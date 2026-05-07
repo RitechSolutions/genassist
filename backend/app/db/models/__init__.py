@@ -3,6 +3,7 @@ from app.db.models.agent_response_log import AgentResponseLogModel
 
 # from app.db.models.api_key_permission import ApiKeyPermissionModel
 from app.db.models.api_key import ApiKeyModel
+from app.db.models.audio_provider import AudioProvidersModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.audit_log import AuditLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
@@ -104,6 +105,7 @@ __all__ = [
     "PromptVersionModel",
     "PromptConfigModel",
     "FilesUploadSessionModel",
+    "AudioProvidersModel",
 ]
 
 models = [
@@ -151,6 +153,7 @@ models = [
     LlmCostRateModel,
     PromptVersionModel,
     PromptConfigModel,
+    AudioProvidersModel,
 ]
 
 auto_register_updated_by(models)

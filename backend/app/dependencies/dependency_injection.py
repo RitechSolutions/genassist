@@ -31,6 +31,7 @@ from app.repositories.file_upload_session import FileUploadSessionRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.llm_cost_rates import LlmCostRateRepository
+from app.repositories.audio_providers import AudioProviderRepository
 from app.repositories.llm_providers import LlmProviderRepository
 from app.repositories.operator_statistics import OperatorStatisticsRepository
 from app.repositories.operators import OperatorRepository
@@ -67,6 +68,7 @@ from app.services.gpt_questions import QuestionAnswerer
 from app.services.gpt_speaker_separator import SpeakerSeparator
 from app.services.llm_analysts import LlmAnalystService
 from app.services.llm_cost_rates import LlmCostRateService
+from app.services.audio_providers import AudioProviderService
 from app.services.llm_providers import LlmProviderService
 from app.services.operator_statistics import OperatorStatisticsService
 from app.services.operators import OperatorService
@@ -237,6 +239,9 @@ class Dependencies(Module):
 
         binder.bind(LlmProviderService, scope=request_scope)
         binder.bind(LlmProviderRepository, scope=request_scope)
+
+        binder.bind(AudioProviderService, scope=request_scope)
+        binder.bind(AudioProviderRepository, scope=request_scope)
 
         binder.bind(LlmCostRateService, scope=request_scope)
         binder.bind(LlmCostRateRepository, scope=request_scope)

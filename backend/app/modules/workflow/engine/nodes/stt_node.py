@@ -1,11 +1,7 @@
 import base64
-import io
 import json
 import logging
-import os
 from typing import Any, Dict
-
-import openai
 
 from app.modules.workflow.engine.base_node import BaseNode
 
@@ -13,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class STTNode(BaseNode):
-    """Speech-to-Text node using OpenAI Whisper API."""
+    """Speech-to-Text node using configurable audio providers."""
 
     async def process(self, config: Dict[str, Any]) -> Any:
         audio_source = config.get("audio_source")
@@ -25,32 +21,15 @@ class STTNode(BaseNode):
         if not audio_bytes:
             return {"error": "No audio input provided for Speech to Text node"}
 
-        model = config.get("model", "whisper-1")
-        language = config.get("language") or None
-        response_format = config.get("response_format", "text")
-        temperature = float(config.get("temperature", 0.0))
+        audio_provider_id = config.get("audioProviderId")
+        if not audio_provider_id:
+            return {"error": "No audio provider configured for Speech to Text node"}
 
         try:
-            client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            from app.modules.workflow.audio.provider import get_stt_provider
 
-            audio_file = io.BytesIO(audio_bytes)
-            audio_file.name = f"audio.{audio_format}"
-
-            kwargs: Dict[str, Any] = {
-                "model": model,
-                "file": audio_file,
-                "response_format": response_format,
-                "temperature": temperature,
-            }
-            if language:
-                kwargs["language"] = language
-
-            transcript = await client.audio.transcriptions.create(**kwargs)
-
-            if response_format == "text":
-                text = str(transcript)
-            else:
-                text = transcript.model_dump() if hasattr(transcript, "model_dump") else transcript
+            provider = await get_stt_provider(audio_provider_id)
+            text = await provider.transcribe(audio_bytes, audio_format, config)
 
             return {
                 "message": text if isinstance(text, str) else str(text),

@@ -14,6 +14,7 @@ import {
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useAudioProviderConfig } from "../hooks/useAudioProviderConfig";
 
 type STTDialogProps = BaseNodeDialogProps<STTNodeData, STTNodeData>;
 
@@ -22,19 +23,26 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
 
   const [name, setName] = useState(data.name || "Speech to Text");
   const [audioSource, setAudioSource] = useState(data.audio_source || "");
-  const [provider, setProvider] = useState(data.provider || "openai");
+  const [audioProviderId, setAudioProviderId] = useState(data.audioProviderId || "");
   const [model, setModel] = useState(data.model || "whisper-1");
   const [language, setLanguage] = useState(data.language ?? "");
-  const [responseFormat, setResponseFormat] = useState(
-    data.response_format || "text",
-  );
+  const [responseFormat, setResponseFormat] = useState(data.response_format || "text");
   const [temperature, setTemperature] = useState(data.temperature ?? 0.0);
+
+  const {
+    providers: audioProviders,
+    providerType,
+    models,
+    responseFormats,
+    supportsTemperature,
+    getDefaultsForProvider,
+  } = useAudioProviderConfig({ capability: "stt", audioProviderId, enabled: isOpen });
 
   useEffect(() => {
     if (isOpen) {
       setName(data.name || "Speech to Text");
       setAudioSource(data.audio_source || "");
-      setProvider(data.provider || "openai");
+      setAudioProviderId(data.audioProviderId || "");
       setModel(data.model || "whisper-1");
       setLanguage(data.language ?? "");
       setResponseFormat(data.response_format || "text");
@@ -42,17 +50,29 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const handleProviderChange = (id: string) => {
+    setAudioProviderId(id);
+    const defaults = getDefaultsForProvider(id);
+    if (defaults) {
+      setModel(defaults.model);
+      setResponseFormat(defaults.responseFormat);
+    }
+  };
+
+  const buildNodeData = (): STTNodeData => ({
+    ...data,
+    name,
+    audio_source: audioSource,
+    provider: providerType || "openai",
+    audioProviderId: audioProviderId || undefined,
+    model,
+    language: language || undefined,
+    response_format: responseFormat,
+    temperature,
+  });
+
   const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      audio_source: audioSource,
-      provider,
-      model,
-      language: language || undefined,
-      response_format: responseFormat,
-      temperature,
-    });
+    onUpdate(buildNodeData());
     onClose();
   };
 
@@ -70,16 +90,7 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        audio_source: audioSource,
-        provider,
-        model,
-        language: language || undefined,
-        response_format: responseFormat,
-        temperature,
-      }}
+      data={buildNodeData()}
     >
       <div className="space-y-4">
         <div>
@@ -106,13 +117,17 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="provider">Provider</Label>
-          <Select value={provider} onValueChange={setProvider}>
+          <Label htmlFor="audioProviderId">Audio Provider</Label>
+          <Select value={audioProviderId} onValueChange={handleProviderChange}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select provider" />
+              <SelectValue placeholder="Select audio provider" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="openai">OpenAI</SelectItem>
+              {audioProviders?.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} ({p.provider_type})
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -124,13 +139,11 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
               <SelectValue placeholder="Select model" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="whisper-1">Whisper-1</SelectItem>
-              <SelectItem value="gpt-4o-transcribe">
-                GPT-4o Transcribe
-              </SelectItem>
-              <SelectItem value="gpt-4o-mini-transcribe">
-                GPT-4o Mini Transcribe
-              </SelectItem>
+              {models.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -156,34 +169,38 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
               <SelectValue placeholder="Select format" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="text">Plain Text</SelectItem>
-              <SelectItem value="json">JSON</SelectItem>
-              <SelectItem value="verbose_json">Verbose JSON</SelectItem>
+              {responseFormats.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
-        <div>
-          <Label htmlFor="temperature">Temperature ({temperature})</Label>
-          <p className="text-xs text-muted-foreground mb-1">
-            Sampling temperature (0.0 for deterministic)
-          </p>
-          <RichInput
-            id="temperature"
-            type="number"
-            value={String(temperature)}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (!isNaN(val) && val >= 0.0 && val <= 1.0) {
-                setTemperature(val);
-              }
-            }}
-            min={0.0}
-            max={1.0}
-            step={0.1}
-            className="w-full"
-          />
-        </div>
+        {supportsTemperature && (
+          <div>
+            <Label htmlFor="temperature">Temperature ({temperature})</Label>
+            <p className="text-xs text-muted-foreground mb-1">
+              Sampling temperature (0.0 for deterministic)
+            </p>
+            <RichInput
+              id="temperature"
+              type="number"
+              value={String(temperature)}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val >= 0.0 && val <= 1.0) {
+                  setTemperature(val);
+                }
+              }}
+              min={0.0}
+              max={1.0}
+              step={0.1}
+              className="w-full"
+            />
+          </div>
+        )}
       </div>
     </NodeConfigPanel>
   );
