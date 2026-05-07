@@ -175,6 +175,11 @@ const menuItems: MenuItem[] = [
         permissionsRequired: ["read:llm_provider"],
       },
       {
+        title: "Audio Providers",
+        url: "/audio-providers",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
         title: "LLM Analyst",
         url: "/llm-analyst",
         permissionsRequired: ["read:llm_analyst"],

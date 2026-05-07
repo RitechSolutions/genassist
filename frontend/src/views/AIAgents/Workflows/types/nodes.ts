@@ -446,6 +446,7 @@ export interface FileReaderNodeData extends BaseNodeData {
 export interface TTSNodeData extends BaseNodeData {
   text: string;
   provider: string;
+  audioProviderId?: string;
   voice: string;
   model: string;
   output_format: string;
@@ -456,6 +457,7 @@ export interface TTSNodeData extends BaseNodeData {
 export interface STTNodeData extends BaseNodeData {
   audio_source: string;
   provider: string;
+  audioProviderId?: string;
   model: string;
   language?: string;
   response_format: string;
