@@ -90,6 +90,7 @@ export interface CreateDeploymentRequest {
   deployment_id: string;
   job_id: string;
   gpu_id?: number | null;
+  tensor_parallel_size?: number;
   max_model_len?: number | null;
   gpu_memory_utilization?: number;
   dtype?: string;
