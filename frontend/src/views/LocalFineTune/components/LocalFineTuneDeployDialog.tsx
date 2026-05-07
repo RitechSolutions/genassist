@@ -7,8 +7,8 @@ import { Switch } from "@/components/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
 import { Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { createDeployment } from "@/services/localFineTune";
-import type { CreateDeploymentRequest } from "@/interfaces/localFineTune.interface";
+import { createDeployment, listSystemGpus } from "@/services/localFineTune";
+import type { CreateDeploymentRequest, GpuInfo } from "@/interfaces/localFineTune.interface";
 
 interface LocalFineTuneDeployDialogProps {
   isOpen: boolean;
@@ -34,8 +34,13 @@ export function LocalFineTuneDeployDialog({
   const [gpuMemUtil, setGpuMemUtil] = useState<number | "">(0.9);
   const [dtype, setDtype] = useState("auto");
   const [gpuId, setGpuId] = useState<number | "">("");
+  const [tensorParallelSize, setTensorParallelSize] = useState<number>(1);
+  const [availableGpus, setAvailableGpus] = useState<GpuInfo[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const maxParallelism = availableGpus.length || null;
+  const parallelismExceedsGpus = maxParallelism !== null && tensorParallelSize > maxParallelism;
 
   useEffect(() => {
     if (isOpen) {
@@ -44,7 +49,10 @@ export function LocalFineTuneDeployDialog({
       setGpuMemUtil(0.9);
       setDtype("auto");
       setGpuId("");
+      setTensorParallelSize(1);
+      setAvailableGpus([]);
       setShowAdvanced(false);
+      listSystemGpus().then(setAvailableGpus).catch(() => setAvailableGpus([]));
     }
   }, [isOpen, jobId]);
 
@@ -60,6 +68,7 @@ export function LocalFineTuneDeployDialog({
       job_id: jobId,
       gpu_memory_utilization: gpuMemUtil !== "" ? Number(gpuMemUtil) : undefined,
       dtype,
+      tensor_parallel_size: tensorParallelSize,
       max_model_len: maxModelLen !== "" ? Number(maxModelLen) : null,
       gpu_id: gpuId !== "" ? Number(gpuId) : null,
     };
@@ -136,6 +145,38 @@ export function LocalFineTuneDeployDialog({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="tensor-parallel-size">
+                Tensor Parallel Size
+                {maxParallelism !== null && (
+                  <span className="ml-1.5 text-xs text-muted-foreground font-normal">
+                    ({maxParallelism} GPU{maxParallelism !== 1 ? "s" : ""} available)
+                  </span>
+                )}
+              </Label>
+              <Input
+                id="tensor-parallel-size"
+                type="number"
+                min={1}
+                max={maxParallelism ?? undefined}
+                step={1}
+                value={tensorParallelSize}
+                onChange={(e) =>
+                  setTensorParallelSize(Math.max(1, Number.parseInt(e.target.value) || 1))
+                }
+                className={parallelismExceedsGpus ? "rounded-lg border-destructive" : "rounded-lg"}
+              />
+              {parallelismExceedsGpus ? (
+                <p className="text-xs text-destructive">
+                  Exceeds the {maxParallelism} GPU{maxParallelism !== 1 ? "s" : ""} available on this system.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Number of GPUs to use. Set to 2+ for large models (e.g. Gemma 9B across 2 GPUs).
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center gap-2 border-t pt-4">
               <div className="flex-1" />
               <div className="flex items-center gap-2">
@@ -165,18 +206,30 @@ export function LocalFineTuneDeployDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="gpu-id">GPU ID</Label>
-                  <Input
-                    id="gpu-id"
-                    type="number"
-                    min={0}
-                    value={gpuId}
-                    onChange={(e) =>
-                      setGpuId(e.target.value === "" ? "" : Number(e.target.value))
-                    }
-                    placeholder="auto"
-                    className="rounded-lg"
-                  />
+                  <Label>
+                    {tensorParallelSize > 1 ? "Pin First GPU" : "GPU"}
+                  </Label>
+                  <Select
+                    value={gpuId === "" ? "auto" : String(gpuId)}
+                    onValueChange={(v) => setGpuId(v === "auto" ? "" : Number(v))}
+                  >
+                    <SelectTrigger className="rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto (by load)</SelectItem>
+                      {availableGpus.map((gpu) => (
+                        <SelectItem key={gpu.id} value={String(gpu.id)}>
+                          GPU {gpu.id} · {gpu.name} ({gpu.free_memory_gb}GB free)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {tensorParallelSize > 1
+                      ? `Pins the selected GPU first; ${tensorParallelSize - 1} more auto-selected by load.`
+                      : "Auto lets the service pick the GPU with the lowest load."}
+                  </p>
                 </div>
               </div>
             )}
@@ -191,7 +244,7 @@ export function LocalFineTuneDeployDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || parallelismExceedsGpus}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Deploy
             </Button>
