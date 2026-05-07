@@ -4,6 +4,8 @@ import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
   CreateDeploymentRequest,
   CreateLocalFineTuneJobRequest,
+  DeleteJobFilesRequest,
+  DeleteJobFilesResponse,
   GpuInfo,
   SystemGpusResponse,
   LocalFineTuneDeployment,
@@ -143,6 +145,20 @@ export async function createLocalFineTuneJob(
 
 export async function cancelLocalFineTuneJob(jobId: string): Promise<LocalFineTuneJob> {
   return localFineTuneRequest<LocalFineTuneJob>("POST", `api/v1/fine-tuning/jobs/${jobId}/cancel`);
+}
+
+export async function deleteLocalFineTuneJobFiles(
+  jobId: string,
+  options: DeleteJobFilesRequest = {}
+): Promise<DeleteJobFilesResponse> {
+  const { delete_data_files = true, delete_checkpoints = true, delete_model = false } = options;
+  return localFineTuneRequest<DeleteJobFilesResponse>(
+    "DELETE",
+    `api/v1/fine-tuning/jobs/${jobId}/files`,
+    {
+      params: { delete_data_files, delete_checkpoints, delete_model },
+    }
+  );
 }
 
 export async function createDeployment(
