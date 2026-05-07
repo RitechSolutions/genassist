@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import logging
 import os
 from typing import Any, Dict
@@ -68,6 +69,12 @@ class STTNode(BaseNode):
                     return base64.b64decode(source_output["data"]), audio_format
 
         if isinstance(source_output, str) and source_output:
+            try:
+                parsed = json.loads(source_output)
+                if isinstance(parsed, dict):
+                    return self._extract_audio(parsed)
+            except (json.JSONDecodeError, ValueError):
+                pass
             try:
                 return base64.b64decode(source_output), "mp3"
             except Exception:
