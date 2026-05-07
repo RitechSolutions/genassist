@@ -61,7 +61,9 @@ SUPPORTED_NODE_TYPES = [
     "guardrailProvenanceNode",
     "guardrailNliNode",
     "fileReaderNode",
-    "externalAgentNode"
+    "externalAgentNode",
+    "ttsNode",
+    "sttNode"
 ]
 
 

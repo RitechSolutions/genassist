@@ -4,7 +4,7 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 // Define compatibility types
-export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "any";
+export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "audio" | "any";
 
 // Define handler types
 export interface NodeHandler {
@@ -442,6 +442,26 @@ export interface FileReaderNodeData extends BaseNodeData {
   fileId?: string;
 }
 
+// TTS Node Data
+export interface TTSNodeData extends BaseNodeData {
+  text: string;
+  provider: string;
+  voice: string;
+  model: string;
+  output_format: string;
+  speed: number;
+}
+
+// STT Node Data
+export interface STTNodeData extends BaseNodeData {
+  audio_source: string;
+  provider: string;
+  model: string;
+  language?: string;
+  response_format: string;
+  temperature: number;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -473,7 +493,9 @@ export type NodeData =
   | GuardrailProvenanceNodeData
   | GuardrailNliNodeData
   | FileReaderNodeData
-  | ExternalAgentNodeData;
+  | ExternalAgentNodeData
+  | TTSNodeData
+  | STTNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
@@ -485,6 +507,7 @@ export interface NodeTypeDefinition<T extends NodeData> {
   category:
     | "io"
     | "ai"
+    | "audio"
     | "routing"
     | "integrations"
     | "formatting"
