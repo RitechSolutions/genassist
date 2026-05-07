@@ -53,7 +53,8 @@ export type LocalFineTuneJobStatus =
   | "saving_model"
   | "succeeded"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "model_deleted";
 
 export interface LocalFineTuneJobEvent {
   job_id: string;

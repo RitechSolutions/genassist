@@ -115,6 +115,11 @@ export function LocalFineTuneDeploymentsCard({
     );
   }, [deployments, searchQuery]);
 
+  const isRecentDeployment = (deployment: LocalFineTuneDeployment) => {
+    if (!deployment.created_at) return false;
+    return Date.now() - new Date(deployment.created_at).getTime() < 20_000;
+  };
+
   const handleHealthCheck = async (deployment: LocalFineTuneDeployment) => {
     if (healthCheckInFlight.current.has(deployment.id)) return;
     healthCheckInFlight.current.add(deployment.id);
@@ -123,6 +128,8 @@ export function LocalFineTuneDeploymentsCard({
       const result = await checkDeploymentHealth(deployment.id);
       if (result.status === "healthy") {
         toast.success(`Healthy — ${result.details}`);
+      } else if (isRecentDeployment(deployment)) {
+        toast(`Service may need a few seconds to become accessible`, { icon: "⚠️" });
       } else {
         toast.error(`Unhealthy — ${result.details}`);
       }
@@ -130,6 +137,8 @@ export function LocalFineTuneDeploymentsCard({
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 401) {
         toast.error("Session expired — please refresh the page");
+      } else if (isRecentDeployment(deployment)) {
+        toast(`Service may need a few seconds to become accessible`, { icon: "⚠️" });
       } else {
         toast.error("Health check failed");
       }
