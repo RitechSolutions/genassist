@@ -13,6 +13,7 @@ import {
   getLocalFineTuneJobNameSubtitle,
 } from "@/views/LocalFineTune/utils/jobDisplayName";
 import { cancelLocalFineTuneJob } from "@/services/localFineTune";
+import { LocalFineTuneDeleteFilesDialog } from "@/views/LocalFineTune/components/LocalFineTuneDeleteFilesDialog";
 import { LocalFineTuneDeployDialog } from "@/views/LocalFineTune/components/LocalFineTuneDeployDialog";
 import {
   DropdownMenu,
@@ -95,6 +96,8 @@ interface LocalFineTuneJobsCardProps {
   loading: boolean;
   error: string | null;
   searchQuery: string;
+  onDeployed?: () => void;
+  onFilesDeleted?: () => void;
 }
 
 export function LocalFineTuneJobsCard({
@@ -103,11 +106,12 @@ export function LocalFineTuneJobsCard({
   loading,
   error,
   searchQuery,
+  onDeployed,
+  onFilesDeleted,
 }: LocalFineTuneJobsCardProps) {
   const navigate = useNavigate();
   const [jobToDelete, setJobToDelete] = useState<LocalFineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [jobToCancel, setJobToCancel] = useState<LocalFineTuneJob | null>(null);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -173,9 +177,13 @@ export function LocalFineTuneJobsCard({
           const hasModel = Boolean(job.fine_tuned_model);
           const isDeployable = isSucceeded && hasModel;
           const isCancellable = inProgressStatuses.has(status);
-          const disabledReason = !isSucceeded
-            ? "Only Jobs with the status 'Completed' create a model that can be deployed"
-            : "No model path available for this job";
+          const isTerminal = ["succeeded", "failed", "cancelled"].includes(status);
+          let disabledReason = "No model path available for this job";
+          if (status === "model_deleted") {
+            disabledReason = "The fine-tuned model has been deleted";
+          } else if (!isSucceeded) {
+            disabledReason = "Only jobs with the status 'Completed' create a model that can be deployed";
+          }
 
           return (
             <TooltipProvider delayDuration={200}>
@@ -226,6 +234,19 @@ export function LocalFineTuneJobsCard({
                       Cancel Job
                     </DropdownMenuItem>
                   )}
+                  {isTerminal && (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setJobToDelete(job);
+                        setIsDeleteDialogOpen(true);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Files
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </TooltipProvider>
@@ -252,20 +273,6 @@ export function LocalFineTuneJobsCard({
     }
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!jobToDelete) return;
-    try {
-      setIsDeleting(true);
-      setJobs((prev) => prev.filter((j) => j.id !== jobToDelete.id));
-      toast.success("Job removed from the list");
-    } catch {
-      toast.error("Failed to delete job");
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setJobToDelete(null);
-    }
-  };
 
   return (
     <>
@@ -282,18 +289,21 @@ export function LocalFineTuneJobsCard({
         onRowClick={(job) => navigate(`/local-fine-tune/${job.id}`)}
       />
 
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={jobToDelete?.id}
-        title="Remove job from list?"
-        description={`This will remove job "${jobToDelete?.id}" from the list. This action is local only.`}
-        primaryButtonText="Remove"
-        secondaryButtonText="Cancel"
-        onCancel={() => setJobToDelete(null)}
-      />
+      {jobToDelete && (
+        <LocalFineTuneDeleteFilesDialog
+          isOpen={isDeleteDialogOpen}
+          onOpenChange={(open) => {
+            setIsDeleteDialogOpen(open);
+            if (!open) setJobToDelete(null);
+          }}
+          jobId={jobToDelete.id}
+          jobDisplayName={getLocalFineTuneJobDisplayName(jobToDelete)}
+          onDeleted={() => {
+            setJobToDelete(null);
+            onFilesDeleted?.();
+          }}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={isCancelDialogOpen}
@@ -314,7 +324,10 @@ export function LocalFineTuneJobsCard({
           onOpenChange={(open) => { if (!open) setJobToDeploy(null); }}
           jobId={jobToDeploy.id}
           jobDisplayName={getLocalFineTuneJobDisplayName(jobToDeploy)}
-          onDeployed={() => setJobToDeploy(null)}
+          onDeployed={() => {
+            setJobToDeploy(null);
+            onDeployed?.();
+          }}
         />
       )}
     </>

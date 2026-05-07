@@ -26,6 +26,11 @@ export default function LocalFineTune() {
     setRefreshKey((k) => k + 1);
   };
 
+  const handleDeployed = () => {
+    setDeployRefreshKey((k) => k + 1);
+    setActiveTab("deployments");
+  };
+
   return (
     <PageLayout>
       <PageHeader
@@ -68,6 +73,8 @@ export default function LocalFineTune() {
             loading={loading}
             error={error}
             searchQuery={searchQuery}
+            onDeployed={handleDeployed}
+            onFilesDeleted={() => setRefreshKey((k) => k + 1)}
           />
         </>
       )}

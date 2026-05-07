@@ -53,7 +53,8 @@ export type LocalFineTuneJobStatus =
   | "saving_model"
   | "succeeded"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "model_deleted";
 
 export interface LocalFineTuneJobEvent {
   job_id: string;
@@ -89,6 +90,7 @@ export interface CreateDeploymentRequest {
   deployment_id: string;
   job_id: string;
   gpu_id?: number | null;
+  tensor_parallel_size?: number;
   max_model_len?: number | null;
   gpu_memory_utilization?: number;
   dtype?: string;
@@ -117,5 +119,20 @@ export interface LocalFineTuneDeploymentHealth {
 export interface DeploymentStopResponse {
   id: string;
   status: string;
+  message: string;
+}
+
+export interface DeleteJobFilesRequest {
+  delete_data_files?: boolean;
+  delete_checkpoints?: boolean;
+  delete_model?: boolean;
+}
+
+export interface DeleteJobFilesResponse {
+  job_id: string;
+  status: "success" | "partial_success" | "failed" | "no_files" | string;
+  deleted_items: string[];
+  bytes_freed: number;
+  errors: string[] | null;
   message: string;
 }
