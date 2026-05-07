@@ -119,3 +119,18 @@ export interface DeploymentStopResponse {
   status: string;
   message: string;
 }
+
+export interface DeleteJobFilesRequest {
+  delete_data_files?: boolean;
+  delete_checkpoints?: boolean;
+  delete_model?: boolean;
+}
+
+export interface DeleteJobFilesResponse {
+  job_id: string;
+  status: "success" | "partial_success" | "failed" | "no_files" | string;
+  deleted_items: string[];
+  bytes_freed: number;
+  errors: string[] | null;
+  message: string;
+}
