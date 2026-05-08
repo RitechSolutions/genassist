@@ -49,6 +49,7 @@ export default function MCPServersPage() {
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditServer={handleEditServer}
+        onCreateServer={handleCreateServer}
         updatedServer={updatedServer}
       />
 
