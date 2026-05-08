@@ -34,8 +34,26 @@ class LlmProviderService:
         self.repository = repository
         self.app_settings_service = app_settings_service
 
+    @staticmethod
+    def _extract_vllm_fine_tuned(connection_data: Dict[str, Any], llm_model: str):
+        """
+        Extracts a clean display name from the api_url:::model_path select value
+        and stores it as llm_model. connection_data.model retains the full value
+        so the edit form can pre-select the correct deployment.
+        Returns (connection_data, display_name).
+        """
+        raw = connection_data.get("model", "")
+        if ":::" not in raw:
+            return connection_data, llm_model
+        _, model_path = raw.split(":::", 1)
+        display_name = model_path.split("/")[-1]
+        return connection_data, display_name
+
     async def create(self, data: LlmProviderCreate):
         connection_data = data.connection_data.copy()
+
+        if data.llm_model_provider == "vllm_fine_tuned":
+            connection_data, data.llm_model = self._extract_vllm_fine_tuned(connection_data, data.llm_model)
 
         api_key = connection_data.get("api_key")
         if api_key:
@@ -91,6 +109,11 @@ class LlmProviderService:
 
         existing_conn_data = obj.connection_data or {}
         update_conn_data = update_data.get("connection_data", {})
+
+        if obj.llm_model_provider == "vllm_fine_tuned" and ":::" in update_conn_data.get("model", ""):
+            _, update_data["llm_model"] = self._extract_vllm_fine_tuned(
+                update_conn_data, update_data.get("llm_model", "")
+            )
 
         for field_name in self.encrypted_fields:
             if field_name in update_conn_data:

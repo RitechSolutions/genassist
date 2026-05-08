@@ -31,9 +31,11 @@ from .read_mails_tool_node import ReadMailsToolNode
 from .router_node import RouterNode
 from .set_state_node import SetStateNode
 from .slack_tool_node import SlackToolNode
+from .stt_node import STTNode
 from .sql_node import SQLNode
 from .thread_rag_node import ThreadRAGNode
 from .tool_builder_node import ToolBuilderNode
+from .tts_node import TTSNode
 from .whatsapp_tool_node import WhatsAppToolNode
 from .workflow_executor_node import WorkflowExecutorNode
 from .zendesk_tool_node import ZendeskToolNode
@@ -73,4 +75,6 @@ __all__ = [
     "GuardrailProvenanceNode",
     "GuardrailNliNode",
     "FileReaderNode",
+    "TTSNode",
+    "STTNode",
 ]

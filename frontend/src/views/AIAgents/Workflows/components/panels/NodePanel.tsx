@@ -35,6 +35,7 @@ import {
   UTILS_NODES_HELP_CONTENT,
 } from "@/views/AIAgents/Workflows/nodeTypes/utils/helperDefinition";
 import { INTEGRATION_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/integrations/helperDefinition";
+import { AUDIO_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/audio/helperDefinition";
 import {
   defaultHelpHeaderGradient,
   helpHeaderGradientByCategory,
@@ -147,6 +148,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     formatting: "Formatting",
     tools: "Tools",
     training: "Training",
+    audio: "Audio",
     utils: "Utils",
   };
 
@@ -159,6 +161,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     tools: TOOLS_NODES_HELP_CONTENT,
     training: TRAINING_NODES_HELP_CONTENT,
     integrations: INTEGRATION_NODES_HELP_CONTENT,
+    audio: AUDIO_NODES_HELP_CONTENT,
   };
 
   // Filter nodes based on search query

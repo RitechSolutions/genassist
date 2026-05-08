@@ -208,5 +208,11 @@ async def invalidate_llm_provider_cache(provider_id: UUID | None):
 
     await invalidate_cache("llm_providers:get_all", None)
 
+async def invalidate_audio_provider_cache(provider_id: UUID | None = None):
+    if provider_id:
+        await invalidate_cache("audio_providers:get_by_id", str(provider_id))
+    await invalidate_cache("audio_providers:get_all", None)
+
+
 async def invalidate_user_cache(user_id: UUID):
     await invalidate_cache("users:get_by_id_for_auth", user_id)

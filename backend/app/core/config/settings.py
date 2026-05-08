@@ -92,6 +92,7 @@ class ProjectSettings(BaseSettings):
         "webm",
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
+    LOCAL_FINE_TUNE_API_URL: Optional[str] = None
     WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
     WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 

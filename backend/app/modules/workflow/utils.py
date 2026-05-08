@@ -17,7 +17,7 @@ from app.modules.workflow.sandbox import (
 logger = logging.getLogger(__name__)
 
 # Maximum wall-clock seconds for user-supplied Python code execution.
-_EXEC_TIMEOUT_SECONDS = 30
+_EXEC_TIMEOUT_SECONDS = 120
 
 
 def add_executable_function(code: str) -> str:
