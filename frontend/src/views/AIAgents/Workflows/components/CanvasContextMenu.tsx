@@ -34,6 +34,7 @@ const categoryLabels: Record<string, string> = {
   formatting: "Formatting",
   tools: "Tools",
   training: "Training",
+  audio: "Audio",
 };
 
 const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({

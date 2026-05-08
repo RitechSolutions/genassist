@@ -2,14 +2,21 @@ import axios from "axios";
 import { getLocalFineTuneApiUrl } from "@/config/localFineTune";
 import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
+  CreateDeploymentRequest,
   CreateLocalFineTuneJobRequest,
+  DeleteJobFilesRequest,
+  DeleteJobFilesResponse,
+  GpuInfo,
+  SystemGpusResponse,
+  LocalFineTuneDeployment,
+  LocalFineTuneDeploymentHealth,
   LocalFineTuneJob,
   LocalFineTuneJobEvent,
-  LocalFineTuneSupportedModel,
+  LocalFineTuneSupportedModel, DeploymentStopResponse,
 } from "@/interfaces/localFineTune.interface";
 
 async function localFineTuneRequest<T>(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   endpoint: string,
   options?: { data?: unknown; params?: Record<string, string | number | boolean> }
 ): Promise<T> {
@@ -22,7 +29,7 @@ async function localFineTuneRequest<T>(
   const tenantId = getTenantId();
 
   const config: {
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "DELETE";
     url: string;
     data?: unknown;
     params?: Record<string, string | number | boolean>;
@@ -97,10 +104,9 @@ export async function listLocalFineTuneSupportedModels(
 }
 
 export async function listLocalFineTuneJobs(): Promise<LocalFineTuneJob[]> {
-  const res = await localFineTuneRequest<LocalFineTuneJob[]>(
-    "GET",
-    "api/v1/fine-tuning/jobs"
-  );
+  const res = await localFineTuneRequest<LocalFineTuneJob[]>("GET", "api/v1/fine-tuning/jobs", {
+    params: { order_by: "created_at", sort_direction: "desc"},
+  });
   return Array.isArray(res) ? res : [];
 }
 
@@ -135,4 +141,83 @@ export async function createLocalFineTuneJob(
   return localFineTuneRequest<LocalFineTuneJob>("POST", "api/v1/fine-tuning/jobs", {
     data: payload,
   });
+}
+
+export async function cancelLocalFineTuneJob(jobId: string): Promise<LocalFineTuneJob> {
+  return localFineTuneRequest<LocalFineTuneJob>("POST", `api/v1/fine-tuning/jobs/${jobId}/cancel`);
+}
+
+export async function deleteLocalFineTuneJobFiles(
+  jobId: string,
+  options: DeleteJobFilesRequest = {}
+): Promise<DeleteJobFilesResponse> {
+  const { delete_data_files = true, delete_checkpoints = true, delete_model = false } = options;
+  return localFineTuneRequest<DeleteJobFilesResponse>(
+    "DELETE",
+    `api/v1/fine-tuning/jobs/${jobId}/files`,
+    {
+      params: { delete_data_files, delete_checkpoints, delete_model },
+    }
+  );
+}
+
+export async function createDeployment(
+  payload: CreateDeploymentRequest
+): Promise<LocalFineTuneDeployment> {
+  return localFineTuneRequest<LocalFineTuneDeployment>("POST", "api/v1/deployments", {
+    data: payload,
+  });
+}
+
+export async function listDeployments(): Promise<LocalFineTuneDeployment[]> {
+  const res = await localFineTuneRequest<LocalFineTuneDeployment[]>("GET", "api/v1/deployments", {
+    params: { order_by: "created_at", sort_direction: "desc" },
+  });
+  return Array.isArray(res) ? res : [];
+}
+
+export async function getDeployment(id: string): Promise<LocalFineTuneDeployment | null> {
+  try {
+    return await localFineTuneRequest<LocalFineTuneDeployment>("GET", `api/v1/deployments/${id}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function stopDeployment(id: string): Promise<DeploymentStopResponse> {
+  return localFineTuneRequest<DeploymentStopResponse>("DELETE", `api/v1/deployments/${id}`);
+}
+
+export async function checkDeploymentHealth(id: string): Promise<LocalFineTuneDeploymentHealth> {
+  return localFineTuneRequest<LocalFineTuneDeploymentHealth>(
+    "GET",
+    `api/v1/deployments/${id}/health`
+  );
+}
+
+export async function listSystemGpus(): Promise<GpuInfo[]> {
+  const res = await localFineTuneRequest<SystemGpusResponse>("GET", "api/v1/system/gpus");
+  return res.cuda_available ? res.gpus : [];
+}
+
+export async function testDeploymentInference(
+  apiUrl: string,
+  modelPath: string,
+  message: string
+): Promise<string> {
+  // apiUrl from the server is http://localhost:{port} — repoint to the actual server host
+  const serverHost = new URL(getLocalFineTuneApiUrl()).hostname;
+  const deploymentUrl = new URL(apiUrl);
+  deploymentUrl.hostname = serverHost;
+
+  const response = await axios.post<{
+    choices: { message: { content: string } }[];
+  }>(`${deploymentUrl.origin}/v1/chat/completions`, {
+    model: modelPath,
+    messages: [{ role: "user", content: message }],
+    max_tokens: 512,
+    temperature: 0.7,
+  });
+
+  return response.data.choices[0].message.content;
 }

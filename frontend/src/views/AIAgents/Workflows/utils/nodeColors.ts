@@ -6,6 +6,7 @@ export const nodeColors: Record<string, string> = {
   formatting: "purple-600",
   tools: "sky-600",
   training: "rose-600",
+  audio: "teal-600",
   default: "brand-600",
 };
 
@@ -21,6 +22,7 @@ export const nodeBgColors: Record<string, string> = {
   formatting: "bg-purple-50",
   tools: "bg-sky-50",
   training: "bg-rose-50",
+  audio: "bg-teal-50",
   default: "bg-brand-50",
 };
 
@@ -36,6 +38,7 @@ export const nodeIconColors: Record<string, string> = {
   formatting: "text-purple-600",
   tools: "text-sky-600",
   training: "text-rose-600",
+  audio: "text-teal-600",
   default: "text-brand-600",
 };
 
