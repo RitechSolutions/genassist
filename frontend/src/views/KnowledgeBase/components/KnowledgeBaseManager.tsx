@@ -140,15 +140,15 @@ const KnowledgeBaseManager: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold">Knowledge Base</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold">Knowledge Base</h2>
           <p className="text-zinc-400 font-normal">View and manage the knowledge base</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative">
             <Select value={typeFilter} onValueChange={setTypeFilter} defaultValue="all">
-              <SelectTrigger className="min-w-32 bg-white">
+              <SelectTrigger className="w-full sm:min-w-32 bg-white">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
               <SelectContent>
@@ -160,11 +160,14 @@ const KnowledgeBaseManager: React.FC = () => {
           </div>
           <SearchInput
             placeholder="Search knowledge base..."
-            className="min-w-64"
+            className="w-full sm:min-w-64"
             value={searchQuery}
             onChange={setSearchQuery}
           />
-          <Button onClick={() => navigate('/knowledge-base/new')} className="rounded-full">
+          <Button
+            onClick={() => navigate('/knowledge-base/new')}
+            className="w-full rounded-full sm:w-auto"
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add New
           </Button>
@@ -194,11 +197,11 @@ const KnowledgeBaseManager: React.FC = () => {
         ) : (
           <div className="divide-y divide-gray-100">
             {filteredItems.map((item) => (
-              <div key={item.id} className="py-4 px-6">
+              <div key={item.id} className="px-4 py-4 sm:px-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div className="flex-1 flex flex-col space-y-1">
                     <div className="flex items-center gap-2">
-                      <h4 className="text-lg font-semibold">{item.name}</h4>
+                      <h4 className="text-base sm:text-lg font-semibold break-words">{item.name}</h4>
                       <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
                         {item.type.toUpperCase()}
                       </span>
@@ -239,7 +242,7 @@ const KnowledgeBaseManager: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2 justify-center md:justify-end w-full md:w-auto">
+                  <div className="flex gap-2 justify-end w-full md:w-auto">
                     <Button variant="ghost" size="icon" onClick={() => navigate(`/knowledge-base/edit/${item.id}`)} className="h-8 w-8">
                       <Pencil className="h-4 w-4" />
                     </Button>

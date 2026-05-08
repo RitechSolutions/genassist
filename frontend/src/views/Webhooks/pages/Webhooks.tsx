@@ -49,6 +49,7 @@ export default function WebhooksPage() {
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditWebhook={handleEditWebhook}
+        onCreateWebhook={handleCreateWebhook}
         updatedWebhook={updatedWebhook}
       />
 
