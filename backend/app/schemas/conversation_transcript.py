@@ -31,8 +31,11 @@ class TranscriptSegmentInput(BaseModel):
     text: str
     type: Optional[str] = "message"
     attachments: Optional[List[TranscriptSegmentAttachment]] = None
+    audio_data: Optional[bytes] = None
+    audio_format: Optional[str] = None
     model_config = ConfigDict(
             from_attributes=True,
+            arbitrary_types_allowed=True,
             )
 
 

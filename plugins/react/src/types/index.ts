@@ -21,6 +21,8 @@ export interface ChatMessage {
   type?: string;
   linkUrl?: string;
   linkLabel?: string;
+  audio_format?: string;
+  audioObjectUrl?: string;
 }
 
 // Attachment type

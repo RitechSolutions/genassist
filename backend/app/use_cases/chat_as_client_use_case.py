@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
 
 from app.api.v1.routes.agents import run_query_agent_logic
@@ -39,18 +41,21 @@ async def send_message_to_socket(
     tenant_id: str,
 ) -> None:
     socket_connection_manager = injector.get(SocketConnectionManager)
+    payload = {
+        "id": str(message.id),
+        "create_time": message.create_time.isoformat() if message.create_time else None,
+        "start_time": message.start_time,
+        "end_time": message.end_time,
+        "speaker": message.speaker,
+        "text": message.text,
+        "type": message.type,
+    }
+    if message.audio_format:
+        payload["audio_format"] = message.audio_format
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="message",
-            payload={
-                "id": str(message.id),
-                "create_time": message.create_time.isoformat() if message.create_time else None,
-                "start_time": message.start_time,
-                "end_time": message.end_time,
-                "speaker": message.speaker,
-                "text": message.text,
-                "type": message.type,
-            },
+            payload=payload,
             room_id=conversation_id,
             current_user_id=current_user_id,
             required_topic="message",
@@ -59,11 +64,50 @@ async def send_message_to_socket(
     )
 
 
+def _extract_spoken_text(agent_response: dict) -> str:
+    """Extract the text the LLM generated before TTS converted it to audio."""
+    try:
+        raw = agent_response.get("row_agent_response", {})
+        state = raw.get("state", {})
+        node_status = state.get("nodeExecutionStatus", {})
+
+        # First pass: look for LLM / agent node outputs (most reliable)
+        for node_id, status in node_status.items():
+            node_type = status.get("type", "")
+            if node_type in ("llmModelNode", "agentNode"):
+                output = status.get("output")
+                if isinstance(output, dict):
+                    text = output.get("message", "") or output.get("response", "")
+                    if text:
+                        return text
+                if isinstance(output, str) and output:
+                    return output
+
+        # Second pass: find any non-audio, non-error string output (fallback)
+        for node_id, status in node_status.items():
+            node_type = status.get("type", "")
+            if node_type in ("ttsNode", "sttNode", "chatInputNode", "chatOutputNode"):
+                continue
+            output = status.get("output")
+            if isinstance(output, str) and output and not output.startswith("Error"):
+                return output
+
+        logger.debug(
+            "Could not extract spoken text from workflow. Node types present: %s",
+            [s.get("type") for s in node_status.values()],
+        )
+    except Exception as exc:
+        logger.warning("_extract_spoken_text failed: %s", exc)
+    return ""
+
+
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
     tenant_id: str,
     current_user_id: UUID,
+    audio_bytes: Optional[bytes] = None,
+    audio_format: Optional[str] = None,
 ) -> ConversationModel:
     """
     Process an in-progress conversation update with agent response handling.
@@ -98,8 +142,15 @@ async def process_conversation_update_with_agent(
         if message.text:
             message.text = _pii_redactor.redact(message.text)
 
-    # Broadcast user message immediately with pre-generated ID
+    # Tag user message with audio data if present
     user_message = model.messages[0]
+    if audio_bytes:
+        user_message.audio_data = audio_bytes
+        user_message.audio_format = audio_format or "webm"
+        user_message.type = "audio"
+        if not user_message.text or user_message.text.strip() == "":
+            user_message.text = "[Voice message]"
+
     # 1:1 chat: broadcast user message immediately with pre-generated ID
     await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
@@ -113,6 +164,11 @@ async def process_conversation_update_with_agent(
             model.metadata = {}
 
         model.metadata["thread_id"] = str(conversation_id)
+
+        # Inject audio data into metadata for the workflow engine (base64, in-memory only)
+        if audio_bytes:
+            model.metadata["audio_data"] = base64.b64encode(audio_bytes).decode("utf-8")
+            model.metadata["audio_format"] = audio_format or "webm"
 
         agent_response = await run_query_agent_logic(
             agent_service,
@@ -139,16 +195,34 @@ async def process_conversation_update_with_agent(
                 type="form_request",
             )
         else:
-            # Normal agent response
             agent_answer = agent_response.get("response", "No answer found")
-            transcript_object = TranscriptSegmentInput(
-                id=generate_sequential_uuid(),
-                create_time=now,
-                start_time=elapsed_seconds,
-                end_time=elapsed_seconds,
-                speaker="agent",
-                text=str(agent_answer),
-            )
+
+            if isinstance(agent_answer, dict) and agent_answer.get("type") == "audio":
+                # Audio response from TTS workflow
+                audio_b64 = agent_answer.get("data", "")
+                audio_fmt = agent_answer.get("format", "mp3")
+                spoken_text = _extract_spoken_text(agent_response)
+                transcript_object = TranscriptSegmentInput(
+                    id=generate_sequential_uuid(),
+                    create_time=now,
+                    start_time=elapsed_seconds,
+                    end_time=elapsed_seconds,
+                    speaker="agent",
+                    text=spoken_text or "[Audio response]",
+                    type="audio",
+                    audio_data=base64.b64decode(audio_b64),
+                    audio_format=audio_fmt,
+                )
+            else:
+                # Normal text response
+                transcript_object = TranscriptSegmentInput(
+                    id=generate_sequential_uuid(),
+                    create_time=now,
+                    start_time=elapsed_seconds,
+                    end_time=elapsed_seconds,
+                    speaker="agent",
+                    text=str(agent_answer),
+                )
 
         model.messages.append(transcript_object)
 

@@ -91,6 +91,10 @@ def schema_to_transcript_message(
     if segment.id is not None:
         message_data["id"] = segment.id
 
+    if segment.audio_data:
+        message_data["audio_data"] = segment.audio_data
+        message_data["audio_format"] = segment.audio_format
+
     return TranscriptMessageModel(**message_data)
 
 _CUSTOMER_SPEAKERS = {"customer", "user"}
