@@ -7,6 +7,7 @@ export const helpHeaderGradientByCategory: Record<string, string> = {
   tools: "bg-gradient-to-b from-sky-100/80 via-sky-50/50 to-white",
   training: "bg-gradient-to-b from-rose-100/80 via-rose-50/50 to-white",
   utils: "bg-gradient-to-b from-slate-100/80 via-slate-50/50 to-white",
+  audio: "bg-gradient-to-b from-teal-100/80 via-teal-50/50 to-white",
 };
 
 export const defaultHelpHeaderGradient =

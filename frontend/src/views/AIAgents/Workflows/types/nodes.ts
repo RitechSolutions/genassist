@@ -4,7 +4,7 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 // Define compatibility types
-export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "any";
+export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "audio" | "any";
 
 // Define handler types
 export interface NodeHandler {
@@ -155,6 +155,23 @@ export interface APIToolNodeData extends BaseNodeData {
   headers: Record<string, string>;
   parameters: Record<string, string>;
   requestBody: string;
+}
+
+// External Agent Node Data
+export interface ExternalAgentNodeData extends BaseNodeData {
+  endpoint: string;
+  method: string;
+  headers: Record<string, string>;
+  requestBody: string;
+  authType: "none" | "bearer" | "api_key" | "basic";
+  authToken?: string;
+  authHeader?: string;
+  authUsername?: string;
+  authPassword?: string;
+  timeout?: number;
+  messageField: string;
+  stepsField?: string;
+  mappingScript?: string;
 }
 
 // LLM Model node data
@@ -425,6 +442,28 @@ export interface FileReaderNodeData extends BaseNodeData {
   fileId?: string;
 }
 
+// TTS Node Data
+export interface TTSNodeData extends BaseNodeData {
+  text: string;
+  provider: string;
+  audioProviderId?: string;
+  voice: string;
+  model: string;
+  output_format: string;
+  speed: number;
+}
+
+// STT Node Data
+export interface STTNodeData extends BaseNodeData {
+  audio_source: string;
+  provider: string;
+  audioProviderId?: string;
+  model: string;
+  language?: string;
+  response_format: string;
+  temperature: number;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -455,7 +494,10 @@ export type NodeData =
   | SetStateNodeData
   | GuardrailProvenanceNodeData
   | GuardrailNliNodeData
-  | FileReaderNodeData;
+  | FileReaderNodeData
+  | ExternalAgentNodeData
+  | TTSNodeData
+  | STTNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
@@ -467,6 +509,7 @@ export interface NodeTypeDefinition<T extends NodeData> {
   category:
     | "io"
     | "ai"
+    | "audio"
     | "routing"
     | "integrations"
     | "formatting"
