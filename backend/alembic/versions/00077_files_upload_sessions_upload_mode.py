@@ -7,7 +7,7 @@ service layer can disambiguate the legacy server-staged chunked flow
 in-flight rows; new code should always set it explicitly.
 
 Revision ID: b85c0d9e7f12
-Revises: f1a2b3c4d5e6
+Revises: h8e9f1a2b3c4
 Create Date: 2026-04-29 12:35:00.000000
 """
 
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b85c0d9e7f12"
-down_revision: Union[str, None] = "f1a2b3c4d5e6"
+down_revision: Union[str, None] = "h8e9f1a2b3c4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
