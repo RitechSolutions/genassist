@@ -5,6 +5,7 @@ import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/button";
 import { Calendar } from "@/components/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
+import { cn } from "@/helpers/utils";
 
 export interface DatePreset {
   label: string;
@@ -36,6 +37,8 @@ export interface DateRangePickerProps {
   align?: "start" | "center" | "end";
   /** Number of calendar months to display */
   numberOfMonths?: number;
+  /** Optional class override for the trigger button */
+  triggerClassName?: string;
 }
 
 export const DateRangePicker = ({
@@ -45,6 +48,7 @@ export const DateRangePicker = ({
   placeholder = "Pick date range",
   align = "end",
   numberOfMonths = 2,
+  triggerClassName,
 }: DateRangePickerProps) => {
   const presets = useMemo(() => customPresets ?? getDefaultPresets(), [customPresets]);
 
@@ -57,7 +61,10 @@ export const DateRangePicker = ({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="gap-2 min-w-[200px] justify-start">
+        <Button
+          variant="outline"
+          className={cn("gap-2 min-w-[200px] justify-start", triggerClassName)}
+        >
           <CalendarIcon className="h-4 w-4 text-muted-foreground" />
           <span>{label}</span>
         </Button>

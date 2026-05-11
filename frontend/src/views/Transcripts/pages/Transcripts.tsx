@@ -491,9 +491,9 @@ const Transcripts = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-4 w-full">
               {/* Top row: Title/Upload | Agent, Date Range, Search */}
@@ -540,7 +540,7 @@ const Transcripts = () => {
               </div>
 
               {/* Filter bar */}
-              <div className="w-full flex flex-wrap items-center gap-2 rounded-full bg-white border border-gray-100 px-3 py-1.5 shadow-sm">
+              <div className="w-full flex flex-wrap items-start gap-2 rounded-2xl sm:rounded-full bg-white border border-gray-100 px-3 py-2 sm:py-1.5 shadow-sm">
                 <Tabs
                   value={activeTab}
                   className="min-w-0"
@@ -566,7 +566,7 @@ const Transcripts = () => {
                   </TabsList>
                 </Tabs>
 
-                <div className="flex items-center gap-1.5 shrink-0 flex-wrap ml-auto">
+                <div className="flex w-full sm:w-auto items-center gap-1.5 shrink-0 flex-wrap sm:ml-auto">
                   <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
                     <SelectTrigger className="w-[120px] bg-white h-8 rounded-full text-xs">
                       <SelectValue placeholder="Status" />
@@ -863,7 +863,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <div className="flex items-center gap-1.5">
+                  <div className="ml-auto sm:ml-0 flex items-center gap-1.5">
                     <Switch
                       id="hide-empty"
                       checked={hideEmpty}
@@ -921,10 +921,10 @@ const Transcripts = () => {
                         setIsLiveTranscriptSelected(isLiveTranscript(transcript));
                         setIsModalOpen(true);
                       }}
-                      className="p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
+                      className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                      <div className="flex items-start space-x-4 min-w-0">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
                         <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/5">
                           {isCallTranscript(transcript) ? (
                             <PlayCircle className="w-5 h-5 text-primary" />
@@ -946,9 +946,9 @@ const Transcripts = () => {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             <span>Duration: {formatDuration(transcript?.metadata?.duration ?? 0)}</span>
-                            <span className="h-3 w-px bg-gray-200" aria-hidden />
+                            <span className="hidden sm:inline h-3 w-px bg-gray-200" aria-hidden />
                             <span>
                               {transcript?.timestamp
                                 ? new Date(transcript.timestamp).toLocaleString()
@@ -992,7 +992,7 @@ const Transcripts = () => {
                           )}
                         </div>
                       </div>
-                        <div className="flex flex-col items-end gap-2 shrink-0 mt-2 sm:mt-0">
+                        <div className="mt-1 flex items-center justify-between gap-2 sm:mt-0 sm:shrink-0 sm:flex-col sm:items-end">
                           {/* Sentiment badge */}
                           {(() => {
                             const sentiment = transcript ? getEffectiveSentiment(transcript) : "Unknown";

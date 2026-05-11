@@ -2,18 +2,20 @@ import { useEffect, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Button } from "@/components/button";
 import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { AudioProvider } from "@/interfaces/audioProvider.interface";
 import { getAllAudioProviders, deleteAudioProvider } from "@/services/audioProviders";
 import { toast } from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, AlertCircle, HelpCircle } from "lucide-react";
+import { CheckCircle, AlertCircle, HelpCircle, Plus, Volume2 } from "lucide-react";
 
 interface AudioProviderCardProps {
   searchQuery: string;
   refreshKey?: number;
   onEdit: (provider: AudioProvider) => void;
+  onCreate: () => void;
   updatedProvider?: AudioProvider | null;
 }
 
@@ -21,6 +23,7 @@ export function AudioProviderCard({
   searchQuery,
   refreshKey = 0,
   onEdit,
+  onCreate,
   updatedProvider = null,
 }: AudioProviderCardProps) {
   const [providers, setProviders] = useState<AudioProvider[]>([]);
@@ -156,6 +159,27 @@ export function AudioProviderCard({
         renderRow={renderRow}
         emptyMessage="No Audio Providers found"
         searchEmptyMessage="No Audio Providers matching your search"
+        emptyState={
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+            <div className="rounded-full bg-gray-100 p-4">
+              <Volume2 className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="font-medium text-lg">
+              {searchQuery ? "No Audio Providers matching your search" : "No Audio Providers found"}
+            </h3>
+            <p className="text-sm text-gray-500 max-w-sm px-4">
+              {searchQuery
+                ? "Try adjusting your search query."
+                : "Add your first audio provider to enable TTS and STT capabilities."}
+            </p>
+            {!searchQuery && (
+              <Button onClick={onCreate} className="rounded-full">
+                <Plus className="h-4 w-4 mr-2" />
+                Create your first audio provider
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <ConfirmDialog
