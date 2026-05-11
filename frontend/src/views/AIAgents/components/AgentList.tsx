@@ -195,7 +195,7 @@ const AgentList: React.FC<AgentListProps> = ({
           handleOpenWorkflow(agent.id);
         }}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <h4 className="text-base font-semibold">{agentName}</h4>
@@ -211,7 +211,7 @@ const AgentList: React.FC<AgentListProps> = ({
                 </span>
               )}
             </div>
-            <div className="space-y-1 text-sm text-muted-foreground">
+            <div className="space-y-1 text-sm text-muted-foreground break-all">
               <div>
                 <span className="font-medium">ID:</span> {agent.id}
               </div>
@@ -225,7 +225,7 @@ const AgentList: React.FC<AgentListProps> = ({
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-end gap-2 sm:gap-4">
             <div onClick={(e) => e.stopPropagation()}>
               <Switch
                 checked={isActive}
@@ -312,23 +312,28 @@ const AgentList: React.FC<AgentListProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-3xl font-bold">
             Agent Studio{" "}
-            <span className="text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
+            <span className="hidden sm:inline text-xl sm:text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
           </h2>
           <p className="text-zinc-400 font-normal">View and manage workflows</p>
+          <div className="mt-2 sm:hidden">
+            <span className="text-zinc-400 font-normal text-base">
+              ({activeCount} Active, {inactiveCount} Inactive)
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <SearchInput
             value={searchTerm}
             onChange={setSearchTerm}
             placeholder="Search agents..."
-            className="w-[200px]"
+            className="w-full sm:w-[200px]"
           />
           <Button
-            className="flex items-center gap-2 rounded-full"
+            className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
             onClick={() => setOpenAgentForm(true)}
           >
             <Plus className="h-4 w-4" />
@@ -338,7 +343,7 @@ const AgentList: React.FC<AgentListProps> = ({
       </div>
 
       <Tabs value={activeTab} onValueChange={onTabChange}>
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="user">My Agents</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>

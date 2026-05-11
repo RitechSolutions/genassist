@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import {
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Trash2,
   Plus,
@@ -39,7 +41,6 @@ import { DisclaimerEditor } from "@/components/DisclaimerEditor";
 import { getTranslationByKey, getLanguages } from "@/services/translations";
 import { Language, Translation } from "@/interfaces/translation.interface";
 import { getTranslationCount } from "../utils";
-import { Switch } from "@/components/switch";
 
 interface AgentFormData {
   id?: string;
@@ -992,17 +993,29 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 border-t pt-4">
-                <div className="flex-1" />
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="show_advanced">Advanced</Label>
-                  <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
-                </div>
+              <div className="border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((prev) => !prev)}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/40"
+                  aria-expanded={showAdvanced}
+                  aria-controls="advanced-section"
+                >
+                  <span className="text-sm font-medium">Advanced</span>
+                  {showAdvanced ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
               </div>
 
               <div className="space-y-3">
                 {showAdvanced && (
-                  <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                  <div
+                    id="advanced-section"
+                    className="space-y-2 rounded-lg border bg-muted/30 p-4"
+                  >
                     <div className="flex items-center gap-2">
                       <Bot className="h-4 w-4 text-muted-foreground" />
                       <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
