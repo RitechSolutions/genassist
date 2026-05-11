@@ -91,7 +91,7 @@ class ConversationRepository:
             .options(
                 joinedload(ConversationModel.analysis),
                 joinedload(ConversationModel.recording),
-                joinedload(ConversationModel.operator),
+                joinedload(ConversationModel.operator).joinedload(OperatorModel.agent),
             )
         )
 
@@ -385,7 +385,8 @@ class ConversationRepository:
         Note: include_messages=True may impact performance for large result sets.
         """
         query = select(ConversationModel).options(
-            joinedload(ConversationModel.recording)
+            joinedload(ConversationModel.recording),
+            selectinload(ConversationModel.operator).selectinload(OperatorModel.agent),
         )
 
         query = self._apply_base_filters(query, conversation_filter)
