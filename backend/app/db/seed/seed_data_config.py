@@ -1,14 +1,17 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import os
 
 @dataclass
 class SeedTestData:
     # Credentials
     admin_username: str = "admin"
-    admin_password: str = "genadmin"
     supervisor_username: str = "supervisor1"
-    supervisor_password: str = "gensupervisor1"
     operator_username: str = "operator1"
-    operator_password: str = "genoperator1"
+
+    # NOTE: passwords are sourced from env to avoid hardcoding credentials in-repo
+    admin_password: str = field(default_factory=lambda: os.environ.get("SEED_ADMIN_PASSWORD", ""))
+    supervisor_password: str = field(default_factory=lambda: os.environ.get("SEED_SUPERVISOR_PASSWORD", ""))
+    operator_password: str = field(default_factory=lambda: os.environ.get("SEED_OPERATOR_PASSWORD", ""))
 
     # Database entry ids
     admin_user_id = "00000196-1b89-8e8e-905c-0eefdb9008f1"

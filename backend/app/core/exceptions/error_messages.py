@@ -146,6 +146,7 @@ class ErrorKey(Enum):
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
     TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
     AZURE_INIT_FAILED = "AZURE_INIT_FAILED"
+    LLM_PROVIDER_RESIDENCY_VIOLATION = "LLM_PROVIDER_RESIDENCY_VIOLATION"
 
 
 ERROR_MESSAGES = {
@@ -288,6 +289,10 @@ ERROR_MESSAGES = {
         ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
                                           "Delete the related evaluations first, then try again.",
         ErrorKey.AZURE_INIT_FAILED: "Azure initialization failed.",
+        ErrorKey.LLM_PROVIDER_RESIDENCY_VIOLATION: (
+            "The selected LLM provider does not satisfy this tenant's data residency policy. "
+            "Ensure the provider's allowed regions include a region permitted for this tenant."
+        ),
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

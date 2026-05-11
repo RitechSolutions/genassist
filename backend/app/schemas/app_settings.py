@@ -4,7 +4,7 @@ from uuid import UUID
 from datetime import datetime
 
 AppSettingsType = Literal["Zendesk", "WhatsApp",
-                          "Gmail", "Microsoft", "Slack", "Jira", "FileManagerSettings", "Other"]
+                          "Gmail", "Microsoft", "Slack", "Jira", "FileManagerSettings", "Security", "Other"]
 
 
 class AppSettingsBase(BaseModel):

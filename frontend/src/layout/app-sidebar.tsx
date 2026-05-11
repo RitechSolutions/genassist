@@ -175,6 +175,11 @@ const menuItems: MenuItem[] = [
         permissionsRequired: ["read:llm_provider"],
       },
       {
+        title: "Audio Providers",
+        url: "/audio-providers",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
         title: "LLM Analyst",
         url: "/llm-analyst",
         permissionsRequired: ["read:llm_analyst"],
@@ -216,6 +221,11 @@ const menuItems: MenuItem[] = [
         title: "User Groups",
         url: "/user-groups",
         permissionsRequired: ["read:user_group"],
+      },
+      {
+        title: "GDPR Requests",
+        url: "/admin/gdpr-conversations",
+        permissionsRequired: ["delete:conversation:gdpr"],
       },
     ],
   },

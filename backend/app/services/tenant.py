@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import List, Optional
 from uuid import UUID
@@ -23,6 +24,26 @@ class TenantService:
 
     def __init__(self, repository: TenantRepository):
         self.repository = repository
+
+    def _check_seed_passwords_or_raise(self) -> None:
+        """
+        Fail fast if DB seeding credentials aren't configured.
+
+        Tenant creation relies on seeding to provision the initial admin user.
+        If seeding can't run (missing passwords), we should not create the tenant at all.
+        """
+        required_password_envs = (
+            "SEED_ADMIN_PASSWORD",
+            "SEED_APIUSER_PASSWORD",
+        )
+
+        missing = [k for k in required_password_envs if not os.environ.get(k)]
+        if missing:
+            raise ValueError(
+                "Missing required seed password env vars: "
+                + ", ".join(missing)
+                + ". Set them before creating a tenant."
+            )
 
     async def get_tenant_by_slug(self, tenant_slug: str) -> Optional[TenantModel]:
         """Get tenant by slug"""
@@ -57,6 +78,12 @@ class TenantService:
         if not settings.MULTI_TENANT_ENABLED:
             logger.warning("Multi-tenancy is disabled, cannot create tenant")
             return ValueError("Multi-tenancy is disabled")
+
+        try:
+            self._check_seed_passwords_or_raise()
+        except ValueError as e:
+            logger.warning("Rejected tenant creation due to missing seed credentials")
+            return e
 
         slug = slug.strip()
         if not _TENANT_SLUG_REGEX.fullmatch(slug):

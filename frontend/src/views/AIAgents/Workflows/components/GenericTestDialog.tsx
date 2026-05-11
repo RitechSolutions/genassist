@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -7,24 +7,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/button";
-import { Label } from "@/components/label";
-import { RichTextarea } from "@/components/richTextarea";
-import { RichInput } from "@/components/richInput";
-import { Checkbox } from "@/components/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
 import { Play, X } from "lucide-react";
 import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
-import { testNode, WorkflowTestResponse } from "@/services/workflows";
+import { testNode } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
-import JsonViewer from "@/components/JsonViewer";
+import { useAudioTest } from "../hooks/useAudioTest";
+import { TestInputFields, STTAudioInput } from "./TestInputFields";
+import { TestOutputSection } from "./TestOutputSection";
 
 export interface GenericTestInputField {
   id: string;
@@ -67,7 +58,10 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     unknown
   > | null>(null);
 
-  const SCHEMA_TYPES: SchemaType[] = ["string", "number", "boolean", "object", "array", "any"];
+  const {
+    isSTTNode, isRecording, audioFileName, fileInputRef,
+    getSTTAudioKey, handleAudioFileUpload, startRecording, stopRecording,
+  } = useAudioTest({ nodeType, nodeData, setFormData, setError });
 
   const { updateNodeOutput, getAvailableDataForNode, getNodeOutput } =
     useWorkflowExecution();
@@ -296,6 +290,19 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       // Parse input values based on their schema types
       const parsedData: Record<string, unknown> = {};
 
+      // For STT nodes, pass structured audio dict
+      if (isSTTNode) {
+        const key = getSTTAudioKey();
+        const audioData = formData[key];
+        if (audioData) {
+          try {
+            parsedData[key] = JSON.parse(audioData);
+          } catch {
+            parsedData[key] = audioData;
+          }
+        }
+      }
+
       // Get inputSchema if available
       const inputSchema = "inputSchema" in nodeData && nodeData.inputSchema
         ? nodeData.inputSchema
@@ -411,168 +418,35 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
           <div className="flex flex-col space-y-4 min-w-0 w-full">
-            {/* Input Fields */}
-            {inputFields.length > 0 ? (
-              <div className="space-y-4">
-                <Label>Input Variables</Label>
-                {inputFields.map((field) => {
-                  const currentType = fieldTypes[field.id] || "string";
-                  const isPrefilled = availableData && getValueFromPath(availableData, field.id) !== undefined;
-
-                  return (
-                    <div key={field.id} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor={field.id}>
-                          {field.label}
-                          {field.required && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
-                        </Label>
-                        <div className="flex items-center space-x-2">
-                          <select
-                            value={currentType}
-                            onChange={(e) =>
-                              handleTypeChange(field.id, e.target.value as SchemaType)
-                            }
-                            className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-300"
-                            disabled={isLoading}
-                          >
-                            {SCHEMA_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                            {field.source || "config"}
-                          </span>
-                          {isPrefilled && (
-                            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                              Prefilled
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {currentType === "boolean" ? (
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id={field.id}
-                            checked={formData[field.id] === "true"}
-                            onCheckedChange={(checked) =>
-                              handleInputChange(
-                                field.id,
-                                checked ? "true" : "false"
-                              )
-                            }
-                            disabled={isLoading}
-                          />
-                          <Label
-                            htmlFor={field.id}
-                            className="text-sm font-normal"
-                          >
-                            {field.placeholder || `Enable ${field.label}`}
-                          </Label>
-                        </div>
-                      ) : currentType === "object" || currentType === "array" ? (
-                        <div className="space-y-2">
-                          <RichTextarea
-                            id={field.id}
-                            placeholder={
-                              field.placeholder ||
-                              `Enter ${
-                                currentType === "object"
-                                  ? "JSON object"
-                                  : "JSON array"
-                              }`
-                            }
-                            value={formData[field.id] || ""}
-                            onChange={(e) =>
-                              handleInputChange(field.id, e.target.value)
-                            }
-                            disabled={isLoading}
-                            className={`flex-1 font-mono text-xs ${
-                              isPrefilled ? "border-blue-300 bg-blue-50" : ""
-                            }`}
-                            rows={3}
-                          />
-                          <p className="text-xs text-gray-500">
-                            {currentType === "object"
-                              ? 'Enter a valid JSON object (e.g., {"key": "value"})'
-                              : 'Enter a valid JSON array (e.g., ["item1", "item2"])'}
-                          </p>
-                        </div>
-                      ) : field.options && field.options.length > 0 ? (
-                        <Select
-                          value={formData[field.id] || ""}
-                          onValueChange={(val) => handleInputChange(field.id, val)}
-                          disabled={isLoading}
-                        >
-                          <SelectTrigger className="text-sm">
-                            <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
-                          </SelectTrigger>
-                          <SelectContent className="z-[1300]">
-                            {field.options.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <RichInput
-                          id={field.id}
-                          type={currentType === "number" ? "number" : field.type === "date" ? "date" : "text"}
-                          placeholder={field.placeholder}
-                          value={formData[field.id] || ""}
-                          onChange={(e) =>
-                            handleInputChange(field.id, e.target.value)
-                          }
-                          disabled={isLoading}
-                          className={`flex-1 ${
-                            isPrefilled ? "border-blue-300 bg-blue-50" : ""
-                          }`}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500 italic">
-                No variables found in node configuration or inputSchema
-              </div>
+            {isSTTNode && (
+              <STTAudioInput
+                isLoading={isLoading}
+                isRecording={isRecording}
+                audioFileName={audioFileName}
+                fileInputRef={fileInputRef}
+                onFileUpload={handleAudioFileUpload}
+                onStartRecording={startRecording}
+                onStopRecording={stopRecording}
+              />
             )}
 
-            {/* Output Section */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label>Output</Label>
-                {isLoading && (
-                  <div className="text-xs text-blue-500">Loading...</div>
-                )}
-              </div>
+            {!isSTTNode && (
+              <TestInputFields
+                inputFields={inputFields}
+                formData={formData}
+                fieldTypes={fieldTypes}
+                availableData={availableData}
+                isLoading={isLoading}
+                onInputChange={handleInputChange}
+                onTypeChange={handleTypeChange}
+              />
+            )}
 
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded-md text-xs mb-2">
-                  {error}
-                </div>
-              )}
-              {output === null ? (
-                <div className="whitespace-pre-wrap">No output yet</div>
-              ) : typeof output === "string" ? (
-                <div className="whitespace-pre-wrap">{output}</div>
-              ) : (
-                <JsonViewer
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  data={output as any}
-                  onCopy={(data) => {
-                    navigator.clipboard.writeText(
-                      JSON.stringify(data, null, 2)
-                    );
-                  }}
-                />
-              )}
-            </div>
+            <TestOutputSection
+              output={output}
+              error={error}
+              isLoading={isLoading}
+            />
           </div>
         </div>
 
@@ -590,7 +464,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
             onClick={handleRun}
             disabled={
               isLoading ||
-              inputFields.some((field) => field.required && !formData[field.id])
+              (isSTTNode ? !formData[getSTTAudioKey()] : inputFields.some((field) => field.required && !formData[field.id]))
             }
           >
             <Play className="h-4 w-4 mr-2" />

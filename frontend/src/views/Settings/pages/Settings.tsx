@@ -10,13 +10,16 @@ import { settingSections } from '../helpers/settingsData';
 import { Link } from 'react-router-dom';
 import { getAuthMe } from '@/services/auth';
 import { getFileManagerSettings, type FileManagerSettings } from '@/services/fileManager';
+import { getSecuritySettings, type SecuritySettings } from '@/services/appSettings';
 import { FileManagerSettingsCard } from '../components/FileManagerSettingsCard';
+import { SecuritySettingsCard } from '../components/SecuritySettingsCard';
 import type { User } from '@/interfaces/user.interface';
 
 const SettingsPage = () => {
   const { toggleStates, handleToggle } = useSettings();
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [fileManagerSettings, setFileManagerSettings] = useState<FileManagerSettings | null>(null);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -32,8 +35,13 @@ const SettingsPage = () => {
       const settings = await getFileManagerSettings();
       setFileManagerSettings(settings);
     };
+    const fetchSecuritySettings = async () => {
+      const settings = await getSecuritySettings();
+      setSecuritySettings(settings);
+    };
     fetchProfile();
     fetchFileManagerSettings();
+    fetchSecuritySettings();
   }, []);
 
   const sectionsWithData = useMemo(() => {
@@ -146,6 +154,13 @@ const SettingsPage = () => {
                     </div>
                   </Card>
                 )}
+
+                <Card className="md:col-span-2 mt-6">
+                  <SecuritySettingsCard
+                    settings={securitySettings}
+                    onSaved={(updated) => setSecuritySettings(updated)}
+                  />
+                </Card>
 
                 {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
                   <Button variant="outline">Cancel</Button>
