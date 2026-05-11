@@ -20,6 +20,20 @@ Optionally tune the URL lifetime via
 When the flag is off the new endpoints return `501` and the frontend falls
 back to the existing chunked-session upload automatically.
 
+## Where this is used in the app
+
+This flow is currently used by the Settings UI **Manage Files** page:
+
+- Frontend UI: `frontend/src/views/Settings/pages/FileManagerFiles.tsx`
+- Frontend API helpers: `frontend/src/services/fileManager.ts`
+- Backend routes: `backend/app/api/v1/routes/file_manager.py`
+- Backend orchestration: `backend/app/services/file_upload_session.py`
+
+The page uses direct presigned PUT uploads **only when the server says it is
+supported** (see capability detection below). Otherwise it uses the legacy
+multipart form upload (`POST /file-manager/files`), which streams bytes through
+the API.
+
 ### Frontend capability detection
 
 The backend surfaces whether the capability is currently active via:
@@ -31,6 +45,10 @@ GET /api/file-manager/settings
 The response includes `values.direct_s3_upload_enabled` (boolean). This value is
 **derived** from server config + active provider + app-settings activation; it is
 not persisted as a user-editable setting.
+
+In the UI this is consumed as:
+
+- `directS3Enabled = provider === "s3" && settings?.values.direct_s3_upload_enabled === true`
 
 ## API
 
@@ -128,6 +146,39 @@ placeholder `files` row, marks the session `failed`, and returns `400`.
 Idempotency: if a previous finalize succeeded, re-sending `{ "success": true }`
 returns the already-computed result without modifying the file again.
 
+## Frontend upload behavior (Manage Files page)
+
+The Settings → **Manage Files** upload button calls `handleSubmitUpload()` in
+`frontend/src/views/Settings/pages/FileManagerFiles.tsx`.
+
+At runtime it chooses between two upload implementations:
+
+1. **Direct S3 (preferred when enabled)**:
+   - Calls `uploadFileRecordViaPresignedS3(file, body, { onProgress })` from
+     `frontend/src/services/fileManager.ts`.
+   - That helper performs:
+     - `POST /file-manager/upload-session/presign`
+     - `PUT presigned_url` via `XMLHttpRequest` (so we can report progress)
+     - `POST /file-manager/upload-session/{session_id}/finalize` with `{ success: true }`
+
+2. **Legacy multipart (fallback / default)**:
+   - Calls `uploadFileRecord(formData, { onProgress })`, which is:
+     - `POST /file-manager/files` with `multipart/form-data`
+
+### Automatic fallback when direct S3 fails
+
+Even when `direct_s3_upload_enabled` is true, the UI **still falls back** to the
+legacy multipart upload if the direct upload path throws. This is intentional so
+misconfigured S3 (especially CORS) does not block uploads.
+
+Direct upload errors trigger a best-effort cleanup call:
+
+- If the PUT fails or finalize fails, the frontend calls finalize with:
+  `{ "success": false, "error_message": "..." }`
+
+The server then best-effort deletes the object and deletes the placeholder
+`files` row.
+
 ## Required S3 bucket CORS
 
 The browser PUT requires explicit CORS on the bucket, including exposing the
@@ -149,6 +200,17 @@ Example (JSON CORS configuration):
 
 For the GET redirect path used by `download_file` / `get_file_source`, you may
 also want a separate CORS rule allowing `GET` from the same origins.
+
+## Related: file downloads are also “direct” for S3
+
+This feature pairs well with another optimization already present in the
+file-manager routes:
+
+- `GET /file-manager/files/{file_id}/download` returns a `302 Location: <presigned GET>`
+  for S3-backed files.
+- `GET /file-manager/files/{file_id}/source` also redirects for S3-backed files
+  by default, and supports `?force_proxy=true` to preserve the legacy behavior
+  (proxy bytes through the API) when needed.
 
 ## Security caveats
 
