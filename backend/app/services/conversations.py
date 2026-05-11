@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
@@ -19,6 +20,7 @@ from app.auth.utils import (
 from starlette_context import context
 from starlette_context.errors import ContextDoesNotExistError
 from app.cache.redis_cache import invalidate_conversation_cache, make_key_builder
+from app.cache.redis_cache import clear_conversation_memory_cache
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -41,6 +43,8 @@ from app.db.models.message_model import TranscriptMessageModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
+from app.repositories.audit_logs import AuditLogRepository
+from app.repositories.recordings import RecordingsRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.schemas.conversation import (
     ConversationCreate,
@@ -60,6 +64,7 @@ from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.llm_analysts import LlmAnalystService
 from app.services.operator_statistics import OperatorStatisticsService
 from app.services.zendesk import ZendeskClient
+from app.modules.workflow.agents.rag import ThreadScopedRAG
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,9 @@ conversation_id_key_builder_full = make_key_builder("conversation_id")
 class ConversationService:
     def __init__(self, operator_statistics_service: OperatorStatisticsService,
             conversation_repo: ConversationRepository, transcript_message_repo: TranscriptMessageRepository,
+            audit_log_repo: AuditLogRepository,
+            recordings_repo: RecordingsRepository,
+            thread_rag: ThreadScopedRAG,
             gpt_kpi_analyzer_service: GptKpiAnalyzer = Depends(),
             conversation_analysis_service: ConversationAnalysisService = Depends(),
             llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService), ):
@@ -80,6 +88,51 @@ class ConversationService:
         self.operator_statistics_service = operator_statistics_service
         self.llm_analyst_service = llm_analyst_service
         self.transcript_message_repo = transcript_message_repo
+        self.audit_log_repo = audit_log_repo
+        self.recordings_repo = recordings_repo
+        self.thread_rag = thread_rag
+
+    async def _gdpr_purge_supporting_stores(
+        self,
+        *,
+        conversation_id: UUID,
+        message_ids: list[UUID],
+        recording_id: UUID | None,
+    ) -> None:
+        # Redis conversation memory (thread-scoped)
+        await clear_conversation_memory_cache(conversation_id)
+
+        # Vector store / embeddings (pgvector, qdrant, etc.) keyed by chat_id
+        await self.thread_rag.purge_chat(str(conversation_id))
+
+        # Local recordings (AudioService stores to RECORDINGS_DIR) + recording row
+        if recording_id:
+            rec = await self.recordings_repo.find_by_id(recording_id)
+            if rec and rec.file_path:
+                try:
+                    p = Path(rec.file_path)
+                    if p.exists():
+                        p.unlink()
+                except Exception as e:
+                    logger.warning(
+                        "gdpr.conversation_purge recording_delete_failed conversation_id=%s recording_id=%s err=%s",
+                        conversation_id,
+                        recording_id,
+                        e,
+                    )
+            if rec:
+                await self.recordings_repo.delete_recording(rec)
+
+        # Audit log snapshots (delete both pre- and post-delete trail for these ids)
+        record_ids: list[UUID] = [conversation_id, *message_ids]
+        if recording_id:
+            record_ids.append(recording_id)
+        deleted = await self.audit_log_repo.delete_by_record_ids(record_ids)
+        logger.info(
+            "gdpr.conversation_purge audit_log_deleted conversation_id=%s deleted_rows=%s",
+            conversation_id,
+            deleted,
+        )
 
 
     async def save_conversation(self, conversation: ConversationCreate):
@@ -469,8 +522,9 @@ class ConversationService:
         action is traceable without introducing a dedicated audit table.
         """
 
+        include_messages = mode in (GdprDeleteMode.ANONYMIZE, GdprDeleteMode.HARD)
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id, include_messages=(mode == GdprDeleteMode.ANONYMIZE)
+            conversation_id, include_messages=include_messages
         )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
@@ -478,7 +532,14 @@ class ConversationService:
         actor_user_id = get_current_user_id()
 
         if mode == GdprDeleteMode.HARD:
+            message_ids = [m.id for m in (conversation.messages or []) if getattr(m, "id", None)]
+            recording_id = getattr(conversation, "recording_id", None)
             await self.conversation_repo.delete_conversation(conversation)
+            await self._gdpr_purge_supporting_stores(
+                conversation_id=conversation_id,
+                message_ids=message_ids,
+                recording_id=recording_id,
+            )
             await invalidate_conversation_cache(conversation_id)
             logger.info(
                 "gdpr.conversation_deleted conversation_id=%s mode=hard actor_user_id=%s",
