@@ -11,7 +11,7 @@ unchanged when the feature flag is disabled.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +20,33 @@ class PresignDirectUploadCreate(BaseModel):
     """Body for ``POST /file-manager/upload-session/presign``."""
 
     original_filename: str = Field(..., min_length=1, max_length=500)
+    # Optional file-record fields (used by the settings "Manage Files" UI).
+    # Backward compatible: if omitted, server keeps the old behavior (uuid name under "uploads/").
+    path: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description=(
+            "Optional logical folder. When provided, the server uses it as the S3 key prefix "
+            "(after sanitization). If omitted, defaults to the route's sub_folder."
+        ),
+    )
+    name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=500,
+        description=(
+            "Optional storage filename (no path separators). If omitted, server generates a UUID name."
+        ),
+    )
+    description: Optional[str] = Field(default=None, max_length=2000)
+    tags: Optional[List[str]] = Field(
+        default=None,
+        description="Optional tags to persist on the placeholder files row.",
+    )
+    file_metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional metadata dict to persist on the placeholder files row.",
+    )
     expected_size: Optional[int] = Field(
         default=None,
         ge=0,

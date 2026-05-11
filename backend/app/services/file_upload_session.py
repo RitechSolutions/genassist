@@ -333,22 +333,45 @@ class FileUploadSessionService:
                 "Active S3 provider does not support presigned PUT URLs.",
             )
 
-        # Allocate a unique object key.
+        def _clean_prefix(raw: Optional[str]) -> str:
+            if not raw:
+                return ""
+            # Normalize to posix-ish separators and drop empty / "." segments.
+            raw2 = raw.replace("\\", "/").strip()
+            parts = [p for p in raw2.split("/") if p and p != "." and p != ".."]
+            return "/".join(parts)
+
+        def _validate_storage_name(raw: Optional[str]) -> Optional[str]:
+            if raw is None:
+                return None
+            name = raw.strip()
+            if not name:
+                return None
+            if "/" in name or "\\" in name:
+                raise ValueError("name must not include path separators.")
+            return name
+
+        # Allocate an object key.
         original_name = payload.original_filename
-        file_extension = (
-            original_name.split(".")[-1].lower() if "." in original_name else ""
-        )
+        explicit_name = _validate_storage_name(getattr(payload, "name", None))
+        # Use extension from the explicit storage name if provided; else from original.
+        ext_source = explicit_name or original_name
+        file_extension = ext_source.split(".")[-1].lower() if "." in ext_source else ""
         unique_filename = (
-            f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}"
+            explicit_name
+            or (f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}")
         )
-        clean_sub_folder = (sub_folder or "").strip("/").strip()
-        object_key = (
-            f"{clean_sub_folder}/{unique_filename}" if clean_sub_folder else unique_filename
-        )
+
+        # Folder prefix: payload.path (if provided) overrides the route default.
+        clean_sub_folder = _clean_prefix(getattr(payload, "path", None)) or _clean_prefix(sub_folder)
+        object_key = f"{clean_sub_folder}/{unique_filename}" if clean_sub_folder else unique_filename
 
         # Pre-create a placeholder ``files`` row so the client gets a stable file_id
         # back that already points at a real (pending) record. The row is filled in
         # with size/mime_type on finalize, or soft-deleted on failure.
+        user_meta = getattr(payload, "file_metadata", None)
+        file_meta: Dict[str, Any] = dict(user_meta) if isinstance(user_meta, dict) else {}
+        file_meta.update({"direct_upload": True, "status": "pending"})
         file_base = FileBase(
             name=unique_filename,
             original_filename=original_name,
@@ -358,7 +381,9 @@ class FileUploadSessionService:
             file_extension=file_extension or None,
             mime_type=payload.content_type,
             size=None,
-            file_metadata={"direct_upload": True, "status": "pending"},
+            description=getattr(payload, "description", None),
+            tags=getattr(payload, "tags", None) or [],
+            file_metadata=file_meta,
         )
         try:
             created_file = await file_manager_service.repository.create_file(file_base)
