@@ -19,6 +19,7 @@ interface DataTableProps<T> {
   renderRow: (item: T, index: number) => ReactNode;
   emptyMessage?: string;
   searchEmptyMessage?: string;
+  emptyState?: ReactNode;
 }
 
 export function DataTable<T>({
@@ -30,6 +31,7 @@ export function DataTable<T>({
   renderRow,
   emptyMessage = "No data found",
   searchEmptyMessage = "No data found matching your search",
+  emptyState,
 }: DataTableProps<T>) {
   if (loading) {
     return (
@@ -49,17 +51,21 @@ export function DataTable<T>({
 
   if (data.length === 0) {
     return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery ? searchEmptyMessage : emptyMessage}
-        </div>
+      <Card className="overflow-hidden">
+        {emptyState ?? (
+          <div className="p-8">
+            <div className="text-center text-muted-foreground">
+              {searchQuery ? searchEmptyMessage : emptyMessage}
+            </div>
+          </div>
+        )}
       </Card>
     );
   }
 
   return (
     <Card>
-      <Table className="table-fixed">
+      <Table>
         <TableHeader>
           <TableRow>
             {headers.map((header, index) => (

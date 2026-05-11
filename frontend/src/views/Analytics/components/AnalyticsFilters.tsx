@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { DateRange } from "react-day-picker";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { cn } from "@/helpers/utils";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,10 @@ export interface AnalyticsFiltersProps {
 
   /** Optional extra controls rendered after the built-in filters (e.g. ExportButton, node type select) */
   children?: ReactNode;
+  /** Optional wrapper class override */
+  className?: string;
+  /** Compact date range buttons for constrained layouts */
+  compactDatePickers?: boolean;
 }
 
 export const AnalyticsFilters = ({
@@ -37,9 +42,11 @@ export const AnalyticsFilters = ({
   compareDateRange,
   onCompareDateRangeChange,
   children,
+  className,
+  compactDatePickers = false,
 }: AnalyticsFiltersProps) => {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
       {/* Agent selector */}
       {agents && onAgentFilterChange && (
         <Select value={agentFilter ?? "all"} onValueChange={onAgentFilterChange}>
@@ -58,7 +65,11 @@ export const AnalyticsFilters = ({
       )}
 
       {/* Date range with presets */}
-      <DateRangePicker value={dateRange} onChange={onDateRangeChange} />
+      <DateRangePicker
+        value={dateRange}
+        onChange={onDateRangeChange}
+        triggerClassName={compactDatePickers ? "min-w-[150px] h-9 px-2.5 text-xs" : undefined}
+      />
 
       {/* Optional comparison date range */}
       {onCompareDateRangeChange && (
@@ -68,6 +79,7 @@ export const AnalyticsFilters = ({
             value={compareDateRange}
             onChange={onCompareDateRangeChange}
             placeholder="Compare period…"
+            triggerClassName={compactDatePickers ? "min-w-[150px] h-9 px-2.5 text-xs" : undefined}
           />
         </div>
       )}

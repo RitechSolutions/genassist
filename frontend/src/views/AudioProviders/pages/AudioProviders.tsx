@@ -50,6 +50,7 @@ export default function AudioProviders() {
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEdit={handleEdit}
+        onCreate={handleCreate}
         updatedProvider={updatedProvider}
       />
 
