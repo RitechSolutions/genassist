@@ -39,6 +39,7 @@ import {
   getFileBase64,
   getFileManagerSettings,
   listFiles,
+  uploadFileRecordViaPresignedS3,
   uploadFileRecord,
   type FileManagerSettings,
   type FileRecord,
@@ -423,6 +424,8 @@ export function FileManagerFiles() {
     settings?.values.file_manager_enabled === true && settings.is_active === 1;
   const provider = settings?.values.file_manager_provider || "local";
   const isLocalProvider = provider === "local";
+  const directS3Enabled =
+    provider === "s3" && settings?.values.direct_s3_upload_enabled === true;
 
   const loadFiles = useCallback(async () => {
     if (!canRead) return;
@@ -592,9 +595,35 @@ export function FileManagerFiles() {
     setUploading(true);
     setUploadProgress(0);
     try {
-      await uploadFileRecord(fd, {
-        onProgress: (pct) => setUploadProgress(pct),
-      });
+      if (directS3Enabled) {
+        try {
+          await uploadFileRecordViaPresignedS3(
+            uploadFile,
+            {
+              path: p,
+              name: isLocalProvider ? uploadFile.name : generatedName,
+              description: descriptionInput.trim() || undefined,
+              tags: uploadTags.length ? uploadTags : undefined,
+              file_metadata: Object.keys(metaObj).length ? metaObj : undefined,
+            },
+            { onProgress: (pct) => setUploadProgress(pct) }
+          );
+        } catch (err) {
+          // Fall back to legacy multipart upload so a misconfigured bucket/cors doesn't block uploads.
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[file-manager] direct S3 upload failed, falling back to multipart:",
+            err
+          );
+          await uploadFileRecord(fd, {
+            onProgress: (pct) => setUploadProgress(pct),
+          });
+        }
+      } else {
+        await uploadFileRecord(fd, {
+          onProgress: (pct) => setUploadProgress(pct),
+        });
+      }
       toast.success("File uploaded.");
       setUploadOpen(false);
       resetUploadForm();
