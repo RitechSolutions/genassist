@@ -4,9 +4,10 @@ export interface TranscriptEntry {
   start_time: number;
   end_time: number;
   create_time: string | number;
-  type?: "message" | "takeover" | string;
+  type?: "message" | "takeover" | "audio" | string;
   message_id?: string;
   feedback?: string | ConversationFeedbackEntry[] | null;
+  audio_format?: string;
 }
 
 export interface Recording {

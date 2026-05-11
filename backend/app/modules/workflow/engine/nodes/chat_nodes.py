@@ -81,6 +81,16 @@ class ChatInputNode(BaseNode):
                             # Value in session but not in Redis, use session value
                             validated_data[param_name] = stateful_value
 
+            # Pass audio data through if present (for STT workflows)
+            audio_data_b64 = self.get_state().get_value("audio_data")
+            if audio_data_b64:
+                validated_data["audio_data"] = {
+                    "type": "audio",
+                    "data": audio_data_b64,
+                    "encoding": "base64",
+                    "format": self.get_state().get_value("audio_format") or "webm",
+                }
+
             self.set_node_input(validated_data)
             return validated_data
         except ValueError as e:
