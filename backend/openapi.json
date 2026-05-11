@@ -7601,7 +7601,7 @@
         ],
         "parameters": [
           {
-            "name": "x-tenant-id",
+            "name": "X-Tenant-ID",
             "in": "header",
             "required": false,
             "schema": {
@@ -30390,6 +30390,73 @@
             "maxLength": 500,
             "minLength": 1,
             "title": "Original Filename"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path",
+            "description": "Optional logical folder. When provided, the server uses it as the S3 key prefix (after sanitization). If omitted, defaults to the route's sub_folder."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Optional storage filename (no path separators). If omitted, server generates a UUID name."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "Optional tags to persist on the placeholder files row."
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata",
+            "description": "Optional metadata dict to persist on the placeholder files row."
           },
           "expected_size": {
             "anyOf": [
