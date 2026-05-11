@@ -32074,6 +32074,17 @@
               }
             ],
             "title": "Feedback"
+          },
+          "audio_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Format"
           }
         },
         "type": "object",
