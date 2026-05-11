@@ -331,6 +331,21 @@ class ThreadScopedRAG:
             logger.error(f"Could not get service for chat {chat_id}")
             return []
 
+    async def purge_chat(self, chat_id: str) -> Dict[str, bool]:
+        """
+        GDPR helper: remove all chat-scoped retrieval artifacts (e.g. embeddings)
+        for the given chat_id.
+        """
+        service = await self._get_service(chat_id, config_overrides=None)
+        if not service:
+            logger.error(f"Could not get service for chat {chat_id}")
+            return {}
+        try:
+            return await service.delete_by_metadata({"chat_id": chat_id})
+        except Exception as e:
+            logger.error(f"Error purging chat {chat_id}: {e}")
+            return {}
+
         try:
             # Search using AgentRAGService
             search_results: List[SearchResult] = await service.search(query, limit=top_k)
