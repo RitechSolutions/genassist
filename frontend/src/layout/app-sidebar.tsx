@@ -22,6 +22,7 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/sidebar";
 import { useLocation } from "react-router";
 import { Link } from "react-router-dom";
@@ -460,6 +461,7 @@ function UserFooter({
 // ---------------------------------------------------------------------------
 
 export function AppSidebar() {
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
   const [username, setUsername] = useState<string>("");
   const [tenantId, setTenantId] = useState<string>("");
   const { getFeatureItem } = useFeatureFlag();
@@ -540,6 +542,13 @@ export function AppSidebar() {
       }
     }
   }, [currentPath]);
+
+  // Close the mobile drawer after successful route navigation.
+  useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [currentPath, isMobile, setOpenMobile]);
 
   const filterItems = useCallback(
     (items: MenuItem[]): MenuItem[] => {
