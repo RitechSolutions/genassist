@@ -868,6 +868,66 @@ export class ChatService {
     }
   }
 
+  async sendAudioMessage(
+    audioBlob: Blob,
+    audioFormat: string,
+    extraMetadata?: Record<string, any>,
+  ): Promise<void> {
+    if (!this.conversationId) {
+      throw new Error("Conversation not started");
+    }
+
+    const now = Date.now() / 1000;
+    const chatMessage: ChatMessage = {
+      create_time: now,
+      start_time: this.conversationCreateTime ? now - this.conversationCreateTime : 0,
+      end_time: this.conversationCreateTime ? now - this.conversationCreateTime + 0.01 : 0.01,
+      speaker: "customer",
+      text: "[Voice message]",
+      type: "audio",
+      audioObjectUrl: URL.createObjectURL(audioBlob),
+    };
+
+    // Show user message in UI immediately
+    if (this.messageHandler) {
+      this.messageHandler(chatMessage);
+    }
+
+    const mergedMetadata = {
+      ...(this.metadata || {}),
+      ...(extraMetadata || {}),
+    };
+
+    const model = {
+      messages: [chatMessage],
+      metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : {},
+    };
+
+    const formData = new FormData();
+    formData.append("model", JSON.stringify(model));
+    formData.append(
+      "audio_file",
+      audioBlob,
+      `recording.${audioFormat}`,
+    );
+    formData.append("audio_format", audioFormat);
+
+    try {
+      await axios.patch(
+        `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
+        formData,
+        {
+          headers: this.getHeaders("multipart/form-data"),
+        },
+      );
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+      }
+      throw error;
+    }
+  }
+
   async uploadFile(chatId: string, file: File): Promise<FileUploadResponse | null> {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
@@ -922,6 +982,9 @@ export class ChatService {
         );
         if (!adjustedMessage.message_id && (payload as any).id) {
           adjustedMessage.message_id = (payload as any).id;
+        }
+        if ((payload as any).audio_format) {
+          adjustedMessage.audio_format = (payload as any).audio_format;
         }
         if (adjustedMessage.speaker !== "customer") {
           this.messageHandler(adjustedMessage);

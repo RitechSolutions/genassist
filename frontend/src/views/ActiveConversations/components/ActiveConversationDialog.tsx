@@ -888,7 +888,7 @@ function TranscriptDialogContent({
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
-                          <ConversationEntryWrapper entry={entry} />
+                          <ConversationEntryWrapper entry={entry} conversationId={transcript.id} />
                           <span className={`block text-[10px] text-right mt-1 ${
                             isAgent ? "text-white/70" : "text-gray-500"
                           }`}>
