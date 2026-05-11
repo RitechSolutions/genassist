@@ -1,7 +1,7 @@
 """Add audio_data and audio_format to transcript_messages
 
 Revision ID: i9f0a1b2c3d4
-Revises: h8e9f1a2b3c4
+Revises: b85c0d9e7f12
 Create Date: 2026-05-08 12:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 
 revision: str = "i9f0a1b2c3d4"
-down_revision: Union[str, None] = "h8e9f1a2b3c4"
+down_revision: Union[str, None] = "b85c0d9e7f12"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
