@@ -320,6 +320,14 @@ def create_celery():
             "options": {"expires": 3600},  # Task expires after 1 hour
         }
 
+    if settings.CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK:
+        beat_schedule["cleanup-stale-direct-upload-sessions"] = {
+            "task": "app.tasks.file_upload_session_tasks.cleanup_stale_direct_upload_sessions",
+            # Run every 5 minutes; uses FILES_DIRECT_S3_PRESIGN_EXPIRES_SECONDS for cutoff.
+            "schedule": crontab(minute="*/5"),
+            "options": {"expires": 1200},  # Task expires after 20 minutes
+        }
+
     if settings.CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS:
         beat_schedule["backfill-problematic-conversation-analyses"] = {
             "task": "app.tasks.conversations_tasks.backfill_missing_conversation_analyses",

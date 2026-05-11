@@ -26,4 +26,8 @@ class FilesUploadSessionModel(Base):
     expected_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     result_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Discriminates between the legacy server-staged chunked flow ("server_chunked", default
+    # when NULL) and the new direct browser -> S3 presigned PUT flow ("direct_s3").
+    # Added by migration 00075. Nullable for backward compatibility with in-flight rows.
+    upload_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
