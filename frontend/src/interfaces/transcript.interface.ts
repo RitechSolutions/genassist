@@ -40,6 +40,8 @@ export interface Analysis {
 
 export interface BackendTranscript {
   id: string;
+  agent_id?: string | null;
+  agent_name?: string | null;
   operator_id: string;
   data_source_id: string;
   recording_id: string | null;
@@ -106,6 +108,8 @@ export interface ConversationFeedbackEntry {
 
 export interface Transcript {
   id: string;
+  agent_id?: string | null;
+  agent_name?: string | null;
   audio: string;
   duration: number;
   recording_id: string | null;
