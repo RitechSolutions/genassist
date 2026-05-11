@@ -13,7 +13,7 @@ class STTNode(BaseNode):
 
     async def process(self, config: Dict[str, Any]) -> Any:
         audio_source = config.get("audio_source")
-        if not audio_source:
+        if not audio_source or audio_source in ("null", "None"):
             audio_source = self.get_input_from_source()
 
         audio_bytes, audio_format = self._extract_audio(audio_source)
@@ -45,7 +45,13 @@ class STTNode(BaseNode):
                 encoding = source_output.get("encoding", "base64")
                 audio_format = source_output.get("format", "mp3")
                 if encoding == "base64":
-                    return base64.b64decode(source_output["data"]), audio_format
+                    audio_bytes = base64.b64decode(source_output["data"])
+                    if len(audio_bytes) > 100:
+                        return audio_bytes, audio_format
+                    logger.warning("Decoded audio data too small (%d bytes), likely invalid", len(audio_bytes))
+                    return None, audio_format
+            if "audio_data" in source_output:
+                return self._extract_audio(source_output["audio_data"])
 
         if isinstance(source_output, str) and source_output:
             try:
@@ -55,7 +61,10 @@ class STTNode(BaseNode):
             except (json.JSONDecodeError, ValueError):
                 pass
             try:
-                return base64.b64decode(source_output), "mp3"
+                audio_bytes = base64.b64decode(source_output)
+                if len(audio_bytes) > 100:
+                    return audio_bytes, "mp3"
+                logger.warning("Decoded audio data too small (%d bytes), likely invalid", len(audio_bytes))
             except Exception:
                 logger.warning("audio_source string is not valid base64")
 
