@@ -720,7 +720,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
                                     : 'bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none'
                                 }`}
                               >
-                                <ConversationEntryWrapper entry={entryObj} />
+                                <ConversationEntryWrapper entry={entryObj} conversationId={localTranscript.id} />
 
                                 <div className="flex items-center justify-end">
                                   <span

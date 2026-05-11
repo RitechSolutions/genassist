@@ -896,6 +896,32 @@ export const useChat = ({
     ],
   );
 
+  const sendAudioMessage = useCallback(
+    async (audioBlob: Blob, audioFormat: string) => {
+      if (!chatServiceRef.current) {
+        throw new Error("Chat service not initialized");
+      }
+
+      try {
+        setIsLoading(true);
+        if (!isTakenOver) {
+          setIsAgentTyping(true);
+        }
+        await chatServiceRef.current.sendAudioMessage(audioBlob, audioFormat);
+      } catch (error: any) {
+        setIsAgentTyping(false);
+        if (isTokenExpiredError(error)) {
+          resetToInitialState();
+        } else if (onErrorRef.current && error instanceof Error) {
+          onErrorRef.current(error);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isTakenOver, isTokenExpiredError, resetToInitialState],
+  );
+
   const startConversation = useCallback(
     async (reCaptchaToken?: string | undefined) => {
       if (!chatServiceRef.current) {
@@ -1017,6 +1043,7 @@ export const useChat = ({
     messages,
     isLoading,
     sendMessage,
+    sendAudioMessage,
     uploadFile,
     resetConversation,
     startConversation,

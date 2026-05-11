@@ -2,7 +2,11 @@ import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallba
 import { ChatMessageComponent } from './ChatMessage';
 import { AttachmentPreview } from './common/AttachmentPreview';
 import { useChat } from '../hooks/useChat';
-import { ChatMessage, GenAgentChatProps, ScheduleItem, Attachment, AttachmentWithFile } from '../types';
+import { useScrollManagement } from '../hooks/useScrollManagement';
+import { useThinkingAnimation } from '../hooks/useThinkingAnimation';
+import { useViewportManager } from '../hooks/useViewportManager';
+import { useFileAttachments } from '../hooks/useFileAttachments';
+import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
 import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
@@ -11,18 +15,48 @@ import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
 
-// Type for attachment with file reference
-
 import {
   resolveLanguage,
   mergeTranslations,
   getTranslationString,
-  getTranslationArray,
   getTranslationsForLanguage,
 } from '../utils/i18n';
 import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
 
-// can be used to hide the language selector on the chat box
+import {
+  resolveTheme,
+  hexToRgba,
+  getContainerStyle,
+  getHeaderStyle,
+  logoContainerStyle,
+  logoStyle,
+  headerTitleContainerStyle,
+  getHeaderTitleStyle,
+  getHeaderSubtitleStyle,
+  menuButtonStyle,
+  getMenuPopupStyle,
+  getMenuItemStyle,
+  chatContainerStyle,
+  inputContainerStyle,
+  inputWrapperStyle,
+  getTextAreaStyle,
+  attachButtonStyle,
+  getSendButtonStyle,
+  sendButtonDisabledStyle,
+  rightActionContainerStyle,
+  getPossibleQueriesContainerStyle,
+  getQueryButtonStyle,
+  getConfirmOverlayStyle,
+  getConfirmDialogStyle,
+  confirmButtonsStyle,
+  getConfirmButtonStyle,
+  getContentCardStyle,
+  getDisclaimerStyle,
+  getPositionStyles,
+  getFloatingContainerStyle,
+  CSS_KEYFRAMES,
+} from '../styles/genAgentChatStyles';
+
 const SHOW_CHAT_LANGUAGE_SELECTOR = true;
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
@@ -95,19 +129,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   // Get translations based on resolved language, then merge with custom translations
   const translations = useMemo(() => {
-    // First get base translations for the language
     const baseTranslations = getTranslationsForLanguage(resolvedLanguage);
-    // Then merge with any custom translations provided
     return mergeTranslations(customTranslations, baseTranslations);
   }, [resolvedLanguage, customTranslations]);
 
-  // Translation helper function
   const t = (key: string, fallback?: string): string => {
     return getTranslationString(key, translations, fallback);
   };
 
-  // Get translated placeholder or use provided/default
-  // Make it reactive to language changes
   const inputPlaceholder = useMemo(() => placeholder || t('input.placeholder', 'Ask a question'), [placeholder, translations]);
   const [inputValue, setInputValue] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -115,44 +144,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
-  const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
   const [submittedForms, setSubmittedForms] = useState<Set<number>>(new Set());
   const [submittingFormIndex, setSubmittingFormIndex] = useState<number | null>(null);
-  const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
-  const [fileErrorToast, setFileErrorToast] = useState<string | null>(null);
-  const fileErrorToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
   const [showBacklight, setShowBacklight] = useState(false);
-  const [isFullscreenToggled, setIsFullscreenToggled] = useState(false);
 
-  // default thinking messages if none provided by workflow
-  const DEFAULT_THINKING_MESSAGES = useMemo(
-    () => getTranslationArray('thinking.messages', translations, [
-      "Thinking…",
-      "Analyzing your question…",
-      "Searching knowledge…",
-      "Pulling relevant info…",
-      "Drafting the answer…",
-      "Double‑checking details…",
-      "Tying it together…",
-      "Almost there…",
-    ]),
-    [translations]
-  );
-  const [currentThinkingParts, setCurrentThinkingParts] = useState<string[]>([]);
-  const [currentThinkingPartIndex, setCurrentThinkingPartIndex] = useState(0);
   const {
     messages,
     isLoading,
     sendMessage,
+    sendAudioMessage,
     uploadFile,
     resetConversation,
     startConversation,
-    connectionState,
     conversationId,
     guestToken,
     possibleQueries,
@@ -184,6 +191,52 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     onConfigLoaded,
   });
 
+  const { currentThinkingParts, currentThinkingPartIndex } = useThinkingAnimation({
+    isAgentTyping,
+    thinkingPhrases,
+    thinkingDelayMs,
+    translations,
+  });
+
+  const { messagesEndRef, chatContainerRef } = useScrollManagement({
+    messages,
+    isAgentTyping,
+    currentThinkingPartIndex,
+    currentThinkingPartsLength: currentThinkingParts.length,
+    conversationId,
+    isFloatingOpen,
+    mode,
+  });
+
+  const {
+    windowWidth,
+    windowHeight,
+    isFullscreen,
+    handleFullscreenToggle,
+  } = useViewportManager({
+    mode,
+    widget,
+    isFloatingOpen,
+    showResetConfirm,
+    showLanguageDropdown,
+    showMenu,
+    onExitFullscreen,
+    setShowResetConfirm,
+    setShowLanguageDropdown,
+    setShowMenu,
+  });
+
+  const {
+    attachments,
+    setAttachments,
+    uploadingFiles,
+    fileErrorToast,
+    fileInputRef,
+    handleFileChange,
+    handleRemoveAttachment,
+    clearAttachments,
+  } = useFileAttachments({ uploadFile, t });
+
   useEffect(() => {
     if (language) return;
     if (!Array.isArray(agentAvailableLanguages) || agentAvailableLanguages.length === 0) {
@@ -194,42 +247,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       setSelectedLanguage(normalized[0]);
     }
   }, [agentAvailableLanguages, language, selectedLanguage]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   const audioService = useRef<AudioService | null>(null);
-  const hasAnchoredHistory = useRef(false);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
   const reCaptchaTokenRef = useRef<string | undefined>(undefined);
-  const isUserAtBottomRef = useRef(true);
-
-  const anchorHistory = () => {
-    const el = chatContainerRef.current;
-    if (!el || !messages.length || hasAnchoredHistory.current) return;
-    if (el.clientHeight === 0) return; // hidden, wait for visibility/size
-    el.scrollTop = el.scrollHeight;
-    hasAnchoredHistory.current = true;
-    isUserAtBottomRef.current = true;
-  };
-
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth', force: boolean = false) => {
-    const container = chatContainerRef.current;
-    const el = messagesEndRef.current;
-    if (!container || !el) return;
-
-    // Only scroll if user is at bottom or if forced (e.g., for agent typing)
-    if (!force && !isUserAtBottomRef.current) {
-      return;
-    }
-
-    const doScroll = () => {
-      container.scrollTo({ top: container.scrollHeight, behavior });
-      isUserAtBottomRef.current = true;
-    };
-    if (behavior === 'auto') {
-      doScroll();
-    } else {
-      requestAnimationFrame(doScroll);
-    }
-  };
 
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
@@ -241,116 +261,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     audioService.current?.setGuestToken(guestToken ?? null);
   }, [guestToken]);
 
-  useLayoutEffect(() => {
-    if (!messages.length) return;
-    if (hasAnchoredHistory.current) {
-      scrollToBottom('smooth', false);
-    } else {
-      anchorHistory();
-    }
-  }, [messages]);
-
-  useLayoutEffect(() => {
-    if (!isAgentTyping) return;
-    // Force scroll when agent is typing
-    scrollToBottom('auto', true);
-  }, [isAgentTyping, currentThinkingPartIndex, currentThinkingParts.length]);
-
-  useEffect(() => {
-    hasAnchoredHistory.current = false;
-  }, [conversationId]);
-
-  useEffect(() => {
-    return () => {
-      if (fileErrorToastTimeoutRef.current) {
-        clearTimeout(fileErrorToastTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Ensure chat is always open when mode is fullscreen
   useEffect(() => {
     if (mode === 'fullscreen' && !isFloatingOpen) {
       setIsFloatingOpen(true);
     }
   }, [mode, isFloatingOpen]);
-
-  // Scroll to bottom when chat is reopened in floating mode
-  const prevIsFloatingOpenRef = useRef(isFloatingOpen);
-  useEffect(() => {
-    // Only trigger when chat transitions from closed to open
-    if ((mode === 'floating' || mode === 'fullscreen') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
-      // Reset the anchor flag so it can scroll to bottom
-      hasAnchoredHistory.current = false;
-      isUserAtBottomRef.current = true;
-
-      // Wait for container to be visible and then scroll
-      const scrollWhenVisible = () => {
-        const container = chatContainerRef.current;
-        if (!container) {
-          requestAnimationFrame(scrollWhenVisible);
-          return;
-        }
-
-        // Check if container is visible
-        if (container.clientHeight === 0) {
-          requestAnimationFrame(scrollWhenVisible);
-          return;
-        }
-
-        // Scroll to bottom
-        container.scrollTop = container.scrollHeight;
-        hasAnchoredHistory.current = true;
-        isUserAtBottomRef.current = true;
-      };
-
-      // Use requestAnimationFrame to wait for render
-      requestAnimationFrame(() => {
-        requestAnimationFrame(scrollWhenVisible);
-      });
-    }
-    prevIsFloatingOpenRef.current = isFloatingOpen;
-  }, [isFloatingOpen, mode]);
-
-  useEffect(() => {
-    if (!messages.length) return;
-    const el = chatContainerRef.current;
-    if (!el) return;
-
-    // Observe size/visibility changes to anchor chat view.
-    const resizeObserver = new ResizeObserver(() => {
-      if (isUserAtBottomRef.current) {
-        anchorHistory();
-      }
-    });
-    resizeObserver.observe(el);
-
-    anchorHistory();
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [messages]);
-
-  useEffect(() => {
-    const container = chatContainerRef.current;
-    if (!container) return;
-
-    const isAtBottom = (threshold: number = 100): boolean => {
-      if (!container) return true;
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      return scrollHeight - scrollTop - clientHeight <= threshold;
-    };
-    const handleScroll = () => {
-      isUserAtBottomRef.current = isAtBottom();
-    };
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-    };
-  }, []);
 
   useLayoutEffect(() => {
     const updateHeaderHeight = () => {
@@ -368,75 +283,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     };
   }, []);
 
-  // Smoothly show/hide the backlight while the agent is typing
   useEffect(() => {
     if (isAgentTyping) {
       setShowBacklight(true);
       return;
     }
-    const t = setTimeout(() => setShowBacklight(false), 420); // allow fade-out
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setShowBacklight(false), 420);
+    return () => clearTimeout(timer);
   }, [isAgentTyping]);
-
-  // Show "thinking" phrases while agent is typing
-  useEffect(() => {
-    if (!isAgentTyping) {
-      setCurrentThinkingParts([]);
-      setCurrentThinkingPartIndex(0);
-      return;
-    }
-
-    // Randomly select a phrase from the list
-    const list = (thinkingPhrases && thinkingPhrases.length > 0) ? thinkingPhrases : DEFAULT_THINKING_MESSAGES;
-    const randomIndex = Math.floor(Math.random() * list.length);
-    const selectedPhrase = list[randomIndex];
-
-    // Split by | to get parts, or use the phrase as a single part if no | found
-    const parts = selectedPhrase.includes('|')
-      ? selectedPhrase.split('|').map(part => part.trim()).filter(part => part.length > 0)
-      : [selectedPhrase.trim()];
-
-    // Initialize with first part
-    setCurrentThinkingParts(parts);
-    setCurrentThinkingPartIndex(0);
-
-    // If there's only one part, no need to progress
-    if (parts.length <= 1) return;
-
-    // Progress through parts with delay, but stop at the last one
-    const rotDelay = Math.max(250, thinkingDelayMs || 1000);
-    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
-
-    // Set up timeouts for each part transition
-    for (let i = 1; i < parts.length; i++) {
-      const timeoutId = setTimeout(() => {
-        setCurrentThinkingPartIndex(i);
-      }, rotDelay * i);
-      timeoutIds.push(timeoutId);
-    }
-
-    return () => {
-      timeoutIds.forEach(id => clearTimeout(id));
-    };
-  }, [isAgentTyping, thinkingPhrases, thinkingDelayMs]);
 
   const submitMessage = async () => {
     if (inputValue.trim() === '' && attachments.length === 0) return;
-    if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
+    if (isAgentTyping) return;
     const textToSend = inputValue;
-    // NOTES: we don't upload files anymore, we just send the content blocks
     const filesToUpload = attachments.map(a => a.file);
-    // const fileAttachments = attachments.map(a => a.attachment);
 
     setInputValue('');
     setAttachments([]);
-    // Reset the file input value so the same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
 
     try {
-      // Include FAQ query in metadata if one was previously selected
       const extraMetadata: Record<string, any> = {};
 
       if (selectedFaqQuery) {
@@ -447,12 +315,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         extraMetadata.attachments = attachments.map(a => a.attachment);
       }
 
-      // send message with attachments
       await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     } finally {
-      // Refocus the input field
       setTimeout(() => textAreaRef.current?.focus(), 0);
     }
   };
@@ -474,7 +340,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (submittingFormIndex !== null || isAgentTyping) return;
     setSubmittingFormIndex(messageIndex);
     try {
-      // Build a readable summary from the form data
       const summaryText = Object.entries(formData)
         .map(([key, value]) => `${key}: ${value}`)
         .join(', ');
@@ -511,9 +376,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const handleQuickAction = async (text: string) => {
     if (!text.trim()) return;
-    if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
+    if (isAgentTyping) return;
     try {
-      // Include FAQ query in metadata if one was previously selected
       const extraMetadata = selectedFaqQuery ? { faq_query: selectedFaqQuery } : undefined;
       await sendMessage(text, [], extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
@@ -528,90 +392,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     } catch (error) {
       // ignore
     }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-
-      // Initialize attachments with files (attachment reference will be null initially)
-      const newAttachments: AttachmentWithFile[] = newFiles.map(file => ({file, attachment: null}));
-      setAttachments(prev => [...prev, ...newAttachments]);
-
-      const newUploadingFiles = new Set(uploadingFiles);
-      newFiles.forEach(file => newUploadingFiles.add(file.name));
-      setUploadingFiles(newUploadingFiles);
-
-      try {
-        // Upload files and get attachment references (use allSettled so one failure doesn't skip the rest)
-        const settled = await Promise.allSettled(
-          newFiles.map(async (file) => ({ file, attachment: await uploadFile(file) }))
-        );
-
-        const fileToAttachmentMap = new Map<string, Attachment | null>();
-        const failedFileKeys = new Set<string>();
-        settled.forEach((result, index) => {
-          const file = newFiles[index];
-          if (!file) return;
-          const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
-          if (result.status === 'rejected') {
-            fileToAttachmentMap.set(fileKey, null);
-            failedFileKeys.add(fileKey);
-            return;
-          }
-          const { attachment } = result.value;
-          fileToAttachmentMap.set(fileKey, attachment);
-          if (attachment === null) {
-            failedFileKeys.add(fileKey);
-          }
-        });
-
-        const hasFailedUploads = failedFileKeys.size > 0;
-
-        // Update attachments: remove failed files, set attachment for successful ones
-        setAttachments(prev => {
-          return prev
-            .filter(att => {
-              const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
-              return !failedFileKeys.has(fileKey);
-            })
-            .map(att => {
-              const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
-              const uploadedAttachment = fileToAttachmentMap.get(fileKey);
-              if (uploadedAttachment !== undefined) {
-                return { ...att, attachment: uploadedAttachment };
-              }
-              return att;
-            });
-        });
-
-        if (hasFailedUploads) {
-          if (fileErrorToastTimeoutRef.current) {
-            clearTimeout(fileErrorToastTimeoutRef.current);
-          }
-          setFileErrorToast(t('fileUpload.fileTypeNotSupported', 'This file type is not supported.'));
-          fileErrorToastTimeoutRef.current = setTimeout(() => {
-            setFileErrorToast(null);
-            fileErrorToastTimeoutRef.current = null;
-          }, 4000);
-        }
-      } catch (error) {
-        // ignore
-        console.error('Error uploading file', error);
-      } finally {
-        const finalUploadingFiles = new Set(uploadingFiles);
-        newFiles.forEach(file => finalUploadingFiles.delete(file.name));
-        setUploadingFiles(finalUploadingFiles);
-        // Reset the file input value so the same file can be selected again
-        if (fileInputRef.current) {
-          fileInputRef.current!.value = '';
-        }
-      }
-    }
-  };
-
-  const handleRemoveAttachment = (fileName: string) => {
-    setAttachments(prev => prev.filter(att => att.file.name !== fileName));
   };
 
   const handleVoiceError = (error: Error) => {
@@ -636,10 +416,38 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   };
 
-  const handleQueryClick = async (query: string) => {
-    if (isAgentTyping || isLoading) return; // Prevent sending while agent is thinking/typing
+  const audioUrlBuilder = useCallback((messageId: string) => {
+    return `${baseUrl}/api/conversations/${conversationId}/messages/${messageId}/audio`;
+  }, [baseUrl, conversationId]);
 
-    // Store the FAQ query for all subsequent messages
+  const audioHeaders = useMemo(() => {
+    const h: Record<string, string> = { 'x-api-key': apiKey };
+    if (tenant) h['x-tenant-id'] = tenant;
+    if (guestToken) h['Authorization'] = `Bearer ${guestToken}`;
+    return h;
+  }, [apiKey, tenant, guestToken]);
+
+  const [autoPlayAudioMessageId, setAutoPlayAudioMessageId] = useState<string | null>(null);
+  const prevMessageCountRef = useRef<number>(0);
+  const initialLoadDoneRef = useRef(false);
+  React.useEffect(() => {
+    if (!useAudio || !messages.length) return;
+    const prevCount = prevMessageCountRef.current;
+    prevMessageCountRef.current = messages.length;
+    if (!initialLoadDoneRef.current) {
+      initialLoadDoneRef.current = true;
+      return;
+    }
+    if (messages.length <= prevCount) return;
+    const last = messages[messages.length - 1];
+    if (last.speaker === 'agent' && last.type === 'audio' && last.message_id) {
+      setAutoPlayAudioMessageId(last.message_id);
+    }
+  }, [messages, useAudio]);
+
+  const handleQueryClick = async (query: string) => {
+    if (isAgentTyping || isLoading) return;
+
     setSelectedFaqQuery(query);
 
     try {
@@ -652,12 +460,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleStartConversation = async () => {
     if (isLoading) return;
 
-    // Clear input text and file attachments when starting a conversation
     setInputValue('');
-    setAttachments([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    clearAttachments();
 
     try {
       await startConversation(reCaptchaTokenRef.current);
@@ -676,16 +480,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const handleConfirmReset = async () => {
-    // Clear input text and file attachments when restarting
     setInputValue('');
-    setAttachments([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    clearAttachments();
 
     await resetConversation(reCaptchaTokenRef.current);
-    setSelectedFaqQuery(null); // Clear FAQ query on reset
-    setSubmittedForms(new Set()); // Clear form submission state so new forms are interactive
+    setSelectedFaqQuery(null);
+    setSubmittedForms(new Set());
     setSubmittingFormIndex(null);
     setShowResetConfirm(false);
   };
@@ -698,110 +498,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setSelectedLanguage(lang);
   };
 
-  const handleFullscreenToggle = () => {
-    setIsFullscreenToggled(prev => !prev);
-    setShowMenu(false);
-  };
-
-  // Track window / visual viewport size for layout and mobile detection
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 700);
-
-  // Automatically determine if should be fullscreen (mobile devices or widget mode or manual toggle or fullscreen mode)
-  const isFullscreen = useMemo(() => {
-    // If mode is fullscreen, always fullscreen
-    if (mode === 'fullscreen') return true;
-    // If widget prop is true, always fullscreen
-    if (widget) return true;
-    // If manually toggled, use toggle state
-    if (isFullscreenToggled) return true;
-    // Otherwise, use mobile detection
-    return windowWidth <= 768;
-  }, [windowWidth, widget, isFullscreenToggled, mode]);
-
-  // Escape: close overlays first, then exit UI fullscreen when applicable
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (mode === 'floating' && !isFloatingOpen) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-
-      if (showResetConfirm) {
-        e.preventDefault();
-        setShowResetConfirm(false);
-        return;
-      }
-      if (showLanguageDropdown) {
-        e.preventDefault();
-        setShowLanguageDropdown(false);
-        return;
-      }
-      if (showMenu) {
-        e.preventDefault();
-        setShowMenu(false);
-        return;
-      }
-
-      if (!isFullscreen) return;
-
-      if (isFullscreenToggled) {
-        e.preventDefault();
-        setIsFullscreenToggled(false);
-        return;
-      }
-      if (mode === 'fullscreen' && onExitFullscreen) {
-        e.preventDefault();
-        onExitFullscreen();
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    isFloatingOpen,
-    isFullscreen,
-    isFullscreenToggled,
-    mode,
-    onExitFullscreen,
-    showLanguageDropdown,
-    showMenu,
-    showResetConfirm,
-  ]);
-
-  useEffect(() => {
-    const updateViewport = () => {
-      setWindowWidth(window.innerWidth);
-      setWindowHeight(window.innerHeight);
-    };
-    updateViewport();
-    window.addEventListener('resize', updateViewport);
-    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-    vv?.addEventListener('resize', updateViewport);
-    vv?.addEventListener('scroll', updateViewport);
-    return () => {
-      window.removeEventListener('resize', updateViewport);
-      vv?.removeEventListener('resize', updateViewport);
-      vv?.removeEventListener('scroll', updateViewport);
-    };
-  }, []);
-
-  // Lock body scroll when fullscreen is active on mobile
-  useEffect(() => {
-    if (isFullscreen && typeof document !== 'undefined') {
-      const originalStyle = window.getComputedStyle(document.body).overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalStyle;
-      };
-    }
-  }, [isFullscreen]);
-
   const handleReCaptchaVerify = useCallback((token: string) => {
     reCaptchaTokenRef.current = token;
   }, []);
 
-  // Available languages (can be extended)
   const allLanguages = [
     { code: 'en', name: 'English' },
     { code: 'es', name: 'Español' },
@@ -822,20 +522,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [agentAvailableLanguages]);
   const hasLanguageOptions = availableLanguages.length > 0;
 
-  const primaryColor = theme?.primaryColor || '#2962FF';
-  const backgroundColor = theme?.backgroundColor || '#ffffff';
-  const textColor = theme?.textColor || '#000000';
-  const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
-  const fontSize = theme?.fontSize || '14px';
+  // Resolve theme values
+  const themeParams = resolveTheme(theme);
+  const { primaryColor, backgroundColor, textColor, fontFamily, fontSize } = themeParams;
   const fontSizeNumber = typeof fontSize === 'string' ? parseInt(fontSize, 10) : (typeof fontSize === 'number' ? fontSize : 14);
-
-  // Helper function to convert hex color to rgba
-  const hexToRgba = (hex: string, alpha: number): string => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
 
   const position = floatingConfig.position || 'bottom-right';
   const offset = floatingConfig.offset || { x: 20, y: 20 };
@@ -844,160 +534,23 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const isFloatingDocked = mode === 'floating' && !isFullscreen;
 
-  const containerStyle: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    // When fullscreen, let height be calculated from top/bottom, otherwise use specified height
-    height: isFullscreen ? undefined : '100%',
-    maxHeight: isFullscreen
-      ? undefined
-      : isFloatingDocked
-        ? '100%'
-        : windowWidth > 768
-          ? '700px'
-          : '600px',
-    minHeight: isFloatingDocked ? 0 : undefined,
-    width: isFullscreen ? '100vw' : '380px',
-    maxWidth: isFullscreen ? '100vw' : '400px',
-    border: isFullscreen ? 'none' : '1px solid #e0e0e0',
-    borderRadius: isFullscreen ? '0' : '32px',
-    overflow: 'hidden',
-    backgroundColor: theme?.secondaryColor || '#f5f5f5',
-    fontFamily,
-    boxShadow: isFullscreen ? 'none' : "0 4px 20px rgba(0, 0, 0, 0.2)",
-    position: isFullscreen ? 'fixed' : 'relative',
-    top: isFullscreen ? 0 : undefined,
-    left: isFullscreen ? 0 : undefined,
-    right: isFullscreen ? 0 : undefined,
-    // Position container above browser footer using safe area insets
-    bottom: isFullscreen ? 'env(safe-area-inset-bottom, 0px)' : undefined,
-    zIndex: isFullscreen ? 9999 : undefined,
-  };
+  // Computed styles
+  const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams });
+  const headerStyle = getHeaderStyle(themeParams);
+  const headerTitleStyle = getHeaderTitleStyle(fontFamily);
+  const headerSubtitleStyle = getHeaderSubtitleStyle(fontFamily);
+  const menuPopupStyle = getMenuPopupStyle(backgroundColor);
+  const menuItemStyle = getMenuItemStyle(themeParams);
+  const contentCardStyle = getContentCardStyle(backgroundColor);
+  const sendButtonStyle = getSendButtonStyle(primaryColor);
+  const possibleQueriesContainerStyle = getPossibleQueriesContainerStyle(fontFamily);
+  const queryButtonStyle = getQueryButtonStyle(themeParams);
+  const confirmOverlayStyle = getConfirmOverlayStyle(showResetConfirm);
+  const confirmDialogStyle = getConfirmDialogStyle(themeParams);
+  const disclaimerStyle = getDisclaimerStyle(fontFamily);
 
-  const headerStyle: React.CSSProperties = {
-    padding: '15px',
-    backgroundColor: theme?.secondaryColor || '#f5f5f5',
-    color: '#111111',
-    fontWeight: 'bold',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    position: 'relative',
-  };
-
-  const logoContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    position: 'relative',
-    zIndex: 1,
-  };
-
-  const logoStyle: React.CSSProperties = {
-    width: '28px',
-    height: '28px',
-  };
-
-  const headerTitleContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-  };
-
-  const headerTitleStyle: React.CSSProperties = {
-    fontSize: '16px',
-    fontWeight: 'bold',
-    margin: 0,
-    fontFamily,
-  };
-
-  const headerSubtitleStyle: React.CSSProperties = {
-    fontSize: '14px',
-    fontWeight: 'normal',
-    margin: 0,
-    fontFamily,
-  };
-
-  const menuButtonStyle: React.CSSProperties = {
-    backgroundColor: 'transparent',
-    color: '#111111',
-    border: 'none',
-    borderRadius: '50%',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
-    position: 'relative',
-    zIndex: 1,
-  };
-
-  const menuPopupStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: '50px',
-    right: '15px',
-    backgroundColor: backgroundColor,
-    borderRadius: '8px',
-    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
-    zIndex: 1000,
-    minWidth: '150px',
-    overflow: 'visible',
-  };
-
-  const menuItemStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 15px',
-    color: textColor,
-    cursor: 'pointer',
-    fontSize,
-    fontFamily,
-    borderBottom: '1px solid #f0f0f0',
-  };
-
-
-  const chatContainerStyle: React.CSSProperties = {
-    flex: 1,
-    minHeight: 0,
-    overflowY: 'auto',
-    padding: '15px',
-    backgroundColor: 'transparent',
-    display: 'flex',
-    flexDirection: 'column',
-  };
-
-  const inputContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    padding: '12px 15px',
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    gap: '8px',
-    flexShrink: 0,
-    overflowX: 'hidden',
-    minWidth: 0,
-  };
-
-  const inputWrapperStyle: React.CSSProperties = {
-    display: 'flex',
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: '24px',
-    border: '1px solid #e5e7eb',
-    padding: '0 12px',
-    minHeight: '50px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-    position: 'relative',
-    overflowX: 'hidden',
-    minWidth: 0,
-  };
-
-  // Use at least 16px font size on mobile to prevent zoom
   const textAreaFontSize = useMemo(() => {
     if (windowWidth <= 768) {
-      // On mobile, use at least 16px to prevent zoom
       return Math.max(16, fontSizeNumber) + 'px';
     }
     return fontSize;
@@ -1009,48 +562,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [windowWidth, fontSizeNumber]);
 
   const textAreaMaxHeightCalculated = useMemo(() => {
-    return textAreaLineHeight * 3; // up to 3 lines
+    return textAreaLineHeight * 3;
   }, [textAreaLineHeight]);
 
-  const textAreaStyle: React.CSSProperties = {
-    flex: 1,
-    border: 'none',
-    outline: 'none',
-    background: 'transparent',
-    fontSize: textAreaFontSize,
+  const textAreaStyle = getTextAreaStyle({
+    textAreaFontSize,
     fontFamily,
-    padding: '10px',
-    paddingRight: '46px',
-    color: textColor,
-    resize: 'none',
-    lineHeight: `${textAreaLineHeight}px`,
-    maxHeight: `${textAreaMaxHeightCalculated}px`,
-    overflowY: 'hidden',
-    overflowX: 'hidden',
-    minWidth: 0,
-    width: '100%',
-    boxSizing: 'border-box',
-  };
+    textAreaLineHeight,
+    textAreaMaxHeightCalculated,
+    textColor,
+  });
 
-  const attachButtonStyle: React.CSSProperties = {
-    backgroundColor: 'transparent',
-    border: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
-    color: '#757575',
-    padding: 0,
-  };
-
-  // Disable chat input when a form_request is pending (not yet submitted).
   const hasPendingForm = messages.some((msg, idx) => {
     if (msg.type !== 'form_request' || msg.speaker !== 'agent') return false;
     return !submittedForms.has(idx);
   });
 
-  // Derive the pending form schema + index for footer rendering.
   const pendingForm = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
@@ -1063,38 +590,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [messages, submittedForms]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
-
-  const sendButtonStyle: React.CSSProperties = {
-    backgroundColor: primaryColor,
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '50%',
-    width: '36px',
-    height: '36px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
-    flexShrink: 0,
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-  };
-
-  const sendButtonDisabledStyle: React.CSSProperties = {
-    backgroundColor: '#d1d5db',
-    cursor: 'not-allowed',
-    opacity: 0.8,
-  };
-
-  const rightActionContainerStyle: React.CSSProperties = {
-    position: 'absolute',
-    right: '4px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  };
 
   const autoResizeTextArea = () => {
     const el = textAreaRef.current;
@@ -1109,243 +604,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     autoResizeTextArea();
   }, [inputValue, textAreaMaxHeightCalculated]);
 
-  const possibleQueriesContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    padding: '0',
-    paddingLeft: '28px',
-    paddingRight: '28px',
-    marginTop: '5px',
-    marginBottom: '15px',
-    width: '100%',
-    fontFamily,
-  };
-
-  const queryButtonStyle: React.CSSProperties = {
-    padding: '12px 15px',
-    backgroundColor: theme?.secondaryColor || '#f5f5f5',
-    color: textColor,
-    border: 'none',
-    borderRadius: '6px',
-    fontSize,
-    cursor: 'pointer',
-    textAlign: 'left',
-    fontWeight: 'normal',
-    boxShadow: 'none',
-    width: '100%',
-    maxWidth: '240px',
-    fontFamily,
-  };
-
-  const confirmOverlayStyle: React.CSSProperties = {
-    display: showResetConfirm ? 'flex' : 'none',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  };
-
-  const confirmDialogStyle: React.CSSProperties = {
-    backgroundColor: backgroundColor,
-    padding: '20px',
-    borderRadius: '8px',
-    maxWidth: '300px',
-    textAlign: 'center',
-    fontFamily,
-    color: textColor,
-  };
-
-  const confirmButtonsStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'center',
-    marginTop: '15px',
-    gap: '10px',
-  };
-
-  const confirmButtonStyle = (isConfirm: boolean): React.CSSProperties => ({
-    padding: '8px 16px',
-    backgroundColor: isConfirm ? '#F44336' : '#e0e0e0',
-    color: isConfirm ? '#ffffff' : textColor,
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontFamily,
-    fontSize,
-  });
-
-  const contentCardStyle: React.CSSProperties = {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    backgroundColor,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
-    position: 'relative',
-    zIndex: 2,
-    overflow: 'hidden',
-    minHeight: 0,
-  };
-
-  // Floating mode styles
-  const getPositionStyles = (): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      position: 'fixed',
-      zIndex: 1000,
-    };
-
-    switch (position) {
-      case 'bottom-right':
-        return { ...base, bottom: offsetY, right: offsetX };
-      case 'bottom-left':
-        return { ...base, bottom: offsetY, left: offsetX };
-      case 'top-right':
-        return { ...base, top: offsetY, right: offsetX };
-      case 'top-left':
-        return { ...base, top: offsetY, left: offsetX };
-      default:
-        return { ...base, bottom: offsetY, right: offsetX };
-    }
-  };
-
-  const getChatPositionStyles = (): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      position: 'fixed',
-      borderRadius: '32px',
-      zIndex: 1004,
-    };
-
-    switch (position) {
-      case 'bottom-right':
-        return {
-          ...base,
-          bottom: offsetY,
-          right: offsetX
-        };
-      case 'bottom-left':
-        return {
-          ...base,
-          bottom: offsetY,
-          left: offsetX
-        };
-      case 'top-right':
-        return {
-          ...base,
-          top: offsetY,
-          right: offsetX
-        };
-      case 'top-left':
-        return {
-          ...base,
-          top: offsetY,
-          left: offsetX
-        };
-      default:
-        return {
-          ...base,
-          bottom: offsetY,
-          right: offsetX
-        };
-    }
-  };
-
-  const disclaimerStyle: React.CSSProperties = {
-    textAlign: 'left',
-    fontSize: '12px',
-    color: '#9ca3af',
-    margin: '12px 4px 2px 4px',
-    fontFamily,
-  };
-
   const showAgentDisclaimer = Boolean(inputDisclaimerHtml);
   const agentDisclaimerContent = showAgentDisclaimer && (
     <span dangerouslySetInnerHTML={{ __html: inputDisclaimerHtml! }} />
   );
 
-  const getResponsiveDimensions = (): React.CSSProperties => {
-    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const fallbackHeight = isFullscreen ? '100vh' : '60vh';
-
-    if (isFullscreen) {
-      return { width: '100vw', height: fallbackHeight, borderRadius: '0' };
-    }
-
-    // Floating docked panel: width only; height/maxHeight come from viewport-aware shell styles
-    if (mode === 'floating') {
-      if (screenWidth <= 480) {
-        return { width: 'calc(100vw - 40px)' };
-      }
-      if (screenWidth <= 768) {
-        return { width: '350px' };
-      }
-      return { width: '380px' };
-    }
-
-    if (screenWidth <= 480) {
-      return { width: 'calc(100vw - 40px)', height: fallbackHeight };
-    }
-    if (screenWidth <= 768) {
-      return { width: '350px', height: fallbackHeight };
-    }
-
-    return { width: '380px', height: fallbackHeight };
-  };
-
-  /** Max height for open floating chat ≈ viewport minus corner offset; updates with resize / visualViewport. */
-  const getFloatingShellStyle = (): React.CSSProperties => {
-    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    const margin = 10;
-    const usableHeight = Math.max(280, windowHeight - offsetY - margin * 10);
-    let maxHeight: number | string = usableHeight;
-
-    // If the screen is large enough, set the max height to 60vh
-    if (screenWidth >= 765 && screenHeight >= 1070) {
-      maxHeight = '60vh';
-    }
-
-    return {
-      display: 'flex',
-      flexDirection: 'column',
-      maxHeight: maxHeight,
-      height: usableHeight,
-      // Prefer anchoring from bottom of the viewport when using bottom-* positions
-      ...(position === 'top-right' || position === 'top-left'
-        ? { top: offsetY, bottom: 'auto' }
-        : { top: 'auto', bottom: offsetY }),
-    };
-  };
-
-  const floatingContainerStyle: React.CSSProperties = {
-    ...((mode === 'fullscreen' || (isFullscreen && windowWidth <= 768))
-      ? {
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 'env(safe-area-inset-bottom, 0px)',
-          // Height will be automatically calculated from top and bottom
-          borderRadius: '0',
-          zIndex: 9999,
-        }
-      : {
-          ...getChatPositionStyles(),
-          ...getResponsiveDimensions(),
-          ...(mode === 'floating' && !isFullscreen ? getFloatingShellStyle() : {}),
-        }
-    ),
-  };
+  const floatingContainerStyle = getFloatingContainerStyle({
+    mode,
+    isFullscreen,
+    windowWidth,
+    windowHeight,
+    position,
+    offsetX,
+    offsetY,
+  });
 
   const renderLanguageSelector = () => {
-    // ------------------------------------------------------------
-    // Show language selector only when SHOW_CHAT_LANGUAGE_SELECTOR is true
-    // ------------------------------------------------------------
     if (!SHOW_CHAT_LANGUAGE_SELECTOR) {
       return null;
     }
@@ -1354,23 +628,16 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       return null;
     }
     return (
-      <>
-        <LanguageSelector
-          availableLanguages={availableLanguages}
-          selectedLanguage={resolvedLanguage}
-          onLanguageChange={handleLanguageChange}
-          translations={translations}
-          theme={theme}
-        />
-      </>
+      <LanguageSelector
+        availableLanguages={availableLanguages}
+        selectedLanguage={resolvedLanguage}
+        onLanguageChange={handleLanguageChange}
+        translations={translations}
+        theme={theme}
+      />
     );
   };
 
-  /**
-   * Render the component with ReCaptcha
-   * @param children - The children to be rendered
-   * @returns The rendered component
-   */
   const renderWithReCaptcha = useMemo(() => {
     if (!reCaptchaKey) {
       return (children: React.ReactNode) => <>{children}</>;
@@ -1390,49 +657,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const renderChatComponent = () => (
     <div style={containerStyle} data-genassist-root="true">
-      <style>{`
-        @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
-        /* Hide scrollbars for the expanding textarea but keep scrolling */
-        .ga-textarea-nosb {
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-          max-width: 100%;
-          box-sizing: border-box;
-        }
-        .ga-textarea-nosb::-webkit-scrollbar { width: 0; height: 0; }
-        /* Disclaimer links color */
-        .ga-input-disclaimer a {
-          color: #9ca3af !important;
-          text-decoration: underline;
-        }
-        .ga-input-disclaimer a:hover {
-          color: #6b7280 !important;
-        }
-        /* Prevent zoom on mobile - ensure minimum 16px font size */
-        @media (max-width: 768px) {
-          .ga-textarea-nosb {
-            font-size: 16px !important;
-          }
-        }
-        /* Backlight sweep under content edge (GPU-friendly).
-           Wider travel to fully reach both corners. */
-        @keyframes ga-backlight-sweep2 { 0% { transform: translateX(-35%); } 100% { transform: translateX(105%); } }
-        @keyframes ga-backlight-pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
-        @keyframes ga-think-change { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
-        /* Hide reCAPTCHA badge */
-        /* Ensure reCAPTCHA container is always hidden */
-        .grecaptcha-badge {
-          display: none !important;
-          visibility: hidden !important;
-          position: absolute !important;
-          width: 0 !important;
-          height: 0 !important;
-          overflow: hidden !important;
-          opacity: 0 !important;
-          pointer-events: none !important;
-        }
-        /* Support for safe area insets - handled via inline styles on input container */
-      `}</style>
+      <style>{CSS_KEYFRAMES}</style>
       <div style={headerStyle} ref={headerRef}>
         <div style={logoContainerStyle}>
           <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
@@ -1583,7 +808,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           {renderLanguageSelector()}
 
           {(() => {
-            // show welcome card (only when showWelcomeBeforeStart is true)
             const shouldShowSyntheticWelcome =
               showWelcomeBeforeStart &&
               !hasUserMessages &&
@@ -1627,12 +851,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             const firstAgentIndex = messages.findIndex(m => m.speaker === 'agent');
 
             const applyMessageFilter = (message: any) => {
-              // filter out file messages added by the agent
               return message.type !== 'file';
             }
 
             return messages.filter(applyMessageFilter).map((message, index) => {
-              // For form_request messages, show just the message text as an agent bubble
               if (message.type === 'form_request' && message.speaker === 'agent') {
                 try {
                   const formSchema = JSON.parse(message.text);
@@ -1708,6 +930,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   language={resolvedLanguage}
                   agentName={agentName}
                   isAgentTyping={isAgentTyping}
+                  audioUrlBuilder={message.type === 'audio' && useAudio ? audioUrlBuilder : undefined}
+                  audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
+                  autoPlayAudioMessageId={autoPlayAudioMessageId}
                 />
               );
             });
@@ -1874,15 +1099,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 rows={1}
               />
               <div style={rightActionContainerStyle}>
-                {useAudio && inputValue.trim() === '' && attachments.length === 0 ? (
-                  <VoiceInput
-                    onTranscription={(text: string) => setInputValue(text)}
-                    onError={handleVoiceError}
-                    baseUrl={baseUrl}
-                    apiKey={apiKey}
-                    theme={theme}
-                  />
-                ) : (
+                {!(useAudio && inputValue.trim() === '' && attachments.length === 0) && (
                   <button
                     type="submit"
                     style={{ ...sendButtonStyle, ...(isSendDisabled ? sendButtonDisabledStyle : {}) }}
@@ -1892,6 +1109,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   </button>
                 )}
               </div>
+              {useAudio && inputValue.trim() === '' && attachments.length === 0 && (
+                <VoiceInput
+                  onAudioReady={async (blob: Blob, format: string) => {
+                    try {
+                      setIsPlayingAudio(true);
+                      await sendAudioMessage(blob, format);
+                    } catch {
+                      // error handled inside sendAudioMessage
+                    } finally {
+                      setIsPlayingAudio(false);
+                    }
+                  }}
+                  onError={handleVoiceError}
+                  theme={theme}
+                />
+              )}
             </div>
 
             {agentDisclaimerContent && (
@@ -1909,8 +1142,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           <h3 style={{fontFamily, marginTop: 0}}>{t('dialog.resetConversation.title')}</h3>
           <p style={{fontFamily, fontSize}}>{t('dialog.resetConversation.message')}</p>
           <div style={confirmButtonsStyle}>
-            <button style={{...confirmButtonStyle(false), color: textColor}} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
-            <button style={confirmButtonStyle(true)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
+            <button style={{...getConfirmButtonStyle(false, themeParams), color: textColor}} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
+            <button style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
           </div>
         </div>
       </div>
@@ -1925,7 +1158,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             showChat={isFloatingOpen}
             onClick={() => setIsFloatingOpen(prev => !prev)}
             primaryColor={primaryColor}
-            style={getPositionStyles()}
+            style={getPositionStyles({ position, offsetX, offsetY })}
           />
         )}
 
