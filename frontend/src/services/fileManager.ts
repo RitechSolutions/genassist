@@ -43,6 +43,11 @@ export interface FileManagerSettings {
     base_path: string;
     aws_bucket_name: string;
     azure_container_name: string;
+    /**
+     * Server-derived capability flag (read-only).
+     * Present in `values` from `GET /file-manager/settings`.
+     */
+    direct_s3_upload_enabled?: boolean;
   };
   is_active: number;
 }
@@ -116,6 +121,98 @@ export const getFileBase64 = async (fileId: string): Promise<FileBase64Response 
 export interface UploadFileRecordOptions {
   /** 0–100 while upload is in progress */
   onProgress?: (percentLoaded: number) => void;
+}
+
+export interface PresignDirectUploadRequest {
+  original_filename: string;
+  expected_size?: number;
+  content_type?: string;
+  path?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  file_metadata?: Record<string, unknown>;
+}
+
+interface PresignDirectUploadResponse {
+  session_id: string;
+  file_id: string;
+  object_key: string;
+  presigned_url: string;
+  method: string; // "PUT"
+  required_headers: Record<string, string>;
+  expires_in: number;
+}
+
+/**
+ * Direct browser -> S3 upload for file-manager records (settings "Manage Files" page).
+ * Uses the presign -> PUT -> finalize flow when enabled server-side.
+ */
+export async function uploadFileRecordViaPresignedS3(
+  file: File,
+  body: Omit<PresignDirectUploadRequest, "original_filename" | "expected_size" | "content_type">,
+  options?: UploadFileRecordOptions
+): Promise<void> {
+  const baseURL = await getApiUrl();
+  const presignUrl = `${baseURL}file-manager/upload-session/presign`;
+  const { data: presigned } = await api.post<PresignDirectUploadResponse>(
+    presignUrl,
+    {
+      original_filename: file.name,
+      expected_size: file.size,
+      content_type: file.type || "application/octet-stream",
+      ...body,
+    } satisfies PresignDirectUploadRequest,
+    {}
+  );
+
+  const finalizeUrl = `${baseURL}file-manager/upload-session/${presigned.session_id}/finalize`;
+
+  const reportFailure = async (errorMessage: string) => {
+    try {
+      await api.post(finalizeUrl, { success: false, error_message: errorMessage.slice(0, 1900) });
+    } catch {
+      // ignore best-effort cleanup failure
+    }
+  };
+
+  // PUT directly to S3 with XHR so we can report progress.
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(presigned.method || "PUT", presigned.presigned_url, true);
+    Object.entries(presigned.required_headers || {}).forEach(([k, v]) => {
+      try {
+        xhr.setRequestHeader(k, v);
+      } catch {
+        // ignore invalid headers; S3 will reject if required
+      }
+    });
+    xhr.upload.onprogress = (ev) => {
+      const cb = options?.onProgress;
+      if (!cb) return;
+      const total = ev.total ?? file.size ?? 0;
+      if (total > 0) cb(Math.min(100, Math.round((ev.loaded * 100) / total)));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`S3 upload failed with status ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("S3 upload failed (network error)"));
+    xhr.onabort = () => reject(new Error("S3 upload aborted"));
+    xhr.send(file);
+  }).catch(async (err) => {
+    await reportFailure(err instanceof Error ? err.message : String(err));
+    throw err;
+  });
+
+  try {
+    await api.post(finalizeUrl, { success: true });
+    options?.onProgress?.(100);
+    setServerUp();
+  } catch (err) {
+    await reportFailure(err instanceof Error ? err.message : String(err));
+    throw err;
+  }
 }
 
 function formatAxiosErrorMessage(error: AxiosError): string {
