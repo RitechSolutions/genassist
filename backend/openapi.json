@@ -5722,7 +5722,7 @@
           "Conversations"
         ],
         "summary": "Update",
-        "description": "Append segments to an existing in-progress conversation.\nIf agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
+        "description": "Append segments to an existing in-progress conversation.\nAccepts JSON body (text messages) or multipart/form-data (audio messages).\nIf agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
         "operationId": "update_api_conversations_in_progress_update__conversation_id__patch",
         "security": [
           {
@@ -5744,16 +5744,67 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationUpdateWithRecaptchaToken"
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
-        },
+        }
+      }
+    },
+    "/api/conversations/{conversation_id}/messages/{message_id}/audio": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Message Audio",
+        "description": "Stream audio data for a transcript message.",
+        "operationId": "get_message_audio_api_conversations__conversation_id__messages__message_id__audio_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -24093,57 +24144,6 @@
         ],
         "title": "ConversationTranscriptCreate"
       },
-      "ConversationUpdateWithRecaptchaToken": {
-        "properties": {
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/TranscriptSegmentInput"
-            },
-            "type": "array",
-            "title": "Messages"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          },
-          "llm_analyst_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llm Analyst Id"
-          },
-          "recaptcha_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recaptcha Token"
-          }
-        },
-        "type": "object",
-        "required": [
-          "messages"
-        ],
-        "title": "ConversationUpdateWithRecaptchaToken"
-      },
       "CreateFineTuningJobRequest": {
         "properties": {
           "training_file": {
@@ -32232,6 +32232,29 @@
               }
             ],
             "title": "Attachments"
+          },
+          "audio_data": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Data"
+          },
+          "audio_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Format"
           }
         },
         "type": "object",

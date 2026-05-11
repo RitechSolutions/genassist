@@ -71,6 +71,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
           message_id: (entry as { id?: string }).id,
           feedback: perMessageFeedback,
           type: (entry as { type?: string }).type || "message",
+          audio_format: (entry as { audio_format?: string }).audio_format,
         } as TranscriptEntry;
       });
     } else {
