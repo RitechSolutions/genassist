@@ -13,6 +13,8 @@ export type ActiveConversation = {
     supervisor_id?: string | null;
     topic?: string;
     negative_reason?: string;
+    agent_id?: string | null;
+    agent_name?: string | null;
   };
   
   export type ActiveConversationsResponse = {
