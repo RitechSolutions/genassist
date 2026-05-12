@@ -344,18 +344,6 @@ export const ActiveConversations = () => {
     }
   };
 
-  /** Row click: set ?conversation= so URL is shareable; load is driven by deep-link effect. */
-  const handleItemClick = (item: ActiveConversation) => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("conversation", item.id);
-        return next;
-      },
-      { replace: true }
-    );
-  };
-
   useEffect(() => {
     if (!isDialogOpen || !selectedTranscript?.id || !allConversations) return;
 
