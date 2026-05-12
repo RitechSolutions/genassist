@@ -168,6 +168,31 @@ class AgentRAGService:
         logger.info(f"Deleted document {doc_id}: {results}")
         return results
 
+    async def delete_by_metadata(self, filter_dict: Dict[str, Any]) -> Dict[str, bool]:
+        """
+        Delete documents/vectors matching metadata filters for providers that
+        support it (currently vector-backed providers).
+        """
+        if not self._initialized:
+            logger.error("DataSourceService not initialized")
+            return {}
+
+        results: Dict[str, bool] = {}
+        for provider in self.data_provider:
+            try:
+                delete_fn = getattr(provider, "delete_by_metadata", None)
+                if callable(delete_fn):
+                    results[provider.name] = bool(await delete_fn(filter_dict))
+                else:
+                    # Provider does not support metadata deletes; treat as no-op success
+                    results[provider.name] = True
+            except Exception as e:
+                logger.error(f"{provider.name} delete_by_metadata failed: {e}")
+                results[provider.name] = False
+
+        logger.info(f"Deleted by metadata {filter_dict}: {results}")
+        return results
+
     async def get_document_ids(self) -> List[str]:
         """Get all document IDs from all providers (deduplicated)"""
         if not self._initialized:

@@ -201,6 +201,10 @@ class RecordingsRepository:
     async def find_by_id(self, rec_id: UUID):
         return await self.db.get(RecordingModel, rec_id)
 
+    async def delete_recording(self, recording: RecordingModel) -> None:
+        await self.db.delete(recording)
+        await self.db.commit()
+
     async def recording_exists(self , original_filename: str ,data_source_id: UUID):
         stmt = select(RecordingModel).where(
             RecordingModel.original_filename == original_filename,
