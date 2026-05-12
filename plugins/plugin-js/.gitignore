@@ -14,3 +14,4 @@ example-widget/node_modules
 # Fonts
 src/fonts/*
 !src/fonts/README.txt
+src/font.css
