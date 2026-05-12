@@ -1,7 +1,8 @@
 import React from 'react';
 import { WelcomeCard } from './WelcomeCard';
 import { ChatMessage, ScheduleItem, Translations } from '../types';
-import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic } from 'lucide-react';
+import { AudioPlayer } from './AudioPlayer';
 import { formatTimestamp } from '../utils/time';
 import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
@@ -36,6 +37,9 @@ interface ChatMessageProps {
   language?: string;
   agentName?: string; // Custom agent name to display instead of translation
   isAgentTyping?: boolean; // Whether agent is currently typing/thinking
+  audioUrlBuilder?: (messageId: string) => string;
+  audioHeaders?: Record<string, string>;
+  autoPlayAudioMessageId?: string | null;
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -56,6 +60,9 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   language,
   agentName,
   isAgentTyping = false,
+  audioUrlBuilder,
+  audioHeaders,
+  autoPlayAudioMessageId,
 }) => {
   // Merge translations with defaults
   const translations = React.useMemo(
@@ -378,7 +385,40 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
         </div>
       )}
 
-      {message.text && (
+      {message.type === 'audio' && isUser && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignSelf: 'flex-end' }}>
+          {message.audioObjectUrl ? (
+            <AudioPlayer blobUrl={message.audioObjectUrl} primaryColor={primaryColor} />
+          ) : audioUrlBuilder && message.message_id && audioHeaders ? (
+            <AudioPlayer audioUrl={audioUrlBuilder(message.message_id)} headers={audioHeaders} primaryColor={primaryColor} />
+          ) : (
+            <div style={{ ...bubbleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Mic size={16} />
+              <span>{message.text || '[Voice message]'}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {message.type === 'audio' && !isUser && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignSelf: 'flex-start' }}>
+          {audioUrlBuilder && message.message_id && audioHeaders ? (
+            <AudioPlayer
+              audioUrl={audioUrlBuilder(message.message_id)}
+              headers={audioHeaders}
+              primaryColor={primaryColor}
+              autoPlay={autoPlayAudioMessageId === message.message_id}
+            />
+          ) : (
+            <div style={{ ...bubbleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Mic size={16} />
+              <span>{message.text || '[Audio response]'}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {message.type !== 'audio' && message.text && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', alignSelf: isUser ? 'flex-end' : 'flex-start' }}>
           <div style={{ ...bubbleStyle, position: 'relative' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

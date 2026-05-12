@@ -83,6 +83,8 @@ class ConversationRead(ConversationBase):
     thumbs_down_count: int = 0
     thumbs_up_count: int = 0
     custom_attributes: Optional[dict[str, Any]] = None
+    agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
 
     model_config = ConfigDict(
         from_attributes = True

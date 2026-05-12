@@ -1143,7 +1143,12 @@ const Transcripts = () => {
         <TranscriptDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={handleConversationModalOpenChange}
+          onOpenChange={setIsModalOpen}
+          agentName={
+            selectedAgentId !== "all"
+              ? agents.find((a) => a.id === selectedAgentId)?.name
+              : undefined
+          }
         />
       )}
     </SidebarProvider>

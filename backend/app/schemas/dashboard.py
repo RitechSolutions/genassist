@@ -27,6 +27,8 @@ class ActiveConversationItem(BaseModel):
     created_at: datetime
     negative_reason: Optional[str] = None
     in_progress_hostility_score: int = 0
+    agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

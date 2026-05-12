@@ -638,37 +638,44 @@ function TranscriptDialogContent({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <MessageSquare className="w-5 h-5" />
-          <span>Chat #{transcript.id.slice(-4)}</span>
-          <Badge
-            variant="default"
-            className={`ml-2 ${
-              sentiment === "positive"
-                ? "bg-green-600 text-white"
-                : sentiment === "negative"
-                ? "bg-red-600 text-white"
-                : "bg-purple-600 text-white"
-            }`}
-          >
-            {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
-          </Badge>
-          {isConnected && (
+        <DialogTitle className="flex flex-col gap-1.5 items-start">
+          <span className="flex flex-wrap items-center gap-2">
+            <MessageSquare className="w-5 h-5 shrink-0" />
+            <span>Chat #{transcript.id.slice(-4)}</span>
             <Badge
-              variant="outline"
-              className="ml-2 bg-green-50 text-green-700 border-green-200"
+              variant="default"
+              className={
+                sentiment === "positive"
+                  ? "bg-green-600 text-white"
+                  : sentiment === "negative"
+                  ? "bg-red-600 text-white"
+                  : "bg-purple-600 text-white"
+              }
             >
-              Live
+              {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
             </Badge>
-          )}
-          {hasTakenOver && (
-            <Badge
-              variant="outline"
-              className="ml-2 bg-blue-50 text-blue-700 border-blue-200"
-            >
-              Supervisor Mode
-            </Badge>
-          )}
+            {isConnected && (
+              <Badge
+                variant="outline"
+                className="bg-green-50 text-green-700 border-green-200"
+              >
+                Live
+              </Badge>
+            )}
+            {hasTakenOver && (
+              <Badge
+                variant="outline"
+                className="bg-blue-50 text-blue-700 border-blue-200"
+              >
+                Supervisor Mode
+              </Badge>
+            )}
+          </span>
+          {transcript.agent_name?.trim() ? (
+            <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
+              {transcript.agent_name.trim()}
+            </span>
+          ) : null}
         </DialogTitle>
       </DialogHeader>
 
@@ -888,7 +895,7 @@ function TranscriptDialogContent({
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
-                          <ConversationEntryWrapper entry={entry} />
+                          <ConversationEntryWrapper entry={entry} conversationId={transcript.id} />
                           <span className={`block text-[10px] text-right mt-1 ${
                             isAgent ? "text-white/70" : "text-gray-500"
                           }`}>
