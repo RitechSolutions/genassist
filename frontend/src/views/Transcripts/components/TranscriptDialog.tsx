@@ -18,6 +18,7 @@ import {
   fetchAgentResponseLogsByConversation,
   type AgentResponseLogSummary,
 } from '@/services/transcripts';
+import { getAllUsers } from '@/services/users';
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/button';
@@ -70,6 +71,45 @@ function resolveAgentNameFromTranscript(
   if (idVal && agentNameMap[idVal]) return agentNameMap[idVal];
 
   return undefined;
+}
+
+function resolveSupervisorId(transcript: Transcript): string | undefined {
+  const directSupervisorId = transcript.supervisor_id?.trim();
+  if (directSupervisorId) return directSupervisorId;
+
+  const attrs = transcript.custom_attributes;
+  if (!attrs) return undefined;
+
+  const entries = Object.entries(attrs);
+  const valueForKey = (...candidates: string[]) => {
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      const hit = entries.find(([k]) => k.toLowerCase() === cl);
+      const v = hit?.[1];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+
+  return valueForKey('supervisor_id', 'supervisorId', 'operator_id', 'operatorId');
+}
+
+function resolveSupervisorUsernameFromAttrs(transcript: Transcript): string | undefined {
+  const attrs = transcript.custom_attributes;
+  if (!attrs) return undefined;
+
+  const entries = Object.entries(attrs);
+  const valueForKey = (...candidates: string[]) => {
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      const hit = entries.find(([k]) => k.toLowerCase() === cl);
+      const v = hit?.[1];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+
+  return valueForKey('supervisor_username', 'supervisor_user_name', 'operator_username', 'operator_user_name');
 }
 
 const isCallTranscript = (transcript: Transcript | null) => {
@@ -191,6 +231,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const [debugLogOpen, setDebugLogOpen] = useState(false);
   const [debugMessageId, setDebugMessageId] = useState<string | null>(null);
   const [showCosts, setShowCosts] = useState(false);
+  const [supervisorUsername, setSupervisorUsername] = useState<string | undefined>(undefined);
   const [costsByMessageId, setCostsByMessageId] = useState<Record<string, AgentResponseLogSummary>>({});
   const [totalCost, setTotalCost] = useState<Record<string, number>>({
     total: 0,
@@ -220,6 +261,43 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
     if (fromAgentId) return fromAgentId;
     return resolveAgentNameFromTranscript(localTranscript, agentNameMap);
   }, [localTranscript, agentNameProp, agentNameMap]);
+
+  const supervisorId = useMemo(() => {
+    if (!localTranscript) return undefined;
+    return resolveSupervisorId(localTranscript);
+  }, [localTranscript]);
+
+  const supervisorUsernameFromAttrs = useMemo(() => {
+    if (!localTranscript) return undefined;
+    return resolveSupervisorUsernameFromAttrs(localTranscript);
+  }, [localTranscript]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isOpen || !supervisorId) {
+      setSupervisorUsername(undefined);
+      return;
+    }
+
+    if (supervisorUsernameFromAttrs) {
+      setSupervisorUsername(supervisorUsernameFromAttrs);
+      return;
+    }
+
+    getAllUsers()
+      .then((users) => {
+        if (cancelled) return;
+        const matchedUser = users.find((user) => user.id === supervisorId);
+        setSupervisorUsername(matchedUser?.username || undefined);
+      })
+      .catch(() => {
+        if (!cancelled) setSupervisorUsername(undefined);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, supervisorId, supervisorUsernameFromAttrs]);
 
   useEffect(() => {
     if (!localTranscript || !isCall) return;
@@ -456,6 +534,19 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
               <span>
                 {isCall ? 'Call' : 'Chat'} #{(localTranscript?.metadata?.title ?? '----').slice(-4)}
               </span>
+              {supervisorId && (
+                <div className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-800">
+                  <span className="flex items-center gap-1.5 leading-none">
+                    <span>Supervisor:</span>
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-200 text-[10px] font-semibold uppercase text-blue-800">
+                      {(supervisorUsername?.charAt(0) || 'S').toUpperCase()}
+                    </span>
+                    <span>
+                      {supervisorUsername ? `${supervisorUsername}` : 'Loading...'}
+                    </span>
+                  </span>
+                </div>
+              )}
             </span>
             {headerAgentName ? (
               <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground pr-10">
