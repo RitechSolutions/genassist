@@ -79,6 +79,13 @@ export interface WhatsappNodeData extends BaseNodeData {
 }
 
 export interface RouterNodeData extends BaseNodeData {
+  /** Stored as boolean; string "true"/"false" may appear from older persisted JSON. */
+  smartModeEnabled?: boolean | string;
+  providerId?: string;
+  smartPrompt?: string;
+  systemPrompt?: string;
+  /** Must be "true" or "false" when Smart Mode is on; invalid values normalize to "false" at runtime. */
+  fallbackRoute?: string;
   first_value?: string;
   compare_condition?:
     | "equal"

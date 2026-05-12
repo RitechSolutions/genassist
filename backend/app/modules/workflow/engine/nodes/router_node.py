@@ -15,6 +15,26 @@ from ..base_node import BaseNode
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_smart_mode_enabled(raw: Any) -> bool:
+    """Accept bool or common string forms from UI / JSON without mis-treating str."""
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return False
+    if isinstance(raw, (int, float)):
+        return raw != 0
+    if isinstance(raw, str):
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+    return False
+
+
+def _normalize_fallback_route(raw: Any) -> str:
+    """Only true/false are valid; anything else becomes false."""
+    s = str(raw if raw is not None else "").strip().lower()
+    return s if s in ("true", "false") else "false"
+
+
 DEFAULT_SMART_ROUTER_SYSTEM_PROMPT = (
     "You are a routing decision engine. Return only one value: true or false. "
     "Do not explain. Do not add extra text."
@@ -48,8 +68,12 @@ class RouterNode(BaseNode):
         Returns:
             Dictionary with routing decision and input data
         """
-        smart_mode_enabled = bool(config.get("smartModeEnabled", False))
-        fallback_route = config.get("fallbackRoute", "false") or "false"
+        smart_mode_enabled = _parse_smart_mode_enabled(
+            config.get("smartModeEnabled", False)
+        )
+        fallback_route = _normalize_fallback_route(
+            config.get("fallbackRoute", "false")
+        )
         provider_id = config.get("providerId") or ""
         smart_prompt = config.get("smartPrompt") or ""
         system_prompt_raw = config.get("systemPrompt")
@@ -67,7 +91,7 @@ class RouterNode(BaseNode):
                 str(provider_id).strip(),
                 str(smart_prompt).strip(),
                 system_for_llm,
-                str(fallback_route).strip() or "false",
+                fallback_route,
             )
         else:
             # Determine route based on configuration (unchanged behavior)
@@ -104,7 +128,7 @@ class RouterNode(BaseNode):
         system_prompt: str,
         fallback_route: str,
     ) -> str:
-        fb = str(fallback_route).strip() or "false"
+        fb = _normalize_fallback_route(fallback_route)
 
         if not provider_id:
             logger.warning(

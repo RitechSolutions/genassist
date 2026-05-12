@@ -14,7 +14,18 @@ function shouldShowConditionalField(
   if (!field.conditional) return true;
 
   const conditionalFieldValue = data[field.conditional.field];
-  return conditionalFieldValue === field.conditional.value;
+  const target = field.conditional.value;
+
+  if (typeof target === "boolean") {
+    const on =
+      conditionalFieldValue === true ||
+      conditionalFieldValue === "true" ||
+      conditionalFieldValue === 1 ||
+      conditionalFieldValue === "1";
+    return target ? on : !on;
+  }
+
+  return conditionalFieldValue === target;
 }
 
 export function getEmptyRequiredFields(
