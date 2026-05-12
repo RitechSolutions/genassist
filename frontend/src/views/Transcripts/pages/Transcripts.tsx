@@ -1078,6 +1078,11 @@ const Transcripts = () => {
           transcript={selectedTranscript}
           isOpen={isModalOpen}
           onOpenChange={setIsModalOpen}
+          agentName={
+            selectedAgentId !== "all"
+              ? agents.find((a) => a.id === selectedAgentId)?.name
+              : undefined
+          }
         />
       )}
     </SidebarProvider>

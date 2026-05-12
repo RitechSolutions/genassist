@@ -108,7 +108,8 @@ class DashboardRepository:
             )
             .options(
                 selectinload(ConversationModel.analysis),
-                selectinload(ConversationModel.messages)
+                selectinload(ConversationModel.messages),
+                selectinload(ConversationModel.operator).selectinload(OperatorModel.agent),
             )
             .order_by(ConversationModel.created_at.desc())
             .offset(offset)
