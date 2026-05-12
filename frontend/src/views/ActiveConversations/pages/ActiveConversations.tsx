@@ -33,6 +33,8 @@ const transformDashboardConversation = (item: ActiveConversationItem): ActiveCon
   supervisor_id: undefined,
   topic: item.topic || undefined,
   negative_reason: item.negative_reason || undefined,
+  agent_id: item.agent_id ?? undefined,
+  agent_name: item.agent_name ?? undefined,
 });
 
 export const enrichConversationItem = (item: ActiveConversation): Transcript => {
@@ -109,6 +111,8 @@ export const enrichConversationItem = (item: ActiveConversation): Transcript => 
     customer_ratio: item.customer_ratio || 0,
     word_count: item.word_count || 0,
     in_progress_hostility_score: item.in_progress_hostility_score || 0,
+    agent_id: item.agent_id ?? null,
+    agent_name: item.agent_name ?? null,
   };
 };
 
@@ -376,6 +380,41 @@ export const ActiveConversations = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allConversations, selectedTranscript?.id, selectedTranscript?.status, selectedTranscript?.supervisor_id, isDialogOpen]);
+
+  const handleItemClick = async (item: ActiveConversation) => {
+    setIsLoadingTranscript(true);
+
+    try {
+      // Fetch the full  conversation data by ID
+      const backend = await apiRequest<BackendTranscript>("get", `/conversations/${item.id}?include_feedback=true`);
+      const transformed = transformTranscript(backend);
+      if (item.topic && item.topic !== "Unknown" && transformed?.metadata) {
+        transformed.metadata.topic = transformed.metadata.topic && transformed.metadata.topic !== "Unknown"
+          ? transformed.metadata.topic
+          : item.topic;
+      }
+      if (item.agent_name?.trim() && !transformed.agent_name?.trim()) {
+        transformed.agent_name = item.agent_name.trim();
+        if (item.agent_id) transformed.agent_id = item.agent_id;
+      }
+      setSelectedTranscript(transformed);
+      setIsDialogOpen(true);
+
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load conversation details",
+        variant: "destructive",
+      });
+
+      // Fallback to enriched conversation item if fetch fails
+      const enrichedTranscript = enrichConversationItem(item);
+      setSelectedTranscript(enrichedTranscript);
+      setIsDialogOpen(true);
+    } finally {
+      setIsLoadingTranscript(false);
+    }
+  };
 
   const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
     try {

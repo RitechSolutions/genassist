@@ -40,10 +40,13 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
     try {
       setIsSaving(true);
 
+      // `direct_s3_upload_enabled` is a server-derived, read-only capability flag.
+      const { direct_s3_upload_enabled, ...persistableValues } = settings.values;
+
       await updateFileManagerSettings({
         ...settings,
         values: {
-          ...settings.values,
+          ...persistableValues,
           file_manager_provider: selectedProvider,
           base_path: basePath,
           aws_bucket_name: awsBucketName,

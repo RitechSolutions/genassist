@@ -198,6 +198,37 @@ export const getAudioUrl = async (recordingId: string): Promise<string> => {
   return URL.createObjectURL(blob);
 };
 
+export const getMessageAudioUrl = async (
+  conversationId: string,
+  messageId: string
+): Promise<string> => {
+  const baseURL = await getApiUrl();
+  const url = `${baseURL}conversations/${conversationId}/messages/${messageId}/audio`;
+  const token = getAccessToken();
+
+  if (!token) {
+    throw new Error("Not authenticated—no access token found");
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  const tenantId = localStorage.getItem("tenant_id");
+  if (tenantId) {
+    headers["x-tenant-id"] = tenantId;
+  }
+
+  const res = await fetch(url, { headers });
+
+  if (!res.ok) {
+    throw new Error(`Audio fetch failed (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
+
 export interface ConversationFeedback {
   feedback: "good" | "bad";
   feedback_message: string;
