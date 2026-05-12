@@ -25,6 +25,11 @@ export const ROUTER_NODE_DEFINITION: NodeTypeDefinition<RouterNodeData> = {
   icon: "SplitRotated",
   defaultData: {
     name: "Conditional Router",
+    smartModeEnabled: false,
+    providerId: "",
+    smartPrompt: "",
+    systemPrompt: "",
+    fallbackRoute: "false",
     first_value: "",
     compare_condition: "contains",
     second_value: "",
