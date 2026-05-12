@@ -1,6 +1,6 @@
 from uuid import UUID
 from injector import inject
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.audit_log import AuditLogModel
@@ -90,3 +90,18 @@ class AuditLogRepository:
         )
         result = await self.db.execute(query)
         return result.scalars().all() 
+
+    async def delete_by_record_ids(self, record_ids: list[UUID]) -> int:
+        """
+        Hard-delete audit log rows for the given record IDs.
+
+        Used for GDPR Right-to-Erasure purges where audit snapshots may contain
+        enough information to reconstruct deleted entities.
+        """
+        if not record_ids:
+            return 0
+
+        stmt = delete(AuditLogModel).where(AuditLogModel.record_id.in_(record_ids))
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        return int(result.rowcount or 0)
