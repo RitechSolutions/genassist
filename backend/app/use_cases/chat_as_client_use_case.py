@@ -428,6 +428,7 @@ async def process_file_upload_from_chat(
                 "type": file_type,
                 "url": file_url,
                 "name": file_name,
+                "file_id": str(file_id),
             }
         )
 
