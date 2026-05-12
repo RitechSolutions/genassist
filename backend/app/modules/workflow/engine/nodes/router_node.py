@@ -2,13 +2,23 @@
 Router node implementation using the BaseNode class.
 """
 
-from typing import Any, Dict
 import logging
 import re
+from typing import Any, Dict
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from app.dependencies.injector import injector
+from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SMART_ROUTER_SYSTEM_PROMPT = (
+    "You are a routing decision engine. Return only one value: true or false. "
+    "Do not explain. Do not add extra text."
+)
 
 
 class RouterNode(BaseNode):
@@ -38,37 +48,108 @@ class RouterNode(BaseNode):
         Returns:
             Dictionary with routing decision and input data
         """
+        smart_mode_enabled = bool(config.get("smartModeEnabled", False))
+        fallback_route = config.get("fallbackRoute", "false") or "false"
+        provider_id = config.get("providerId") or ""
+        smart_prompt = config.get("smartPrompt") or ""
+        system_prompt_raw = config.get("systemPrompt")
 
-        # Get routing configuration from resolved config
         first_value = config.get("first_value")
         compare_condition = config.get("compare_condition")
         second_value = config.get("second_value")
 
-        # Determine route based on configuration
-        if not all([first_value, compare_condition, second_value]):
-            logger.warning(
-                f"RouterNode {self.node_id} missing configuration values")
-            route = "false"
-        else:
-            route = self._evaluate_condition(
-                first_value, compare_condition, second_value
+        if smart_mode_enabled:
+            system_for_llm = (
+                (system_prompt_raw or "").strip()
+                or DEFAULT_SMART_ROUTER_SYSTEM_PROMPT
             )
+            route = await self._evaluate_smart_route(
+                str(provider_id).strip(),
+                str(smart_prompt).strip(),
+                system_for_llm,
+                str(fallback_route).strip() or "false",
+            )
+        else:
+            # Determine route based on configuration (unchanged behavior)
+            if not all([first_value, compare_condition, second_value]):
+                logger.warning(
+                    "RouterNode %s missing configuration values", self.node_id
+                )
+                route = "false"
+            else:
+                route = self._evaluate_condition(
+                    first_value, compare_condition, second_value
+                )
 
         next_nodes = self.get_connected_nodes(route)
 
-        # Create output with routing decision
         output = {
             "route": route,
             "next_nodes": next_nodes,
             "first_value": first_value,
             "compare_condition": compare_condition,
-            "second_value": second_value
-
+            "second_value": second_value,
+            "smartModeEnabled": smart_mode_enabled,
+            "fallbackRoute": fallback_route,
         }
 
-        logger.info(f"RouterNode {self.node_id} routed to {route}")
+        logger.info("RouterNode %s routed to %s", self.node_id, route)
 
         return output
+
+    async def _evaluate_smart_route(
+        self,
+        provider_id: str,
+        smart_prompt: str,
+        system_prompt: str,
+        fallback_route: str,
+    ) -> str:
+        fb = str(fallback_route).strip() or "false"
+
+        if not provider_id:
+            logger.warning(
+                "RouterNode %s Smart Mode: missing providerId, using fallbackRoute=%s",
+                self.node_id,
+                fb,
+            )
+            return fb
+        if not smart_prompt:
+            logger.warning(
+                "RouterNode %s Smart Mode: missing smartPrompt, using fallbackRoute=%s",
+                self.node_id,
+                fb,
+            )
+            return fb
+
+        try:
+            llm_provider = injector.get(LLMProvider)
+            llm_model = await llm_provider.get_model(provider_id)
+            response = await llm_model.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=smart_prompt),
+                ]
+            )
+            normalized = str(response.content).strip().lower()
+        except Exception as e:
+            logger.error(
+                "RouterNode %s Smart Mode execution failed: %s; using fallbackRoute=%s",
+                self.node_id,
+                e,
+                fb,
+            )
+            return fb
+
+        if normalized not in ("true", "false"):
+            logger.warning(
+                "RouterNode %s Smart Mode: invalid route %r, using fallbackRoute=%s",
+                self.node_id,
+                normalized,
+                fb,
+            )
+            return fb
+
+        return normalized
 
     def _evaluate_condition(self,
                             first_value: str,
