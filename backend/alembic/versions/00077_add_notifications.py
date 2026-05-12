@@ -1,7 +1,7 @@
 """notification preferences update
 
 Revision ID: 796abc886377
-Revises: g7d8e9f0a1b2
+Revises: h8e9f1a2b3c4
 Create Date: 2026-05-06 12:17:11.656100
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '796abc886377'
-down_revision: Union[str, None] = 'g7d8e9f0a1b2'
+down_revision: Union[str, None] = 'h8e9f1a2b3c4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -34,7 +34,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_notification_types_type'), 'notification_types', ['type'], unique=True)
 
     op.create_table(
-        'user_notification_preferences',
+        'user_notification',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('user_id', sa.UUID(), nullable=False),
         sa.Column('notification_type_id', sa.UUID(), nullable=False),
@@ -47,16 +47,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['notification_type_id'], ['notification_types.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('user_id', 'notification_type_id', name='uq_user_notification_preferences_user_type')
+        sa.UniqueConstraint('user_id', 'notification_type_id', name='uq_user_notification_user_type')
     )
-    op.create_index(op.f('ix_user_notification_preferences_notification_type_id'), 'user_notification_preferences', ['notification_type_id'], unique=False)
-    op.create_index(op.f('ix_user_notification_preferences_user_id'), 'user_notification_preferences', ['user_id'], unique=False)
+    op.create_index(op.f('ix_user_notification_notification_type_id'), 'user_notification', ['notification_type_id'], unique=False)
+    op.create_index(op.f('ix_user_notification_user_id'), 'user_notification', ['user_id'], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_user_notification_preferences_user_id'), table_name='user_notification_preferences')
-    op.drop_index(op.f('ix_user_notification_preferences_notification_type_id'), table_name='user_notification_preferences')
-    op.drop_table('user_notification_preferences')
+    op.drop_index(op.f('ix_user_notification_user_id'), table_name='user_notification')
+    op.drop_index(op.f('ix_user_notification_type_id'), table_name='user_notification')
+    op.drop_table('user_notification')
 
     op.drop_index(op.f('ix_notification_types_type'), table_name='notification_types')
     op.drop_table('notification_types')
