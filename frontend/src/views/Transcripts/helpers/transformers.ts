@@ -139,6 +139,8 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
 
     return {
       id: backendData.id.toString(),
+      agent_id: backendData.agent_id != null ? String(backendData.agent_id) : null,
+      agent_name: backendData.agent_name ?? null,
       audio: audioUrl,
       create_time: backendData.created_at || new Date().toISOString(),
       recording_id: backendData.recording_id,
