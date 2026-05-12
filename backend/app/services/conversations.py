@@ -34,6 +34,11 @@ from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.file_manager_url_utils import (
+    collect_gdpr_file_manager_ids_from_custom_attributes,
+    collect_gdpr_file_manager_ids_from_messages,
+    collect_gdpr_file_manager_ids_from_transcription_field,
+)
 from app.core.utils.transcript_utils import (
     schema_to_transcript_message,
     transcript_messages_to_json,
@@ -63,6 +68,7 @@ from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.llm_analysts import LlmAnalystService
 from app.services.operator_statistics import OperatorStatisticsService
+from app.services.file_manager import FileManagerService
 from app.services.zendesk import ZendeskClient
 from app.modules.workflow.agents.rag import ThreadScopedRAG
 
@@ -79,6 +85,7 @@ class ConversationService:
             audit_log_repo: AuditLogRepository,
             recordings_repo: RecordingsRepository,
             thread_rag: ThreadScopedRAG,
+            file_manager_service: FileManagerService = Injected(FileManagerService),
             gpt_kpi_analyzer_service: GptKpiAnalyzer = Depends(),
             conversation_analysis_service: ConversationAnalysisService = Depends(),
             llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService), ):
@@ -91,6 +98,7 @@ class ConversationService:
         self.audit_log_repo = audit_log_repo
         self.recordings_repo = recordings_repo
         self.thread_rag = thread_rag
+        self.file_manager_service = file_manager_service
 
     async def _gdpr_purge_supporting_stores(
         self,
@@ -134,6 +142,55 @@ class ConversationService:
             deleted,
         )
 
+    def _collect_gdpr_file_manager_attachment_ids(self, conversation: ConversationModel) -> set[UUID]:
+        """UUIDs of File Manager objects referenced by transcript, legacy transcription, or attributes."""
+        ids = collect_gdpr_file_manager_ids_from_messages(conversation.messages)
+        ids |= collect_gdpr_file_manager_ids_from_transcription_field(
+            getattr(conversation, "transcription", None)
+        )
+        ids |= collect_gdpr_file_manager_ids_from_custom_attributes(conversation.custom_attributes)
+        return ids
+
+    async def _gdpr_purge_file_manager_attachments(self, file_ids: set[UUID], *, conversation_id: UUID) -> None:
+        """Best-effort delete of file rows and backing objects (idempotent)."""
+        for file_id in file_ids:
+            try:
+                await self.file_manager_service.delete_file(file_id, delete_from_storage=True)
+            except AppException as e:
+                logger.warning(
+                    "gdpr.file_purge_skipped conversation_id=%s file_id=%s err=%s",
+                    conversation_id,
+                    file_id,
+                    e,
+                )
+            except Exception as e:
+                logger.warning(
+                    "gdpr.file_purge_failed conversation_id=%s file_id=%s err=%s",
+                    conversation_id,
+                    file_id,
+                    e,
+                )
+
+    @staticmethod
+    def _redact_file_transcript_message_text(message: TranscriptMessageModel) -> None:
+        """Replace file-attachment JSON with a non-actionable placeholder after blob purge."""
+        try:
+            payload = json.loads(message.text or "{}")
+        except (json.JSONDecodeError, TypeError):
+            message.text = "[redacted]"
+            return
+        if not isinstance(payload, dict):
+            message.text = "[redacted]"
+            return
+        message.text = json.dumps(
+            {
+                "type": payload.get("type", "file"),
+                "name": "[redacted]",
+                "url": "",
+                "file_id": "",
+            },
+            ensure_ascii=False,
+        )
 
     async def save_conversation(self, conversation: ConversationCreate):
         return await self.conversation_repo.save_conversation(conversation)
@@ -506,17 +563,19 @@ class ConversationService:
         Behavior depends on ``mode``:
 
         - ``SOFT`` (default): scrub ``custom_attributes.pii`` and flip the
-          existing ``is_deleted`` flag. Backward-compatible because it only
-          uses primitives (`SoftDeleteMixin`) that already exist; the global
-          ORM filter hides the row from all standard reads.
+          existing ``is_deleted`` flag. File Manager blobs are left in place so
+          a mistaken soft-delete can still be reconciled without data loss.
         - ``ANONYMIZE``: scrub ``custom_attributes.pii``, redact PII inside
           each ``transcript_messages.text`` via ``redact_sensitive_substrings``,
-          and stamp ``conversations.pii_redacted_at`` for auditing. The row
-          stays visible so per-conversation analytics drilldowns keep working.
-        - ``HARD``: delegate to the existing internal ``delete_conversation``
-          which cascades to messages and analysis. Already-aggregated daily
-          analytics counts are not affected because they store anonymized
-          aggregates (no row-level PII).
+          purge File Manager objects referenced by the transcript (and related
+          fields), replace ``type=file`` payloads with placeholders, and stamp
+          ``conversations.pii_redacted_at`` for auditing. The row stays visible so
+          per-conversation analytics drilldowns keep working.
+        - ``HARD``: purge File Manager attachments, then delegate to the
+          existing internal ``delete_conversation`` path, which cascades to
+          ``transcript_messages`` and ``conversation_analysis``. Supporting
+          stores (Redis memory, RAG, recordings, audit snapshots) are purged as
+          before. Already-aggregated daily analytics counts are unaffected.
 
         Always emits a structured log line ``gdpr.conversation_deleted`` so the
         action is traceable without introducing a dedicated audit table.
@@ -534,6 +593,10 @@ class ConversationService:
         if mode == GdprDeleteMode.HARD:
             message_ids = [m.id for m in (conversation.messages or []) if getattr(m, "id", None)]
             recording_id = getattr(conversation, "recording_id", None)
+            fm_ids = self._collect_gdpr_file_manager_attachment_ids(conversation)
+            await self._gdpr_purge_file_manager_attachments(
+                fm_ids, conversation_id=conversation_id
+            )
             await self.conversation_repo.delete_conversation(conversation)
             await self._gdpr_purge_supporting_stores(
                 conversation_id=conversation_id,
@@ -564,9 +627,16 @@ class ConversationService:
             )
             return {"conversation_id": str(conversation_id), "mode": mode.value}
 
-        # ANONYMIZE
+        # ANONYMIZE: remove File Manager blobs first, then redact DB text.
+        fm_ids = self._collect_gdpr_file_manager_attachment_ids(conversation)
+        await self._gdpr_purge_file_manager_attachments(
+            fm_ids, conversation_id=conversation_id
+        )
         for message in conversation.messages or []:
-            if message.text:
+            msg_type = (getattr(message, "type", None) or "").lower()
+            if msg_type == "file":
+                self._redact_file_transcript_message_text(message)
+            elif message.text:
                 message.text = redact_sensitive_substrings(message.text)
 
         conversation.custom_attributes = scrubbed_attrs
