@@ -1,5 +1,5 @@
 from app.db.base import Base
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 from sqlalchemy import (
     UUID,
@@ -10,6 +10,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     Text,
+    inspect as sa_inspect,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -17,6 +18,9 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
 from app.db.models.message_model import TranscriptMessageModel
+
+if TYPE_CHECKING:
+    from app.db.models.user import UserModel
 
 
 class ConversationAnalysisModel(Base):
@@ -113,6 +117,12 @@ class ConversationModel(Base, GroupScopedMixin):
         "RecordingModel", back_populates="conversation", uselist=False
     )
     operator = relationship("OperatorModel", back_populates="conversations")
+    supervisor: Mapped[Optional["UserModel"]] = relationship(
+        "UserModel",
+        primaryjoin="foreign(ConversationModel.supervisor_id) == UserModel.id",
+        uselist=False,
+        viewonly=True,
+    )
 
     @property
     def agent_id(self) -> Optional[UUID]:
@@ -131,3 +141,14 @@ class ConversationModel(Base, GroupScopedMixin):
             return None
         agent = getattr(operator, "agent", None)
         return agent.name if agent is not None else None
+
+    @property
+    def supervisor_username(self) -> Optional[str]:
+        """Login name for ``supervisor_id``; requires ``supervisor`` relationship loaded."""
+        if self.supervisor_id is None:
+            return None
+        state = sa_inspect(self)
+        if "supervisor" in state.unloaded:
+            return None
+        sup = self.supervisor
+        return sup.username if sup is not None else None

@@ -18,7 +18,6 @@ import {
   fetchAgentResponseLogsByConversation,
   type AgentResponseLogSummary,
 } from '@/services/transcripts';
-import { getAllUsers } from '@/services/users';
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/button';
@@ -231,8 +230,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const [debugLogOpen, setDebugLogOpen] = useState(false);
   const [debugMessageId, setDebugMessageId] = useState<string | null>(null);
   const [showCosts, setShowCosts] = useState(false);
-  const [supervisorUsername, setSupervisorUsername] = useState<string | undefined>(undefined);
-  const [isSupervisorLoading, setIsSupervisorLoading] = useState(false);
   const [costsByMessageId, setCostsByMessageId] = useState<Record<string, AgentResponseLogSummary>>({});
   const [totalCost, setTotalCost] = useState<Record<string, number>>({
     total: 0,
@@ -268,44 +265,12 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
     return resolveSupervisorId(localTranscript);
   }, [localTranscript]);
 
-  const supervisorUsernameFromAttrs = useMemo(() => {
+  const supervisorDisplayName = useMemo(() => {
     if (!localTranscript) return undefined;
+    const fromApi = localTranscript.supervisor_username?.trim();
+    if (fromApi) return fromApi;
     return resolveSupervisorUsernameFromAttrs(localTranscript);
   }, [localTranscript]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!isOpen || !supervisorId) {
-      setSupervisorUsername(undefined);
-      setIsSupervisorLoading(false);
-      return;
-    }
-
-    if (supervisorUsernameFromAttrs) {
-      setSupervisorUsername(supervisorUsernameFromAttrs);
-      setIsSupervisorLoading(false);
-      return;
-    }
-
-    setIsSupervisorLoading(true);
-    getAllUsers()
-      .then((users) => {
-        if (cancelled) return;
-        const matchedUser = users.find((user) => user.id === supervisorId);
-        setSupervisorUsername(matchedUser?.username || undefined);
-        setIsSupervisorLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSupervisorUsername(undefined);
-          setIsSupervisorLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, supervisorId, supervisorUsernameFromAttrs]);
 
   useEffect(() => {
     if (!localTranscript || !isCall) return;
@@ -544,21 +509,13 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
               </span>
               {supervisorId && (
                 <div className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-800">
-                  {isSupervisorLoading ? (
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-3 w-16 rounded-full bg-blue-200 animate-pulse" />
-                      <span className="h-5 w-5 rounded-full bg-blue-200 animate-pulse" />
-                      <span className="h-3 w-20 rounded-full bg-blue-200 animate-pulse" />
+                  <span className="flex items-center gap-1.5 leading-none">
+                    <span>Supervisor:</span>
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-200 text-[10px] font-semibold uppercase text-blue-800">
+                      {(supervisorDisplayName?.charAt(0) || supervisorId.charAt(0) || 'S').toUpperCase()}
                     </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 leading-none">
-                      <span>Supervisor:</span>
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-200 text-[10px] font-semibold uppercase text-blue-800">
-                        {(supervisorUsername?.charAt(0) || 'S').toUpperCase()}
-                      </span>
-                      <span>{supervisorUsername || supervisorId}</span>
-                    </span>
-                  )}
+                    <span>{supervisorDisplayName || supervisorId}</span>
+                  </span>
                 </div>
               )}
             </span>

@@ -76,6 +76,7 @@ class ConversationRead(ConversationBase):
     analysis: Optional[ConversationAnalysisRead] = None
     in_progress_hostility_score: Optional[int] = None
     supervisor_id: Optional[UUID] = None
+    supervisor_username: Optional[str] = None
     topic: Optional[str] = None
     negative_reason: Optional[str] = None
     feedback: Optional[str] = None

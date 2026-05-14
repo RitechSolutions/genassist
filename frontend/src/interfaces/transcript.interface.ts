@@ -60,6 +60,7 @@ export interface BackendTranscript {
   requires_supervisor?: boolean;
   in_progress_hostility_score: number;
   supervisor_id?: string | null;
+  supervisor_username?: string | null;
   recording: Recording | null;
   analysis?: Analysis | null;
   topic?: string;
@@ -125,6 +126,7 @@ export interface Transcript {
   word_count?: number;
   in_progress_hostility_score?: number;
   supervisor_id?: string | null;
+  supervisor_username?: string | null;
   feedback?: ConversationFeedbackEntry[];
 
   // NOTE: used to avoid parsing issues
