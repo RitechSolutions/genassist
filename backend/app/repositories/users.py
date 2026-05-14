@@ -7,6 +7,7 @@ from fastapi_cache import FastAPICache
 from injector import inject
 from redis.exceptions import ResponseError
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -132,6 +133,67 @@ class UserRepository:
         result = await self.db.execute(exec_query)
         return result.scalars().first()
 
+    async def get_by_entra_oid(self, entra_oid: str) -> UserModel | None:
+        query = (
+            select(UserModel)
+            .where(UserModel.entra_oid == entra_oid, UserModel.is_deleted == 0)
+            .options(joinedload(UserModel.user_type))
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+    async def set_entra_oid_if_empty(self, user_id: UUID, entra_oid: str) -> None:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id, UserModel.entra_oid.is_(None), UserModel.is_deleted == 0)
+            .values(entra_oid=entra_oid)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        if result.rowcount:
+            await self._clear_user_full_cache(user_id)
+
+    async def create_from_microsoft_sso(
+        self,
+        *,
+        username: str,
+        email: str,
+        hashed_password: str,
+        user_type_id: UUID,
+        role_ids: list[UUID],
+        entra_oid: str,
+    ) -> UserModel:
+        user_type = await self.db.get(UserTypeModel, user_type_id)
+        if not user_type:
+            raise AppException(error_key=ErrorKey.USER_TYPE_NOT_FOUND, status_code=404)
+        for role_id in role_ids:
+            role = await self.db.get(RoleModel, role_id)
+            if not role:
+                raise AppException(error_key=ErrorKey.ROLE_NOT_FOUND, status_code=404)
+
+        new_user = UserModel(
+            username=username,
+            hashed_password=hashed_password,
+            email=email,
+            is_active=1,
+            user_type_id=user_type_id,
+            group_id=None,
+            entra_oid=entra_oid,
+            force_upd_pass_date=None,
+        )
+        self.db.add(new_user)
+        await self.db.flush()
+        for role_id in role_ids:
+            self.db.add(UserRoleModel(user_id=new_user.id, role_id=role_id))
+        try:
+            await self.db.commit()
+            await self.db.refresh(new_user)
+        except IntegrityError as err:
+            await self.db.rollback()
+            logger.warning("create_from_microsoft_sso integrity error: %s", err)
+            raise AppException(error_key=ErrorKey.SSO_MICROSOFT_OAUTH_ERROR, status_code=409) from None
+        return new_user
+
     async def get_all(self, filter: BaseFilterModel):
         query = (
             select(UserModel)
@@ -166,6 +228,10 @@ class UserRepository:
         for field in ['username', 'email', 'is_active', 'notes']:
             if hasattr(data, field) and getattr(data, field) is not None:
                 setattr(user, field, getattr(data, field))
+
+        update_dump = data.model_dump(exclude_unset=True)
+        if "entra_oid" in update_dump:
+            user.entra_oid = update_dump["entra_oid"]
 
         # Update password (hashed)
         # TODO decide allow update password or do forgot password link
