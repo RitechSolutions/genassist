@@ -1,6 +1,6 @@
 import { apiRequest } from "@/config/api"
 
-export type NotificationPreferences = {
+export type NotificationUserSettings = {
   conversationStarted: boolean
   conversationHostility: boolean
   conversationFinalizedHostility: boolean
@@ -8,7 +8,7 @@ export type NotificationPreferences = {
   canManageWorkflowFailed: boolean
 }
 
-type NotificationPreferencesRaw = {
+type NotificationUserSettingsRaw = {
   conversation_started: boolean
   conversation_hostility: boolean
   conversation_finalized_hostility: boolean
@@ -16,9 +16,9 @@ type NotificationPreferencesRaw = {
   can_manage_workflow_failed: boolean
 }
 
-export type NotificationPreferencesUpdate = Partial<
+export type NotificationUserSettingsUpdate = Partial<
   Pick<
-    NotificationPreferences,
+    NotificationUserSettings,
     | "conversationStarted"
     | "conversationHostility"
     | "conversationFinalizedHostility"
@@ -26,7 +26,7 @@ export type NotificationPreferencesUpdate = Partial<
   >
 >
 
-function mapPreferences(raw: NotificationPreferencesRaw): NotificationPreferences {
+function mapUserSettings(raw: NotificationUserSettingsRaw): NotificationUserSettings {
   return {
     conversationStarted: raw.conversation_started,
     conversationHostility: raw.conversation_hostility,
@@ -36,7 +36,9 @@ function mapPreferences(raw: NotificationPreferencesRaw): NotificationPreference
   }
 }
 
-function mapUpdates(updates: NotificationPreferencesUpdate): Record<string, boolean> {
+function mapUserSettingsUpdates(
+  updates: NotificationUserSettingsUpdate
+): Record<string, boolean> {
   const payload: Record<string, boolean> = {}
   if (typeof updates.conversationStarted === "boolean") {
     payload.conversation_started = updates.conversationStarted
@@ -53,35 +55,35 @@ function mapUpdates(updates: NotificationPreferencesUpdate): Record<string, bool
   return payload
 }
 
-export async function fetchNotificationPreferences(): Promise<NotificationPreferences | null> {
+export async function fetchNotificationUserSettings(): Promise<NotificationUserSettings | null> {
   try {
-    const response = await apiRequest<NotificationPreferencesRaw>(
+    const response = await apiRequest<NotificationUserSettingsRaw>(
       "get",
-      "/notification-preferences"
+      "/notifications"
     )
     if (!response) return null
-    return mapPreferences(response)
+    return mapUserSettings(response)
   } catch (error) {
-    console.error("Error fetching notification preferences:", error)
+    console.error("Error fetching notification user settings:", error)
     return null
   }
 }
 
-export async function updateNotificationPreferences(
-  updates: NotificationPreferencesUpdate
-): Promise<NotificationPreferences | null> {
+export async function updateNotificationUserSettings(
+  updates: NotificationUserSettingsUpdate
+): Promise<NotificationUserSettings | null> {
   try {
-    const payload = mapUpdates(updates)
+    const payload = mapUserSettingsUpdates(updates)
     if (Object.keys(payload).length === 0) return null
-    const response = await apiRequest<NotificationPreferencesRaw>(
+    const response = await apiRequest<NotificationUserSettingsRaw>(
       "patch",
-      "/notification-preferences",
+      "/notifications",
       payload
     )
     if (!response) return null
-    return mapPreferences(response)
+    return mapUserSettings(response)
   } catch (error) {
-    console.error("Error updating notification preferences:", error)
+    console.error("Error updating notification user settings:", error)
     return null
   }
 }

@@ -21,8 +21,9 @@ def notification_payload(
     level: str,
     action_url: str,
     timestamp: datetime | None = None,
+    group_id: UUID | str | None = None,
 ) -> dict:
-    return {
+    payload = {
         "id": notification_id,
         "title": title,
         "description": description,
@@ -30,6 +31,9 @@ def notification_payload(
         "action_url": action_url,
         "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
     }
+    if group_id is not None:
+        payload["group_id"] = str(group_id)
+    return payload
 
 
 def emit_notification(

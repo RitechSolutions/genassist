@@ -20,8 +20,8 @@ import {
   isConversationHostilityNotification,
   isConversationStartedNotification,
   isWorkflowFailedNotification,
-  useNotificationPreferences,
-} from "@/hooks/useNotificationPreferences"
+  useNotificationUserSettings,
+} from "@/hooks/useNotificationUserSettings"
 
 export const NOTIFICATIONS_QUERY_KEY = ["notifications-feed"] as const
 export const NOTIFICATIONS_INFINITE_QUERY_KEY = [
@@ -64,13 +64,13 @@ function applyReadMap(items: Notification[]): Notification[] {
 
 export const useNotifications = () => {
   const queryClient = useQueryClient()
-  const { preferences } = useNotificationPreferences()
+  const { settings } = useNotificationUserSettings()
   const {
     conversationStarted,
     conversationHostility,
     conversationFinalizedHostility,
     workflowFailed,
-  } = preferences
+  } = settings
 
   const { data: notifications = [], refetch } = useQuery<Notification[]>({
     queryKey: [
@@ -232,13 +232,13 @@ export const useNotificationsInfinite = ({
   typeFilter?: NotificationTypeFilter
 } = {}) => {
   const queryClient = useQueryClient()
-  const { preferences } = useNotificationPreferences()
+  const { settings } = useNotificationUserSettings()
   const {
     conversationStarted,
     conversationHostility,
     conversationFinalizedHostility,
     workflowFailed,
-  } = preferences
+  } = settings
   const infiniteKey = [
     ...notificationsInfiniteQueryKey(conversationStarted, typeFilter),
     conversationHostility,
