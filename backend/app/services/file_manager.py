@@ -24,6 +24,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.app_settings import AppSettingsRead
 from app.core.utils.cache_headers import no_store_headers
+from app.core.utils.file_manager_url_utils import first_file_manager_uuid_from_url
 from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
 
 logger = logging.getLogger(__name__)
@@ -449,10 +450,12 @@ class FileManagerService:
             file_id: File ID to delete
             delete_from_storage: Whether to delete from storage provider as well
         """
-        if delete_from_storage and self.storage_provider:
-            file = await self.repository.get_file_by_id(file_id)
+        file = await self.repository.get_file_by_id(file_id)
+        if delete_from_storage:
             try:
-                await self.storage_provider.delete_file(file.storage_path)
+                await self._initialize_storage_provider(file.storage_provider)
+                if self.storage_provider and self.storage_provider.is_initialized():
+                    await self.storage_provider.delete_file(file.storage_path)
             except Exception as e:
                 logger.warning(f"Failed to delete file from storage: {e}")
 
@@ -494,23 +497,26 @@ class FileManagerService:
 
 
     async def extract_file_id_from_url(self, file_url: str) -> Optional[UUID]:
-        """Extract the file ID from the file URL."""
-        file_id = file_url.split("/")[-1]
-        try:
-            return UUID(file_id) if file_id else None
-        except ValueError:
-            return None
+        """Extract the file ID from a File Manager ``/files/<uuid>/`` URL (ignores query string)."""
+        return first_file_manager_uuid_from_url(file_url)
 
     async def get_file_from_url(self, file_url: str) -> Optional[FileModel]:
         """Get the file from the URL."""
         file_id = await self.extract_file_id_from_url(file_url)
+        if file_id is None:
+            return None
         return await self.get_file_by_id(file_id)
 
 
     # ==================== Helper Methods ====================
     async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
         """Initialize the storage provider."""
-        if self.storage_provider and self.storage_provider.is_initialized():
+        current_name = getattr(self.storage_provider, "name", None) if self.storage_provider else None
+        if (
+            self.storage_provider
+            and self.storage_provider.is_initialized()
+            and current_name == storage_provider_name
+        ):
             return self.storage_provider
 
         # make sure the file has a storage provider
