@@ -22,7 +22,7 @@ class TenantModel(Base):
     subdomain: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Data residency policy (e.g. "EU", "CA", "US"). None = unrestricted.
-    data_residency: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # data_residency: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     # Metadata
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
