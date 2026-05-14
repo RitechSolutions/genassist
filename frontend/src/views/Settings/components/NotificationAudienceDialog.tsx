@@ -34,7 +34,7 @@ const TYPE_META: Record<
 > = {
   conversation_started: {
     title: "Conversation started",
-    description: "Choose who may receive alerts when a new conversation begins.",
+    description: "Choose who may receive alerts when a new conversation begins",
   },
   conversation_hostility: {
     title: "High hostility detected",
@@ -220,10 +220,6 @@ export function NotificationAudienceDialog({
             <DialogHeader className="shrink-0 pr-8">
               <DialogTitle>{meta.title}</DialogTitle>
               <p className="text-sm text-muted-foreground">{meta.description}</p>
-              <p className="text-xs text-muted-foreground border-t pt-3 mt-2">
-                Administrator accounts always receive every notification type in the app
-                and are not listed as selectable recipients.
-              </p>
             </DialogHeader>
 
             {!targeting ? (
@@ -385,7 +381,7 @@ export function NotificationAudienceDialog({
                 disabled={!targeting}
                 onClick={() => void handleSave()}
               >
-                Save audience
+                Save
               </Button>
             </DialogFooter>
           </>
