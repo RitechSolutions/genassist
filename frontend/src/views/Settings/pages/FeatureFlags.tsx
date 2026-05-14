@@ -40,10 +40,11 @@ export function FeatureFlags() {
         onActionClick={handleCreateFeatureFlag}
       />
       
-      <FeatureFlagsCard 
-        searchQuery={searchQuery} 
+      <FeatureFlagsCard
+        searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditFeatureFlag={handleEditFeatureFlag}
+        onCreateFeatureFlag={handleCreateFeatureFlag}
       />
 
       <FeatureFlagDialog 

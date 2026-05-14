@@ -152,31 +152,8 @@ const AgentList: React.FC<AgentListProps> = ({
     setSettingsFormData(null);
   };
 
-  if (!agents || agents.length === 0) {
-    return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-md border border-dashed p-8 text-center animate-in fade-in-50">
-        <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-          <h3 className="mt-4 text-lg font-semibold">No workflows found</h3>
-          <p className="mb-4 mt-2 text-sm text-muted-foreground">
-            You haven't created any workflows yet. Get started by creating your
-            first agent.
-          </p>
-          <Button
-            className="flex items-center gap-2"
-            onClick={() => setOpenAgentForm(true)}
-          >
-            <Plus className="h-4 w-4" />
-            New Workflow
-          </Button>
-        </div>
-        <AgentFormDialog
-          isOpen={openAgentForm}
-          onClose={() => setOpenAgentForm(false)}
-          data={null}
-        />
-      </div>
-    );
-  }
+  const isSearchActive = searchTerm.trim() !== "";
+  const isListEmpty = filteredAgents.length === 0;
 
   const renderAgent = (agent: AgentListItem) => {
     const agentName = agent.name;
@@ -350,21 +327,54 @@ const AgentList: React.FC<AgentListProps> = ({
         </TabsList>
       </Tabs>
 
-      <div className="rounded-md border bg-card">
-        <div className="divide-y">
-          {filteredAgents.map((agent) => {
-            return renderAgent(agent);
-          })}
-        </div>
-
-        {/* Infinite scroll sentinel and loading indicator */}
-        {loadingMore && (
-          <div className="flex items-center justify-center py-4 border-t">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+      <div className="rounded-md border bg-card shadow-sm overflow-hidden">
+        {isListEmpty ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+            <div className="rounded-full bg-gray-100 p-4">
+              <Workflow className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="font-medium text-lg">
+              {isSearchActive
+                ? "No matching agents"
+                : activeTab === "system"
+                  ? "No system agents"
+                  : "No agents yet"}
+            </h3>
+            <p className="text-sm text-gray-500 max-w-sm px-4">
+              {isSearchActive
+                ? "Try adjusting your search query."
+                : activeTab === "system"
+                  ? "There are no system agents in this workspace."
+                  : "Create your first workflow to deploy an agent and manage it from Agent Studio."}
+            </p>
+            {!isSearchActive && (
+              <Button
+                onClick={() => setOpenAgentForm(true)}
+                className="rounded-full flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New Workflow
+              </Button>
+            )}
           </div>
+        ) : (
+          <>
+            <div className="divide-y">
+              {filteredAgents.map((agent) => {
+                return renderAgent(agent);
+              })}
+            </div>
+
+            {/* Infinite scroll sentinel and loading indicator */}
+            {loadingMore && (
+              <div className="flex items-center justify-center py-4 border-t">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+              </div>
+            )}
+            <div ref={sentinelRef} className="h-1" />
+          </>
         )}
-        <div ref={sentinelRef} className="h-1" />
       </div>
       <AgentFormDialog
         isOpen={openAgentForm}
