@@ -1,15 +1,17 @@
 from app.db.base import Base
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 from sqlalchemy import (
     UUID,
     BigInteger,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Integer,
     PrimaryKeyConstraint,
     String,
     Text,
+    inspect as sa_inspect,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -17,6 +19,9 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
 from app.db.models.message_model import TranscriptMessageModel
+
+if TYPE_CHECKING:
+    from app.db.models.user import UserModel
 
 
 class ConversationAnalysisModel(Base):
@@ -53,6 +58,12 @@ from app.db.events.group_scope import GroupScopedMixin  # noqa: E402
 
 
 class ConversationModel(Base, GroupScopedMixin):
+    """
+    Agent-facing conversations. ``group_id`` is the user group that owns the agent
+    (resolved from the agent's ``created_by`` user). It scopes dashboard notifications
+    and complements ``created_by``-based group filtering for legacy rows where
+    ``group_id`` is null.
+    """
     __tablename__ = "conversations"
     __table_args__ = (
         ForeignKeyConstraint(["operator_id"], ["operators.id"], name="operator_id_fk"),
@@ -67,6 +78,12 @@ class ConversationModel(Base, GroupScopedMixin):
     )
 
     data_source_id: Mapped[Optional[UUID]] = mapped_column(UUID)
+    group_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("user_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     operator_id: Mapped[UUID] = mapped_column(UUID)
     recording_id: Mapped[Optional[UUID]] = mapped_column(UUID)
     conversation_date: Mapped[Optional[datetime.datetime]] = mapped_column(
@@ -113,6 +130,12 @@ class ConversationModel(Base, GroupScopedMixin):
         "RecordingModel", back_populates="conversation", uselist=False
     )
     operator = relationship("OperatorModel", back_populates="conversations")
+    supervisor: Mapped[Optional["UserModel"]] = relationship(
+        "UserModel",
+        primaryjoin="foreign(ConversationModel.supervisor_id) == UserModel.id",
+        uselist=False,
+        viewonly=True,
+    )
 
     @property
     def agent_id(self) -> Optional[UUID]:
@@ -131,3 +154,14 @@ class ConversationModel(Base, GroupScopedMixin):
             return None
         agent = getattr(operator, "agent", None)
         return agent.name if agent is not None else None
+
+    @property
+    def supervisor_username(self) -> Optional[str]:
+        """Login name for ``supervisor_id``; requires ``supervisor`` relationship loaded."""
+        if self.supervisor_id is None:
+            return None
+        state = sa_inspect(self)
+        if "supervisor" in state.unloaded:
+            return None
+        sup = self.supervisor
+        return sup.username if sup is not None else None

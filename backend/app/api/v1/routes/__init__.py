@@ -24,6 +24,7 @@ from app.api.v1.routes import (
     llm_providers,
     mcp,
     mcp_servers,
+    notification,
     ml_model_pipeline,
     ml_models,
     office365,
@@ -160,5 +161,10 @@ router.include_router(
 )
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
+router.include_router(
+    notification.router,
+    prefix="/notifications",
+    tags=["Notifications"],
+)
 router.include_router(customers.router, prefix="/customers", tags=["Customers"])
 router.include_router(internal.router, prefix="/internal", tags=["Internal"])
