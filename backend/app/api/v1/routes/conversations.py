@@ -358,6 +358,7 @@ async def start(
             level="info",
             action_url=transcript_conversation_notification_url(conversation.id),
             timestamp=conversation.created_at,
+            group_id=getattr(conversation, "group_id", None),
         ),
     )
 
@@ -503,6 +504,7 @@ async def update_no_agent(
                 level="warning",
                 action_url=transcript_conversation_notification_url(updated_conversation.id),
                 timestamp=updated_conversation.updated_at,
+                group_id=getattr(updated_conversation, "group_id", None),
             ),
         )
 

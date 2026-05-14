@@ -294,6 +294,7 @@ async def process_conversation_update_with_agent(
                 level="warning",
                 action_url=transcript_conversation_notification_url(updated_conversation.id),
                 timestamp=updated_conversation.updated_at,
+                group_id=getattr(updated_conversation, "group_id", None),
             ),
         )
 
@@ -368,6 +369,7 @@ async def get_or_create_conversation(
                 level="info",
                 action_url=transcript_conversation_notification_url(open_conversation.id),
                 timestamp=open_conversation.created_at,
+                group_id=getattr(open_conversation, "group_id", None),
             ),
         )
 

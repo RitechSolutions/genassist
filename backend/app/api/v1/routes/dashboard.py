@@ -2,10 +2,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.schemas.dashboard import (
     ActiveConversationsResponse,
@@ -180,6 +182,7 @@ async def get_integrations(
     description="Returns recent notification candidates from real backend events.",
 )
 async def get_notifications(
+    request: Request,
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of notifications"),
     skip: int = Query(default=0, ge=0, le=10_000, description="Offset into the merged feed"),
     notification_type: Literal[
@@ -209,7 +212,15 @@ async def get_notifications(
     ),
     notification_feed_service: NotificationFeedService = Injected(NotificationFeedService),
 ) -> NotificationFeedResponse:
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
+    user = request.state.user
+    gid = getattr(user, "group_id", None)
+    supervised = list(getattr(user, "supervised_group_ids", None) or [])
     items, has_more = await notification_feed_service.get_feed(
+        user_id=user.id,
+        user_group_id=gid,
+        supervised_group_ids=supervised,
         limit=limit,
         skip=skip,
         include_conversation_started=include_conversation_started,

@@ -299,6 +299,7 @@ class ConversationService:
                         action_url=transcript_conversation_notification_url(conversation_id),
                         timestamp=saved_conversation.updated_at
                         or datetime.now(timezone.utc),
+                        group_id=getattr(saved_conversation, "group_id", None),
                     ),
                 )
             except Exception:

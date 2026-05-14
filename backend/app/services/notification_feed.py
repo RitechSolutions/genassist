@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Literal
+from uuid import UUID
 
 from injector import inject
 from sqlalchemy import and_, desc, or_, select
@@ -9,6 +10,8 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.db.models.conversation import ConversationModel
 from app.db.models.ml_model_pipeline import MLModelPipelineRun, PipelineRunStatus
 from app.db.models.test_suite import TestRunModel
+from app.auth.utils import current_user_is_admin
+from app.repositories.notification import NotificationRepository
 from app.schemas.notification import NotificationItem
 from app.services.realtime_notifications import transcript_conversation_notification_url
 
@@ -22,12 +25,20 @@ NotificationTypeFilter = Literal[
 
 @inject
 class NotificationFeedService:
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        notification_repository: NotificationRepository,
+    ):
         self.db = db
+        self._notification_repo = notification_repository
 
     async def get_feed(
         self,
         *,
+        user_id: UUID,
+        user_group_id: UUID | None,
+        supervised_group_ids: list[UUID],
         limit: int = 50,
         skip: int = 0,
         include_conversation_started: bool = True,
@@ -36,20 +47,34 @@ class NotificationFeedService:
         include_workflow_failed: bool = True,
         notification_type: NotificationTypeFilter = "all",
     ) -> tuple[list[NotificationItem], bool]:
+        audience = await self._notification_repo.build_audience_flags_for_user(
+            user_id=user_id,
+            user_group_id=user_group_id,
+            supervised_group_ids=supervised_group_ids,
+            bypass_audience_restrictions=current_user_is_admin(),
+        )
+
         fetch_cap = min(max(skip + limit, limit), 500)
         include_started = (
             include_conversation_started
             and notification_type in ("all", "conversation_started")
+            and audience.get("conversation_started", False)
         )
         include_hostility = (
             include_conversation_hostility
             and notification_type in ("all", "conversation_hostility")
+            and audience.get("conversation_hostility", False)
         )
-        include_finalized_hostility = notification_type in (
-            "all",
-            "conversation_finalized_hostility",
-        ) and include_conversation_finalized_hostility
-        include_failed = include_workflow_failed and notification_type == "all"
+        include_finalized_hostility = (
+            notification_type in ("all", "conversation_finalized_hostility")
+            and include_conversation_finalized_hostility
+            and audience.get("conversation_finalized_hostility", False)
+        )
+        include_failed = (
+            include_workflow_failed
+            and notification_type == "all"
+            and audience.get("workflow_failed", False)
+        )
 
         started = (
             await self._conversation_started_notifications(limit=fetch_cap)
@@ -96,6 +121,7 @@ class NotificationFeedService:
                     timestamp=row.created_at or row.updated_at or datetime.now(timezone.utc),
                     type="info",
                     action_url=transcript_conversation_notification_url(row.id),
+                    group_id=str(row.group_id) if row.group_id else None,
                 )
             )
         return items
@@ -135,6 +161,7 @@ class NotificationFeedService:
                     timestamp=row.updated_at or row.created_at or datetime.now(timezone.utc),
                     type="warning",
                     action_url=transcript_conversation_notification_url(row.id),
+                    group_id=str(row.group_id) if row.group_id else None,
                 )
             )
         return items
@@ -165,6 +192,7 @@ class NotificationFeedService:
                     timestamp=row.updated_at or row.created_at or datetime.now(timezone.utc),
                     type="warning",
                     action_url=transcript_conversation_notification_url(row.id),
+                    group_id=str(row.group_id) if row.group_id else None,
                 )
             )
         return items
