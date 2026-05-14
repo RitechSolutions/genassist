@@ -27,6 +27,7 @@ from app.core.utils.bi_utils import (
 from app.db.models.conversation import ConversationAnalysisModel
 from app.db.models.operator import OperatorModel
 from app.db.models import AgentModel
+from app.db.models.user import UserModel
 
 # KPI score fields on ConversationAnalysisModel (0-10 scale).
 # Used for sorting, filtering, and join detection.
@@ -45,8 +46,23 @@ class ConversationRepository:
     def __init__(self, db: AsyncSession):  # Auto-inject db
         self.db = db
 
+    async def resolve_group_id_for_operator(self, operator_id: UUID) -> Optional[UUID]:
+        """User group of the agent owner (``AgentModel.created_by``), if any."""
+        stmt = (
+            select(UserModel.group_id)
+            .select_from(AgentModel)
+            .join(UserModel, UserModel.id == AgentModel.created_by)
+            .where(AgentModel.operator_id == operator_id)
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def save_conversation(self, conversation_data: ConversationCreate):
-        new_conversation = ConversationModel(**conversation_data.model_dump())
+        data = conversation_data.model_dump()
+        if data.get("group_id") is None:
+            data["group_id"] = await self.resolve_group_id_for_operator(conversation_data.operator_id)
+        new_conversation = ConversationModel(**data)
         self.db.add(new_conversation)
         await self.db.commit()
         await self.db.refresh(new_conversation)

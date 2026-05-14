@@ -5,6 +5,7 @@ from sqlalchemy import (
     UUID,
     BigInteger,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Integer,
     PrimaryKeyConstraint,
@@ -57,6 +58,12 @@ from app.db.events.group_scope import GroupScopedMixin  # noqa: E402
 
 
 class ConversationModel(Base, GroupScopedMixin):
+    """
+    Agent-facing conversations. ``group_id`` is the user group that owns the agent
+    (resolved from the agent's ``created_by`` user). It scopes dashboard notifications
+    and complements ``created_by``-based group filtering for legacy rows where
+    ``group_id`` is null.
+    """
     __tablename__ = "conversations"
     __table_args__ = (
         ForeignKeyConstraint(["operator_id"], ["operators.id"], name="operator_id_fk"),
@@ -71,6 +78,12 @@ class ConversationModel(Base, GroupScopedMixin):
     )
 
     data_source_id: Mapped[Optional[UUID]] = mapped_column(UUID)
+    group_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("user_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     operator_id: Mapped[UUID] = mapped_column(UUID)
     recording_id: Mapped[Optional[UUID]] = mapped_column(UUID)
     conversation_date: Mapped[Optional[datetime.datetime]] = mapped_column(

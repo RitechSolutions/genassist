@@ -1,4 +1,4 @@
-from sqlalchemy import event, select
+from sqlalchemy import and_, event, or_, select
 from sqlalchemy.orm import Session, with_loader_criteria
 from starlette_context import context
 from starlette_context.errors import ContextDoesNotExistError
@@ -11,9 +11,13 @@ GROUP_SCOPE_BYPASS_FLAG = "bypass_group_scope"
 class GroupScopedMixin:
     """
     Marker mixin — models that inherit this are subject to group-scoped row
-    filtering on every SELECT.  No columns are added; filtering uses the
-    existing ``created_by`` column (from AuditMixin) to restrict rows to
-    those created by members of the requesting user's group.
+    filtering on every SELECT. By default filtering uses the existing
+    ``created_by`` column (from AuditMixin) to restrict rows to those created
+    by members of the requesting user's group.
+
+    ``ConversationModel`` additionally uses an optional ``group_id`` column
+    (agent owner's group) combined with the same ``created_by`` rules for rows
+    where ``group_id`` is null.
 
     To opt a model in, simply add GroupScopedMixin to its base classes::
 
@@ -45,6 +49,34 @@ def _build_criteria(model_cls, group_id, supervised_group_ids, user_id):
     return model_cls.created_by == user_id
 
 
+def _build_conversation_criteria(model_cls, group_id, supervised_group_ids, user_id):
+    """
+    Conversations may carry an explicit ``group_id`` (agent owner's group).
+    Visible rows: match ``group_id`` to the viewer's group / supervised groups,
+    or fall back to ``created_by`` rules when ``group_id`` is null (legacy rows).
+    """
+    from app.db.models.user import UserModel
+
+    if supervised_group_ids:
+        legacy = model_cls.created_by.in_(
+            select(UserModel.id).where(UserModel.group_id.in_(supervised_group_ids))
+        )
+        return or_(
+            model_cls.group_id.in_(supervised_group_ids),
+            and_(model_cls.group_id.is_(None), legacy),
+        )
+    if group_id:
+        legacy = model_cls.created_by.in_(
+            select(UserModel.id).where(UserModel.group_id == group_id)
+        )
+        return or_(
+            model_cls.group_id == group_id,
+            and_(model_cls.group_id.is_(None), legacy),
+        )
+    legacy = model_cls.created_by == user_id
+    return and_(model_cls.group_id.is_(None), legacy)
+
+
 def get_group_scope_clause(model_cls):
     """
     Return a SQLAlchemy WHERE clause for group-based row filtering, or ``None``
@@ -73,6 +105,12 @@ def get_group_scope_clause(model_cls):
     except Exception:
         return None
 
+    from app.db.models.conversation import ConversationModel
+
+    if model_cls is ConversationModel:
+        return _build_conversation_criteria(
+            model_cls, group_id, supervised_group_ids, user_id
+        )
     return _build_criteria(model_cls, group_id, supervised_group_ids, user_id)
 
 
@@ -105,21 +143,51 @@ def _group_scope_filter(execute_state):
     # Build criteria using a lambda so SQLAlchemy can substitute the concrete
     # model class. We use __subclasses__() because GroupScopedMixin has no
     # columns — the lambda inspection requires `created_by` on the target class.
+    from app.db.models.user import UserModel
+
     if supervised_group_ids:
-        from app.db.models.user import UserModel
         _ids = tuple(supervised_group_ids)  # capture for closure
-        criteria = lambda cls: cls.created_by.in_(
-            select(UserModel.id).where(UserModel.group_id.in_(_ids))
-        )
+
+        def default_criteria(cls):
+            return cls.created_by.in_(
+                select(UserModel.id).where(UserModel.group_id.in_(_ids))
+            )
+
+        def conversation_criteria(cls):
+            legacy = cls.created_by.in_(
+                select(UserModel.id).where(UserModel.group_id.in_(_ids))
+            )
+            return or_(cls.group_id.in_(_ids), and_(cls.group_id.is_(None), legacy))
+
     elif group_id:
-        from app.db.models.user import UserModel
-        criteria = lambda cls: cls.created_by.in_(
-            select(UserModel.id).where(UserModel.group_id == group_id)
-        )
+        _gid = group_id
+
+        def default_criteria(cls):
+            return cls.created_by.in_(
+                select(UserModel.id).where(UserModel.group_id == _gid)
+            )
+
+        def conversation_criteria(cls):
+            legacy = cls.created_by.in_(
+                select(UserModel.id).where(UserModel.group_id == _gid)
+            )
+            return or_(cls.group_id == _gid, and_(cls.group_id.is_(None), legacy))
+
     else:
-        criteria = lambda cls: cls.created_by == user_id
+        _uid = user_id
+
+        def default_criteria(cls):
+            return cls.created_by == _uid
+
+        def conversation_criteria(cls):
+            legacy = cls.created_by == _uid
+            return and_(cls.group_id.is_(None), legacy)
 
     for scoped_cls in GroupScopedMixin.__subclasses__():
+        if scoped_cls.__name__ == "ConversationModel":
+            crit = conversation_criteria
+        else:
+            crit = default_criteria
         execute_state.statement = execute_state.statement.options(
-            with_loader_criteria(scoped_cls, criteria, include_aliases=True)
+            with_loader_criteria(scoped_cls, crit, include_aliases=True)
         )

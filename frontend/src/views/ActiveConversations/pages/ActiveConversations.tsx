@@ -7,7 +7,7 @@ import { ActiveConversationItem } from "@/interfaces/dashboard.interface";
 import { apiRequest } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { transformTranscript } from "@/views/Transcripts/helpers/transformers";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ActiveConversationsModule } from "../components/ActiveConversationsModule";
 import { HOSTILITY_NEUTRAL_MAX, HOSTILITY_POSITIVE_MAX } from "@/views/Transcripts/helpers/formatting";
@@ -118,7 +118,7 @@ export const enrichConversationItem = (item: ActiveConversation): Transcript => 
 
 export const ActiveConversations = () => {
   const { toast } = useToast();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(
     null
   );
@@ -135,6 +135,72 @@ export const ActiveConversations = () => {
   const sentimentFilter = searchParams.get("sentiment") || undefined;
   const categoryFilter = searchParams.get("category") || undefined;
   const includeFeedbackFilter = (searchParams.get("include_feedback") || "false").toLowerCase() === "true";
+
+  const conversationDeepLinkId = useMemo(() => {
+    const raw = searchParams.get("conversation")?.trim();
+    return raw || null;
+  }, [searchParams]);
+
+  const allConversationsRef = useRef<ActiveConversation[]>([]);
+  allConversationsRef.current = allConversations;
+
+  // Deep link: /dashboard?conversation=<id> (e.g. shared link or notification)
+  useEffect(() => {
+    if (!conversationDeepLinkId) return;
+
+    let cancelled = false;
+    const id = conversationDeepLinkId;
+
+    void (async () => {
+      setIsLoadingTranscript(true);
+      try {
+        const backend = await apiRequest<BackendTranscript>(
+          "get",
+          `/conversations/${encodeURIComponent(id)}?include_feedback=true`
+        );
+        if (cancelled) return;
+        const transformed = transformTranscript(backend);
+        const topicSource = allConversationsRef.current.find((c) => c.id === id);
+        if (
+          topicSource?.topic &&
+          topicSource.topic !== "Unknown" &&
+          transformed?.metadata
+        ) {
+          transformed.metadata.topic =
+            transformed.metadata.topic &&
+            transformed.metadata.topic !== "Unknown"
+              ? transformed.metadata.topic
+              : topicSource.topic;
+        }
+        setSelectedTranscript(transformed);
+        setIsDialogOpen(true);
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Error",
+            description: "Failed to load conversation details",
+            variant: "destructive",
+          });
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete("conversation");
+              return next;
+            },
+            { replace: true }
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTranscript(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationDeepLinkId, setSearchParams, toast]);
 
   // Use WebSocket hook for real-time updates (uses shared context from layout)
   const {
@@ -247,6 +313,37 @@ export const ActiveConversations = () => {
   // Main loading is driven by HTTP snapshot only
   const isLoading = isLoadingInitial;
 
+  /** Refresh transcript when list row updates (status/supervisor); does not change URL. */
+  const syncOpenConversationFromListItem = async (item: ActiveConversation) => {
+    setIsLoadingTranscript(true);
+    try {
+      const backend = await apiRequest<BackendTranscript>(
+        "get",
+        `/conversations/${item.id}?include_feedback=true`
+      );
+      const transformed = transformTranscript(backend);
+      if (item.topic && item.topic !== "Unknown" && transformed?.metadata) {
+        transformed.metadata.topic =
+          transformed.metadata.topic && transformed.metadata.topic !== "Unknown"
+            ? transformed.metadata.topic
+            : item.topic;
+      }
+      setSelectedTranscript(transformed);
+      setIsDialogOpen(true);
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to load conversation details",
+        variant: "destructive",
+      });
+      const enrichedTranscript = enrichConversationItem(item);
+      setSelectedTranscript(enrichedTranscript);
+      setIsDialogOpen(true);
+    } finally {
+      setIsLoadingTranscript(false);
+    }
+  };
+
   useEffect(() => {
     if (!isDialogOpen || !selectedTranscript?.id || !allConversations) return;
 
@@ -267,7 +364,7 @@ export const ActiveConversations = () => {
     const selectedSupervisor = selectedTranscript.supervisor_id ?? null;
 
     if (freshStatus !== selectedStatus || freshSupervisor !== selectedSupervisor) {
-      handleItemClick(fresh);
+      void syncOpenConversationFromListItem(fresh);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allConversations, selectedTranscript?.id, selectedTranscript?.status, selectedTranscript?.supervisor_id, isDialogOpen]);
@@ -344,6 +441,14 @@ export const ActiveConversations = () => {
   const handleDialogClose = (open: boolean) => {
     setIsDialogOpen(open);
     if (!open) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("conversation");
+          return next;
+        },
+        { replace: true }
+      );
       wsRefetch();
     }
   };
