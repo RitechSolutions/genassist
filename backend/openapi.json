@@ -32991,6 +32991,19 @@
               }
             ],
             "title": "Group Id"
+          },
+          "entra_oid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entra Oid",
+            "description": "Microsoft Entra object id (oid) for SSO"
           }
         },
         "type": "object",
@@ -33224,6 +33237,19 @@
             "title": "Supervised Group Ids",
             "description": "Group IDs this user supervises",
             "default": []
+          },
+          "entra_oid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entra Oid",
+            "description": "Microsoft Entra object id (oid) for SSO"
           }
         },
         "type": "object",
@@ -33424,6 +33450,19 @@
               }
             ],
             "title": "Group Id"
+          },
+          "entra_oid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entra Oid",
+            "description": "Microsoft Entra object id (oid) for SSO"
           }
         },
         "type": "object",
