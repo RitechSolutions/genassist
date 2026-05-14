@@ -251,3 +251,45 @@ class S3Client:
             A presigned URL for the S3 operation
         """
         return self.s3_client.generate_presigned_url(operation, Params=params, ExpiresIn=expires_in)
+
+    def generate_presigned_put_url(
+        self,
+        file_key: str,
+        content_type: Optional[str],
+        expires_in: int,
+        bucket: Optional[str] = None,
+    ) -> str:
+        """Generate a presigned PUT URL for direct browser uploads.
+
+        The signed ``Content-Type`` becomes a hard requirement for the PUT request:
+        the client MUST send the same value or S3 will return a SignatureDoesNotMatch
+        error. Pass ``None`` to leave it unsigned (any content-type accepted).
+        """
+        params: Dict[str, Any] = {
+            "Bucket": bucket or self.bucket_name,
+            "Key": file_key,
+        }
+        if content_type:
+            params["ContentType"] = content_type
+        return self.s3_client.generate_presigned_url(
+            "put_object", Params=params, ExpiresIn=expires_in
+        )
+
+    def head_object(self, file_key: str) -> Dict[str, Any]:
+        """Return basic object metadata or raise ``ClientError`` if missing."""
+        try:
+            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=file_key)
+            return {
+                "key": file_key,
+                "size": int(response.get("ContentLength", 0) or 0),
+                "etag": (response.get("ETag") or "").strip('"'),
+                "content_type": response.get("ContentType"),
+                "last_modified": (
+                    response["LastModified"].isoformat()
+                    if response.get("LastModified")
+                    else None
+                ),
+            }
+        except ClientError as e:
+            logger.error(f"Error head_object on S3 key {file_key}: {e}")
+            raise

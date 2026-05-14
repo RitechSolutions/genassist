@@ -178,6 +178,22 @@ class VectorProvider(BaseDataProvider):
             logger.error(f"Failed to delete document {doc_id}: {e}")
             return False
 
+    async def delete_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (bulk delete).
+
+        This is used by GDPR purge flows to remove all embeddings for a
+        conversation/chat without needing to enumerate document IDs.
+        """
+        try:
+            if not self._initialized:
+                if not await self.initialize():
+                    return False
+            return await self.vector_db.delete_vectors_by_metadata(filter_dict)
+        except Exception as e:
+            logger.error(f"Failed to delete vectors by metadata {filter_dict}: {e}")
+            return False
+
     async def search(
         self,
         query: str,

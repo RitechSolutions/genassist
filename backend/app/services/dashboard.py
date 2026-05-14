@@ -63,6 +63,8 @@ class DashboardService:
             "duration": item.duration or 0,
             "topic": item.topic,
             "negative_reason": item.negative_reason,
+            "agent_id": str(item.agent_id) if item.agent_id else None,
+            "agent_name": item.agent_name,
         }
 
     async def get_summary_stats(
@@ -131,7 +133,9 @@ class DashboardService:
                 status=conv.status,
                 created_at=conv.created_at,
                 negative_reason=conv.negative_reason,
-                in_progress_hostility_score=conv.in_progress_hostility_score or 0
+                in_progress_hostility_score=conv.in_progress_hostility_score or 0,
+                agent_id=conv.agent_id,
+                agent_name=conv.agent_name,
             ))
 
         total = feedback_counts["total"]

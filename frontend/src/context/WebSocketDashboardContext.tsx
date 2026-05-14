@@ -155,6 +155,10 @@ export function WebSocketDashboardProvider({
             negative_reason:
               (payload as { negative_reason?: string }).negative_reason ??
               existing?.negative_reason,
+            agent_id:
+              (payload as { agent_id?: string }).agent_id ?? existing?.agent_id,
+            agent_name:
+              (payload as { agent_name?: string }).agent_name ?? existing?.agent_name,
           };
           const enhanced = applyCachedTopic(merged);
           if (index !== -1) {
