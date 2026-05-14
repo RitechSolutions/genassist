@@ -424,6 +424,28 @@ const Transcripts = () => {
 
   const activeSort = getSortLabel();
 
+  const hasNarrowingFilters = useMemo(
+    () =>
+      debouncedSearch.trim() !== "" ||
+      activeTab !== "all" ||
+      supportType !== "all" ||
+      statusFilter !== "all" ||
+      selectedAgentId !== "all" ||
+      activeQualityCount > 0 ||
+      activeCustomAttrCount > 0 ||
+      orderBy !== "",
+    [
+      debouncedSearch,
+      activeTab,
+      supportType,
+      statusFilter,
+      selectedAgentId,
+      activeQualityCount,
+      activeCustomAttrCount,
+      orderBy,
+    ]
+  );
+
   const handleRefreshConversations = () => {
     refetch();
     toast({
@@ -1044,9 +1066,21 @@ const Transcripts = () => {
                     );
                   })
                 ) : (
-                    <p className="text-center text-gray-500 p-6">
-                      No transcripts found. Try adjusting your filters.
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <div className="rounded-full bg-gray-100 p-4">
+                      <MessageSquare className="h-12 w-12 text-gray-400" />
+                    </div>
+                    <h3 className="font-medium text-lg">
+                      {hasNarrowingFilters
+                        ? "No conversations match your filters"
+                        : "No transcripts yet"}
+                    </h3>
+                    <p className="text-sm text-gray-500 max-w-sm px-4">
+                      {hasNarrowingFilters
+                        ? "Try adjusting your search or filters to see more results."
+                        : "Nothing in this view yet. Try a wider date range or different filters if you expected conversations here."}
                     </p>
+                  </div>
                 )}
               </Card>
 
