@@ -1,10 +1,13 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.schemas.dashboard import (
     ActiveConversationsResponse,
@@ -13,7 +16,9 @@ from app.schemas.dashboard import (
     DashboardSummaryStats,
     IntegrationsResponse,
 )
+from app.schemas.notification import NotificationFeedResponse
 from app.services.dashboard import DashboardService
+from app.services.notification_feed import NotificationFeedService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -164,3 +169,64 @@ async def get_integrations(
     - Other configured integrations
     """
     return await dashboard_service.get_integrations()
+
+
+@router.get(
+    "/notifications",
+    response_model=NotificationFeedResponse,
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get notification feed",
+    description="Returns recent notification candidates from real backend events.",
+)
+async def get_notifications(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of notifications"),
+    skip: int = Query(default=0, ge=0, le=10_000, description="Offset into the merged feed"),
+    notification_type: Literal[
+        "all",
+        "conversation_started",
+        "conversation_hostility",
+        "conversation_finalized_hostility",
+    ] = Query(
+        default="all",
+        description="Server-side type filter for notification categories.",
+    ),
+    include_conversation_started: bool = Query(
+        default=True,
+        description="When false, omits conversation-started rows from the feed (pagination-stable).",
+    ),
+    include_conversation_hostility: bool = Query(
+        default=True,
+        description="When false, omits high-hostility notifications.",
+    ),
+    include_conversation_finalized_hostility: bool = Query(
+        default=True,
+        description="When false, omits finalized high-hostility notifications.",
+    ),
+    include_workflow_failed: bool = Query(
+        default=True,
+        description="When false, omits workflow failed notifications.",
+    ),
+    notification_feed_service: NotificationFeedService = Injected(NotificationFeedService),
+) -> NotificationFeedResponse:
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
+    user = request.state.user
+    gid = getattr(user, "group_id", None)
+    supervised = list(getattr(user, "supervised_group_ids", None) or [])
+    items, has_more = await notification_feed_service.get_feed(
+        user_id=user.id,
+        user_group_id=gid,
+        supervised_group_ids=supervised,
+        limit=limit,
+        skip=skip,
+        include_conversation_started=include_conversation_started,
+        include_conversation_hostility=include_conversation_hostility,
+        include_conversation_finalized_hostility=include_conversation_finalized_hostility,
+        include_workflow_failed=include_workflow_failed,
+        notification_type=notification_type,
+    )
+    return NotificationFeedResponse(items=items, has_more=has_more)

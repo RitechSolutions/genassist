@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import { type CSSProperties, useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
-import { Transcript } from "@/interfaces/transcript.interface";
+import { BackendTranscript, Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 import { enrichConversationItem } from "@/views/ActiveConversations/pages/ActiveConversations";
@@ -63,6 +63,7 @@ import { format, subDays } from "date-fns";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
+import { apiRequest } from "@/config/api";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -263,6 +264,23 @@ const Transcripts = () => {
     navigate({ search: newSearchParams.toString() }, { replace: true });
   };
 
+  const handleConversationModalOpenChange = useCallback(
+    (open: boolean) => {
+      setIsModalOpen(open);
+      if (!open) {
+        const params = new URLSearchParams(location.search);
+        if (params.has("conversation")) {
+          params.delete("conversation");
+          navigate(
+            { pathname: location.pathname, search: params.toString() },
+            { replace: true }
+          );
+        }
+      }
+    },
+    [location.pathname, location.search, navigate]
+  );
+
   const handleStatusFilterChange = (value: string) => {
     const v = value as StatusFilter;
     setStatusFilter(v);
@@ -279,6 +297,56 @@ const Transcripts = () => {
   const isLiveTranscript = (transcript: Transcript) => {
     return transcript?.status === "in_progress" || transcript?.status === "takeover";
   };
+
+  const conversationDeepLinkId = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("conversation");
+    const id = raw?.trim();
+    return id || null;
+  }, [location.search]);
+
+  // Deep link: /transcripts?conversation=<id> (e.g. from notifications)
+  useEffect(() => {
+    if (!conversationDeepLinkId) return;
+
+    let cancelled = false;
+    const id = conversationDeepLinkId;
+
+    void (async () => {
+      try {
+        const backend = await apiRequest<BackendTranscript>(
+          "get",
+          `/conversations/${encodeURIComponent(id)}?include_feedback=true`
+        );
+        if (cancelled) return;
+        const transformed = transformTranscript(backend);
+        const live =
+          transformed?.status === "in_progress" ||
+          transformed?.status === "takeover";
+        setSelectedTranscript(transformed);
+        setIsLiveTranscriptSelected(live);
+        setIsModalOpen(true);
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Could not open conversation",
+            description:
+              "This conversation may not exist or you may not have access.",
+            variant: "destructive",
+          });
+          const next = new URLSearchParams(window.location.search);
+          next.delete("conversation");
+          navigate(
+            { pathname: location.pathname, search: next.toString() },
+            { replace: true }
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationDeepLinkId, location.pathname, navigate, toast]);
 
   const isCallTranscript = (transcript: Transcript) => {
     return Boolean(transcript?.recording_id) || Boolean(transcript?.metadata?.isCall);
@@ -939,9 +1007,7 @@ const Transcripts = () => {
                     <div
                       key={transcript.id}
                       onClick={() => {
-                        setSelectedTranscript(transcript);
-                        setIsLiveTranscriptSelected(isLiveTranscript(transcript));
-                        setIsModalOpen(true);
+                        updateUrlParams({ conversation: transcript.id });
                       }}
                       className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
                     >
@@ -1103,7 +1169,7 @@ const Transcripts = () => {
         <ActiveConversationDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
           refetchConversations={refetch}
           onTakeOver={handleTakeOver}
         />

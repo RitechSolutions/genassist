@@ -153,6 +153,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       word_count: backendData.word_count,
       in_progress_hostility_score: backendData.in_progress_hostility_score,
       supervisor_id: backendData.supervisor_id,
+      supervisor_username: backendData.supervisor_username ?? null,
       metadata: {
         isCall,
         duration: durationInSeconds,
@@ -194,6 +195,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       word_count: 0,
       in_progress_hostility_score: 0,
       supervisor_id: null,
+      supervisor_username: null,
       metadata: {
         isCall: false,
         duration: 0,
