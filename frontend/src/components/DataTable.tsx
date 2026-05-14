@@ -51,7 +51,7 @@ export function DataTable<T>({
 
   if (data.length === 0) {
     return (
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden shadow-sm">
         {emptyState ?? (
           <div className="p-8">
             <div className="text-center text-muted-foreground">

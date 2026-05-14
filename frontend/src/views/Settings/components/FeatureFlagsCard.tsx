@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/card";
-import { Pencil, Loader2, Trash2 } from "lucide-react";
+import { ListEmptyState } from "@/components/ListEmptyState";
+import { Pencil, Loader2, Trash2, ToggleLeft, Plus } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -9,7 +10,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/table";
-import { formatDate } from "@/helpers/utils";
 import { FeatureFlag } from "@/interfaces/featureFlag.interface";
 import { toast } from "react-hot-toast";
 import { Button } from "@/components/button";
@@ -35,12 +35,14 @@ interface FeatureFlagsCardProps {
   searchQuery: string;
   refreshKey?: number;
   onEditFeatureFlag: (featureFlag: FeatureFlag) => void;
+  onCreateFeatureFlag: () => void;
 }
 
 export function FeatureFlagsCard({
   searchQuery,
   refreshKey = 0,
   onEditFeatureFlag,
+  onCreateFeatureFlag,
 }: FeatureFlagsCardProps) {
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,22 +136,38 @@ export function FeatureFlagsCard({
     );
   }
 
-  if (filteredFeatureFlags.length === 0) {
-    return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery
-            ? "No feature flags found matching your search"
-            : "No feature flags found"}
-        </div>
-      </Card>
-    );
-  }
+  const isSearchActive = searchQuery.trim().length > 0;
 
   return (
     <>
-      <Card>
-        <Table>
+      <Card className="overflow-hidden shadow-sm">
+        {filteredFeatureFlags.length === 0 ? (
+          <ListEmptyState
+            icon={<ToggleLeft className="h-12 w-12 text-gray-400" />}
+            title={
+              isSearchActive
+                ? "No matching feature flags"
+                : "No feature flags yet"
+            }
+            description={
+              isSearchActive
+                ? "Try adjusting your search query."
+                : "Add a flag to control rollout of application behavior and experiments."
+            }
+            action={
+              !isSearchActive ? (
+                <Button
+                  onClick={onCreateFeatureFlag}
+                  className="rounded-full flex items-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add New Flag
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Key</TableHead>
@@ -197,7 +215,8 @@ export function FeatureFlagsCard({
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+          </Table>
+        )}
       </Card>
 
       <AlertDialog
