@@ -41,6 +41,7 @@ import { FeatureFlags as FeatureFlagsPage } from "./views/Settings/pages/Feature
 import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
 import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
+import { NotificationsSettings } from "./views/Settings/pages/Notifications";
 import { FeatureFlags as FeatureFlagKeys } from "@/config/featureFlags";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { GlobalChat } from "./components/GlobalChat";
@@ -226,6 +227,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:file"]}>
                   <FileManagerFiles />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "settings/notifications",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                  <NotificationsSettings />
                 </ProtectedRoute>
               ),
             },

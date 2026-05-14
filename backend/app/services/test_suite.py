@@ -47,6 +47,10 @@ from app.schemas.test_suite import (
 )
 from app.schemas.workflow import WorkflowInDB
 from app.services.workflow import WorkflowService
+from app.core.tenant_scope import get_tenant_context
+from app.dependencies.injector import injector
+from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+from app.services.realtime_notifications import emit_notification, notification_payload
 
 
 logger = logging.getLogger(__name__)
@@ -580,6 +584,17 @@ class TestSuiteService:
             run.status = "failed"
             run.summary_metrics = {"error": "No test cases in suite"}
             await self.run_repo.update(run)
+            emit_notification(
+                socket_connection_manager=injector.get(SocketConnectionManager),
+                tenant_id=get_tenant_context(),
+                payload=notification_payload(
+                    notification_id=f"workflow_failed:test:{run.id}",
+                    title="Workflow Run Failed",
+                    description=f"Test run {str(run.id)[:8]}... failed.",
+                    level="error",
+                    action_url="/tests/evaluations",
+                ),
+            )
             return
 
         # Build workflow config for engine

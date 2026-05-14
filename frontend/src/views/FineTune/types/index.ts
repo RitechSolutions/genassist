@@ -19,4 +19,5 @@ export type AccuracyPoint = { label: string; value: number };
 export type FineTuneJobsCardProps = {
   searchQuery: string;
   refreshKey?: number;
+  onNewFineTuneJob?: () => void;
 };
