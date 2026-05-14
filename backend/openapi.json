@@ -186,6 +186,138 @@
         }
       }
     },
+    "/api/auth/sso/microsoft/status": {
+      "get": {
+        "tags": [
+          "v1",
+          "Auth"
+        ],
+        "summary": "Whether Microsoft SSO is available",
+        "operationId": "microsoft_sso_status_api_auth_sso_microsoft_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sso/microsoft/start": {
+      "get": {
+        "tags": [
+          "v1",
+          "Auth"
+        ],
+        "summary": "Begin Microsoft Entra sign-in (redirect)",
+        "operationId": "microsoft_sso_start_api_auth_sso_microsoft_start_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sso/microsoft/callback": {
+      "get": {
+        "tags": [
+          "v1",
+          "Auth"
+        ],
+        "summary": "OAuth redirect from Microsoft",
+        "operationId": "microsoft_sso_callback_api_auth_sso_microsoft_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 4,
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sso/microsoft/complete": {
+      "post": {
+        "tags": [
+          "v1",
+          "Auth"
+        ],
+        "summary": "Exchange one-time SSO code for GenAssist tokens",
+        "operationId": "microsoft_sso_complete_api_auth_sso_microsoft_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MicrosoftSsoCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/user": {
       "post": {
         "tags": [
@@ -29434,6 +29566,21 @@
           "id"
         ],
         "title": "MessageFeedbackRead"
+      },
+      "MicrosoftSsoCompleteRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "MicrosoftSsoCompleteRequest"
       },
       "ModelType": {
         "type": "string",

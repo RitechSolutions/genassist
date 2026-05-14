@@ -1,4 +1,6 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+from uuid import UUID
+
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -9,8 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import TYPE_CHECKING
-from uuid import UUID
+
 from app.db.base import Base
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ class UserModel(Base):
     )
     username: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
+    entra_oid: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     hashed_password: Mapped[str] = mapped_column(String(1000))
