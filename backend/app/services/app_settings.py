@@ -87,6 +87,12 @@ class AppSettingsService:
         self, setting_type: str, values: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Validate values against schema and encrypt sensitive fields."""
+        # Some settings surface server-derived, read-only capability flags to the UI.
+        # Clients may round-trip these values back during updates; we must ignore them
+        # rather than persisting or rejecting the request.
+        if setting_type == "FileManagerSettings" and isinstance(values, dict):
+            values = {k: v for k, v in values.items() if k != "direct_s3_upload_enabled"}
+
         # For "Other" type, no validation needed
         if setting_type == "Other":
             return values

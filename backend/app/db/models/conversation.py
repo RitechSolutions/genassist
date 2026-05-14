@@ -1,5 +1,6 @@
 from app.db.base import Base
 from typing import Optional
+from uuid import UUID
 from sqlalchemy import (
     UUID,
     BigInteger,
@@ -112,3 +113,21 @@ class ConversationModel(Base, GroupScopedMixin):
         "RecordingModel", back_populates="conversation", uselist=False
     )
     operator = relationship("OperatorModel", back_populates="conversations")
+
+    @property
+    def agent_id(self) -> Optional[UUID]:
+        """Resolved AI agent id (via operator); requires operator.agent to be loaded."""
+        operator = getattr(self, "operator", None)
+        if operator is None:
+            return None
+        agent = getattr(operator, "agent", None)
+        return agent.id if agent is not None else None
+
+    @property
+    def agent_name(self) -> Optional[str]:
+        """Resolved AI agent display name; requires operator.agent to be loaded."""
+        operator = getattr(self, "operator", None)
+        if operator is None:
+            return None
+        agent = getattr(operator, "agent", None)
+        return agent.name if agent is not None else None

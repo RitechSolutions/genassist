@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
-from sqlalchemy import Computed, DateTime, Float, ForeignKey, String, Text, Integer, UUID as SQLAlchemyUUID
+from sqlalchemy import Computed, DateTime, Float, ForeignKey, LargeBinary, String, Text, Integer, UUID as SQLAlchemyUUID
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -25,6 +26,10 @@ class TranscriptMessageModel(Base):
 
     # Sequence number for ordering messages within a conversation
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Audio data stored as raw bytes (BYTEA) for voice messages
+    audio_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    audio_format: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     # Full-text search column (generated, stored)
     text_search = mapped_column(

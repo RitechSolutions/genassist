@@ -13,7 +13,7 @@ echo "Open: http://localhost:8022/index.html"
 echo "Press Ctrl+C to stop"
 echo ""
 
-# # Use http-server to serve the example-widget folder
+# Use npx http-server to serve the example-widget folder if you don't have python installed
 # npx http-server -p 8022 -c-1
 
 # Try Python first, then fall back to http-server

@@ -197,8 +197,7 @@ async def get_agent_chat_locales(
     "/{conversation_id}",
     response_model=ConversationRead,
     dependencies=[
-        Depends(auth),
-        Depends(permissions(P.Conversation.READ))
+        Depends(auth)
     ],
 )
 async def get(
@@ -502,13 +501,29 @@ async def update_no_agent(
 async def update(
     request: Request,
     conversation_id: UUID,
-    model: ConversationUpdateWithRecaptchaToken,
     file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Append segments to an existing in-progress conversation.
+    Accepts JSON body (text messages) or multipart/form-data (audio messages).
     If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
+    content_type = request.headers.get("content-type", "")
+    audio_bytes: bytes | None = None
+    audio_format: str | None = None
+
+    if "multipart" in content_type:
+        form = await request.form()
+        model_json = form.get("model", "{}")
+        model = ConversationUpdateWithRecaptchaToken.model_validate_json(model_json)
+        audio_file = form.get("audio_file")
+        if audio_file is not None:
+            audio_bytes = await audio_file.read()
+            audio_format = form.get("audio_format", "webm")
+    else:
+        body = await request.json()
+        model = ConversationUpdateWithRecaptchaToken.model_validate(body)
+
     tenant_id = get_tenant_context()
 
     # Get agent from request.state (set by get_agent_for_start dependency)
@@ -539,6 +554,8 @@ async def update(
         model=model,
         tenant_id=tenant_id,
         current_user_id=get_current_user_id(),
+        audio_bytes=audio_bytes,
+        audio_format=audio_format,
     )
 
     # invalidate the cache for the conversation
@@ -552,6 +569,56 @@ async def update(
     apply_agent_cors_headers(request, json_response, agent_security_settings)
 
     return json_response
+
+
+async def _any_conversation_read(request: Request):
+    """Allow access if the caller has either READ or READ_IN_PROGRESS."""
+    from app.auth.utils import has_permission
+
+    for source in ("guest_token", "api_key", "user"):
+        obj = getattr(request.state, source, None)
+        if obj is None:
+            continue
+        perms = obj.get("permissions", []) if isinstance(obj, dict) else getattr(obj, "permissions", [])
+        if has_permission(perms, P.Conversation.READ) or has_permission(perms, P.Conversation.READ_IN_PROGRESS):
+            return
+    raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
+
+
+@router.get(
+    "/{conversation_id}/messages/{message_id}/audio",
+    dependencies=[
+        Depends(auth),
+        Depends(_any_conversation_read),
+    ],
+)
+async def get_message_audio(
+    conversation_id: UUID,
+    message_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(TranscriptMessageService),
+):
+    """Stream audio data for a transcript message."""
+    import io
+
+    from fastapi.responses import StreamingResponse
+
+    from app.core.utils.cache_headers import no_store_headers
+
+    repo = transcript_message_service.transcript_message_repo
+    message = await repo.get_message_by_message_id(message_id)
+
+    if not message or message.conversation_id != conversation_id or not message.audio_data:
+        raise AppException(error_key=ErrorKey.MESSAGE_NOT_FOUND, status_code=404)
+
+    content_type = f"audio/{message.audio_format or 'mp3'}"
+    return StreamingResponse(
+        io.BytesIO(message.audio_data),
+        media_type=content_type,
+        headers={
+            "Content-Length": str(len(message.audio_data)),
+            **no_store_headers(),
+        },
+    )
 
 
 @router.patch(
