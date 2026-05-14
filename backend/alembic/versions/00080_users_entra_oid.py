@@ -1,7 +1,7 @@
 """add entra_oid for Microsoft SSO user mapping
 
 Revision ID: j0k1l2m3n4o5
-Revises: i9f0a1b2c3d4
+Revises: e9d128a0e7f1
 Create Date: 2026-05-13
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "j0k1l2m3n4o5"
-down_revision: Union[str, None] = "i9f0a1b2c3d4"
+down_revision: Union[str, None] = "e9d128a0e7f1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
