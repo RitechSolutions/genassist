@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar"
 import { AppSidebar } from "@/layout/app-sidebar"
 import { useIsMobile } from "@/hooks/useMobile"
 import { Button } from "@/components/button"
-import { BellOff, Check, Loader2 } from "lucide-react"
+import { Card } from "@/components/card"
+import { Bell, Check, Loader2, Settings2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs"
 import {
   Select,
@@ -13,14 +15,60 @@ import {
   SelectValue,
 } from "@/components/select"
 import { useNotificationsInfinite } from "@/hooks/useNotifications"
+import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
 import { type NotificationTypeFilter } from "@/services/dashboard"
 import { NotificationCard } from "../components/NotificationCard"
 
-const EmptyNotificationsState = ({ message }: { message: string }) => (
-  <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-    <BellOff className="h-12 w-12 text-gray-400" />
-    <h3 className="font-medium text-lg">No notifications found</h3>
-    <p className="text-sm text-gray-500 max-w-sm">{message}</p>
+type ConversationTypeFilter = Exclude<NotificationTypeFilter, "all">
+
+const CONVERSATION_TYPE_FILTER_OPTIONS: Array<{
+  value: ConversationTypeFilter
+  label: string
+  settingKey: "conversationStarted" | "conversationHostility" | "conversationFinalizedHostility"
+}> = [
+  {
+    value: "conversation_started",
+    label: "Conversation Started",
+    settingKey: "conversationStarted",
+  },
+  {
+    value: "conversation_hostility",
+    label: "High Hostility",
+    settingKey: "conversationHostility",
+  },
+  {
+    value: "conversation_finalized_hostility",
+    label: "Finalized Hostility",
+    settingKey: "conversationFinalizedHostility",
+  },
+]
+
+const EmptyNotificationsState = ({
+  title,
+  description,
+  primaryAction,
+}: {
+  title: string
+  description: string
+  primaryAction?: { label: string; to: string }
+}) => (
+  <div className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+    <div className="rounded-full bg-muted p-4">
+      <Bell className="h-12 w-12 text-muted-foreground" />
+    </div>
+    <h3 className="text-lg font-medium text-foreground">{title}</h3>
+    <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+    {primaryAction ? (
+      <Button asChild className="rounded-full">
+        <Link
+          to={primaryAction.to}
+          className="inline-flex items-center gap-2"
+        >
+          <Settings2 className="h-4 w-4 shrink-0" />
+          {primaryAction.label}
+        </Link>
+      </Button>
+    ) : null}
   </div>
 )
 
@@ -30,6 +78,25 @@ const NotificationsPage = () => {
   const [typeFilter, setTypeFilter] = useState<NotificationTypeFilter>("all")
   const allSentinelRef = useRef<HTMLDivElement>(null)
   const unreadSentinelRef = useRef<HTMLDivElement>(null)
+  const { settings } = useNotificationUserSettings()
+
+  const allowedTypeFilterOptions = useMemo(() => {
+    const opts: Array<{ value: NotificationTypeFilter; label: string }> = [
+      { value: "all", label: "All" },
+    ]
+    for (const row of CONVERSATION_TYPE_FILTER_OPTIONS) {
+      if (settings[row.settingKey]) {
+        opts.push({ value: row.value, label: row.label })
+      }
+    }
+    return opts
+  }, [settings])
+
+  useEffect(() => {
+    if (typeFilter === "all") return
+    const allowed = allowedTypeFilterOptions.some((o) => o.value === typeFilter)
+    if (!allowed) setTypeFilter("all")
+  }, [typeFilter, allowedTypeFilterOptions])
 
   const {
     notifications,
@@ -103,16 +170,11 @@ const NotificationsPage = () => {
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="conversation_started">
-                      Conversation Started
-                    </SelectItem>
-                    <SelectItem value="conversation_hostility">
-                      High Hostility
-                    </SelectItem>
-                    <SelectItem value="conversation_finalized_hostility">
-                      Finalized Hostility
-                    </SelectItem>
+                    {allowedTypeFilterOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button size="sm" variant="outline" onClick={markAllAsRead}>
@@ -132,15 +194,26 @@ const NotificationsPage = () => {
                 <TabsTrigger value="unread">Unread</TabsTrigger>
               </TabsList>
               <TabsContent value="all">
-                <div className="overflow-hidden rounded-lg border bg-white p-2 shadow-sm">
+                <Card className="overflow-hidden">
                   {isLoading && filteredNotifications.length === 0 ? (
-                    <p className="text-center text-gray-500 p-6">
-                      Loading notifications…
-                    </p>
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+                      <Loader2
+                        className="h-8 w-8 animate-spin"
+                        aria-label="Loading notifications"
+                      />
+                      <p className="text-sm">Loading notifications…</p>
+                    </div>
                   ) : filteredNotifications.length === 0 && !hasNextPage ? (
-                    <EmptyNotificationsState message="You're all caught up. New updates will appear here." />
+                    <EmptyNotificationsState
+                      title="No notifications yet"
+                      description="When there is activity you follow—such as new conversations, high hostility alerts, or workflow issues—it will show up here. You can choose which types you receive in Settings."
+                      primaryAction={{
+                        label: "Notification preferences",
+                        to: "/settings/notifications",
+                      }}
+                    />
                   ) : (
-                    <>
+                    <div className="p-2">
                       {filteredNotifications.map((notification) => (
                         <NotificationCard
                           key={notification.id}
@@ -161,20 +234,27 @@ const NotificationsPage = () => {
                           />
                         </div>
                       ) : null}
-                    </>
+                    </div>
                   )}
-                </div>
+                </Card>
               </TabsContent>
               <TabsContent value="unread">
-                <div className="overflow-hidden rounded-lg border bg-white p-2 shadow-sm">
+                <Card className="overflow-hidden">
                   {isLoading && filteredNotifications.length === 0 ? (
-                    <p className="text-center text-gray-500 p-6">
-                      Loading notifications…
-                    </p>
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+                      <Loader2
+                        className="h-8 w-8 animate-spin"
+                        aria-label="Loading notifications"
+                      />
+                      <p className="text-sm">Loading notifications…</p>
+                    </div>
                   ) : unreadNotifications.length === 0 && !hasNextPage ? (
-                    <EmptyNotificationsState message="No unread notifications right now." />
+                    <EmptyNotificationsState
+                      title="No unread notifications"
+                      description="You are up to date. New unread items will appear in this tab when they arrive."
+                    />
                   ) : (
-                    <>
+                    <div className="p-2">
                       {unreadNotifications.map((notification) => (
                         <NotificationCard
                           key={notification.id}
@@ -195,9 +275,9 @@ const NotificationsPage = () => {
                           />
                         </div>
                       ) : null}
-                    </>
+                    </div>
                   )}
-                </div>
+                </Card>
               </TabsContent>
             </Tabs>
             </div>

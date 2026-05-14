@@ -109,7 +109,7 @@ export function NotificationBellPopover({
         align="end"
         className="w-[min(100vw-1.5rem,340px)] max-w-[340px] p-0 overflow-x-hidden"
       >
-        <div className="border-b px-4 py-3">
+        <div className="px-4 py-3">
           <p className="text-sm font-semibold text-zinc-900">Notifications</p>
         </div>
 
