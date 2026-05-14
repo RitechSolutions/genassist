@@ -92,6 +92,7 @@ class ConversationRepository:
                 joinedload(ConversationModel.analysis),
                 joinedload(ConversationModel.recording),
                 joinedload(ConversationModel.operator).joinedload(OperatorModel.agent),
+                joinedload(ConversationModel.supervisor),
             )
         )
 
@@ -386,6 +387,7 @@ class ConversationRepository:
         """
         query = select(ConversationModel).options(
             joinedload(ConversationModel.recording),
+            joinedload(ConversationModel.supervisor),
             selectinload(ConversationModel.operator).selectinload(OperatorModel.agent),
         )
 

@@ -311,7 +311,7 @@ const SidebarTrigger = React.forwardRef<
       className={cn(
         className,
         "h-7 w-7",
-        "z-[1402]",
+        "z-40",
         // Position based on sidebar state
         isMobile
           ? openMobile
