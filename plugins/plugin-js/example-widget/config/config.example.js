@@ -15,4 +15,13 @@ window.GENASSIST_CONFIG = {
   useWs: false,
   useFiles: false,
   usePoll: false,
+  theme: {
+    primaryColor: "#278900",
+    secondaryColor: "#d7f3cc",
+    backgroundColor: "#ffffff",
+    textColor: "#000000",
+    fontFamily: "Roboto, sans-serif",
+    fontSize: "16px",
+    fontWeight: 400
+  }
 };
