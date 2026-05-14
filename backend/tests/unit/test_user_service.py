@@ -97,6 +97,22 @@ async def test_create_user_duplicate_email(user_service, mock_repository, sample
     mock_repository.create.assert_not_called()
 
 @pytest.mark.asyncio
+async def test_create_user_duplicate_entra_oid(user_service, mock_repository, sample_user_data):
+    oid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    sample_user_data["entra_oid"] = oid
+    user_create = UserCreate(**sample_user_data)
+    mock_repository.get_by_username.return_value = None
+    mock_repository.get_by_email.return_value = None
+    mock_repository.get_by_entra_oid.return_value = MagicMock()
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.create(user_create)
+
+    assert exc_info.value.error_key == ErrorKey.ENTRA_OID_IN_USE
+    mock_repository.get_by_entra_oid.assert_called_once_with(oid)
+    mock_repository.create.assert_not_called()
+
+@pytest.mark.asyncio
 async def test_get_user_by_id_success(user_service, mock_repository):
     # Setup
     user_id = uuid4()

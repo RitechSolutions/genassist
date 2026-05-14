@@ -41,6 +41,11 @@ class UserService:
         if existing_email:
             raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
 
+        if user.entra_oid:
+            existing_oid = await self.repository.get_by_entra_oid(user.entra_oid)
+            if existing_oid is not None:
+                raise AppException(error_key=ErrorKey.ENTRA_OID_IN_USE, status_code=409)
+
         user.password = get_password_hash(user.password)
         new_user = await self.repository.create(user)
         model = await self.repository.get_full(new_user.id)

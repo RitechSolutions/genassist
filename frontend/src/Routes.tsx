@@ -3,7 +3,7 @@ import { Outlet, RouterProvider } from "react-router-dom";
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
-import { ChangePassword, Login } from "@/views/Login";
+import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
 import Index from "@/views/Index";
 import Transcripts from "./views/Transcripts";
 import Operators from "./views/Operators";
@@ -510,6 +510,7 @@ export const RoutesProvider = () => {
           ],
         },
         { path: "login", element: (<><ServerStatusBanner /><Login /></>) },
+        { path: "login/sso-callback", element: (<><ServerStatusBanner /><LoginSsoCallback /></>) },
         { path: "register", element: <Register /> },
         { path: "privacy", element: <Privacy /> },
         {

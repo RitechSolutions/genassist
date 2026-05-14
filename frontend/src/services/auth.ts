@@ -32,6 +32,10 @@ interface LoginCredentials extends Record<string, unknown> {
   password: string;
 }
 
+export const completeMicrosoftSso = async (ssoCode: string): Promise<AuthTokens | null> => {
+  return apiRequest<AuthTokens>("POST", "auth/sso/microsoft/complete", { code: ssoCode });
+};
+
 export const login = async (
   credentials: LoginCredentials,
   tenant?: string
