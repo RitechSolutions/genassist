@@ -202,8 +202,7 @@ async def get_agent_chat_locales(
     "/{conversation_id}",
     response_model=ConversationRead,
     dependencies=[
-        Depends(auth),
-        Depends(permissions(P.Conversation.READ))
+        Depends(auth)
     ],
 )
 async def get(
@@ -642,7 +641,9 @@ async def get_message_audio(
 ):
     """Stream audio data for a transcript message."""
     import io
+
     from fastapi.responses import StreamingResponse
+
     from app.core.utils.cache_headers import no_store_headers
 
     repo = transcript_message_service.transcript_message_repo

@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Genassist Widget - Example Help Center Example</title>
     <style>
+
+        *:not(.config-section *) {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             margin: 0;
@@ -93,14 +100,15 @@
 
         <div class="config-section">
             <h2>Custom Fonts</h2>
-            <p>The widget bundles the <strong>Roboto</strong> font by default via <code>@font-face</code> declarations in <code>src/font.css</code>. The font files are embedded into <code>widget.css</code> during the build.</p>
+            <p>Fonts are wired through the widget entry: <code>src/main.jsx</code> imports <code>src/font.css</code>, and <code>font.css</code> declares <code>@font-face</code> rules whose <code>src: url(...)</code> paths point at files under <code>src/fonts/</code>. By default the repo ships <strong>Roboto</strong> faces that way.</p>
+            <p>When you run <code>npm run build</code>, Vite resolves those assets and emits <strong><code>dist/widget.css</code></strong>. The <code>@font-face</code> blocks and the font binary data they reference are folded into that single stylesheet, so hosts only need to load <code>widget.css</code> plus <code>widget.iife.js</code>—no separate font URLs unless you load fonts externally (Option&nbsp;B).</p>
 
-            <p><strong>Option A: Use a bundled custom font (recommended)</strong></p>
+            <p><strong>Option A: Bundle custom fonts (recommended)</strong></p>
             <ol>
-                <li>Add your font files to <code>src/fonts/</code></li>
-                <li>Update <code>src/font.css</code> with your <code>@font-face</code> rules</li>
-                <li>Set the <code>fontFamily</code> in the theme config</li>
-                <li>Rebuild with <code>npm run build</code> — fonts will be embedded into <code>widget.css</code></li>
+                <li>Add font files under <code>src/fonts/</code> (keep paths stable for <code>url("./fonts/…")</code> from <code>font.css</code>)</li>
+                <li>Edit <code>src/font.css</code>: add or replace <code>@font-face</code> rules (one block per weight/style you need)</li>
+                <li>Set <code>theme.fontFamily</code> in <code>GENASSIST_CONFIG</code> to match your <code>font-family</code> name</li>
+                <li>Run <code>npm run build</code> — output <code>dist/widget.css</code> contains the bundled font CSS; ship that file with your integration</li>
             </ol>
             <div class="code-block">
                 <code>
