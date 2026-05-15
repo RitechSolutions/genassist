@@ -60,6 +60,7 @@ export default function UserGroups() {
         refreshKey={refreshKey}
         onEditGroup={handleEditGroup}
         updatedGroup={updatedGroup}
+        onCreateGroup={handleCreateGroup}
       />
 
       <UserGroupDialog

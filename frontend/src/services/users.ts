@@ -28,7 +28,7 @@ export const getUser = async (id: string): Promise<User | null> => {
 
 export const createUser = async (userData: User): Promise<User> => {
   try {
-    const requestData = {
+    const requestData: Record<string, unknown> = {
       username: userData.username,
       email: userData.email,
       password: userData.password,
@@ -37,6 +37,9 @@ export const createUser = async (userData: User): Promise<User> => {
       role_ids: userData.role_ids,
       group_id: userData.group_id ?? null,
     };
+    if (userData.entra_oid !== undefined) {
+      requestData.entra_oid = userData.entra_oid;
+    }
     
     const response = await apiRequest<User>("POST", "user", requestData);
     if (!response) throw new Error("Failed to create user");

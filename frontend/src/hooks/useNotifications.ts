@@ -14,7 +14,7 @@ import {
   fetchDashboardNotificationsPage,
   type NotificationTypeFilter,
 } from "@/services/dashboard"
-import { useWebSocket } from "@/hooks/useWebSocket"
+import { useWebSocketDashboardContext } from "@/context/WebSocketDashboardContext"
 import {
   isConversationFinalizedHostilityNotification,
   isConversationHostilityNotification,
@@ -64,6 +64,7 @@ function applyReadMap(items: Notification[]): Notification[] {
 
 export const useNotifications = () => {
   const queryClient = useQueryClient()
+  const { subscribe } = useWebSocketDashboardContext()
   const { settings } = useNotificationUserSettings()
   const {
     conversationStarted,
@@ -193,14 +194,7 @@ export const useNotifications = () => {
     ]
   )
 
-  useWebSocket({
-    roomType: "dashboard",
-    token: localStorage.getItem("access_token") || "",
-    topics: ["notification"],
-    onMessage: handleSocketMessage,
-    reconnect: true,
-    maxReconnectAttempts: 5,
-  })
+  useEffect(() => subscribe(handleSocketMessage), [subscribe, handleSocketMessage])
 
   useEffect(() => {
     void refetch()

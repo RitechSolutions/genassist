@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/card";
-import { Pencil, Loader2, Trash2 } from "lucide-react";
+import { ListEmptyState } from "@/components/ListEmptyState";
+import { Pencil, Loader2, Trash2, Globe2, Plus } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -30,12 +31,14 @@ interface LanguagesCardProps {
   searchQuery: string;
   refreshKey?: number;
   onEditLanguage: (language: Language) => void;
+  onCreateLanguage: () => void;
 }
 
 export function LanguagesCard({
   searchQuery,
   refreshKey = 0,
   onEditLanguage,
+  onCreateLanguage,
 }: LanguagesCardProps) {
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,70 +123,87 @@ export function LanguagesCard({
     );
   }
 
-  if (filteredLanguages.length === 0) {
-    return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery
-            ? "No languages found matching your search"
-            : "No languages found"}
-        </div>
-      </Card>
-    );
-  }
+  const isSearchActive = searchQuery.trim().length > 0;
 
   return (
     <>
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Code</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Active</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredLanguages.map((language) => (
-              <TableRow key={language.id}>
-                <TableCell className="font-medium">{language.code}</TableCell>
-                <TableCell>{language.name}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={language.is_active}
-                      onCheckedChange={() => handleToggleActive(language)}
-                    />
-                    <Badge variant={language.is_active ? "default" : "secondary"}>
-                      {language.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEditLanguage(language)}
-                      title="Edit Language"
-                    >
-                      <Pencil className="w-4 h-4 text-black" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteClick(language)}
-                      title="Delete Language"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </Button>
-                  </div>
-                </TableCell>
+      <Card className="overflow-hidden shadow-sm">
+        {filteredLanguages.length === 0 ? (
+          <ListEmptyState
+            icon={<Globe2 className="h-12 w-12 text-gray-400" />}
+            title={
+              isSearchActive
+                ? "No matching languages"
+                : "No languages yet"
+            }
+            description={
+              isSearchActive
+                ? "Try adjusting your search query."
+                : "Add supported languages so translations can be keyed per locale."
+            }
+            action={
+              !isSearchActive ? (
+                <Button
+                  onClick={onCreateLanguage}
+                  className="rounded-full flex items-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add New Language
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Active</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredLanguages.map((language) => (
+                <TableRow key={language.id}>
+                  <TableCell className="font-medium">{language.code}</TableCell>
+                  <TableCell>{language.name}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={language.is_active}
+                        onCheckedChange={() => handleToggleActive(language)}
+                      />
+                      <Badge variant={language.is_active ? "default" : "secondary"}>
+                        {language.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onEditLanguage(language)}
+                        title="Edit Language"
+                      >
+                        <Pencil className="w-4 h-4 text-black" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteClick(language)}
+                        title="Delete Language"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </Card>
 
       <AlertDialog
