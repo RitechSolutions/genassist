@@ -1,5 +1,5 @@
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, constr, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, constr, ConfigDict, field_validator
 from typing import Optional
 from typing import Annotated
 from datetime import datetime
@@ -42,11 +42,26 @@ class UserBase(BaseModel):
     is_active: int = 1  # Default value
 
 
+def _normalize_entra_oid_value(v):
+    if v is None:
+        return None
+    if isinstance(v, str):
+        s = v.strip()
+        return s or None
+    return v
+
+
 # Used for user creation (excludes ID, timestamps)
 class UserCreate(UserBase):
     role_ids: list[UUID] = Field(..., description="Roles IDs")
     user_type_id: UUID
     group_id: UUID | None = None
+    entra_oid: str | None = Field(None, max_length=64, description="Microsoft Entra object id (oid) for SSO")
+
+    @field_validator("entra_oid", mode="before")
+    @classmethod
+    def normalize_entra_oid_create(cls, v):
+        return _normalize_entra_oid_value(v)
 
 
 class UserRead(BaseModel):
@@ -62,6 +77,7 @@ class UserRead(BaseModel):
                                                     description="Date when we force updating password date on login")
     group_id: Optional[UUID] = None
     supervised_group_ids: list[UUID] = Field([], description="Group IDs this user supervises")
+    entra_oid: str | None = Field(None, max_length=64, description="Microsoft Entra object id (oid) for SSO")
 
     model_config = ConfigDict(
         from_attributes = True
@@ -83,5 +99,11 @@ class UserUpdate(BaseModel):
     role_ids: list[UUID] | None = None
     notes: str | None = None
     group_id: UUID | None = None
+    entra_oid: str | None = Field(None, max_length=64, description="Microsoft Entra object id (oid) for SSO")
+
+    @field_validator("entra_oid", mode="before")
+    @classmethod
+    def normalize_entra_oid(cls, v):
+        return _normalize_entra_oid_value(v)
 
 

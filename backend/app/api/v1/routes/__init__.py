@@ -7,9 +7,10 @@ from app.api.v1.routes import (
     analytics,
     api_keys,
     app_settings,
-    audit_logs,
     audio_providers,
+    audit_logs,
     auth,
+    auth_sso_microsoft,
     azure_blob_router,
     conversations,
     customers,
@@ -32,6 +33,7 @@ from app.api.v1.routes import (
     operators,
     permissions,
     playground,
+    prompt_editor,
     public_registration,
     recordings,
     reports,
@@ -39,21 +41,20 @@ from app.api.v1.routes import (
     roles,
     smb_share_router,
     tenants,
-    translations,
-    twilio_agents,
-    prompt_editor,
     test_cases,
     test_evaluations,
     test_runs,
     test_suites,
+    translations,
+    twilio_agents,
     user_groups,
     user_types,
     users,
     voice,
     webhook,
     webhook_execute,
-    workflow_manager,
     workflow_builder,
+    workflow_manager,
     workflows,
     zendesk,
 )
@@ -64,6 +65,7 @@ default_router_options = {"redirect_slashes": False}
 router = APIRouter(**default_router_options)
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
+router.include_router(auth_sso_microsoft.router, prefix="/auth", tags=["Auth"])
 router.include_router(users.router, prefix="/user", tags=["User"])
 router.include_router(user_groups.router, prefix="/user-groups", tags=["User Groups"])
 router.include_router(user_types.router, prefix="/user-type", tags=["UserTypes"])
