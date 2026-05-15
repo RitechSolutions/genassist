@@ -302,7 +302,9 @@ async def analyze_csv(
         try:
             # check if the file_url includes a valid file id
             if file_url.startswith("http://") or file_url.startswith("https://"):
-                file_path = await file_manager_service.download_file_from_url_to_path(file_url, file_path)
+                dest_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"csv_file_{uuid.uuid4()}.csv")
+                await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
+                file_path = dest_path
             else:
                 file_path = ml_utils.resolve_csv_file_path(file_url)
 
