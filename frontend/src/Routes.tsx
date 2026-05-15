@@ -66,26 +66,22 @@ import { WebSocketDashboardProvider } from "@/context/WebSocketDashboardContext"
 const getAccessToken = () =>
   typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
 
-const WebSocketDashboardLayout = ({ children }: { children: ReactNode }) => (
-  <WebSocketDashboardProvider token={getAccessToken()}>
-    {children}
-  </WebSocketDashboardProvider>
-);
-
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
   const isDown = isOffline || status.down;
 
   return (
     <ProtectedRoute>
-      {isDown ? (
-        <ServerDownPage />
-      ) : (
-        <>
-          <Outlet />
-          <GlobalChat />
-        </>
-      )}
+      <WebSocketDashboardProvider token={getAccessToken()}>
+        {isDown ? (
+          <ServerDownPage />
+        ) : (
+          <>
+            <Outlet />
+            <GlobalChat />
+          </>
+        )}
+      </WebSocketDashboardProvider>
     </ProtectedRoute>
   );
 };
@@ -138,23 +134,12 @@ export const RoutesProvider = () => {
           element: <ProtectedLayout />,
           children: [
             { path: "", element: <Navigate to="/dashboard" replace /> },
-            {
-              path: "dashboard",
-              element: (
-                <WebSocketDashboardLayout>
-                  <Index />
-                </WebSocketDashboardLayout>
-              ),
-            },
+            { path: "dashboard", element: <Index /> },
             {
               path: "transcripts",
               element: (
-                <ProtectedRoute
-                  requiredPermissions={["read:conversation"]}
-                >
-                  <WebSocketDashboardLayout>
-                    <Transcripts />
-                  </WebSocketDashboardLayout>
+                <ProtectedRoute requiredPermissions={["read:conversation"]}>
+                  <Transcripts />
                 </ProtectedRoute>
               ),
             },
