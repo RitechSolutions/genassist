@@ -3,7 +3,7 @@ import { Outlet, RouterProvider } from "react-router-dom";
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
-import { ChangePassword, Login } from "@/views/Login";
+import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
 import Index from "@/views/Index";
 import Transcripts from "./views/Transcripts";
 import Operators from "./views/Operators";
@@ -66,26 +66,22 @@ import { WebSocketDashboardProvider } from "@/context/WebSocketDashboardContext"
 const getAccessToken = () =>
   typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
 
-const WebSocketDashboardLayout = ({ children }: { children: ReactNode }) => (
-  <WebSocketDashboardProvider token={getAccessToken()}>
-    {children}
-  </WebSocketDashboardProvider>
-);
-
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
   const isDown = isOffline || status.down;
 
   return (
     <ProtectedRoute>
-      {isDown ? (
-        <ServerDownPage />
-      ) : (
-        <>
-          <Outlet />
-          <GlobalChat />
-        </>
-      )}
+      <WebSocketDashboardProvider token={getAccessToken()}>
+        {isDown ? (
+          <ServerDownPage />
+        ) : (
+          <>
+            <Outlet />
+            <GlobalChat />
+          </>
+        )}
+      </WebSocketDashboardProvider>
     </ProtectedRoute>
   );
 };
@@ -138,23 +134,12 @@ export const RoutesProvider = () => {
           element: <ProtectedLayout />,
           children: [
             { path: "", element: <Navigate to="/dashboard" replace /> },
-            {
-              path: "dashboard",
-              element: (
-                <WebSocketDashboardLayout>
-                  <Index />
-                </WebSocketDashboardLayout>
-              ),
-            },
+            { path: "dashboard", element: <Index /> },
             {
               path: "transcripts",
               element: (
-                <ProtectedRoute
-                  requiredPermissions={["read:conversation"]}
-                >
-                  <WebSocketDashboardLayout>
-                    <Transcripts />
-                  </WebSocketDashboardLayout>
+                <ProtectedRoute requiredPermissions={["read:conversation"]}>
+                  <Transcripts />
                 </ProtectedRoute>
               ),
             },
@@ -519,6 +504,7 @@ export const RoutesProvider = () => {
           ],
         },
         { path: "login", element: (<><ServerStatusBanner /><Login /></>) },
+        { path: "login/sso-callback", element: (<><ServerStatusBanner /><LoginSsoCallback /></>) },
         { path: "register", element: <Register /> },
         { path: "privacy", element: <Privacy /> },
         {

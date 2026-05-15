@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable } from "@/components/DataTable";
+import { ListEmptyState } from "@/components/ListEmptyState";
 import { TableCell, TableRow } from "@/components/table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
@@ -9,6 +10,8 @@ import { formatCallDuration } from "@/helpers/formatters";
 import {
   Loader2,
   Trash2,
+  Sparkles,
+  Plus,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listFineTuneJobs } from "@/services/openaiFineTune";
@@ -22,7 +25,11 @@ import {
 } from "@/views/FineTune/utils/utils";
 import type { FineTuneJobsCardProps, JobProgress } from "@/views/FineTune/types";
 
-export function FineTuneJobsCard({ searchQuery, refreshKey = 0 }: FineTuneJobsCardProps) {
+export function FineTuneJobsCard({
+  searchQuery,
+  refreshKey = 0,
+  onNewFineTuneJob,
+}: FineTuneJobsCardProps) {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<FineTuneJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,6 +262,38 @@ export function FineTuneJobsCard({ searchQuery, refreshKey = 0 }: FineTuneJobsCa
     );
   };
 
+  const isSearchActive = searchQuery.trim().length > 0;
+
+  const emptyState = useMemo(
+    () => (
+      <ListEmptyState
+        icon={<Sparkles className="h-12 w-12 text-gray-400" />}
+        title={
+          isSearchActive
+            ? "No matching fine-tune jobs"
+            : "No fine-tune jobs yet"
+        }
+        description={
+          isSearchActive
+            ? "Try adjusting your search query."
+            : "Start a job to train a model on your data. Jobs you create will show up here."
+        }
+        action={
+          !isSearchActive && onNewFineTuneJob ? (
+            <Button
+              onClick={onNewFineTuneJob}
+              className="rounded-full flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              New Fine-Tune Job
+            </Button>
+          ) : undefined
+        }
+      />
+    ),
+    [isSearchActive, onNewFineTuneJob]
+  );
+
   return (
     <>
       <DataTable
@@ -266,6 +305,7 @@ export function FineTuneJobsCard({ searchQuery, refreshKey = 0 }: FineTuneJobsCa
         renderRow={renderRow}
         emptyMessage="No Fine-Tune jobs found"
         searchEmptyMessage="No jobs matching your search"
+        emptyState={emptyState}
       />
 
       <ConfirmDialog

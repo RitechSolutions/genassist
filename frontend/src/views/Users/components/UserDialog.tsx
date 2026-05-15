@@ -30,6 +30,8 @@ import { getAllRoles } from "@/services/roles";
 import { getAllUserGroups, addGroupSupervisor, removeGroupSupervisor } from "@/services/userGroups";
 import { Badge } from "@/components/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixTooltip";
+import { getApiUrl } from "@/config/api";
+import { isAxiosError } from "axios";
 
 interface UserDialogProps {
   isOpen: boolean;
@@ -64,10 +66,39 @@ export function UserDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | undefined>("");
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
+  const [entraOid, setEntraOid] = useState("");
+  const [microsoftSsoEnabled, setMicrosoftSsoEnabled] = useState(false);
 
   useEffect(() => {
     setDialogMode(mode);
   }, [mode]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const sso_microsoft_enabled = import.meta.env.VITE_SSO_MICROSOFT_ENABLED === "true";
+    setMicrosoftSsoEnabled(sso_microsoft_enabled);
+
+    if (!sso_microsoft_enabled) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const base = await getApiUrl();
+        const r = await fetch(`${base}auth/sso/microsoft/status`);
+        if (!r.ok || cancelled) return;
+        const data = (await r.json()) as { microsoft_sso_enabled?: boolean };
+        if (!cancelled && data.microsoft_sso_enabled) {
+          setMicrosoftSsoEnabled(true);
+        }
+      } catch {
+        // keep false
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -75,7 +106,18 @@ export function UserDialog({
       resetForm();
 
       if (userToEdit && dialogMode === "edit") {
-        populateFormWithUserData(userToEdit);
+        if (userToEdit.id) {
+          (async () => {
+            try {
+              const full = await getUser(userToEdit.id!);
+              populateFormWithUserData(full || userToEdit);
+            } catch {
+              populateFormWithUserData(userToEdit);
+            }
+          })();
+        } else {
+          populateFormWithUserData(userToEdit);
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,6 +127,7 @@ export function UserDialog({
     setUserId(user.id);
     setUsername(user.username || "");
     setEmail(user.email || "");
+    setEntraOid(user.entra_oid ?? "");
     setPassword("");
     setApiKey("");
     setIsActive(user.is_active === 1);
@@ -172,6 +215,10 @@ export function UserDialog({
         userData.password = password || apiKey || email;
       }
 
+      if (microsoftSsoEnabled) {
+        userData.entra_oid = entraOid.trim() ? entraOid.trim() : null;
+      }
+
       if (dialogMode === "create") {
         await createUser(userData as User);
         toast.success("User created successfully.");
@@ -211,20 +258,23 @@ export function UserDialog({
 
       onOpenChange(false);
       resetForm();
-    } catch (error) {
-      const data = error.response.data;
+    } catch (error: unknown) {
+      const data = isAxiosError(error) ? (error.response?.data as Record<string, unknown> | undefined) : undefined;
+      const status = isAxiosError(error) ? error.response?.status : undefined;
       let errorMessage = "";
 
-      if (error.status === 400) {
-        if (data?.error_key === 'EMAIL_ALREADY_EXISTS') {
+      if (status === 400) {
+        if (data?.error_key === "EMAIL_ALREADY_EXISTS") {
           errorMessage = "A user with this email already exists.";
         } else {
           errorMessage = "A user with this username already exists.";
         }
-      } else if (data.error) {
+      } else if (status === 409 && data?.error_key === "ENTRA_OID_IN_USE") {
+        errorMessage = "This Microsoft Entra object ID is already linked to another user.";
+      } else if (data && typeof data.error === "string") {
         errorMessage = data.error;
-      } else if (data.detail) {
-        errorMessage = data.detail["0"].ctx.reason;
+      } else if (data?.detail && Array.isArray(data.detail) && data.detail[0] && typeof (data.detail[0] as { ctx?: { reason?: string } }).ctx?.reason === "string") {
+        errorMessage = (data.detail[0] as { ctx: { reason: string } }).ctx.reason;
       }
 
       toast.error(
@@ -249,6 +299,7 @@ export function UserDialog({
       setUserTypeId("");
       setGroupId("");
       setSupervisedGroupIds([]);
+      setEntraOid("");
     }
   };
 
@@ -324,6 +375,24 @@ export function UserDialog({
                 />
               </div>
             </div>
+            {microsoftSsoEnabled && (
+              <div className="space-y-2">
+                <Label htmlFor="entra-oid">Microsoft Entra ID</Label>
+                <Input
+                  id="entra-oid"
+                  value={entraOid}
+                  onChange={(e) => setEntraOid(e.target.value)}
+                  placeholder="Entra ID — optional, for SSO pre-linking"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Must match the user&apos;s <code className="text-xs">oid</code> claim from the ID token.
+                  {dialogMode === "edit"
+                    ? " Clear the field to unlink this account from Entra SSO."
+                    : " Leave blank to link automatically on first sign-in when the email matches."}
+                </p>
+              </div>
+            )}
             <div
               className={`grid gap-4 ${
                 isConsoleUserType ? "grid-cols-1" : "grid-cols-2"

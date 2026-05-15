@@ -45,6 +45,7 @@ export function Translations() {
         refreshKey={refreshKey}
         onEditTranslation={handleOpenEdit}
         onRefresh={handleRefresh}
+        onAddTranslation={handleOpenCreate}
       />
 
       <TranslationDialog
