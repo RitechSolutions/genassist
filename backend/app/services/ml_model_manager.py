@@ -236,7 +236,7 @@ class MLModelManager:
             None,  # Use default executor for this quick check
             validate_pickle_file_safe,
             pkl_file,
-            5,  # 5 second timeout for validation
+            30,  # 30 second timeout for validation
         )
 
         if not is_valid:
