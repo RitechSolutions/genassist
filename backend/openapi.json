@@ -7921,7 +7921,7 @@
         ],
         "parameters": [
           {
-            "name": "X-Tenant-ID",
+            "name": "x-tenant-id",
             "in": "header",
             "required": false,
             "schema": {
@@ -21821,6 +21821,7 @@
           },
           "resolution_rate": {
             "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Resolution Rate",
             "default": "0.00"
           },
@@ -21831,6 +21832,7 @@
           },
           "cost": {
             "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cost",
             "default": "0.00"
           },
@@ -30709,7 +30711,8 @@
                 "type": "number"
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)"
               }
             ],
             "title": "Score",
@@ -30727,7 +30730,8 @@
                 "type": "number"
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)"
               }
             ],
             "title": "Avg Customer Satisfaction",
@@ -30739,7 +30743,8 @@
                 "type": "number"
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)"
               }
             ],
             "title": "Avg Resolution Rate",
@@ -30751,7 +30756,8 @@
                 "type": "number"
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)"
               }
             ],
             "title": "Avg Response Time",
@@ -30763,7 +30769,8 @@
                 "type": "number"
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)"
               }
             ],
             "title": "Avg Quality Of Service",
@@ -30823,6 +30830,7 @@
           },
           "score": {
             "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)",
             "title": "Score",
             "default": "0.00"
           },
