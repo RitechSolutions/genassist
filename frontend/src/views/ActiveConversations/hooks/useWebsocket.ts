@@ -5,6 +5,8 @@ import {
   UseWebSocketTranscriptOptions,
   StatisticsPayload,
   TakeoverPayload,
+  TakeoverWirePayload,
+  resolveTakeoverSupervisorId,
 } from "@/interfaces/websocket.interface";
 import { isWsEnabled } from "@/config/api";
 
@@ -59,21 +61,15 @@ export function useWebSocketTranscript({
     }
 
     if (data.topic === "takeover" || data.type === "takeover") {
-      const payload = data.payload as {
-        supervisor_id?: string;
-        user_id?: string;
-        takeover_user_id?: string;
-      };
-      const supervisorId =
-        payload?.supervisor_id ??
-        payload?.takeover_user_id ??
-        payload?.user_id;
-      setTakeoverInfo({
-        supervisor_id: supervisorId,
-        user_id: payload?.user_id ?? payload?.takeover_user_id,
-        takeover_user_id: payload?.takeover_user_id,
-        timestamp: new Date().toISOString(),
-      });
+      const supervisorId = resolveTakeoverSupervisorId(
+        data.payload as TakeoverWirePayload
+      );
+      if (supervisorId) {
+        setTakeoverInfo({
+          supervisor_id: supervisorId,
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
   }, []);
 
