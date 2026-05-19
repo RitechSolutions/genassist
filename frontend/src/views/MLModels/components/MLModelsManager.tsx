@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PageListSkeleton } from "@/components/skeletons";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { Badge } from "@/components/badge";
 import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
@@ -718,11 +719,7 @@ const MLModelsManager: React.FC = () => {
 
             <div className="rounded-lg border bg-white overflow-hidden">
               {loading ? (
-                <div className="flex justify-center items-center py-12">
-                  <div className="text-sm text-gray-500">
-                    Loading ML models...
-                  </div>
-                </div>
+                <PageListSkeleton variant="rich" bordered={false} />
               ) : filteredItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
                   <div className="rounded-full bg-gray-100 p-4">

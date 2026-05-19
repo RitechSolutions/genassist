@@ -64,6 +64,7 @@ import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
 import { apiRequest } from "@/config/api";
+import { PageListSkeleton } from "@/components/skeletons";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -993,9 +994,7 @@ const Transcripts = () => {
 
               <Card className="divide-y divide-gray-100 bg-white shadow-sm rounded-lg overflow-hidden">
                 {loading ? (
-                  <p className="text-center text-gray-500 p-6">
-                    Loading transcripts...
-                  </p>
+                  <PageListSkeleton variant="conversation" rows={6} bordered={false} />
                 ) : error ? (
                   <p className="text-center text-red-500 p-6">
                     Error loading transcripts. Please try again.

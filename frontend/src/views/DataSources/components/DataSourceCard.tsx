@@ -12,6 +12,7 @@ interface DataSourceCardProps {
   dataSources: DataSource[];
   searchQuery: string;
   refreshKey: number;
+  loading?: boolean;
   onEditDataSource?: (dataSource: DataSource) => void;
   onDeleteDataSource?: (id: string) => Promise<void>;
 }
@@ -19,10 +20,10 @@ interface DataSourceCardProps {
 export function DataSourceCard({
   searchQuery,
   dataSources,
+  loading = false,
   onEditDataSource,
   onDeleteDataSource,
 }: DataSourceCardProps) {
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dataSourceToDelete, setDataSourceToDelete] =
     useState<DataSource | null>(null);

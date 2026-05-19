@@ -7,6 +7,7 @@ import type { AgentStatsItem } from "@/interfaces/dashboard.interface";
 import { useNavigate } from "react-router-dom";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { PageListSkeleton } from "@/components/skeletons";
 
 interface AgentStats {
   id: string;
@@ -114,11 +115,7 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
       {/* Agents List */}
       <div className="flex flex-col gap-2 px-4 pb-4">
         {loading ? (
-          <div className="space-y-2">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />
-            ))}
-          </div>
+          <PageListSkeleton variant="dashboard-agent" rows={4} bordered={false} />
         ) : agents.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No agents configured yet.</p>
