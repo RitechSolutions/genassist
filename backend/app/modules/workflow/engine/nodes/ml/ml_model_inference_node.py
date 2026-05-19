@@ -93,11 +93,52 @@ def convert_input_types(inference_inputs: Dict[str, Any]) -> Dict[str, Any]:
     return converted
 
 
+def _is_empty_input(value: Any) -> bool:
+    """True when a feature was left unset in the node config."""
+    if value is None:
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    return isinstance(value, list) and len(value) == 0
+
+
+def _normalize_inference_inputs(inference_inputs: Dict[str, Any]) -> Dict[str, List[Any]]:
+    """Convert inference inputs to batch lists, skipping unset/empty values."""
+    normalized: Dict[str, List[Any]] = {}
+    for key, value in inference_inputs.items():
+        if _is_empty_input(value):
+            continue
+        normalized[key] = value if isinstance(value, list) else [value]
+    return normalized
+
+
+def _infer_batch_size(normalized_inputs: Dict[str, List[Any]]) -> int:
+    if not normalized_inputs:
+        return 0
+    return max(len(values) for values in normalized_inputs.values())
+
+
+def _broadcast_column(values: List[Any], batch_size: int, feature_name: str) -> List[Any]:
+    """Expand a single-value column to batch_size or validate an explicit batch column."""
+    col_len = len(values)
+    if col_len == batch_size:
+        return values
+    if col_len == 1:
+        return values * batch_size
+    raise ValueError(
+        f"Feature '{feature_name}' has {col_len} values but batch size is {batch_size}. "
+        f"Provide one value (applied to every row) or exactly {batch_size} values."
+    )
+
+
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
 ) -> np.ndarray:
     """Build a 2-D numpy array aligned to feature_names, filling missing features with 0.
+
+    Batch size is the maximum length among provided feature columns. Single-value
+    columns are broadcast to that batch size. Missing features default to 0.
 
     When feature_names is empty (model metadata doesn't specify column order),
     falls back to using all input columns in their dict-insertion order.
@@ -109,15 +150,27 @@ def _build_input_array(
     if len(feature_names) == 0:
         feature_names = list(normalized_inputs.keys())
 
+    batch_size = _infer_batch_size(normalized_inputs)
     input_cols = set(normalized_inputs)
     columns = []
-    batch_size = len(next(iter(normalized_inputs.values())))
     for feat in feature_names:
         if feat in input_cols:
-            columns.append(normalized_inputs[feat])
+            columns.append(_broadcast_column(normalized_inputs[feat], batch_size, feat))
         else:
             columns.append([0] * batch_size)
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
+
+
+def _label_for_prediction(value: Any) -> str:
+    return "Available" if value == 1 else "Not Available"
+
+
+def _build_prediction_entries(predictions: Sequence[Any]) -> List[Dict[str, Any]]:
+    """Build drag-and-drop friendly prediction objects for workflow variables."""
+    return [
+        {"result": int(p), "label": _label_for_prediction(p)}
+        for p in predictions
+    ]
 
 
 class MLModelInferenceNode(BaseNode):
@@ -142,7 +195,8 @@ class MLModelInferenceNode(BaseNode):
         Returns:
             Dictionary with prediction results in batch format:
                 {
-                    "prediction": [1, 0, ...],
+                    "prediction": [{"result": 1, "label": "Available"}, ...],
+                    "prediction_values": [1, 0, ...],
                     "prediction_label": ["Available", "Not Available", ...],
                     "probabilities": [{...}, {...}, ...],
                     "batch_size": N,
@@ -201,10 +255,8 @@ class MLModelInferenceNode(BaseNode):
             # Convert string inputs to proper types (bool, float, int) and parse JSON arrays
             inference_inputs = convert_input_types(inference_inputs)
 
-            # Normalize to batch format: convert single values to lists
-            normalized_inputs: Dict[str, list] = {}
-            for key, value in inference_inputs.items():
-                normalized_inputs[key] = value if isinstance(value, list) else [value]
+            # Normalize to batch format; skip unset feature slots from the UI
+            normalized_inputs = _normalize_inference_inputs(inference_inputs)
 
             # Check if model_response has a "version" key for v2.0 format vs legacy
             if "version" in model_response and model_response["version"] == "v2.0":
@@ -261,6 +313,8 @@ class MLModelInferenceNode(BaseNode):
                     for i in range(len(feature_names))
                 }
 
+                prediction_entries = _build_prediction_entries(predictions)
+
                 result: Dict[str, Any] = {
                     "status": "success",
                     "model_id": str(model_id),
@@ -272,8 +326,9 @@ class MLModelInferenceNode(BaseNode):
                     "features_used": ml_model.features,
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,
-                    "prediction": [int(p) for p in predictions],
-                    "prediction_label": ["Available" if p == 1 else "Not Available" for p in predictions],
+                    "prediction": prediction_entries,
+                    "prediction_values": [entry["result"] for entry in prediction_entries],
+                    "prediction_label": [entry["label"] for entry in prediction_entries],
                 }
 
                 # Add probabilities and confidence
