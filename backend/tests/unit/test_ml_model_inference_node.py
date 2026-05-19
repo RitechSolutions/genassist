@@ -4,6 +4,7 @@ import pytest
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     _build_input_array,
     _build_prediction_entries,
+    _label_for_prediction,
     _normalize_inference_inputs,
 )
 
@@ -51,15 +52,26 @@ class TestBuildInputArray:
         np.testing.assert_array_equal(result[0], [0, 10, 0])
 
 
+class TestLabelForPrediction:
+    def test_zero_is_not_available(self):
+        assert _label_for_prediction(0) == "Not Available"
+
+    def test_non_zero_number_is_available(self):
+        assert _label_for_prediction(3891) == "Available"
+
+    def test_bool_false_is_not_available(self):
+        assert _label_for_prediction(False) == "Not Available"
+
+
 class TestBuildPredictionEntries:
     def test_single_prediction_object(self):
         entries = _build_prediction_entries([3891])
-        assert entries == [{"result": 3891, "label": "Not Available"}]
+        assert entries == [{"result": 3891, "label": "Available"}]
 
     def test_batch_prediction_objects(self):
         entries = _build_prediction_entries([1, 0, 3891])
         assert entries == [
             {"result": 1, "label": "Available"},
             {"result": 0, "label": "Not Available"},
-            {"result": 3891, "label": "Not Available"},
+            {"result": 3891, "label": "Available"},
         ]

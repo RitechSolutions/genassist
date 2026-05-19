@@ -162,7 +162,16 @@ def _build_input_array(
 
 
 def _label_for_prediction(value: Any) -> str:
-    return "Available" if value == 1 else "Not Available"
+    """Map a model prediction to an availability label."""
+    if value is None:
+        return "Not Available"
+    if isinstance(value, (bool, np.bool_)):
+        return "Available" if value else "Not Available"
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return "Available" if float(value) != 0 else "Not Available"
+    if isinstance(value, str):
+        return "Available" if value.strip() else "Not Available"
+    return "Available" if value else "Not Available"
 
 
 def _build_prediction_entries(predictions: Sequence[Any]) -> List[Dict[str, Any]]:
@@ -326,7 +335,7 @@ class MLModelInferenceNode(BaseNode):
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,
                     "prediction": prediction_entries,
-                    "prediction_label": [entry["label"] for entry in prediction_entries],
+                    "prediction_label": [_label_for_prediction(p) for p in predictions],
                 }
 
                 # Add probabilities and confidence
