@@ -28,10 +28,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { getAgentConfig } from "@/services/api";
 import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
+import { PageListSkeleton } from "@/components/skeletons";
 
 interface AgentListProps {
   agents: AgentListItem[];
   total: number;
+  loading?: boolean;
   onDelete: (agentId: string) => void;
   onUpdate: (agentId: string) => void;
   onManageKeys: (agentId: string) => void;
@@ -47,6 +49,7 @@ interface AgentListProps {
 const AgentList: React.FC<AgentListProps> = ({
   agents,
   total,
+  loading = false,
   onDelete,
   onUpdate,
   onManageKeys,
@@ -328,7 +331,9 @@ const AgentList: React.FC<AgentListProps> = ({
       </Tabs>
 
       <div className="rounded-md border bg-card shadow-sm overflow-hidden">
-        {isListEmpty ? (
+        {loading ? (
+          <PageListSkeleton variant="agent" rows={5} bordered={false} />
+        ) : isListEmpty ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">
               <Workflow className="h-12 w-12 text-gray-400" />
