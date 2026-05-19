@@ -255,7 +255,10 @@ export function WebSocketDashboardProvider({
         const payload = data.payload as {
           conversation_id?: string;
           supervisor_id?: string;
+          takeover_user_id?: string;
         };
+        const supervisorId =
+          payload?.supervisor_id ?? payload?.takeover_user_id;
         if (payload?.conversation_id) {
           setConversations((prev) =>
             prev.map((c) =>
@@ -263,7 +266,7 @@ export function WebSocketDashboardProvider({
                 ? {
                     ...c,
                     status: "takeover" as const,
-                    supervisor_id: payload.supervisor_id || c.supervisor_id,
+                    supervisor_id: supervisorId || c.supervisor_id,
                   }
                 : c
             )

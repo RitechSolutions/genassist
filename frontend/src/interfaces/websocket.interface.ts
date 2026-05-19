@@ -18,6 +18,7 @@ export interface StatisticsPayload {
 export interface TakeoverPayload {
     supervisor_id?: string;
     user_id?: string;
+    takeover_user_id?: string;
     timestamp?: string;
   }
 
