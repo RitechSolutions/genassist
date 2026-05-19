@@ -196,7 +196,6 @@ class MLModelInferenceNode(BaseNode):
             Dictionary with prediction results in batch format:
                 {
                     "prediction": [{"result": 1, "label": "Available"}, ...],
-                    "prediction_values": [1, 0, ...],
                     "prediction_label": ["Available", "Not Available", ...],
                     "probabilities": [{...}, {...}, ...],
                     "batch_size": N,
@@ -327,7 +326,6 @@ class MLModelInferenceNode(BaseNode):
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,
                     "prediction": prediction_entries,
-                    "prediction_values": [entry["result"] for entry in prediction_entries],
                     "prediction_label": [entry["label"] for entry in prediction_entries],
                 }
 
