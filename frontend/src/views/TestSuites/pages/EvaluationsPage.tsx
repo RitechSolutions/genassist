@@ -19,7 +19,7 @@ import {
 import {TestEvaluationConfig} from "@/interfaces/testEvaluation.interface";
 import {getLLMProvidersMinimal} from "@/services/llmProviders";
 import {LLMProviderMinimal} from "@/interfaces/llmProvider.interface";
-import {Skeleton} from "@/components/skeleton";
+import {PageListSkeleton} from "@/components/skeletons";
 import {Progress} from "@/components/progress";
 import {Badge} from "@/components/badge";
 import {EvaluationWizard, EvaluationWizardData} from "../components/EvaluationWizard";
@@ -340,31 +340,7 @@ const EvaluationsPage: React.FC = () => {
 
       <div className="rounded-lg border bg-white overflow-hidden">
         {isLoading ? (
-          <div className="divide-y divide-gray-100">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="py-4 px-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-6 w-48" />
-                    <Skeleton className="h-4 w-64" />
-                    <div className="flex items-center gap-2 mt-2">
-                      <Skeleton className="h-2 w-32 rounded-full" />
-                      <Skeleton className="h-4 w-16" />
-                    </div>
-                    <div className="flex gap-1 mt-2">
-                      <Skeleton className="h-5 w-20 rounded-full" />
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Skeleton className="h-8 w-8 rounded" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                    <Skeleton className="h-8 w-20 rounded" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <PageListSkeleton variant="evaluation" bordered={false} />
         ) : filteredEvaluations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">

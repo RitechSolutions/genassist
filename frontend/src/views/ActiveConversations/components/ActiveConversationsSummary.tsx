@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/skeleton";
 import { cn } from "@/helpers/utils";
 
 interface SummaryProps {
@@ -17,11 +18,11 @@ export function ActiveConversationsSummary({ total, counts, loading }: SummaryPr
     <div className="flex flex-col items-center gap-6 rounded-2xl bg-muted px-2 pb-2 pt-6 sm:gap-8 sm:pt-8">
       {loading ? (
         <div className="w-full space-y-3">
-          <div className="mx-auto h-10 w-20 animate-pulse rounded bg-gray-200 sm:h-12 sm:w-24" />
+          <Skeleton className="mx-auto h-10 w-20 sm:h-12 sm:w-24" />
           <div className="flex gap-1">
-            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
-            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
-            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
+            <Skeleton className="h-24 flex-1 rounded-lg" />
+            <Skeleton className="h-24 flex-1 rounded-lg" />
+            <Skeleton className="h-24 flex-1 rounded-lg" />
           </div>
         </div>
       ) : (
@@ -29,7 +30,7 @@ export function ActiveConversationsSummary({ total, counts, loading }: SummaryPr
           <div className="text-4xl font-bold leading-none text-foreground sm:text-5xl">
             {total}
           </div>
-          
+
           <div className="flex gap-1 w-full">
             {sentiments.map((sentiment, index) => (
               <div

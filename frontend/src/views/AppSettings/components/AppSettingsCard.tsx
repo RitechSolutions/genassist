@@ -12,6 +12,7 @@ interface AppSettingsCardProps {
   appSettings: AppSetting[];
   searchQuery: string;
   refreshKey: number;
+  loading?: boolean;
   onEditSetting?: (setting: AppSetting) => void;
   onDeleteSetting?: (id: string) => Promise<void>;
 }
@@ -19,6 +20,7 @@ interface AppSettingsCardProps {
 export function AppSettingsCard({
   searchQuery,
   appSettings,
+  loading = false,
   onEditSetting,
   onDeleteSetting,
 }: AppSettingsCardProps) {
@@ -181,7 +183,7 @@ export function AppSettingsCard({
     <>
       <DataTable
         data={displayData}
-        loading={false}
+        loading={loading}
         error={null}
         searchQuery={searchQuery}
         headers={headers}

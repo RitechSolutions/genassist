@@ -8,7 +8,8 @@ import {
   TableRow,
 } from "@/components/table";
 import { Card } from "@/components/card";
-import { Loader2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { TableSkeleton } from "@/components/skeletons";
+import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
 import { getPaginationMeta } from "@/helpers/pagination";
 export interface Column<T> {
@@ -84,11 +85,7 @@ export function DataTable<T extends { id?: string | number }>({
   }, [data, sortKey, sortDir, columns]);
 
   if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
+    return <TableSkeleton columns={columns.length} />;
   }
 
   if (error) {
