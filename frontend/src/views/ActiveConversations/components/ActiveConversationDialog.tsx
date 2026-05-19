@@ -230,18 +230,10 @@ function TranscriptDialogContent({
   );
 
   useEffect(() => {
-    const wsSupervisorId =
-      takeoverInfo.supervisor_id ??
-      takeoverInfo.takeover_user_id ??
-      takeoverInfo.user_id;
-    if (wsSupervisorId) {
-      setLocalSupervisorId(wsSupervisorId);
+    if (takeoverInfo.supervisor_id) {
+      setLocalSupervisorId(takeoverInfo.supervisor_id);
     }
-  }, [
-    takeoverInfo.supervisor_id,
-    takeoverInfo.takeover_user_id,
-    takeoverInfo.user_id,
-  ]);
+  }, [takeoverInfo.supervisor_id]);
 
   const resolvedSupervisorId = useMemo(() => {
     const fromTranscript = transcript?.supervisor_id?.trim();
@@ -249,17 +241,9 @@ function TranscriptDialogContent({
       localSupervisorId ??
       (fromTranscript || null) ??
       takeoverInfo.supervisor_id ??
-      takeoverInfo.takeover_user_id ??
-      takeoverInfo.user_id ??
       null
     );
-  }, [
-    localSupervisorId,
-    transcript?.supervisor_id,
-    takeoverInfo.supervisor_id,
-    takeoverInfo.takeover_user_id,
-    takeoverInfo.user_id,
-  ]);
+  }, [localSupervisorId, transcript?.supervisor_id, takeoverInfo.supervisor_id]);
 
   const isCurrentUserSupervisor = useMemo(() => {
     if (userInitiatedTakeOver) return true;

@@ -13,6 +13,8 @@ import {
   ConversationListPayload,
   ConversationUpdatePayload,
   FinalizePayload,
+  TakeoverWirePayload,
+  resolveTakeoverSupervisorId,
 } from "@/interfaces/websocket.interface";
 import { conversationService } from "@/services/liveConversations";
 
@@ -252,13 +254,10 @@ export function WebSocketDashboardProvider({
         break;
       }
       case "takeover": {
-        const payload = data.payload as {
+        const payload = data.payload as TakeoverWirePayload & {
           conversation_id?: string;
-          supervisor_id?: string;
-          takeover_user_id?: string;
         };
-        const supervisorId =
-          payload?.supervisor_id ?? payload?.takeover_user_id;
+        const supervisorId = resolveTakeoverSupervisorId(payload);
         if (payload?.conversation_id) {
           setConversations((prev) =>
             prev.map((c) =>
