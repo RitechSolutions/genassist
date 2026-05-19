@@ -59,10 +59,19 @@ export function useWebSocketTranscript({
     }
 
     if (data.topic === "takeover" || data.type === "takeover") {
-      const payload = data.payload as { supervisor_id?: string; user_id?: string };
+      const payload = data.payload as {
+        supervisor_id?: string;
+        user_id?: string;
+        takeover_user_id?: string;
+      };
+      const supervisorId =
+        payload?.supervisor_id ??
+        payload?.takeover_user_id ??
+        payload?.user_id;
       setTakeoverInfo({
-        supervisor_id: payload?.supervisor_id,
-        user_id: payload?.user_id,
+        supervisor_id: supervisorId,
+        user_id: payload?.user_id ?? payload?.takeover_user_id,
+        takeover_user_id: payload?.takeover_user_id,
         timestamp: new Date().toISOString(),
       });
     }
