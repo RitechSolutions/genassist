@@ -2,6 +2,7 @@ import { useToast } from "@/hooks/useToast";
 import { ActiveConversation } from "@/interfaces/liveConversation.interface";
 import { Transcript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import { conversationService } from "@/services/liveConversations";
+import { getCurrentUserId } from "@/services/auth";
 import { fetchDashboardConversations } from "@/services/dashboard";
 import { ActiveConversationItem } from "@/interfaces/dashboard.interface";
 import { apiRequest } from "@/config/api";
@@ -410,6 +411,7 @@ export const ActiveConversations = () => {
         transcriptId
       );
       if (success) {
+        const currentUserId = getCurrentUserId();
         toast({
           title: "Success",
           description: "Successfully took over the conversation",
@@ -417,12 +419,22 @@ export const ActiveConversations = () => {
         // Update the selected transcript and list
         setSelectedTranscript((prev) =>
           prev?.id === transcriptId
-            ? { ...prev, status: "takeover" as const }
+            ? {
+                ...prev,
+                status: "takeover" as const,
+                supervisor_id: currentUserId ?? prev.supervisor_id,
+              }
             : prev
         );
         setAllConversations((prev) =>
           prev.map((c) =>
-            c.id === transcriptId ? { ...c, status: "takeover" as const } : c
+            c.id === transcriptId
+              ? {
+                  ...c,
+                  status: "takeover" as const,
+                  supervisor_id: currentUserId ?? c.supervisor_id,
+                }
+              : c
           )
         );
         wsRefetch();

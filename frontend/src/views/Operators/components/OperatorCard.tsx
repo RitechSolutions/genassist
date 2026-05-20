@@ -1,39 +1,54 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/card";
-import { ThumbsUp, Clock, Star, InfoIcon } from "lucide-react";
+import { ThumbsUp, Clock, Star } from "lucide-react";
 import { OperatorDetailsDialog } from "./OperatorDetailsDialog";
 import { useLocation } from "react-router-dom";
 import { fetchOperators } from "@/services/operators";
 import { Operator } from "@/interfaces/operator.interface";
 import { formatCallDuration } from "@/helpers/formatters";
 import { CardHeader } from "@/components/CardHeader";
+import { PageListSkeleton } from "@/components/skeletons";
 
-export function OperatorsCard({ searchQuery, refreshKey }) {
+interface OperatorsCardProps {
+  searchQuery: string;
+  refreshKey: number;
+}
+
+export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
   const [operators, setOperators] = useState<Operator[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<Operator | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [imageErrors, setImageErrors] = useState(new Set());
+  const [imageErrors, setImageErrors] = useState(new Set<string | number>());
 
   const location = useLocation();
   const isDashboard = location.pathname === "/dashboard";
 
   useEffect(() => {
     const getOperators = async () => {
-      const rawData = await fetchOperators();
+      setLoading(true);
+      try {
+        const rawData = await fetchOperators();
 
-      const sortedOperators = rawData.sort((a, b) => {
-        const sentimentA = a.operator_statistics?.positive ?? 0;
-        const sentimentB = b.operator_statistics?.positive ?? 0;
+        const sortedOperators = rawData.sort((a, b) => {
+          const sentimentA = a.operator_statistics?.positive ?? 0;
+          const sentimentB = b.operator_statistics?.positive ?? 0;
 
-        if (sentimentB !== sentimentA) {
-          return sentimentB - sentimentA;
-        }
-        return (b.operator_statistics.score ?? 0) - (a.operator_statistics.score ?? 0);
-      });
+          if (sentimentB !== sentimentA) {
+            return sentimentB - sentimentA;
+          }
+          return (
+            (b.operator_statistics?.score ?? 0) -
+            (a.operator_statistics?.score ?? 0)
+          );
+        });
 
-      setOperators(isDashboard ? sortedOperators.slice(0, 5) : sortedOperators);
-      
-      setOperators(sortedOperators);
+        setOperators(
+          isDashboard ? sortedOperators.slice(0, 5) : sortedOperators
+        );
+      } finally {
+        setLoading(false);
+      }
     };
 
     getOperators();
@@ -43,37 +58,45 @@ export function OperatorsCard({ searchQuery, refreshKey }) {
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
   }
 
-  const handleImageError = (agentId) => {
+  const handleImageError = (agentId: string | number) => {
     setImageErrors((prevErrors) => new Set(prevErrors).add(agentId));
   };
 
   let filteredAgents = searchQuery
-  ? operators.filter(
-      (agent) =>
-        agent.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        agent.lastName?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  : operators;
+    ? operators.filter(
+        (agent) =>
+          agent.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          agent.lastName?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : operators;
 
   if (isDashboard) {
     filteredAgents = filteredAgents.slice(0, 5);
   }
 
+  const isSearchActive = searchQuery.trim() !== "";
+
   return (
     <>
       <Card className="p-4 shadow-sm animate-fade-up bg-white">
-        <CardHeader 
+        <CardHeader
           title={isDashboard ? "Top Performing Operators" : ""}
-          tooltipText={isDashboard ? "Operators ranked by customer satisfaction scores and overall performance metrics" : undefined}
+          tooltipText={
+            isDashboard
+              ? "Operators ranked by customer satisfaction scores and overall performance metrics"
+              : undefined
+          }
           linkText={isDashboard ? "View all" : undefined}
           linkHref={isDashboard ? "/operators" : undefined}
         />
 
         <div className="space-y-2">
-          {filteredAgents.length > 0 ? (
+          {loading ? (
+            <PageListSkeleton variant="operator" rows={5} bordered={false} />
+          ) : filteredAgents.length > 0 ? (
             filteredAgents.map((agent, index) => (
               <div
-                key={index}
+                key={agent.id ?? index}
                 className="flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-muted/30 cursor-pointer"
                 onClick={() => {
                   setSelectedAgent(agent);
@@ -99,15 +122,23 @@ export function OperatorsCard({ searchQuery, refreshKey }) {
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <div className="flex items-center gap-1">
                       <ThumbsUp className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">{agent.operator_statistics?.positive ?? 0}%</span>
+                      <span className="text-xs text-muted-foreground">
+                        {agent.operator_statistics?.positive ?? 0}%
+                      </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">{formatCallDuration(agent.operator_statistics?.totalCallDuration)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatCallDuration(
+                          agent.operator_statistics?.totalCallDuration
+                        )}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="w-3.5 h-3.5 text-yellow-400" />
-                      <span className="text-xs text-muted-foreground">{agent.operator_statistics?.score ?? 0}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {agent.operator_statistics?.score ?? 0}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -117,7 +148,11 @@ export function OperatorsCard({ searchQuery, refreshKey }) {
               </div>
             ))
           ) : (
-            <p className="text-center text-muted-foreground text-sm py-8">No operators found</p>
+            <p className="text-center text-muted-foreground text-sm py-8">
+              {isSearchActive
+                ? "No operators match your search."
+                : "No operators found"}
+            </p>
           )}
         </div>
       </Card>

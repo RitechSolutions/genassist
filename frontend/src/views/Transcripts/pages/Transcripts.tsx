@@ -64,6 +64,7 @@ import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
 import { apiRequest } from "@/config/api";
+import { PageListSkeleton } from "@/components/skeletons";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -268,17 +269,12 @@ const Transcripts = () => {
     (open: boolean) => {
       setIsModalOpen(open);
       if (!open) {
-        const params = new URLSearchParams(location.search);
-        if (params.has("conversation")) {
-          params.delete("conversation");
-          navigate(
-            { pathname: location.pathname, search: params.toString() },
-            { replace: true }
-          );
-        }
+        const next = new URLSearchParams(location.search);
+        next.delete("conversation");
+        navigate({ search: next.toString() }, { replace: true });
       }
     },
-    [location.pathname, location.search, navigate]
+    [location.search, navigate]
   );
 
   const handleStatusFilterChange = (value: string) => {
@@ -993,9 +989,7 @@ const Transcripts = () => {
 
               <Card className="divide-y divide-gray-100 bg-white shadow-sm rounded-lg overflow-hidden">
                 {loading ? (
-                  <p className="text-center text-gray-500 p-6">
-                    Loading transcripts...
-                  </p>
+                  <PageListSkeleton variant="conversation" rows={6} bordered={false} />
                 ) : error ? (
                   <p className="text-center text-red-500 p-6">
                     Error loading transcripts. Please try again.
@@ -1177,7 +1171,7 @@ const Transcripts = () => {
         <TranscriptDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
           agentName={
             selectedAgentId !== "all"
               ? agents.find((a) => a.id === selectedAgentId)?.name
