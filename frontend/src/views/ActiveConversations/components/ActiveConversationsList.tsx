@@ -1,7 +1,7 @@
 import { Button } from "@/components/button";
-import { Skeleton } from "@/components/skeleton";
 import { MessageSquare } from "lucide-react";
 import type { NormalizedConversation } from "../helpers/activeConversations.types";
+import { PageListSkeleton } from "@/components/skeletons";
 import ConversationRow from "./ConversationRow";
 
 interface ListProps {
@@ -26,16 +26,7 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
   }
 
   if (isLoading) {
-    return (
-      <>
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="p-4">
-            <Skeleton className="h-6 w-2/3 mb-2" />
-            <Skeleton className="h-4 w-full" />
-          </div>
-        ))}
-      </>
-    );
+    return <PageListSkeleton variant="conversation" rows={5} bordered={false} />;
   }
 
   if (!items || items.length === 0) {
