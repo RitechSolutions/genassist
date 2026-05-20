@@ -186,14 +186,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center p-8">
-        Loading workflows configurations...
-      </div>
-    );
-
-  if (error) {
+  if (error && !loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-2 p-4 text-destructive bg-destructive/10 rounded-md">
@@ -231,6 +224,7 @@ const Dashboard: React.FC = () => {
         <AgentList
           agents={agents}
           total={total}
+          loading={loading}
           onDelete={handleDeleteClick}
           onUpdate={handleUpdateAgent}
           onManageKeys={handleManageKeys}
