@@ -24,7 +24,7 @@ import type {BackendTranscript, TranscriptEntry} from "@/interfaces/transcript.i
 import {getWorkflowsMinimal} from "@/services/workflows";
 import type {WorkflowMinimal} from "@/interfaces/workflow.interface";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/select";
-import {Skeleton} from "@/components/skeleton";
+import {PageListSkeleton} from "@/components/skeletons";
 
 const CONV_PAGE_SIZE = 20;
 
@@ -264,25 +264,7 @@ const DatasetsPage: React.FC = () => {
 
       <div className="rounded-lg border bg-white overflow-hidden">
         {isLoading ? (
-          <div className="divide-y divide-gray-100">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="py-4 px-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-6 w-48" />
-                    <Skeleton className="h-4 w-64" />
-                    <Skeleton className="h-3 w-32 mt-2" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Skeleton className="h-6 w-16 rounded-md" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <PageListSkeleton bordered={false} />
         ) : filteredSuites.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">

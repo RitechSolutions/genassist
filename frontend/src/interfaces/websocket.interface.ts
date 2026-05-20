@@ -15,11 +15,27 @@ export interface StatisticsPayload {
     [key: string]: number | string | undefined;
   }
 
+/** Normalized takeover event (WS may send takeover_user_id; REST uses supervisor_id). */
 export interface TakeoverPayload {
     supervisor_id?: string;
-    user_id?: string;
     timestamp?: string;
   }
+
+export type TakeoverWirePayload = {
+    supervisor_id?: string;
+    takeover_user_id?: string;
+    user_id?: string;
+};
+
+export function resolveTakeoverSupervisorId(
+    payload: TakeoverWirePayload | null | undefined
+): string | undefined {
+    const id =
+        payload?.supervisor_id?.trim() ||
+        payload?.takeover_user_id?.trim() ||
+        payload?.user_id?.trim();
+    return id || undefined;
+}
 
 // New interfaces for dashboard WebSocket
 export interface UseWebSocketDashboardOptions {

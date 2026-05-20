@@ -4,6 +4,7 @@ import { Card } from "@/components/card";
 import { IntegrationWorkflowsDialog } from "./IntegrationWorkflowsDialog";
 import { fetchDashboardIntegrations } from "@/services/dashboard";
 import type { IntegrationItem as ApiIntegrationItem } from "@/interfaces/dashboard.interface";
+import { PageListSkeleton } from "@/components/skeletons";
 import { useNavigate } from "react-router-dom";
 
 type IconType = "mail" | "headset" | "slack" | "whatsapp" | "calendar" | "other";
@@ -149,11 +150,7 @@ export function IntegrationsCard({
         {/* Integrations List */}
         <div className="flex flex-col gap-2 px-4 pb-4">
           {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />
-              ))}
-            </div>
+            <PageListSkeleton variant="dashboard-integration" rows={5} bordered={false} />
           ) : integrations.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No integrations configured yet.</p>
