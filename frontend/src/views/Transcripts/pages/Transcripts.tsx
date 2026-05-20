@@ -269,17 +269,12 @@ const Transcripts = () => {
     (open: boolean) => {
       setIsModalOpen(open);
       if (!open) {
-        const params = new URLSearchParams(location.search);
-        if (params.has("conversation")) {
-          params.delete("conversation");
-          navigate(
-            { pathname: location.pathname, search: params.toString() },
-            { replace: true }
-          );
-        }
+        const next = new URLSearchParams(location.search);
+        next.delete("conversation");
+        navigate({ search: next.toString() }, { replace: true });
       }
     },
-    [location.pathname, location.search, navigate]
+    [location.search, navigate]
   );
 
   const handleStatusFilterChange = (value: string) => {
@@ -1176,7 +1171,7 @@ const Transcripts = () => {
         <TranscriptDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
           agentName={
             selectedAgentId !== "all"
               ? agents.find((a) => a.id === selectedAgentId)?.name
