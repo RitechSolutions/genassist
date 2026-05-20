@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { cn } from "@/helpers/utils";
 import { Card } from "@/components/card";
-import { Loader2 } from "lucide-react";
+import { TableSkeleton } from "@/components/skeletons";
 import {
   Table,
   TableBody,
@@ -34,11 +34,7 @@ export function DataTable<T>({
   emptyState,
 }: DataTableProps<T>) {
   if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
+    return <TableSkeleton columns={headers.length} />;
   }
 
   if (error) {
