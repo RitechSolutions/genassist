@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SearchInput } from '@/components/SearchInput';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { PageListSkeleton } from '@/components/skeletons';
 import { KBListItem, FileItem } from '../types/knowledgeBase';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -183,9 +184,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
       <div className="rounded-lg border bg-white overflow-hidden">
         {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="text-sm text-gray-500">Loading knowledge base items...</div>
-          </div>
+          <PageListSkeleton variant="rich" bordered={false} />
         ) : filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
             <Database className="h-12 w-12 text-gray-400" />

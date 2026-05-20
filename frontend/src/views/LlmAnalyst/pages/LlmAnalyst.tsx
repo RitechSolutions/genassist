@@ -76,6 +76,7 @@ export default function LLMAnalysts() {
       <LLMAnalystCard
         searchQuery={searchQuery}
         analysts={llmAnalysts}
+        loading={isLoading}
         onEdit={handleEditLLMAnalyst}
         onDelete={handleDeleteLLMAnalyst}
       />

@@ -77,6 +77,7 @@ export default function DataSources() {
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         dataSources={dataSources}
+        loading={isLoading}
         onEditDataSource={handleEditDataSource}
         onDeleteDataSource={handleDeleteDataSource}
       />
