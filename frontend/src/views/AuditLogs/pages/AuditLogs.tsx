@@ -218,7 +218,8 @@ export default function AuditLogs() {
                 users={users}
                 selectedUser={selectedUser}
                 onViewDetails={handleViewDetails}
-                isRefreshing={isRefreshing}
+                loading={isRefreshing && filteredAuditLogs.length === 0}
+                isRefreshing={isRefreshing && filteredAuditLogs.length > 0}
               />
 
               <Pagination>
