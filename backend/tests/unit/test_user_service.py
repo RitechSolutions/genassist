@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -225,6 +226,22 @@ async def test_update_user_success(user_service, mock_repository):
     mock_repository.update.assert_called_once_with(user_id, update_data)
     mock_repository.get_full.assert_called_once_with(mock_updated_user.id)
     assert result == mock_updated_user
+
+def test_user_update_rejects_empty_role_ids():
+    with pytest.raises(ValidationError):
+        UserUpdate(role_ids=[])
+
+@pytest.mark.asyncio
+async def test_update_user_empty_role_ids(user_service, mock_repository):
+    user_id = uuid4()
+    update_data = UserUpdate.model_construct(role_ids=[])
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.update(user_id, update_data)
+
+    assert exc_info.value.error_key == ErrorKey.USER_ROLES_REQUIRED
+    assert exc_info.value.status_code == 400
+    mock_repository.update.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_update_user_duplicate_email(user_service, mock_repository):
