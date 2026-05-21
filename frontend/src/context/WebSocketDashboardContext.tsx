@@ -6,7 +6,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import {
+  handleDashboardNotificationMessage,
+  type NotificationFeedIncludes,
+} from "@/hooks/notificationSocketSync";
+import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings";
 import { ActiveConversation } from "@/interfaces/liveConversation.interface";
 import {
   ConversationDataPayload,
@@ -26,9 +32,8 @@ const DEFAULT_TOPICS = [
   "update",
   "notification",
 ] as const;
-const EFFECTIVE_TOPICS: string[] = Array.from(
-  new Set([...DEFAULT_TOPICS, "message", "hostile", "update"])
-);
+/** Must include `notification` — bell real-time updates use the dashboard socket, not per-conversation sockets. */
+const EFFECTIVE_TOPICS: string[] = Array.from(new Set(DEFAULT_TOPICS));
 
 export type DashboardMessageListener = (
   data: Record<string, unknown>
@@ -91,6 +96,19 @@ export function WebSocketDashboardProvider({
   const [finalizedIds, setFinalizedIds] = useState<string[]>([]);
   const [resyncHint, setResyncHint] = useState<number>(0);
   const messageListenersRef = useRef(new Set<DashboardMessageListener>());
+  const queryClient = useQueryClient();
+  const { settings: notificationSettings } = useNotificationUserSettings();
+
+  const notificationIncludes = useMemo<NotificationFeedIncludes>(
+    () => ({
+      conversationStarted: notificationSettings.conversationStarted,
+      conversationHostility: notificationSettings.conversationHostility,
+      conversationFinalizedHostility:
+        notificationSettings.conversationFinalizedHostility,
+      workflowFailed: notificationSettings.workflowFailed,
+    }),
+    [notificationSettings]
+  );
 
   const subscribe = useCallback((listener: DashboardMessageListener) => {
     messageListenersRef.current.add(listener);
@@ -99,17 +117,23 @@ export function WebSocketDashboardProvider({
     };
   }, []);
 
-  const handleMessage = useCallback((data: Record<string, unknown>) => {
-    const topic = (data.topic || data.type) as string;
+  const handleMessage = useCallback(
+    (data: Record<string, unknown>) => {
+      const topic = (data.topic || data.type) as string;
 
-    if (topic === "notification") {
-      for (const listener of messageListenersRef.current) {
-        listener(data);
+      if (topic === "notification") {
+        handleDashboardNotificationMessage(
+          queryClient,
+          data,
+          notificationIncludes
+        );
+        for (const listener of messageListenersRef.current) {
+          listener(data);
+        }
+        return;
       }
-      return;
-    }
 
-    switch (topic) {
+      switch (topic) {
       case "conversation_list": {
         const payload = data.payload as ConversationListPayload;
         if (Array.isArray(payload.conversations)) {
@@ -276,7 +300,9 @@ export function WebSocketDashboardProvider({
       default:
         break;
     }
-  }, []);
+    },
+    [queryClient, notificationIncludes]
+  );
 
   const { isConnected, error, refetch } = useWebSocket({
     roomType: "dashboard",

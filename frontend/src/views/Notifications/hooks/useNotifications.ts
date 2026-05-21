@@ -1,1 +1,4 @@
-export { useNotifications } from "@/hooks/useNotifications"
+export {
+  useNotificationBell,
+  useNotificationsInfinite,
+} from "@/hooks/useNotifications"

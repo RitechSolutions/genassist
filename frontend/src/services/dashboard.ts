@@ -95,7 +95,7 @@ export const fetchDashboardIntegrations = async (): Promise<IntegrationsResponse
   }
 };
 
-type NotificationFeedItemRaw = Omit<Notification, "read" | "actionUrl"> & {
+type NotificationFeedItemRaw = Omit<Notification, "actionUrl"> & {
   action_url: string;
 };
 
@@ -108,7 +108,7 @@ function mapNotificationFeedItems(
     description: item.description,
     timestamp: item.timestamp,
     type: item.type,
-    read: false,
+    read: Boolean(item.read),
     actionUrl: item.action_url,
   }));
 }
@@ -118,34 +118,60 @@ export type NotificationFeedPageResult = {
   hasMore: boolean;
 };
 
+export type NotificationBellPreview = {
+  items: Notification[];
+  unreadCount: number;
+};
+
+export const NOTIFICATIONS_PAGE_SIZE = 20;
+
 export type NotificationTypeFilter =
   | "all"
   | "conversation_started"
   | "conversation_hostility"
   | "conversation_finalized_hostility";
 
+type NotificationFeedIncludeOptions = {
+  includeConversationStarted: boolean;
+  includeConversationHostility: boolean;
+  includeConversationFinalizedHostility: boolean;
+  includeWorkflowFailed: boolean;
+};
+
+function appendNotificationFeedIncludes(
+  params: URLSearchParams,
+  includes: NotificationFeedIncludeOptions
+): void {
+  params.set(
+    "include_conversation_started",
+    String(includes.includeConversationStarted)
+  );
+  params.set(
+    "include_conversation_hostility",
+    String(includes.includeConversationHostility)
+  );
+  params.set(
+    "include_conversation_finalized_hostility",
+    String(includes.includeConversationFinalizedHostility)
+  );
+  params.set("include_workflow_failed", String(includes.includeWorkflowFailed));
+}
+
 /** Paginated notification feed (merged, sorted server-side). */
 export const fetchDashboardNotificationsPage = async (
   limit: number,
   skip: number,
-  includeConversationStarted: boolean,
-  includeConversationHostility: boolean,
-  includeConversationFinalizedHostility: boolean,
-  includeWorkflowFailed: boolean,
-  notificationType: NotificationTypeFilter = "all"
+  includes: NotificationFeedIncludeOptions,
+  notificationType: NotificationTypeFilter = "all",
+  unreadOnly = false
 ): Promise<NotificationFeedPageResult | null> => {
   try {
     const params = new URLSearchParams();
     params.set("limit", String(limit));
     params.set("skip", String(skip));
     params.set("notification_type", notificationType);
-    params.set("include_conversation_started", String(includeConversationStarted));
-    params.set("include_conversation_hostility", String(includeConversationHostility));
-    params.set(
-      "include_conversation_finalized_hostility",
-      String(includeConversationFinalizedHostility)
-    );
-    params.set("include_workflow_failed", String(includeWorkflowFailed));
+    params.set("unread_only", String(unreadOnly));
+    appendNotificationFeedIncludes(params, includes);
     const response = await apiRequest<{
       items: NotificationFeedItemRaw[];
       has_more: boolean;
@@ -161,30 +187,26 @@ export const fetchDashboardNotificationsPage = async (
   }
 };
 
-export type FetchDashboardNotificationsOptions = {
-  skip?: number;
-  includeConversationStarted?: boolean;
-  includeConversationHostility?: boolean;
-  includeConversationFinalizedHostility?: boolean;
-  includeWorkflowFailed?: boolean;
-  notificationType?: NotificationTypeFilter;
-};
-
-/** First page (or window) of notifications for sidebar / bell cache. */
-export const fetchDashboardNotifications = async (
-  limit: number = 50,
-  options?: FetchDashboardNotificationsOptions
-): Promise<Notification[] | null> => {
-  const page = await fetchDashboardNotificationsPage(
-    limit,
-    options?.skip ?? 0,
-    options?.includeConversationStarted ?? true,
-    options?.includeConversationHostility ?? true,
-    options?.includeConversationFinalizedHostility ?? true,
-    options?.includeWorkflowFailed ?? true,
-    options?.notificationType ?? "all"
-  );
-  return page?.items ?? null;
+/** Latest notifications for the header bell (max 10) plus unread badge count. */
+export const fetchNotificationBellPreview = async (
+  includes: NotificationFeedIncludeOptions
+): Promise<NotificationBellPreview | null> => {
+  try {
+    const params = new URLSearchParams();
+    appendNotificationFeedIncludes(params, includes);
+    const response = await apiRequest<{
+      items: NotificationFeedItemRaw[];
+      unread_count: number;
+    }>("get", `/dashboard/notifications/bell?${params.toString()}`);
+    if (!response) return null;
+    return {
+      items: mapNotificationFeedItems(response.items),
+      unreadCount: response.unread_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Error fetching notification bell preview:", error);
+    return null;
+  }
 };
 
 /**

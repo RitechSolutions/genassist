@@ -5,12 +5,11 @@ import { Button } from "@/components/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover"
 import { ScrollArea } from "@/components/scroll-area"
 import { formatTimeAgo } from "@/helpers/formatters"
-import { useNotifications } from "@/hooks/useNotifications"
+import { useNotificationBell } from "@/hooks/useNotifications"
 import { Notification } from "@/interfaces/notification.interface"
 import { cn } from "@/helpers/utils"
 
 type NotificationBellPopoverProps = {
-  maxItems?: number
   className?: string
   /** Smaller trigger (e.g. sidebar beside avatar) */
   compact?: boolean
@@ -66,14 +65,10 @@ function formatNotificationDescription(
 }
 
 export function NotificationBellPopover({
-  maxItems = 10,
   className,
   compact = false,
 }: NotificationBellPopoverProps) {
-  const { notifications, markAsRead } = useNotifications()
-
-  const unreadCount = notifications.filter((notification) => !notification.read).length
-  const previewItems = notifications.slice(0, maxItems)
+  const { notifications, unreadCount, markAsRead } = useNotificationBell()
 
   return (
     <Popover>
@@ -115,12 +110,12 @@ export function NotificationBellPopover({
 
         <ScrollArea className="h-[320px] max-w-full">
           <div className="min-w-0 max-w-full px-2 pt-1 pb-1">
-            {previewItems.length === 0 ? (
+            {notifications.length === 0 ? (
               <p className="px-2 py-4 text-center text-sm text-zinc-500">
                 No notifications yet.
               </p>
             ) : (
-              previewItems.map((notification) => {
+              notifications.map((notification) => {
                 const typeMeta = notificationTypeStyle[notification.type]
                 const TypeIcon = typeMeta.icon
                 const conversationShortId = getConversationShortId(notification)

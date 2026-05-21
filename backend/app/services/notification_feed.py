@@ -22,7 +22,6 @@ NotificationTypeFilter = Literal[
     "conversation_finalized_hostility",
 ]
 
-
 @inject
 class NotificationFeedService:
     def __init__(
@@ -46,7 +45,65 @@ class NotificationFeedService:
         include_conversation_finalized_hostility: bool = True,
         include_workflow_failed: bool = True,
         notification_type: NotificationTypeFilter = "all",
+        unread_only: bool = False,
     ) -> tuple[list[NotificationItem], bool]:
+        all_items = await self._collect_merged_items(
+            user_id=user_id,
+            user_group_id=user_group_id,
+            supervised_group_ids=supervised_group_ids,
+            include_conversation_started=include_conversation_started,
+            include_conversation_hostility=include_conversation_hostility,
+            include_conversation_finalized_hostility=include_conversation_finalized_hostility,
+            include_workflow_failed=include_workflow_failed,
+            notification_type=notification_type,
+            merge_cap=500 if unread_only else min(max(skip + limit, limit), 500),
+        )
+        all_items = await self._apply_read_state(user_id=user_id, items=all_items)
+        if unread_only:
+            all_items = [item for item in all_items if not item.read]
+        page = all_items[skip : skip + limit]
+        has_more = len(all_items) > skip + limit
+        return page, has_more
+
+    async def get_bell_preview(
+        self,
+        *,
+        user_id: UUID,
+        user_group_id: UUID | None,
+        supervised_group_ids: list[UUID],
+        include_conversation_started: bool = True,
+        include_conversation_hostility: bool = True,
+        include_conversation_finalized_hostility: bool = True,
+        include_workflow_failed: bool = True,
+    ) -> tuple[list[NotificationItem], int]:
+        all_items = await self._collect_merged_items(
+            user_id=user_id,
+            user_group_id=user_group_id,
+            supervised_group_ids=supervised_group_ids,
+            include_conversation_started=include_conversation_started,
+            include_conversation_hostility=include_conversation_hostility,
+            include_conversation_finalized_hostility=include_conversation_finalized_hostility,
+            include_workflow_failed=include_workflow_failed,
+            notification_type="all",
+            merge_cap=500,
+        )
+        all_items = await self._apply_read_state(user_id=user_id, items=all_items)
+        unread_count = sum(1 for item in all_items if not item.read)
+        return all_items[:10], unread_count
+
+    async def _collect_merged_items(
+        self,
+        *,
+        user_id: UUID,
+        user_group_id: UUID | None,
+        supervised_group_ids: list[UUID],
+        include_conversation_started: bool,
+        include_conversation_hostility: bool,
+        include_conversation_finalized_hostility: bool,
+        include_workflow_failed: bool,
+        notification_type: NotificationTypeFilter,
+        merge_cap: int,
+    ) -> list[NotificationItem]:
         audience = await self._notification_repo.build_audience_flags_for_user(
             user_id=user_id,
             user_group_id=user_group_id,
@@ -54,7 +111,6 @@ class NotificationFeedService:
             bypass_audience_restrictions=current_user_is_admin(),
         )
 
-        fetch_cap = min(max(skip + limit, limit), 500)
         include_started = (
             include_conversation_started
             and notification_type in ("all", "conversation_started")
@@ -77,31 +133,42 @@ class NotificationFeedService:
         )
 
         started = (
-            await self._conversation_started_notifications(limit=fetch_cap)
+            await self._conversation_started_notifications(limit=merge_cap)
             if include_started
             else []
         )
         hostility = (
-            await self._hostility_notifications(limit=fetch_cap)
+            await self._hostility_notifications(limit=merge_cap)
             if include_hostility
             else []
         )
         finalized_hostile = (
-            await self._finalized_high_hostility_notifications(limit=fetch_cap)
+            await self._finalized_high_hostility_notifications(limit=merge_cap)
             if include_finalized_hostility
             else []
         )
         workflow_failed = (
-            await self._workflow_failed_notifications(limit=fetch_cap)
+            await self._workflow_failed_notifications(limit=merge_cap)
             if include_failed
             else []
         )
 
         all_items = [*started, *hostility, *finalized_hostile, *workflow_failed]
         all_items.sort(key=lambda item: item.timestamp, reverse=True)
-        page = all_items[skip : skip + limit]
-        has_more = len(all_items) > skip + limit
-        return page, has_more
+        return all_items
+
+    async def _apply_read_state(
+        self, *, user_id: UUID, items: list[NotificationItem]
+    ) -> list[NotificationItem]:
+        if not items:
+            return items
+        read_ids = await self._notification_repo.get_read_notification_ids(
+            user_id,
+            [item.id for item in items],
+        )
+        return [
+            item.model_copy(update={"read": item.id in read_ids}) for item in items
+        ]
 
     async def _conversation_started_notifications(self, limit: int) -> list[NotificationItem]:
         stmt = (

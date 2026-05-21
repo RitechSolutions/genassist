@@ -6,9 +6,11 @@ from app.auth.utils import current_user_is_admin
 from app.db.models.notification_type import NotificationTypeModel
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.notification_ids import normalize_notification_ids
 from app.repositories.notification import NotificationRepository
 from app.schemas.notification import (
     NotificationAdminTargetingRead,
+    NotificationMarkReadResponse,
     NotificationTypeTargetingRead,
     NotificationTypeTargetingUpdate,
     NotificationUserSettingsRead,
@@ -182,3 +184,16 @@ class NotificationService:
             user_ids=sorted(user_ids_out, key=str),
             group_ids=sorted(group_ids_out, key=str),
         )
+
+    async def mark_notifications_read(
+        self, user_id: UUID, notification_ids: list[str]
+    ) -> NotificationMarkReadResponse:
+        normalized = normalize_notification_ids(notification_ids)
+        if not normalized:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail="No valid notification ids were provided.",
+            )
+        await self.repo.mark_notifications_read(user_id, normalized)
+        return NotificationMarkReadResponse(marked_count=len(normalized))

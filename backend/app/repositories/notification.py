@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime, timezone
 from uuid import UUID
 
 from injector import inject
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.notification_type import NotificationTypeModel
 from app.db.models.notification_type_recipient_group import NotificationTypeRecipientGroupModel
 from app.db.models.notification_type_recipient_user import NotificationTypeRecipientUserModel
+from app.db.models.user_notification_read import UserNotificationReadModel
 from app.db.models.user_notification_setting import UserNotificationSettingModel
 
 NOTIFICATION_TYPE_DEFINITIONS: dict[str, dict[str, bool]] = {
@@ -269,3 +271,46 @@ class NotificationRepository:
         users_map = await self._recipient_users_by_type_id([nt.id])
         groups_map = await self._recipient_groups_by_type_id([nt.id])
         return nt, users_map.get(nt.id, set()), groups_map.get(nt.id, set())
+
+    async def get_read_notification_ids(
+        self,
+        user_id: UUID,
+        notification_ids: list[str] | None = None,
+    ) -> set[str]:
+        stmt = select(UserNotificationReadModel.notification_id).where(
+            UserNotificationReadModel.user_id == user_id,
+            UserNotificationReadModel.is_deleted == 0,
+        )
+        if notification_ids is not None:
+            if not notification_ids:
+                return set()
+            stmt = stmt.where(
+                UserNotificationReadModel.notification_id.in_(notification_ids)
+            )
+        result = await self.db.execute(stmt)
+        return set(result.scalars().all())
+
+    async def mark_notifications_read(
+        self, user_id: UUID, notification_ids: list[str]
+    ) -> int:
+        if not notification_ids:
+            return 0
+
+        existing = await self.get_read_notification_ids(user_id, notification_ids)
+        now = datetime.now(timezone.utc)
+        added = 0
+        for notification_id in notification_ids:
+            if notification_id in existing:
+                continue
+            self.db.add(
+                UserNotificationReadModel(
+                    user_id=user_id,
+                    notification_id=notification_id,
+                    read_at=now,
+                )
+            )
+            added += 1
+
+        if added:
+            await self.db.commit()
+        return added

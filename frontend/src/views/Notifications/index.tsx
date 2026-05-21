@@ -1,10 +1,14 @@
 import NotificationsPage from './pages/NotificationsPage'
 import { NotificationCard } from './components/NotificationCard'
-import { useNotifications } from './hooks/useNotifications'
+import {
+  useNotificationBell,
+  useNotificationsInfinite,
+} from './hooks/useNotifications'
 
 export {
   NotificationCard,
-  useNotifications
+  useNotificationBell,
+  useNotificationsInfinite,
 }
 
 export default NotificationsPage 

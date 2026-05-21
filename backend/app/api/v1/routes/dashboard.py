@@ -16,7 +16,7 @@ from app.schemas.dashboard import (
     DashboardSummaryStats,
     IntegrationsResponse,
 )
-from app.schemas.notification import NotificationFeedResponse
+from app.schemas.notification import NotificationBellResponse, NotificationFeedResponse
 from app.services.dashboard import DashboardService
 from app.services.notification_feed import NotificationFeedService
 
@@ -210,6 +210,10 @@ async def get_notifications(
         default=True,
         description="When false, omits workflow failed notifications.",
     ),
+    unread_only: bool = Query(
+        default=False,
+        description="When true, returns only unread notifications (paginated after filtering).",
+    ),
     notification_feed_service: NotificationFeedService = Injected(NotificationFeedService),
 ) -> NotificationFeedResponse:
     if not hasattr(request.state, "user") or not request.state.user:
@@ -228,5 +232,41 @@ async def get_notifications(
         include_conversation_finalized_hostility=include_conversation_finalized_hostility,
         include_workflow_failed=include_workflow_failed,
         notification_type=notification_type,
+        unread_only=unread_only,
     )
     return NotificationFeedResponse(items=items, has_more=has_more)
+
+
+@router.get(
+    "/notifications/bell",
+    response_model=NotificationBellResponse,
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get bell notification preview",
+    description="Returns the 10 most recent notifications and an unread count for the bell badge.",
+)
+async def get_notification_bell_preview(
+    request: Request,
+    include_conversation_started: bool = Query(default=True),
+    include_conversation_hostility: bool = Query(default=True),
+    include_conversation_finalized_hostility: bool = Query(default=True),
+    include_workflow_failed: bool = Query(default=True),
+    notification_feed_service: NotificationFeedService = Injected(NotificationFeedService),
+) -> NotificationBellResponse:
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
+    user = request.state.user
+    gid = getattr(user, "group_id", None)
+    supervised = list(getattr(user, "supervised_group_ids", None) or [])
+    items, unread_count = await notification_feed_service.get_bell_preview(
+        user_id=user.id,
+        user_group_id=gid,
+        supervised_group_ids=supervised,
+        include_conversation_started=include_conversation_started,
+        include_conversation_hostility=include_conversation_hostility,
+        include_conversation_finalized_hostility=include_conversation_finalized_hostility,
+        include_workflow_failed=include_workflow_failed,
+    )
+    return NotificationBellResponse(items=items, unread_count=unread_count)

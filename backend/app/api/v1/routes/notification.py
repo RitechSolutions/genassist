@@ -8,6 +8,8 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.notification import (
     NotificationAdminTargetingRead,
+    NotificationMarkReadRequest,
+    NotificationMarkReadResponse,
     NotificationTypeTargetingRead,
     NotificationTypeTargetingUpdate,
     NotificationUserSettingsRead,
@@ -43,6 +45,29 @@ async def get_notification_user_settings(
         request.state.user.id,
         user_group_id=gid,
         supervised_group_ids=supervised,
+    )
+
+
+@router.post(
+    "/reads",
+    response_model=NotificationMarkReadResponse,
+    dependencies=[Depends(auth)],
+    summary="Mark notification instances as read",
+    description=(
+        "Persists read state per synthetic notification id for the current user. "
+        "Does not affect future notifications of the same type."
+    ),
+)
+async def mark_notifications_read(
+    dto: NotificationMarkReadRequest,
+    request: Request,
+    service: NotificationService = Injected(NotificationService),
+) -> NotificationMarkReadResponse:
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
+    return await service.mark_notifications_read(
+        request.state.user.id,
+        dto.notification_ids,
     )
 
 

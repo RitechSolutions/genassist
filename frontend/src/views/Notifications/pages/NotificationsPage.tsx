@@ -98,6 +98,8 @@ const NotificationsPage = () => {
     if (!allowed) setTypeFilter("all")
   }, [typeFilter, allowedTypeFilterOptions])
 
+  const unreadOnly = activeTab === "unread"
+
   const {
     notifications,
     markAllAsRead,
@@ -106,14 +108,7 @@ const NotificationsPage = () => {
     fetchNextPage,
     isFetchingNextPage,
     isLoading,
-  } = useNotificationsInfinite({ typeFilter })
-
-  const filteredNotifications = notifications
-
-  const unreadNotifications = useMemo(
-    () => filteredNotifications.filter((n) => !n.read),
-    [filteredNotifications]
-  )
+  } = useNotificationsInfinite({ typeFilter, unreadOnly })
 
   useEffect(() => {
     const sentinel =
@@ -130,7 +125,7 @@ const NotificationsPage = () => {
           void fetchNextPage()
         }
       },
-      { root: null, rootMargin: "200px", threshold: 0 }
+      { root: null, rootMargin: "100px", threshold: 0.1 }
     )
 
     observer.observe(sentinel)
@@ -140,8 +135,8 @@ const NotificationsPage = () => {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-    filteredNotifications.length,
-    unreadNotifications.length,
+    notifications.length,
+    unreadOnly,
   ])
 
   return (
@@ -195,7 +190,7 @@ const NotificationsPage = () => {
               </TabsList>
               <TabsContent value="all">
                 <Card className="overflow-hidden">
-                  {isLoading && filteredNotifications.length === 0 ? (
+                  {isLoading && notifications.length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
                       <Loader2
                         className="h-8 w-8 animate-spin"
@@ -203,7 +198,7 @@ const NotificationsPage = () => {
                       />
                       <p className="text-sm">Loading notifications…</p>
                     </div>
-                  ) : filteredNotifications.length === 0 && !hasNextPage ? (
+                  ) : notifications.length === 0 && !hasNextPage ? (
                     <EmptyNotificationsState
                       title="No notifications yet"
                       description="When there is activity you follow—such as new conversations, high hostility alerts, or workflow issues—it will show up here. You can choose which types you receive in Settings."
@@ -214,7 +209,7 @@ const NotificationsPage = () => {
                     />
                   ) : (
                     <div className="p-2">
-                      {filteredNotifications.map((notification) => (
+                      {notifications.map((notification) => (
                         <NotificationCard
                           key={notification.id}
                           notification={notification}
@@ -227,11 +222,14 @@ const NotificationsPage = () => {
                         aria-hidden
                       />
                       {isFetchingNextPage ? (
-                        <div className="flex justify-center py-3">
+                        <div className="flex items-center justify-center py-4 border-t">
                           <Loader2
                             className="h-5 w-5 animate-spin text-muted-foreground"
                             aria-label="Loading more"
                           />
+                          <span className="ml-2 text-sm text-muted-foreground">
+                            Loading more...
+                          </span>
                         </div>
                       ) : null}
                     </div>
@@ -240,7 +238,7 @@ const NotificationsPage = () => {
               </TabsContent>
               <TabsContent value="unread">
                 <Card className="overflow-hidden">
-                  {isLoading && filteredNotifications.length === 0 ? (
+                  {isLoading && notifications.length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
                       <Loader2
                         className="h-8 w-8 animate-spin"
@@ -248,14 +246,14 @@ const NotificationsPage = () => {
                       />
                       <p className="text-sm">Loading notifications…</p>
                     </div>
-                  ) : unreadNotifications.length === 0 && !hasNextPage ? (
+                  ) : notifications.length === 0 && !hasNextPage ? (
                     <EmptyNotificationsState
                       title="No unread notifications"
                       description="You are up to date. New unread items will appear in this tab when they arrive."
                     />
                   ) : (
                     <div className="p-2">
-                      {unreadNotifications.map((notification) => (
+                      {notifications.map((notification) => (
                         <NotificationCard
                           key={notification.id}
                           notification={notification}
@@ -268,11 +266,14 @@ const NotificationsPage = () => {
                         aria-hidden
                       />
                       {isFetchingNextPage ? (
-                        <div className="flex justify-center py-3">
+                        <div className="flex justify-center py-4 border-t">
                           <Loader2
                             className="h-5 w-5 animate-spin text-muted-foreground"
                             aria-label="Loading more"
                           />
+                          <span className="ml-2 text-sm text-muted-foreground">
+                            Loading more...
+                          </span>
                         </div>
                       ) : null}
                     </div>

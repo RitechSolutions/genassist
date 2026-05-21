@@ -12,11 +12,32 @@ class NotificationItem(BaseModel):
     type: str
     action_url: str
     group_id: str | None = None
+    read: bool = False
+
+
+class NotificationMarkReadRequest(BaseModel):
+    notification_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Synthetic notification ids to mark as read for the current user.",
+    )
+
+
+class NotificationMarkReadResponse(BaseModel):
+    marked_count: int
 
 
 class NotificationFeedResponse(BaseModel):
     items: list[NotificationItem]
     has_more: bool = False
+
+
+class NotificationBellResponse(BaseModel):
+    """Latest notifications for the header bell popover."""
+
+    items: list[NotificationItem]
+    unread_count: int = 0
 
 
 class NotificationUserSettingsRead(BaseModel):

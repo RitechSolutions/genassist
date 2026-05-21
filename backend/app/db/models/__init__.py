@@ -22,6 +22,7 @@ from app.db.models.role_permission import RolePermissionModel
 from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
 from app.db.models.user import UserModel
 from app.db.models.user_notification_setting import UserNotificationSettingModel
+from app.db.models.user_notification_read import UserNotificationReadModel
 from app.db.models.user_role import UserRoleModel
 from app.db.models.notification_type import NotificationTypeModel
 from app.db.models.notification_type_recipient_group import NotificationTypeRecipientGroupModel
@@ -65,6 +66,7 @@ __all__ = [
     "UserRoleModel",
     "UserModel",
     "UserNotificationSettingModel",
+    "UserNotificationReadModel",
     "NotificationTypeModel",
     "LlmAnalystModel",
     "LlmProvidersModel",
@@ -122,6 +124,7 @@ models = [
     NodeExecutionDailyStatsModel,
     UserModel,
     UserNotificationSettingModel,
+    UserNotificationReadModel,
     NotificationTypeModel,
     RoleModel,
     PermissionModel,

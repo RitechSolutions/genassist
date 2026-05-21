@@ -18,7 +18,16 @@ async def ws_dashboard(
     auth_user: AuthenticatedUser = require_authenticated_user(
         required_permissions=["*", "read:in_progress_conversation"]
     ),
-    topics: list[str] = Query(default=["message"]),
+    topics: list[str] = Query(
+        default=[
+            "message",
+            "update",
+            "finalize",
+            "hostile",
+            "statistics",
+            "notification",
+        ],
+    ),
 ):
     manager = websocket.app.state.manager
 
