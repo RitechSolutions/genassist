@@ -46,6 +46,8 @@ This produces the following files in the `dist/` directory:
 
 > **Note:** The build excludes images and static assets. Only JS and CSS files are output.
 
+For step-by-step build instructions (prerequisites, `src/font.css` setup, Vite lib output, and shipping `dist/`), see **[BUILD.md](./BUILD.md)**.
+
 ### Local Preview
 
 ```bash
