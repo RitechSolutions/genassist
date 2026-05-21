@@ -197,6 +197,12 @@ def socket_auth(required_permissions: list[str]):
             raise WebSocketException(code=4401, reason="Token expired")
         except InvalidTokenError:
             raise WebSocketException(code=4401, reason="Invalid token")
+        except RuntimeError as exc:
+            # Auth service is misconfigured (missing JWT keys, etc.). Surface a
+            # distinct close code so the frontend can stop reconnecting instead
+            # of treating it as a transient network failure.
+            logger.exception("WebSocket auth unavailable: %s", exc)
+            raise WebSocketException(code=1011, reason="Authentication unavailable")
 
     return Depends(_auth_dependency)
 
