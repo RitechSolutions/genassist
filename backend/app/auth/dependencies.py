@@ -12,6 +12,7 @@ from app.auth.utils import api_key_header, current_user_is_admin, has_permission
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import set_tenant_context
 from app.schemas.socket_principal import SocketPrincipal
 from app.schemas.user import UserReadAuth
@@ -123,6 +124,7 @@ def socket_auth(required_permissions: list[str]):
 
     async def _auth_dependency(
         websocket: WebSocket,
+        conversation_id: UUID | None = None,
         access_token: str | None = Query(default=None),
         api_key: str | None = Query(default=None),
         auth_service=Injected(AuthService),
@@ -174,9 +176,42 @@ def socket_auth(required_permissions: list[str]):
             logger.debug(f"WebSocket tenant context set: {resolved_tenant_id}")
 
             if access_token:
-                user = await auth_service.decode_jwt(access_token)
-                principal, user_id, perms = user, user.id, user.permissions
-                _set_user_context(user, user.roles)
+                guest_handled = False
+                try:
+                    guest_data = await auth_service.decode_guest_token(access_token)
+                    if conversation_id is not None and guest_data["conversation_id"] != str(
+                        conversation_id
+                    ):
+                        raise WebSocketException(
+                            code=4403,
+                            reason="Token is not valid for this conversation",
+                        )
+                    guest_user_id = guest_data.get("user_id")
+                    if not guest_user_id:
+                        raise WebSocketException(
+                            code=4401, reason="Invalid guest token"
+                        )
+                    from app.dependencies.injector import injector
+                    from app.services.users import UserService
+
+                    user_service = injector.get(UserService)
+                    user = await user_service.get_by_id_for_auth(UUID(str(guest_user_id)))
+                    if user is None or not user.is_active:
+                        raise WebSocketException(code=4401, reason="Invalid guest token")
+                    principal, user_id, perms = (
+                        user,
+                        user.id,
+                        guest_data.get("permissions", []),
+                    )
+                    _set_user_context(user, user.roles)
+                    guest_handled = True
+                except AppException:
+                    guest_handled = False
+
+                if not guest_handled:
+                    user = await auth_service.decode_jwt(access_token)
+                    principal, user_id, perms = user, user.id, user.permissions
+                    _set_user_context(user, user.roles)
             elif api_key:
                 key_obj = await auth_service.authenticate_api_key(api_key)
                 principal, user_id, perms = (
@@ -185,6 +220,13 @@ def socket_auth(required_permissions: list[str]):
                     key_obj.permissions,
                 )
                 _set_user_context(key_obj.user, key_obj.roles)
+                if conversation_id is not None and not has_permission(
+                    perms, P.Conversation.READ
+                ):
+                    raise WebSocketException(
+                        code=4403,
+                        reason="Guest token required for in-progress conversation access",
+                    )
             else:
                 raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials")
 
@@ -285,6 +327,25 @@ async def _handle_authenticated_agent(
     context["operator_id"] = user.operator.id if user.operator else None
 
 
+def _require_guest_token_for_session_only_api_keys(request: Request) -> None:
+    """
+    API keys without read:conversation (e.g. public embed / ai agent role) must use a
+    guest JWT scoped to the conversation for poll/update — not a bare shared API key.
+    """
+    if getattr(request.state, "guest_token", None):
+        return
+    api_key_obj = getattr(request.state, "api_key", None)
+    if api_key_obj is None:
+        return
+    if has_permission(api_key_obj.permissions, P.Conversation.READ):
+        return
+    raise AppException(
+        status_code=403,
+        error_key=ErrorKey.NOT_AUTHORIZED,
+        error_detail="Guest token required for in-progress conversation access",
+    )
+
+
 async def auth_for_conversation_update(
     request: Request,
     conversation_id: UUID,
@@ -296,6 +357,7 @@ async def auth_for_conversation_update(
     Custom authentication for conversation update endpoint.
     If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     If agent.security_settings.token_based_auth is false, accepts both API keys and JWT tokens.
+    API keys without read:conversation must present a guest JWT bound to conversation_id.
 
     Optimized to fetch conversation with agent in a single database query.
     """
@@ -305,6 +367,7 @@ async def auth_for_conversation_update(
     if not agent:
         # fallback to standard auth
         await auth(request, api_key, user)
+        _require_guest_token_for_session_only_api_keys(request)
         return
 
     # check if agent.security_settings.token_based_auth is true
@@ -314,11 +377,25 @@ async def auth_for_conversation_update(
         if agent.security_settings and agent.security_settings.token_based_auth
         else False
     )
+
+    # Prefer guest JWT when provided (scoped to this conversation)
+    try:
+        token_str = await oauth2(request)
+        if token_str and await _handle_guest_token(
+            request, token_str, conversation_id, auth_service, agent
+        ):
+            return
+    except AppException:
+        raise
+    except Exception:
+        pass
+
     if token_based_auth:
         await _handle_authenticated_agent(request, conversation_id, agent, api_key, user, auth_service)
     else:
         # Standard auth accepts both API key and JWT
         await auth(request, api_key, user)
+        _require_guest_token_for_session_only_api_keys(request)
 
 
 def verify_internal_secret(x_internal_secret: str = Header(...)):

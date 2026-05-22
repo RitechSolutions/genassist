@@ -50,25 +50,68 @@ async def verify_ws_token(
     token_exp: Optional[int] = None
 
     if body.access_token:
-        # Decode JWT and extract expiry
+        guest_verified = False
         try:
-            raw_payload = jwt.decode(
-                body.access_token,
-                auth_service.secret_key,
-                algorithms=[auth_service.algorithm],
-                options={"verify_exp": False},
-            )
-            token_exp = raw_payload.get("exp")
-        except Exception:
-            token_exp = None
+            guest_data = await auth_service.decode_guest_token(body.access_token)
+            if body.conversation_id and guest_data["conversation_id"] != body.conversation_id:
+                raise AppException(
+                    status_code=403,
+                    error_key=ErrorKey.NOT_AUTHORIZED,
+                    error_detail="Token is not valid for this conversation",
+                )
+            guest_user_id = guest_data.get("user_id")
+            if not guest_user_id:
+                raise AppException(
+                    status_code=401,
+                    error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
+                    error_detail="Invalid guest token",
+                )
+            user_id = UUID(str(guest_user_id))
+            user_permissions = guest_data.get("permissions", [])
+            try:
+                raw_payload = jwt.decode(
+                    body.access_token,
+                    auth_service.secret_key,
+                    algorithms=[auth_service.algorithm],
+                    options={"verify_exp": False},
+                )
+                token_exp = raw_payload.get("exp")
+            except Exception:
+                token_exp = None
+            guest_verified = True
+        except AppException:
+            guest_verified = False
 
-        user = await auth_service.decode_jwt(body.access_token)
-        user_id = user.id
-        user_permissions = user.permissions
+        if not guest_verified:
+            # Decode JWT and extract expiry
+            try:
+                raw_payload = jwt.decode(
+                    body.access_token,
+                    auth_service.secret_key,
+                    algorithms=[auth_service.algorithm],
+                    options={"verify_exp": False},
+                )
+                token_exp = raw_payload.get("exp")
+            except Exception:
+                token_exp = None
+
+            user = await auth_service.decode_jwt(body.access_token)
+            user_id = user.id
+            user_permissions = user.permissions
     elif body.api_key:
         key_obj = await auth_service.authenticate_api_key(body.api_key)
         user_id = key_obj.user.id
         user_permissions = key_obj.permissions
+        if body.conversation_id is not None:
+            from app.core.permissions.constants import Permissions as P
+            from app.auth.utils import has_permission
+
+            if not has_permission(key_obj.permissions, P.Conversation.READ):
+                raise AppException(
+                    status_code=403,
+                    error_key=ErrorKey.NOT_AUTHORIZED,
+                    error_detail="Guest token required for in-progress conversation access",
+                )
     else:
         raise AppException(status_code=400, error_key=ErrorKey.MISSING_PARAMETER, error_detail="Either access_token or api_key is required")
 

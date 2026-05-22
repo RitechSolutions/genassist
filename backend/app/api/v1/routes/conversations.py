@@ -202,7 +202,8 @@ async def get_agent_chat_locales(
     "/{conversation_id}",
     response_model=ConversationRead,
     dependencies=[
-        Depends(auth)
+        Depends(auth),
+        Depends(permissions(P.Conversation.READ)),
     ],
 )
 async def get(
