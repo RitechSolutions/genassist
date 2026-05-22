@@ -48,8 +48,11 @@ class TokenVerifier:
         api_key: str | None,
         required_permissions: list[str],
         tenant_id: str,
+        conversation_id: str | None = None,
     ) -> AuthenticatedUser:
-        cache_key = self._cache_key(access_token, api_key, required_permissions, tenant_id)
+        cache_key = self._cache_key(
+            access_token, api_key, required_permissions, tenant_id, conversation_id
+        )
 
         # Check cache
         cached = self._cache.get(cache_key)
@@ -64,6 +67,7 @@ class TokenVerifier:
                 api_key=api_key,
                 required_permissions=required_permissions,
                 tenant_id=tenant_id,
+                conversation_id=conversation_id,
             )
 
             resp = await self._client.post(
@@ -101,6 +105,7 @@ class TokenVerifier:
         api_key: str | None,
         required_permissions: list[str],
         tenant_id: str,
+        conversation_id: str | None = None,
     ) -> str:
         """
         Cache is keyed by token/api key + tenant + required permissions.
@@ -111,7 +116,8 @@ class TokenVerifier:
         """
         token_raw = access_token or api_key or ""
         perms_part = ",".join(sorted(required_permissions))
-        raw = f"{token_raw}|{tenant_id}|{perms_part}"
+        conv_part = conversation_id or ""
+        raw = f"{token_raw}|{tenant_id}|{perms_part}|{conv_part}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     async def _sweep_loop(self):

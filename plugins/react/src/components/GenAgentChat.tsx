@@ -421,9 +421,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [baseUrl, conversationId]);
 
   const audioHeaders = useMemo(() => {
-    const h: Record<string, string> = { 'x-api-key': apiKey };
+    const h: Record<string, string> = {};
+    if (guestToken) {
+      h['Authorization'] = `Bearer ${guestToken}`;
+    } else {
+      h['x-api-key'] = apiKey;
+    }
     if (tenant) h['x-tenant-id'] = tenant;
-    if (guestToken) h['Authorization'] = `Bearer ${guestToken}`;
     return h;
   }, [apiKey, tenant, guestToken]);
 

@@ -13,6 +13,7 @@ def require_authenticated_user(required_permissions: list[str]):
 
     async def _dependency(
         websocket: WebSocket,
+        conversation_id: str | None = None,
         access_token: str | None = Query(default=None),
         api_key: str | None = Query(default=None),
     ) -> AuthenticatedUser:
@@ -35,6 +36,7 @@ def require_authenticated_user(required_permissions: list[str]):
                 api_key,
                 required_permissions,
                 tenant_id,
+                conversation_id=conversation_id,
             )
         except AuthenticationError as exc:
             # Close the WebSocket with an auth-specific code before route handler runs
