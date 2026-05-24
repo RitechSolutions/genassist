@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getLocalFineTuneApiUrl } from "@/config/localFineTune";
+import { getLocalFineTuneApiUrl, getLocalFineTuneCallOrigin } from "@/config/localFineTune";
 import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
   CreateDeploymentRequest,
@@ -138,8 +138,12 @@ export async function listLocalFineTuneJobEvents(
 export async function createLocalFineTuneJob(
   payload: CreateLocalFineTuneJobRequest
 ): Promise<LocalFineTuneJob> {
+  const data: CreateLocalFineTuneJobRequest = {
+    ...payload,
+    origin: payload.origin ?? getLocalFineTuneCallOrigin(),
+  };
   return localFineTuneRequest<LocalFineTuneJob>("POST", "api/v1/fine-tuning/jobs", {
-    data: payload,
+    data,
   });
 }
 
