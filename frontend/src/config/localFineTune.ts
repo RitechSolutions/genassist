@@ -16,3 +16,13 @@ export const getLocalFineTuneApiUrl = (): string => {
 
   return normalizeLocalFineTuneUrl(url.trim());
 };
+
+const DEFAULT_LOCAL_FINE_TUNING_CALL_ORIGIN = "dev";
+
+export const getLocalFineTuneCallOrigin = (): string => {
+  const origin = import.meta.env.VITE_LOCAL_FINE_TUNING_CALL_ORIGIN;
+  if (typeof origin === "string" && origin.trim() !== "") {
+    return origin.trim();
+  }
+  return DEFAULT_LOCAL_FINE_TUNING_CALL_ORIGIN;
+};
