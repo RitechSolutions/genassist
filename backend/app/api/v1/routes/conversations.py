@@ -10,12 +10,11 @@ from fastapi.responses import JSONResponse
 from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 
-from app.auth.dependencies import (
-    auth,
+from app.auth.dependencies import auth, permissions, require_admin_user, socket_auth
+from app.auth.dependencies_conversations import (
     auth_for_conversation_update,
-    permissions,
-    require_admin_user,
-    socket_auth,
+    permissions_for_conversation,
+    socket_auth_conversation,
 )
 from app.auth.dependencies_agent_security import (
     get_agent_for_start,
@@ -371,7 +370,7 @@ async def start(
     dependencies=[
         Depends(get_agent_for_update),
         Depends(auth_for_conversation_update),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
 @limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
@@ -536,7 +535,7 @@ async def update_no_agent(
     dependencies=[
         Depends(get_agent_for_update),
         Depends(auth_for_conversation_update),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
 @limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
@@ -953,7 +952,7 @@ async def get_agent_response_log_by_message(
 async def websocket_endpoint(
     websocket: WebSocket,
     conversation_id: UUID,
-    principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
+    principal: SocketPrincipal = socket_auth_conversation([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
