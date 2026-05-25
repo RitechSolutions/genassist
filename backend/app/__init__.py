@@ -20,7 +20,7 @@ from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 from app.file_system.file_system import ensure_directories
 from app.middlewares._middleware import build_middlewares
 from app.middlewares.rate_limit_middleware import init_rate_limiter
-from app.routes import health
+from app.routes import health, jwks
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
 
     # Service-level probes (outside `/api`)
     app.include_router(health.router)
+    app.include_router(jwks.router)
 
     register_routers(app)
 
@@ -70,6 +71,16 @@ def add_di_middleware(app):
 def validate_env():
     if not os.getenv("DB_NAME"):
         raise RuntimeError("Missing required env var: DB_NAME")
+
+    # Eagerly verify JWT signing material so the process refuses to start
+    # rather than failing every authenticated request at runtime.
+    from app.services.auth import _load_pem_from_env
+
+    if not _load_pem_from_env("JWT_PRIVATE_KEY") or not _load_pem_from_env("JWT_PUBLIC_KEY"):
+        raise RuntimeError(
+            "Missing JWT signing keys: set JWT_PRIVATE_KEY/JWT_PUBLIC_KEY "
+            "(or JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH)."
+        )
 
 
 # --------------------------------------------------------------------------- #

@@ -50,11 +50,14 @@ async def verify_ws_token(
     token_exp: Optional[int] = None
 
     if body.access_token:
-        # Decode JWT and extract expiry
+        # Decode JWT and extract expiry. Signature is verified here; expiry is
+        # not, so we can still surface exp for downstream caching even when the
+        # token is about to expire. Full verification (including exp) happens
+        # in decode_jwt() right below.
         try:
             raw_payload = jwt.decode(
                 body.access_token,
-                auth_service.secret_key,
+                auth_service.verifying_key,
                 algorithms=[auth_service.algorithm],
                 options={"verify_exp": False},
             )

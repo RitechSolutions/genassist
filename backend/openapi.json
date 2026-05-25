@@ -38,6 +38,27 @@
         }
       }
     },
+    "/.well-known/jwks.json": {
+      "get": {
+        "summary": "Jwks",
+        "description": "JWKS for external platforms to verify tokens signed by this service.\n\nReturns the RSA public key in JWK Set format (RFC 7517). External consumers\ncan fetch this and verify access / refresh / guest JWTs without ever\nholding any signing material.",
+        "operationId": "jwks__well_known_jwks_json_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Jwks  Well Known Jwks Json Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/token": {
       "post": {
         "tags": [
