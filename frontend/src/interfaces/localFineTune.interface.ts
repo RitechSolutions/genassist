@@ -44,7 +44,6 @@ export interface CreateLocalFineTuneJobRequest {
   cleanup_files?: boolean;
   hyperparameters: LocalFineTuneHyperparameters;
   gpu_ids?: number[] | null;
-  origin?: string;
 }
 
 export type LocalFineTuneJobStatus =

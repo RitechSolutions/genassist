@@ -7,7 +7,11 @@ import { Switch } from "@/components/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
 import { Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { createDeployment, listSystemGpus } from "@/services/localFineTune";
+import {
+  createDeployment,
+  getLocalFineTuneErrorMessage,
+  listSystemGpus,
+} from "@/services/localFineTune";
 import type { CreateDeploymentRequest, GpuInfo } from "@/interfaces/localFineTune.interface";
 
 interface LocalFineTuneDeployDialogProps {
@@ -79,8 +83,8 @@ export function LocalFineTuneDeployDialog({
       toast.success("Deployment created");
       onDeployed();
       onOpenChange(false);
-    } catch {
-      toast.error("Failed to create deployment");
+    } catch (err) {
+      toast.error(getLocalFineTuneErrorMessage(err, "Failed to create deployment"));
     } finally {
       setSubmitting(false);
     }
