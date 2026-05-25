@@ -1159,6 +1159,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             onClick={() => setIsFloatingOpen(prev => !prev)}
             primaryColor={primaryColor}
             style={getPositionStyles({ position, offsetX, offsetY })}
+            chatBubbleIcon={theme?.chatBubbleIcon}
           />
         )}
 
