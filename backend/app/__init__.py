@@ -54,7 +54,7 @@ def create_app() -> FastAPI:
 
     # Service-level probes (outside `/api`)
     app.include_router(health.router)
-    app.include_router(jwks.router)
+    app.include_router(jwks.router, prefix="/api")
 
     register_routers(app)
 
