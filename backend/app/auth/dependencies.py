@@ -63,10 +63,12 @@ async def auth(
     request: Request,
     api_key: Optional[str] = Depends(api_key_header),
     user: Optional[UserReadAuth] = Depends(get_current_user),
+    token: Optional[str] = Depends(oauth2),
 ):
     """
     Authenticates the API key or the JWT Token. If there is a valid authentication then continues.
     """
+    context["access_token"] = token
     if getattr(request.state, "api_key", None):
         # Authenticate API Key if provided
         context["auth_mode"] = "api_key"
