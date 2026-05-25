@@ -2,7 +2,7 @@
 
 GenAssist chat widgets and embedded clients cannot keep API keys secret in the browser. Any credential shipped in HTML, JavaScript, or CSS is public to visitors, operators, extensions, and third-party scripts on that origin.
 
-This guide describes the supported integration pattern and a PayByPhone-style deployment checklist.
+This guide describes the supported integration pattern and a Client-style deployment checklist.
 
 ## Supported architecture
 
@@ -21,23 +21,27 @@ sequenceDiagram
   Note over Browser,GA: No long-lived API key in the browser
 ```
 
+
+
 ### GenAssist controls (enable per agent)
 
 In **AI Agents → Security** (or API):
 
-| Setting | Purpose |
-|---------|---------|
-| `token_based_auth` | After start, reject bare API keys on update/poll/WS; require guest JWT |
-| `token_expiration_minutes` | Short-lived guest tokens |
-| `recaptcha_enabled` | Bot protection on start/update |
-| `cors_allowed_origins` | Limit browser origins (e.g. `https://support.example.com`) |
-| Rate limits | Throttle start/update abuse |
+
+| Setting                    | Purpose                                                                |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `token_based_auth`         | After start, reject bare API keys on update/poll/WS; require guest JWT |
+| `token_expiration_minutes` | Short-lived guest tokens                                               |
+| `recaptcha_enabled`        | Bot protection on start/update                                         |
+| `cors_allowed_origins`     | Limit browser origins (e.g. `https://support.example.com`)             |
+| Rate limits                | Throttle start/update abuse                                            |
+
 
 ### API key hygiene
 
 - Use the **ai agent** role only (`create` / `update` / `read:in_progress_conversation`).
 - Do **not** grant `read:conversation` on public embed keys.
-- Set **`expires_in_days`** (30–90) and rotate after pipeline changes.
+- Set `**expires_in_days`** (30–90) and rotate after pipeline changes.
 - Use **separate keys** per surface (help-center vs backoffice).
 
 ### Platform enforcement (GenAssist backend)
@@ -46,7 +50,7 @@ In **AI Agents → Security** (or API):
 - In-progress **poll/update** reject bare API keys without `read:conversation`; callers must use a **guest JWT** scoped to `conversation_id`.
 - WebSocket verification accepts guest tokens and binds them to the conversation room.
 
-## PayByPhone deployment checklist (P0)
+## Client deployment checklist (P0)
 
 Apply in the Southern Cross monorepo (not in this repository):
 
@@ -59,7 +63,7 @@ Apply in the Southern Cross monorepo (not in this repository):
 
 ## BFF session endpoint (P1)
 
-PayByPhone should implement a small backend (Azure Function, API gateway, or existing BFF) that:
+Client should implement a small backend (Azure Function, API gateway, or existing BFF) that:
 
 1. Validates reCAPTCHA and allowed origin.
 2. Calls GenAssist with the server-held API key:
@@ -72,9 +76,8 @@ Content-Type: application/json
 {"messages": [], "operator_id": "...", "data_source_id": "...", "recaptcha_token": "..."}
 ```
 
-3. Returns only `{ "conversation_id", "guest_token" }` to the browser.
-
-4. Configures the widget with `baseUrl`, `tenant`, reCAPTCHA site key — **not** the GenAssist API key.
+1. Returns only `{ "conversation_id", "guest_token" }` to the browser.
+2. Configures the widget with `baseUrl`, `tenant`, reCAPTCHA site key — **not** the GenAssist API key.
 
 Example (Node/Express sketch):
 
@@ -112,10 +115,10 @@ A shared backoffice API key in static bundles cannot attribute actions to indivi
 
 **Target pattern:**
 
-1. Browser sends the PayByPhone operator SSO token to a **backoffice BFF**.
+1. Browser sends the Client operator SSO token to a **backoffice BFF**.
 2. BFF validates SSO, maps `sub` → operator identity, and proxies GenAssist calls with:
-   - Server-held integration credentials, and
-   - Audit metadata (`operator_id`, `email`) on each request or a per-operator GenAssist service account (future).
+  - Server-held integration credentials, and
+  - Audit metadata (`operator_id`, `email`) on each request or a per-operator GenAssist service account (future).
 
 Until that exists, prefer the GenAssist admin UI (JWT login) for operator workflows instead of embedding chat with a shared key.
 
@@ -124,3 +127,4 @@ Until that exists, prefer the GenAssist admin UI (JWT login) for operator workfl
 - [plugin-js README](../../plugins/plugin-js/README.md) — embed configuration
 - [SECURITY.md](../../SECURITY.md) — reporting and contributor practices
 - [websocket standalone service](../websocket-standalone-service.md) — WS verify-token with `conversation_id`
+
