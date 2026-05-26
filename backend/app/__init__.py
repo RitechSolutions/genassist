@@ -72,16 +72,6 @@ def validate_env():
     if not os.getenv("DB_NAME"):
         raise RuntimeError("Missing required env var: DB_NAME")
 
-    # Eagerly verify JWT signing material so the process refuses to start
-    # rather than failing every authenticated request at runtime.
-    from app.services.auth import _load_pem_from_env
-
-    if not _load_pem_from_env("JWT_PRIVATE_KEY") or not _load_pem_from_env("JWT_PUBLIC_KEY"):
-        raise RuntimeError(
-            "Missing JWT signing keys: set JWT_PRIVATE_KEY/JWT_PUBLIC_KEY "
-            "(or JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH)."
-        )
-
 
 # --------------------------------------------------------------------------- #
 # Lifespan handler helpers                                                    #
