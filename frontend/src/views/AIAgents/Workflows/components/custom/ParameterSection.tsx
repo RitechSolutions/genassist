@@ -185,9 +185,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent style={{ zIndex: 1100 }}>
         <DialogHeader>
-          <DialogTitle>
-            {mode === "create" ? "Add Parameter" : "Edit Parameter"}
-          </DialogTitle>
+          <DialogTitle>{mode === 'create' ? 'Add Parameter' : 'Edit Parameter'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -195,9 +193,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
             <RichInput
               placeholder="param_1"
               value={formData.name}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, name: e.target.value }))
-              }
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               className="w-full"
             />
           </div>
@@ -205,21 +201,17 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
             <label className="text-sm font-medium">Type</label>
             <Select
               value={formData.type}
-              onValueChange={(v) =>
-                setFormData((prev) => ({ ...prev, type: v as SchemaType }))
-              }
+              onValueChange={(v) => setFormData((prev) => ({ ...prev, type: v as SchemaType }))}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["string", "number", "boolean", "object", "array", "any"].map(
-                  (t) => (
-                    <SelectItem key={t} value={t}>
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
-                    </SelectItem>
-                  )
-                )}
+                {['string', 'number', 'boolean', 'object', 'array', 'any'].map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -240,9 +232,13 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           <div className="space-y-2">
             <label className="text-sm font-medium">Required</label>
             <Select
-              value={formData.required ? "true" : "false"}
+              value={formData.required ? 'true' : 'false'}
               onValueChange={(v) =>
-                setFormData((prev) => ({ ...prev, required: v === "true" }))
+                setFormData((prev) => ({
+                  ...prev,
+                  required: v === 'true',
+                  defaultValue: v === 'true' ? '' : prev.defaultValue,
+                }))
               }
             >
               <SelectTrigger className="w-full">
@@ -260,9 +256,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                 <Checkbox
                   id="stateful"
                   checked={formData.stateful || false}
-                  onCheckedChange={(checked) =>
-                    setFormData((prev) => ({ ...prev, stateful: checked === true }))
-                  }
+                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, stateful: checked === true }))}
                 />
                 <label htmlFor="stateful" className="text-sm font-medium cursor-pointer">
                   Stateful (persists across workflow executions)
@@ -279,35 +273,36 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                 <Checkbox
                   id="useInFilter"
                   checked={formData.useInFilter || false}
-                  onCheckedChange={(checked) =>
-                    setFormData((prev) => ({ ...prev, useInFilter: checked === true }))
-                  }
+                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, useInFilter: checked === true }))}
                 />
                 <label htmlFor="useInFilter" className="text-sm font-medium cursor-pointer">
                   Use in filter (available for filtering & analytics)
                 </label>
               </div>
               <p className="text-xs text-gray-500">
-                When enabled, this parameter will be stored as a custom attribute on conversations for filtering and analytics
+                When enabled, this parameter will be stored as a custom attribute on conversations for filtering and
+                analytics
               </p>
             </div>
           )}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Default Value</label>
-            <RichInput
-              placeholder="Default value (optional)"
-              value={formData.defaultValue || ""}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  defaultValue: e.target.value,
-                }))
-              }
-              className="w-full"
-            />
-          </div>
+          {!formData.required && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Default Value</label>
+              <RichInput
+                placeholder="Default value (optional)"
+                value={formData.defaultValue || ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    defaultValue: e.target.value,
+                  }))
+                }
+                className="w-full"
+              />
+            </div>
+          )}
           <DialogFooter className="flex justify-between">
-            {mode === "edit" && onDelete && (
+            {mode === 'edit' && onDelete && (
               <Button
                 type="button"
                 variant="destructive"
@@ -318,7 +313,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
               </Button>
             )}
             <Button type="submit" disabled={!formData.name}>
-              {mode === "create" ? "Add Parameter" : "Save Changes"}
+              {mode === 'create' ? 'Add Parameter' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </form>
