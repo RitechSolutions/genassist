@@ -1,14 +1,17 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import httpx
+import jwt
 from injector import inject
 from starlette_context import context
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException, UpstreamServiceError
+from app.core.tenant_scope import get_tenant_context
 from app.schemas.local_fine_tuning import (
     CreateDeploymentRequest,
     CreateLocalFineTuneJobRequest,
@@ -31,10 +34,15 @@ logger = logging.getLogger(__name__)
 class LocalFineTuningService:
     """Proxy service that forwards local fine-tuning API calls to the external service.
 
-    The caller's bearer token is pulled from `starlette_context` (set by `auth()`)
-    and forwarded so the upstream can derive the tenant from the JWT. The `origin`
-    field on job-create is injected from `settings.LOCAL_FINE_TUNING_CALL_ORIGIN`.
+    A short-lived service-to-service JWT is minted per request, signed with the
+    shared secret in ``settings.LOCAL_FINE_TUNE_JWT_SECRET`` (HS256), and sent as
+    a Bearer token. The payload carries ``tenant_id`` (so the upstream can
+    derive the tenant) and ``origin`` from ``settings.LOCAL_FINE_TUNING_CALL_ORIGIN``
+    (so the upstream knows which calling environment it's serving).
     """
+
+    _TOKEN_ALGORITHM = "HS256"
+    _TOKEN_TTL_SECONDS = 300
 
     def __init__(self):
         logger.info("LocalFineTuningService initialized")
@@ -48,12 +56,30 @@ class LocalFineTuningService:
             )
         return settings.LOCAL_FINE_TUNE_API_URL.rstrip("/")
 
+    def _mint_token(self) -> str:
+        if not settings.LOCAL_FINE_TUNE_JWT_SECRET:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                status_code=503,
+                error_detail="LOCAL_FINE_TUNE_JWT_SECRET not configured",
+            )
+        now = datetime.now(timezone.utc)
+        payload: Dict[str, Any] = {
+            "tenant_id": get_tenant_context(),
+            "origin": settings.LOCAL_FINE_TUNING_CALL_ORIGIN,
+            "iat": now,
+            "exp": now + timedelta(seconds=self._TOKEN_TTL_SECONDS),
+        }
+        if context.exists():
+            user_id = context.get("user_id")
+            if user_id is not None:
+                payload["user_id"] = str(user_id)
+        return jwt.encode(
+            payload, settings.LOCAL_FINE_TUNE_JWT_SECRET, algorithm=self._TOKEN_ALGORITHM
+        )
+
     def _headers(self) -> Dict[str, str]:
-        headers: Dict[str, str] = {}
-        token = context.get("access_token") if context.exists() else None
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        return headers
+        return {"Authorization": f"Bearer {self._mint_token()}"}
 
     @staticmethod
     def _upstream_error_body(resp: httpx.Response) -> Any:
@@ -184,7 +210,6 @@ class LocalFineTuningService:
 
     async def create_job(self, payload: CreateLocalFineTuneJobRequest) -> LocalFineTuneJob:
         body = payload.model_dump(exclude_none=True)
-        body["origin"] = settings.LOCAL_FINE_TUNING_CALL_ORIGIN
         raw = await self._request("POST", "api/v1/fine-tuning/jobs", json=body)
         return LocalFineTuneJob.model_validate(raw)
 
