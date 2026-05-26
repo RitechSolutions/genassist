@@ -11,14 +11,14 @@ from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 
 from app.auth.dependencies import auth, permissions, require_admin_user, socket_auth
+from app.auth.dependencies_agent_security import (
+    get_agent_for_start,
+    get_agent_for_update,
+)
 from app.auth.dependencies_conversations import (
     auth_for_conversation_update,
     permissions_for_conversation,
     socket_auth_conversation,
-)
-from app.auth.dependencies_agent_security import (
-    get_agent_for_start,
-    get_agent_for_update,
 )
 from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import invalidate_cache
@@ -67,15 +67,15 @@ from app.services.analytics_realtime import (
     update_conversation_started,
     update_feedback_given,
 )
+from app.services.auth import AuthService
+from app.services.conversations import ConversationService
+from app.services.dashboard import DashboardService
+from app.services.file_manager import FileManagerService
 from app.services.realtime_notifications import (
     emit_notification,
     notification_payload,
     transcript_conversation_notification_url,
 )
-from app.services.auth import AuthService
-from app.services.conversations import ConversationService
-from app.services.dashboard import DashboardService
-from app.services.file_manager import FileManagerService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.translations import TranslationsService
 from app.use_cases.chat_as_client_use_case import (
@@ -202,7 +202,7 @@ async def get_agent_chat_locales(
     response_model=ConversationRead,
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.READ)),
+        Depends(permissions_for_conversation(P.Conversation.READ)),
     ],
 )
 async def get(
@@ -402,7 +402,7 @@ async def poll_in_progress(
     "/in-progress/no-agent-update/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
         Depends(get_agent_for_update),  # Get agent early for rate limiting and CORS
     ],
 )
