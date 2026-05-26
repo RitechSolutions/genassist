@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from starlette_context import context, request_cycle_context
 
 from app.auth.dependencies_conversations import permissions_for_conversation
 from app.core.exceptions.exception_classes import AppException
@@ -33,7 +34,9 @@ async def test_permissions_for_conversation_checks_guest_token():
     request = _make_request(
         guest_token={"permissions": [P.Conversation.UPDATE_IN_PROGRESS]},
     )
-    await check(request)
+    with request_cycle_context():
+        context["auth_mode"] = "guest_token"
+        await check(request)
 
 
 @pytest.mark.asyncio
@@ -42,9 +45,25 @@ async def test_permissions_for_conversation_rejects_guest_without_permission():
     request = _make_request(
         guest_token={"permissions": [P.Conversation.UPDATE_IN_PROGRESS]},
     )
-    with pytest.raises(AppException) as exc:
-        await check(request)
+    with request_cycle_context():
+        context["auth_mode"] = "guest_token"
+        with pytest.raises(AppException) as exc:
+            await check(request)
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_permissions_for_conversation_ignores_stale_guest_token_for_jwt_user():
+    """JWT/API-key callers must not be limited to guest_token permissions."""
+    check = permissions_for_conversation(P.Conversation.READ)
+    user = SimpleNamespace(permissions=[P.Conversation.READ])
+    request = _make_request(
+        guest_token={"permissions": [P.Conversation.UPDATE_IN_PROGRESS]},
+        user=user,
+    )
+    with request_cycle_context():
+        context["auth_mode"] = "token"
+        await check(request)
 
 
 @pytest.mark.asyncio
@@ -52,8 +71,10 @@ async def test_permissions_for_conversation_checks_api_key_in_legacy_mode():
     check = permissions_for_conversation(P.Conversation.READ)
     api_key = SimpleNamespace(permissions=[P.Conversation.UPDATE_IN_PROGRESS])
     request = _make_request(api_key=api_key, agent=_agent(token_based_auth=False))
-    with pytest.raises(AppException) as exc:
-        await check(request)
+    with request_cycle_context():
+        context["auth_mode"] = "api_key"
+        with pytest.raises(AppException) as exc:
+            await check(request)
     assert exc.value.status_code == 403
 
 
@@ -62,7 +83,9 @@ async def test_permissions_for_conversation_allows_legacy_api_key_with_permissio
     check = permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)
     api_key = SimpleNamespace(permissions=[P.Conversation.UPDATE_IN_PROGRESS])
     request = _make_request(api_key=api_key, agent=_agent(token_based_auth=False))
-    await check(request)
+    with request_cycle_context():
+        context["auth_mode"] = "api_key"
+        await check(request)
 
 
 @pytest.mark.asyncio
@@ -70,8 +93,10 @@ async def test_permissions_for_conversation_checks_api_key_when_token_based_auth
     check = permissions_for_conversation(P.Conversation.READ)
     api_key = SimpleNamespace(permissions=[P.Conversation.UPDATE_IN_PROGRESS])
     request = _make_request(api_key=api_key, agent=_agent(token_based_auth=True))
-    with pytest.raises(AppException) as exc:
-        await check(request)
+    with request_cycle_context():
+        context["auth_mode"] = "api_key"
+        with pytest.raises(AppException) as exc:
+            await check(request)
     assert exc.value.status_code == 403
 
 
@@ -80,6 +105,8 @@ async def test_permissions_for_conversation_always_checks_jwt_user():
     check = permissions_for_conversation(P.Conversation.READ)
     user = SimpleNamespace(permissions=[P.Conversation.UPDATE_IN_PROGRESS])
     request = _make_request(user=user)
-    with pytest.raises(AppException) as exc:
-        await check(request)
+    with request_cycle_context():
+        context["auth_mode"] = "token"
+        with pytest.raises(AppException) as exc:
+            await check(request)
     assert exc.value.status_code == 403

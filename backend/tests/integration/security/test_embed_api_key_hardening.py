@@ -2,7 +2,8 @@
 Security hardening for public embed API keys (FG-1 / C-2).
 
 - GET /api/conversations/{id} requires read:conversation (ai agent keys cannot enumerate).
-- In-progress poll/update reject bare ai-agent API keys without a guest JWT.
+- When token_based_auth is enabled, in-progress poll/update reject bare ai-agent API keys
+  without a guest JWT (legacy agents with token_based_auth disabled may use the API key).
 """
 import os
 from uuid import uuid4
@@ -24,8 +25,8 @@ def test_get_conversation_requires_read_permission(authorized_client_agent):
 
 
 @pytest.mark.skipif(_SKIP_IN_CI, reason=_SKIP_REASON)
-def test_poll_requires_guest_token_for_session_only_api_key(authorized_client_agent):
-    """Bare shared embed keys cannot poll another conversation by UUID."""
+def test_poll_unknown_conversation_with_session_only_api_key(authorized_client_agent):
+    """Bare shared embed keys cannot poll a non-existent conversation by UUID."""
     fake_id = uuid4()
     response = authorized_client_agent.get(f"/api/conversations/in-progress/poll/{fake_id}")
-    assert response.status_code in (403, 404)
+    assert response.status_code == 404
