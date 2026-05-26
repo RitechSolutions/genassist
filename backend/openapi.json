@@ -7942,7 +7942,7 @@
         ],
         "parameters": [
           {
-            "name": "X-Tenant-Id",
+            "name": "X-Tenant-ID",
             "in": "header",
             "required": false,
             "schema": {
@@ -35619,6 +35619,17 @@
             "type": "string",
             "title": "Tenant Id",
             "default": "master"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           }
         },
         "type": "object",
