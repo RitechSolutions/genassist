@@ -34100,6 +34100,17 @@
             "type": "string",
             "title": "Tenant Id",
             "default": "master"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           }
         },
         "type": "object",
