@@ -196,18 +196,19 @@ export class ChatService {
    */
   private getHeaders(contentType: string = "application/json"): Record<string, string> {
     const headers: Record<string, string> = {
-      "x-api-key": this.apiKey,
       "Content-Type": contentType,
     };
+
+    // Prefer guest JWT for session calls; omit shared API key once scoped token exists.
+    if (this.guestToken) {
+      headers["Authorization"] = `Bearer ${this.guestToken}`;
+    } else {
+      headers["x-api-key"] = this.apiKey;
+    }
 
     // Add tenant header if provided
     if (this.tenant) {
       headers["x-tenant-id"] = this.tenant;
-    }
-
-    // Add authorization header if guest token is available
-    if (this.guestToken) {
-      headers["Authorization"] = `Bearer ${this.guestToken}`;
     }
 
     // Add Accept-Language header if language is set
