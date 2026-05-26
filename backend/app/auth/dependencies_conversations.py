@@ -14,6 +14,7 @@ from fastapi import Depends, Query, Request, WebSocket, WebSocketException, stat
 from fastapi_injector import Injected
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
 
 from app.auth.dependencies import _set_user_context, auth, get_current_user
 from app.auth.utils import api_key_header, has_permission, oauth2
@@ -29,6 +30,13 @@ from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 
 logger = logging.getLogger(__name__)
+
+
+def _auth_mode() -> str | None:
+    try:
+        return context.get("auth_mode")
+    except ContextDoesNotExistError:
+        return None
 
 
 async def _soft_load_agent(
@@ -153,25 +161,6 @@ async def _conversation_token_based_auth(
     return _agent_token_based_auth(agent)
 
 
-def _require_guest_token_for_session_only_api_keys(request: Request) -> None:
-    """
-    API keys without read:conversation (public embed / ai agent role) must use a
-    guest JWT scoped to the conversation — not a bare shared API key.
-    """
-    if getattr(request.state, "guest_token", None):
-        return
-    api_key_obj = getattr(request.state, "api_key", None)
-    if api_key_obj is None:
-        return
-    if has_permission(api_key_obj.permissions, P.Conversation.READ):
-        return
-    raise AppException(
-        status_code=403,
-        error_key=ErrorKey.NOT_AUTHORIZED,
-        error_detail="Guest token required for in-progress conversation access",
-    )
-
-
 async def auth_for_conversation(
     request: Request,
     conversation_id: UUID,
@@ -195,7 +184,6 @@ async def auth_for_conversation(
 
     if not agent:
         await auth(request, api_key, user)
-        _require_guest_token_for_session_only_api_keys(request)
         return
 
     try:
@@ -213,7 +201,6 @@ async def auth_for_conversation(
         await _handle_authenticated_agent(request, conversation_id, agent, api_key, user, auth_service)
     else:
         await auth(request, api_key, user)
-        _require_guest_token_for_session_only_api_keys(request)
 
 
 # Backward-compatible alias
@@ -229,8 +216,14 @@ def permissions_for_conversation(*required_permissions: str) -> Callable[[Reques
     """
 
     async def wrapper(request: Request):
-        if getattr(request.state, "guest_token", None):
-            guest_permissions = request.state.guest_token.get("permissions", [])
+        # Only apply guest-scoped permissions when auth chose guest mode.
+        # guest_token may remain on request.state while the caller authenticated
+        # via JWT or API key (auth_mode token / api_key).
+        if _auth_mode() == "guest_token":
+            guest_token = getattr(request.state, "guest_token", None)
+            if not guest_token:
+                raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED)
+            guest_permissions = guest_token.get("permissions", [])
             if not has_permission(guest_permissions, *required_permissions):
                 raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
             return
