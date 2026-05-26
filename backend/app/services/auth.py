@@ -1,15 +1,10 @@
-import base64
-import hashlib
-import json
 import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Optional
 
 import jwt
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 from injector import inject
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
@@ -24,112 +19,14 @@ from app.services.users import UserService
 logger = logging.getLogger(__name__)
 
 
-def _load_pem_from_env(env_var: str) -> Optional[str]:
-    """Load a PEM key from ``<env_var>`` (inline) or ``<env_var>_PATH`` (file)."""
-    value = os.environ.get(env_var)
-    if value:
-        # Allow PEMs stored as single-line env vars with literal "\n" escapes.
-        return value.replace("\\n", "\n")
-    path = os.environ.get(f"{env_var}_PATH")
-    if path:
-        with open(path, "r") as fh:
-            return fh.read()
-    return None
-
-
-def _b64url_uint(value: int) -> str:
-    """Encode a non-negative integer as unpadded base64url (RFC 7518 §2)."""
-    byte_len = (value.bit_length() + 7) // 8 or 1
-    return (
-        base64.urlsafe_b64encode(value.to_bytes(byte_len, "big"))
-        .rstrip(b"=")
-        .decode("ascii")
-    )
-
-
 @inject
 class AuthService:
     def __init__(self):
 
-        self.algorithm = os.environ.get("JWT_ALGORITHM", "RS256")
+        self.secret_key = os.environ.get("JWT_SECRET_KEY")
+        self.algorithm = "HS256"
         self.access_token_expire_minutes = 60
         self.refresh_token_expire_days = 2
-
-        self._private_key_pem = _load_pem_from_env("JWT_PRIVATE_KEY")
-        self._public_key_pem = _load_pem_from_env("JWT_PUBLIC_KEY")
-        self._kid_cache: Optional[str] = None
-
-    def _require_signing_key(self) -> str:
-        if not self._private_key_pem:
-            raise RuntimeError(
-                "JWT_PRIVATE_KEY (or JWT_PRIVATE_KEY_PATH) must be configured "
-                "to sign tokens."
-            )
-        return self._private_key_pem
-
-    def _require_verifying_key(self) -> str:
-        if not self._public_key_pem:
-            raise RuntimeError(
-                "JWT_PUBLIC_KEY (or JWT_PUBLIC_KEY_PATH) must be configured "
-                "to verify tokens."
-            )
-        return self._public_key_pem
-
-    @property
-    def verifying_key(self) -> str:
-        """Public PEM used to verify signatures. Raises if not configured."""
-        return self._require_verifying_key()
-
-    @property
-    def kid(self) -> str:
-        if self._kid_cache is None:
-            override = os.environ.get("JWT_KEY_ID")
-            self._kid_cache = override or self._compute_kid(self._require_verifying_key())
-        return self._kid_cache
-
-    @staticmethod
-    def _compute_kid(public_key_pem: str) -> str:
-        # RFC 7638 JWK thumbprint: SHA-256 over the canonical JWK, base64url-encoded.
-        # Stable across restarts as long as the public key is unchanged.
-        public_key = serialization.load_pem_public_key(public_key_pem.encode())
-        if not isinstance(public_key, rsa.RSAPublicKey):
-            raise RuntimeError("JWT public key must be RSA.")
-        numbers = public_key.public_numbers()
-        jwk = {"e": _b64url_uint(numbers.e), "kty": "RSA", "n": _b64url_uint(numbers.n)}
-        canonical = json.dumps(jwk, separators=(",", ":"), sort_keys=True).encode()
-        return (
-            base64.urlsafe_b64encode(hashlib.sha256(canonical).digest())
-            .rstrip(b"=")
-            .decode("ascii")
-        )
-
-    def public_jwk(self) -> dict[str, Any]:
-        """Return the public verifying key as a JWK (for the JWKS endpoint)."""
-        public_key = serialization.load_pem_public_key(
-            self._require_verifying_key().encode()
-        )
-        numbers = public_key.public_numbers()
-        return {
-            "kty": "RSA",
-            "use": "sig",
-            "alg": self.algorithm,
-            "kid": self.kid,
-            "n": _b64url_uint(numbers.n),
-            "e": _b64url_uint(numbers.e),
-        }
-
-    def _encode(self, payload: dict) -> str:
-        return jwt.encode(
-            payload,
-            self._require_signing_key(),
-            algorithm=self.algorithm,
-            headers={"kid": self.kid},
-        )
-
-    def _decode(self, token: str) -> dict:
-        return jwt.decode(
-            token, self._require_verifying_key(), algorithms=[self.algorithm]
-        )
 
     async def _get_redis(self):
         from app.dependencies.injector import injector
@@ -146,7 +43,7 @@ class AuthService:
                 expires_delta or timedelta(minutes=self.access_token_expire_minutes)
             )
             to_encode.update({"exp": expire, "typ": "access"})
-            return self._encode(to_encode)
+            return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         except Exception as error:
             raise AppException(
                 error_key=ErrorKey.ERROR_CREATE_TOKEN,
@@ -167,7 +64,7 @@ class AuthService:
             "typ": "refresh",
             "jti": str(uuid.uuid4()),
         })
-        return self._encode(to_encode)
+        return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
 
     async def decode_jwt(self, token: str, expected_typ: str = "access") -> UserReadAuth:
         """Decode and validate a JWT, enforcing the ``typ`` claim.
@@ -178,7 +75,7 @@ class AuthService:
                           (``"access"`` or ``"refresh"``).
         """
         try:
-            payload = self._decode(token)
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
 
             # --- typ enforcement ---------------------------------------------------
             # Tokens minted before the typ claim was added will not have it.
@@ -244,17 +141,6 @@ class AuthService:
                 error_detail=f"JWT error: {error}",
                 error_obj=error,
             )
-        except RuntimeError as error:
-            # Signing/verifying material is missing or invalid. This is a server
-            # config issue, not a credential issue — return 503 so the frontend
-            # does not interpret it as 401 (refresh-token loop) or 500 (retry).
-            logger.exception("JWT verification unavailable: %s", error)
-            raise AppException(
-                status_code=503,
-                error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
-                error_detail="Authentication temporarily unavailable, Runtime Error",
-                error_obj=error,
-            )
 
     # --- Refresh-token revocation ----------------------------------------------
 
@@ -276,7 +162,7 @@ class AuthService:
         auto-expire and don't accumulate indefinitely.
         """
         try:
-            payload = self._decode(token)
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             jti = payload.get("jti")
             if not jti:
                 return
@@ -366,7 +252,7 @@ class AuthService:
                 expires_delta or timedelta(hours=24)
             )  # Default 24 hours for guest tokens
             to_encode.update({"exp": expire})
-            return self._encode(to_encode)
+            return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         except Exception as error:
             raise AppException(
                 error_key=ErrorKey.ERROR_CREATE_TOKEN,
@@ -381,7 +267,7 @@ class AuthService:
         Returns dict with tenant_id, agent_id, conversation_id, user_id, and permissions.
         """
         try:
-            payload = self._decode(token)
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             token_type = payload.get("type")
 
             if token_type != "guest":
@@ -409,13 +295,5 @@ class AuthService:
                 status_code=401,
                 error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
                 error_detail=f"JWT error: {error}",
-                error_obj=error,
-            )
-        except RuntimeError as error:
-            logger.exception("Guest JWT verification unavailable: %s", error)
-            raise AppException(
-                status_code=503,
-                error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
-                error_detail="Authentication temporarily unavailable, Runtime Error",
                 error_obj=error,
             )
