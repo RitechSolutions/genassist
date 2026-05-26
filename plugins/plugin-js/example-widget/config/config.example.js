@@ -22,6 +22,7 @@ window.GENASSIST_CONFIG = {
     textColor: "#000000",
     fontFamily: "Roboto, sans-serif",
     fontSize: "16px",
-    fontWeight: 400
+    fontWeight: 400,
+    chatBubbleIcon: 'message' // 'message', 'sparkles', 'x'
   }
 };
