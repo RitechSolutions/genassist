@@ -71,6 +71,7 @@ from app.services.llm_analysts import LlmAnalystService
 from app.services.llm_cost_rates import LlmCostRateService
 from app.services.audio_providers import AudioProviderService
 from app.services.llm_providers import LlmProviderService
+from app.services.local_fine_tuning import LocalFineTuningService
 from app.services.operator_statistics import OperatorStatisticsService
 from app.services.operators import OperatorService
 from app.services.notification_feed import NotificationFeedService
@@ -216,6 +217,8 @@ class Dependencies(Module):
 
         binder.bind(ApiKeysService, scope=request_scope)
         binder.bind(ApiKeysRepository, scope=request_scope)
+
+        binder.bind(LocalFineTuningService, scope=request_scope)
 
         binder.bind(AppSettingsService, scope=request_scope)
         binder.bind(AppSettingsRepository, scope=request_scope)
