@@ -6,12 +6,25 @@ A React-based widget plugin for integrating Genassist chat into any website usin
 
 This project builds a standalone JavaScript widget that can be embedded into any web page. The widget provides an AI-powered chat interface using the `genassist-chat-react` component. It is built as an IIFE (Immediately Invoked Function Expression) bundle that includes all dependencies (React, ReactDOM, GenAgentChat).
 
+## Security (public embeds)
+
+The build output (`widget.iife.js`) does **not** contain API keys. However, if you set `apiKey` in `window.GENASSIST_CONFIG` on a public page, that key is visible to every visitor — same as baking it into a SPA bundle.
+
+**Do not ship long-lived API keys to browsers.** For production help centers:
+
+1. Enable **token-based auth** on the agent in GenAssist (Security settings).
+2. Use a **backend-for-frontend (BFF)** you operate to call `/api/conversations/in-progress/start` with the API key server-side.
+3. Pass only `conversation_id` and `guest_token` to the widget for ongoing chat.
+
+Full guidance: [docs/integrations/public-embed-security.md](../../docs/integrations/public-embed-security.md).
+
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 16+ and npm
-- A Genassist API account with `baseUrl`, `apiKey`, and optionally `tenant` ID
+- A Genassist API account with `baseUrl`, and optionally `tenant` ID
+- For local dev: `apiKey` in config; for production public sites: BFF + guest token (see Security above)
 
 ### Installation
 

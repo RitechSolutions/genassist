@@ -146,6 +146,7 @@ export interface GenAgentChatProps {
     fontSize?: string;
     backgroundColor?: string;
     textColor?: string;
+    chatBubbleIcon?: React.ReactElement;
   };
   headerTitle?: string;
   description?: string;
