@@ -38,6 +38,27 @@
         }
       }
     },
+    "/api/.well-known/jwks.json": {
+      "get": {
+        "summary": "Jwks",
+        "description": "JWKS for external platforms to verify tokens signed by this service.\n\nReturns the RSA public key in JWK Set format (RFC 7517). External consumers\ncan fetch this and verify access / refresh / guest JWTs without ever\nholding any signing material.",
+        "operationId": "jwks_api__well_known_jwks_json_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Jwks Api  Well Known Jwks Json Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/token": {
       "post": {
         "tags": [
@@ -18910,6 +18931,716 @@
         ]
       }
     },
+    "/api/local-fine-tuning/supported-models": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Supported Models",
+        "operationId": "list_supported_models_api_local_fine_tuning_supported_models_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneSupportedModel"
+                  },
+                  "title": "Response List Supported Models Api Local Fine Tuning Supported Models Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/system/gpus": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List System Gpus",
+        "operationId": "list_system_gpus_api_local_fine_tuning_system_gpus_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemGpusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/local-fine-tuning/jobs": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_local_fine_tuning_jobs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneJob"
+                  },
+                  "type": "array",
+                  "title": "Response List Jobs Api Local Fine Tuning Jobs Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Create Job",
+        "operationId": "create_job_api_local_fine_tuning_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocalFineTuneJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Get Job",
+        "operationId": "get_job_api_local_fine_tuning_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}/events": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Job Events",
+        "operationId": "list_job_events_api_local_fine_tuning_jobs__job_id__events_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneJobEvent"
+                  },
+                  "title": "Response List Job Events Api Local Fine Tuning Jobs  Job Id  Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Cancel Job",
+        "operationId": "cancel_job_api_local_fine_tuning_jobs__job_id__cancel_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}/files": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Delete Job Files",
+        "operationId": "delete_job_files_api_local_fine_tuning_jobs__job_id__files_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "delete_data_files",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Delete Data Files"
+            }
+          },
+          {
+            "name": "delete_checkpoints",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Delete Checkpoints"
+            }
+          },
+          {
+            "name": "delete_model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Delete Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteJobFilesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/deployments": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Deployments",
+        "operationId": "list_deployments_api_local_fine_tuning_deployments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneDeployment"
+                  },
+                  "type": "array",
+                  "title": "Response List Deployments Api Local Fine Tuning Deployments Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Create Deployment",
+        "operationId": "create_deployment_api_local_fine_tuning_deployments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneDeployment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/local-fine-tuning/deployments/{deployment_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Get Deployment",
+        "operationId": "get_deployment_api_local_fine_tuning_deployments__deployment_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneDeployment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Stop Deployment",
+        "operationId": "stop_deployment_api_local_fine_tuning_deployments__deployment_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentStopResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/deployments/{deployment_id}/health": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Deployment Health",
+        "operationId": "deployment_health_api_local_fine_tuning_deployments__deployment_id__health_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneDeploymentHealth"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/deployments/{deployment_id}/test-inference": {
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Test Inference",
+        "operationId": "test_inference_api_local_fine_tuning_deployments__deployment_id__test_inference_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestInferenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestInferenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/azure-blob-storage/list": {
       "post": {
         "tags": [
@@ -24765,6 +25496,79 @@
         ],
         "title": "ConversationTranscriptCreate"
       },
+      "CreateDeploymentRequest": {
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "title": "Deployment Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "gpu_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Id"
+          },
+          "tensor_parallel_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tensor Parallel Size"
+          },
+          "max_model_len": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Model Len"
+          },
+          "gpu_memory_utilization": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Memory Utilization"
+          },
+          "dtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deployment_id",
+          "job_id"
+        ],
+        "title": "CreateDeploymentRequest"
+      },
       "CreateFineTuningJobRequest": {
         "properties": {
           "training_file": {
@@ -24829,6 +25633,86 @@
           "model": "gpt-4.1-nano-2025-04-14",
           "training_file": "file-RCnFCYRhFDcq1aHxiYkBHw"
         }
+      },
+      "CreateLocalFineTuneJobRequest": {
+        "properties": {
+          "training_file": {
+            "type": "string",
+            "title": "Training File"
+          },
+          "file_token": {
+            "type": "string",
+            "title": "File Token"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suffix"
+          },
+          "tool_training_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Training Mode"
+          },
+          "remote_files": {
+            "type": "boolean",
+            "title": "Remote Files"
+          },
+          "cleanup_files": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup Files"
+          },
+          "hyperparameters": {
+            "$ref": "#/components/schemas/LocalFineTuneHyperparameters"
+          },
+          "gpu_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "training_file",
+          "file_token",
+          "model_id",
+          "remote_files",
+          "hyperparameters"
+        ],
+        "title": "CreateLocalFineTuneJobRequest",
+        "description": "Request body for creating a local fine-tuning job. The backend injects `origin`."
       },
       "CustomerCreate": {
         "properties": {
@@ -25344,6 +26228,80 @@
         },
         "type": "object",
         "title": "DataSourceUpdate"
+      },
+      "DeleteJobFilesResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deleted_items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deleted Items"
+          },
+          "bytes_freed": {
+            "type": "integer",
+            "title": "Bytes Freed"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "bytes_freed",
+          "message"
+        ],
+        "title": "DeleteJobFilesResponse"
+      },
+      "DeploymentStopResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "message"
+        ],
+        "title": "DeploymentStopResponse"
       },
       "DiscoverToolsRequest": {
         "properties": {
@@ -26403,6 +27361,45 @@
         "type": "object",
         "title": "GoldSuiteLinkRequest",
         "description": "Link an existing suite or create a new one."
+      },
+      "GpuInfo": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_memory_gb": {
+            "type": "number",
+            "title": "Total Memory Gb"
+          },
+          "free_memory_gb": {
+            "type": "number",
+            "title": "Free Memory Gb"
+          },
+          "used_memory_gb": {
+            "type": "number",
+            "title": "Used Memory Gb"
+          },
+          "compute_capability": {
+            "type": "string",
+            "title": "Compute Capability"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_memory_gb",
+          "free_memory_gb",
+          "used_memory_gb",
+          "compute_capability"
+        ],
+        "title": "GpuInfo"
       },
       "HTTPValidationError": {
         "properties": {
@@ -28614,6 +29611,481 @@
         },
         "type": "object",
         "title": "LlmProviderUpdate"
+      },
+      "LocalFineTuneDeployment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "model_path": {
+            "type": "string",
+            "title": "Model Path"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "gpu_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Id"
+          },
+          "api_url": {
+            "type": "string",
+            "title": "Api Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "process_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Id"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "max_model_len": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Model Len"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "model_path",
+          "port",
+          "api_url"
+        ],
+        "title": "LocalFineTuneDeployment"
+      },
+      "LocalFineTuneDeploymentHealth": {
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "title": "Deployment Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "api_url": {
+            "type": "string",
+            "title": "Api Url"
+          },
+          "details": {
+            "type": "string",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "deployment_id",
+          "status",
+          "api_url",
+          "details"
+        ],
+        "title": "LocalFineTuneDeploymentHealth"
+      },
+      "LocalFineTuneHyperparameters": {
+        "properties": {
+          "num_train_epochs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Train Epochs"
+          },
+          "per_device_train_batch_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Device Train Batch Size"
+          },
+          "gradient_accumulation_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Accumulation Steps"
+          },
+          "learning_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Rate"
+          },
+          "lora_r": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora R"
+          },
+          "lora_alpha": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Alpha"
+          },
+          "max_seq_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Seq Length"
+          },
+          "logging_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logging Steps"
+          },
+          "save_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Save Steps"
+          },
+          "eval_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eval Steps"
+          },
+          "warmup_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmup Steps"
+          },
+          "fp16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fp16"
+          },
+          "bf16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bf16"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "LocalFineTuneHyperparameters"
+      },
+      "LocalFineTuneJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "training_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training File"
+          },
+          "validation_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation File"
+          },
+          "hyperparameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hyperparameters"
+          },
+          "suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suffix"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "fine_tuned_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fine Tuned Model"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalFineTuneJobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "LocalFineTuneJob"
+      },
+      "LocalFineTuneJobError": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "LocalFineTuneJobError"
+      },
+      "LocalFineTuneJobEvent": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "job_id",
+          "level",
+          "message",
+          "timestamp"
+        ],
+        "title": "LocalFineTuneJobEvent"
+      },
+      "LocalFineTuneSupportedModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LocalFineTuneSupportedModel"
       },
       "MCPServerCreate": {
         "properties": {
@@ -32062,6 +33534,27 @@
         ],
         "title": "SortField"
       },
+      "SystemGpusResponse": {
+        "properties": {
+          "cuda_available": {
+            "type": "boolean",
+            "title": "Cuda Available"
+          },
+          "gpus": {
+            "items": {
+              "$ref": "#/components/schemas/GpuInfo"
+            },
+            "type": "array",
+            "title": "Gpus"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "cuda_available"
+        ],
+        "title": "SystemGpusResponse"
+      },
       "TenantCreate": {
         "properties": {
           "name": {
@@ -32702,6 +34195,32 @@
         },
         "type": "object",
         "title": "TestEvaluationUpdate"
+      },
+      "TestInferenceRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "TestInferenceRequest"
+      },
+      "TestInferenceResponse": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "TestInferenceResponse"
       },
       "TestResult": {
         "properties": {
@@ -34100,6 +35619,17 @@
             "type": "string",
             "title": "Tenant Id",
             "default": "master"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           }
         },
         "type": "object",

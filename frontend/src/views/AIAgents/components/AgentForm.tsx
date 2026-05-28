@@ -38,6 +38,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
+import { normalizeDisclaimerHtml } from "@/helpers/disclaimerHtml";
 import { getTranslationByKey, getLanguages } from "@/services/translations";
 import { Language, Translation } from "@/interfaces/translation.interface";
 import { getTranslationCount } from "../utils";
@@ -75,6 +76,10 @@ interface AgentFormProps {
   hideButtons?: boolean;
   // Form ID for external button association
   formId?: string;
+  /** Optional hook to transform payload immediately before create/update (e.g. sheet footer submit). */
+  prepareSubmitData?: (
+    data: Omit<AgentFormData, "id">,
+  ) => Omit<AgentFormData, "id">;
 }
 
 interface TranslationTriggerProps {
@@ -178,6 +183,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   onSaved,
   hideButtons = false,
   formId,
+  prepareSubmitData,
 }: AgentFormProps) => {
   const id = data?.id;
   const navigate = useNavigate();
@@ -462,19 +468,21 @@ const AgentForm: React.FC<AgentFormProps> = ({
           }
         }
         const { id: _, ...rest } = formData;
+        const prepared = prepareSubmitData?.(rest) ?? rest;
         const dataToSubmit = {
-          ...rest,
-          possible_queries: omitEmptyStrings(rest.possible_queries),
-          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+          ...prepared,
+          possible_queries: omitEmptyStrings(prepared.possible_queries),
+          thinking_phrases: omitEmptyStrings(prepared.thinking_phrases),
         };
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
       } else {
         const { id: _, has_welcome_image, ...rest } = formData;
+        const prepared = prepareSubmitData?.(rest) ?? rest;
         const dataToSubmit = {
-          ...rest,
-          possible_queries: omitEmptyStrings(rest.possible_queries),
-          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+          ...prepared,
+          possible_queries: omitEmptyStrings(prepared.possible_queries),
+          thinking_phrases: omitEmptyStrings(prepared.thinking_phrases),
         };
         const agentConfig = await createAgentConfig({
           ...dataToSubmit,
@@ -1163,6 +1171,13 @@ interface AgentDialogProps {
   onSaved?: () => void;
 }
 
+const prepareAgentSheetSubmitData = (
+  data: Omit<AgentFormData, "id">,
+): Omit<AgentFormData, "id"> => ({
+  ...data,
+  input_disclaimer_html: normalizeDisclaimerHtml(data.input_disclaimer_html ?? ""),
+});
+
 export const AgentFormDialog = ({
   isOpen,
   onClose,
@@ -1215,6 +1230,7 @@ export const AgentFormDialog = ({
             onSaved={onSaved}
             hideButtons={true}
             formId={formId}
+            prepareSubmitData={prepareAgentSheetSubmitData}
           />
         </div>
         {/* Sticky Footer with Action Buttons */}
