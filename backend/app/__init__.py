@@ -265,6 +265,7 @@ def create_celery():
             "app.tasks.kb_batch_tasks",
             "app.tasks.analytics_aggregation_tasks",
             "app.tasks.test_suite_tasks",
+            "app.tasks.support_ticket_tasks",
         ],
     )
 
@@ -424,6 +425,12 @@ def create_celery():
             "schedule": crontab(minute="0", hour="3"),
             "options": {"expires": 7200},
         }
+
+    beat_schedule["process-support-ticket-sync-outbox"] = {
+        "task": "app.tasks.support_ticket_tasks.process_support_ticket_sync_outbox_task",
+        "schedule": crontab(minute="*/2"),
+        "options": {"expires": 300},
+    }
 
     celery_app.conf.beat_schedule = beat_schedule
 

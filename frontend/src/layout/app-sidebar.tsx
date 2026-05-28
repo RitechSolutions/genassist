@@ -14,6 +14,7 @@ import {
   Waypoints,
   ListChecks,
   ChevronsUpDown,
+  LifeBuoy,
 } from "lucide-react";
 import {
   Sidebar,
@@ -236,6 +237,12 @@ const menuItems: MenuItem[] = [
     icon: ScrollText,
     url: "/audit-logs",
     permissionsRequired: ["read:audit_log"],
+  },
+  {
+    title: "Help Center",
+    icon: LifeBuoy,
+    url: "/help-center",
+    permissionsRequired: ["read:support_ticket"],
   },
   {
     title: "Settings",
