@@ -100,7 +100,7 @@ export function WebSocketDashboardProvider({
   }, []);
 
   const handleMessage = useCallback((data: Record<string, unknown>) => {
-    const topic = (data.topic || data.type) as string;
+    const topic = String(data.topic ?? data.type ?? data.msg_type ?? "");
 
     if (topic === "notification") {
       for (const listener of messageListenersRef.current) {

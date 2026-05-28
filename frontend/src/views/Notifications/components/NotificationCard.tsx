@@ -6,17 +6,21 @@ import {
 } from "lucide-react"
 import { Link } from "react-router-dom"
 
+import { Badge } from "@/components/badge"
 import { formatTimeAgo } from "@/helpers/formatters"
+import { formatNotificationDescription } from "@/helpers/notificationDisplay"
 import { Notification } from "../../../interfaces/notification.interface"
 import { cn } from "@/helpers/utils"
 
 interface NotificationCardProps {
   notification: Notification
+  groupName?: string
   onMarkRead?: (id: string) => void
 }
 
 export const NotificationCard = ({
   notification,
+  groupName,
   onMarkRead,
 }: NotificationCardProps) => {
   const typeStyles = {
@@ -27,15 +31,15 @@ export const NotificationCard = ({
   }
 
   const TypeIcon = typeStyles[notification.type].icon
-  const conversationShortId = notification.id.startsWith("conversation_")
-    ? `#${notification.id.split(":").pop()?.slice(-4) ?? ""}`
-    : null
-
-  const formattedDescription = conversationShortId
-    ? notification.description
-        .replace(/\(ID:\s*[^)]+\)/gi, `(${conversationShortId})`)
-        .replace(/Conversation\s+[a-f0-9-]+\.{3}/gi, `Conversation ${conversationShortId}`)
-    : notification.description
+  const displayTitle = notification.title
+  const levelBadgeClass =
+    notification.type === "error"
+      ? "bg-red-100 text-red-700 border-red-200"
+      : notification.type === "warning"
+        ? "bg-amber-100 text-amber-700 border-amber-200"
+        : notification.type === "success"
+          ? "bg-green-100 text-green-700 border-green-200"
+          : "bg-blue-100 text-blue-700 border-blue-200"
 
   return (
     <Link
@@ -65,12 +69,21 @@ export const NotificationCard = ({
           )}
         />
         <div className="min-w-0 flex-1 overflow-hidden">
-          <p className="break-words text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">
-            {notification.title}
-            {conversationShortId ? ` ${conversationShortId}` : ""}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="break-words text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">
+              {displayTitle}
+            </p>
+            <Badge variant="outline" className={cn("capitalize text-[10px] px-2 py-0", levelBadgeClass)}>
+              {notification.type}
+            </Badge>
+            {groupName ? (
+              <Badge variant="outline" className="text-[10px] px-2 py-0">
+                {groupName}
+              </Badge>
+            ) : null}
+          </div>
           <p className="mt-0.5 break-words text-xs text-zinc-500 line-clamp-3 [overflow-wrap:anywhere]">
-            {formattedDescription}
+            {formatNotificationDescription(notification)}
           </p>
           <p className="mt-1 text-[11px] text-zinc-400">
             {formatTimeAgo(notification.timestamp)}

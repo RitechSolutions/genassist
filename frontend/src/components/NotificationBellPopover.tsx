@@ -5,6 +5,7 @@ import { Button } from "@/components/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover"
 import { ScrollArea } from "@/components/scroll-area"
 import { formatTimeAgo } from "@/helpers/formatters"
+import { formatNotificationDescription } from "@/helpers/notificationDisplay"
 import { useNotifications } from "@/hooks/useNotifications"
 import { Notification } from "@/interfaces/notification.interface"
 import { cn } from "@/helpers/utils"
@@ -38,31 +39,12 @@ const notificationTypeStyle: Record<
   },
 }
 
-function getConversationShortId(notification: Notification): string | null {
-  if (!notification.id.startsWith("conversation_")) return null
-  const parts = notification.id.split(":")
-  const rawId = parts[parts.length - 1] ?? ""
-  if (!rawId) return null
-  return `#${rawId.slice(-4)}`
-}
-
 function formatNotificationTimestamp(timestamp: string): string {
   try {
     return formatTimeAgo(timestamp)
   } catch {
     return timestamp
   }
-}
-
-function formatNotificationDescription(
-  notification: Notification,
-  conversationShortId: string | null
-): string {
-  if (!conversationShortId) return notification.description
-
-  return notification.description
-    .replace(/\(ID:\s*[^)]+\)/gi, `(${conversationShortId})`)
-    .replace(/Conversation\s+[a-f0-9-]+\.{3}/gi, `Conversation ${conversationShortId}`)
 }
 
 export function NotificationBellPopover({
@@ -123,11 +105,7 @@ export function NotificationBellPopover({
               previewItems.map((notification) => {
                 const typeMeta = notificationTypeStyle[notification.type]
                 const TypeIcon = typeMeta.icon
-                const conversationShortId = getConversationShortId(notification)
-                const formattedDescription = formatNotificationDescription(
-                  notification,
-                  conversationShortId
-                )
+                const formattedDescription = formatNotificationDescription(notification)
 
                 return (
                   <Link
@@ -157,7 +135,6 @@ export function NotificationBellPopover({
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <p className="break-words text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">
                         {notification.title}
-                        {conversationShortId ? ` ${conversationShortId}` : ""}
                       </p>
                       <p className="mt-0.5 break-words text-xs text-zinc-500 line-clamp-3 [overflow-wrap:anywhere]">
                         {formattedDescription}
