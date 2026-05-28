@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar"
 import { AppSidebar } from "@/layout/app-sidebar"
 import { useIsMobile } from "@/hooks/useMobile"
@@ -18,6 +19,7 @@ import { useNotificationsInfinite } from "@/hooks/useNotifications"
 import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
 import { type NotificationTypeFilter } from "@/services/dashboard"
 import { NotificationCard } from "../components/NotificationCard"
+import { getAllUserGroups } from "@/services/userGroups"
 
 type ConversationTypeFilter = Exclude<NotificationTypeFilter, "all">
 
@@ -76,6 +78,9 @@ const NotificationsPage = () => {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState("all")
   const [typeFilter, setTypeFilter] = useState<NotificationTypeFilter>("all")
+  const [levelFilter, setLevelFilter] = useState<
+    "all" | "info" | "success" | "warning" | "error"
+  >("all")
   const allSentinelRef = useRef<HTMLDivElement>(null)
   const unreadSentinelRef = useRef<HTMLDivElement>(null)
   const { settings } = useNotificationUserSettings()
@@ -106,7 +111,16 @@ const NotificationsPage = () => {
     fetchNextPage,
     isFetchingNextPage,
     isLoading,
-  } = useNotificationsInfinite({ typeFilter })
+  } = useNotificationsInfinite({ typeFilter, levelFilter })
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ["user-groups-all"],
+    queryFn: () => getAllUserGroups(),
+  })
+  const groupNameById = useMemo(
+    () => Object.fromEntries(groups.map((g) => [g.id, g.name])),
+    [groups]
+  )
 
   const filteredNotifications = notifications
 
@@ -160,6 +174,23 @@ const NotificationsPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-4">
+                <Select
+                  value={levelFilter}
+                  onValueChange={(value) =>
+                    setLevelFilter(value as "all" | "info" | "success" | "warning" | "error")
+                  }
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="All levels" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All levels</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select
                   value={typeFilter}
                   onValueChange={(value) =>
@@ -218,6 +249,7 @@ const NotificationsPage = () => {
                         <NotificationCard
                           key={notification.id}
                           notification={notification}
+                          groupName={notification.groupId ? groupNameById[notification.groupId] : undefined}
                           onMarkRead={markAsRead}
                         />
                       ))}
@@ -259,6 +291,7 @@ const NotificationsPage = () => {
                         <NotificationCard
                           key={notification.id}
                           notification={notification}
+                          groupName={notification.groupId ? groupNameById[notification.groupId] : undefined}
                           onMarkRead={markAsRead}
                         />
                       ))}

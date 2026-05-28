@@ -12,16 +12,11 @@ import { Notification } from "@/interfaces/notification.interface"
 import {
   fetchDashboardNotifications,
   fetchDashboardNotificationsPage,
+  markNotificationsRead,
   type NotificationTypeFilter,
 } from "@/services/dashboard"
 import { useWebSocketDashboardContext } from "@/context/WebSocketDashboardContext"
-import {
-  isConversationFinalizedHostilityNotification,
-  isConversationHostilityNotification,
-  isConversationStartedNotification,
-  isWorkflowFailedNotification,
-  useNotificationUserSettings,
-} from "@/hooks/useNotificationUserSettings"
+import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
 
 export const NOTIFICATIONS_QUERY_KEY = ["notifications-feed"] as const
 export const NOTIFICATIONS_INFINITE_QUERY_KEY = [
@@ -30,36 +25,27 @@ export const NOTIFICATIONS_INFINITE_QUERY_KEY = [
 
 export function notificationsInfiniteQueryKey(
   conversationStarted: boolean,
-  notificationType: NotificationTypeFilter = "all"
-): readonly [string, boolean, NotificationTypeFilter] {
-  return [NOTIFICATIONS_INFINITE_QUERY_KEY[0], conversationStarted, notificationType]
+  notificationType: NotificationTypeFilter = "all",
+  notificationLevel: "all" | "info" | "success" | "warning" | "error" = "all"
+): readonly [
+  string,
+  boolean,
+  NotificationTypeFilter,
+  "all" | "info" | "success" | "warning" | "error",
+] {
+  return [
+    NOTIFICATIONS_INFINITE_QUERY_KEY[0],
+    conversationStarted,
+    notificationType,
+    notificationLevel,
+  ]
 }
 
-const NOTIFICATION_READ_MAP_KEY = "notifications_read_map"
 const NOTIFICATIONS_PAGE_SIZE = 20
 
 type NotificationFeedPage = {
   items: Notification[]
   hasMore: boolean
-}
-
-function loadReadMap(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(NOTIFICATION_READ_MAP_KEY)
-    if (!raw) return {}
-    return JSON.parse(raw) as Record<string, boolean>
-  } catch {
-    return {}
-  }
-}
-
-function saveReadMap(readMap: Record<string, boolean>): void {
-  localStorage.setItem(NOTIFICATION_READ_MAP_KEY, JSON.stringify(readMap))
-}
-
-function applyReadMap(items: Notification[]): Notification[] {
-  const readMap = loadReadMap()
-  return items.map((item) => ({ ...item, read: Boolean(readMap[item.id]) }))
 }
 
 export const useNotifications = () => {
@@ -88,7 +74,7 @@ export const useNotifications = () => {
         includeConversationFinalizedHostility: conversationFinalizedHostility,
         includeWorkflowFailed: workflowFailed,
       })
-      return applyReadMap(items ?? [])
+      return items ?? []
     },
     refetchInterval: isPollEnabled ? 15000 : false,
   })
@@ -115,22 +101,22 @@ export const useNotifications = () => {
     ]
   )
 
-  const markAllAsRead = () => {
-    const readMap = loadReadMap()
-    notifications.forEach((notification) => {
-      readMap[notification.id] = true
-    })
-    saveReadMap(readMap)
+  const markAllAsRead = async () => {
+    const unreadIds = notifications
+      .filter((notification) => !notification.read)
+      .map((notification) => notification.id)
+    if (unreadIds.length === 0) return
+    const ok = await markNotificationsRead(unreadIds, true)
+    if (!ok) return
     updateCachedNotifications((prev) =>
       prev.map((notification) => ({ ...notification, read: true }))
     )
     toast.success("All notifications are marked as read.")
   }
 
-  const markAsRead = (id: string) => {
-    const readMap = loadReadMap()
-    readMap[id] = true
-    saveReadMap(readMap)
+  const markAsRead = async (id: string) => {
+    const ok = await markNotificationsRead([id], true)
+    if (!ok) return
     updateCachedNotifications((prev) =>
       prev.map((notification) =>
         notification.id === id ? { ...notification, read: true } : notification
@@ -140,57 +126,16 @@ export const useNotifications = () => {
 
   const handleSocketMessage = useCallback(
     (data: Record<string, unknown>) => {
-      const topic = String(data.type ?? data.topic ?? "")
+      const topic = String(data.type ?? data.topic ?? data.msg_type ?? "")
       if (topic !== "notification") return
-      const payload = (data.payload ?? {}) as Record<string, unknown>
-      const incoming: Notification = {
-        id: String(payload.id ?? ""),
-        title: String(payload.title ?? "Notification"),
-        description: String(payload.description ?? ""),
-        timestamp: String(payload.timestamp ?? new Date().toISOString()),
-        type: (payload.type as Notification["type"]) ?? "info",
-        actionUrl: payload.action_url ? String(payload.action_url) : undefined,
-        read: Boolean(loadReadMap()[String(payload.id ?? "")]),
-      }
-
-      if (!incoming.id) return
-      if (!conversationStarted && isConversationStartedNotification(incoming.id)) {
-        return
-      }
-      if (!conversationHostility && isConversationHostilityNotification(incoming.id)) {
-        return
-      }
-      if (
-        !conversationFinalizedHostility &&
-        isConversationFinalizedHostilityNotification(incoming.id)
-      ) {
-        return
-      }
-      if (!workflowFailed && isWorkflowFailedNotification(incoming.id)) {
-        return
-      }
-
-      updateCachedNotifications((prev) => {
-        const exists = prev.some((item) => item.id === incoming.id)
-        if (exists) {
-          return prev.map((item) =>
-            item.id === incoming.id ? { ...item, ...incoming } : item
-          )
-        }
-        return [incoming, ...prev]
-      })
-
-      void queryClient.invalidateQueries({
-        queryKey: NOTIFICATIONS_INFINITE_QUERY_KEY,
-      })
+      // In WS mode, always refetch persisted notifications from DB to avoid
+      // payload-shape drift and to keep user_notification IDs/states accurate.
+      void refetch()
+      void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_INFINITE_QUERY_KEY })
     },
     [
-      conversationStarted,
-      conversationHostility,
-      conversationFinalizedHostility,
-      workflowFailed,
-      updateCachedNotifications,
       queryClient,
+      refetch,
     ]
   )
 
@@ -222,8 +167,10 @@ export const useNotifications = () => {
 
 export const useNotificationsInfinite = ({
   typeFilter = "all",
+  levelFilter = "all",
 }: {
   typeFilter?: NotificationTypeFilter
+  levelFilter?: "all" | "info" | "success" | "warning" | "error"
 } = {}) => {
   const queryClient = useQueryClient()
   const { settings } = useNotificationUserSettings()
@@ -234,7 +181,7 @@ export const useNotificationsInfinite = ({
     workflowFailed,
   } = settings
   const infiniteKey = [
-    ...notificationsInfiniteQueryKey(conversationStarted, typeFilter),
+    ...notificationsInfiniteQueryKey(conversationStarted, typeFilter, levelFilter),
     conversationHostility,
     conversationFinalizedHostility,
     workflowFailed,
@@ -251,11 +198,12 @@ export const useNotificationsInfinite = ({
         conversationHostility,
         conversationFinalizedHostility,
         workflowFailed,
-        typeFilter
+        typeFilter,
+        levelFilter
       )
       if (!page) return { items: [], hasMore: false }
       return {
-        items: applyReadMap(page.items),
+        items: page.items,
         hasMore: page.hasMore,
       }
     },
@@ -294,15 +242,15 @@ export const useNotificationsInfinite = ({
       conversationFinalizedHostility,
       workflowFailed,
       typeFilter,
+      levelFilter,
       infiniteKey,
     ]
   )
 
   const markAsRead = useCallback(
-    (id: string) => {
-      const readMap = loadReadMap()
-      readMap[id] = true
-      saveReadMap(readMap)
+    async (id: string) => {
+      const ok = await markNotificationsRead([id], true)
+      if (!ok) return
       setInfinitePagesRead((n) => n.id === id)
       void queryClient.invalidateQueries({
         queryKey: [
@@ -325,27 +273,28 @@ export const useNotificationsInfinite = ({
   )
 
   const markAllAsRead = useCallback(() => {
+    const markAll = async () => {
     const key = infiniteKey
     const pages = queryClient.getQueryData<InfiniteData<NotificationFeedPage>>(
       key
     )
-    const ids = pages?.pages.flatMap((p) => p.items.map((i) => i.id)) ?? []
-    const readMap = loadReadMap()
-    ids.forEach((id) => {
-      readMap[id] = true
-    })
-    saveReadMap(readMap)
-    setInfinitePagesRead(() => true)
-    void queryClient.invalidateQueries({
-      queryKey: [
-        ...NOTIFICATIONS_QUERY_KEY,
-        conversationStarted,
-        conversationHostility,
-        conversationFinalizedHostility,
-        workflowFailed,
-      ],
-    })
-    toast.success("All loaded notifications are marked as read.")
+      const ids = pages?.pages.flatMap((p) => p.items.map((i) => i.id)) ?? []
+      if (ids.length === 0) return
+      const ok = await markNotificationsRead(ids, true)
+      if (!ok) return
+      setInfinitePagesRead(() => true)
+      void queryClient.invalidateQueries({
+        queryKey: [
+          ...NOTIFICATIONS_QUERY_KEY,
+          conversationStarted,
+          conversationHostility,
+          conversationFinalizedHostility,
+          workflowFailed,
+        ],
+      })
+      toast.success("All loaded notifications are marked as read.")
+    }
+    void markAll()
   }, [
     queryClient,
     conversationStarted,
