@@ -58,16 +58,6 @@ class VectorProvider(BaseDataProvider):
                 logger.error("Failed to create vector database collection")
                 return False
 
-            # Set embedding function for ChromaDB if needed
-            if hasattr(self.vector_db, 'set_embedding_function'):
-                # Create a wrapper function for LangChain compatibility
-                async def embedding_function(texts):
-                    if isinstance(texts, str):
-                        return await self.embedder.embed_text(texts)
-                    return await self.embedder.embed_texts(texts)
-
-                self.vector_db.set_embedding_function(embedding_function)
-
             self._initialized = True
             logger.info("VectorProvider initialized successfully")
             return True
