@@ -175,7 +175,12 @@ async def microsoft_sso_callback(
 
         user = await user_service.resolve_user_for_microsoft_sso(entra_oid=entra_oid, email=email)
         tenant_id = get_tenant_context()
-        token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
+        token_data = {
+            "sub": user.username,
+            "user_id": str(user.id),
+            "tenant_id": tenant_id,
+            "origin": settings.LOCAL_FINE_TUNING_CALL_ORIGIN,
+        }
         access_token = auth_service.create_access_token(data=token_data)
         refresh_token = auth_service.create_refresh_token(data=token_data)
 

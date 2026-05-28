@@ -23,6 +23,7 @@ from app.api.v1.routes import (
     llm_analysts,
     llm_cost_rates,
     llm_providers,
+    local_fine_tuning,
     mcp,
     mcp_servers,
     notification,
@@ -145,6 +146,11 @@ router.include_router(
 router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
 
 router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenAI API"])
+router.include_router(
+    local_fine_tuning.router,
+    prefix="/local-fine-tuning",
+    tags=["Local Fine-Tuning"],
+)
 
 router.include_router(
     azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"]
