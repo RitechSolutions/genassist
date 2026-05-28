@@ -36,3 +36,18 @@ class AppException(Exception):
         self.error_variables = error_variables
         super().__init__(error_key.value)
 
+
+class UpstreamServiceError(Exception):
+    """Forwards an external service's error response through this backend verbatim.
+
+    Use this when proxying a remote service whose error envelope is already
+    client-safe (e.g. another internal service that does its own gating). The
+    registered handler returns the upstream JSON body and status code unchanged,
+    bypassing this backend's error-message translation and `error_detail` gating.
+    """
+
+    def __init__(self, status_code: int, body):
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"upstream {status_code}")
+
