@@ -1,5 +1,8 @@
 import { format } from "date-fns";
 import { Card } from "@/components/card";
+import { cn } from "@/helpers/utils";
+import { analyticsFadeUpClass } from "../../constants/animations";
+import { AnalyticsMetricsCardsSkeleton } from "../skeletons";
 import { Tooltip } from "@/components/tooltip";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import type { AgentStatsSummaryResponse } from "@/interfaces/analyticsReports.interface";
@@ -148,22 +151,9 @@ function buildMetrics(
   return metrics;
 }
 
-const PLACEHOLDER_COUNT = 5;
-
 export function SummaryStatsCards({ summary, previousSummary, compareDateRange, loading, error, containmentRate }: SummaryStatsCardsProps) {
   if (loading) {
-    return (
-      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8">
-          {Array.from({ length: PLACEHOLDER_COUNT }).map((_, i) => (
-            <div key={i} className="relative flex flex-col gap-3 py-2 sm:py-0">
-              <div className="h-7 w-16 bg-zinc-100 rounded animate-pulse" />
-              <div className="h-4 w-24 bg-zinc-100 rounded animate-pulse" />
-            </div>
-          ))}
-        </div>
-      </Card>
-    );
+    return <AnalyticsMetricsCardsSkeleton count={5} />;
   }
 
   if (error || !summary) return null;
@@ -175,7 +165,7 @@ export function SummaryStatsCards({ summary, previousSummary, compareDateRange, 
       : "grid-cols-2 sm:grid-cols-2 lg:grid-cols-4";
 
   return (
-    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
+    <Card className={cn("w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
       {previousSummary && getComparisonLabel(compareDateRange) && (
         <p className="text-xs text-muted-foreground/60 mb-4">
           {getComparisonLabel(compareDateRange)}

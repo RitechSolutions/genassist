@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
-import { Skeleton } from "@/components/skeleton";
+import { AttributeBreakdownChartBodySkeleton } from "../skeletons";
 import {
   Select,
   SelectContent,
@@ -24,6 +24,9 @@ import {
 } from "@/services/analyticsReports";
 import type { DateRange } from "react-day-picker";
 import { format } from "date-fns";
+import { cn } from "@/helpers/utils";
+import { AttributeBreakdownEmptyState } from "../AnalyticsEmptyStates";
+import { analyticsFadeUpClass } from "../../constants/animations";
 
 const ROW_HEIGHT = 44;
 const CHART_MIN_HEIGHT = 180;
@@ -86,7 +89,7 @@ export const AttributeBreakdownChart = ({
   const chartHeight = Math.max(CHART_MIN_HEIGHT, data.length * ROW_HEIGHT + CHART_PADDING);
 
   return (
-    <Card className="mt-6">
+    <Card className={cn("mt-6 bg-white", analyticsFadeUpClass)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div>
           <CardTitle className="text-base font-semibold">
@@ -113,18 +116,9 @@ export const AttributeBreakdownChart = ({
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="space-y-4 py-4">
-            {[1, 0.75, 0.5].map((w, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-8 rounded" style={{ width: `${w * 100}%` }} />
-              </div>
-            ))}
-          </div>
+          <AttributeBreakdownChartBodySkeleton />
         ) : data.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-12">
-            No data for this attribute yet.
-          </p>
+          <AttributeBreakdownEmptyState />
         ) : (
           <>
             <ResponsiveContainer width="100%" height={chartHeight}>

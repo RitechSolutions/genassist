@@ -1,11 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
 import { subDays } from "date-fns";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
+import { cn } from "@/helpers/utils";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
-import { useIsMobile } from "@/hooks/useMobile";
-import { Card, CardContent } from "@/components/card";
 import {
   Select,
   SelectContent,
@@ -13,10 +12,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { Info } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { NodeBreakdownChart } from "../components/reports/NodeBreakdownChart";
-import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import {
+  AnalyticsFilters,
+  analyticsFilterSelectTriggerClassName,
+} from "../components/AnalyticsFilters";
+import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
+import { analyticsFadeUpClass } from "../constants/animations";
+import { NodeAnalyticsTableEmptyState } from "../components/AnalyticsEmptyStates";
+import { NodeAnalyticsPageSkeleton } from "../components/skeletons";
 import { useAgentsList } from "../hooks/useAgentsList";
 import { fetchNodeDailyStats } from "@/services/analyticsReports";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
@@ -35,8 +40,6 @@ interface AgentNodeBreakdown {
 }
 
 const NodeAnalyticsPage = () => {
-  const isMobile = useIsMobile();
-
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
@@ -178,6 +181,8 @@ const NodeAnalyticsPage = () => {
     ...toExpandedUTCDateRange(dateRange),
   };
 
+  const canExport = !loading && agentBreakdown.length > 0;
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
@@ -187,128 +192,59 @@ const NodeAnalyticsPage = () => {
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Header */}
-              <header>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="mb-1 flex items-center justify-between gap-3">
-                      <h1 className="text-2xl sm:text-3xl font-bold animate-fade-down">
-                        Node Analytics
-                      </h1>
-                      {isMobile && (
-                        <Select value={agentFilter} onValueChange={setAgentFilter}>
-                          <SelectTrigger className="w-44 rounded-full">
-                            <SelectValue placeholder="All agents" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All agents</SelectItem>
-                            {agents.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground animate-fade-up">
-                      Workflow node execution metrics by type and date
-                    </p>
-                  </div>
+              <AnalyticsPageHeader
+                title="Node Analytics"
+                subtitle="Workflow node execution metrics by type and date"
+              >
+                <AnalyticsFilters
+                  agents={agents}
+                  agentFilter={agentFilter}
+                  onAgentFilterChange={setAgentFilter}
+                  dateRange={dateRange}
+                  onDateRangeChange={setDateRange}
+                >
+                  <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
+                    <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
+                      <SelectValue placeholder="All node types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All node types</SelectItem>
+                      {nodeTypeOptions.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {nodeTypeLabel(t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                  {!isMobile && (
-                    <AnalyticsFilters
-                      agents={agents}
-                      agentFilter={agentFilter}
-                      onAgentFilterChange={setAgentFilter}
-                      dateRange={dateRange}
-                      onDateRangeChange={setDateRange}
-                    >
-                      {/* Node type filter */}
-                      <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
-                        <SelectTrigger className="w-44">
-                          <SelectValue placeholder="All node types" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All node types</SelectItem>
-                          {nodeTypeOptions.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {nodeTypeLabel(t)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <ExportButton
+                    endpoint="/analytics/nodes/export"
+                    params={exportParams}
+                    filename="node-analytics"
+                    disabled={!canExport}
+                  />
+                </AnalyticsFilters>
+              </AnalyticsPageHeader>
 
-                      <ExportButton
-                        endpoint="/analytics/nodes/export"
-                        params={exportParams}
-                        filename="node-analytics"
-                        disabled={loading || agentBreakdown.length === 0}
-                      />
-                    </AnalyticsFilters>
-                  )}
-                </div>
+              {loading ? (
+                <NodeAnalyticsPageSkeleton />
+              ) : (
+                <div className="space-y-6 sm:space-y-8">
+              <NodeBreakdownChart items={items} loading={false} />
 
-                {isMobile && (
-                  <div className="mt-3">
-                    <AnalyticsFilters
-                      className="flex-wrap"
-                      compactDatePickers
-                      dateRange={dateRange}
-                      onDateRangeChange={setDateRange}
-                    >
-                      <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
-                        <SelectTrigger className="h-9 w-40 text-xs">
-                          <SelectValue placeholder="All node types" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All node types</SelectItem>
-                          {nodeTypeOptions.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {nodeTypeLabel(t)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      <ExportButton
-                        endpoint="/analytics/nodes/export"
-                        params={exportParams}
-                        filename="node-analytics"
-                        disabled={loading || agentBreakdown.length === 0}
-                      />
-                    </AnalyticsFilters>
-                  </div>
-                )}
-              </header>
-
-              {/* Empty-data notice */}
-              {!loading && items.length === 0 && !error && (
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Info className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                    <p className="text-sm text-blue-700">
-                      No node data yet. Run the aggregation task to populate the summary tables.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Node breakdown bar chart */}
-              <NodeBreakdownChart items={items} loading={loading} />
-
-              {/* Agent breakdown table */}
-              <div>
+              <div className={analyticsFadeUpClass}>
                 <DataTable
                   data={agentBreakdown}
                   columns={agentBreakdownColumns}
-                  loading={loading}
+                  loading={false}
                   error={error}
-                  emptyMessage="No node data for the selected period."
+                  emptyState={<NodeAnalyticsTableEmptyState />}
                   keyExtractor={(item) => item.id}
                   pageSize={10}
                 />
               </div>
+                </div>
+              )}
 
             </div>
           </div>

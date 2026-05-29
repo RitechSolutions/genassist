@@ -1,5 +1,16 @@
-import { useMemo } from "react";
-import { format, subDays, subMonths, subYears, startOfYear, startOfWeek, startOfMonth } from "date-fns";
+import { useCallback, useMemo } from "react";
+import {
+  endOfDay,
+  format,
+  isAfter,
+  startOfDay,
+  subDays,
+  subMonths,
+  subYears,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+} from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/button";
@@ -39,6 +50,23 @@ export interface DateRangePickerProps {
   numberOfMonths?: number;
   /** Optional class override for the trigger button */
   triggerClassName?: string;
+  /** When true, dates after today cannot be selected (default: false). */
+  disableFutureDates?: boolean;
+}
+
+function clampRangeToToday(range: DateRange | undefined): DateRange | undefined {
+  if (!range) return undefined;
+  const todayEnd = endOfDay(new Date());
+  const clamp = (d: Date | undefined) => {
+    if (!d) return undefined;
+    return isAfter(d, todayEnd) ? todayEnd : d;
+  };
+  const from = clamp(range.from);
+  const to = clamp(range.to);
+  if (from && to && isAfter(from, to)) {
+    return { from: to, to };
+  }
+  return { from, to };
 }
 
 export const DateRangePicker = ({
@@ -49,8 +77,25 @@ export const DateRangePicker = ({
   align = "end",
   numberOfMonths = 2,
   triggerClassName,
+  disableFutureDates = false,
 }: DateRangePickerProps) => {
   const presets = useMemo(() => customPresets ?? getDefaultPresets(), [customPresets]);
+  const todayEnd = useMemo(() => endOfDay(new Date()), []);
+  const todayStart = useMemo(() => startOfDay(new Date()), []);
+
+  const handleSelect = useCallback(
+    (range: DateRange | undefined) => {
+      onChange(disableFutureDates ? clampRangeToToday(range) : range);
+    },
+    [disableFutureDates, onChange],
+  );
+
+  const handlePreset = useCallback(
+    (range: DateRange) => {
+      handleSelect(range);
+    },
+    [handleSelect],
+  );
 
   const label = value?.from
     ? value.to
@@ -77,7 +122,7 @@ export const DateRangePicker = ({
               variant="ghost"
               size="sm"
               className="justify-start text-xs h-8"
-              onClick={() => onChange(preset.range)}
+              onClick={() => handlePreset(preset.range)}
             >
               {preset.label}
             </Button>
@@ -94,9 +139,12 @@ export const DateRangePicker = ({
         <Calendar
           mode="range"
           selected={value}
-          onSelect={onChange}
+          onSelect={handleSelect}
           numberOfMonths={numberOfMonths}
           initialFocus
+          disabled={disableFutureDates ? { after: todayEnd } : undefined}
+          toDate={disableFutureDates ? todayEnd : undefined}
+          defaultMonth={disableFutureDates ? todayStart : undefined}
         />
       </PopoverContent>
     </Popover>

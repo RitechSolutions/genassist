@@ -9,7 +9,10 @@ import {
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
-import { Skeleton } from "@/components/skeleton";
+import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
+import { DailyConversationsChartEmptyState } from "../AnalyticsEmptyStates";
+import { analyticsFadeUpClass } from "../../constants/animations";
+import { cn } from "@/helpers/utils";
 import type { AgentDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 
 interface AgentExecutionChartProps {
@@ -30,7 +33,7 @@ function formatDate(dateStr: string): string {
 
 export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecutionChartProps) {
   if (loading) {
-    return <Skeleton className="h-[320px] rounded-xl w-full" />;
+    return <AnalyticsChartCardSkeleton variant="area" />;
   }
 
   // Collect unique sorted dates and unique agent IDs
@@ -64,7 +67,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
   const totalConversations = items.reduce((s, i) => s + i.unique_conversations, 0);
 
   return (
-    <Card className="bg-white shadow-sm">
+    <Card className={cn("bg-white shadow-sm", analyticsFadeUpClass)}>
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-sm font-semibold text-zinc-700">
@@ -81,9 +84,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
       </CardHeader>
       <CardContent className="pt-4">
         {data.length === 0 ? (
-          <div className="flex items-center justify-center h-56 text-sm text-muted-foreground">
-            No data available for the selected period.
-          </div>
+          <DailyConversationsChartEmptyState />
         ) : (
           <ResponsiveContainer width="100%" height={agentIds.length > 1 ? 280 : 240}>
             <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
