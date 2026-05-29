@@ -129,13 +129,61 @@ def extract_code_params(
     return code_params
 
 
+_PATH_TOKEN_RE = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
+
+
+def _parse_path_tokens(path: str) -> list[str | int]:
+    """Parse dot/bracket paths like ``prediction[0].result`` into traversal tokens."""
+    tokens: list[str | int] = []
+    for match in _PATH_TOKEN_RE.finditer(path):
+        if match.group(1) is not None:
+            tokens.append(match.group(1))
+        elif match.group(2) is not None:
+            tokens.append(int(match.group(2)))
+    return tokens
+
+
+def _access_path_segment(current: Any, key: str | int) -> Any:
+    """Traverse one segment of a nested path."""
+    if current is None:
+        return None
+
+    if isinstance(current, list):
+        if isinstance(key, int):
+            index = key
+        elif isinstance(key, str) and key.isdigit():
+            index = int(key)
+        else:
+            return None
+        if 0 <= index < len(current):
+            return current[index]
+        return None
+
+    if isinstance(current, dict):
+        if key in current:
+            return current[key]
+        if isinstance(key, str) and key.isdigit() and int(key) in current:
+            return current[int(key)]
+        if isinstance(key, int) and str(key) in current:
+            return current[str(key)]
+        return None
+
+    if isinstance(key, str) and hasattr(current, key):
+        try:
+            return getattr(current, key)
+        except AttributeError:
+            return None
+
+    return None
+
+
 def get_nested_value(obj: Any, path: str) -> Any:
     """
-    Safely retrieve a nested value from an object using dot notation.
+    Safely retrieve a nested value from an object using dot/bracket notation.
 
     Args:
         obj: The object to traverse (dict, object, or any value)
-        path: Dot-separated path like "data.user.name"
+        path: Path like "data.user.name" or "prediction[0].result"
 
     Returns:
         The value at the specified path, or None if not found
@@ -143,21 +191,10 @@ def get_nested_value(obj: Any, path: str) -> Any:
     if not path:
         return obj
 
-    keys = path.split(".")
     current = obj
-
-    for key in keys:
+    for key in _parse_path_tokens(path):
+        current = _access_path_segment(current, key)
         if current is None:
-            return None
-
-        if isinstance(current, dict):
-            current = current.get(key)
-        elif hasattr(current, key):
-            try:
-                current = getattr(current, key)
-            except AttributeError:
-                return None
-        else:
             return None
 
     return current
