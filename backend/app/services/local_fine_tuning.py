@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 import httpx
 import jwt
@@ -268,16 +267,6 @@ class LocalFineTuningService:
     ) -> TestInferenceResponse:
         deployment = await self.get_deployment(deployment_id)
 
-        server_host = urlparse(self._base_url()).hostname
-        parsed_api = urlparse(deployment.api_url)
-        rewritten_host = server_host or parsed_api.hostname or "localhost"
-        if parsed_api.port:
-            netloc = f"{rewritten_host}:{parsed_api.port}"
-        else:
-            netloc = rewritten_host
-        rewritten = parsed_api._replace(netloc=netloc)
-        chat_url = f"{rewritten.scheme}://{rewritten.netloc}/v1/chat/completions"
-
         body = {
             "model": deployment.model_path,
             "messages": [{"role": "user", "content": message}],
@@ -285,30 +274,15 @@ class LocalFineTuningService:
             "temperature": 0.7,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=settings.DEFAULT_TIMEOUT) as client:
-                resp = await client.post(chat_url, json=body)
-        except httpx.RequestError as exc:
-            logger.warning(f"Local fine-tune deployment unreachable: POST {chat_url} → {exc}")
-            raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
-                status_code=502,
-                error_detail=f"Deployment unreachable: {exc}",
-            ) from exc
-
-        if resp.status_code >= 400:
-            logger.warning(
-                f"Local fine-tune deployment error: POST {chat_url} → {resp.status_code} {resp.text[:500]}"
-            )
-            raise UpstreamServiceError(
-                status_code=resp.status_code,
-                body=self._upstream_error_body(resp),
-            )
+        data = await self._request(
+            "POST",
+            f"api/v1/deployments/{deployment_id}/inference",
+            json=body,
+        )
 
         try:
-            data = resp.json()
             content = data["choices"][0]["message"]["content"]
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
+        except (KeyError, IndexError, TypeError) as exc:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
                 status_code=502,
