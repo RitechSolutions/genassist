@@ -40,7 +40,7 @@ export function LocalFineTuneTestDialog({
     setMessages((prev) => [...prev, { role: "user", content: text }]);
 
     try {
-      const reply = await testDeploymentInference(deployment.api_url, deployment.model_path, text);
+      const reply = await testDeploymentInference(deployment.id, text);
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (err: unknown) {
