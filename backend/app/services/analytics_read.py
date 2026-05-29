@@ -6,6 +6,7 @@ from injector import inject
 
 from app.repositories.analytics_read import AnalyticsReadRepository
 from app.schemas.analytics import (
+    AgentConversationStatusByAgent,
     AgentDailyStatsItem,
     AgentDailyStatsListResponse,
     AgentStatsSummaryResponse,
@@ -44,7 +45,29 @@ class AnalyticsReadService:
         summary = await self.repo.get_agent_stats_summary(
             agent_id=agent_id, from_date=from_date, to_date=to_date
         )
-        return self._dict_to_summary(summary, agent_id, from_date, to_date)
+        by_agent: list[AgentConversationStatusByAgent] = []
+        if agent_id is None:
+            rows = await self.repo.get_conversation_status_counts(
+                from_date=from_date, to_date=to_date, group_by_agent=True
+            )
+            by_agent = [AgentConversationStatusByAgent.model_validate(r) for r in rows]
+        return self._dict_to_summary(
+            summary, agent_id, from_date, to_date, conversation_status_by_agent=by_agent
+        )
+
+    async def get_conversation_status_by_agent(
+        self,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        agent_id: UUID | None = None,
+    ) -> list[AgentConversationStatusByAgent]:
+        rows = await self.repo.get_conversation_status_counts(
+            agent_id=agent_id,
+            from_date=from_date,
+            to_date=to_date,
+            group_by_agent=True,
+        )
+        return [AgentConversationStatusByAgent.model_validate(r) for r in rows]
 
     def _dict_to_summary(
         self,
@@ -52,6 +75,8 @@ class AnalyticsReadService:
         agent_id: UUID | None,
         from_date: date | None,
         to_date: date | None,
+        *,
+        conversation_status_by_agent: list[AgentConversationStatusByAgent] | None = None,
     ) -> AgentStatsSummaryResponse:
         return AgentStatsSummaryResponse(
             agent_id=agent_id,
@@ -68,6 +93,7 @@ class AnalyticsReadService:
             total_in_progress_conversations=raw.get("total_in_progress_conversations", 0),
             total_thumbs_up=raw.get("total_thumbs_up", 0),
             total_thumbs_down=raw.get("total_thumbs_down", 0),
+            conversation_status_by_agent=conversation_status_by_agent or [],
         )
 
     async def get_agent_stats_summary_with_comparison(
@@ -79,10 +105,24 @@ class AnalyticsReadService:
         data = await self.repo.get_agent_stats_summary_with_comparison(
             agent_id=agent_id, from_date=from_date, to_date=to_date
         )
+        by_agent: list[AgentConversationStatusByAgent] = []
+        if agent_id is None:
+            rows = await self.repo.get_conversation_status_counts(
+                from_date=from_date, to_date=to_date, group_by_agent=True
+            )
+            by_agent = [AgentConversationStatusByAgent.model_validate(r) for r in rows]
+
         return {
-            "current": self._dict_to_summary(data["current"], agent_id, from_date, to_date),
+            "current": self._dict_to_summary(
+                data["current"],
+                agent_id,
+                from_date,
+                to_date,
+                conversation_status_by_agent=by_agent,
+            ),
             "previous": self._dict_to_summary(data["previous"], agent_id, from_date, to_date)
-            if data["previous"] is not None else None,
+            if data["previous"] is not None
+            else None,
         }
 
     async def get_node_daily_stats(
