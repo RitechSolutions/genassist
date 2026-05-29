@@ -5,8 +5,6 @@ import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "luci
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
-import { useIsMobile } from "@/hooks/useMobile";
-import { Card, CardContent } from "@/components/card";
 import {
   Select,
   SelectContent,
@@ -14,12 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { Info } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { SummaryStatsCards } from "../components/reports/SummaryStatsCards";
 import { AgentExecutionChart } from "../components/reports/AgentExecutionChart";
 import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdownDialog";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
+import { analyticsFadeUpClass } from "../constants/animations";
+import {
+  AgentPerformanceTableEmptyState,
+  AnalyticsAggregatedDataEmptyState,
+} from "../components/AnalyticsEmptyStates";
+import { AgentPerformancePageSkeleton } from "../components/skeletons";
+import { cn } from "@/helpers/utils";
 import { useAgentsList } from "../hooks/useAgentsList";
 import {
   fetchAgentStatsSummary,
@@ -64,8 +69,6 @@ interface AgentAggregated {
 }
 
 const AgentPerformancePage = () => {
-  const isMobile = useIsMobile();
-
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
@@ -308,6 +311,13 @@ const AgentPerformancePage = () => {
     ...toExpandedUTCDateRange(dateRange),
   };
 
+  const hasSummary = summary != null;
+  const hasDailyStats = items.length > 0;
+  const showDetailSections = hasSummary || hasDailyStats;
+  const exportRowCount =
+    agentFilter === "all" ? aggregatedItems.length : items.length;
+  const canExport = !loading && exportRowCount > 0;
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
@@ -317,101 +327,47 @@ const AgentPerformancePage = () => {
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Header */}
-              <header>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="mb-1 flex items-center justify-between gap-3">
-                      <h1 className="text-2xl sm:text-3xl font-bold animate-fade-down">
-                        Agent Performance
-                      </h1>
-                      {isMobile && (
-                        <Select value={agentFilter} onValueChange={setAgentFilter}>
-                          <SelectTrigger className="w-44 rounded-full">
-                            <SelectValue placeholder="All agents" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All agents</SelectItem>
-                            {agents.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground animate-fade-up">
-                      Daily performance metrics per agent
-                    </p>
-                  </div>
+              <AnalyticsPageHeader
+                title="Agent Performance"
+                subtitle="Daily performance metrics per agent"
+              >
+                <AnalyticsFilters
+                  agents={agents}
+                  agentFilter={agentFilter}
+                  onAgentFilterChange={setAgentFilter}
+                  dateRange={dateRange}
+                  onDateRangeChange={setDateRange}
+                  compareDateRange={compareDateRange}
+                  onCompareDateRangeChange={setCompareDateRange}
+                >
+                  <ExportButton
+                    endpoint="/analytics/agents/export"
+                    params={exportParams}
+                    filename="agent-performance"
+                    disabled={!canExport}
+                  />
+                </AnalyticsFilters>
+              </AnalyticsPageHeader>
 
-                  {!isMobile && (
-                    <AnalyticsFilters
-                      agents={agents}
-                      agentFilter={agentFilter}
-                      onAgentFilterChange={setAgentFilter}
-                      dateRange={dateRange}
-                      onDateRangeChange={setDateRange}
-                      compareDateRange={compareDateRange}
-                      onCompareDateRangeChange={setCompareDateRange}
-                    >
-                      <ExportButton
-                        endpoint="/analytics/agents/export"
-                        params={exportParams}
-                        filename="agent-performance"
-                        disabled={loading || items.length === 0}
-                      />
-                    </AnalyticsFilters>
-                  )}
-                </div>
+              {loading ? (
+                <AgentPerformancePageSkeleton tableColumns={statsColumns.length} />
+              ) : (
+                <div className="space-y-6 sm:space-y-8">
+              {!showDetailSections && !error && <AnalyticsAggregatedDataEmptyState />}
 
-                {isMobile && (
-                  <div className="mt-3">
-                    <AnalyticsFilters
-                      className="flex-wrap"
-                      compactDatePickers
-                      dateRange={dateRange}
-                      onDateRangeChange={setDateRange}
-                      compareDateRange={compareDateRange}
-                      onCompareDateRangeChange={setCompareDateRange}
-                    >
-                      <ExportButton
-                        endpoint="/analytics/agents/export"
-                        params={exportParams}
-                        filename="agent-performance"
-                        disabled={loading || items.length === 0}
-                      />
-                    </AnalyticsFilters>
-                  </div>
-                )}
-              </header>
-
-              {/* Empty-data notice */}
-              {!loading && items.length === 0 && !error && (
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Info className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                    <p className="text-sm text-blue-700">
-                      No analytics data yet. Run the aggregation task to populate the summary tables.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Summary cards — containment rate promoted to top-level KPI */}
+              {/* Summary KPIs — always shown when summary API returns data */}
               <SummaryStatsCards
                 summary={summary}
                 previousSummary={previousSummary}
                 compareDateRange={compareDateRange}
-                loading={loading}
+                loading={false}
                 error={error}
                 containmentRate={containmentRate}
               />
 
               {/* Escalation tracking — only when a specific agent is selected */}
-              {agentFilter !== "all" && (
-                <div className="space-y-3">
+              {summary && agentFilter !== "all" && (
+                <div className={cn("space-y-3", analyticsFadeUpClass)}>
                   {/* Escalation node config */}
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -509,22 +465,38 @@ const AgentPerformancePage = () => {
                 </div>
               )}
 
-              {/* Daily conversations chart */}
-              <AgentExecutionChart items={items} loading={loading} agentNameMap={agentNameMap} />
+              {showDetailSections && (
+                <>
+                  <AgentExecutionChart
+                    items={items}
+                    loading={false}
+                    agentNameMap={agentNameMap}
+                  />
 
-              {/* Stats table */}
-              <div>
-                <DataTable
-                  data={agentFilter === "all" ? aggregatedItems : (items as unknown as AgentAggregated[])}
-                  columns={statsColumns as Column<AgentAggregated>[]}
-                  loading={loading}
-                  error={error}
-                  emptyMessage="No data for the selected period."
-                  keyExtractor={(item) => item.id}
-                  pageSize={10}
-                  onRowClick={agentFilter !== "all" ? (item) => setSelectedItem(item as unknown as AgentDailyStatsItem) : undefined}
-                />
-              </div>
+                  <div className={analyticsFadeUpClass}>
+                    <DataTable
+                      data={
+                        agentFilter === "all"
+                          ? aggregatedItems
+                          : (items as unknown as AgentAggregated[])
+                      }
+                      columns={statsColumns as Column<AgentAggregated>[]}
+                      loading={false}
+                      error={error}
+                      emptyState={<AgentPerformanceTableEmptyState />}
+                      keyExtractor={(item) => item.id}
+                      pageSize={10}
+                      onRowClick={
+                        agentFilter !== "all"
+                          ? (item) => setSelectedItem(item as unknown as AgentDailyStatsItem)
+                          : undefined
+                      }
+                    />
+                  </div>
+                </>
+              )}
+                </div>
+              )}
 
             </div>
           </div>

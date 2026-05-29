@@ -1,5 +1,6 @@
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
 import { Card } from "@/components/card";
+import { AnalyticsMetricsCardsSkeleton } from "./skeletons";
 import { Tooltip } from "@/components/tooltip";
 import {
   SmileIcon,
@@ -14,6 +15,8 @@ import {
 import { format } from "date-fns";
 import type { FetchedMetricsData, MetricsDeltas } from "@/services/metrics";
 import type { DateRange } from "react-day-picker";
+import { cn } from "@/helpers/utils";
+import { analyticsFadeUpClass, analyticsRefreshingClassName } from "../constants/animations";
 
 interface MetricItem {
   title: string;
@@ -62,8 +65,6 @@ function DeltaBadge({ delta }: { delta: number | undefined | null }) {
     </span>
   );
 }
-
-const PLACEHOLDER_COUNT = 5;
 
 export const AnalyticsMetricsSection = ({
   dateRange,
@@ -150,16 +151,7 @@ export const AnalyticsMetricsSection = ({
   if (loading) {
     return (
       <div className="space-y-6 sm:space-y-8">
-        <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8">
-            {Array.from({ length: PLACEHOLDER_COUNT }).map((_, i) => (
-              <div key={i} className="flex flex-col gap-3 py-2 sm:py-0">
-                <div className="h-7 w-16 bg-zinc-100 rounded animate-pulse" />
-                <div className="h-4 w-20 bg-zinc-100 rounded animate-pulse" />
-              </div>
-            ))}
-          </div>
-        </Card>
+        <AnalyticsMetricsCardsSkeleton showContextLine />
       </div>
     );
   }
@@ -173,14 +165,8 @@ export const AnalyticsMetricsSection = ({
   }
 
   return (
-    <div
-      className={
-        refreshing
-          ? "opacity-70 transition-opacity duration-200"
-          : "transition-opacity duration-200"
-      }
-    >
-      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up mb-6 sm:mb-8">
+    <div className={cn("space-y-6 sm:space-y-8", analyticsRefreshingClassName(refreshing))}>
+      <Card className={cn("mb-0 w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
         {/* Context line */}
         {(analyzedCount > 0 || deltas) && (
           <p className="text-xs text-muted-foreground mb-4">
