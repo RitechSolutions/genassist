@@ -160,15 +160,24 @@ const AgentPerformancePage = () => {
       : null;
   const containmentRate = escalationRate !== null ? 1 - escalationRate : null;
 
+  const conversationStatusByAgent = useMemo(() => {
+    const map = new Map<string, { unique_conversations: number; finalized_conversations: number; in_progress_conversations: number }>();
+    for (const row of summary?.conversation_status_by_agent ?? []) {
+      map.set(row.agent_id, {
+        unique_conversations: row.unique_conversations,
+        finalized_conversations: row.finalized_conversations,
+        in_progress_conversations: row.in_progress_conversations,
+      });
+    }
+    return map;
+  }, [summary?.conversation_status_by_agent]);
+
   // When all agents shown: aggregate daily rows into one row per agent
   const aggregatedItems = useMemo<AgentAggregated[]>(() => {
     const map = new Map<string, AgentAggregated & { _totalMs: number; _msCount: number }>();
     for (const item of items) {
       const existing = map.get(item.agent_id);
       if (existing) {
-        existing.unique_conversations += item.unique_conversations;
-        existing.finalized_conversations += item.finalized_conversations;
-        existing.in_progress_conversations += item.in_progress_conversations;
         existing.execution_count += item.execution_count;
         existing.success_count += item.success_count;
         existing.error_count += item.error_count;
@@ -200,11 +209,17 @@ const AgentPerformancePage = () => {
         });
       }
     }
-    return Array.from(map.values()).map((a) => ({
-      ...a,
-      avg_response_ms: a._msCount > 0 ? a._totalMs / a._msCount : null,
-    }));
-  }, [items]);
+    return Array.from(map.values()).map((a) => {
+      const conv = conversationStatusByAgent.get(a.agent_id);
+      return {
+        ...a,
+        unique_conversations: conv?.unique_conversations ?? a.unique_conversations,
+        finalized_conversations: conv?.finalized_conversations ?? a.finalized_conversations,
+        in_progress_conversations: conv?.in_progress_conversations ?? a.in_progress_conversations,
+        avg_response_ms: a._msCount > 0 ? a._totalMs / a._msCount : null,
+      };
+    });
+  }, [items, conversationStatusByAgent]);
 
   const statsColumns = useMemo(() => {
     const statCols: Column<AgentAggregated>[] = [

@@ -7,6 +7,7 @@ from uuid import UUID
 from injector import inject
 
 from app.core.utils.date_time_utils import utc_now
+from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
 
@@ -171,9 +172,12 @@ class AnalyticsAggregationService:
             if conv_id_str and log.conversation is not None:
                 ab["conversation_ids"].add(conv_id_str)
                 conv_status = (log.conversation.status or "").lower()
-                if conv_status == "finalized":
+                if conv_status == ConversationStatus.FINALIZED.value:
                     ab["finalized_conversation_ids"].add(conv_id_str)
-                else:
+                elif conv_status in (
+                    ConversationStatus.IN_PROGRESS.value,
+                    ConversationStatus.TAKE_OVER.value,
+                ):
                     ab["in_progress_conversation_ids"].add(conv_id_str)
                 if conv_id_str not in ab["thumbs_data"]:
                     ab["thumbs_data"][conv_id_str] = (

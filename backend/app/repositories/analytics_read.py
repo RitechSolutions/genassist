@@ -1,15 +1,17 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 
 from app.core.utils.date_time_utils import previous_period
+from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
+from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.db.models.operator import OperatorModel
@@ -63,6 +65,109 @@ class AnalyticsReadRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    def _conversations_with_activity_subquery(
+        self,
+        agent_id: UUID | None,
+        from_date: date | None,
+        to_date: date | None,
+    ):
+        """One row per (conversation, agent) with activity in the date range."""
+        conditions = [AgentResponseLogModel.is_deleted == 0]
+        if from_date is not None:
+            start = datetime.combine(from_date, time.min, tzinfo=timezone.utc)
+            conditions.append(AgentResponseLogModel.logged_at >= start)
+        if to_date is not None:
+            end = datetime.combine(to_date, time.max, tzinfo=timezone.utc)
+            conditions.append(AgentResponseLogModel.logged_at <= end)
+
+        stmt = (
+            select(
+                ConversationModel.id.label("conversation_id"),
+                AgentModel.id.label("agent_id"),
+                ConversationModel.status.label("status"),
+            )
+            .select_from(AgentResponseLogModel)
+            .join(
+                ConversationModel,
+                AgentResponseLogModel.conversation_id == ConversationModel.id,
+            )
+            .join(OperatorModel, ConversationModel.operator_id == OperatorModel.id)
+            .join(AgentModel, AgentModel.operator_id == OperatorModel.id)
+            .where(*conditions)
+            .distinct()
+        )
+        if agent_id is not None:
+            stmt = stmt.where(AgentModel.id == agent_id)
+        return stmt.subquery()
+
+    async def get_conversation_status_counts(
+        self,
+        agent_id: UUID | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        *,
+        group_by_agent: bool = False,
+    ) -> list[dict]:
+        """
+        Distinct conversations with agent activity in the period, split by current status.
+
+        Unlike summing daily stats rows, each conversation is counted once using its
+        present status (finalized vs in_progress/takeover).
+        """
+        finalized = ConversationStatus.FINALIZED.value
+        active_statuses = (
+            ConversationStatus.IN_PROGRESS.value,
+            ConversationStatus.TAKE_OVER.value,
+        )
+        activity = self._conversations_with_activity_subquery(agent_id, from_date, to_date)
+
+        if group_by_agent:
+            stmt = (
+                select(
+                    activity.c.agent_id,
+                    func.count(activity.c.conversation_id).label("unique_conversations"),
+                    func.coalesce(
+                        func.sum(
+                            case((activity.c.status == finalized, 1), else_=0)
+                        ),
+                        0,
+                    ).label("finalized_conversations"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (activity.c.status.in_(active_statuses), 1),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("in_progress_conversations"),
+                )
+                .group_by(activity.c.agent_id)
+            )
+            result = await self.db.execute(stmt)
+            return [dict(r) for r in result.mappings().all()]
+
+        stmt = select(
+            func.count(activity.c.conversation_id).label("total_unique_conversations"),
+            func.coalesce(
+                func.sum(case((activity.c.status == finalized, 1), else_=0)),
+                0,
+            ).label("total_finalized_conversations"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (activity.c.status.in_(active_statuses), 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("total_in_progress_conversations"),
+        ).select_from(activity)
+
+        result = await self.db.execute(stmt)
+        row = result.mappings().one()
+        return [dict(row)]
+
     async def get_agent_stats_summary(
         self,
         agent_id: UUID | None = None,
@@ -80,9 +185,6 @@ class AnalyticsReadRepository:
             ).label("avg_response_ms"),
             func.avg(AgentExecutionDailyStatsModel.avg_success_rate).label("avg_success_rate"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.rag_used_count), 0).label("total_rag_used"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.unique_conversations), 0).label("total_unique_conversations"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.finalized_conversations), 0).label("total_finalized_conversations"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.in_progress_conversations), 0).label("total_in_progress_conversations"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.thumbs_up_count), 0).label("total_thumbs_up"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.thumbs_down_count), 0).label("total_thumbs_down"),
         ).where(AgentExecutionDailyStatsModel.is_deleted == 0)
@@ -95,8 +197,13 @@ class AnalyticsReadRepository:
             stmt = stmt.where(AgentExecutionDailyStatsModel.stat_date <= to_date)
 
         result = await self.db.execute(stmt)
-        row = result.mappings().one()
-        return dict(row)
+        row = dict(result.mappings().one())
+
+        conv_rows = await self.get_conversation_status_counts(
+            agent_id=agent_id, from_date=from_date, to_date=to_date, group_by_agent=False
+        )
+        row.update(conv_rows[0])
+        return row
 
     async def get_agent_stats_summary_with_comparison(
         self,
