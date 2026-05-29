@@ -1,7 +1,8 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import AceEditor from "react-ace";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
+import { parseDroppedVariable } from "@/helpers/variable-input/droppedVariable";
 
 interface DraggableAceEditorProps {
   id?: string;
@@ -16,22 +17,9 @@ interface DraggableAceEditorProps {
   width?: string;
   setOptions?: Record<string, unknown>;
   onVariableDrop?: (path: string, value: unknown) => void;
-  name?: string; // Add name prop for compatibility
+  name?: string;
 }
 
-/**
- * AceEditor component that can receive dropped values from the JSON viewer
- * Supports both manual input and drag-and-drop from available variables
- * Variables can be dropped at cursor position or replace selected text
- * Shows real-time drag cursor for precise positioning
- *
- * Styling:
- * - Inherits all AceEditor component styles
- * - Supports custom className for additional styling
- * - Full width by default (w-full)
- * - Proper drag and drop visual feedback
- * - Syntax highlighting for variables in the preview section
- */
 export const DraggableAceEditor: React.FC<DraggableAceEditorProps> = ({
   id,
   label,
@@ -50,10 +38,58 @@ export const DraggableAceEditor: React.FC<DraggableAceEditorProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
+  const cleanupDropListenersRef = useRef<(() => void) | null>(null);
+  const dropHandledRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      cleanupDropListenersRef.current?.();
+    };
+  }, []);
+
+  const processDrop = useCallback(
+    (dataTransfer: DataTransfer, clientX?: number, clientY?: number) => {
+      if (dropHandledRef.current) {
+        return;
+      }
+
+      const dropped = parseDroppedVariable(dataTransfer);
+      if (!dropped || !editorRef.current) {
+        return;
+      }
+
+      dropHandledRef.current = true;
+      requestAnimationFrame(() => {
+        dropHandledRef.current = false;
+      });
+
+      const editor = editorRef.current;
+
+      if (clientX != null && clientY != null) {
+        const position = editor.renderer.screenToTextCoordinates(
+          clientX,
+          clientY
+        );
+        editor.moveCursorToPosition(position);
+      }
+
+      editor.focus();
+
+      if (onVariableDrop) {
+        onVariableDrop(dropped.path, dropped.value);
+        return;
+      }
+
+      editor.insert(dropped.reference);
+      onChange(editor.getValue());
+    },
+    [onChange, onVariableDrop]
+  );
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
     setIsDragOver(true);
   };
 
@@ -63,66 +99,52 @@ export const DraggableAceEditor: React.FC<DraggableAceEditorProps> = ({
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-
-    if (!editorRef.current) {
-      return;
-    }
-
-    try {
-      // Try to get JSON data first
-      const jsonData = e.dataTransfer.getData("application/json");
-
-      if (jsonData) {
-        const { path, value: droppedValue } = JSON.parse(jsonData);
-        // Insert the variable reference at the cursor position
-        // const variableReference = `{{${path}}}`;
-        //insertAtCursor(path);
-
-        // Call the callback if provided
-        if (onVariableDrop) {
-          onVariableDrop(path, droppedValue);
-        }
-        return;
-      }
-
-      // Fallback to plain text
-      const textData = e.dataTransfer.getData("text/plain");
-
-      if (textData) {
-        const variableReference = `{{${textData}}}`;
-        insertAtCursor(variableReference);
-      }
-    } catch (error) {
-      // ignore
-    }
-  };
-
-  // Helper function to insert value at cursor position in AceEditor
-  const insertAtCursor = useCallback(
-    (textToInsert: string) => {
-      if (!editorRef.current) return;
-
-      const session = editorRef.current.getSession();
-      const cursor = editorRef.current.getCursorPosition();
-
-      // Insert the text at cursor position
-      session.insert(cursor, textToInsert);
-
-      // Update the value in the parent component
-      const newValue = session.getValue();
-      onChange(newValue);
-    },
-    [onChange]
-  );
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleEditorLoad = (editor: any) => {
-    editorRef.current = editor;
-  };
+  const handleEditorLoad = useCallback(
+    (editor: any) => {
+      cleanupDropListenersRef.current?.();
+      editorRef.current = editor;
+
+      const container = editor.container as HTMLElement;
+      const capture = true;
+
+      const onDragOver = (event: DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "copy";
+        }
+        setIsDragOver(true);
+      };
+
+      const onDragLeave = (event: DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragOver(false);
+      };
+
+      const onDrop = (event: DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        setIsDragOver(false);
+        if (event.dataTransfer) {
+          processDrop(event.dataTransfer, event.clientX, event.clientY);
+        }
+      };
+
+      container.addEventListener("dragover", onDragOver, capture);
+      container.addEventListener("dragleave", onDragLeave, capture);
+      container.addEventListener("drop", onDrop, capture);
+
+      cleanupDropListenersRef.current = () => {
+        container.removeEventListener("dragover", onDragOver, capture);
+        container.removeEventListener("dragleave", onDragLeave, capture);
+        container.removeEventListener("drop", onDrop, capture);
+      };
+    },
+    [processDrop]
+  );
 
   const defaultSetOptions = {
     showLineNumbers: true,
@@ -147,7 +169,6 @@ export const DraggableAceEditor: React.FC<DraggableAceEditorProps> = ({
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         <div className="editor-card relative flex flex-col p-6 gap-2.5 h-[500px] bg-[#1C1C1C] backdrop-blur-[20px] rounded-[16px] w-full">
           <AceEditor
