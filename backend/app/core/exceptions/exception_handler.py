@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
-from app.core.exceptions.exception_classes import AppException
+from app.core.exceptions.exception_classes import AppException, UpstreamServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,13 @@ def init_error_handlers(app):
             'error_detail': _response_error_detail(error),
             }
         return JSONResponse(content=jsonable_encoder(response), status_code=error.status_code)
+
+    @app.exception_handler(UpstreamServiceError)
+    def handle_upstream_service_error(request: Request, error: UpstreamServiceError):
+        """Return the upstream response body unchanged so its error envelope
+        (already client-safe) reaches the caller without re-wrapping."""
+        logger.info(f"Forwarding upstream error: {error.status_code} {error.body}")
+        return JSONResponse(content=jsonable_encoder(error.body), status_code=error.status_code)
 
     # Regex for:  Key (name)=(Summarizer12) already exists.
     _DUP_DETAIL_RE = re.compile(
