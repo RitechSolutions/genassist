@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
@@ -9,16 +9,14 @@ import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { AnalyticsInsightsPageSkeleton } from "../components/skeletons";
 import { AttributeBreakdownChart } from "../components/reports/AttributeBreakdownChart";
 import { useAnalyticsData } from "../hooks/useAnalyticsData";
-import { useAnalyticsPeriodComparison } from "../hooks/useAnalyticsPeriodComparison";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
-import type { PeriodPreset } from "@/helpers/analyticsPeriodComparison";
 
 const AnalyticsPage = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("last7days");
+  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
   const {
     groups,
     showGroupFilter,
@@ -30,27 +28,10 @@ const AnalyticsPage = () => {
     filterParams,
   } = useAnalyticsFilters();
 
-  const { comparisonRange, comparedWithLabel } = useAnalyticsPeriodComparison(
-    dateRange,
-    periodPreset,
-  );
-
-  const handleDateRangeChange = useCallback(
-    (range: DateRange | undefined, meta?: { preset: PeriodPreset }) => {
-      setDateRange(range);
-      if (meta?.preset) {
-        setPeriodPreset(meta.preset);
-      } else if (range) {
-        setPeriodPreset("custom");
-      }
-    },
-    [],
-  );
-
   const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(
     dateRange,
     agentFilter,
-    comparisonRange,
+    compareDateRange,
     filterParams.group_id,
   );
 
@@ -74,7 +55,9 @@ const AnalyticsPage = () => {
                   agentFilter={agentFilter}
                   onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
-                  onDateRangeChange={handleDateRangeChange}
+                  onDateRangeChange={setDateRange}
+                  compareDateRange={compareDateRange}
+                  onCompareDateRangeChange={setCompareDateRange}
                 />
               </AnalyticsPageHeader>
 
@@ -91,8 +74,7 @@ const AnalyticsPage = () => {
                     loading={false}
                     refreshing={refreshing}
                     error={error}
-                    comparisonRange={comparisonRange}
-                    comparedWithLabel={comparedWithLabel}
+                    compareDateRange={compareDateRange}
                   />
 
                   <AttributeBreakdownChart
