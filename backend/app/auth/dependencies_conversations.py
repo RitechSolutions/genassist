@@ -76,29 +76,27 @@ async def _handle_guest_token(
     """
     try:
         guest_token_data = await auth_service.decode_guest_token(token_str)
-
-        if guest_token_data["conversation_id"] != str(conversation_id):
-            raise AppException(
-                status_code=403,
-                error_key=ErrorKey.NOT_AUTHORIZED,
-                error_detail="Token is not valid for this conversation",
-            )
-
-        guest_user_id = guest_token_data.get("user_id")
-        user_id_uuid = UUID(guest_user_id) if guest_user_id and isinstance(guest_user_id, str) else guest_user_id
-
-        request.state.guest_token = guest_token_data
-        request.state.user = None
-        context["auth_mode"] = "guest_token"
-        context["user_id"] = user_id_uuid
-        context["user_roles"] = []
-        context["operator_id"] = agent.operator.id if agent and agent.operator else None
-
-        return True
-    except AppException as e:
-        if "guest token" in str(e.error_detail).lower() or "conversation" in str(e.error_detail).lower():
-            raise
+    except AppException:
         return False
+
+    if guest_token_data["conversation_id"] != str(conversation_id):
+        raise AppException(
+            status_code=403,
+            error_key=ErrorKey.NOT_AUTHORIZED,
+            error_detail="Token is not valid for this conversation",
+        )
+
+    guest_user_id = guest_token_data.get("user_id")
+    user_id_uuid = UUID(guest_user_id) if guest_user_id and isinstance(guest_user_id, str) else guest_user_id
+
+    request.state.guest_token = guest_token_data
+    request.state.user = None
+    context["auth_mode"] = "guest_token"
+    context["user_id"] = user_id_uuid
+    context["user_roles"] = []
+    context["operator_id"] = agent.operator.id if agent and agent.operator else None
+
+    return True
 
 
 async def _handle_authenticated_agent(
