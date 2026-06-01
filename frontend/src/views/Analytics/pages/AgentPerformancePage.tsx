@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { subDays } from "date-fns";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
@@ -38,9 +38,6 @@ import type {
 } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 import { ExportButton } from "@/components/ui/ExportButton";
-import { useAnalyticsPeriodComparison } from "../hooks/useAnalyticsPeriodComparison";
-import type { PeriodPreset } from "@/helpers/analyticsPeriodComparison";
-
 const LS_KEY = (agentId: string) => `analytics_escalation_node_${agentId}`;
 
 function getResponseTimeColor(ms: number): string {
@@ -75,7 +72,7 @@ const AgentPerformancePage = () => {
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("last7days");
+  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
 
   const {
     groups,
@@ -88,26 +85,9 @@ const AgentPerformancePage = () => {
     agentNameMap,
     filterParams,
   } = useAnalyticsFilters();
-  const { comparisonRange, comparedWithLabel } = useAnalyticsPeriodComparison(
-    dateRange,
-    periodPreset,
-  );
-
-  const handleDateRangeChange = useCallback(
-    (range: DateRange | undefined, meta?: { preset: PeriodPreset }) => {
-      setDateRange(range);
-      if (meta?.preset) {
-        setPeriodPreset(meta.preset);
-      } else if (range) {
-        setPeriodPreset("custom");
-      }
-    },
-    [],
-  );
   const [summary, setSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [previousSummary, setPreviousSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [items, setItems] = useState<AgentDailyStatsItem[]>([]);
-  const [compareItems, setCompareItems] = useState<AgentDailyStatsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<AgentDailyStatsItem | null>(null);
@@ -137,16 +117,14 @@ const AgentPerformancePage = () => {
           }
         : undefined;
 
-      const [currentData, previousData, dailyData, compareDailyData] = await Promise.all([
+      const [currentData, previousData, dailyData] = await Promise.all([
         fetchAgentStatsSummary(params),
         compareParams ? fetchAgentStatsSummary(compareParams) : Promise.resolve(null),
         fetchAgentDailyStats(params),
-        compareParams ? fetchAgentDailyStats(compareParams) : Promise.resolve(null),
       ]);
       setSummary(currentData);
       setPreviousSummary(previousData);
       setItems(dailyData?.items ?? []);
-      setCompareItems(compareDailyData?.items ?? []);
     } catch {
       setError("Failed to load analytics data.");
     } finally {
@@ -155,7 +133,7 @@ const AgentPerformancePage = () => {
   };
 
   useEffect(() => {
-    loadData(dateRange, filterParams, comparisonRange);
+    loadData(dateRange, filterParams, compareDateRange);
 
     if (agentFilter !== "all") {
       setEscalationNode(localStorage.getItem(LS_KEY(agentFilter)) ?? "");
@@ -171,7 +149,7 @@ const AgentPerformancePage = () => {
     agentFilter,
     filterParams.agent_id,
     filterParams.group_id,
-    comparisonRange,
+    compareDateRange,
   ]);
 
   const handleEscalationNodeChange = (value: string) => {
@@ -389,7 +367,9 @@ const AgentPerformancePage = () => {
                   agentFilter={agentFilter}
                   onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
-                  onDateRangeChange={handleDateRangeChange}
+                  onDateRangeChange={setDateRange}
+                  compareDateRange={compareDateRange}
+                  onCompareDateRangeChange={setCompareDateRange}
                 >
                   <ExportButton
                     endpoint="/analytics/agents/export"
@@ -410,7 +390,7 @@ const AgentPerformancePage = () => {
               <SummaryStatsCards
                 summary={summary}
                 previousSummary={previousSummary}
-                comparedWithLabel={comparedWithLabel}
+                compareDateRange={compareDateRange}
                 loading={false}
                 error={error}
                 containmentRate={containmentRate}
@@ -520,10 +500,6 @@ const AgentPerformancePage = () => {
                 <>
                   <AgentExecutionChart
                     items={items}
-                    compareItems={compareItems}
-                    dateRange={dateRange}
-                    comparisonRange={comparisonRange}
-                    comparedWithLabel={comparedWithLabel}
                     loading={false}
                     agentNameMap={agentNameMap}
                   />
