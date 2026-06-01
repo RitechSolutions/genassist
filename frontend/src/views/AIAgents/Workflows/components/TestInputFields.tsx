@@ -22,6 +22,7 @@ interface TestInputFieldsProps {
   formData: Record<string, string>;
   fieldTypes: Record<string, SchemaType>;
   availableData: Record<string, unknown> | null;
+  hasWorkflowContext?: boolean;
   isLoading: boolean;
   onInputChange: (id: string, value: string) => void;
   onTypeChange: (id: string, newType: SchemaType) => void;
@@ -32,11 +33,27 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
   formData,
   fieldTypes,
   availableData,
+  hasWorkflowContext = false,
   isLoading,
   onInputChange,
   onTypeChange,
 }) => {
   if (inputFields.length === 0) {
+    if (hasWorkflowContext) {
+      return (
+        <div className="space-y-3">
+          <Label>Workflow Context</Label>
+          <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+            Values from upstream nodes (<code className="text-xs">source</code>,{" "}
+            <code className="text-xs">session</code>) are applied automatically
+            from your workflow test data. No manual input is required for dragged
+            variables like{" "}
+            <code className="text-xs">{`{{source.variable_name}}`}</code>.
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="text-sm text-gray-500 italic">
         No variables found in node configuration or inputSchema
@@ -46,6 +63,13 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
 
   return (
     <div className="space-y-4">
+      {hasWorkflowContext && (
+        <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+          Upstream <code className="text-xs">source</code> /{" "}
+          <code className="text-xs">session</code> values are included automatically.
+          Only custom parameters below need manual input.
+        </div>
+      )}
       <Label>Input Variables</Label>
       {inputFields.map((field) => {
         const currentType = fieldTypes[field.id] || "string";

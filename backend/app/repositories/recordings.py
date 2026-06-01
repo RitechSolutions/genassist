@@ -2,10 +2,11 @@ from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
+from app.core.utils.analytics_agent_scope import resolve_scoped_agent_ids
 from app.core.utils.date_time_utils import previous_period
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, Date
+from sqlalchemy import false, or_, select, func, cast, Date
 from app.db.models.recording import RecordingModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.agent import AgentModel
@@ -59,6 +60,8 @@ class RecordingsRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         agent_id: Optional[UUID] = None,
+        agent_ids: Optional[list[UUID]] = None,
+        group_id: Optional[UUID] = None,
         conversation_already_joined: bool = False,
     ):
         """Apply common ConversationModel/AgentModel joins and date filters to a query."""
@@ -67,11 +70,42 @@ class RecordingsRepository:
                 ConversationModel,
                 ConversationAnalysisModel.conversation_id == ConversationModel.id,
             )
-        if agent_id is not None:
+
+        if group_id is not None:
+            scope = [ConversationModel.group_id == group_id]
+            if agent_id is not None:
+                query = query.join(
+                    AgentModel,
+                    AgentModel.operator_id == ConversationModel.operator_id,
+                )
+                scope.append(AgentModel.id == agent_id)
+            elif agent_ids:
+                query = query.join(
+                    AgentModel,
+                    AgentModel.operator_id == ConversationModel.operator_id,
+                )
+                if len(agent_ids) == 1:
+                    scope.append(AgentModel.id == agent_ids[0])
+                else:
+                    scope.append(AgentModel.id.in_(agent_ids))
+            query = query.where(or_(*scope))
+        elif agent_ids is not None:
+            query = query.join(
+                AgentModel,
+                AgentModel.operator_id == ConversationModel.operator_id,
+            )
+            if not agent_ids:
+                query = query.where(false())
+            elif len(agent_ids) == 1:
+                query = query.where(AgentModel.id == agent_ids[0])
+            else:
+                query = query.where(AgentModel.id.in_(agent_ids))
+        elif agent_id is not None:
             query = query.join(
                 AgentModel,
                 AgentModel.operator_id == ConversationModel.operator_id,
             ).where(AgentModel.id == agent_id)
+
         if from_date is not None:
             query = query.where(ConversationModel.conversation_date >= from_date)
         if to_date is not None:
@@ -98,13 +132,25 @@ class RecordingsRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         agent_id: Optional[UUID] = None,
+        group_id: Optional[UUID] = None,
     ) -> dict:
         """Return numeric metric averages (already scaled to 0-100 for display)."""
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids and group_id is None:
+            return dict(_EMPTY_RAW_METRICS)
+
         query = select(
             func.count(ConversationAnalysisModel.id),
             *[func.avg(getattr(ConversationAnalysisModel, k)) for k in _METRIC_KEYS],
         )
-        query = self._apply_filters(query, from_date, to_date, agent_id)
+        query = self._apply_filters(
+            query,
+            from_date,
+            to_date,
+            agent_id=agent_id,
+            agent_ids=agent_ids if agent_id is None else None,
+            group_id=group_id,
+        )
         result = await self.db.execute(query)
 
         row = result.one()
@@ -122,8 +168,9 @@ class RecordingsRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         agent_id: Optional[UUID] = None,
+        group_id: Optional[UUID] = None,
     ):
-        raw = await self._get_raw_metrics(from_date, to_date, agent_id)
+        raw = await self._get_raw_metrics(from_date, to_date, agent_id, group_id)
         return format_raw_metrics(raw)
 
     async def get_metrics_with_comparison(
@@ -131,9 +178,10 @@ class RecordingsRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         agent_id: Optional[UUID] = None,
+        group_id: Optional[UUID] = None,
     ) -> dict:
         """Return current metrics, previous-period metrics, and deltas."""
-        current_raw = await self._get_raw_metrics(from_date, to_date, agent_id)
+        current_raw = await self._get_raw_metrics(from_date, to_date, agent_id, group_id)
 
         if from_date is None or to_date is None:
             return {
@@ -143,7 +191,7 @@ class RecordingsRepository:
             }
 
         prev_from, prev_to = previous_period(from_date, to_date)
-        previous_raw = await self._get_raw_metrics(prev_from, prev_to, agent_id)
+        previous_raw = await self._get_raw_metrics(prev_from, prev_to, agent_id, group_id)
 
         # Compute deltas (percentage-point difference) — exclude neutral_sentiment
         delta_keys = [k for k in _METRIC_KEYS if k != "neutral_sentiment"]
@@ -164,8 +212,13 @@ class RecordingsRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         agent_id: Optional[UUID] = None,
+        group_id: Optional[UUID] = None,
     ) -> list[dict]:
         """Return daily averages for key KPI metrics (0-10 scale, multiplied by 10 for %)."""
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids and group_id is None:
+            return []
+
         day_col = cast(ConversationModel.conversation_date, Date).label("day")
         query = (
             select(
@@ -183,7 +236,13 @@ class RecordingsRepository:
             .order_by(day_col)
         )
         query = self._apply_filters(
-            query, from_date, to_date, agent_id, conversation_already_joined=True
+            query,
+            from_date,
+            to_date,
+            agent_id=agent_id,
+            agent_ids=agent_ids,
+            group_id=group_id,
+            conversation_already_joined=True,
         )
 
         rows = (await self.db.execute(query)).all()
