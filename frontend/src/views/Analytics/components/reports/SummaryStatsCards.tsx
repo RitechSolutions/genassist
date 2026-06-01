@@ -1,6 +1,8 @@
-import { format } from "date-fns";
 import { Card } from "@/components/card";
-import { Tooltip } from "@/components/tooltip";
+import { cn } from "@/helpers/utils";
+import { analyticsFadeUpClass } from "../../constants/animations";
+import { AnalyticsMetricsCardsSkeleton } from "../skeletons";
+import { AnalyticsKpiStat, analyticsKpiGridClass } from "../AnalyticsKpiStat";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import type { AgentStatsSummaryResponse } from "@/interfaces/analyticsReports.interface";
 import type { DateRange } from "react-day-picker";
@@ -8,7 +10,7 @@ import type { DateRange } from "react-day-picker";
 interface SummaryStatsCardsProps {
   summary: AgentStatsSummaryResponse | null;
   previousSummary?: AgentStatsSummaryResponse | null;
-  compareDateRange?: DateRange;
+  comparedWithLabel?: string | null;
   loading: boolean;
   error: string | null;
   containmentRate?: number | null;
@@ -46,11 +48,6 @@ function pctChange(current: number, previous: number): number | null {
 function ppDiff(currentRate: number, previousRate: number): number | null {
   const diff = Math.round((currentRate - previousRate) * 10) / 10;
   return diff === 0 ? null : diff;
-}
-
-function getComparisonLabel(compareDateRange?: DateRange): string | null {
-  if (!compareDateRange?.from || !compareDateRange?.to) return null;
-  return `vs ${format(compareDateRange.from, "MMM d")} – ${format(compareDateRange.to, "MMM d")}`;
 }
 
 function getResponseTimeColor(ms: number): string {
@@ -148,72 +145,31 @@ function buildMetrics(
   return metrics;
 }
 
-const PLACEHOLDER_COUNT = 5;
-
-export function SummaryStatsCards({ summary, previousSummary, compareDateRange, loading, error, containmentRate }: SummaryStatsCardsProps) {
+export function SummaryStatsCards({ summary, previousSummary, comparedWithLabel, loading, error, containmentRate }: SummaryStatsCardsProps) {
   if (loading) {
-    return (
-      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8">
-          {Array.from({ length: PLACEHOLDER_COUNT }).map((_, i) => (
-            <div key={i} className="relative flex flex-col gap-3 py-2 sm:py-0">
-              <div className="h-7 w-16 bg-zinc-100 rounded animate-pulse" />
-              <div className="h-4 w-24 bg-zinc-100 rounded animate-pulse" />
-            </div>
-          ))}
-        </div>
-      </Card>
-    );
+    return <AnalyticsMetricsCardsSkeleton count={5} />;
   }
 
   if (error || !summary) return null;
 
   const metrics = buildMetrics(summary, containmentRate, previousSummary);
-  const colClass =
-    metrics.length === 5
-      ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
-      : "grid-cols-2 sm:grid-cols-2 lg:grid-cols-4";
 
   return (
-    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-      {previousSummary && getComparisonLabel(compareDateRange) && (
-        <p className="text-xs text-muted-foreground/60 mb-4">
-          {getComparisonLabel(compareDateRange)}
-        </p>
+    <Card className={cn("w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
+      {previousSummary && comparedWithLabel && (
+        <p className="text-xs text-muted-foreground/60 mb-4">{comparedWithLabel}</p>
       )}
-      <div className={`grid ${colClass} gap-4 sm:gap-6 lg:gap-8`}>
-        {metrics.map((metric, index) => (
-          <div key={metric.label} className="relative">
-            <div className="flex flex-col gap-1 py-2 sm:py-0">
-              <div className="flex items-baseline gap-2">
-                <span className={`text-xl sm:text-2xl font-bold leading-tight ${metric.color ?? "text-foreground"}`}>
-                  {metric.value}
-                </span>
-                <DeltaBadge delta={metric.delta} />
-              </div>
-              <div className="flex items-center gap-1 text-sm font-medium text-muted-foreground">
-                {metric.label}
-                {metric.description && (
-                  <Tooltip
-                    content={<span className="whitespace-normal max-w-[200px] block">{metric.description}</span>}
-                    iconClassName="w-3 h-3"
-                    contentClassName="w-48 text-center"
-                  />
-                )}
-              </div>
-              {metric.sub && (
-                <div className="text-xs text-muted-foreground/70 leading-tight">
-                  {metric.sub}
-                </div>
-              )}
-            </div>
-            {index < metrics.length - 1 && (
-              <>
-                <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
-                <div className="lg:hidden border-b border-zinc-100 mt-3" />
-              </>
-            )}
-          </div>
+      <div className={analyticsKpiGridClass(metrics.length)}>
+        {metrics.map((metric) => (
+          <AnalyticsKpiStat
+            key={metric.label}
+            label={metric.label}
+            value={metric.value}
+            sub={metric.sub}
+            description={metric.description}
+            valueClassName={metric.color ?? "text-foreground"}
+            delta={<DeltaBadge delta={metric.delta} />}
+          />
         ))}
       </div>
     </Card>

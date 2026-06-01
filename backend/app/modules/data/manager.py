@@ -10,17 +10,17 @@ import asyncio
 import logging
 import os
 import tempfile
-import urllib.request
 import urllib.parse
-from typing import Dict, Optional, List, Any
+import urllib.request
+from typing import Any, Dict, List, Optional
 
-from app.schemas.agent_knowledge import KBRead
-from app.modules.data.utils import FileTextExtractor
 from app.core.config.settings import file_storage_settings
 from app.db.models import StorageProvider
+from app.modules.data.utils import FileTextExtractor
+from app.schemas.agent_knowledge import KBRead
 
-from .service import AgentRAGService
 from .providers import SearchResult
+from .service import AgentRAGService
 from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
@@ -258,6 +258,15 @@ class AgentRAGServiceManager:
 
             # Use first item to get service
             representative_item = items[0]
+
+            # Leave Zendesk KBs untouched because the sync task owns them.
+            if getattr(representative_item, "type", "") == "zendesk":
+                logger.info(
+                    f"Skipping generic RAG load for Zendesk KB {kb_id}; "
+                    "handled by Zendesk sync task"
+                )
+                continue
+
             service = await self.get_service(representative_item)
 
             if not service:

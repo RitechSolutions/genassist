@@ -39,6 +39,17 @@ class AgentDailyStatsListResponse(BaseModel):
 
 # ── Agent summary (aggregated across date range) ───────────────────────────────
 
+class AgentConversationStatusByAgent(BaseModel):
+    """Per-agent conversation counts for a date range (current status, not summed daily rows)."""
+
+    agent_id: UUID
+    unique_conversations: int
+    finalized_conversations: int = 0
+    in_progress_conversations: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AgentStatsSummaryResponse(BaseModel):
     agent_id: Optional[UUID] = None
     from_date: Optional[date] = None
@@ -54,6 +65,7 @@ class AgentStatsSummaryResponse(BaseModel):
     total_in_progress_conversations: int = 0
     total_thumbs_up: int = 0
     total_thumbs_down: int = 0
+    conversation_status_by_agent: list[AgentConversationStatusByAgent] = []
 
     model_config = ConfigDict(from_attributes=True)
 

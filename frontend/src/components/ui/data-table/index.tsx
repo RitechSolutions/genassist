@@ -29,6 +29,8 @@ export interface DataTableProps<T> {
   searchQuery?: string;
   emptyMessage?: string;
   notFoundMessage?: string;
+  /** Rich empty UI (e.g. ListEmptyState). Falls back to emptyMessage when omitted. */
+  emptyState?: React.ReactNode;
   keyExtractor?: (item: T) => string | number;
   pageSize?: number;
   onRowClick?: (item: T) => void;
@@ -44,6 +46,7 @@ export function DataTable<T extends { id?: string | number }>({
   searchQuery = "",
   emptyMessage = "No data available",
   notFoundMessage = "No results found",
+  emptyState,
   keyExtractor = (item: T) => item.id as string | number,
   pageSize,
   onRowClick,
@@ -98,10 +101,14 @@ export function DataTable<T extends { id?: string | number }>({
 
   if (data.length === 0) {
     return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery ? notFoundMessage : emptyMessage}
-        </div>
+      <Card className="overflow-hidden shadow-sm">
+        {emptyState ?? (
+          <div className="p-8">
+            <div className="text-center text-muted-foreground">
+              {searchQuery ? notFoundMessage : emptyMessage}
+            </div>
+          </div>
+        )}
       </Card>
     );
   }
