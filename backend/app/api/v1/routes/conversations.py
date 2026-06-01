@@ -998,7 +998,9 @@ async def websocket_dashboard_endpoint(
     websocket: WebSocket,
     principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
-    topics: list[str] = Query(default=["message", "update", "finalize", "hostile", "statistics"]),
+    topics: list[str] = Query(
+        default=["message", "update", "finalize", "hostile", "statistics", "notification"]
+    ),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
     dashboard_service: DashboardService = Injected(DashboardService),
 ):
