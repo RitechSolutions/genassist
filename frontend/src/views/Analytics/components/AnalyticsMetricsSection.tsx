@@ -11,6 +11,7 @@ import {
   TrendingDown,
   type LucideIcon,
 } from "lucide-react";
+import { format } from "date-fns";
 import type { FetchedMetricsData, MetricsDeltas } from "@/services/metrics";
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/helpers/utils";
@@ -37,8 +38,7 @@ interface AnalyticsMetricsSectionProps {
   loading: boolean;
   refreshing?: boolean;
   error: Error | null;
-  comparisonRange?: DateRange;
-  comparedWithLabel?: string | null;
+  compareDateRange?: DateRange;
 }
 
 /** Return a Tailwind text color class based on score percentage. */
@@ -76,8 +76,7 @@ export const AnalyticsMetricsSection = ({
   loading,
   refreshing,
   error,
-  comparisonRange,
-  comparedWithLabel,
+  compareDateRange,
 }: AnalyticsMetricsSectionProps) => {
   const defaultMetrics: FetchedMetricsData = {
     "Customer Satisfaction": "0%",
@@ -179,10 +178,10 @@ export const AnalyticsMetricsSection = ({
             {analyzedCount > 0 && (
               <>Based on {analyzedCount.toLocaleString()} analyzed conversation{analyzedCount !== 1 ? "s" : ""}</>
             )}
-            {deltas && comparedWithLabel && (
+            {deltas && compareDateRange?.from && compareDateRange?.to && (
               <span className="text-muted-foreground/60">
                 {analyzedCount > 0 ? " · " : ""}
-                {comparedWithLabel}
+                vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}
               </span>
             )}
           </p>
@@ -209,13 +208,7 @@ export const AnalyticsMetricsSection = ({
         </div>
       </Card>
 
-      <PerformanceChart
-        dateRange={dateRange}
-        agentId={agentId}
-        groupId={groupId}
-        comparisonRange={comparisonRange}
-        comparedWithLabel={comparedWithLabel}
-      />
+      <PerformanceChart dateRange={dateRange} agentId={agentId} groupId={groupId} />
     </div>
   );
 };
