@@ -33,6 +33,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { getApiUrl } from "@/config/api";
 import { isAxiosError } from "axios";
 
+// Sentinel value for the "No group" option, since Radix SelectItem cannot use an empty string value.
+const NO_GROUP_VALUE = "__none__";
+
 interface UserDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -481,11 +484,17 @@ export function UserDialog({
             {userGroups.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="group">Group</Label>
-                <Select value={groupId} onValueChange={setGroupId}>
+                <Select
+                  value={groupId || NO_GROUP_VALUE}
+                  onValueChange={(value) =>
+                    setGroupId(value === NO_GROUP_VALUE ? "" : value)
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select group (optional)" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NO_GROUP_VALUE}>No group</SelectItem>
                     {userGroups.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
                         {g.name}
