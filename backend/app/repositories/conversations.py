@@ -47,7 +47,21 @@ class ConversationRepository:
         self.db = db
 
     async def resolve_group_id_for_operator(self, operator_id: UUID) -> Optional[UUID]:
-        """User group of the agent owner (``AgentModel.created_by``), if any."""
+        """User group for an agent's operator (console user), else agent creator's group."""
+        from app.db.models.operator import OperatorModel
+
+        stmt = (
+            select(UserModel.group_id)
+            .select_from(OperatorModel)
+            .join(UserModel, UserModel.id == OperatorModel.user_id)
+            .where(OperatorModel.id == operator_id)
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        operator_group = result.scalar_one_or_none()
+        if operator_group is not None:
+            return operator_group
+
         stmt = (
             select(UserModel.group_id)
             .select_from(AgentModel)
