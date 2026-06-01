@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -17,6 +16,7 @@ from app.modules.data.utils import FileTextExtractor
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.datasources import DataSourceService
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,11 @@ def import_s3_files_to_kb():
         max_files: Maximum number of files to process
         embeddings_model: Model to use for embeddings
     """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(import_s3_files_to_kb_async_with_scope())
+    return run_async_in_celery(
+        import_s3_files_to_kb_async_with_scope(),
+        timeout=45 * 60,
+        task_name="import_s3_files_to_kb",
+    )
 
 
 async def import_s3_files_to_kb_async_with_scope():
