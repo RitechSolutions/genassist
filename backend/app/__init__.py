@@ -297,7 +297,7 @@ def create_celery():
         # enforcement happens via asyncio.wait_for inside each task body
         # (see app/tasks/base.py::run_async_in_celery). Bound result-backend
         # growth so a slow/wedged worker doesn't pile up Redis keys.
-        result_expires=7200,
+        result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,
