@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
 from sqlalchemy import select, func, asc, desc
@@ -15,6 +15,34 @@ class AgentRepository(DbRepository[AgentModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(AgentModel, db)
 
+
+    async def get_by_id(
+        self, obj_id: UUID, *, eager: Sequence[str] | None = None
+    ) -> Optional[AgentModel]:
+        """Point lookup by primary key — bypass group-scope row filtering.
+
+        Operating on a specific known agent is gated by endpoint permissions;
+        group-scope filtering is only meant for list/analytics queries.
+        """
+        stmt = (
+            self._apply_eager_options(select(AgentModel), eager)
+            .where(AgentModel.id == obj_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def get_by_operator_id(
+        self, operator_id: UUID, eager: Sequence[str] | None = None
+    ) -> Optional[AgentModel]:
+        """Point lookup by operator — bypass group-scope row filtering."""
+        stmt = (
+            self._apply_eager_options(select(AgentModel), eager)
+            .where(AgentModel.operator_id == operator_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
 
     async def get_by_id_full(self, agent_id: UUID) -> AgentModel | None:
         """
