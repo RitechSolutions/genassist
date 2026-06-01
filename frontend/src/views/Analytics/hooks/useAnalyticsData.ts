@@ -30,7 +30,7 @@ function computeDeltas(current: FetchedMetricsData, previous: FetchedMetricsData
 export const useAnalyticsData = (
   dateRange: DateRange | undefined,
   agentId?: string,
-  comparisonRange?: DateRange,
+  compareDateRange?: DateRange,
   groupId?: string,
 ) => {
   const [metrics, setMetrics] = useState<FetchedMetricsData | null>(null);
@@ -46,9 +46,9 @@ export const useAnalyticsData = (
 
     const doFetch = async () => {
       try {
-        const hasCompare = comparisonRange?.from && comparisonRange?.to;
+        const hasCompare = compareDateRange?.from && compareDateRange?.to;
         const compareParams = hasCompare
-          ? toMetricsApiParams(comparisonRange, agentId, groupId)
+          ? toMetricsApiParams(compareDateRange, agentId, groupId)
           : undefined;
 
         const [current, previous] = await Promise.all([
@@ -82,8 +82,8 @@ export const useAnalyticsData = (
     dateRange?.to?.getTime(),
     agentId,
     groupId,
-    comparisonRange?.from?.getTime(),
-    comparisonRange?.to?.getTime(),
+    compareDateRange?.from?.getTime(),
+    compareDateRange?.to?.getTime(),
   ]);
 
   return { metrics, deltas, loading: initialLoading, refreshing, error };

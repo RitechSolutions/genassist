@@ -12,8 +12,6 @@ import {
   startOfWeek,
   startOfYear,
 } from "date-fns";
-import type { PeriodPreset } from "@/helpers/analyticsPeriodComparison";
-import { PERIOD_PRESET_BY_LABEL } from "@/helpers/analyticsPeriodComparison";
 import { CalendarIcon } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/button";
@@ -51,13 +49,9 @@ function getDefaultPresets(): DatePreset[] {
   ];
 }
 
-export type DateRangePickerChangeMeta = {
-  preset: PeriodPreset;
-};
-
 export interface DateRangePickerProps {
   value: DateRange | undefined;
-  onChange: (value: DateRange | undefined, meta?: DateRangePickerChangeMeta) => void;
+  onChange: (value: DateRange | undefined) => void;
   /** Custom presets — defaults to a built-in set if omitted */
   presets?: DatePreset[];
   /** Placeholder text when no date is selected */
@@ -102,17 +96,15 @@ export const DateRangePicker = ({
   const todayStart = useMemo(() => startOfDay(new Date()), []);
 
   const handleSelect = useCallback(
-    (range: DateRange | undefined, preset: PeriodPreset = "custom") => {
-      const next = disableFutureDates ? clampRangeToToday(range) : range;
-      onChange(next, { preset });
+    (range: DateRange | undefined) => {
+      onChange(disableFutureDates ? clampRangeToToday(range) : range);
     },
     [disableFutureDates, onChange],
   );
 
   const handlePreset = useCallback(
-    (range: DateRange, label: string) => {
-      const preset = PERIOD_PRESET_BY_LABEL[label] ?? "custom";
-      handleSelect(range, preset);
+    (range: DateRange) => {
+      handleSelect(range);
     },
     [handleSelect],
   );
@@ -142,7 +134,7 @@ export const DateRangePicker = ({
               variant="ghost"
               size="sm"
               className="justify-start text-xs h-8"
-              onClick={() => handlePreset(preset.range, preset.label)}
+              onClick={() => handlePreset(preset.range)}
             >
               {preset.label}
             </Button>
@@ -151,7 +143,7 @@ export const DateRangePicker = ({
             variant="ghost"
             size="sm"
             className="justify-start text-xs h-8 text-muted-foreground"
-            onClick={() => handleSelect(undefined, "custom")}
+            onClick={() => handleSelect(undefined)}
           >
             Clear
           </Button>
@@ -159,7 +151,7 @@ export const DateRangePicker = ({
         <Calendar
           mode="range"
           selected={value}
-          onSelect={(range) => handleSelect(range, "custom")}
+          onSelect={handleSelect}
           numberOfMonths={numberOfMonths}
           initialFocus
           disabled={disableFutureDates ? { after: todayEnd } : undefined}
