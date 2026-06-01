@@ -9,6 +9,7 @@ import { formatNotificationDescription } from "@/helpers/notificationDisplay"
 import { useNotifications } from "@/hooks/useNotifications"
 import { Notification } from "@/interfaces/notification.interface"
 import { cn } from "@/helpers/utils"
+import { EmptyNotificationsState } from "@/views/Notifications/components/EmptyNotificationsState"
 
 type NotificationBellPopoverProps = {
   maxItems?: number
@@ -96,13 +97,21 @@ export function NotificationBellPopover({
         </div>
 
         <ScrollArea className="h-[320px] max-w-full">
+          {previewItems.length === 0 ? (
+            <div className="flex min-h-[320px] items-center justify-center">
+              <EmptyNotificationsState
+                compact
+                title="No notifications yet"
+                description="When there is activity you follow—such as new conversations, high hostility alerts, or workflow issues—it will show up here."
+                primaryAction={{
+                  label: "Notification preferences",
+                  to: "/settings/notifications",
+                }}
+              />
+            </div>
+          ) : (
           <div className="min-w-0 max-w-full px-2 pt-1 pb-1">
-            {previewItems.length === 0 ? (
-              <p className="px-2 py-4 text-center text-sm text-zinc-500">
-                No notifications yet.
-              </p>
-            ) : (
-              previewItems.map((notification) => {
+              {previewItems.map((notification) => {
                 const typeMeta = notificationTypeStyle[notification.type]
                 const TypeIcon = typeMeta.icon
                 const formattedDescription = formatNotificationDescription(notification)
@@ -146,9 +155,9 @@ export function NotificationBellPopover({
                   </div>
                   </Link>
                 )
-              })
-            )}
+              })}
           </div>
+          )}
         </ScrollArea>
 
         <div className="border-t px-3 py-2">

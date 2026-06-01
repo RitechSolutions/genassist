@@ -41,6 +41,7 @@ export function notificationsInfiniteQueryKey(
   ]
 }
 
+const NOTIFICATIONS_BELL_LIMIT = 10
 const NOTIFICATIONS_PAGE_SIZE = 20
 
 type NotificationFeedPage = {
@@ -68,7 +69,7 @@ export const useNotifications = () => {
       workflowFailed,
     ],
     queryFn: async () => {
-      const items = await fetchDashboardNotifications(80, {
+      const items = await fetchDashboardNotifications(NOTIFICATIONS_BELL_LIMIT, {
         includeConversationStarted: conversationStarted,
         includeConversationHostility: conversationHostility,
         includeConversationFinalizedHostility: conversationFinalizedHostility,
