@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import {
-  useQuery,
   useQueryClient,
   useInfiniteQuery,
   type InfiniteData,
@@ -10,160 +9,26 @@ import { toast } from "react-hot-toast"
 import { isPollEnabled } from "@/config/api"
 import { Notification } from "@/interfaces/notification.interface"
 import {
-  fetchDashboardNotifications,
   fetchDashboardNotificationsPage,
   markNotificationsRead,
   type NotificationTypeFilter,
 } from "@/services/dashboard"
-import { useWebSocketDashboardContext } from "@/context/WebSocketDashboardContext"
 import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
+import {
+  NOTIFICATIONS_INFINITE_QUERY_KEY,
+  NOTIFICATIONS_PAGE_SIZE,
+  notificationsInfiniteQueryKey,
+} from "@/constants/notificationFeed"
 
-export const NOTIFICATIONS_QUERY_KEY = ["notifications-feed"] as const
-export const NOTIFICATIONS_INFINITE_QUERY_KEY = [
-  "notifications-feed-infinite",
-] as const
-
-export function notificationsInfiniteQueryKey(
-  conversationStarted: boolean,
-  notificationType: NotificationTypeFilter = "all",
-  notificationLevel: "all" | "info" | "success" | "warning" | "error" = "all"
-): readonly [
-  string,
-  boolean,
-  NotificationTypeFilter,
-  "all" | "info" | "success" | "warning" | "error",
-] {
-  return [
-    NOTIFICATIONS_INFINITE_QUERY_KEY[0],
-    conversationStarted,
-    notificationType,
-    notificationLevel,
-  ]
-}
-
-const NOTIFICATIONS_BELL_LIMIT = 10
-const NOTIFICATIONS_PAGE_SIZE = 20
+export {
+  NOTIFICATIONS_INFINITE_QUERY_KEY,
+  NOTIFICATIONS_PAGE_SIZE,
+  notificationsInfiniteQueryKey,
+} from "@/constants/notificationFeed"
 
 type NotificationFeedPage = {
   items: Notification[]
   hasMore: boolean
-}
-
-export const useNotifications = () => {
-  const queryClient = useQueryClient()
-  const { subscribe } = useWebSocketDashboardContext()
-  const { settings } = useNotificationUserSettings()
-  const {
-    conversationStarted,
-    conversationHostility,
-    conversationFinalizedHostility,
-    workflowFailed,
-  } = settings
-
-  const { data: notifications = [], refetch } = useQuery<Notification[]>({
-    queryKey: [
-      ...NOTIFICATIONS_QUERY_KEY,
-      conversationStarted,
-      conversationHostility,
-      conversationFinalizedHostility,
-      workflowFailed,
-    ],
-    queryFn: async () => {
-      const items = await fetchDashboardNotifications(NOTIFICATIONS_BELL_LIMIT, {
-        includeConversationStarted: conversationStarted,
-        includeConversationHostility: conversationHostility,
-        includeConversationFinalizedHostility: conversationFinalizedHostility,
-        includeWorkflowFailed: workflowFailed,
-      })
-      return items ?? []
-    },
-    refetchInterval: isPollEnabled ? 15000 : false,
-  })
-
-  const updateCachedNotifications = useCallback(
-    (updater: (prev: Notification[]) => Notification[]) => {
-      queryClient.setQueryData<Notification[]>(
-        [
-          ...NOTIFICATIONS_QUERY_KEY,
-          conversationStarted,
-          conversationHostility,
-          conversationFinalizedHostility,
-          workflowFailed,
-        ],
-        (prev) => updater(prev ?? [])
-      )
-    },
-    [
-      queryClient,
-      conversationStarted,
-      conversationHostility,
-      conversationFinalizedHostility,
-      workflowFailed,
-    ]
-  )
-
-  const markAllAsRead = async () => {
-    const unreadIds = notifications
-      .filter((notification) => !notification.read)
-      .map((notification) => notification.id)
-    if (unreadIds.length === 0) return
-    const ok = await markNotificationsRead(unreadIds, true)
-    if (!ok) return
-    updateCachedNotifications((prev) =>
-      prev.map((notification) => ({ ...notification, read: true }))
-    )
-    toast.success("All notifications are marked as read.")
-  }
-
-  const markAsRead = async (id: string) => {
-    const ok = await markNotificationsRead([id], true)
-    if (!ok) return
-    updateCachedNotifications((prev) =>
-      prev.map((notification) =>
-        notification.id === id ? { ...notification, read: true } : notification
-      )
-    )
-  }
-
-  const handleSocketMessage = useCallback(
-    (data: Record<string, unknown>) => {
-      const topic = String(data.type ?? data.topic ?? data.msg_type ?? "")
-      if (topic !== "notification") return
-      // In WS mode, always refetch persisted notifications from DB to avoid
-      // payload-shape drift and to keep user_notification IDs/states accurate.
-      void refetch()
-      void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_INFINITE_QUERY_KEY })
-    },
-    [
-      queryClient,
-      refetch,
-    ]
-  )
-
-  useEffect(() => subscribe(handleSocketMessage), [subscribe, handleSocketMessage])
-
-  useEffect(() => {
-    void refetch()
-  }, [
-    conversationStarted,
-    conversationHostility,
-    conversationFinalizedHostility,
-    workflowFailed,
-    refetch,
-  ])
-
-  const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.read).length,
-    [notifications]
-  )
-
-  return {
-    notifications,
-    unreadCount,
-    markAllAsRead,
-    markAsRead,
-    refetch,
-  }
 }
 
 export const useNotificationsInfinite = ({
@@ -211,6 +76,7 @@ export const useNotificationsInfinite = ({
     initialPageParam: 0,
     getNextPageParam: (lastPage, _pages, lastSkip) =>
       lastPage.hasMore ? (lastSkip as number) + lastPage.items.length : undefined,
+    refetchInterval: isPollEnabled ? 15000 : false,
   })
 
   const flatNotifications = useMemo(
@@ -254,57 +120,30 @@ export const useNotificationsInfinite = ({
       if (!ok) return
       setInfinitePagesRead((n) => n.id === id)
       void queryClient.invalidateQueries({
-        queryKey: [
-          ...NOTIFICATIONS_QUERY_KEY,
-          conversationStarted,
-          conversationHostility,
-          conversationFinalizedHostility,
-          workflowFailed,
-        ],
+        queryKey: NOTIFICATIONS_INFINITE_QUERY_KEY,
       })
     },
-    [
-      queryClient,
-      conversationStarted,
-      conversationHostility,
-      conversationFinalizedHostility,
-      workflowFailed,
-      setInfinitePagesRead,
-    ]
+    [queryClient, setInfinitePagesRead]
   )
 
   const markAllAsRead = useCallback(() => {
     const markAll = async () => {
-    const key = infiniteKey
-    const pages = queryClient.getQueryData<InfiniteData<NotificationFeedPage>>(
-      key
-    )
+      const key = infiniteKey
+      const pages = queryClient.getQueryData<InfiniteData<NotificationFeedPage>>(
+        key
+      )
       const ids = pages?.pages.flatMap((p) => p.items.map((i) => i.id)) ?? []
       if (ids.length === 0) return
       const ok = await markNotificationsRead(ids, true)
       if (!ok) return
       setInfinitePagesRead(() => true)
       void queryClient.invalidateQueries({
-        queryKey: [
-          ...NOTIFICATIONS_QUERY_KEY,
-          conversationStarted,
-          conversationHostility,
-          conversationFinalizedHostility,
-          workflowFailed,
-        ],
+        queryKey: NOTIFICATIONS_INFINITE_QUERY_KEY,
       })
       toast.success("All loaded notifications are marked as read.")
     }
     void markAll()
-  }, [
-    queryClient,
-    conversationStarted,
-    conversationHostility,
-    conversationFinalizedHostility,
-    workflowFailed,
-    setInfinitePagesRead,
-    infiniteKey,
-  ])
+  }, [queryClient, setInfinitePagesRead, infiniteKey])
 
   return {
     notifications: flatNotifications,
@@ -316,5 +155,46 @@ export const useNotificationsInfinite = ({
     refetch: infinite.refetch,
     markAsRead,
     markAllAsRead,
+  }
+}
+
+/** Bell / sidebar preview — shares the infinite feed query (first page, default filters). */
+export const useNotifications = () => {
+  const queryClient = useQueryClient()
+  const {
+    notifications: feedNotifications,
+    markAsRead,
+    refetch,
+  } = useNotificationsInfinite({ typeFilter: "all", levelFilter: "all" })
+
+  const notifications = useMemo(
+    () => feedNotifications.slice(0, NOTIFICATIONS_PAGE_SIZE),
+    [feedNotifications]
+  )
+
+  const unreadCount = useMemo(
+    () => notifications.filter((notification) => !notification.read).length,
+    [notifications]
+  )
+
+  const markAllBellAsRead = useCallback(async () => {
+    const unreadIds = notifications
+      .filter((notification) => !notification.read)
+      .map((notification) => notification.id)
+    if (unreadIds.length === 0) return
+    const ok = await markNotificationsRead(unreadIds, true)
+    if (!ok) return
+    void queryClient.invalidateQueries({
+      queryKey: NOTIFICATIONS_INFINITE_QUERY_KEY,
+    })
+    toast.success("All notifications are marked as read.")
+  }, [notifications, queryClient])
+
+  return {
+    notifications,
+    unreadCount,
+    markAllAsRead: markAllBellAsRead,
+    markAsRead,
+    refetch,
   }
 }

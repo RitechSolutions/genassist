@@ -50,7 +50,7 @@ export const NotificationCard = ({
         }
       }}
       className={cn(
-        "relative mb-1 block max-w-full min-w-0 border-b border-zinc-100 px-4 py-3 transition-colors hover:bg-zinc-50 last:mb-0",
+        "relative mb-1 block max-w-full min-w-0 border-b border-zinc-100 px-4 py-3 transition-colors hover:bg-zinc-50 last:mb-0 last:border-b-0",
         !notification.read && "rounded-md bg-blue-100/70 pr-16"
       )}
     >
