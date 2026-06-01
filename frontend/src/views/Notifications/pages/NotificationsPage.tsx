@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar"
 import { AppSidebar } from "@/layout/app-sidebar"
 import { useIsMobile } from "@/hooks/useMobile"
 import { Button } from "@/components/button"
 import { Card } from "@/components/card"
-import { Bell, Check, Loader2, Settings2 } from "lucide-react"
+import { Check, Loader2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs"
 import {
   Select,
@@ -18,6 +17,7 @@ import {
 import { useNotificationsInfinite } from "@/hooks/useNotifications"
 import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
 import { type NotificationTypeFilter } from "@/services/dashboard"
+import { EmptyNotificationsState } from "../components/EmptyNotificationsState"
 import { NotificationCard } from "../components/NotificationCard"
 import { getAllUserGroups } from "@/services/userGroups"
 
@@ -44,35 +44,6 @@ const CONVERSATION_TYPE_FILTER_OPTIONS: Array<{
     settingKey: "conversationFinalizedHostility",
   },
 ]
-
-const EmptyNotificationsState = ({
-  title,
-  description,
-  primaryAction,
-}: {
-  title: string
-  description: string
-  primaryAction?: { label: string; to: string }
-}) => (
-  <div className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
-    <div className="rounded-full bg-muted p-4">
-      <Bell className="h-12 w-12 text-muted-foreground" />
-    </div>
-    <h3 className="text-lg font-medium text-foreground">{title}</h3>
-    <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
-    {primaryAction ? (
-      <Button asChild className="rounded-full">
-        <Link
-          to={primaryAction.to}
-          className="inline-flex items-center gap-2"
-        >
-          <Settings2 className="h-4 w-4 shrink-0" />
-          {primaryAction.label}
-        </Link>
-      </Button>
-    ) : null}
-  </div>
-)
 
 const NotificationsPage = () => {
   const isMobile = useIsMobile()
