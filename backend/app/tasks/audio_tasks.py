@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import tempfile
@@ -14,6 +13,7 @@ from app.dependencies.injector import injector
 from app.schemas.recording import RecordingCreate
 from app.services.audio import AudioService
 from app.services.datasources import DataSourceService
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,11 @@ def transcribe_audio_files_from_s3():
     """
     Celery task that Transcribes Audio files from S3 bucket into recordings.
     """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(transcribe_audio_files_async_with_scope())
+    return run_async_in_celery(
+        transcribe_audio_files_async_with_scope(),
+        timeout=45 * 60,
+        task_name="transcribe_audio_files_from_s3",
+    )
 
 
 async def transcribe_audio_files_async_with_scope(ds_id: Optional[str] = None):
