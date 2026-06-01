@@ -97,7 +97,13 @@ export interface AgentStatsSummaryWithComparison {
 
 export interface AnalyticsFilterParams {
   agent_id?: string;
+  group_id?: string;
   from_date?: string;
   to_date?: string;
   node_type?: string;
+}
+
+export interface GroupAgentItem {
+  id: string;
+  name: string;
 }

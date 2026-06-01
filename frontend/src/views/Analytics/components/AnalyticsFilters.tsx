@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { DateRange } from "react-day-picker";
-import { DateRangePicker } from "@/components/date-range-picker";
+import { DateRangePicker, type DateRangePickerChangeMeta } from "@/components/date-range-picker";
 import { cn } from "@/helpers/utils";
 import {
   Select,
@@ -10,20 +10,22 @@ import {
   SelectValue,
 } from "@/components/select";
 import type { AgentListItem } from "@/interfaces/ai-agent.interface";
+import type { UserGroup } from "@/interfaces/userGroup.interface";
 
 export interface AnalyticsFiltersProps {
+  /** Group filter (admins) — pass `undefined` to hide */
+  groups?: UserGroup[];
+  groupFilter?: string;
+  onGroupFilterChange?: (value: string) => void;
+
   /** Agent filter — pass `undefined` to hide the agent selector */
   agents?: AgentListItem[];
   agentFilter?: string;
   onAgentFilterChange?: (value: string) => void;
 
-  /** Date range picker */
+  /** Date range picker (single period control; comparison is derived automatically) */
   dateRange: DateRange | undefined;
-  onDateRangeChange: (value: DateRange | undefined) => void;
-
-  /** Optional comparison date range */
-  compareDateRange?: DateRange | undefined;
-  onCompareDateRangeChange?: (value: DateRange | undefined) => void;
+  onDateRangeChange: (value: DateRange | undefined, meta?: DateRangePickerChangeMeta) => void;
 
   /** Optional extra controls rendered after the built-in filters (e.g. ExportButton, node type select) */
   children?: ReactNode;
@@ -39,13 +41,14 @@ export const analyticsFilterSelectTriggerClassName =
   "w-full rounded-full md:w-36 xl:w-44";
 
 export const AnalyticsFilters = ({
+  groups,
+  groupFilter,
+  onGroupFilterChange,
   agents,
   agentFilter,
   onAgentFilterChange,
   dateRange,
   onDateRangeChange,
-  compareDateRange,
-  onCompareDateRangeChange,
   children,
   className,
 }: AnalyticsFiltersProps) => {
@@ -58,7 +61,22 @@ export const AnalyticsFilters = ({
         className,
       )}
     >
-      {/* Agent selector */}
+      {groups && onGroupFilterChange && (
+        <Select value={groupFilter ?? "all"} onValueChange={onGroupFilterChange}>
+          <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
+            <SelectValue placeholder="All groups" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All groups</SelectItem>
+            {groups.map((g) => (
+              <SelectItem key={g.id} value={g.id}>
+                {g.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+
       {agents && onAgentFilterChange && (
         <Select value={agentFilter ?? "all"} onValueChange={onAgentFilterChange}>
           <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
@@ -75,7 +93,6 @@ export const AnalyticsFilters = ({
         </Select>
       )}
 
-      {/* Date range with presets */}
       <div className="min-w-0 max-md:w-full md:shrink-0">
         <DateRangePicker
           value={dateRange}
@@ -85,23 +102,6 @@ export const AnalyticsFilters = ({
         />
       </div>
 
-      {/* Optional comparison date range */}
-      {onCompareDateRangeChange && (
-        <div className="flex min-w-0 items-center gap-1.5 max-md:w-full md:shrink-0">
-          <span className="shrink-0 text-xs text-muted-foreground">vs</span>
-          <div className="min-w-0 flex-1">
-            <DateRangePicker
-              value={compareDateRange}
-              onChange={onCompareDateRangeChange}
-              placeholder="Compare period…"
-              triggerClassName={datePickerTriggerClassName}
-              disableFutureDates
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Extra controls (export button, node type filter, etc.) */}
       {children != null && (
         <div className="flex shrink-0 flex-col gap-2 max-md:w-full md:flex-row md:items-center [&_button]:max-md:w-full">
           {children}
