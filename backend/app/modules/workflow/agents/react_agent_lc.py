@@ -118,8 +118,12 @@ class ReActAgentLC(BaseToolAgent):
                     field_type = float
                 elif param_type == "boolean":
                     field_type = bool
+                elif param_type == "object":
+                    field_type = dict
+                elif param_type == "array":
+                    field_type = list
                 else:
-                    field_type = str  # Default to string
+                    field_type = Any
 
                 # Create field definition for create_model
                 if required:
