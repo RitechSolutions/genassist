@@ -265,6 +265,7 @@ def create_celery():
             "app.tasks.kb_batch_tasks",
             "app.tasks.analytics_aggregation_tasks",
             "app.tasks.test_suite_tasks",
+            "app.tasks.file_upload_session_tasks",
         ],
     )
 
