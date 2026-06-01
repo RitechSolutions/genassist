@@ -1,5 +1,7 @@
+import { format } from "date-fns";
 import { Card } from "@/components/card";
 import { cn } from "@/helpers/utils";
+import type { DateRange } from "react-day-picker";
 import { analyticsFadeUpClass } from "../../constants/animations";
 import { AnalyticsMetricsCardsSkeleton } from "../skeletons";
 import { AnalyticsKpiStat, analyticsKpiGridClass } from "../AnalyticsKpiStat";
@@ -10,7 +12,7 @@ import type { DateRange } from "react-day-picker";
 interface SummaryStatsCardsProps {
   summary: AgentStatsSummaryResponse | null;
   previousSummary?: AgentStatsSummaryResponse | null;
-  comparedWithLabel?: string | null;
+  compareDateRange?: DateRange;
   loading: boolean;
   error: string | null;
   containmentRate?: number | null;
@@ -145,7 +147,7 @@ function buildMetrics(
   return metrics;
 }
 
-export function SummaryStatsCards({ summary, previousSummary, comparedWithLabel, loading, error, containmentRate }: SummaryStatsCardsProps) {
+export function SummaryStatsCards({ summary, previousSummary, compareDateRange, loading, error, containmentRate }: SummaryStatsCardsProps) {
   if (loading) {
     return <AnalyticsMetricsCardsSkeleton count={5} />;
   }
@@ -156,8 +158,10 @@ export function SummaryStatsCards({ summary, previousSummary, comparedWithLabel,
 
   return (
     <Card className={cn("w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
-      {previousSummary && comparedWithLabel && (
-        <p className="text-xs text-muted-foreground/60 mb-4">{comparedWithLabel}</p>
+      {previousSummary && compareDateRange?.from && compareDateRange?.to && (
+        <p className="text-xs text-muted-foreground/60 mb-4">
+          vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}
+        </p>
       )}
       <div className={analyticsKpiGridClass(metrics.length)}>
         {metrics.map((metric) => (

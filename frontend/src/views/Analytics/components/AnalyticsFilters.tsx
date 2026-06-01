@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { DateRange } from "react-day-picker";
-import { DateRangePicker, type DateRangePickerChangeMeta } from "@/components/date-range-picker";
+import { DateRangePicker } from "@/components/date-range-picker";
 import { cn } from "@/helpers/utils";
 import {
   Select,
@@ -23,9 +23,13 @@ export interface AnalyticsFiltersProps {
   agentFilter?: string;
   onAgentFilterChange?: (value: string) => void;
 
-  /** Date range picker (single period control; comparison is derived automatically) */
+  /** Primary date range */
   dateRange: DateRange | undefined;
-  onDateRangeChange: (value: DateRange | undefined, meta?: DateRangePickerChangeMeta) => void;
+  onDateRangeChange: (value: DateRange | undefined) => void;
+
+  /** Optional comparison date range */
+  compareDateRange?: DateRange | undefined;
+  onCompareDateRangeChange?: (value: DateRange | undefined) => void;
 
   /** Optional extra controls rendered after the built-in filters (e.g. ExportButton, node type select) */
   children?: ReactNode;
@@ -49,6 +53,8 @@ export const AnalyticsFilters = ({
   onAgentFilterChange,
   dateRange,
   onDateRangeChange,
+  compareDateRange,
+  onCompareDateRangeChange,
   children,
   className,
 }: AnalyticsFiltersProps) => {
@@ -101,6 +107,21 @@ export const AnalyticsFilters = ({
           disableFutureDates
         />
       </div>
+
+      {onCompareDateRangeChange && (
+        <div className="flex min-w-0 items-center gap-1.5 max-md:w-full md:shrink-0">
+          <span className="shrink-0 text-xs text-muted-foreground">vs</span>
+          <div className="min-w-0 flex-1">
+            <DateRangePicker
+              value={compareDateRange}
+              onChange={onCompareDateRangeChange}
+              placeholder="Compare period…"
+              triggerClassName={datePickerTriggerClassName}
+              disableFutureDates
+            />
+          </div>
+        </div>
+      )}
 
       {children != null && (
         <div className="flex shrink-0 flex-col gap-2 max-md:w-full md:flex-row md:items-center [&_button]:max-md:w-full">
