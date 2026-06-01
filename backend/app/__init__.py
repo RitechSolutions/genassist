@@ -274,7 +274,7 @@ def create_celery():
         broker_url=settings.REDIS_URL,  # Explicitly set broker URL
         result_backend=settings.REDIS_URL,  # Explicitly set result backend
         broker_transport_options={
-            "visibility_timeout": 3600,  # 1 hour
+            "visibility_timeout": 7200,  # 2 hours
             "fanout_prefix": True,
             "fanout_patterns": True,
             "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
