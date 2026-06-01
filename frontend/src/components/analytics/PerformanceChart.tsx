@@ -1,67 +1,182 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Card } from "@/components/card";
-import { Area, AreaChart, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { cn } from "@/helpers/utils";
+import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
+import { PerformanceTrendChartEmptyState } from "@/views/Analytics/components/AnalyticsEmptyStates";
+import { PeriodComparisonChartHint } from "@/views/Analytics/components/reports/PeriodComparisonChartHint";
+import { analyticsFadeUpClass } from "@/views/Analytics/constants/animations";
+import {
+  Area,
+  AreaChart,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  type TooltipProps,
+} from "recharts";
 import { fetchMetricsDaily, type DailyMetricsItem } from "@/services/metrics";
 import { toMetricsApiParams } from "@/helpers/analyticsParams";
+import {
+  buildComparisonChartData,
+  type ComparisonChartRow,
+} from "@/helpers/analyticsPeriodComparison";
+import {
+  compareLegendLabel,
+  compareSeriesKey,
+  formatChartDayLabel,
+  formatPeriodRangeLabel,
+  isCompareSeriesKey,
+  normalizeDateKey,
+} from "@/helpers/alignChartPeriods";
 import type { DateRange } from "react-day-picker";
 
-type ChartRow = {
-  name: string;
-  satisfaction: number;
-  serviceQuality: number;
-  resolutionRate: number;
-  efficiency: number;
-};
+const METRIC_KEYS = ["satisfaction", "serviceQuality", "resolutionRate", "efficiency"] as const;
+type MetricKey = (typeof METRIC_KEYS)[number];
 
 interface PerformanceChartProps {
   dateRange?: DateRange;
   agentId?: string;
+  groupId?: string;
+  comparisonRange?: DateRange;
+  comparedWithLabel?: string | null;
 }
 
-const LABELS: Record<string, string> = {
+const LABELS: Record<MetricKey, string> = {
   satisfaction: "Customer Satisfaction",
   serviceQuality: "Quality of Service",
   resolutionRate: "Resolution Rate",
   efficiency: "Efficiency",
 };
 
-const SERIES = [
-  { key: "satisfaction", color: "#10b981" },
-  { key: "serviceQuality", color: "#8b5cf6" },
-  { key: "resolutionRate", color: "#f59e0b" },
-  { key: "efficiency", color: "#06b6d4" },
-] as const;
+const SERIES: { key: MetricKey; color: string; field: keyof DailyMetricsItem }[] = [
+  { key: "satisfaction", color: "#10b981", field: "satisfaction" },
+  { key: "serviceQuality", color: "#8b5cf6", field: "quality_of_service" },
+  { key: "resolutionRate", color: "#f59e0b", field: "resolution_rate" },
+  { key: "efficiency", color: "#06b6d4", field: "efficiency" },
+];
 
-function formatDateLabel(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+function indexMetricsByDate(items: DailyMetricsItem[]): Map<string, DailyMetricsItem> {
+  const map = new Map<string, DailyMetricsItem>();
+  for (const item of items) {
+    map.set(normalizeDateKey(item.date), item);
+  }
+  return map;
 }
 
-function toChartRows(items: DailyMetricsItem[]): ChartRow[] {
-  return items.map((item) => ({
-    name: formatDateLabel(item.date),
-    satisfaction: item.satisfaction,
-    serviceQuality: item.quality_of_service,
-    resolutionRate: item.resolution_rate,
-    efficiency: item.efficiency,
-  }));
+function metricValue(item: DailyMetricsItem | undefined, field: keyof DailyMetricsItem): number {
+  if (!item) return 0;
+  const v = item[field];
+  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
 }
 
-export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) => {
-  const [data, setData] = useState<ChartRow[]>([]);
+function buildChartRows(
+  selectedRange: DateRange | undefined,
+  currentItems: DailyMetricsItem[],
+  compareItems: DailyMetricsItem[],
+  comparisonRange: DateRange | undefined,
+): ComparisonChartRow[] {
+  if (!selectedRange?.from || !selectedRange?.to) return [];
+
+  const currentByDate = indexMetricsByDate(currentItems);
+  const compareByDate = indexMetricsByDate(compareItems);
+
+  const getValuesForDate = (date: string, period: "selected" | "comparison"): Record<MetricKey, number> => {
+    const map = period === "selected" ? currentByDate : compareByDate;
+    const item = map.get(date);
+    const values = {} as Record<MetricKey, number>;
+    for (const { key, field } of SERIES) {
+      values[key] = metricValue(item, field);
+    }
+    return values;
+  };
+
+  return buildComparisonChartData({
+    selectedRange,
+    comparisonRange,
+    metrics: METRIC_KEYS,
+    getValuesForDate,
+  });
+}
+
+function PerformanceTooltip({
+  active,
+  payload,
+  label,
+  comparing,
+}: TooltipProps<number, string> & { comparing: boolean }) {
+  if (!active || !payload?.length) return null;
+
+  const row = payload[0]?.payload as ComparisonChartRow | undefined;
+
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs shadow-md">
+      <p className="mb-1.5 font-medium text-zinc-900">{label}</p>
+      {comparing && row && (
+        <div className="mb-2 space-y-0.5 text-[10px] text-muted-foreground">
+          <p>Selected: {formatChartDayLabel(row.selectedDate)}</p>
+          {row.comparisonDate ? (
+            <p>Comparison: {formatChartDayLabel(row.comparisonDate)}</p>
+          ) : (
+            <p>Comparison: —</p>
+          )}
+        </div>
+      )}
+      <div className="space-y-1">
+        {METRIC_KEYS.map((key) => {
+          const currentEntry = payload.find((p) => p.dataKey === key);
+          const compareEntry = payload.find((p) => p.dataKey === compareSeriesKey(key));
+          const currentVal = currentEntry?.value ?? 0;
+          const compareVal = compareEntry?.value;
+
+          return (
+            <div key={key} className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">{LABELS[key]}</span>
+              <span className="font-medium tabular-nums text-zinc-800">
+                {`${currentVal}%`}
+                {comparing && compareVal != null && (
+                  <span className="ml-1.5 font-normal text-muted-foreground">/ {compareVal}%</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export const PerformanceChart = ({
+  dateRange,
+  agentId,
+  groupId,
+  comparisonRange,
+  comparedWithLabel,
+}: PerformanceChartProps) => {
+  const [data, setData] = useState<ComparisonChartRow[]>([]);
   const [loading, setLoading] = useState(true);
   const fetchIdRef = useRef(0);
+  const comparing = Boolean(comparisonRange?.from && comparisonRange?.to);
+  const comparisonRangeLabel = formatPeriodRangeLabel(comparisonRange);
 
   useEffect(() => {
     const fetchId = ++fetchIdRef.current;
-    const params = toMetricsApiParams(dateRange, agentId);
+    const params = toMetricsApiParams(dateRange, agentId, groupId);
+    const compareParams = comparing
+      ? toMetricsApiParams(comparisonRange, agentId, groupId)
+      : undefined;
 
     const load = async () => {
       setLoading(true);
       try {
-        const items = await fetchMetricsDaily(params);
+        const [currentItems, compareItems] = await Promise.all([
+          fetchMetricsDaily(params),
+          compareParams ? fetchMetricsDaily(compareParams) : Promise.resolve([]),
+        ]);
         if (fetchId !== fetchIdRef.current) return;
-        setData(toChartRows(items));
+        setData(
+          buildChartRows(dateRange, currentItems, compareItems, comparisonRange),
+        );
       } catch {
         if (fetchId === fetchIdRef.current) {
           setData([]);
@@ -74,15 +189,49 @@ export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) 
     };
 
     load();
-  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId]);
+  }, [
+    dateRange?.from?.getTime(),
+    dateRange?.to?.getTime(),
+    agentId,
+    groupId,
+    comparisonRange?.from?.getTime(),
+    comparisonRange?.to?.getTime(),
+    comparing,
+  ]);
+
+  const legendFormatter = useMemo(
+    () => (value: string) => {
+      if (isCompareSeriesKey(value)) {
+        const base = value.replace(/__compare$/, "") as MetricKey;
+        return compareLegendLabel(LABELS[base] ?? base, comparisonRangeLabel);
+      }
+      return LABELS[value as MetricKey] ?? value;
+    },
+    [comparisonRangeLabel],
+  );
+
+  const hasDateRange = Boolean(dateRange?.from && dateRange?.to);
+
+  if (loading && data.length === 0) {
+    return <AnalyticsChartCardSkeleton variant="area" />;
+  }
 
   return (
-    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
-      <h2 className="text-base sm:text-lg font-semibold mb-4">Daily Performance Trend</h2>
-      <div className={`h-[300px] sm:h-[400px] w-full transition-opacity duration-200 ${loading ? "opacity-60" : ""}`}>
-        {data.length === 0 && !loading ? (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-            No data available for the selected period.
+    <Card className={cn("bg-white p-4 shadow-sm sm:p-6", analyticsFadeUpClass)}>
+      <h2 className="text-base font-semibold sm:text-lg">Daily Performance Trend</h2>
+      {comparing && (
+        <PeriodComparisonChartHint comparedWithLabel={comparedWithLabel} />
+      )}
+      <div
+        className={cn(
+          "h-[300px] w-full transition-opacity duration-200 sm:h-[400px]",
+          comparing && !loading ? "mt-1" : "mt-4",
+          loading && "opacity-60",
+        )}
+      >
+        {!hasDateRange || (data.length === 0 && !loading) ? (
+          <div className="flex h-full min-h-[240px] items-center justify-center sm:min-h-[300px]">
+            <PerformanceTrendChartEmptyState />
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -111,19 +260,10 @@ export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) 
                 width={35}
                 tickFormatter={(value) => `${value}%`}
               />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#fff",
-                  border: "none",
-                  borderRadius: "8px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  fontSize: "12px",
-                }}
-                formatter={(value: number, name: string) => [`${value}%`, LABELS[name] ?? name]}
-              />
+              <Tooltip content={<PerformanceTooltip comparing={comparing} />} />
               <Legend
-                formatter={(value: string) => LABELS[value] ?? value}
-                wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
+                formatter={legendFormatter}
+                wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }}
               />
 
               {SERIES.map(({ key, color }) => (
@@ -135,8 +275,25 @@ export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) 
                   strokeWidth={2}
                   fill={`url(#color-${key})`}
                   name={key}
+                  connectNulls
                 />
               ))}
+
+              {comparing &&
+                SERIES.map(({ key, color }) => (
+                  <Area
+                    key={compareSeriesKey(key)}
+                    type="monotone"
+                    dataKey={compareSeriesKey(key)}
+                    stroke={color}
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                    strokeOpacity={0.65}
+                    fill="none"
+                    name={compareSeriesKey(key)}
+                    connectNulls
+                  />
+                ))}
             </AreaChart>
           </ResponsiveContainer>
         )}

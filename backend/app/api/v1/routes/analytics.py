@@ -16,6 +16,7 @@ from app.schemas.analytics import (
     NodeDailyStatsListResponse,
     NodeTypeBreakdownResponse,
 )
+from app.schemas.analytics_group import GroupAgentItem
 from app.services.analytics_export import EXTENSIONS, VALID_FORMATS, export_agent_stats, export_node_stats, get_agent_names
 from app.services.analytics_read import AnalyticsReadService
 from app.services.audio import AudioService
@@ -37,12 +38,13 @@ router = APIRouter()
 )
 async def get_agent_daily_stats(
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
 ) -> AgentDailyStatsListResponse:
     return await service.get_agent_daily_stats(
-        agent_id=agent_id, from_date=from_date, to_date=to_date
+        agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
     )
 
 
@@ -56,6 +58,7 @@ async def get_agent_daily_stats(
 )
 async def get_agent_stats_summary(
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     compare: bool = Query(default=False),
@@ -63,10 +66,10 @@ async def get_agent_stats_summary(
 ):
     if compare:
         return await service.get_agent_stats_summary_with_comparison(
-            agent_id=agent_id, from_date=from_date, to_date=to_date
+            agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
         )
     return await service.get_agent_stats_summary(
-        agent_id=agent_id, from_date=from_date, to_date=to_date
+        agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
     )
 
 
@@ -81,6 +84,7 @@ async def get_agent_stats_summary(
 async def export_agent_performance(
     fmt: str = Query(default="csv", alias="format"),
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
@@ -90,7 +94,7 @@ async def export_agent_performance(
         raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(VALID_FORMATS))}")
 
     try:
-        summary, daily = await _fetch_agent_data(service, agent_id, from_date, to_date)
+        summary, daily = await _fetch_agent_data(service, agent_id, group_id, from_date, to_date)
         agent_names = await get_agent_names(agent_repo)
 
         node_breakdown = None
@@ -126,13 +130,18 @@ async def export_agent_performance(
 )
 async def get_node_daily_stats(
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     node_type: str | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
 ) -> NodeDailyStatsListResponse:
     return await service.get_node_daily_stats(
-        agent_id=agent_id, node_type=node_type, from_date=from_date, to_date=to_date
+        agent_id=agent_id,
+        group_id=group_id,
+        node_type=node_type,
+        from_date=from_date,
+        to_date=to_date,
     )
 
 
@@ -147,6 +156,7 @@ async def get_node_daily_stats(
 async def export_node_analytics(
     fmt: str = Query(default="csv", alias="format"),
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     node_type: str | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
@@ -158,7 +168,11 @@ async def export_node_analytics(
 
     try:
         daily = await service.get_node_daily_stats(
-            agent_id=agent_id, node_type=node_type, from_date=from_date, to_date=to_date
+            agent_id=agent_id,
+            group_id=group_id,
+            node_type=node_type,
+            from_date=from_date,
+            to_date=to_date,
         )
         agent_names = await get_agent_names(agent_repo)
 
@@ -209,16 +223,17 @@ async def get_metrics(
     from_date: datetime | None = None,
     to_date: datetime | None = None,
     agent_id: UUID | None = None,
+    group_id: UUID | None = None,
     compare: bool = Query(default=False),
     service: AudioService = Injected(AudioService),
 ):
     try:
         if compare:
             return await service.fetch_metrics_with_comparison(
-                from_date=from_date, to_date=to_date, agent_id=agent_id
+                from_date=from_date, to_date=to_date, agent_id=agent_id, group_id=group_id
             )
         return await service.fetch_and_calculate_metrics(
-            from_date=from_date, to_date=to_date, agent_id=agent_id
+            from_date=from_date, to_date=to_date, agent_id=agent_id, group_id=group_id
         )
     except Exception as e:
         logger.error(f"Error fetching metrics: {e}")
@@ -237,11 +252,12 @@ async def get_metrics_daily(
     from_date: datetime | None = None,
     to_date: datetime | None = None,
     agent_id: UUID | None = None,
+    group_id: UUID | None = None,
     service: AudioService = Injected(AudioService),
 ):
     try:
         items = await service.fetch_metrics_per_day(
-            from_date=from_date, to_date=to_date, agent_id=agent_id
+            from_date=from_date, to_date=to_date, agent_id=agent_id, group_id=group_id
         )
         return {"items": items}
     except Exception as e:
@@ -260,9 +276,10 @@ async def get_metrics_daily(
 )
 async def get_custom_attribute_keys(
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
 ) -> list[str]:
-    return await service.get_custom_attribute_keys(agent_id=agent_id)
+    return await service.get_custom_attribute_keys(agent_id=agent_id, group_id=group_id)
 
 
 @router.get(
@@ -276,13 +293,35 @@ async def get_custom_attribute_keys(
 async def get_custom_attribute_breakdown(
     key: str = Query(..., description="Custom attribute key to group by"),
     agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
     from_date: datetime | None = Query(default=None),
     to_date: datetime | None = Query(default=None),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
 ) -> list[dict]:
     return await service.get_custom_attribute_breakdown(
-        key=key, agent_id=agent_id, from_date=from_date, to_date=to_date
+        key=key,
+        agent_id=agent_id,
+        group_id=group_id,
+        from_date=from_date,
+        to_date=to_date,
     )
+
+
+@router.get(
+    "/groups/{group_id}/agents",
+    response_model=list[GroupAgentItem],
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="List agents owned by users in a group",
+)
+async def get_group_agents(
+    group_id: UUID,
+    service: AnalyticsReadService = Injected(AnalyticsReadService),
+) -> list[GroupAgentItem]:
+    rows = await service.get_agents_for_group(group_id)
+    return [GroupAgentItem.model_validate(r) for r in rows]
 
 
 def _build_streaming_response(content: bytes, media_type: str, filename_base: str, fmt: str) -> StreamingResponse:
@@ -300,10 +339,15 @@ def _build_streaming_response(content: bytes, media_type: str, filename_base: st
 async def _fetch_agent_data(
     service: AnalyticsReadService,
     agent_id: UUID | None,
+    group_id: UUID | None,
     from_date: date | None,
     to_date: date | None,
 ) -> tuple[AgentStatsSummaryResponse, AgentDailyStatsListResponse]:
     # Sequential — same SQLAlchemy session cannot handle concurrent operations
-    summary = await service.get_agent_stats_summary(agent_id=agent_id, from_date=from_date, to_date=to_date)
-    daily = await service.get_agent_daily_stats(agent_id=agent_id, from_date=from_date, to_date=to_date)
+    summary = await service.get_agent_stats_summary(
+        agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
+    )
+    daily = await service.get_agent_daily_stats(
+        agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
+    )
     return summary, daily

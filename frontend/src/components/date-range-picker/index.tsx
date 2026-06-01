@@ -1,5 +1,19 @@
-import { useMemo } from "react";
-import { format, subDays, subMonths, subYears, startOfYear, startOfWeek, startOfMonth } from "date-fns";
+import { useCallback, useMemo } from "react";
+import {
+  endOfDay,
+  endOfYear,
+  format,
+  isAfter,
+  startOfDay,
+  subDays,
+  subMonths,
+  subYears,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+} from "date-fns";
+import type { PeriodPreset } from "@/helpers/analyticsPeriodComparison";
+import { PERIOD_PRESET_BY_LABEL } from "@/helpers/analyticsPeriodComparison";
 import { CalendarIcon } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/button";
@@ -14,21 +28,36 @@ export interface DatePreset {
 
 function getDefaultPresets(): DatePreset[] {
   const now = new Date();
+  const todayStart = startOfDay(now);
+  const lastYear = subYears(now, 1);
   return [
-    { label: "Today", range: { from: new Date(now.setHours(0, 0, 0, 0)), to: new Date() } },
-    { label: "Last 7 days", range: { from: subDays(new Date(), 7), to: new Date() } },
-    { label: "Last 30 days", range: { from: subDays(new Date(), 30), to: new Date() } },
-    { label: "This week", range: { from: startOfWeek(new Date(), { weekStartsOn: 1 }), to: new Date() } },
-    { label: "This month", range: { from: startOfMonth(new Date()), to: new Date() } },
-    { label: "Last month", range: { from: startOfMonth(subMonths(new Date(), 1)), to: subDays(startOfMonth(new Date()), 0) } },
-    { label: "Year to date", range: { from: startOfYear(new Date()), to: new Date() } },
-    { label: "Last year", range: { from: subYears(new Date(), 1), to: new Date() } },
+    { label: "Today", range: { from: todayStart, to: now } },
+    { label: "Last 7 days", range: { from: subDays(now, 7), to: now } },
+    { label: "Last 30 days", range: { from: subDays(now, 30), to: now } },
+    { label: "This week", range: { from: startOfWeek(now, { weekStartsOn: 1 }), to: now } },
+    { label: "This month", range: { from: startOfMonth(now), to: now } },
+    {
+      label: "Last month",
+      range: {
+        from: startOfMonth(subMonths(now, 1)),
+        to: endOfDay(subDays(startOfMonth(now), 1)),
+      },
+    },
+    { label: "Year to date", range: { from: startOfYear(now), to: now } },
+    {
+      label: "Last year",
+      range: { from: startOfYear(lastYear), to: endOfYear(lastYear) },
+    },
   ];
 }
 
+export type DateRangePickerChangeMeta = {
+  preset: PeriodPreset;
+};
+
 export interface DateRangePickerProps {
   value: DateRange | undefined;
-  onChange: (value: DateRange | undefined) => void;
+  onChange: (value: DateRange | undefined, meta?: DateRangePickerChangeMeta) => void;
   /** Custom presets — defaults to a built-in set if omitted */
   presets?: DatePreset[];
   /** Placeholder text when no date is selected */
@@ -39,6 +68,23 @@ export interface DateRangePickerProps {
   numberOfMonths?: number;
   /** Optional class override for the trigger button */
   triggerClassName?: string;
+  /** When true, dates after today cannot be selected (default: false). */
+  disableFutureDates?: boolean;
+}
+
+function clampRangeToToday(range: DateRange | undefined): DateRange | undefined {
+  if (!range) return undefined;
+  const todayEnd = endOfDay(new Date());
+  const clamp = (d: Date | undefined) => {
+    if (!d) return undefined;
+    return isAfter(d, todayEnd) ? todayEnd : d;
+  };
+  const from = clamp(range.from);
+  const to = clamp(range.to);
+  if (from && to && isAfter(from, to)) {
+    return { from: to, to };
+  }
+  return { from, to };
 }
 
 export const DateRangePicker = ({
@@ -49,8 +95,27 @@ export const DateRangePicker = ({
   align = "end",
   numberOfMonths = 2,
   triggerClassName,
+  disableFutureDates = false,
 }: DateRangePickerProps) => {
   const presets = useMemo(() => customPresets ?? getDefaultPresets(), [customPresets]);
+  const todayEnd = useMemo(() => endOfDay(new Date()), []);
+  const todayStart = useMemo(() => startOfDay(new Date()), []);
+
+  const handleSelect = useCallback(
+    (range: DateRange | undefined, preset: PeriodPreset = "custom") => {
+      const next = disableFutureDates ? clampRangeToToday(range) : range;
+      onChange(next, { preset });
+    },
+    [disableFutureDates, onChange],
+  );
+
+  const handlePreset = useCallback(
+    (range: DateRange, label: string) => {
+      const preset = PERIOD_PRESET_BY_LABEL[label] ?? "custom";
+      handleSelect(range, preset);
+    },
+    [handleSelect],
+  );
 
   const label = value?.from
     ? value.to
@@ -77,7 +142,7 @@ export const DateRangePicker = ({
               variant="ghost"
               size="sm"
               className="justify-start text-xs h-8"
-              onClick={() => onChange(preset.range)}
+              onClick={() => handlePreset(preset.range, preset.label)}
             >
               {preset.label}
             </Button>
@@ -86,7 +151,7 @@ export const DateRangePicker = ({
             variant="ghost"
             size="sm"
             className="justify-start text-xs h-8 text-muted-foreground"
-            onClick={() => onChange(undefined)}
+            onClick={() => handleSelect(undefined, "custom")}
           >
             Clear
           </Button>
@@ -94,9 +159,12 @@ export const DateRangePicker = ({
         <Calendar
           mode="range"
           selected={value}
-          onSelect={onChange}
+          onSelect={(range) => handleSelect(range, "custom")}
           numberOfMonths={numberOfMonths}
           initialFocus
+          disabled={disableFutureDates ? { after: todayEnd } : undefined}
+          toDate={disableFutureDates ? todayEnd : undefined}
+          defaultMonth={disableFutureDates ? todayStart : undefined}
         />
       </PopoverContent>
     </Popover>
