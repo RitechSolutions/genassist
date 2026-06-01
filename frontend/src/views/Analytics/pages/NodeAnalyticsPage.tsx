@@ -22,7 +22,7 @@ import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { analyticsFadeUpClass } from "../constants/animations";
 import { NodeAnalyticsTableEmptyState } from "../components/AnalyticsEmptyStates";
 import { NodeAnalyticsPageSkeleton } from "../components/skeletons";
-import { useAgentsList } from "../hooks/useAgentsList";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { fetchNodeDailyStats } from "@/services/analyticsReports";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
@@ -44,10 +44,19 @@ const NodeAnalyticsPage = () => {
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [agentFilter, setAgentFilter] = useState("all");
   const [nodeTypeFilter, setNodeTypeFilter] = useState("all");
 
-  const { agents, agentNameMap } = useAgentsList();
+  const {
+    groups,
+    showGroupFilter,
+    groupFilter,
+    setGroupFilter,
+    agentFilter,
+    setAgentFilter,
+    agents,
+    agentNameMap,
+    filterParams,
+  } = useAnalyticsFilters();
   const [nodeTypeOptions, setNodeTypeOptions] = useState<string[]>([]);
   const [items, setItems] = useState<NodeDailyStatsItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +65,7 @@ const NodeAnalyticsPage = () => {
   const loadData = async (
     range: DateRange | undefined,
     nodeType: string,
-    agentId: string
+    filters: { agent_id?: string; group_id?: string },
   ) => {
     setLoading(true);
     setError(null);
@@ -64,7 +73,7 @@ const NodeAnalyticsPage = () => {
       const data = await fetchNodeDailyStats({
         ...toExpandedUTCDateRange(range),
         node_type: nodeType !== "all" ? nodeType : undefined,
-        agent_id: agentId !== "all" ? agentId : undefined,
+        ...filters,
       });
       const fetched = data?.items ?? [];
       setItems(fetched);
@@ -81,8 +90,8 @@ const NodeAnalyticsPage = () => {
   };
 
   useEffect(() => {
-    loadData(dateRange, nodeTypeFilter, agentFilter);
-  }, [dateRange, nodeTypeFilter, agentFilter]);
+    loadData(dateRange, nodeTypeFilter, filterParams);
+  }, [dateRange, nodeTypeFilter, filterParams.agent_id, filterParams.group_id]);
 
   const agentBreakdown = useMemo<AgentNodeBreakdown[]>(() => {
     // Use a separate accumulator type to track weighted-average state
@@ -176,7 +185,7 @@ const NodeAnalyticsPage = () => {
   );
 
   const exportParams = {
-    agent_id: agentFilter !== "all" ? agentFilter : undefined,
+    ...filterParams,
     node_type: nodeTypeFilter !== "all" ? nodeTypeFilter : undefined,
     ...toExpandedUTCDateRange(dateRange),
   };
@@ -197,6 +206,9 @@ const NodeAnalyticsPage = () => {
                 subtitle="Workflow node execution metrics by type and date"
               >
                 <AnalyticsFilters
+                  groups={showGroupFilter ? groups : undefined}
+                  groupFilter={groupFilter}
+                  onGroupFilterChange={setGroupFilter}
                   agents={agents}
                   agentFilter={agentFilter}
                   onAgentFilterChange={setAgentFilter}

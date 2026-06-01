@@ -1,6 +1,7 @@
 import { Card } from "@/components/card";
 import { Skeleton } from "@/components/skeleton";
 import { cn } from "@/helpers/utils";
+import { analyticsKpiGridClass } from "../AnalyticsKpiStat";
 import { analyticsFadeUpClass } from "../../constants/animations";
 
 export interface AnalyticsMetricsCardsSkeletonProps {
@@ -16,13 +17,6 @@ export function AnalyticsMetricsCardsSkeleton({
   showContextLine = false,
   className,
 }: AnalyticsMetricsCardsSkeletonProps) {
-  const colClass =
-    count >= 5
-      ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
-      : count === 4
-        ? "grid-cols-2 sm:grid-cols-2 lg:grid-cols-4"
-        : "grid-cols-2 sm:grid-cols-3";
-
   return (
     <Card
       className={cn(
@@ -31,13 +25,13 @@ export function AnalyticsMetricsCardsSkeleton({
         className,
       )}
     >
-      {showContextLine && <Skeleton className="mb-4 h-3 w-56" />}
-      <div className={cn("grid gap-4 sm:gap-6 lg:gap-8", colClass)}>
+      {showContextLine && <Skeleton className="mb-4 h-3 w-56 max-w-full" />}
+      <div className={analyticsKpiGridClass(count)}>
         {Array.from({ length: count }, (_, i) => (
-          <div key={i} className="flex flex-col gap-2 py-2 sm:py-0">
-            <Skeleton className="h-7 w-16" />
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-3 w-36" />
+          <div key={i} className="flex min-w-0 flex-col gap-2 py-1">
+            <Skeleton className="h-7 w-16 max-w-full" />
+            <Skeleton className="h-4 w-full max-w-[7rem]" />
+            <Skeleton className="h-3 w-full max-w-[9rem]" />
           </div>
         ))}
       </div>
