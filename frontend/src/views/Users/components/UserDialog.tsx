@@ -181,12 +181,6 @@ export function UserDialog({
       );
     }
 
-    if (dialogMode !== "create") {
-      requiredFields = requiredFields.filter(
-        (field) => field.label !== "Roles"
-      );
-    }
-
     const missingFields = requiredFields
       .filter((field) => field.isEmpty)
       .map((field) => field.label);
@@ -266,6 +260,8 @@ export function UserDialog({
       if (status === 400) {
         if (data?.error_key === "EMAIL_ALREADY_EXISTS") {
           errorMessage = "A user with this email already exists.";
+        } else if (data?.error_key === "USER_ROLES_REQUIRED") {
+          errorMessage = "At least one role is required.";
         } else {
           errorMessage = "A user with this username already exists.";
         }
@@ -304,11 +300,15 @@ export function UserDialog({
   };
 
   const handleRoleToggle = (roleId: string) => {
-    setSelectedRoleIds((prev) =>
-      prev.includes(roleId)
+    setSelectedRoleIds((prev) => {
+      if (prev.includes(roleId) && prev.length === 1) {
+        toast.error("At least one role is required.");
+        return prev;
+      }
+      return prev.includes(roleId)
         ? prev.filter((id) => id !== roleId)
-        : [...prev, roleId]
-    );
+        : [...prev, roleId];
+    });
   };
 
   const isConsoleUserType = useMemo(() => {
