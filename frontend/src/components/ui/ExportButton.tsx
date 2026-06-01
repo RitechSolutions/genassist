@@ -54,8 +54,10 @@ async function downloadBlob(
 export function ExportButton({ endpoint, params, filename, disabled }: ExportButtonProps) {
   const [exporting, setExporting] = useState<"csv" | "xlsx" | "pdf" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const isExportBlocked = Boolean(disabled);
 
   const handle = (fmt: "csv" | "xlsx" | "pdf") => async () => {
+    if (isExportBlocked || exporting !== null) return;
     setExporting(fmt);
     setExportError(null);
     try {
@@ -70,32 +72,43 @@ export function ExportButton({ endpoint, params, filename, disabled }: ExportBut
     }
   };
 
+  const triggerButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={isExportBlocked || exporting !== null}
+      className="gap-1.5"
+    >
+      <Download className="w-3.5 h-3.5" />
+      {exporting ? "Exporting…" : "Export"}
+    </Button>
+  );
+
   return (
     <div className="flex flex-col items-end gap-1">
       {exportError && (
         <p className="text-xs text-red-500 max-w-[240px] text-right">{exportError}</p>
       )}
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={disabled || exporting !== null}
-          className="gap-1.5"
-        >
-          <Download className="w-3.5 h-3.5" />
-          {exporting ? "Exporting…" : "Export"}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {EXPORT_FORMATS.map(({ fmt, label, Icon, iconClass }) => (
-          <DropdownMenuItem key={fmt} onClick={handle(fmt)} className="gap-2 cursor-pointer">
-            <Icon className={`w-4 h-4 ${iconClass}`} />
-            {label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      {isExportBlocked ? (
+        triggerButton
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>{triggerButton}</DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {EXPORT_FORMATS.map(({ fmt, label, Icon, iconClass }) => (
+              <DropdownMenuItem
+                key={fmt}
+                disabled={exporting !== null}
+                onClick={handle(fmt)}
+                className="gap-2 cursor-pointer"
+              >
+                <Icon className={`w-4 h-4 ${iconClass}`} />
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
