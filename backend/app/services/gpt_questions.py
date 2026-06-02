@@ -61,7 +61,6 @@ class QuestionAnswerer:
 
 # Conditionally assign the method after class definition
 if USE_OPIK:
-    pass
     QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
 else:
     QuestionAnswerer.answer_question = QuestionAnswerer.answer_question
