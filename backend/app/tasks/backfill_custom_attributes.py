@@ -1,10 +1,10 @@
-import asyncio
 import json
 import logging
 
 from celery import shared_task
 
 from app.core.utils.custom_attributes import extract_custom_attributes_from_state
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +13,11 @@ BATCH_SIZE = 500
 
 @shared_task
 def backfill_custom_attributes(force: bool = False):
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(backfill_custom_attributes_async_with_scope(force=force))
+    return run_async_in_celery(
+        backfill_custom_attributes_async_with_scope(force=force),
+        timeout=110 * 60,
+        task_name="backfill_custom_attributes",
+    )
 
 
 async def backfill_custom_attributes_async_with_scope(force: bool = False):
