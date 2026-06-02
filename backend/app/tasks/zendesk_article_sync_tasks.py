@@ -58,13 +58,14 @@ def import_zendesk_articles_to_kb(kb_id: Optional[str] = None, sync_now: bool = 
     When kb_id is provided, sync only that KB. Otherwise sync all KBs due for sync.
     sync_now: when True, bypass schedule and force immediate sync.
     """
-    # 13min timeout: under the beat 'expires' of 900s upstream-of-15min would conflict,
-    # but the new cadence is 5min so 13min gives generous headroom while still bounding
-    # any single sync run so a hung downstream call (RAG/embeddings/pgvector) cannot
-    # wedge the solo-pool worker indefinitely.
+    # 15min timeout. Beat fires every 15min with expires=900s, so a hung run
+    # is force-cancelled (15min) before the next tick could enqueue a duplicate. This
+    # bounds any single sync so a hung downstream call (RAG/embeddings/pgvector) cannot
+    # wedge the solo-pool worker indefinitely, while still leaving generous headroom
+    # for a large but healthy sync.
     return run_async_in_celery(
         import_zendesk_articles_to_kb_async_with_scope(kb_id=kb_id, sync_now=sync_now),
-        timeout=13 * 60,
+        timeout=15 * 60,
         task_name="import_zendesk_articles_to_kb",
     )
 
