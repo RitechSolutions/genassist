@@ -3,19 +3,18 @@ Agent node implementation using the BaseNode class.
 """
 
 import datetime
-from typing import Dict, Any
 import logging
+from typing import Any, Dict
 
 from app.core.utils.token_utils import calculate_history_tokens
-from app.modules.workflow.engine import BaseNode
-from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
-from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.agents.react_agent import ReActAgent
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
 from app.modules.workflow.agents.tool_agent import ToolAgent
+from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
+from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
-
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +90,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             # - Above threshold: lazily index message groups into vector DB,
             #   retrieve semantically relevant groups + keep recent messages verbatim
             from app.dependencies.injector import injector
-            from app.modules.workflow.agents.rag import ThreadScopedRAG
             from app.modules.workflow.agents.conversation_rag_indexer import ConversationRAGIndexer
+            from app.modules.workflow.agents.rag import ThreadScopedRAG
 
             thread_rag = injector.get(ThreadScopedRAG)
 
@@ -281,15 +280,36 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 self.get_state(), result, self.node_id, provider_id
             )
 
+            steps_key = "reasoning_steps" if agent_type in ["ReActAgent", "ReActAgentLC"] else "steps"
+            steps = result.get(steps_key, [])
+
+            # The agent caught an error internally and returned a standardized error response
+            if result.get("status") == "error":
+                error_detail = result.get("error") or "an unknown error occurred"
+                logger.error("Agent '%s' returned an error: %s", agent_type, error_detail)
+                return {
+                    "message": f"The agent could not complete your request: {error_detail}",
+                    "error": error_detail,
+                    "steps": steps,
+                }
+
             # Prepare output
+            response = result.get("response")
+            if response is None:
+                logger.warning("Agent '%s' returned no response. Result: %s", agent_type, result)
+                response = "The agent did not return a response. Please try again or review the agent configuration."
+
             output = {
-                "message": result.get("response", "Something went wrong"),
-                "steps": result.get("reasoning_steps", []) if agent_type in ["ReActAgent", "ReActAgentLC"] else result.get("steps", [])
+                "message": response,
+                "steps": steps,
             }
 
             return output
 
         except Exception as e:
-            logger.error("Error processing agent node: %s", str(e))
-            error_message = f"Error: {str(e)}"
-            return {"error": error_message}
+            logger.exception("Error processing agent node")
+            error_message = str(e)
+            return {
+                "message": f"The agent could not complete your request: {error_message}",
+                "error": error_message,
+            }
