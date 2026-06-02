@@ -8,6 +8,7 @@ from app.core.utils.date_time_utils import utc_now
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.dependencies.injector import injector
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,11 @@ logger = logging.getLogger(__name__)
 @shared_task
 def sync_active_fine_tuning_jobs():
     """Celery task entry point for syncing active fine-tuning jobs"""
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(sync_active_fine_tuning_jobs_async_with_scope())
+    return run_async_in_celery(
+        sync_active_fine_tuning_jobs_async_with_scope(),
+        timeout=110,
+        task_name="sync_active_fine_tuning_jobs",
+    )
 
 
 async def sync_active_fine_tuning_jobs_async_with_scope():
@@ -108,8 +112,11 @@ async def sync_active_fine_tuning_jobs_async():
 @shared_task
 def sync_all_fine_tuning_jobs():
     """Celery task to sync ALL fine-tuning jobs (not just active ones)"""
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(sync_all_fine_tuning_jobs_async_with_scope())
+    return run_async_in_celery(
+        sync_all_fine_tuning_jobs_async_with_scope(),
+        timeout=10 * 60,
+        task_name="sync_all_fine_tuning_jobs",
+    )
 
 
 async def sync_all_fine_tuning_jobs_async_with_scope():

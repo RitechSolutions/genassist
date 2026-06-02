@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -15,6 +14,7 @@ from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.datasources import DataSourceService
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
@@ -58,18 +58,15 @@ def import_zendesk_articles_to_kb(kb_id: Optional[str] = None, sync_now: bool = 
     When kb_id is provided, sync only that KB. Otherwise sync all KBs due for sync.
     sync_now: when True, bypass schedule and force immediate sync.
     """
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_closed():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(
-        import_zendesk_articles_to_kb_async_with_scope(kb_id=kb_id, sync_now=sync_now)
+    # 15min timeout. Beat fires every 15min with expires=900s, so a hung run
+    # is force-cancelled (15min) before the next tick could enqueue a duplicate. This
+    # bounds any single sync so a hung downstream call (RAG/embeddings/pgvector) cannot
+    # wedge the solo-pool worker indefinitely, while still leaving generous headroom
+    # for a large but healthy sync.
+    return run_async_in_celery(
+        import_zendesk_articles_to_kb_async_with_scope(kb_id=kb_id, sync_now=sync_now),
+        timeout=15 * 60,
+        task_name="import_zendesk_articles_to_kb",
     )
 
 
