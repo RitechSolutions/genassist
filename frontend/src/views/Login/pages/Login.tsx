@@ -62,8 +62,7 @@ const LoginPage = () => {
   const handleLogin = async (
     username: string,
     password: string,
-    tenant: string,
-    keepSignedIn: boolean
+    tenant: string
   ) => {
     setIsLoading(true);
 

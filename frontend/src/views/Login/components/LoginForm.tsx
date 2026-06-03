@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/checkbox";
-import { Link } from "react-router-dom";
 import { PasswordInput } from "@/components/PasswordInput";
 import { getApiUrl } from "@/config/api";
 
 interface LoginFormProps {
-  onSubmit: (username: string, password: string, tenant: string, keepSignedIn: boolean) => void;
+  onSubmit: (username: string, password: string, tenant: string) => void;
   isLoading: boolean;
 }
 
@@ -17,7 +15,6 @@ export const LoginForm = ({ onSubmit, isLoading }: LoginFormProps) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [tenant, setTenant] = useState("");
-  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [microsoftSsoEnabled, setMicrosoftSsoEnabled] = useState(false);
 
   useEffect(() => {
@@ -62,7 +59,7 @@ export const LoginForm = ({ onSubmit, isLoading }: LoginFormProps) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(username, password, tenant, keepSignedIn);
+    onSubmit(username, password, tenant);
   };
 
   return (
@@ -102,29 +99,6 @@ export const LoginForm = ({ onSubmit, isLoading }: LoginFormProps) => {
           />
         </div>
       )}
-
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="keepSignedIn"
-            checked={keepSignedIn}
-            onCheckedChange={(checked) => setKeepSignedIn(checked as boolean)}
-            disabled={isLoading}
-          />
-          <label
-            htmlFor="keepSignedIn"
-            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-          >
-            Keep me signed in
-          </label>
-        </div>
-        <Link
-          to="/forgot-password"
-          className="text-sm text-zinc-500 hover:text-zinc-600"
-        >
-          Forgot password?
-        </Link>
-      </div>
 
       <Button
         type="submit"
