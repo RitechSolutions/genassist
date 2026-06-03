@@ -436,7 +436,7 @@ function UserFooter({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-48">
-              <DropdownMenuItem asChild className="flex items-center gap-2">
+              {/* <DropdownMenuItem asChild className="flex items-center gap-2">
                 <Link
                   to="/change-password"
                   className="flex items-center gap-2"
@@ -445,7 +445,7 @@ function UserFooter({
                   <span>Change Password</span>
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              <DropdownMenuSeparator /> */}
               <DropdownMenuItem
                 onClick={onLogout}
                 className="flex items-center gap-2 text-red-600"

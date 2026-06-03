@@ -8,7 +8,7 @@ export const GlobalChat = () => {
   const [websocketUrl, setWebsocketUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
-  const tenantId = localStorage.getItem('tenant_id') as string | undefined;
+  // const tenantId = localStorage.getItem('tenant_id') as string | undefined;
 
   useEffect(() => {
     (async () => {
@@ -36,7 +36,7 @@ export const GlobalChat = () => {
       baseUrl={baseUrl}
       websocketUrl={websocketUrl}
       apiKey={genassistApiKey}
-      tenant={tenantId}
+      // tenant={tenantId}
       headerTitle="Genassist Chat"
       theme={{
         primaryColor: "#173DED",
