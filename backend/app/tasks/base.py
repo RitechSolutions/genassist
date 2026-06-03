@@ -1,13 +1,48 @@
+import asyncio
 from celery import Task, shared_task
 from datetime import datetime
 import logging
-from typing import Callable, List, Any, Awaitable
+from typing import Callable, List, Any, Awaitable, Coroutine, Optional
 
 from app.services.tenant import TenantService
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
 from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def run_async_in_celery(
+    coro: Coroutine[Any, Any, Any],
+    timeout: Optional[float] = None,
+    task_name: str = "celery task",
+) -> Any:
+    """
+    Drive an async coroutine to completion inside a sync Celery task body.
+
+    Always creates a fresh event loop via ``asyncio.run`` so connection-pool
+    state (httpx, AsyncOpenAI, asyncpg) cannot leak across invocations in the
+    solo worker.
+
+    If ``timeout`` is provided, the coroutine is wrapped in ``asyncio.wait_for``
+    so a hung downstream call raises ``asyncio.TimeoutError`` instead of
+    wedging the worker indefinitely. Celery's own ``task_time_limit`` is
+    unreliable with the solo pool — this is the actual enforcement point.
+    """
+    async def _runner() -> Any:
+        if timeout is None:
+            return await coro
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.error(
+                "%s exceeded %ss timeout; cancelling. Worker recovers; "
+                "next scheduled run will retry from current state.",
+                task_name,
+                timeout,
+            )
+            raise
+
+    return asyncio.run(_runner())
 
 
 class BaseTaskWithLogging(Task):

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from uuid import UUID
@@ -14,23 +13,18 @@ from app.dependencies.injector import injector
 from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.conversation import ConversationCreate
 from app.services.conversations import ConversationService
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task
 def analyze_zendesk_tickets_task():
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_closed():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(analyze_zendesk_tickets_async_with_scope())
+    return run_async_in_celery(
+        analyze_zendesk_tickets_async_with_scope(),
+        timeout=50 * 60,
+        task_name="analyze_zendesk_tickets_task",
+    )
 
 
 async def analyze_zendesk_tickets_async_with_scope():

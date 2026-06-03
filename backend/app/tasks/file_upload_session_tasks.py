@@ -11,7 +11,6 @@ be no rows to clean.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -29,14 +28,18 @@ from app.services.file_upload_session import (
     STATUS_FAILED,
     UPLOAD_MODE_DIRECT_S3,
 )
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task
 def cleanup_stale_direct_upload_sessions():
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(cleanup_stale_direct_upload_sessions_with_scope())
+    return run_async_in_celery(
+        cleanup_stale_direct_upload_sessions_with_scope(),
+        timeout=4 * 60,
+        task_name="cleanup_stale_direct_upload_sessions",
+    )
 
 
 async def cleanup_stale_direct_upload_sessions_with_scope():

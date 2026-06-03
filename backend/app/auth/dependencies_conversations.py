@@ -319,10 +319,13 @@ def socket_auth_conversation(required_permissions: list[str]):
                     user = await user_service.get_by_id_for_auth(UUID(str(guest_user_id)))
                     if user is None or not user.is_active:
                         raise WebSocketException(code=4401, reason="Invalid guest token")
+                    guest_perms = list(guest_data.get("permissions", []))
+                    if P.Conversation.READ_IN_PROGRESS not in guest_perms:
+                        guest_perms.append(P.Conversation.READ_IN_PROGRESS)
                     principal, user_id, perms = (
                         user,
                         user.id,
-                        guest_data.get("permissions", []),
+                        guest_perms,
                     )
                     _set_user_context(user, user.roles)
                     guest_handled = True
