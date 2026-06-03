@@ -273,6 +273,7 @@ def create_celery():
     celery_app.conf.update(
         broker_url=settings.REDIS_URL,  # Explicitly set broker URL
         result_backend=settings.REDIS_URL,  # Explicitly set result backend
+        broker_connection_retry_on_startup=True,  # Retain pre-Celery 6.0 startup retry behavior
         broker_transport_options={
             "visibility_timeout": 3600,  # 1 hour
             "fanout_prefix": True,
