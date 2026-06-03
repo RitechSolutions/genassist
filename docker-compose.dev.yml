@@ -65,8 +65,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/playground/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 180s
     depends_on:
       volume-init:
         condition: service_completed_successfully
