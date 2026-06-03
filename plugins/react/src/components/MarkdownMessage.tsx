@@ -50,6 +50,37 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ text, style })
               {children}
             </a>
           ),
+          ul: ({ node: _node, children, ...props }) => (
+            <ul
+              {...props}
+              style={{
+                margin: '0.25em 0',
+                paddingLeft: '1.5em',
+                listStylePosition: 'outside',
+                whiteSpace: 'normal',
+              }}
+            >
+              {children}
+            </ul>
+          ),
+          ol: ({ node: _node, children, ...props }) => (
+            <ol
+              {...props}
+              style={{
+                margin: '0.25em 0',
+                paddingLeft: '1.5em',
+                listStylePosition: 'outside',
+                whiteSpace: 'normal',
+              }}
+            >
+              {children}
+            </ol>
+          ),
+          li: ({ node: _node, children, ...props }) => (
+            <li {...props} style={{ margin: '0.15em 0' }}>
+              {children}
+            </li>
+          ),
         }}
       >
         {text}
