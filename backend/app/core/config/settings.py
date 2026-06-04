@@ -58,9 +58,29 @@ class ProjectSettings(BaseSettings):
     # flag is off: with no direct-S3 rows the task simply finds nothing to do.
     CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
-    # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
-    # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
+    # Worker pool. "solo" is required for the ML worker: ML libs (torch/sklearn/
+    # transformers) spawn native OpenMP/MKL threads at import, and fork() copies
+    # only the calling thread, leaving the child with locked mutexes -> SIGSEGV.
+    # The "default" worker can run "prefork" for true concurrency *because* its boot
+    # import graph is ML-free (see CELERY_INCLUDE_ML_TASKS and the lean worker
+    # bootstrap in run_celery.py): prefork children may lazily import ML libs after
+    # fork safely; only the parent (master) must stay clean.
     CELERY_WORKER_POOL: str = "solo"
+
+    # Role selector for the two-worker split. When True (default — preserves the
+    # legacy single-worker behavior), the Celery app includes the ML/evaluation task
+    # modules (ml_model_pipeline_tasks, test_suite_tasks), which top-level import the
+    # workflow engine and therefore pull sklearn into the process at boot. The
+    # prefork "default" worker MUST set this False so its master process never imports
+    # those modules; ML/eval tasks are routed to the dedicated "ml" queue instead.
+    CELERY_INCLUDE_ML_TASKS: bool = True
+
+    # Explicit prefork concurrency (number of child worker processes). Leave None to
+    # use Celery's default (CPU count) — but for the prefork "default" worker set a
+    # modest value (e.g. 2-4): each child holds its own DB/Redis connections, and
+    # background tasks use NullPool (a fresh connection per query), so unbounded
+    # concurrency can exhaust Postgres max_connections / Redis maxclients.
+    CELERY_WORKER_CONCURRENCY: int | None = None
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
