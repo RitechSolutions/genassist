@@ -9,18 +9,15 @@ from celery.schedules import crontab
 from fastapi import FastAPI
 from fastapi_injector import InjectorMiddleware, RequestScopeOptions, attach_injector
 
-from app.api.v1.routes._routes import register_routers
-from app.cache.redis_cache import init_fastapi_cache_with_redis
 from app.core.config.logging import init_logging
 from app.core.config.settings import settings
-from app.core.exceptions.exception_handler import init_error_handlers
-from app.db.multi_tenant_session import multi_tenant_manager
-from app.dependencies.injector import injector
-from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
-from app.file_system.file_system import ensure_directories
-from app.middlewares._middleware import build_middlewares
-from app.middlewares.rate_limit_middleware import init_rate_limiter
-from app.routes import health
+
+# NOTE: Only logging + settings are imported at module top level. Everything else
+# (routers, the DI injector, middleware, multi-tenant DB) is imported lazily inside
+# create_app()/the lifespan helpers. This keeps importing the `app` package free of
+# the heavy ML/RAG import graph (torch/sklearn/transformers/legra), so the Celery
+# worker can build its app via create_celery() without loading native-thread ML libs
+# into the prefork master process (which would SIGSEGV on fork()).
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -31,6 +28,15 @@ def create_app() -> FastAPI:
     Application-factory entry-point.
     Only orchestration happens here – all heavy lifting lives in helpers.
     """
+    # Imported lazily (not at module top level) so importing the `app` package
+    # stays free of the heavy ML/RAG import graph — see note at top of module.
+    from app.api.v1.routes._routes import register_routers
+    from app.core.exceptions.exception_handler import init_error_handlers
+    from app.file_system.file_system import ensure_directories
+    from app.middlewares._middleware import build_middlewares
+    from app.middlewares.rate_limit_middleware import init_rate_limiter
+    from app.routes import health
+
     app = FastAPI(
         lifespan=_lifespan,
         middleware=build_middlewares(),
@@ -61,6 +67,8 @@ def create_app() -> FastAPI:
 
 
 def add_di_middleware(app):
+    from app.dependencies.injector import injector
+
     app.add_middleware(InjectorMiddleware, injector=injector)
     # Enable cleanup - fastapi-injector will handle AsyncSession through context managers
     options = RequestScopeOptions(enable_cleanup=True)
@@ -90,7 +98,9 @@ async def _initialize_redis_services(app: FastAPI):
     """
     from redis.asyncio import Redis
 
+    from app.cache.redis_cache import init_fastapi_cache_with_redis
     from app.dependencies.dependency_injection import RedisBinary, RedisString
+    from app.dependencies.injector import injector
 
     logger.info("Initializing Redis services...")
 
@@ -156,6 +166,7 @@ async def _initialize_websocket_services():
     This includes:
     - SocketConnectionManager (WebSocket rooms and Redis Pub/Sub)
     """
+    from app.dependencies.injector import injector
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
     logger.info("Initializing WebSocket services (legacy mode)...")
@@ -177,6 +188,7 @@ async def _cleanup_websocket_services():
     - Closing all WebSocket connections
     - Shutting down Redis Pub/Sub subscriber
     """
+    from app.dependencies.injector import injector
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
     logger.info("Cleaning up WebSocket services...")
@@ -203,6 +215,9 @@ async def _lifespan(app: FastAPI):
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """
+    from app.db.multi_tenant_session import multi_tenant_manager
+    from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
+
     logger.debug("Running lifespan startup tasks...")
 
     # Generate OpenAPI schema
@@ -247,26 +262,36 @@ def create_celery():
     logger.debug("Creating new Celery app instance")
     logger.debug(f"Redis URL: {settings.REDIS_URL}")
 
+    # Task modules that top-level import the workflow engine (-> sklearn at boot).
+    # They run only on the dedicated "ml" (solo) worker and are routed to the "ml"
+    # queue. The prefork "default" worker excludes them (CELERY_INCLUDE_ML_TASKS=False)
+    # so its master process never loads ML libs and is safe to fork.
+    ML_TASK_MODULES = [
+        "app.tasks.ml_model_pipeline_tasks",
+        "app.tasks.test_suite_tasks",
+    ]
+    include = [
+        "app.tasks.base",
+        "app.tasks.s3_tasks",
+        "app.tasks.conversations_tasks",
+        "app.tasks.zendesk_tasks",
+        "app.tasks.zendesk_article_sync_tasks",
+        "app.tasks.audio_tasks",
+        "app.tasks.sharepoint_tasks",
+        "app.tasks.fine_tune_job_sync_tasks",
+        "app.tasks.share_folder_tasks",
+        "app.tasks.kb_batch_tasks",
+        "app.tasks.analytics_aggregation_tasks",
+        "app.tasks.file_upload_session_tasks",
+    ]
+    if settings.CELERY_INCLUDE_ML_TASKS:
+        include += ML_TASK_MODULES
+
     celery_app = Celery(
         "genassist_celery_tasks",
         broker=settings.REDIS_URL,
         backend=settings.REDIS_URL,
-        include=[
-            "app.tasks.base",
-            "app.tasks.s3_tasks",
-            "app.tasks.conversations_tasks",
-            "app.tasks.zendesk_tasks",
-            "app.tasks.zendesk_article_sync_tasks",
-            "app.tasks.audio_tasks",
-            "app.tasks.sharepoint_tasks",
-            "app.tasks.fine_tune_job_sync_tasks",
-            "app.tasks.share_folder_tasks",
-            "app.tasks.ml_model_pipeline_tasks",
-            "app.tasks.kb_batch_tasks",
-            "app.tasks.analytics_aggregation_tasks",
-            "app.tasks.test_suite_tasks",
-            "app.tasks.file_upload_session_tasks",
-        ],
+        include=include,
     )
 
     # Configure Celery
@@ -302,11 +327,24 @@ def create_celery():
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,
+        # Queue routing for the two-worker split. Everything defaults to "default"
+        # (consumed by the prefork worker); the ML/evaluation tasks are pinned to the
+        # "ml" queue, consumed only by the solo worker that can safely import ML libs.
+        task_default_queue="default",
+        task_routes={
+            "execute_pipeline_run": {"queue": "ml"},
+            "execute_test_suite_run": {"queue": "ml"},
+            "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs": {"queue": "ml"},
+        },
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
         # Prevent Celery from hijacking root logger and writing to stderr (Datadog-friendly)
         worker_hijack_root_logger=False,
     )
+
+    # Explicit prefork concurrency when configured (ignored by the solo pool).
+    if settings.CELERY_WORKER_CONCURRENCY is not None:
+        celery_app.conf.worker_concurrency = settings.CELERY_WORKER_CONCURRENCY
 
     # Configure periodic tasks (conditionally enabled via settings)
     beat_schedule = {}

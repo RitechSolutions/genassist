@@ -7921,7 +7921,7 @@
         ],
         "parameters": [
           {
-            "name": "x-tenant-id",
+            "name": "X-Tenant-ID",
             "in": "header",
             "required": false,
             "schema": {
@@ -21702,11 +21702,15 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "maxLength": 100,
+            "title": "Name",
+            "description": "Agent name. Limited to 100 characters."
           },
           "description": {
             "type": "string",
-            "title": "Description"
+            "maxLength": 200,
+            "title": "Description",
+            "description": "Agent description. Limited to 200 characters."
           },
           "is_active": {
             "type": "boolean",
@@ -22076,11 +22080,15 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "maxLength": 100,
+            "title": "Name",
+            "description": "Agent name. Limited to 100 characters."
           },
           "description": {
             "type": "string",
-            "title": "Description"
+            "maxLength": 200,
+            "title": "Description",
+            "description": "Agent description. Limited to 200 characters."
           },
           "is_active": {
             "type": "boolean",
@@ -22789,7 +22797,8 @@
           "name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 100
               },
               {
                 "type": "null"
@@ -22800,7 +22809,8 @@
           "description": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 200
               },
               {
                 "type": "null"

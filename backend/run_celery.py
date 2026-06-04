@@ -1,6 +1,6 @@
 import logging
 from celery.signals import worker_process_init
-from app import create_app
+from app import create_celery
 from app.core.config.settings import settings
 
 # Configure logging
@@ -18,9 +18,12 @@ def init_worker_cache(**kwargs):
     logger.info("FastAPICache initialized for Celery worker process")
 
 
-# Create the FastAPI app to get the Celery app instance
-app = create_app()
-celery_app = app.celery_app
+# Build the Celery app directly — NOT via create_app(). The worker never serves
+# HTTP, and create_app() registers the FastAPI router graph, which transitively
+# imports the workflow engine and pulls torch/sklearn into the process. Building the
+# Celery app on its own keeps the (prefork) master process free of ML libs so it can
+# fork children safely. See app/__init__.py create_celery() and the lean-import note.
+celery_app = create_celery()
 
 if __name__ == "__main__":
     logger.debug(f"Starting Celery worker with Redis URL: {settings.REDIS_URL}")
