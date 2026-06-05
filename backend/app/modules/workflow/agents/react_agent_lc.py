@@ -6,6 +6,8 @@ from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain.agents import create_agent
+from langchain.agents.middleware.types import AgentMiddleware
+from langgraph.types import Command
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
 from app.modules.workflow.agents.agent_utils import (
@@ -17,6 +19,16 @@ import json
 
 
 logger = logging.getLogger(__name__)
+
+
+class RetryOnToolErrorMiddleware(AgentMiddleware):
+    """Route failed tool calls back to the model so it can retry."""
+
+    async def awrap_tool_call(self, request, handler):
+        result = await handler(request)
+        if isinstance(result, ToolMessage) and result.status == "error":
+            return Command(goto="model", update={"messages": [result]})
+        return result
 
 
 class ReActAgentLC(BaseToolAgent):
@@ -151,6 +163,7 @@ class ReActAgentLC(BaseToolAgent):
             model=self.llm_model,
             tools=self.lc_tools,
             system_prompt=self.system_prompt,
+            middleware=[RetryOnToolErrorMiddleware()],
         )
 
         return agent_executor
