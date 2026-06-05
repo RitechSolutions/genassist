@@ -260,8 +260,6 @@ def socket_auth_conversation(required_permissions: list[str]):
         access_token: str | None = Query(default=None),
         api_key: str | None = Query(default=None),
         auth_service=Injected(AuthService),
-        conversation_service: ConversationService = Injected(ConversationService),
-        agent_config_service: AgentConfigService = Injected(AgentConfigService),
     ) -> SocketPrincipal:
         try:
             resolved_tenant_id = None
@@ -300,6 +298,10 @@ def socket_auth_conversation(required_permissions: list[str]):
             set_tenant_context(resolved_tenant_id)
             logger.debug(f"WebSocket tenant context set: {resolved_tenant_id}")
 
+            from app.dependencies.injector import injector
+            conversation_service = injector.get(ConversationService)
+            agent_config_service = injector.get(AgentConfigService)
+
             if access_token:
                 guest_handled = False
                 try:
@@ -312,7 +314,6 @@ def socket_auth_conversation(required_permissions: list[str]):
                     guest_user_id = guest_data.get("user_id")
                     if not guest_user_id:
                         raise WebSocketException(code=4401, reason="Invalid guest token")
-                    from app.dependencies.injector import injector
                     from app.services.users import UserService
 
                     user_service = injector.get(UserService)
