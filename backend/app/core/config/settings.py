@@ -129,9 +129,9 @@ class ProjectSettings(BaseSettings):
 
     # === Limits ===
     # Canonical max request body / upload size (aligned with frontend nginx client_max_body_size).
-    MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 100MB
+    MAX_CONTENT_LENGTH: int = 200 * 1024 * 1024  # 200MB
     # Knowledge-base uploads (legacy /upload and chunked /upload-session).
-    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 200 * 1024 * 1024  # 200MB
     KNOWLEDGE_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
