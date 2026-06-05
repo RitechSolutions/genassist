@@ -61,7 +61,7 @@ const BaseNodeContainer = <T extends NodeData>({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const { hasNodeBeenExecuted, updateNodeOutput } = useWorkflowExecution();
+  const { getNodeOutput, updateNodeOutput } = useWorkflowExecution();
   const { deleteElements } = useReactFlow();
   const { hasValidationError, missingFields } = useNodeValidation(
     nodeType,
@@ -86,7 +86,12 @@ const BaseNodeContainer = <T extends NodeData>({
 
   const nodeName = data.name || nodeDefinition?.label || "node";
 
-  const hasError = !hasNodeBeenExecuted(id) || hasValidationError;
+  // A node is only flagged red for a genuine problem: missing/invalid config,
+  // or a test run that actually failed. Simply not having been tested yet does
+  // NOT paint the node red — otherwise testing one node would cascade the
+  // "Node not yet tested" state onto every other untested node.
+  const hasFailedTest = getNodeOutput(id)?.status === "error";
+  const hasError = hasValidationError || hasFailedTest;
   const isSpecialNode =
     nodeType === "chatInputNode" || nodeType === "chatOutputNode";
   const isAgentNode = nodeType === "agentNode";
@@ -179,6 +184,7 @@ const BaseNodeContainer = <T extends NodeData>({
       {hasError && (
         <NodeAlert
           missingFields={missingFields}
+          failedTest={hasFailedTest}
           onFix={onSettings}
           onTest={handleTest}
         />

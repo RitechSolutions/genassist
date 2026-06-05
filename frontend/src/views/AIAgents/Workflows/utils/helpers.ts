@@ -239,35 +239,6 @@ export const extractDynamicVariables = (text: string): Set<string> => {
 
   return variables;
 };
-
-/** Variables bound to workflow runtime context, not manual test inputs. */
-const WORKFLOW_CONTEXT_VARIABLE = /^(source|session|node_outputs|direct_input)(\.|\[|$)/;
-
-export const isWorkflowContextVariable = (variable: string): boolean =>
-  WORKFLOW_CONTEXT_VARIABLE.test(variable);
-
-/** Build input_data context from upstream node outputs for isolated node tests. */
-export const buildWorkflowContextInput = (
-  availableData: Record<string, unknown> | null | undefined
-): Record<string, unknown> => {
-  if (!availableData) {
-    return {};
-  }
-
-  const context: Record<string, unknown> = {};
-  for (const key of ["session", "source", "node_outputs"] as const) {
-    const value = availableData[key];
-    if (value !== undefined && value !== null && typeof value === "object") {
-      context[key] = value;
-    }
-  }
-  return context;
-};
-
-export const hasWorkflowContextData = (
-  availableData: Record<string, unknown> | null | undefined
-): boolean => Object.keys(buildWorkflowContextInput(availableData)).length > 0;
-
 export const extractDynamicVariablesAsRecord = (
   text: string
 ): Record<string, { type: string; required?: boolean }> => {

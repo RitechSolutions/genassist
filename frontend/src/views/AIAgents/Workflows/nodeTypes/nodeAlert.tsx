@@ -2,18 +2,22 @@ import { renderIcon } from "../utils/iconUtils";
 
 interface NodeAlertProps {
   missingFields: string[];
+  failedTest?: boolean;
   onFix?: () => void;
   onTest?: () => void;
 }
 
 export const NodeAlert: React.FC<NodeAlertProps> = ({
   missingFields,
+  failedTest = false,
   onFix,
   onTest,
 }) => {
   const hasMissingFields = missingFields && missingFields.length > 0;
   const message = hasMissingFields
     ? `Missing: ${missingFields.join(", ")}`
+    : failedTest
+    ? "Node test failed"
     : "Node not yet tested";
   const actionText = hasMissingFields ? "Add" : "Test";
   const handleClick = hasMissingFields ? onFix : onTest;
