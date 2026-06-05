@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { getApiUrl } from "@/config/api";
 import { isAxiosError } from "axios";
 
-// Sentinel value for the "No group" option, since Radix SelectItem cannot use an empty string value.
+// Value for the "No group" option, since Radix SelectItem cannot use an empty string value.
 const NO_GROUP_VALUE = "__none__";
 
 interface UserDialogProps {
