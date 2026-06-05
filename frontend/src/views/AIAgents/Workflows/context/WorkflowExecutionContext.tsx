@@ -108,17 +108,12 @@ export const WorkflowExecutionProvider: React.FC<
       setState((prevState) => {
         const newState = { ...prevState };
 
-        // Clone nodeOutputs so we never mutate the previous state object in
-        // place — mutation breaks change detection for memoized selectors.
-        newState.nodeOutputs = {
-          ...prevState.nodeOutputs,
-          [nodeId]: {
-            status: "success",
-            output: output,
-            timestamp: Date.now(),
-            nodeType,
-            nodeName,
-          },
+        newState.nodeOutputs[nodeId] = {
+          status: "success",
+          output: output,
+          timestamp: Date.now(),
+          nodeType,
+          nodeName,
         };
 
         // Update session data for chat input nodes
@@ -191,8 +186,6 @@ export const WorkflowExecutionProvider: React.FC<
   const clearNodeOutput = useCallback((nodeId: string) => {
     setState((prevState) => {
       const newState = { ...prevState };
-      // Clone before deleting so the previous state object is left untouched.
-      newState.nodeOutputs = { ...prevState.nodeOutputs };
       delete newState.nodeOutputs[nodeId];
 
       // Rebuild session and source from remaining outputs
