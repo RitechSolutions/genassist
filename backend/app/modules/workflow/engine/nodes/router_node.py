@@ -148,7 +148,9 @@ class RouterNode(BaseNode):
         try:
             llm_provider = injector.get(LLMProvider)
             llm_model = await llm_provider.get_model(provider_id)
-            response = await llm_model.ainvoke(
+            response = await llm_model.bind(
+                temperature=0, max_tokens=10
+            ).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=smart_prompt),

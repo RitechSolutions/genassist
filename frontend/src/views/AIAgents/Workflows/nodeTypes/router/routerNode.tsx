@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NodeProps } from "reactflow";
 import { RouterNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
@@ -6,6 +6,7 @@ import BaseNodeContainer from "../BaseNodeContainer";
 import { RouterDialog } from "../../nodeDialogs/RouterDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
+import { getLLMProvider } from "@/services/llmProviders";
 
 export const ROUTER_NODE_TYPE = "routerNode";
 
@@ -25,7 +26,20 @@ const RouterNode: React.FC<NodeProps<RouterNodeData>> = ({
   const nodeDefinition = nodeRegistry.getNodeType(ROUTER_NODE_TYPE);
   const color = getNodeColor(nodeDefinition.category);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [providerName, setProviderName] = useState("");
   const smart = isSmartModeOn(data);
+
+  useEffect(() => {
+    if (data.providerId) {
+      getLLMProvider(data.providerId).then((provider) => {
+        if (provider) {
+          setProviderName(
+            `${provider.name} (${provider.llm_model_provider} - ${provider.llm_model})`
+          );
+        }
+      });
+    }
+  }, [data.providerId]);
 
   const onUpdate = (updatedData: RouterNodeData) => {
     if (data.updateNodeData) {
@@ -41,7 +55,7 @@ const RouterNode: React.FC<NodeProps<RouterNodeData>> = ({
         { label: "Mode", value: "Smart (LLM)", isSelection: true },
         {
           label: "LLM Provider",
-          value: data.providerId || "—",
+          value: providerName || "—",
         },
         {
           label: "Routing prompt",
