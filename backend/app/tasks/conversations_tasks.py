@@ -1,18 +1,21 @@
-import asyncio
 from celery import shared_task
 from app.dependencies.injector import injector
 from datetime import datetime, timedelta, timezone
 import logging
 from app.services.conversations import ConversationService
 from app.core.config.settings import settings
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task
 def backfill_missing_conversation_analyses():
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(backfill_missing_conversation_analyses_with_scope())
+    return run_async_in_celery(
+        backfill_missing_conversation_analyses_with_scope(),
+        timeout=9 * 60,
+        task_name="backfill_missing_conversation_analyses",
+    )
 
 
 async def backfill_missing_conversation_analyses_with_scope():
@@ -49,8 +52,11 @@ async def backfill_missing_conversation_analyses_async():
 
 @shared_task
 def cleanup_stale_conversations():
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(cleanup_stale_conversations_async_with_scope())
+    return run_async_in_celery(
+        cleanup_stale_conversations_async_with_scope(),
+        timeout=9 * 60,
+        task_name="cleanup_stale_conversations",
+    )
 
 
 async def cleanup_stale_conversations_async_with_scope():

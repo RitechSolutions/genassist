@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import { type CSSProperties, useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
-import { Transcript } from "@/interfaces/transcript.interface";
+import { BackendTranscript, Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 import { enrichConversationItem } from "@/views/ActiveConversations/pages/ActiveConversations";
@@ -63,6 +63,8 @@ import { format, subDays } from "date-fns";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
+import { apiRequest } from "@/config/api";
+import { PageListSkeleton } from "@/components/skeletons";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -263,6 +265,18 @@ const Transcripts = () => {
     navigate({ search: newSearchParams.toString() }, { replace: true });
   };
 
+  const handleConversationModalOpenChange = useCallback(
+    (open: boolean) => {
+      setIsModalOpen(open);
+      if (!open) {
+        const next = new URLSearchParams(location.search);
+        next.delete("conversation");
+        navigate({ search: next.toString() }, { replace: true });
+      }
+    },
+    [location.search, navigate]
+  );
+
   const handleStatusFilterChange = (value: string) => {
     const v = value as StatusFilter;
     setStatusFilter(v);
@@ -279,6 +293,56 @@ const Transcripts = () => {
   const isLiveTranscript = (transcript: Transcript) => {
     return transcript?.status === "in_progress" || transcript?.status === "takeover";
   };
+
+  const conversationDeepLinkId = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("conversation");
+    const id = raw?.trim();
+    return id || null;
+  }, [location.search]);
+
+  // Deep link: /transcripts?conversation=<id> (e.g. from notifications)
+  useEffect(() => {
+    if (!conversationDeepLinkId) return;
+
+    let cancelled = false;
+    const id = conversationDeepLinkId;
+
+    void (async () => {
+      try {
+        const backend = await apiRequest<BackendTranscript>(
+          "get",
+          `/conversations/${encodeURIComponent(id)}?include_feedback=true`
+        );
+        if (cancelled) return;
+        const transformed = transformTranscript(backend);
+        const live =
+          transformed?.status === "in_progress" ||
+          transformed?.status === "takeover";
+        setSelectedTranscript(transformed);
+        setIsLiveTranscriptSelected(live);
+        setIsModalOpen(true);
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Could not open conversation",
+            description:
+              "This conversation may not exist or you may not have access.",
+            variant: "destructive",
+          });
+          const next = new URLSearchParams(window.location.search);
+          next.delete("conversation");
+          navigate(
+            { pathname: location.pathname, search: next.toString() },
+            { replace: true }
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationDeepLinkId, location.pathname, navigate, toast]);
 
   const isCallTranscript = (transcript: Transcript) => {
     return Boolean(transcript?.recording_id) || Boolean(transcript?.metadata?.isCall);
@@ -423,6 +487,28 @@ const Transcripts = () => {
   };
 
   const activeSort = getSortLabel();
+
+  const hasNarrowingFilters = useMemo(
+    () =>
+      debouncedSearch.trim() !== "" ||
+      activeTab !== "all" ||
+      supportType !== "all" ||
+      statusFilter !== "all" ||
+      selectedAgentId !== "all" ||
+      activeQualityCount > 0 ||
+      activeCustomAttrCount > 0 ||
+      orderBy !== "",
+    [
+      debouncedSearch,
+      activeTab,
+      supportType,
+      statusFilter,
+      selectedAgentId,
+      activeQualityCount,
+      activeCustomAttrCount,
+      orderBy,
+    ]
+  );
 
   const handleRefreshConversations = () => {
     refetch();
@@ -903,9 +989,7 @@ const Transcripts = () => {
 
               <Card className="divide-y divide-gray-100 bg-white shadow-sm rounded-lg overflow-hidden">
                 {loading ? (
-                  <p className="text-center text-gray-500 p-6">
-                    Loading transcripts...
-                  </p>
+                  <PageListSkeleton variant="conversation" rows={6} bordered={false} />
                 ) : error ? (
                   <p className="text-center text-red-500 p-6">
                     Error loading transcripts. Please try again.
@@ -917,9 +1001,7 @@ const Transcripts = () => {
                     <div
                       key={transcript.id}
                       onClick={() => {
-                        setSelectedTranscript(transcript);
-                        setIsLiveTranscriptSelected(isLiveTranscript(transcript));
-                        setIsModalOpen(true);
+                        updateUrlParams({ conversation: transcript.id });
                       }}
                       className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
                     >
@@ -1044,9 +1126,21 @@ const Transcripts = () => {
                     );
                   })
                 ) : (
-                    <p className="text-center text-gray-500 p-6">
-                      No transcripts found. Try adjusting your filters.
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <div className="rounded-full bg-gray-100 p-4">
+                      <MessageSquare className="h-12 w-12 text-gray-400" />
+                    </div>
+                    <h3 className="font-medium text-lg">
+                      {hasNarrowingFilters
+                        ? "No conversations match your filters"
+                        : "No transcripts yet"}
+                    </h3>
+                    <p className="text-sm text-gray-500 max-w-sm px-4">
+                      {hasNarrowingFilters
+                        ? "Try adjusting your search or filters to see more results."
+                        : "Nothing in this view yet. Try a wider date range or different filters if you expected conversations here."}
                     </p>
+                  </div>
                 )}
               </Card>
 
@@ -1069,7 +1163,7 @@ const Transcripts = () => {
         <ActiveConversationDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
           refetchConversations={refetch}
           onTakeOver={handleTakeOver}
         />
@@ -1077,7 +1171,7 @@ const Transcripts = () => {
         <TranscriptDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
           agentName={
             selectedAgentId !== "all"
               ? agents.find((a) => a.id === selectedAgentId)?.name

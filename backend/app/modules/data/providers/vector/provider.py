@@ -58,16 +58,6 @@ class VectorProvider(BaseDataProvider):
                 logger.error("Failed to create vector database collection")
                 return False
 
-            # Set embedding function for ChromaDB if needed
-            if hasattr(self.vector_db, 'set_embedding_function'):
-                # Create a wrapper function for LangChain compatibility
-                async def embedding_function(texts):
-                    if isinstance(texts, str):
-                        return await self.embedder.embed_text(texts)
-                    return await self.embedder.embed_texts(texts)
-
-                self.vector_db.set_embedding_function(embedding_function)
-
             self._initialized = True
             logger.info("VectorProvider initialized successfully")
             return True
@@ -176,6 +166,22 @@ class VectorProvider(BaseDataProvider):
 
         except Exception as e:
             logger.error(f"Failed to delete document {doc_id}: {e}")
+            return False
+
+    async def delete_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (bulk delete).
+
+        This is used by GDPR purge flows to remove all embeddings for a
+        conversation/chat without needing to enumerate document IDs.
+        """
+        try:
+            if not self._initialized:
+                if not await self.initialize():
+                    return False
+            return await self.vector_db.delete_vectors_by_metadata(filter_dict)
+        except Exception as e:
+            logger.error(f"Failed to delete vectors by metadata {filter_dict}: {e}")
             return False
 
     async def search(

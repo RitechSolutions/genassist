@@ -16,6 +16,7 @@ class VerifyTokenRequest(BaseModel):
     api_key: Optional[str] = None
     required_permissions: list[str] = []
     tenant_id: str = "master"
+    conversation_id: Optional[str] = None
 
 
 class VerifyTokenResponse(BaseModel):

@@ -1,15 +1,19 @@
-import asyncio
 import logging
 
 from celery import shared_task
+
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task
 def aggregate_agent_analytics():
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(aggregate_agent_analytics_async_with_scope())
+    return run_async_in_celery(
+        aggregate_agent_analytics_async_with_scope(),
+        timeout=110 * 60,
+        task_name="aggregate_agent_analytics",
+    )
 
 
 async def aggregate_agent_analytics_async_with_scope():

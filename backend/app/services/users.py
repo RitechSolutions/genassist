@@ -41,6 +41,11 @@ class UserService:
         if existing_email:
             raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
 
+        if user.entra_oid:
+            existing_oid = await self.repository.get_by_entra_oid(user.entra_oid)
+            if existing_oid is not None:
+                raise AppException(error_key=ErrorKey.ENTRA_OID_IN_USE, status_code=409)
+
         user.password = get_password_hash(user.password)
         new_user = await self.repository.create(user)
         model = await self.repository.get_full(new_user.id)
@@ -132,12 +137,20 @@ class UserService:
         return full
 
     async def update(self, user_id: UUID, user_data: UserUpdate):
+        if user_data.role_ids is not None and len(user_data.role_ids) == 0:
+            raise AppException(error_key=ErrorKey.USER_ROLES_REQUIRED, status_code=400)
+
         if user_data.email is not None:
             existing = await self.repository.get_by_email(
                 user_data.email, include_deleted=True
             )
             if existing is not None and existing.id != user_id:
                 raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
+
+        if "entra_oid" in user_data.model_fields_set and user_data.entra_oid:
+            existing_oid = await self.repository.get_by_entra_oid(user_data.entra_oid)
+            if existing_oid is not None and existing_oid.id != user_id:
+                raise AppException(error_key=ErrorKey.ENTRA_OID_IN_USE, status_code=409)
 
         updated_user = await self.repository.update(user_id, user_data)
         await invalidate_user_cache(user_id)
@@ -150,3 +163,87 @@ class UserService:
         )
         await invalidate_user_cache(user_id)
         return updated_user
+
+    def _ensure_active_non_console_for_sso(self, user) -> None:
+        if not getattr(user, "is_active", None):
+            raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
+        ut = getattr(user, "user_type", None)
+        if ut and ut.name == "console":
+            raise AppException(error_key=ErrorKey.INVALID_USER_CONSOLE, status_code=401)
+
+    async def _allocate_unique_sso_username(self) -> str:
+        import secrets
+
+        for _ in range(24):
+            candidate = secrets.token_hex(4)
+            existing = await self.repository.get_by_username(candidate)
+            if not existing:
+                return candidate
+        raise AppException(error_key=ErrorKey.INTERNAL_SERVER_ERROR, status_code=500)
+
+    async def resolve_user_for_microsoft_sso(self, *, entra_oid: str, email: str | None):
+        from uuid import UUID as PyUUID
+
+        from app.core.config.settings import settings
+
+        user = await self.repository.get_by_entra_oid(entra_oid)
+        if user:
+            self._ensure_active_non_console_for_sso(user)
+            return user
+
+        if email:
+            by_email = await self.repository.get_by_email(email, include_deleted=False)
+            if by_email:
+                if by_email.entra_oid and by_email.entra_oid != entra_oid:
+                    raise AppException(
+                        error_key=ErrorKey.SSO_MICROSOFT_OAUTH_ERROR,
+                        status_code=403,
+                        error_detail="This email is already linked to another Microsoft account.",
+                    )
+                if not by_email.entra_oid:
+                    await self.repository.set_entra_oid_if_empty(by_email.id, entra_oid)
+                user = await self.repository.get_full(by_email.id)
+                if not user:
+                    raise AppException(error_key=ErrorKey.USER_NOT_FOUND, status_code=404)
+                self._ensure_active_non_console_for_sso(user)
+                return user
+
+        if not settings.SSO_MICROSOFT_AUTO_PROVISION:
+            raise AppException(error_key=ErrorKey.SSO_MICROSOFT_USER_DENIED, status_code=403)
+
+        if not settings.SSO_MICROSOFT_DEFAULT_USER_TYPE_ID or not settings.SSO_MICROSOFT_DEFAULT_ROLE_IDS:
+            raise AppException(error_key=ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED, status_code=500)
+
+        if not email:
+            raise AppException(error_key=ErrorKey.SSO_MICROSOFT_USER_DENIED, status_code=403)
+
+        role_ids = [
+            PyUUID(x.strip())
+            for x in settings.SSO_MICROSOFT_DEFAULT_ROLE_IDS.split(",")
+            if x.strip()
+        ]
+        user_type_id = PyUUID(settings.SSO_MICROSOFT_DEFAULT_USER_TYPE_ID.strip())
+        import secrets
+
+        pwd = get_password_hash(secrets.token_urlsafe(16)[:20])
+        username = await self._allocate_unique_sso_username()
+        try:
+            user = await self.repository.create_from_microsoft_sso(
+                username=username,
+                email=email,
+                hashed_password=pwd,
+                user_type_id=user_type_id,
+                role_ids=role_ids,
+                entra_oid=entra_oid,
+            )
+        except AppException as e:
+            if e.error_key == ErrorKey.SSO_MICROSOFT_OAUTH_ERROR:
+                raise AppException(
+                    error_key=ErrorKey.SSO_MICROSOFT_USER_DENIED,
+                    status_code=403,
+                    error_detail="Could not create your GenAssist profile (duplicate email or username).",
+                ) from e
+            raise
+        await invalidate_user_cache(user.id)
+        self._ensure_active_non_console_for_sso(user)
+        return user

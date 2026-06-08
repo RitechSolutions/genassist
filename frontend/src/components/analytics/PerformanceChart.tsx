@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/card";
+import { cn } from "@/helpers/utils";
+import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
+import { PerformanceTrendChartEmptyState } from "@/views/Analytics/components/AnalyticsEmptyStates";
+import { analyticsFadeUpClass } from "@/views/Analytics/constants/animations";
 import { Area, AreaChart, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { fetchMetricsDaily, type DailyMetricsItem } from "@/services/metrics";
 import { toMetricsApiParams } from "@/helpers/analyticsParams";
@@ -16,6 +20,7 @@ type ChartRow = {
 interface PerformanceChartProps {
   dateRange?: DateRange;
   agentId?: string;
+  groupId?: string;
 }
 
 const LABELS: Record<string, string> = {
@@ -47,14 +52,14 @@ function toChartRows(items: DailyMetricsItem[]): ChartRow[] {
   }));
 }
 
-export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) => {
+export const PerformanceChart = ({ dateRange, agentId, groupId }: PerformanceChartProps) => {
   const [data, setData] = useState<ChartRow[]>([]);
   const [loading, setLoading] = useState(true);
   const fetchIdRef = useRef(0);
 
   useEffect(() => {
     const fetchId = ++fetchIdRef.current;
-    const params = toMetricsApiParams(dateRange, agentId);
+    const params = toMetricsApiParams(dateRange, agentId, groupId);
 
     const load = async () => {
       setLoading(true);
@@ -74,15 +79,21 @@ export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) 
     };
 
     load();
-  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId]);
+  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId, groupId]);
+
+  if (loading && data.length === 0) {
+    return <AnalyticsChartCardSkeleton variant="area" />;
+  }
 
   return (
-    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
+    <Card className={cn("bg-white p-4 shadow-sm sm:p-6", analyticsFadeUpClass)}>
       <h2 className="text-base sm:text-lg font-semibold mb-4">Daily Performance Trend</h2>
-      <div className={`h-[300px] sm:h-[400px] w-full transition-opacity duration-200 ${loading ? "opacity-60" : ""}`}>
+      <div
+        className={`h-[300px] sm:h-[400px] w-full transition-opacity duration-200 ${loading ? "opacity-60" : ""}`}
+      >
         {data.length === 0 && !loading ? (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-            No data available for the selected period.
+          <div className="flex h-full min-h-[240px] items-center justify-center sm:min-h-[300px]">
+            <PerformanceTrendChartEmptyState />
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
