@@ -60,6 +60,7 @@ import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import { DateRangePicker } from "@/components/date-range-picker";
 import type { DateRange } from "react-day-picker";
 import { format, subDays } from "date-fns";
+import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
@@ -153,7 +154,7 @@ const Transcripts = () => {
     return "all";
   };
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initStatusFilter);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
     to: new Date(),
   });

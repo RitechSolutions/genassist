@@ -20,7 +20,7 @@ import {
 } from "@/interfaces/ai-agent.interface";
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
-import { getApiKeys, getApiKey } from "@/services/apiKeys";
+import { getApiKeys, revealApiKey } from "@/services/apiKeys";
 import { AxiosError } from "axios";
 import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 
@@ -691,7 +691,7 @@ export async function getAgentIntegrationKey(agentId: string): Promise<string> {
     throw new Error("No active API key found for this agent");
   }
 
-  const fullKey = await getApiKey(active.id);
+  const fullKey = await revealApiKey(active.id);
   if (!fullKey?.key_val) {
     throw new Error("API key value missing");
   }

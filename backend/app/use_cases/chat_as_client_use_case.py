@@ -30,6 +30,7 @@ from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.file_manager import FileManagerService
 from app.services.realtime_notifications import (
     emit_notification,
+    conversation_started_notification_description,
     notification_payload,
     transcript_conversation_notification_url,
 )
@@ -295,6 +296,9 @@ async def process_conversation_update_with_agent(
                 action_url=transcript_conversation_notification_url(updated_conversation.id),
                 timestamp=updated_conversation.updated_at,
                 group_id=getattr(updated_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=updated_conversation.id,
+                event_key=f"conversation_hostility:{updated_conversation.id}",
             ),
         )
 
@@ -365,11 +369,16 @@ async def get_or_create_conversation(
             payload=notification_payload(
                 notification_id=f"conversation_started:{open_conversation.id}",
                 title="Conversation Started",
-                description=f"A new conversation started (ID: {str(open_conversation.id)[:8]}...).",
+                description=conversation_started_notification_description(
+                    open_conversation.id
+                ),
                 level="info",
                 action_url=transcript_conversation_notification_url(open_conversation.id),
                 timestamp=open_conversation.created_at,
                 group_id=getattr(open_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=open_conversation.id,
+                event_key=f"conversation_started:{open_conversation.id}",
             ),
         )
 

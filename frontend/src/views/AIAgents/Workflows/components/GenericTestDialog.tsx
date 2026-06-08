@@ -10,7 +10,7 @@ import { Button } from "@/components/button";
 import { Play, X } from "lucide-react";
 import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
 import { testNode } from "@/services/workflows";
-import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput, isWorkflowContextVariable, buildWorkflowContextInput, hasWorkflowContextData } from "../utils/helpers";
+import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import { useAudioTest } from "../hooks/useAudioTest";
@@ -102,11 +102,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         // ignore
       }
 
-      // Filter out stateful parameters, conversation_history, and workflow context bindings
+      // Filter out stateful parameters and conversation_history from variables
       const filteredVariables = variables.filter((v) => {
-        if (isWorkflowContextVariable(v)) {
-          return false;
-        }
         // Check if this variable is a stateful parameter in inputSchema
         if ("inputSchema" in nodeData && nodeData.inputSchema) {
           const schema = nodeData.inputSchema[v];
@@ -291,9 +288,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
     try {
       // Parse input values based on their schema types
-      const parsedData: Record<string, unknown> = {
-        ...buildWorkflowContextInput(availableData),
-      };
+      const parsedData: Record<string, unknown> = {};
 
       // For STT nodes, pass structured audio dict
       if (isSTTNode) {
@@ -441,7 +436,6 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
                 formData={formData}
                 fieldTypes={fieldTypes}
                 availableData={availableData}
-                hasWorkflowContext={hasWorkflowContextData(availableData)}
                 isLoading={isLoading}
                 onInputChange={handleInputChange}
                 onTypeChange={handleTypeChange}
