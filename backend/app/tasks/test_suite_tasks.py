@@ -53,6 +53,9 @@ async def _execute_test_suite_run_async(
                 description=f"Test run {str(run_id)[:8]}... failed.",
                 level="error",
                 action_url="/tests/evaluations",
+                entity_kind="test_run",
+                entity_id=run_id,
+                event_key=f"workflow_failed:test:{run_id}",
             ),
         )
         return

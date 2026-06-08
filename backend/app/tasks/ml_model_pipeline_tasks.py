@@ -199,6 +199,9 @@ async def execute_pipeline_run_async(run_id: UUID):
                             description=f"Pipeline run {str(run_id)[:8]}... failed.",
                             level="error",
                             action_url="/ml-models",
+                            entity_kind="pipeline_run",
+                            entity_id=run_id,
+                            event_key=f"workflow_failed:pipeline:{run_id}",
                         ),
                     )
                 except AppException as update_error:

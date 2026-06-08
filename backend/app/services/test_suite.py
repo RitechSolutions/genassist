@@ -593,6 +593,9 @@ class TestSuiteService:
                     description=f"Test run {str(run.id)[:8]}... failed.",
                     level="error",
                     action_url="/tests/evaluations",
+                    entity_kind="test_run",
+                    entity_id=run.id,
+                    event_key=f"workflow_failed:test:{run.id}",
                 ),
             )
             return

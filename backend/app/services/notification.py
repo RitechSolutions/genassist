@@ -38,12 +38,12 @@ class NotificationService:
         *,
         type_key: str,
         notification_types: dict[str, NotificationTypeModel],
-        user_setting_by_type_id: dict[UUID, bool],
+        user_setting_by_type_key: dict[str, bool],
     ) -> bool:
         notification_type = notification_types[type_key]
         if notification_type.is_tenant:
             return bool(notification_type.is_enabled)
-        return user_setting_by_type_id.get(notification_type.id, True)
+        return user_setting_by_type_key.get(type_key, True)
 
     async def get_user_settings(
         self,
@@ -53,10 +53,7 @@ class NotificationService:
         supervised_group_ids: list[UUID] | None = None,
     ) -> NotificationUserSettingsRead:
         notification_types = await self.repo.ensure_notification_types()
-        user_rows = await self.repo.list_user_notification_settings(user_id)
-        user_setting_by_type_id = {
-            row.notification_type_id: row.is_enabled for row in user_rows
-        }
+        user_setting_by_type_key = await self.repo.list_user_notification_settings(user_id)
 
         workflow_type = notification_types[TYPE_WORKFLOW_FAILED]
         workflow_manageable = current_user_is_admin() and workflow_type.is_tenant
@@ -75,7 +72,7 @@ class NotificationService:
             return self._user_setting_value(
                 type_key=type_key,
                 notification_types=notification_types,
-                user_setting_by_type_id=user_setting_by_type_id,
+                user_setting_by_type_key=user_setting_by_type_key,
             )
 
         return NotificationUserSettingsRead(
@@ -123,7 +120,7 @@ class NotificationService:
             else:
                 await self.repo.upsert_user_notification_setting(
                     user_id=user_id,
-                    notification_type_id=notification_type.id,
+                    type_key=type_key,
                     is_enabled=bool(field_value),
                 )
 
