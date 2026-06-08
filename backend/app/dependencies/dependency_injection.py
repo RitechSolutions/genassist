@@ -35,7 +35,7 @@ from app.repositories.audio_providers import AudioProviderRepository
 from app.repositories.llm_providers import LlmProviderRepository
 from app.repositories.operator_statistics import OperatorStatisticsRepository
 from app.repositories.operators import OperatorRepository
-from app.repositories.notification import NotificationRepository
+from app.repositories.notification import NotificationRepository, PersistedNotificationRepository
 from app.repositories.permissions import PermissionsRepository
 from app.repositories.recordings import RecordingsRepository
 from app.repositories.role_permissions import RolePermissionsRepository
@@ -75,6 +75,7 @@ from app.services.local_fine_tuning import LocalFineTuningService
 from app.services.operator_statistics import OperatorStatisticsService
 from app.services.operators import OperatorService
 from app.services.notification_feed import NotificationFeedService
+from app.services.notification_orchestrator import NotificationOrchestratorService
 from app.services.notification import NotificationService
 from app.services.permissions import PermissionsService
 from app.services.role_permissions import RolePermissionsService
@@ -200,7 +201,9 @@ class Dependencies(Module):
         binder.bind(OperatorStatisticsService, scope=request_scope)
         binder.bind(OperatorStatisticsRepository, scope=request_scope)
         binder.bind(NotificationRepository, scope=request_scope)
+        binder.bind(PersistedNotificationRepository, scope=request_scope)
         binder.bind(NotificationService, scope=request_scope)
+        binder.bind(NotificationOrchestratorService, scope=request_scope)
         binder.bind(NotificationFeedService, scope=request_scope)
 
         binder.bind(AgentRepository, scope=request_scope)
