@@ -5,9 +5,11 @@ import { Button } from "@/components/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover"
 import { ScrollArea } from "@/components/scroll-area"
 import { formatTimeAgo } from "@/helpers/formatters"
+import { formatNotificationDescription } from "@/helpers/notificationDisplay"
 import { useNotifications } from "@/hooks/useNotifications"
 import { Notification } from "@/interfaces/notification.interface"
 import { cn } from "@/helpers/utils"
+import { EmptyNotificationsState } from "@/views/Notifications/components/EmptyNotificationsState"
 
 type NotificationBellPopoverProps = {
   maxItems?: number
@@ -38,31 +40,12 @@ const notificationTypeStyle: Record<
   },
 }
 
-function getConversationShortId(notification: Notification): string | null {
-  if (!notification.id.startsWith("conversation_")) return null
-  const parts = notification.id.split(":")
-  const rawId = parts[parts.length - 1] ?? ""
-  if (!rawId) return null
-  return `#${rawId.slice(-4)}`
-}
-
 function formatNotificationTimestamp(timestamp: string): string {
   try {
     return formatTimeAgo(timestamp)
   } catch {
     return timestamp
   }
-}
-
-function formatNotificationDescription(
-  notification: Notification,
-  conversationShortId: string | null
-): string {
-  if (!conversationShortId) return notification.description
-
-  return notification.description
-    .replace(/\(ID:\s*[^)]+\)/gi, `(${conversationShortId})`)
-    .replace(/Conversation\s+[a-f0-9-]+\.{3}/gi, `Conversation ${conversationShortId}`)
 }
 
 export function NotificationBellPopover({
@@ -114,20 +97,24 @@ export function NotificationBellPopover({
         </div>
 
         <ScrollArea className="h-[320px] max-w-full">
+          {previewItems.length === 0 ? (
+            <div className="flex min-h-[320px] items-center justify-center">
+              <EmptyNotificationsState
+                compact
+                title="No notifications yet"
+                description="When there is activity you follow—such as new conversations, high hostility alerts, or workflow issues—it will show up here."
+                primaryAction={{
+                  label: "Notification preferences",
+                  to: "/settings/notifications",
+                }}
+              />
+            </div>
+          ) : (
           <div className="min-w-0 max-w-full px-2 pt-1 pb-1">
-            {previewItems.length === 0 ? (
-              <p className="px-2 py-4 text-center text-sm text-zinc-500">
-                No notifications yet.
-              </p>
-            ) : (
-              previewItems.map((notification) => {
+              {previewItems.map((notification) => {
                 const typeMeta = notificationTypeStyle[notification.type]
                 const TypeIcon = typeMeta.icon
-                const conversationShortId = getConversationShortId(notification)
-                const formattedDescription = formatNotificationDescription(
-                  notification,
-                  conversationShortId
-                )
+                const formattedDescription = formatNotificationDescription(notification)
 
                 return (
                   <Link
@@ -139,7 +126,7 @@ export function NotificationBellPopover({
                       }
                     }}
                     className={cn(
-                      "relative mb-1 block max-w-full min-w-0 border-b border-zinc-100 px-2 py-3 transition-colors hover:bg-zinc-50 last:mb-0",
+                      "relative mb-1 block max-w-full min-w-0 border-b border-zinc-100 px-2 py-3 transition-colors hover:bg-zinc-50 last:mb-0 last:border-b-0",
                       !notification.read && "rounded-md bg-blue-100/70 pr-14"
                     )}
                   >
@@ -157,7 +144,6 @@ export function NotificationBellPopover({
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <p className="break-words text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">
                         {notification.title}
-                        {conversationShortId ? ` ${conversationShortId}` : ""}
                       </p>
                       <p className="mt-0.5 break-words text-xs text-zinc-500 line-clamp-3 [overflow-wrap:anywhere]">
                         {formattedDescription}
@@ -169,9 +155,9 @@ export function NotificationBellPopover({
                   </div>
                   </Link>
                 )
-              })
-            )}
+              })}
           </div>
+          )}
         </ScrollArea>
 
         <div className="border-t px-3 py-2">
