@@ -23,6 +23,7 @@ import { analyticsFadeUpClass } from "../constants/animations";
 import { NodeAnalyticsTableEmptyState } from "../components/AnalyticsEmptyStates";
 import { NodeAnalyticsPageSkeleton } from "../components/skeletons";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
+import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { fetchNodeDailyStats } from "@/services/analyticsReports";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
@@ -40,7 +41,7 @@ interface AgentNodeBreakdown {
 }
 
 const NodeAnalyticsPage = () => {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
