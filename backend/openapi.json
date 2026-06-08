@@ -1796,7 +1796,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeyCreateRead"
                 }
               }
             }
@@ -1963,7 +1963,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ApiKeyRead"
+                    "$ref": "#/components/schemas/ApiKeySafeRead"
                   },
                   "title": "Response Get All Api Api Keys Get"
                 }
@@ -2017,7 +2017,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeySafeRead"
                 }
               }
             }
@@ -2125,7 +2125,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeySafeRead"
                 }
               }
             }
@@ -2188,7 +2188,59 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeyCreateRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/{api_key_id}/reveal": {
+      "post": {
+        "tags": [
+          "v1",
+          "ApiKeys"
+        ],
+        "summary": "Reveal Api Key",
+        "operationId": "reveal_api_key_api_api_keys__api_key_id__reveal_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Api Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreateRead"
                 }
               }
             }
@@ -23172,7 +23224,7 @@
         ],
         "title": "ApiKeyCreate"
       },
-      "ApiKeyRead": {
+      "ApiKeyCreateRead": {
         "properties": {
           "name": {
             "type": "string",
@@ -23235,9 +23287,137 @@
             "title": "Roles",
             "default": []
           },
+          "previous_hashed_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Hashed Expires At",
+            "description": "When set, the prior secret is accepted for API auth until this time (UTC)."
+          },
+          "credential_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expires At",
+            "description": "When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC)."
+          },
+          "credential_expiry_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expiry Days",
+            "description": "Stored expiry selection in days (30/90/180/365). Null means Never."
+          },
           "key_val": {
             "type": "string",
             "title": "Key Val"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "created_at",
+          "updated_at",
+          "user_id",
+          "key_val"
+        ],
+        "title": "ApiKeyCreateRead"
+      },
+      "ApiKeyRotate": {
+        "properties": {
+          "overlap_seconds": {
+            "type": "integer",
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Overlap Seconds",
+            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyRotate",
+        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
+      },
+      "ApiKeySafeRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 4,
+            "title": "Name",
+            "description": "API key name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Is the key active (0/1)",
+            "default": 1
+          },
+          "assigned_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Id",
+            "description": "User id to assign this api key to an AI agent."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRead"
+            },
+            "type": "array",
+            "title": "Roles",
+            "default": []
           },
           "previous_hashed_expires_at": {
             "anyOf": [
@@ -23284,25 +23464,9 @@
           "id",
           "created_at",
           "updated_at",
-          "user_id",
-          "key_val"
+          "user_id"
         ],
-        "title": "ApiKeyRead"
-      },
-      "ApiKeyRotate": {
-        "properties": {
-          "overlap_seconds": {
-            "type": "integer",
-            "maximum": 604800.0,
-            "minimum": 0.0,
-            "title": "Overlap Seconds",
-            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
-            "default": 0
-          }
-        },
-        "type": "object",
-        "title": "ApiKeyRotate",
-        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
+        "title": "ApiKeySafeRead"
       },
       "ApiKeyUpdate": {
         "properties": {

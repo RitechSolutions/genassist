@@ -107,6 +107,12 @@ export const rotateApiKey = async (
   return response;
 };
 
+export const revealApiKey = async (id: string): Promise<ApiKey> => {
+  const response = await apiRequest<ApiKey>("POST", `api-keys/${id}/reveal`);
+  if (!response) throw new Error("Failed to reveal API key");
+  return response;
+};
+
 export const getApiKeys = async (userId?: string): Promise<ApiKey[]> => {
   let url = "api-keys/";
 

@@ -8,6 +8,8 @@ import {
   Pencil,
   Coins,
   Megaphone,
+  Share2,
+  Check,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
@@ -244,6 +246,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const isCall = isCallTranscript(localTranscript);
   const { toast } = useToast();
+  const [linkCopied, setLinkCopied] = useState(false);
   const { agentNameMap } = useAgentsList();
 
   const headerAgentName = useMemo(() => {
@@ -518,6 +521,22 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                   </span>
                 </div>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`ml-auto h-7 w-7 p-0 transition-colors ${linkCopied ? 'text-green-600' : ''}`}
+                title="Copy share link"
+                disabled={linkCopied}
+                onClick={async () => {
+                  const url = `${window.location.origin}/transcripts?conversation=${localTranscript?.id}`;
+                  await navigator.clipboard.writeText(url);
+                  setLinkCopied(true);
+                  toast({ title: 'Link copied to clipboard', description: 'Anyone with this link can open the conversation.' });
+                  setTimeout(() => setLinkCopied(false), 2000);
+                }}
+              >
+                {linkCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+              </Button>
             </span>
             {headerAgentName ? (
               <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground pr-10">
