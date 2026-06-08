@@ -22,6 +22,7 @@ class ApiKeyPermissions:
     """API Key CRUD permissions"""
     CREATE = "create:api_key"
     READ = "read:api_key"
+    DECRYPT = "decrypt:api_key"
     UPDATE = "update:api_key"
     DELETE = "delete:api_key"
 
