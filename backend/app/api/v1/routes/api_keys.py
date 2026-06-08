@@ -4,13 +4,13 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
-from app.schemas.api_key import ApiKeyRead, ApiKeyCreate, ApiKeyRotate, ApiKeyUpdate
+from app.schemas.api_key import ApiKeyCreateRead, ApiKeySafeRead, ApiKeyCreate, ApiKeyRotate, ApiKeyUpdate
 from app.schemas.filter import ApiKeysFilter
 from app.services.api_keys import ApiKeysService
 
 router = APIRouter()
 
-@router.post("", response_model=ApiKeyRead, dependencies=[
+@router.post("", response_model=ApiKeyCreateRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.ApiKey.CREATE))
 ])
@@ -21,14 +21,14 @@ async def create(api_key: ApiKeyCreate, service: ApiKeysService = Injected(ApiKe
     """
     return await service.create(api_key)
 
-@router.get("", response_model=list[ApiKeyRead], dependencies=[
+@router.get("", response_model=list[ApiKeySafeRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.ApiKey.READ))
 ])
 async def get_all(api_keys_filter: ApiKeysFilter = Depends(), service: ApiKeysService = Injected(ApiKeysService)):
     return await service.get_all(api_keys_filter)
 
-@router.get("/{api_key_id}", response_model=ApiKeyRead, dependencies=[
+@router.get("/{api_key_id}", response_model=ApiKeySafeRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.ApiKey.READ))
 ])
@@ -43,7 +43,7 @@ async def delete(api_key_id: UUID, service: ApiKeysService = Injected(ApiKeysSer
      await service.delete(api_key_id)
      return {"message": f"API key with id: {api_key_id} deleted successfully"}
 
-@router.patch("/{api_key_id}", response_model=ApiKeyRead, dependencies=[
+@router.patch("/{api_key_id}", response_model=ApiKeySafeRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.ApiKey.UPDATE))
 ])
@@ -54,7 +54,7 @@ async def update(request: Request, api_key_id: UUID, api_key_data: ApiKeyUpdate,
 
 @router.post(
     "/{api_key_id}/rotate",
-    response_model=ApiKeyRead,
+    response_model=ApiKeyCreateRead,
     dependencies=[
         Depends(auth),
         Depends(permissions(P.ApiKey.UPDATE)),
@@ -70,3 +70,18 @@ async def rotate_api_key(
     overlap window to support agent and integration cutovers.
     """
     return await service.rotate(api_key_id, body)
+
+
+@router.post(
+    "/{api_key_id}/reveal",
+    response_model=ApiKeyCreateRead,
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.ApiKey.DECRYPT)),
+    ],
+)
+async def reveal_api_key(
+    api_key_id: UUID,
+    service: ApiKeysService = Injected(ApiKeysService),
+):
+    return await service.reveal(api_key_id)

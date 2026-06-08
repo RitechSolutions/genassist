@@ -206,7 +206,7 @@ export function ApiKeyDialog({
                         : maskInput(generatedKey || "")
                     }
                     readOnly
-                    className="w-full z-10"
+                    className="w-full z-10 pr-20"
                   />
                   <div className="absolute right-2 flex gap-1 elevation-1 z-20">
                     <Button

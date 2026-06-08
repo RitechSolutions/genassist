@@ -71,8 +71,8 @@ export function ApiKeyDialogLogic({
           setSelectedRoles(
             apiKeyToEdit.roles?.map((r) => r.id) || apiKeyToEdit.role_ids || []
           );
-          setGeneratedKey(apiKeyToEdit.key_val);
-          setHasGeneratedKey(true);
+          setGeneratedKey(null);
+          setHasGeneratedKey(false);
           setExpiryPreset(inferPresetFromApiKey(apiKeyToEdit));
         } else {
           setDialogMode("create");
