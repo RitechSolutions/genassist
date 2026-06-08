@@ -14,7 +14,7 @@ export const CONVERSATION_FINALIZED_HOSTILITY_SETTING_KEY =
   "conversationFinalizedHostility"
 export const WORKFLOW_FAILED_SETTING_KEY = "workflowFailed"
 
-const DEFAULT_NOTIFICATION_USER_SETTINGS: NotificationUserSettings = {
+export const DEFAULT_NOTIFICATION_USER_SETTINGS: NotificationUserSettings = {
   conversationStarted: true,
   conversationHostility: true,
   conversationFinalizedHostility: true,

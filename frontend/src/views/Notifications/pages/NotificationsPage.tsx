@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar"
 import { AppSidebar } from "@/layout/app-sidebar"
 import { useIsMobile } from "@/hooks/useMobile"
 import { Button } from "@/components/button"
 import { Card } from "@/components/card"
-import { Bell, Check, Loader2, Settings2 } from "lucide-react"
+import { Check, Loader2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs"
 import {
   Select,
@@ -17,7 +17,9 @@ import {
 import { useNotificationsInfinite } from "@/hooks/useNotifications"
 import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
 import { type NotificationTypeFilter } from "@/services/dashboard"
+import { EmptyNotificationsState } from "../components/EmptyNotificationsState"
 import { NotificationCard } from "../components/NotificationCard"
+import { getAllUserGroups } from "@/services/userGroups"
 
 type ConversationTypeFilter = Exclude<NotificationTypeFilter, "all">
 
@@ -43,39 +45,13 @@ const CONVERSATION_TYPE_FILTER_OPTIONS: Array<{
   },
 ]
 
-const EmptyNotificationsState = ({
-  title,
-  description,
-  primaryAction,
-}: {
-  title: string
-  description: string
-  primaryAction?: { label: string; to: string }
-}) => (
-  <div className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
-    <div className="rounded-full bg-muted p-4">
-      <Bell className="h-12 w-12 text-muted-foreground" />
-    </div>
-    <h3 className="text-lg font-medium text-foreground">{title}</h3>
-    <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
-    {primaryAction ? (
-      <Button asChild className="rounded-full">
-        <Link
-          to={primaryAction.to}
-          className="inline-flex items-center gap-2"
-        >
-          <Settings2 className="h-4 w-4 shrink-0" />
-          {primaryAction.label}
-        </Link>
-      </Button>
-    ) : null}
-  </div>
-)
-
 const NotificationsPage = () => {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState("all")
   const [typeFilter, setTypeFilter] = useState<NotificationTypeFilter>("all")
+  const [levelFilter, setLevelFilter] = useState<
+    "all" | "info" | "success" | "warning" | "error"
+  >("all")
   const allSentinelRef = useRef<HTMLDivElement>(null)
   const unreadSentinelRef = useRef<HTMLDivElement>(null)
   const { settings } = useNotificationUserSettings()
@@ -106,7 +82,16 @@ const NotificationsPage = () => {
     fetchNextPage,
     isFetchingNextPage,
     isLoading,
-  } = useNotificationsInfinite({ typeFilter })
+  } = useNotificationsInfinite({ typeFilter, levelFilter })
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ["user-groups-all"],
+    queryFn: () => getAllUserGroups(),
+  })
+  const groupNameById = useMemo(
+    () => Object.fromEntries(groups.map((g) => [g.id, g.name])),
+    [groups]
+  )
 
   const filteredNotifications = notifications
 
@@ -160,6 +145,23 @@ const NotificationsPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-4">
+                <Select
+                  value={levelFilter}
+                  onValueChange={(value) =>
+                    setLevelFilter(value as "all" | "info" | "success" | "warning" | "error")
+                  }
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="All levels" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All levels</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select
                   value={typeFilter}
                   onValueChange={(value) =>
@@ -218,6 +220,7 @@ const NotificationsPage = () => {
                         <NotificationCard
                           key={notification.id}
                           notification={notification}
+                          groupName={notification.groupId ? groupNameById[notification.groupId] : undefined}
                           onMarkRead={markAsRead}
                         />
                       ))}
@@ -259,6 +262,7 @@ const NotificationsPage = () => {
                         <NotificationCard
                           key={notification.id}
                           notification={notification}
+                          groupName={notification.groupId ? groupNameById[notification.groupId] : undefined}
                           onMarkRead={markAsRead}
                         />
                       ))}
