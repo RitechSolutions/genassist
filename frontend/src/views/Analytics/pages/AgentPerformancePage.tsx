@@ -26,6 +26,7 @@ import {
 import { AgentPerformancePageSkeleton } from "../components/skeletons";
 import { cn } from "@/helpers/utils";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
+import { usePersistedDateRange, COMPARE_DATE_RANGE_STORAGE_KEY } from "@/hooks/usePersistedDateRange";
 import {
   fetchAgentStatsSummary,
   fetchAgentDailyStats,
@@ -68,11 +69,14 @@ interface AgentAggregated {
 }
 
 const AgentPerformancePage = () => {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
+  const [compareDateRange, setCompareDateRange] = usePersistedDateRange(
+    undefined,
+    COMPARE_DATE_RANGE_STORAGE_KEY,
+  );
 
   const {
     groups,
