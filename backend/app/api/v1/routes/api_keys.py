@@ -77,7 +77,7 @@ async def rotate_api_key(
     response_model=ApiKeyCreateRead,
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.ApiKey.READ)),
+        Depends(permissions(P.ApiKey.DECRYPT)),
     ],
 )
 async def reveal_api_key(
