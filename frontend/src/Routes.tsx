@@ -3,7 +3,7 @@ import { Outlet, RouterProvider } from "react-router-dom";
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
-import { ChangePassword, Login } from "@/views/Login";
+import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
 import Index from "@/views/Index";
 import Transcripts from "./views/Transcripts";
 import Operators from "./views/Operators";
@@ -16,6 +16,7 @@ import NotFound from "@/views/NotFound";
 import Roles from "@/views/Roles/pages/Roles";
 import UserGroups from "@/views/UserGroups/Index";
 import Users from "./views/Users/Index";
+import GdprConversations from "./views/GdprConversations/Index";
 import UserTypes from "./views/UserTypes/pages/UserTypes";
 import ApiKeys from "./views/ApiKeys/pages/ApiKeys";
 import AppSettings from "./views/AppSettings/Index";
@@ -25,6 +26,7 @@ import AuditLogs from "@/views/AuditLogs";
 import Unauthorized from "@/views/Unauthorized";
 import LlmAnalyst from "@/views/LlmAnalyst/Index";
 import LLMProviders from "@/views/LlmProviders/Index";
+import AudioProviders from "@/views/AudioProviders/Index";
 import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
 import LocalFineTune from "@/views/LocalFineTune/Index";
@@ -35,11 +37,13 @@ import KnowledgeBase from "@/views/KnowledgeBase/Index";
 import KnowledgeBaseForm from "@/views/KnowledgeBase/pages/KnowledgeBaseForm";
 import MLModels from "@/views/MLModels/Index";
 import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
-import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
+import { FeatureFlags as FeatureFlagsPage } from "./views/Settings/pages/FeatureFlags";
 import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
 import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
-import { useFeatureFlag } from "./context/FeatureFlagContext";
+import { NotificationsSettings } from "./views/Settings/pages/Notifications";
+import { FeatureFlags as FeatureFlagKeys } from "@/config/featureFlags";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
 import { useServerStatus } from "@/context/ServerStatusContext";
@@ -62,26 +66,22 @@ import { WebSocketDashboardProvider } from "@/context/WebSocketDashboardContext"
 const getAccessToken = () =>
   typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
 
-const WebSocketDashboardLayout = ({ children }: { children: ReactNode }) => (
-  <WebSocketDashboardProvider token={getAccessToken()}>
-    {children}
-  </WebSocketDashboardProvider>
-);
-
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
   const isDown = isOffline || status.down;
 
   return (
     <ProtectedRoute>
-      {isDown ? (
-        <ServerDownPage />
-      ) : (
-        <>
-          <Outlet />
-          <GlobalChat />
-        </>
-      )}
+      <WebSocketDashboardProvider token={getAccessToken()}>
+        {isDown ? (
+          <ServerDownPage />
+        ) : (
+          <>
+            <Outlet />
+            <GlobalChat />
+          </>
+        )}
+      </WebSocketDashboardProvider>
     </ProtectedRoute>
   );
 };
@@ -89,7 +89,9 @@ const ProtectedLayout = () => {
 export type RegistrationStatus = "loading" | "new" | "existing";
 
 export const RoutesProvider = () => {
-  const { isEnabled } = useFeatureFlag();
+  const showLocalFineTune = useFeatureFlagVisible(
+    FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
+  );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
   const [skipOnboarding, setSkipOnboarding] = useState(false);
@@ -132,23 +134,12 @@ export const RoutesProvider = () => {
           element: <ProtectedLayout />,
           children: [
             { path: "", element: <Navigate to="/dashboard" replace /> },
-            {
-              path: "dashboard",
-              element: (
-                <WebSocketDashboardLayout>
-                  <Index />
-                </WebSocketDashboardLayout>
-              ),
-            },
+            { path: "dashboard", element: <Index /> },
             {
               path: "transcripts",
               element: (
-                <ProtectedRoute
-                  requiredPermissions={["read:conversation"]}
-                >
-                  <WebSocketDashboardLayout>
-                    <Transcripts />
-                  </WebSocketDashboardLayout>
+                <ProtectedRoute requiredPermissions={["read:conversation"]}>
+                  <Transcripts />
                 </ProtectedRoute>
               ),
             },
@@ -161,7 +152,7 @@ export const RoutesProvider = () => {
               ),
             },
             {
-              path: "analytics",
+              path: "analytics/ai-insights",
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
                   <Analytics />
@@ -196,7 +187,7 @@ export const RoutesProvider = () => {
               path: "settings/feature-flags",
               element: (
                 <ProtectedRoute requiredPermissions={["read:feature_flag"]}>
-                  <FeatureFlags />
+                  <FeatureFlagsPage />
                 </ProtectedRoute>
               ),
             },
@@ -225,6 +216,10 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "settings/notifications",
+              element: <NotificationsSettings />,
+            },
+            {
               path: "users",
               element: (
                 <ProtectedRoute requiredPermissions={["read:user"]}>
@@ -249,6 +244,14 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "admin/gdpr-conversations",
+              element: (
+                <ProtectedRoute requiredPermissions={["delete:conversation:gdpr"]}>
+                  <GdprConversations />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "llm-analyst",
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
@@ -261,6 +264,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
                   <LLMProviders />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "audio-providers",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
+                  <AudioProviders />
                 </ProtectedRoute>
               ),
             },
@@ -283,17 +294,25 @@ export const RoutesProvider = () => {
             {
               path: "local-fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
-                  <LocalFineTune />
-                </ProtectedRoute>
+                showLocalFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                    <LocalFineTune />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
               path: "local-fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
-                  <LocalFineTuneJobDetail />
-                </ProtectedRoute>
+                showLocalFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                    <LocalFineTuneJobDetail />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
@@ -481,6 +500,7 @@ export const RoutesProvider = () => {
           ],
         },
         { path: "login", element: (<><ServerStatusBanner /><Login /></>) },
+        { path: "login/sso-callback", element: (<><ServerStatusBanner /><LoginSsoCallback /></>) },
         { path: "register", element: <Register /> },
         { path: "privacy", element: <Privacy /> },
         {
@@ -491,7 +511,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [isEnabled],
+    [showLocalFineTune],
   );
 
   const organizationRouter = useMemo(

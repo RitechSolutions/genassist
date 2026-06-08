@@ -118,3 +118,17 @@ export const createWorkflowFromWizard = (payload: WorkflowWizardPayload) =>
     "workflow-manager/config/from-wizard",
     payload as unknown as Record<string, unknown>
   );
+
+export interface WorkflowBuilderPayload {
+  workflow_name: string;
+  workflow_json: string;
+  workflow_description?: string;
+}
+
+// Create a workflow from the enhanced builder format (supports branching, tool connections, config overrides)
+export const createWorkflowFromBuilder = (payload: WorkflowBuilderPayload) =>
+  apiRequest<WorkflowWizardResponse>(
+    "POST",
+    "workflow-builder/config/from-builder",
+    payload as unknown as Record<string, unknown>
+  );

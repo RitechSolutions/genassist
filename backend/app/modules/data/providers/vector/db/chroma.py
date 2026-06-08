@@ -3,10 +3,8 @@ ChromaDB vector database implementation
 """
 
 import logging
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from chromadb import AsyncHttpClient, AsyncClientAPI
-from langchain_chroma import Chroma
-
 
 from .base import BaseVectorDB, VectorDBConfig, SearchResult
 
@@ -16,8 +14,6 @@ logger = logging.getLogger(__name__)
 class ChromaVectorDB(BaseVectorDB):
     """ChromaDB vector database provider"""
     chroma_client: Optional[AsyncClientAPI]
-    langchain_store: Optional[Chroma]
-    embedding_function: Optional[Callable[[str], List[float]]]
 
     def __init__(self, config: VectorDBConfig):
         super().__init__(config)
@@ -40,18 +36,6 @@ class ChromaVectorDB(BaseVectorDB):
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {e}")
             return False
-
-    def set_embedding_function(self, embedding_function):
-        """Set the embedding function for LangChain integration"""
-        self.embedding_function = embedding_function
-
-        if self.chroma_client and self.embedding_function:
-            # Initialize LangChain Chroma store
-            self.langchain_store = Chroma(
-                client=self.chroma_client,
-                collection_name=self.config.collection_name,
-                embedding_function=self.embedding_function
-            )
 
     async def create_collection(self, dimension: int) -> bool:
         """Create a new collection"""
@@ -94,7 +78,6 @@ class ChromaVectorDB(BaseVectorDB):
             await self.chroma_client.delete_collection(self.config.collection_name)
 
             self.collection = None
-            self.langchain_store = None
 
             logger.info(
                 f"Deleted ChromaDB collection: {self.config.collection_name}")

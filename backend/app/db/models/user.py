@@ -1,4 +1,6 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+from uuid import UUID
+
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -7,10 +9,11 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import TYPE_CHECKING
-from uuid import UUID
+
 from app.db.base import Base
 
 if TYPE_CHECKING:
@@ -28,6 +31,7 @@ class UserModel(Base):
     )
     username: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
+    entra_oid: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     hashed_password: Mapped[str] = mapped_column(String(1000))
@@ -35,6 +39,12 @@ class UserModel(Base):
 
     user_type_id: Mapped[UUID] = mapped_column(ForeignKey("user_types.id"), nullable=False)
     group_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("user_groups.id"), nullable=True)
+    notification_settings: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
 
     user_roles = relationship("UserRoleModel", back_populates="user", foreign_keys="[UserRoleModel.user_id]")
     user_type = relationship("UserTypeModel", back_populates="users", foreign_keys=[user_type_id])

@@ -3,7 +3,7 @@ import { GmailNodeData, GmailOperation } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
 import { DraggableInput } from "../components/custom/DraggableInput";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -126,7 +126,7 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
-          <Input
+          <RichInput
             id="node-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -261,7 +261,7 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
               <Paperclip className="h-3 w-3 mr-1" /> Add Files
             </Button>
           </div>
-          <Input
+          <RichInput
             ref={fileInputRef}
             type="file"
             multiple

@@ -1,11 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
 import { subDays } from "date-fns";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
+import { cn } from "@/helpers/utils";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
-import { useIsMobile } from "@/hooks/useMobile";
-import { Card, CardContent } from "@/components/card";
 import {
   Select,
   SelectContent,
@@ -13,11 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { Info } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { NodeBreakdownChart } from "../components/reports/NodeBreakdownChart";
-import { AnalyticsFilters } from "../components/AnalyticsFilters";
-import { useAgentsList } from "../hooks/useAgentsList";
+import {
+  AnalyticsFilters,
+  analyticsFilterSelectTriggerClassName,
+} from "../components/AnalyticsFilters";
+import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
+import { analyticsFadeUpClass } from "../constants/animations";
+import { NodeAnalyticsTableEmptyState } from "../components/AnalyticsEmptyStates";
+import { NodeAnalyticsPageSkeleton } from "../components/skeletons";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { fetchNodeDailyStats } from "@/services/analyticsReports";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
@@ -35,16 +40,23 @@ interface AgentNodeBreakdown {
 }
 
 const NodeAnalyticsPage = () => {
-  const isMobile = useIsMobile();
-
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [agentFilter, setAgentFilter] = useState("all");
   const [nodeTypeFilter, setNodeTypeFilter] = useState("all");
 
-  const { agents, agentNameMap } = useAgentsList();
+  const {
+    groups,
+    showGroupFilter,
+    groupFilter,
+    setGroupFilter,
+    agentFilter,
+    setAgentFilter,
+    agents,
+    agentNameMap,
+    filterParams,
+  } = useAnalyticsFilters();
   const [nodeTypeOptions, setNodeTypeOptions] = useState<string[]>([]);
   const [items, setItems] = useState<NodeDailyStatsItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +65,7 @@ const NodeAnalyticsPage = () => {
   const loadData = async (
     range: DateRange | undefined,
     nodeType: string,
-    agentId: string
+    filters: { agent_id?: string; group_id?: string },
   ) => {
     setLoading(true);
     setError(null);
@@ -61,7 +73,7 @@ const NodeAnalyticsPage = () => {
       const data = await fetchNodeDailyStats({
         ...toExpandedUTCDateRange(range),
         node_type: nodeType !== "all" ? nodeType : undefined,
-        agent_id: agentId !== "all" ? agentId : undefined,
+        ...filters,
       });
       const fetched = data?.items ?? [];
       setItems(fetched);
@@ -78,8 +90,8 @@ const NodeAnalyticsPage = () => {
   };
 
   useEffect(() => {
-    loadData(dateRange, nodeTypeFilter, agentFilter);
-  }, [dateRange, nodeTypeFilter, agentFilter]);
+    loadData(dateRange, nodeTypeFilter, filterParams);
+  }, [dateRange, nodeTypeFilter, filterParams.agent_id, filterParams.group_id]);
 
   const agentBreakdown = useMemo<AgentNodeBreakdown[]>(() => {
     // Use a separate accumulator type to track weighted-average state
@@ -173,42 +185,38 @@ const NodeAnalyticsPage = () => {
   );
 
   const exportParams = {
-    agent_id: agentFilter !== "all" ? agentFilter : undefined,
+    ...filterParams,
     node_type: nodeTypeFilter !== "all" ? nodeTypeFilter : undefined,
     ...toExpandedUTCDateRange(dateRange),
   };
 
+  const canExport = !loading && agentBreakdown.length > 0;
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Header */}
-              <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold mb-1 animate-fade-down">
-                    Node Analytics
-                  </h1>
-                  <p className="text-sm text-muted-foreground animate-fade-up">
-                    Workflow node execution metrics by type and date
-                  </p>
-                </div>
-
-                {/* Filters */}
+              <AnalyticsPageHeader
+                title="Node Analytics"
+                subtitle="Workflow node execution metrics by type and date"
+              >
                 <AnalyticsFilters
+                  groups={showGroupFilter ? groups : undefined}
+                  groupFilter={groupFilter}
+                  onGroupFilterChange={setGroupFilter}
                   agents={agents}
                   agentFilter={agentFilter}
                   onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                 >
-                  {/* Node type filter */}
                   <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
                       <SelectValue placeholder="All node types" />
                     </SelectTrigger>
                     <SelectContent>
@@ -225,38 +233,30 @@ const NodeAnalyticsPage = () => {
                     endpoint="/analytics/nodes/export"
                     params={exportParams}
                     filename="node-analytics"
-                    disabled={loading || agentBreakdown.length === 0}
+                    disabled={!canExport}
                   />
                 </AnalyticsFilters>
-              </header>
+              </AnalyticsPageHeader>
 
-              {/* Empty-data notice */}
-              {!loading && items.length === 0 && !error && (
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Info className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                    <p className="text-sm text-blue-700">
-                      No node data yet. Run the aggregation task to populate the summary tables.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+              {loading ? (
+                <NodeAnalyticsPageSkeleton />
+              ) : (
+                <div className="space-y-6 sm:space-y-8">
+              <NodeBreakdownChart items={items} loading={false} />
 
-              {/* Node breakdown bar chart */}
-              <NodeBreakdownChart items={items} loading={loading} />
-
-              {/* Agent breakdown table */}
-              <div>
+              <div className={analyticsFadeUpClass}>
                 <DataTable
                   data={agentBreakdown}
                   columns={agentBreakdownColumns}
-                  loading={loading}
+                  loading={false}
                   error={error}
-                  emptyMessage="No node data for the selected period."
+                  emptyState={<NodeAnalyticsTableEmptyState />}
                   keyExtractor={(item) => item.id}
                   pageSize={10}
                 />
               </div>
+                </div>
+              )}
 
             </div>
           </div>

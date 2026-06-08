@@ -2,13 +2,13 @@ import { useState, useEffect } from "react";
 import { StatsOverviewCard } from "./StatsOverviewCard";
 
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
-import { fetchDashboardSummary, getFilterDays } from "@/services/dashboard";
+import { fetchDashboardSummary } from "@/services/dashboard";
 import type { DashboardSummaryStats } from "@/interfaces/dashboard.interface";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 
 interface KPISectionProps {
-  timeFilter: string;
+  days: number;
 }
 
 const formatResponseTime = (ms: number): string => {
@@ -22,7 +22,7 @@ const formatNumber = (num: number): string => {
   return num.toLocaleString();
 };
 
-export function KPISection({ timeFilter }: KPISectionProps) {
+export function KPISection({ days }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
   const showCostPerConversation = useFeatureFlagVisible(
@@ -41,7 +41,6 @@ export function KPISection({ timeFilter }: KPISectionProps) {
       if (permissions.includes("read:dashboard") || permissions.includes("*")) {
         setLoading(true);
         try {
-          const days = getFilterDays(timeFilter);
           const data = await fetchDashboardSummary(days);
           setSummaryStats(data);
         } catch (err) {
@@ -55,7 +54,7 @@ export function KPISection({ timeFilter }: KPISectionProps) {
     };
 
     fetchStats();
-  }, [isLoadingPermissions, permissions, timeFilter]);
+  }, [isLoadingPermissions, permissions, days]);
 
   // Transform summary stats for the stats overview card
   const statsMetrics = [

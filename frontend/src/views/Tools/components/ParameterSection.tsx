@@ -1,7 +1,7 @@
 import { FC } from "react";
 import { Button } from "@/components/button";
 import { Trash2, Plus } from "lucide-react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectTrigger,
@@ -52,7 +52,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Parameter Name</label>
-                <Input
+                <RichInput
                   placeholder="param_1"
                   value={param.name}
                   onChange={e =>
@@ -91,7 +91,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
             <div className="grid grid-cols-2 gap-4 border-b border-gray-200 pb-8">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Default Value</label>
-                <Input
+                <RichInput
                   placeholder="Enter default value"
                   value={param.defaultValue}
                   onChange={e =>
@@ -105,7 +105,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Description</label>
-                <Input
+                <RichInput
                   placeholder="Parameter description"
                   value={param.description}
                   onChange={e =>

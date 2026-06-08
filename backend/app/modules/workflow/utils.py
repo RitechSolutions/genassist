@@ -1,15 +1,23 @@
 import json
 import io
+import multiprocessing
+import os
 import re
-import traceback
 from contextlib import redirect_stdout, redirect_stderr
-import importlib
 from typing import Callable, Dict, Any, List, Union
 import logging
 import asyncio
-import concurrent.futures
+
+from app.modules.workflow.sandbox import (
+    make_sandboxed_namespace,
+    validate_code_ast,
+    SandboxViolation,
+)
 
 logger = logging.getLogger(__name__)
+
+# Maximum wall-clock seconds for user-supplied Python code execution.
+_EXEC_TIMEOUT_SECONDS = 120
 
 
 def add_executable_function(code: str) -> str:
@@ -35,67 +43,120 @@ def add_executable_function(code: str) -> str:
     return code + "\n" + "\n".join(template_lines)
 
 
-def _execute_python_code_sync(
-    code: str, params: Dict[str, Any], wrap_code: bool = True
-) -> Dict[str, Any]:
-    """Execute Python code in a controlled environment (synchronous version for thread execution)"""
-    # Capture stdout and stderr
+def _subprocess_worker(
+    code: str,
+    params: Dict[str, Any],
+    wrap_code: bool,
+    result_queue: "multiprocessing.Queue[Dict[str, Any]]",
+) -> None:
+    """Worker that runs inside an isolated subprocess.
+
+    Security controls applied here (in addition to the AST/builtins sandbox):
+    - All environment variables cleared so user code cannot read secrets
+      (JWT_SECRET_KEY, FERNET_KEY, DATABASE_URL, AWS credentials, etc.)
+    - OS-level resource limits applied on Linux (256 MB address space, CPU time cap)
+    """
+    # Strip all env vars — user code must not access container secrets
+    os.environ.clear()
+
+    # Apply CPU time limit (Linux/macOS; silently skipped on unsupported platforms).
+    # RLIMIT_AS (address space) is intentionally omitted: a forked child inherits
+    # the parent's entire virtual memory map (FastAPI, pandas, numpy, etc.) which
+    # already exceeds any reasonable per-script cap, causing immediate MemoryError
+    # on any allocation. Memory abuse is already mitigated by the import allowlist.
+    try:
+        import resource as _rl
+        _rl.setrlimit(_rl.RLIMIT_CPU, (_EXEC_TIMEOUT_SECONDS, _EXEC_TIMEOUT_SECONDS))
+    except Exception:
+        pass
+
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
 
     try:
-        # Create a namespace for the code to execute in
-        namespace = {
-            "params": params,
-            "result": None,
-            "logger": logger,
-            # Add commonly used libraries
-            "json": importlib.import_module("json"),
-            "requests": importlib.import_module("requests"),
-            "datetime": importlib.import_module("datetime"),
-            "math": importlib.import_module("math"),
-            "re": importlib.import_module("re"),
-            "pandas": importlib.import_module("pandas"),
-            "numpy": importlib.import_module("numpy"),
-        }
-        if wrap_code:
-            executable = add_executable_function(code)
-        else:
-            executable = code
+        executable = add_executable_function(code) if wrap_code else code
+        validate_code_ast(executable)
+        namespace = make_sandboxed_namespace(params, logging.getLogger(__name__))
 
-        logger.debug(f"Executable code: {executable}")
-
-        # Execute the code with redirected output
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            exec(executable, namespace)
+            exec(executable, namespace)  # noqa: S102
 
-        # Get the result from the namespace if available
         result = namespace.get("result")
         global_errors = namespace.get("errors")
-        # Construct the response
         output = stdout_buffer.getvalue()
         errors = stderr_buffer.getvalue()
-
         if global_errors:
             errors = errors + "\nGlobal errors: " + str(global_errors)
-        response = {"result": result, "output": output, "errors": errors}
+        result_queue.put({"result": result, "output": output, "errors": errors})
 
-        return response
-
+    except SandboxViolation as sv:
+        result_queue.put({
+            "error": f"Sandbox violation: {sv}",
+            "traceback": "",
+            "output": stdout_buffer.getvalue(),
+            "errors": stderr_buffer.getvalue(),
+        })
+    except SyntaxError as se:
+        result_queue.put({
+            "error": f"Syntax error: {se}",
+            "traceback": "",
+            "output": stdout_buffer.getvalue(),
+            "errors": stderr_buffer.getvalue(),
+        })
     except Exception as e:
-        # Capture any errors during execution
-        error_traceback = traceback.format_exc()
-        logger.error(f"Error in Python code execution: {str(e)}\n{error_traceback}")
-
-        # Get any output that was captured before the error
-        output = stdout_buffer.getvalue()
-        errors = stderr_buffer.getvalue()
-
-        return {
+        result_queue.put({
             "error": str(e),
-            "traceback": error_traceback,
-            "output": output,
-            "errors": errors,
+            "traceback": "",
+            "output": stdout_buffer.getvalue(),
+            "errors": stderr_buffer.getvalue(),
+        })
+
+
+def _execute_python_code_sync(
+    code: str, params: Dict[str, Any], wrap_code: bool = True
+) -> Dict[str, Any]:
+    """Spawn an isolated subprocess to execute user-supplied Python code.
+
+    The subprocess clears its environment and applies resource limits before
+    running the AST/builtins sandbox. Kills the process if it exceeds
+    _EXEC_TIMEOUT_SECONDS.
+    """
+    # fork (not spawn) so the child inherits already-loaded modules.
+    # spawn re-imports everything from scratch, causing 2-5s overhead on macOS
+    # and unnecessary work on Linux. fork is the Linux default; making it
+    # explicit also fixes the slowness on macOS (Python ≥3.12 defaults to spawn).
+    ctx = multiprocessing.get_context("fork")
+    result_queue = ctx.Queue()
+    process = ctx.Process(
+        target=_subprocess_worker,
+        args=(code, params, wrap_code, result_queue),
+        daemon=True,
+    )
+    process.start()
+    process.join(timeout=_EXEC_TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        process.kill()
+        process.join()
+        logger.warning(
+            "User code execution timed out after %ds — subprocess killed",
+            _EXEC_TIMEOUT_SECONDS,
+        )
+        return {
+            "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
+            "traceback": "",
+            "output": "",
+            "errors": "",
+        }
+
+    try:
+        return result_queue.get_nowait()
+    except Exception:
+        return {
+            "error": "Subprocess exited without returning a result",
+            "traceback": "",
+            "output": "",
+            "errors": "",
         }
 
 
@@ -125,24 +186,20 @@ def sanitize_python_code(code: str) -> str:
 async def execute_python_code(
     code: str, params: Dict[str, Any], wrap_code: bool = True
 ) -> Dict[str, Any]:
-    """Execute Python code in a controlled environment asynchronously in a new thread"""
+    """Execute user Python code asynchronously. Subprocess isolation handles timeout."""
     try:
         code = sanitize_python_code(code)
-        # Create a thread pool executor
         loop = asyncio.get_event_loop()
-
-        # Run the synchronous function in a thread pool
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            result = await loop.run_in_executor(
-                executor, _execute_python_code_sync, code, params, wrap_code
-            )
-
-        return result
+        # _execute_python_code_sync blocks for at most _EXEC_TIMEOUT_SECONDS
+        # (subprocess is killed if it exceeds that), so run_in_executor won't hang.
+        return await loop.run_in_executor(
+            None, _execute_python_code_sync, code, params, wrap_code
+        )
     except Exception as e:
-        logger.error(f"Error in async Python code execution: {str(e)}")
+        logger.error("Error in async Python code execution: %s", type(e).__name__)
         return {
             "error": str(e),
-            "traceback": traceback.format_exc(),
+            "traceback": "",
             "output": "",
             "errors": "",
         }

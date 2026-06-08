@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
 
 from app.api.v1.routes.agents import run_query_agent_logic
@@ -12,6 +14,7 @@ from app.db.base import generate_sequential_uuid
 from app.db.models.conversation import ConversationModel
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+from app.core.tenant_scope import get_tenant_context
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -23,9 +26,18 @@ from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
 from app.core.utils.custom_attributes import extract_custom_attributes
+from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.file_manager import FileManagerService
+from app.services.realtime_notifications import (
+    emit_notification,
+    conversation_started_notification_description,
+    notification_payload,
+    transcript_conversation_notification_url,
+)
 
 logger = logging.getLogger(__name__)
+
+_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
 
 # send message to the socket
@@ -36,18 +48,21 @@ async def send_message_to_socket(
     tenant_id: str,
 ) -> None:
     socket_connection_manager = injector.get(SocketConnectionManager)
+    payload = {
+        "id": str(message.id),
+        "create_time": message.create_time.isoformat() if message.create_time else None,
+        "start_time": message.start_time,
+        "end_time": message.end_time,
+        "speaker": message.speaker,
+        "text": message.text,
+        "type": message.type,
+    }
+    if message.audio_format:
+        payload["audio_format"] = message.audio_format
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="message",
-            payload={
-                "id": str(message.id),
-                "create_time": message.create_time.isoformat() if message.create_time else None,
-                "start_time": message.start_time,
-                "end_time": message.end_time,
-                "speaker": message.speaker,
-                "text": message.text,
-                "type": message.type,
-            },
+            payload=payload,
             room_id=conversation_id,
             current_user_id=current_user_id,
             required_topic="message",
@@ -56,11 +71,50 @@ async def send_message_to_socket(
     )
 
 
+def _extract_spoken_text(agent_response: dict) -> str:
+    """Extract the text the LLM generated before TTS converted it to audio."""
+    try:
+        raw = agent_response.get("row_agent_response", {})
+        state = raw.get("state", {})
+        node_status = state.get("nodeExecutionStatus", {})
+
+        # First pass: look for LLM / agent node outputs (most reliable)
+        for node_id, status in node_status.items():
+            node_type = status.get("type", "")
+            if node_type in ("llmModelNode", "agentNode"):
+                output = status.get("output")
+                if isinstance(output, dict):
+                    text = output.get("message", "") or output.get("response", "")
+                    if text:
+                        return text
+                if isinstance(output, str) and output:
+                    return output
+
+        # Second pass: find any non-audio, non-error string output (fallback)
+        for node_id, status in node_status.items():
+            node_type = status.get("type", "")
+            if node_type in ("ttsNode", "sttNode", "chatInputNode", "chatOutputNode"):
+                continue
+            output = status.get("output")
+            if isinstance(output, str) and output and not output.startswith("Error"):
+                return output
+
+        logger.debug(
+            "Could not extract spoken text from workflow. Node types present: %s",
+            [s.get("type") for s in node_status.values()],
+        )
+    except Exception as exc:
+        logger.warning("_extract_spoken_text failed: %s", exc)
+    return ""
+
+
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
     tenant_id: str,
     current_user_id: UUID,
+    audio_bytes: Optional[bytes] = None,
+    audio_format: Optional[str] = None,
 ) -> ConversationModel:
     """
     Process an in-progress conversation update with agent response handling.
@@ -88,12 +142,22 @@ async def process_conversation_update_with_agent(
             if current_user_id != conversation.supervisor_id:
                 raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER_OTHER)
 
-    # Generate IDs upfront for all incoming messages
+    # Generate IDs and redact cardholder data before any downstream
+    # consumer (WebSocket, LLM, database, logs) sees the raw text.
     for message in model.messages:
         message.id = generate_sequential_uuid()
+        if message.text:
+            message.text = _pii_redactor.redact(message.text)
 
-    # Broadcast user message immediately with pre-generated ID
+    # Tag user message with audio data if present
     user_message = model.messages[0]
+    if audio_bytes:
+        user_message.audio_data = audio_bytes
+        user_message.audio_format = audio_format or "webm"
+        user_message.type = "audio"
+        if not user_message.text or user_message.text.strip() == "":
+            user_message.text = "[Voice message]"
+
     # 1:1 chat: broadcast user message immediately with pre-generated ID
     await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
@@ -107,6 +171,11 @@ async def process_conversation_update_with_agent(
             model.metadata = {}
 
         model.metadata["thread_id"] = str(conversation_id)
+
+        # Inject audio data into metadata for the workflow engine (base64, in-memory only)
+        if audio_bytes:
+            model.metadata["audio_data"] = base64.b64encode(audio_bytes).decode("utf-8")
+            model.metadata["audio_format"] = audio_format or "webm"
 
         agent_response = await run_query_agent_logic(
             agent_service,
@@ -133,21 +202,41 @@ async def process_conversation_update_with_agent(
                 type="form_request",
             )
         else:
-            # Normal agent response
             agent_answer = agent_response.get("response", "No answer found")
-            transcript_object = TranscriptSegmentInput(
-                id=generate_sequential_uuid(),
-                create_time=now,
-                start_time=elapsed_seconds,
-                end_time=elapsed_seconds,
-                speaker="agent",
-                text=str(agent_answer),
-            )
+
+            if isinstance(agent_answer, dict) and agent_answer.get("type") == "audio":
+                # Audio response from TTS workflow
+                audio_b64 = agent_answer.get("data", "")
+                audio_fmt = agent_answer.get("format", "mp3")
+                spoken_text = _extract_spoken_text(agent_response)
+                transcript_object = TranscriptSegmentInput(
+                    id=generate_sequential_uuid(),
+                    create_time=now,
+                    start_time=elapsed_seconds,
+                    end_time=elapsed_seconds,
+                    speaker="agent",
+                    text=spoken_text or "[Audio response]",
+                    type="audio",
+                    audio_data=base64.b64decode(audio_b64),
+                    audio_format=audio_fmt,
+                )
+            else:
+                # Normal text response
+                transcript_object = TranscriptSegmentInput(
+                    id=generate_sequential_uuid(),
+                    create_time=now,
+                    start_time=elapsed_seconds,
+                    end_time=elapsed_seconds,
+                    speaker="agent",
+                    text=str(agent_answer),
+                )
 
         model.messages.append(transcript_object)
 
         # 1:1 chat: broadcast agent message immediately with pre-generated ID
         await send_message_to_socket(transcript_object, conversation_id, current_user_id, tenant_id)
+
+    previous_hostility_score = int(conversation.in_progress_hostility_score or 0)
 
     # update the conversation with the new messages
     updated_conversation = await service.update_in_progress_conversation(conversation_id, model)
@@ -189,6 +278,29 @@ async def process_conversation_update_with_agent(
             tenant_id=tenant_id,
         )
     )
+
+    current_hostility_score = int(updated_conversation.in_progress_hostility_score or 0)
+    if previous_hostility_score <= 50 < current_hostility_score:
+        emit_notification(
+            socket_connection_manager=socket_connection_manager,
+            tenant_id=tenant_id,
+            current_user_id=current_user_id,
+            payload=notification_payload(
+                notification_id=f"conversation_hostility:{updated_conversation.id}",
+                title="High Hostility Detected",
+                description=(
+                    f"Conversation {str(updated_conversation.id)[:8]}... reached hostility score "
+                    f"{current_hostility_score}%."
+                ),
+                level="warning",
+                action_url=transcript_conversation_notification_url(updated_conversation.id),
+                timestamp=updated_conversation.updated_at,
+                group_id=getattr(updated_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=updated_conversation.id,
+                event_key=f"conversation_hostility:{updated_conversation.id}",
+            ),
+        )
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
 
@@ -251,6 +363,24 @@ async def get_or_create_conversation(
             operator_id=operator_id,
         )
         open_conversation = await service.start_in_progress_conversation(new_conversation_model)
+        emit_notification(
+            socket_connection_manager=injector.get(SocketConnectionManager),
+            tenant_id=get_tenant_context(),
+            payload=notification_payload(
+                notification_id=f"conversation_started:{open_conversation.id}",
+                title="Conversation Started",
+                description=conversation_started_notification_description(
+                    open_conversation.id
+                ),
+                level="info",
+                action_url=transcript_conversation_notification_url(open_conversation.id),
+                timestamp=open_conversation.created_at,
+                group_id=getattr(open_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=open_conversation.id,
+                event_key=f"conversation_started:{open_conversation.id}",
+            ),
+        )
 
     return open_conversation
 
@@ -348,6 +478,7 @@ async def process_file_upload_from_chat(
                 "type": file_type,
                 "url": file_url,
                 "name": file_name,
+                "file_id": str(file_id),
             }
         )
 

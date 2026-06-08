@@ -63,6 +63,11 @@ export default {
           50: "hsl(var(--brand-50))",
           600: "hsl(var(--brand-600))",
         },
+        "ai-brand": {
+          DEFAULT: "hsl(var(--ai-brand))",
+          hover: "hsl(var(--ai-brand-hover))",
+          light: "hsl(var(--ai-brand-light))",
+        },
         blue: {
           50: "#EFF3FE",
           100: "#DBE4FD",

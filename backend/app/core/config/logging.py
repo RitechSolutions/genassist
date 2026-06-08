@@ -5,11 +5,20 @@ Call  init_logging()  *once* early in startup (before anything logs).
 import logging
 import os
 import sys
-
 from contextvars import ContextVar
+
 from loguru import logger
+
 from app.core.config.settings import settings
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
+
+
+def _pii_filter(record: dict) -> bool:
+    """Redact PII/secrets from the message before it reaches any persistent sink."""
+    record["message"] = redact_sensitive_substrings(record["message"])
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -32,10 +41,13 @@ class _InterceptHandler(logging.Handler):
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        msg = record.getMessage()
+        if record.levelno <= logging.DEBUG:
+            msg = truncate_for_log(msg)
         logger.bind(**record.__dict__.get("extra", {})).opt(
             depth=6,  # keep caller info accurate
             exception=record.exc_info
-        ).log(level, record.getMessage())
+        ).log(level, msg)
 
 def _patch_stdlib(level: str) -> None:
     logging.root.setLevel(level)
@@ -80,6 +92,7 @@ def init_logging() -> None:
     logger.add(
         sys.stdout,
         level=settings.LOG_LEVEL,
+        filter=_pii_filter,
         colorize=True,
         format=(
             "<green>{time:HH:mm:ss.SSS}</green> "
@@ -93,20 +106,22 @@ def init_logging() -> None:
         enqueue=False,  # Disabled to avoid multiprocessing queue issues
     )
 
-    # Rotating JSON files
+    # Rotating JSON files — PII redaction filter applied to all persistent sinks
     logger.add(f"{LOG_DIR}/access.log",
                level="INFO",
-               filter=lambda r: r["level"].name == "INFO",
+               filter=lambda r: r["level"].name == "INFO" and _pii_filter(r),
                rotation="10 MB", retention="7 days", compression="zip",
                format=JSON_FORMAT, enqueue=False)  # Disabled to avoid multiprocessing queue issues
 
     logger.add(f"{LOG_DIR}/error.log",
                level="ERROR",
+               filter=_pii_filter,
                rotation="5 MB", retention="14 days", compression="zip",
                format=JSON_FORMAT, enqueue=False)  # Disabled to avoid multiprocessing queue issues
 
     logger.add(f"{LOG_DIR}/app.log",
                level="DEBUG",
+               filter=_pii_filter,
                rotation="10 MB", retention="10 days", compression="zip",
                format=JSON_FORMAT, enqueue=False)  # Disabled to avoid multiprocessing queue issues
 

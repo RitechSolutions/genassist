@@ -29,7 +29,7 @@ class DataSourceService:
         "api_token",
         "private_key_passphrase",
         "smb_password",
-        "connectionstring",
+        "connection_string",
     ]
 
     def __init__(self, repository: DataSourcesRepository):

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { AggregatorNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Save, Info } from "lucide-react";
 import {
@@ -107,7 +107,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
     >
       <div className="space-y-2">
         <Label htmlFor="node-name">Node Name</Label>
-        <Input
+        <RichInput
           id="node-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -146,7 +146,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
 
       <div className="space-y-2">
         <Label htmlFor="timeout-seconds">Timeout (seconds)</Label>
-        <Input
+        <RichInput
           id="timeout-seconds"
           type="number"
           min="1"

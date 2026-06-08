@@ -6,7 +6,7 @@ import { PanelLeft } from "lucide-react"
 import { useIsMobile } from "@/hooks/useMobile"
 import { cn } from "@/helpers/utils"
 import { Button } from "@/components/button"
-import { Input } from "@/components/input"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/separator"
 import { Sheet, SheetContent } from "@/components/sheet"
 import { Skeleton } from "@/components/skeleton"
@@ -110,6 +110,30 @@ const SidebarProvider = React.forwardRef<
       return () => window.removeEventListener("keydown", handleKeyDown)
     }, [toggleSidebar])
 
+    React.useEffect(() => {
+      if (!isMobile || !openMobile) return
+
+      const handlePointerDown = (event: PointerEvent) => {
+        const path = event.composedPath()
+        const clickedInsideSidebar = path.some(
+          (node) =>
+            node instanceof HTMLElement && node.dataset?.sidebar === "sidebar"
+        )
+        const clickedTrigger = path.some(
+          (node) =>
+            node instanceof HTMLElement && node.dataset?.sidebar === "trigger"
+        )
+
+        if (!clickedInsideSidebar && !clickedTrigger) {
+          setOpenMobile(false)
+        }
+      }
+
+      document.addEventListener("pointerdown", handlePointerDown, true)
+      return () =>
+        document.removeEventListener("pointerdown", handlePointerDown, true)
+    }, [isMobile, openMobile, setOpenMobile])
+
     // We add a state so that we can do data-state="expanded" or "collapsed".
     // This makes it easier to style the sidebar with Tailwind classes.
     const state = open ? "expanded" : "collapsed"
@@ -192,7 +216,13 @@ const Sidebar = React.forwardRef<
 
     if (isMobile) {
       return (
-        <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+        <Sheet modal={false} open={openMobile} onOpenChange={setOpenMobile} {...props}>
+          {openMobile && (
+            <div
+              aria-hidden="true"
+              className="fixed inset-0 z-[1200] bg-black/50 pointer-events-none"
+            />
+          )}
           <SheetContent
             data-sidebar="sidebar"
             data-mobile="true"
@@ -200,6 +230,7 @@ const Sidebar = React.forwardRef<
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+                zIndex: 1301,
               } as React.CSSProperties
             }
             side={side}
@@ -269,11 +300,7 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar, state, isMobile } = useSidebar()
-
-  if (isMobile) {
-    return null
-  }
+  const { toggleSidebar, state, isMobile, openMobile, setOpenMobile } = useSidebar()
 
   return (
     <Button
@@ -282,15 +309,24 @@ const SidebarTrigger = React.forwardRef<
       variant="ghost"
       size="icon"
       className={cn(
+        className,
         "h-7 w-7",
+        "z-40",
         // Position based on sidebar state
-        state === "collapsed" && !isMobile
-          ? "left-4"
-          : "left-[calc(var(--sidebar-width)-1rem)]",
-        className
+        isMobile
+          ? openMobile
+            ? "left-[calc(18rem-1rem)]"
+            : "left-4"
+          : state === "collapsed"
+            ? "left-4"
+            : "left-[calc(var(--sidebar-width)-1rem)]",
       )}
       onClick={(event) => {
         onClick?.(event)
+        if (isMobile && openMobile) {
+          setOpenMobile(false)
+          return
+        }
         toggleSidebar()
       }}
       {...props}

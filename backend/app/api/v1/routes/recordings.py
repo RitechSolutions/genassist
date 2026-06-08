@@ -13,6 +13,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.bi_utils import validate_upload_file_size
+from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_system_utils import get_safe_file_path
 from app.schemas.conversation_transcript import ConversationTranscriptCreate
 from app.schemas.question import QuestionCreate
@@ -99,7 +100,7 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
         recording_data.file_path,
         settings.RECORDINGS_DIR,
     )
-    return FileResponse(safe_serving_path)
+    return FileResponse(safe_serving_path, headers=no_store_headers())
 
 
 # @router.post("/transcribe_no_save")

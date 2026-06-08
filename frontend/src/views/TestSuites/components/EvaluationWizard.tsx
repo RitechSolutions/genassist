@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
-import { Textarea } from "@/components/textarea";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { JsonInput } from "@/components/JsonInput";
 import { Checkbox } from "@/components/checkbox";
@@ -550,86 +550,88 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[95vw] max-w-2xl h-[85vh] max-h-[85vh] overflow-hidden p-0 flex flex-col">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle>{mode === "create" ? "Create Evaluation" : "Edit Evaluation"}</DialogTitle>
-          {/* Step indicator */}
-          <div className="flex items-center gap-2 mt-4">
-            {STEPS.map((s, index) => {
-              const Icon = s.icon;
-              const isActive = s.key === step;
-              const isCompleted = index < currentStepIndex;
-              const isClickable = index <= currentStepIndex || (index === currentStepIndex + 1 && canProceed());
+      <DialogContent className="sm:max-w-[760px] p-0 overflow-hidden">
+        <div className="max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+            <DialogTitle>{mode === "create" ? "Create Evaluation" : "Edit Evaluation"}</DialogTitle>
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 mt-4">
+              {STEPS.map((s, index) => {
+                const Icon = s.icon;
+                const isActive = s.key === step;
+                const isCompleted = index < currentStepIndex;
+                const isClickable = index <= currentStepIndex || (index === currentStepIndex + 1 && canProceed());
 
-              return (
-                <React.Fragment key={s.key}>
-                  <button
-                    type="button"
-                    onClick={() => isClickable && setStep(s.key)}
-                    disabled={!isClickable}
-                    className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
-                      isActive && "bg-primary text-primary-foreground",
-                      isCompleted && !isActive && "bg-primary/20 text-primary",
-                      !isActive && !isCompleted && "bg-gray-100 text-gray-500",
-                      isClickable && !isActive && "hover:bg-gray-200 cursor-pointer",
-                      !isClickable && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {isCompleted && !isActive ? (
-                      <Check className="h-3 w-3" />
-                    ) : (
-                      <Icon className="h-3 w-3" />
-                    )}
-                    <span className="hidden sm:inline">{s.label}</span>
-                  </button>
-                  {index < STEPS.length - 1 && (
-                    <div
+                return (
+                  <React.Fragment key={s.key}>
+                    <button
+                      type="button"
+                      onClick={() => isClickable && setStep(s.key)}
+                      disabled={!isClickable}
                       className={cn(
-                        "flex-1 h-0.5 rounded-full max-w-8",
-                        index < currentStepIndex ? "bg-primary" : "bg-gray-200"
+                        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                        isActive && "bg-primary text-primary-foreground",
+                        isCompleted && !isActive && "bg-primary/20 text-primary",
+                        !isActive && !isCompleted && "bg-gray-100 text-gray-500",
+                        isClickable && !isActive && "hover:bg-gray-200 cursor-pointer",
+                        !isClickable && "opacity-50 cursor-not-allowed"
                       )}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
-        </DialogHeader>
+                    >
+                      {isCompleted && !isActive ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <Icon className="h-3 w-3" />
+                      )}
+                      <span className="hidden sm:inline">{s.label}</span>
+                    </button>
+                    {index < STEPS.length - 1 && (
+                      <div
+                        className={cn(
+                          "flex-1 h-0.5 rounded-full max-w-8",
+                          index < currentStepIndex ? "bg-primary" : "bg-gray-200"
+                        )}
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-          {renderStepContent()}
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+            {renderStepContent()}
+          </div>
+
+          <DialogFooter className="border-t px-6 py-4 shrink-0 flex justify-between">
+            <div>
+              {currentStepIndex > 0 && (
+                <Button variant="outline" onClick={handleBack}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Back
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                Cancel
+              </Button>
+              {currentStepIndex < STEPS.length - 1 ? (
+                <Button onClick={handleNext} disabled={!canProceed()}>
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              ) : (
+                <Button onClick={handleSubmit} disabled={!canProceed() || isSubmitting}>
+                  {isSubmitting
+                    ? "Creating..."
+                    : mode === "create"
+                    ? "Create Evaluation"
+                    : "Save Changes"}
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
         </div>
-
-        <DialogFooter className="border-t px-6 py-4 shrink-0 flex justify-between">
-          <div>
-            {currentStepIndex > 0 && (
-              <Button variant="outline" onClick={handleBack}>
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Back
-              </Button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
-            </Button>
-            {currentStepIndex < STEPS.length - 1 ? (
-              <Button onClick={handleNext} disabled={!canProceed()}>
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            ) : (
-              <Button onClick={handleSubmit} disabled={!canProceed() || isSubmitting}>
-                {isSubmitting
-                  ? "Creating..."
-                  : mode === "create"
-                  ? "Create Evaluation"
-                  : "Save Changes"}
-              </Button>
-            )}
-          </div>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

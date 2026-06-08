@@ -1,5 +1,5 @@
-import { Context, useContext, useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ErrorBanner } from "@/views/Onboarding/components/ErrorBanner";
 import { OnboardingFooter } from "@/views/Onboarding/components/OnboardingFooter";
 import { OnboardingHeader } from "@/views/Onboarding/components/OnboardingHeader";
@@ -7,30 +7,24 @@ import { OnboardingHero } from "@/views/Onboarding/components/OnboardingHero";
 import { OnboardingInput } from "@/views/Onboarding/components/Onboardinginput";
 import { OnboardingNameAgent } from "@/views/Onboarding/components/OnboardingNameAgent";
 import { useOnboardingChat } from "@/views/Onboarding/hooks/useOnboardingChat";
-import { extractWorkflowDraftFromText, isWorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
+import { isWorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
 import { parseInteractiveContentBlocks } from "genassist-chat-react";
-import { useAuth } from "@/views/Login/hooks/useAuth";
-import { fetchUserPermissions } from "@/services/auth";
-import { useFeatureFlag } from "@/context/FeatureFlagContext";
-import {
-  createWorkflowFromWizard,
-  type WorkflowWizardResponse,
-} from "@/services/workflows";
-import { useRoutesContext } from "@/context/RoutesContext"; 
+import { useRoutesContext } from "@/context/RoutesContext";
 
 type OnboardingScreen = "chat" | "name-agent";
 
-const WORKFLOW_DRAFT_STORAGE_KEY = "onboarding_workflow_draft";
-const AGENT_NAME_STORAGE_KEY = "onboarding_agent_name";
+export const WORKFLOW_DRAFT_STORAGE_KEY = "onboarding_workflow_draft";
+export const AGENT_NAME_STORAGE_KEY = "onboarding_agent_name";
 
 export default function Onboarding() {
   const { registrationStatus } = useRoutesContext();
-  const { login } = useAuth();
-  const { refreshFlags } = useFeatureFlag();
+  const navigate = useNavigate();
   const {
     prompt,
     setPrompt,
     agentReply,
+    messages,
+    isThinking,
     subtitleText,
     titleText,
     welcomeFaqs,
@@ -40,11 +34,12 @@ export default function Onboarding() {
     hasConfig,
     handleSubmit,
     sendQuickAction,
+    workflowDraft,
+    isWorkflowReady,
   } = useOnboardingChat({ registrationStatus });
 
   const [showCongrats, setShowCongrats] = useState(true);
   const [showQuickActions, setShowQuickActions] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [screen, setScreen] = useState<OnboardingScreen>(() => {
     try {
       const savedDraftRaw = localStorage.getItem(WORKFLOW_DRAFT_STORAGE_KEY);
@@ -91,18 +86,13 @@ export default function Onboarding() {
     };
   }, []);
 
-  const extractedDraft = useMemo(() => {
-    if (!agentReply) return null;
-    return extractWorkflowDraftFromText(agentReply);
-  }, [agentReply]);
-
-  const effectiveScreen: OnboardingScreen = extractedDraft ? "name-agent" : screen;
+  const effectiveScreen: OnboardingScreen = isWorkflowReady ? "name-agent" : screen;
 
   useEffect(() => {
-    if (!extractedDraft) return;
+    if (!isWorkflowReady || !workflowDraft) return;
 
     try {
-      localStorage.setItem(WORKFLOW_DRAFT_STORAGE_KEY, extractedDraft.raw);
+      localStorage.setItem(WORKFLOW_DRAFT_STORAGE_KEY, JSON.stringify(workflowDraft));
     } catch {
       // ignore
     }
@@ -110,7 +100,7 @@ export default function Onboarding() {
     if (screen !== "name-agent") {
       setScreen("name-agent");
     }
-  }, [extractedDraft, screen]);
+  }, [isWorkflowReady, workflowDraft, screen]);
 
   const isInputDisabled = !hasConfig || isSending;
 
@@ -124,11 +114,6 @@ export default function Onboarding() {
   };
 
   const handleContinue = () => {
-    if (isLoggingIn) return;
-    void handleContinueAsync();
-  };
-
-  const handleContinueAsync = async () => {
     const trimmedName = agentName.trim();
     if (!trimmedName) return;
 
@@ -138,104 +123,17 @@ export default function Onboarding() {
       // ignore
     }
 
-    setIsLoggingIn(true);
-
-    const username =
-      (import.meta.env.VITE_ONBOARDING_USERNAME as string) || "admin";
-    const password =
-      (import.meta.env.VITE_ONBOARDING_PASSWORD as string) || "genadmin";
-    const tenant =
-      localStorage.getItem("tenant_id") ||
-      (import.meta.env.VITE_GENASSIST_CHAT_TENANT_ID as string) ||
-      "";
-
-    try {
-      localStorage.setItem("tenant_id", tenant);
-    } catch {
-      // ignore
-    }
-
-    try {
-      const response = await login(username, password, tenant);
-
-      if (response?.access_token) {
-        localStorage.setItem("access_token", response.access_token);
-        localStorage.setItem("refresh_token", response.refresh_token ?? "");
-        const tokenType = response.token_type || "bearer";
-        localStorage.setItem(
-          "token_type",
-          tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType
-        );
-        localStorage.setItem("isAuthenticated", "true");
-
-        try {
-          await refreshFlags();
-        } catch (error) {
-          // ignore
-        }
-
-        try {
-          await fetchUserPermissions();
-        } catch (error) {
-          // ignore
-        }
-
-        const workflowName =
-          localStorage.getItem(AGENT_NAME_STORAGE_KEY) || trimmedName;
-        const workflowJson =
-          localStorage.getItem(WORKFLOW_DRAFT_STORAGE_KEY) || "";
-        let wizardResponse: WorkflowWizardResponse | null = null;
-
-        if (workflowName && workflowJson) {
-          try {
-            wizardResponse = await createWorkflowFromWizard({
-              workflow_name: workflowName,
-              workflow_json: workflowJson,
-            });
-            if (!wizardResponse) {
-              toast.error("Failed to create workflow from onboarding.");
-            }
-          } catch (error) {
-            toast.error("Failed to create workflow from onboarding.");
-          }
-        } else {
-          toast.error("Missing workflow data from onboarding.");
-        }
-
-        try {
-          localStorage.setItem("skip_onboarding", "true");
-        } catch {
-          // ignore
-        }
-        window.dispatchEvent(new Event("skip-onboarding"));
-
-        toast.success("Logged in successfully.");
-        if (wizardResponse?.agent_id) {
-          window.location.href = `/ai-agents/workflow/${wizardResponse.agent_id}`;
-        } else if (wizardResponse?.url) {
-          window.location.href = wizardResponse.url;
-        } else if (wizardResponse?.id) {
-          window.location.href = `/ai-agents/workflow/${wizardResponse.id}`;
-        } else {
-          window.location.href = "/dashboard";
-        }
-      } else {
-        toast.error("Failed to log in.");
-      }
-    } catch (error) {
-      toast.error("Failed to log in.");
-    } finally {
-      setIsLoggingIn(false);
-    }
+    // Redirect to login — post-login logic will pick up the draft
+    navigate("/login", { state: { from: { pathname: "/onboarding" } } });
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-[#111827] animate-fade-up">
+    <div className="min-h-screen flex flex-col bg-slate-50">
       <OnboardingHeader />
 
-      <main className="flex-1 flex flex-col items-center justify-center">
-        {effectiveScreen === "chat" && registrationStatus === "new" ? (
-          <>
+      <main className="flex-1 flex flex-col items-center justify-center px-4 gap-8">
+        {effectiveScreen === "chat" ? (
+          <div className="w-full flex flex-col items-center gap-8">
             <OnboardingHero
               showCongrats={showCongrats && !agentReply}
               showQuickActions={showQuickActions && quickActions.length > 0}
@@ -244,9 +142,9 @@ export default function Onboarding() {
               quickActions={quickActions}
               onQuickAction={sendQuickAction}
               disableQuickActions={isInputDisabled}
+              messages={messages}
+              isThinking={isThinking}
             />
-
-            <div className="h-32" />
 
             <OnboardingInput
               value={prompt}
@@ -254,19 +152,18 @@ export default function Onboarding() {
               onChange={setPrompt}
               onSubmit={handleSubmit}
             />
-          </>
+          </div>
         ) : (
           <OnboardingNameAgent
             value={agentName}
-            disabled={isSending || isLoggingIn}
+            disabled={isSending}
             onChange={handleAgentNameChange}
             onContinue={handleContinue}
+            workflowDraft={workflowDraft}
           />
         )}
 
-        <div className="w-full max-w-2xl pt-2">
-          <ErrorBanner message={error} />
-        </div>
+        <ErrorBanner message={error} />
       </main>
 
       <OnboardingFooter />

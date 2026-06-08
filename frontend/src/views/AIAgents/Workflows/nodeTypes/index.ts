@@ -4,6 +4,7 @@ import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
 import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
+import ExternalAgentNode from "./llm/externalAgentNode";
 import PythonCodeNode from "./tools/pythonCodeNode";
 import {
   CHAT_INPUT_NODE_DEFINITION,
@@ -31,6 +32,7 @@ import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
 import {
   AGENT_NODE_DEFINITION,
+  EXTERNAL_AGENT_NODE_DEFINITION,
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
@@ -40,11 +42,13 @@ import {
   TEMPLATE_NODE_DEFINITION,
   GUARDRAIL_PROVENANCE_NODE_DEFINITION,
   GUARDRAIL_NLI_NODE_DEFINITION,
-} from "./utils/definitions";
+  FILE_READER_NODE_DEFINITION,
+} from './utils/definitions';
 import TemplateNode from "./utils/templateNode";
 import DataMapperNode from "./utils/dataMapperNode";
 import GuardrailProvenanceNode from "./utils/guardrailProvenanceNode";
 import GuardrailNliNode from "./utils/guardrailNliNode";
+import FileReaderNode from './utils/fileReaderNode';
 import SetStateNode from "./chat/setStateNode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
@@ -77,6 +81,12 @@ import TrainModelNode from "./training/trainModelNode";
 import JiraNode from "./integrations/jiraNode";
 import HumanInTheLoopNode from "./io/humanInTheLoopNode";
 import { HUMAN_IN_THE_LOOP_NODE_DEFINITION } from "./io/definitions";
+import TTSNode from "./audio/ttsNode";
+import STTNode from "./audio/sttNode";
+import {
+  TTS_NODE_DEFINITION,
+  STT_NODE_DEFINITION,
+} from "./audio/definitions";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -104,6 +114,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(EXTERNAL_AGENT_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
 
@@ -130,6 +141,11 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(WORKFLOW_EXECUTOR_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(HUMAN_IN_THE_LOOP_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(FILE_READER_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(TTS_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(STT_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -142,6 +158,7 @@ export const getNodeTypes = () => {
     apiToolNode: APIToolNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
+    externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
     sqlNode: SQLNode,
     mlModelInferenceNode: MLModelInferenceNode,
@@ -168,5 +185,8 @@ export const getNodeTypes = () => {
     mcpNode: MCPNode,
     workflowExecutorNode: WorkflowExecutorNode,
     humanInTheLoopNode: HumanInTheLoopNode,
+    fileReaderNode: FileReaderNode,
+    ttsNode: TTSNode,
+    sttNode: STTNode,
   };
 };

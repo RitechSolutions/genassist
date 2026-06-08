@@ -21,16 +21,17 @@ import {
   TranscriptEntry,
   ConversationFeedbackEntry,
 } from "@/interfaces/transcript.interface";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
+import { getCurrentUserId } from "@/services/auth";
 import { useWebSocketTranscript } from "../hooks/useWebsocket";
 import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
 import toast from "react-hot-toast";
 import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { submitConversationFeedback } from "@/services/transcripts";
 import { isWsEnabled } from "@/config/api";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
@@ -41,6 +42,30 @@ function toEpochMs(ct: string | number | undefined | null): number {
   if (typeof ct === "number") return ct;
   const t = new Date(ct).getTime();
   return isNaN(t) ? 0 : t;
+}
+
+function areMessagesEquivalent(
+  previous: TranscriptEntry[],
+  next: TranscriptEntry[]
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+
+  for (let index = 0; index < previous.length; index += 1) {
+    const prevMsg = previous[index];
+    const nextMsg = next[index];
+
+    if (
+      prevMsg.type !== nextMsg.type ||
+      prevMsg.speaker !== nextMsg.speaker ||
+      prevMsg.text !== nextMsg.text ||
+      toEpochMs(prevMsg.create_time) !== toEpochMs(nextMsg.create_time)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 interface Props {
@@ -99,7 +124,7 @@ function TranscriptDialogContent({
   onOpenChange,
   onTakeOver,
   refetchConversations,
-  messages = [],
+  messages,
 }: Props): JSX.Element {
   const feedbackCacheRef = useRef<Map<string, ConversationFeedbackEntry>>(
     new Map()
@@ -108,6 +133,10 @@ function TranscriptDialogContent({
     const raw = transcript?.messages ?? transcript?.transcript;
     return Array.isArray(raw) ? raw : [];
   }, [transcript?.messages, transcript?.transcript]);
+  const incomingMessages = useMemo(
+    () => (Array.isArray(messages) ? messages : []),
+    [messages]
+  );
 
   const hasSupervisorTakeover = useMemo(() => {
     if (!transcript) return false;
@@ -117,8 +146,9 @@ function TranscriptDialogContent({
     );
   }, [transcript?.status, transcriptMessages]);
 
-  const [hasTakenOver, setHasTakenOver] = useState(hasSupervisorTakeover);
   const [userInitiatedTakeOver, setUserInitiatedTakeOver] = useState(false);
+  const [localSupervisorId, setLocalSupervisorId] = useState<string | null>(null);
+  const currentUserId = getCurrentUserId();
   const [chatInput, setChatInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
@@ -169,14 +199,14 @@ function TranscriptDialogContent({
   useEffect(() => {
     if (!isOpen) {
       setUserInitiatedTakeOver(false);
+      setLocalSupervisorId(null);
     }
   }, [isOpen]);
 
   useEffect(() => {
-    if (userInitiatedTakeOver) {
-      setHasTakenOver(true);
-    }
-  }, [userInitiatedTakeOver]);
+    setUserInitiatedTakeOver(false);
+    setLocalSupervisorId(null);
+  }, [transcript?.id]);
 
   const shouldInitWebSocket = isWsEnabled && transcript?.id && token;
 
@@ -184,6 +214,7 @@ function TranscriptDialogContent({
     messages: wsMessages,
     isConnected,
     statistics,
+    takeoverInfo,
   } = useWebSocketTranscript(
     shouldInitWebSocket
       ? {
@@ -197,6 +228,46 @@ function TranscriptDialogContent({
           transcriptInitial: [],
         }
   );
+
+  useEffect(() => {
+    if (takeoverInfo.supervisor_id) {
+      setLocalSupervisorId(takeoverInfo.supervisor_id);
+    }
+  }, [takeoverInfo.supervisor_id]);
+
+  const resolvedSupervisorId = useMemo(() => {
+    const fromTranscript = transcript?.supervisor_id?.trim();
+    return (
+      localSupervisorId ??
+      (fromTranscript || null) ??
+      takeoverInfo.supervisor_id ??
+      null
+    );
+  }, [localSupervisorId, transcript?.supervisor_id, takeoverInfo.supervisor_id]);
+
+  const isCurrentUserSupervisor = useMemo(() => {
+    if (userInitiatedTakeOver) return true;
+    if (!hasSupervisorTakeover) return false;
+    if (!currentUserId || !resolvedSupervisorId) return false;
+    return resolvedSupervisorId === currentUserId;
+  }, [
+    userInitiatedTakeOver,
+    hasSupervisorTakeover,
+    currentUserId,
+    resolvedSupervisorId,
+  ]);
+
+  const isTakenOverByOther =
+    hasSupervisorTakeover && !isCurrentUserSupervisor;
+
+  const supervisorDisplayName = useMemo(() => {
+    const fromApi = transcript?.supervisor_username?.trim();
+    if (fromApi) return fromApi;
+    if (resolvedSupervisorId) {
+      return `Supervisor (${resolvedSupervisorId.slice(-4)})`;
+    }
+    return "Another supervisor";
+  }, [transcript?.supervisor_username, resolvedSupervisorId]);
 
   useEffect(() => {
     if (transcript) {
@@ -327,7 +398,7 @@ function TranscriptDialogContent({
     if (wsMessages.length > 0) {
       for (const msg of wsMessages) {
         const speaker = msg?.speaker?.toLowerCase();
-        if (speaker === "customer" && !hasTakenOver) {
+        if (speaker === "customer" && !isCurrentUserSupervisor) {
           setIsThinking(true);
         }
 
@@ -345,8 +416,8 @@ function TranscriptDialogContent({
       }
     }
 
-    if (messages.length > 0) {
-      for (const msg of messages) {
+    if (incomingMessages.length > 0) {
+      for (const msg of incomingMessages) {
         if (
           !currentMsgs.some(
             (m) => m.text === msg.text && toEpochMs(m.create_time) === toEpochMs(msg.create_time)
@@ -396,15 +467,20 @@ function TranscriptDialogContent({
       return true;
     });
 
-    setLocalMessages(dedupedMsgs);
-
-    if (!userInitiatedTakeOver) {
-      setHasTakenOver(
-        transcript?.status === "takeover" ||
-          currentMsgs.some((msg) => msg.type === "takeover")
-      );
-    }
-  }, [transcriptMessages, transcript, wsMessages, messages, sentMessages, isOpen, userInitiatedTakeOver]);
+    setLocalMessages((prevMessages) =>
+      areMessagesEquivalent(prevMessages, dedupedMsgs)
+        ? prevMessages
+        : dedupedMsgs
+    );
+  }, [
+    transcriptMessages,
+    transcript,
+    wsMessages,
+    incomingMessages,
+    sentMessages,
+    isOpen,
+    isCurrentUserSupervisor,
+  ]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -445,9 +521,10 @@ function TranscriptDialogContent({
         : await conversationService.takeoverConversation(transcript.id);
 
       if (success) {
-        setHasTakenOver(true);
         setIsThinking(false);
         setUserInitiatedTakeOver(true);
+        const uid = getCurrentUserId();
+        if (uid) setLocalSupervisorId(uid);
 
         // Preserve any locally submitted feedback when takeover triggers a refresh
         try {
@@ -606,37 +683,52 @@ function TranscriptDialogContent({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <MessageSquare className="w-5 h-5" />
-          <span>Chat #{transcript.id.slice(-4)}</span>
-          <Badge
-            variant="default"
-            className={`ml-2 ${
-              sentiment === "positive"
-                ? "bg-green-600 text-white"
-                : sentiment === "negative"
-                ? "bg-red-600 text-white"
-                : "bg-purple-600 text-white"
-            }`}
-          >
-            {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
-          </Badge>
-          {isConnected && (
+        <DialogTitle className="flex flex-col gap-1.5 items-start">
+          <span className="flex flex-wrap items-center gap-2">
+            <MessageSquare className="w-5 h-5 shrink-0" />
+            <span>Chat #{transcript.id.slice(-4)}</span>
             <Badge
-              variant="outline"
-              className="ml-2 bg-green-50 text-green-700 border-green-200"
+              variant="default"
+              className={
+                sentiment === "positive"
+                  ? "bg-green-600 text-white"
+                  : sentiment === "negative"
+                  ? "bg-red-600 text-white"
+                  : "bg-purple-600 text-white"
+              }
             >
-              Live
+              {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
             </Badge>
-          )}
-          {hasTakenOver && (
-            <Badge
-              variant="outline"
-              className="ml-2 bg-blue-50 text-blue-700 border-blue-200"
-            >
-              Supervisor Mode
-            </Badge>
-          )}
+            {isConnected && (
+              <Badge
+                variant="outline"
+                className="bg-green-50 text-green-700 border-green-200"
+              >
+                Live
+              </Badge>
+            )}
+            {isCurrentUserSupervisor && (
+              <Badge
+                variant="outline"
+                className="bg-blue-50 text-blue-700 border-blue-200"
+              >
+                Supervisor Mode
+              </Badge>
+            )}
+            {isTakenOverByOther && (
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-800 border-amber-200"
+              >
+                Taken over
+              </Badge>
+            )}
+          </span>
+          {transcript.agent_name?.trim() ? (
+            <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
+              {transcript.agent_name.trim()}
+            </span>
+          ) : null}
         </DialogTitle>
       </DialogHeader>
 
@@ -782,9 +874,11 @@ function TranscriptDialogContent({
 
                 <TopicBox
                   text={
-                    hasTakenOver
+                    isCurrentUserSupervisor
                       ? "You have taken over this conversation"
-                      : topicText
+                      : isTakenOverByOther
+                        ? `${supervisorDisplayName} has taken over this conversation`
+                        : topicText
                   }
                 />
               </div>
@@ -815,7 +909,9 @@ function TranscriptDialogContent({
                       >
                         <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center">
                           <User className="w-3 h-3 mr-1" />
-                          Supervisor took over
+                          {isCurrentUserSupervisor
+                            ? "You took over"
+                            : `${supervisorDisplayName} took over`}
                         </div>
                       </div>
                     );
@@ -856,7 +952,7 @@ function TranscriptDialogContent({
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
-                          <ConversationEntryWrapper entry={entry} />
+                          <ConversationEntryWrapper entry={entry} conversationId={transcript.id} />
                           <span className={`block text-[10px] text-right mt-1 ${
                             isAgent ? "text-white/70" : "text-gray-500"
                           }`}>
@@ -867,7 +963,7 @@ function TranscriptDialogContent({
                     </div>
                   );
                 })}
-                {isThinking && !hasTakenOver && (
+                {isThinking && !isCurrentUserSupervisor && (
                   <div className="flex flex-col items-end">
                     <span className="text-[11px] text-black font-medium mb-1">
                       Agent
@@ -899,17 +995,15 @@ function TranscriptDialogContent({
           </div>
 
           <div className="mt-4 space-y-3">
-            {!hasTakenOver ? (
+            {!hasSupervisorTakeover ? (
               <Button
                 onClick={handleTakeOver}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                disabled={
-                  loading || transcript.status === "complete" || hasTakenOver
-                }
+                disabled={loading || transcript.status === "complete"}
               >
                 {loading ? "Processing..." : "Take Over Conversation"}
               </Button>
-            ) : (
+            ) : isCurrentUserSupervisor ? (
               <>
                 <div className="flex items-center gap-2">
                   <Input
@@ -934,6 +1028,17 @@ function TranscriptDialogContent({
                   {isFinalizing ? "Finalizing..." : "Finalize Conversation"}
                 </Button>
               </>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <User className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">
+                      Conversation already taken over by <span className="font-medium">{supervisorDisplayName}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>

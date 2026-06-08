@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from injector import inject
@@ -22,9 +22,9 @@ class MCPServerRepository:
     async def create(
         self,
         name: str,
-        api_key_encrypted: str,
-        api_key_hash: str,
         user_id: UUID,
+        auth_type: str,
+        auth_values: Dict[str, Any],
         description: Optional[str] = None,
         is_active: int = 1,
         workflows: Optional[List[dict]] = None,
@@ -32,17 +32,16 @@ class MCPServerRepository:
         """Create a new MCP server."""
         mcp_server = MCPServerModel(
             name=name,
-            api_key_encrypted=api_key_encrypted,
-            api_key_hash=api_key_hash,
+            auth_type=auth_type,
+            auth_values=auth_values,
             user_id=user_id,
             description=description,
             is_active=is_active,
         )
 
         self.db.add(mcp_server)
-        await self.db.flush()  # Flush to get the ID
+        await self.db.flush()
 
-        # Create workflow associations
         if workflows:
             for wf_data in workflows:
                 workflow = MCPServerWorkflowModel(
@@ -55,7 +54,7 @@ class MCPServerRepository:
 
         await self.db.commit()
         await self.db.refresh(mcp_server)
-        return await self.get_by_id(mcp_server.id)  # Return with workflows loaded
+        return await self.get_by_id(mcp_server.id)
 
     async def get_by_id(self, mcp_server_id: UUID, user_id: Optional[UUID] = None) -> Optional[MCPServerModel]:
         """Fetch MCP server by ID, optionally filtered by user."""
@@ -75,12 +74,39 @@ class MCPServerRepository:
 
     async def get_by_api_key_hash(self, api_key_hash: str) -> Optional[MCPServerModel]:
         """Fetch MCP server by API key hash (for authentication)."""
+        j = MCPServerModel.auth_values
         query = (
             select(MCPServerModel)
             .options(selectinload(MCPServerModel.workflows).selectinload(MCPServerWorkflowModel.workflow))
             .where(
                 and_(
-                    MCPServerModel.api_key_hash == api_key_hash,
+                    MCPServerModel.auth_type == "api_key",
+                    j["api_key_hash"].astext == api_key_hash,
+                    MCPServerModel.is_deleted == 0,
+                )
+            )
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+    async def get_by_oauth_client_id_hash(
+        self, oauth_client_id_hash: str
+    ) -> Optional[MCPServerModel]:
+        """
+        Fetch an OAuth2 MCP server by ``auth_values.oauth2_client_id_hash`` only.
+
+        Issuer and audience for inbound JWT verification come from the matched row.
+        """
+        if not oauth_client_id_hash:
+            return None
+        j = MCPServerModel.auth_values
+        query = (
+            select(MCPServerModel)
+            .options(selectinload(MCPServerModel.workflows).selectinload(MCPServerWorkflowModel.workflow))
+            .where(
+                and_(
+                    MCPServerModel.auth_type == "oauth2",
+                    j["oauth2_client_id_hash"].astext == oauth_client_id_hash,
                     MCPServerModel.is_deleted == 0,
                 )
             )
@@ -121,8 +147,8 @@ class MCPServerRepository:
         mcp_server_id: UUID,
         user_id: UUID,
         name: Optional[str] = None,
-        api_key_encrypted: Optional[str] = None,
-        api_key_hash: Optional[str] = None,
+        auth_type: Optional[str] = None,
+        auth_values: Optional[Dict[str, Any]] = None,
         description: Optional[str] = None,
         is_active: Optional[int] = None,
         workflows: Optional[List[dict]] = None,
@@ -132,19 +158,17 @@ class MCPServerRepository:
         if not mcp_server:
             return None
 
-        # Update basic fields
         if name is not None:
             mcp_server.name = name
-        if api_key_encrypted is not None:
-            mcp_server.api_key_encrypted = api_key_encrypted
-        if api_key_hash is not None:
-            mcp_server.api_key_hash = api_key_hash
+        if auth_type is not None:
+            mcp_server.auth_type = auth_type
+        if auth_values is not None:
+            mcp_server.auth_values = auth_values
         if description is not None:
             mcp_server.description = description
         if is_active is not None:
             mcp_server.is_active = is_active
 
-        # Update workflows if provided
         if workflows is not None:
             existing_workflows_query = select(MCPServerWorkflowModel).where(
                 MCPServerWorkflowModel.mcp_server_id == mcp_server_id
@@ -153,27 +177,26 @@ class MCPServerRepository:
             existing_workflows = {wf.workflow_id: wf for wf in existing_workflows_result.scalars().all()}
             incoming_workflows = {wf_data["workflow_id"]: wf_data for wf_data in workflows}
 
-            # Delete workflows removed from the list
             for workflow_id, wf in existing_workflows.items():
                 if workflow_id not in incoming_workflows:
                     await self.db.delete(wf)
 
             for workflow_id, wf_data in incoming_workflows.items():
                 if workflow_id in existing_workflows:
-                    # Update changed fields
                     existing = existing_workflows[workflow_id]
                     if existing.tool_name != wf_data["tool_name"]:
                         existing.tool_name = wf_data["tool_name"]
                     if existing.tool_description != wf_data["tool_description"]:
                         existing.tool_description = wf_data["tool_description"]
                 else:
-                    # Insert new workflow
-                    self.db.add(MCPServerWorkflowModel(
-                        mcp_server_id=mcp_server.id,
-                        workflow_id=workflow_id,
-                        tool_name=wf_data["tool_name"],
-                        tool_description=wf_data["tool_description"],
-                    ))
+                    self.db.add(
+                        MCPServerWorkflowModel(
+                            mcp_server_id=mcp_server.id,
+                            workflow_id=workflow_id,
+                            tool_name=wf_data["tool_name"],
+                            tool_description=wf_data["tool_description"],
+                        )
+                    )
 
         await self.db.commit()
         await self.db.refresh(mcp_server)
@@ -188,4 +211,3 @@ class MCPServerRepository:
         await self.db.commit()
         await self.db.refresh(mcp_server)
         return True
-

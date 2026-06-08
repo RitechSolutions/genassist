@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/skeleton";
 import { cn } from "@/helpers/utils";
 
 interface SummaryProps {
@@ -14,27 +15,27 @@ export function ActiveConversationsSummary({ total, counts, loading }: SummaryPr
   ];
 
   return (
-    <div className="bg-muted rounded-2xl flex flex-col gap-12 items-center pt-12 pb-1 px-1 max-h-[240px]">
+    <div className="flex flex-col items-center gap-6 rounded-2xl bg-muted px-2 pb-2 pt-6 sm:gap-8 sm:pt-8">
       {loading ? (
-        <div className="space-y-4">
-          <div className="h-12 w-24 bg-gray-200 rounded animate-pulse" />
+        <div className="w-full space-y-3">
+          <Skeleton className="mx-auto h-10 w-20 sm:h-12 sm:w-24" />
           <div className="flex gap-1">
-            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
-            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
-            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
+            <Skeleton className="h-24 flex-1 rounded-lg" />
+            <Skeleton className="h-24 flex-1 rounded-lg" />
+            <Skeleton className="h-24 flex-1 rounded-lg" />
           </div>
         </div>
       ) : (
         <>
-          <div className="text-5xl font-bold text-foreground leading-[48px]">
+          <div className="text-4xl font-bold leading-none text-foreground sm:text-5xl">
             {total}
           </div>
-          
+
           <div className="flex gap-1 w-full">
             {sentiments.map((sentiment, index) => (
               <div
                 key={index}
-                className="flex-1 bg-white rounded-lg shadow-sm px-2 py-4 flex flex-col gap-2 items-center justify-center"
+                className="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg bg-white px-2 py-3 shadow-sm sm:gap-2 sm:py-4"
               >
                 <div className="flex items-center justify-center shrink-0">
                   <div className={cn("w-4 h-[4px] rounded-xl", sentiment.color)} />

@@ -3,10 +3,10 @@ import { useParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getAgentConfig, updateAgentConfig } from "@/services/api";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import { Card } from "@/components/card";
 import { Save, Loader2, Upload, X, FileJson } from "lucide-react";
 
@@ -307,7 +307,7 @@ export const SecurityPanel = ({
                 <Label htmlFor="token-expiration">
                   Token Expiration (minutes)
                 </Label>
-                <Input
+                <RichInput
                   id="token-expiration"
                   type="number"
                   min="1"
@@ -333,7 +333,7 @@ export const SecurityPanel = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="cors-origins">Allowed Origins</Label>
-            <Textarea
+            <RichTextarea
               id="cors-origins"
               value={corsAllowedOrigins}
               onChange={(e) => setCorsAllowedOrigins(e.target.value)}
@@ -360,7 +360,7 @@ export const SecurityPanel = ({
               <Label htmlFor="rate-limit-start-minute">
                 Conversation Start (per minute)
               </Label>
-              <Input
+              <RichInput
                 id="rate-limit-start-minute"
                 type="number"
                 min="1"
@@ -373,7 +373,7 @@ export const SecurityPanel = ({
               <Label htmlFor="rate-limit-start-hour">
                 Conversation Start (per hour)
               </Label>
-              <Input
+              <RichInput
                 id="rate-limit-start-hour"
                 type="number"
                 min="1"
@@ -386,7 +386,7 @@ export const SecurityPanel = ({
               <Label htmlFor="rate-limit-update-minute">
                 Conversation Update (per minute)
               </Label>
-              <Input
+              <RichInput
                 id="rate-limit-update-minute"
                 type="number"
                 min="1"
@@ -399,7 +399,7 @@ export const SecurityPanel = ({
               <Label htmlFor="rate-limit-update-hour">
                 Conversation Update (per hour)
               </Label>
-              <Input
+              <RichInput
                 id="rate-limit-update-hour"
                 type="number"
                 min="1"
@@ -441,7 +441,7 @@ export const SecurityPanel = ({
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="recaptcha-project-id">Project ID</Label>
-                  <Input
+                  <RichInput
                     id="recaptcha-project-id"
                     value={recaptchaProjectId}
                     onChange={(e) => setRecaptchaProjectId(e.target.value)}
@@ -450,7 +450,7 @@ export const SecurityPanel = ({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="recaptcha-site-key">Site Key</Label>
-                  <Input
+                  <RichInput
                     id="recaptcha-site-key"
                     value={recaptchaSiteKey}
                     onChange={(e) => setRecaptchaSiteKey(e.target.value)}
@@ -459,7 +459,7 @@ export const SecurityPanel = ({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="recaptcha-min-score">Minimum Score (0.0-1.0)</Label>
-                  <Input
+                  <RichInput
                     id="recaptcha-min-score"
                     type="text"
                     value={recaptchaMinScore}
@@ -527,7 +527,7 @@ export const SecurityPanel = ({
                     </div>
                   </div>
 
-                  <Textarea
+                  <RichTextarea
                     id="gcp-svc-account"
                     value={gcpSvcAccountJson}
                     onChange={(e) => setGcpSvcAccountJson(e.target.value)}

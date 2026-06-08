@@ -71,6 +71,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
           message_id: (entry as { id?: string }).id,
           feedback: perMessageFeedback,
           type: (entry as { type?: string }).type || "message",
+          audio_format: (entry as { audio_format?: string }).audio_format,
         } as TranscriptEntry;
       });
     } else {
@@ -138,6 +139,8 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
 
     return {
       id: backendData.id.toString(),
+      agent_id: backendData.agent_id != null ? String(backendData.agent_id) : null,
+      agent_name: backendData.agent_name ?? null,
       audio: audioUrl,
       create_time: backendData.created_at || new Date().toISOString(),
       recording_id: backendData.recording_id,
@@ -150,6 +153,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       word_count: backendData.word_count,
       in_progress_hostility_score: backendData.in_progress_hostility_score,
       supervisor_id: backendData.supervisor_id,
+      supervisor_username: backendData.supervisor_username ?? null,
       metadata: {
         isCall,
         duration: durationInSeconds,
@@ -191,6 +195,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       word_count: 0,
       in_progress_hostility_score: 0,
       supervisor_id: null,
+      supervisor_username: null,
       metadata: {
         isCall: false,
         duration: 0,

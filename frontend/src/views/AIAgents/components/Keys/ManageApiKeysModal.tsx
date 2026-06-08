@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
-import { getApiKeys, revokeApiKey } from "@/services/apiKeys";
+import { getApiKeys, revokeApiKey, revealApiKey } from "@/services/apiKeys";
 import { ApiKeyExpiryLines } from "@/components/api-keys/ApiKeyExpiryLines";
 import {
   RotateApiKeyDialog,
@@ -33,7 +33,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/alert-dialog";
-import { PlusCircle, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { PlusCircle, Pencil, Trash2, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { Badge } from "@/components/badge";
 import toast from "react-hot-toast";
 import { SecretInput } from "@/components/SecretInput";
@@ -64,12 +64,6 @@ export default function ManageApiKeysModal({
   async function load() {
     const data = await getApiKeys(userId);
     setKeys(data);
-
-    const seeded: Record<string, string> = {};
-    data.forEach((k) => {
-      if (k.key_val) seeded[k.id] = k.key_val;
-    });
-    setSecrets(seeded);
   }
 
   useEffect(() => {
@@ -89,6 +83,25 @@ export default function ManageApiKeysModal({
 
     setFormOpen(false);
     setEditing(null);
+  }
+
+  async function handleReveal(keyId: string) {
+    if (secrets[keyId]) {
+      setSecrets((s) => {
+        const next = { ...s };
+        delete next[keyId];
+        return next;
+      });
+      return;
+    }
+    try {
+      const revealed = await revealApiKey(keyId);
+      if (revealed.key_val) {
+        setSecrets((s) => ({ ...s, [keyId]: revealed.key_val! }));
+      }
+    } catch {
+      toast.error("Failed to reveal API key.");
+    }
   }
 
   async function handleDelete(keyId: string) {
@@ -146,7 +159,28 @@ export default function ManageApiKeysModal({
                         <TableCell className="font-medium">{k.name}</TableCell>
 
                         <TableCell className="font-medium">
-                          <SecretInput value={secret} className="w-full" />
+                          <div className="flex items-center gap-2">
+                            {secret ? (
+                              <SecretInput value={secret} className="w-full" />
+                            ) : (
+                              <span className="text-muted-foreground text-sm">
+                                {"•".repeat(20)}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 shrink-0"
+                              title={secret ? "Hide key" : "Reveal key"}
+                              onClick={() => handleReveal(k.id)}
+                            >
+                              {secret ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
                         </TableCell>
 
                         <TableCell className="align-top">

@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -27,15 +28,21 @@ class AuthService:
         self.access_token_expire_minutes = 60
         self.refresh_token_expire_days = 2
 
+    async def _get_redis(self):
+        from app.dependencies.injector import injector
+        from app.dependencies.dependency_injection import RedisString
+
+        return injector.get(RedisString)
+
     def create_access_token(
         self, data: dict, expires_delta: Optional[timedelta] = None
     ) -> str:
         try:
             to_encode = data.copy()
-            expire = datetime.now() + (
+            expire = datetime.now(timezone.utc) + (
                 expires_delta or timedelta(minutes=self.access_token_expire_minutes)
             )
-            to_encode.update({"exp": expire})
+            to_encode.update({"exp": expire, "typ": "access"})
             return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         except Exception as error:
             raise AppException(
@@ -49,19 +56,51 @@ class AuthService:
         self, data: dict, expires_delta: Optional[timedelta] = None
     ) -> str:
         to_encode = data.copy()
-        expire = datetime.now() + (
+        expire = datetime.now(timezone.utc) + (
             expires_delta or timedelta(days=self.refresh_token_expire_days)
         )
-        to_encode.update({"exp": expire})
+        to_encode.update({
+            "exp": expire,
+            "typ": "refresh",
+            "jti": str(uuid.uuid4()),
+        })
         return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
 
-    async def decode_jwt(self, token: str) -> UserReadAuth:
-        try:
+    async def decode_jwt(self, token: str, expected_typ: str = "access") -> UserReadAuth:
+        """Decode and validate a JWT, enforcing the ``typ`` claim.
 
+        Args:
+            token: The raw JWT string.
+            expected_typ: Required value of the ``typ`` claim
+                          (``"access"`` or ``"refresh"``).
+        """
+        try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+
+            # --- typ enforcement ---------------------------------------------------
+            # Tokens minted before the typ claim was added will not have it.
+            # Accept those for backward compatibility, but reject tokens whose typ
+            # is present but does not match (e.g. an access token used on /refresh).
+            token_typ = payload.get("typ")
+            if token_typ is not None and token_typ != expected_typ:
+                raise AppException(
+                    status_code=401,
+                    error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
+                    error_detail=f"Token type '{token_typ}' not accepted on this endpoint",
+                )
+
+            # --- Revocation check (refresh tokens only) ----------------------------
+            jti = payload.get("jti")
+            if expected_typ == "refresh" and jti:
+                if await self._is_token_revoked(jti):
+                    raise AppException(
+                        status_code=401,
+                        error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
+                        error_detail="Refresh token has been revoked",
+                    )
+
             username = payload.get("sub")
             user_id = payload.get("user_id")
-            token_tenant_id = payload.get("tenant_id")  # Get tenant_id from token
 
             if username is None or user_id is None:
                 raise AppException(
@@ -70,16 +109,15 @@ class AuthService:
                     error_detail="JWT error: Username is None",
                 )
 
-            # Validate tenant_id if present in token (for backward compatibility, allow tokens without tenant_id)
             from app.dependencies.injector import injector
 
             user_service = injector.get(UserService)
             user: UserReadAuth | None = await user_service.get_by_id_for_auth(user_id)
 
             if user is None or not user.is_active:
-                logger.warning(f"User not found or inactive: user_id={user_id}")
+                logger.warning("User not found or inactive: user_id=%s", user_id)
                 raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
-            # I not set there is no expiry
+
             if user.force_upd_pass_date and user.force_upd_pass_date < datetime.now(
                 timezone.utc
             ):
@@ -88,6 +126,8 @@ class AuthService:
                 )
 
             return user
+        except AppException:
+            raise
         except ExpiredSignatureError as error:
             raise AppException(
                 status_code=401,
@@ -101,6 +141,41 @@ class AuthService:
                 error_detail=f"JWT error: {error}",
                 error_obj=error,
             )
+
+    # --- Refresh-token revocation ----------------------------------------------
+
+    _REVOKED_PREFIX = "revoked_jti:"
+
+    async def _is_token_revoked(self, jti: str) -> bool:
+        """Check whether a refresh-token JTI has been revoked."""
+        try:
+            redis = await self._get_redis()
+            return bool(await redis.exists(f"{self._REVOKED_PREFIX}{jti}"))
+        except Exception:
+            logger.warning("Redis unavailable for revocation check — allowing token")
+            return False
+
+    async def revoke_refresh_token(self, token: str) -> None:
+        """Revoke a refresh token by storing its JTI in Redis.
+
+        The key TTL matches the token's remaining lifetime so entries
+        auto-expire and don't accumulate indefinitely.
+        """
+        try:
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            jti = payload.get("jti")
+            if not jti:
+                return
+
+            exp = payload.get("exp")
+            ttl = int(exp - datetime.now(timezone.utc).timestamp()) if exp else self.refresh_token_expire_days * 86400
+            if ttl <= 0:
+                return  # already expired, nothing to revoke
+
+            redis = await self._get_redis()
+            await redis.setex(f"{self._REVOKED_PREFIX}{jti}", ttl, "1")
+        except Exception:
+            logger.warning("Failed to revoke refresh token — Redis may be unavailable")
 
     async def authenticate_api_key(self, api_key: str) -> ApiKeyInternal:
         """Authenticate and return API key object if valid."""
@@ -130,7 +205,6 @@ class AuthService:
             raise AppException(
                 error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,
                 status_code=401,
-                error_detail="Username not found.",
             )
 
         if not user.is_active:
@@ -143,7 +217,6 @@ class AuthService:
             raise AppException(
                 error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,
                 status_code=401,
-                error_detail="Incorrect password.",
             )
 
         return user
@@ -175,7 +248,7 @@ class AuthService:
                     P.Conversation.UPDATE_IN_PROGRESS
                 ],  # Limited permission
             }
-            expire = datetime.now() + (
+            expire = datetime.now(timezone.utc) + (
                 expires_delta or timedelta(hours=24)
             )  # Default 24 hours for guest tokens
             to_encode.update({"exp": expire})

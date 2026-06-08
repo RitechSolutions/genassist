@@ -228,15 +228,18 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     path: string,
     value: unknown
   ) => {
-    // Set data for drop targets (avoid text/html — it can cause a second drag preview and overlapping text)
-    e.dataTransfer.setData("application/json", JSON.stringify({ path, value }));
-    e.dataTransfer.setData("text/plain", path);
+    const reference = path.startsWith("{{") ? path : `{{${path}}}`;
+    // JSON only — omit text/plain so Ace Editor does not also insert on drop
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ path: reference.slice(2, -2), value })
+    );
 
     e.dataTransfer.effectAllowed = "copy";
 
     // Use a single custom drag image so the cursor shows one clear pill instead of default + HTML
     const dragImage = document.createElement("div");
-    dragImage.textContent = path;
+    dragImage.textContent = reference;
     Object.assign(dragImage.style, {
       position: "absolute",
       top: "-9999px",

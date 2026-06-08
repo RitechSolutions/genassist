@@ -2,12 +2,11 @@ import { Button } from "@/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Eye, EyeOff, Copy } from "lucide-react";
 import { ApiKeyDialogLogic } from "./ApiKeyDialogLogic";
@@ -207,7 +206,7 @@ export function ApiKeyDialog({
                         : maskInput(generatedKey || "")
                     }
                     readOnly
-                    className="w-full z-10"
+                    className="w-full z-10 pr-20"
                   />
                   <div className="absolute right-2 flex gap-1 elevation-1 z-20">
                     <Button

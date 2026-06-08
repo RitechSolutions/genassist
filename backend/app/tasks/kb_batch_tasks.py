@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
@@ -16,6 +15,7 @@ from app.services.AzureStorageService import AzureStorageService
 from app.services.datasources import DataSourceService
 from app.services.llm_analysts import LlmAnalystService
 from app.services.transcription import transcribe_audio_whisper
+from app.tasks.base import run_async_in_celery
 from app.tasks.zendesk_article_sync_tasks import import_zendesk_articles_to_kb_async
 
 logger = logging.getLogger(__name__)
@@ -28,8 +28,11 @@ def batch_process_files_kb(kb_id: Optional[str] = None):
     Runs async summary pipeline for Azure blob files.
     Accepts kb_id (single) - dispatches to appropriate Celery tasks by KB type.
     """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(batch_process_files_kb_async_with_scope(kb_id=kb_id))
+    return run_async_in_celery(
+        batch_process_files_kb_async_with_scope(kb_id=kb_id),
+        timeout=4 * 60,
+        task_name="batch_process_files_kb",
+    )
 
 
 async def batch_process_files_kb_async_with_scope(
@@ -242,7 +245,7 @@ async def batch_process_files_kb_async(
 
 
 
-        elif ds_item.type.lower() == "azure_blob":
+        elif ds_item.source_type.lower() == "azure_blob":
             # # Required connection details stored in datasource connection_data
             container = conn.get("container_name")
             prefix = conn.get("input_prefix", "incoming")

@@ -44,6 +44,7 @@ export function Languages() {
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditLanguage={handleEditLanguage}
+        onCreateLanguage={handleCreateLanguage}
       />
 
       <LanguageDialog

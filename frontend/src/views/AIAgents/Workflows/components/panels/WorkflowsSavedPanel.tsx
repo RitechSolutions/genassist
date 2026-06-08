@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -426,7 +426,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="name">Workflow Name</Label>
-              <Input
+              <RichInput
                 id="name"
                 placeholder="My Workflow"
                 value={workflowName}
@@ -435,7 +435,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description (Optional)</Label>
-              <Input
+              <RichInput
                 id="description"
                 placeholder="Description of what this workflow does"
                 value={workflowDescription}
@@ -444,7 +444,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="version">Version</Label>
-              <Input
+              <RichInput
                 id="version"
                 placeholder="Version number"
                 value={workflowVersion}

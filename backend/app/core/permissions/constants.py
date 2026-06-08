@@ -22,6 +22,7 @@ class ApiKeyPermissions:
     """API Key CRUD permissions"""
     CREATE = "create:api_key"
     READ = "read:api_key"
+    DECRYPT = "decrypt:api_key"
     UPDATE = "update:api_key"
     DELETE = "delete:api_key"
 
@@ -47,6 +48,7 @@ class ConversationPermissions:
     UPDATE_IN_PROGRESS = "update:in_progress_conversation"
     TAKEOVER_IN_PROGRESS = "takeover_in_progress_conversation"
     READ_IN_PROGRESS = "read:in_progress_conversation"
+    DELETE_GDPR = "delete:conversation:gdpr"
 
 
 class DataSourcePermissions:
@@ -193,6 +195,16 @@ class OpenAIPermissions:
     READ_FINE_TUNABLE_MODELS = "read:openai_fine_tunable_models"
     DELETE_FINE_TUNED_MODEL = "delete:openai_fine_tuned_model"
 
+
+class LocalFineTuningPermissions:
+    """Local fine-tuning proxy permissions"""
+    READ = "read:local_fine_tuning"
+    CREATE = "create:local_fine_tuning"
+    CANCEL = "cancel:local_fine_tuning"
+    DELETE = "delete:local_fine_tuning"
+    DEPLOY = "deploy:local_fine_tuning"
+    TEST = "test:local_fine_tuning"
+
 class CustomerPermissions:
     CREATE = "create:customer"
     READ = "read:customer"
@@ -248,6 +260,7 @@ class Permissions:
     Workflow = WorkflowPermissions
     Evaluation = EvaluationPermissions
     OpenAI = OpenAIPermissions
+    LocalFineTuning = LocalFineTuningPermissions
     Customer = CustomerPermissions
     Dashboard = DashboardPermissions
     FileManager = FileManagerPermissions
@@ -277,8 +290,8 @@ def get_all_permission_constants() -> set[str]:
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
         UserGroupPermissions, UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
-        CustomerPermissions, DashboardPermissions, LegacyPermissions, FileManagerPermissions,
-        EvaluationPermissions
+        LocalFineTuningPermissions, CustomerPermissions, DashboardPermissions,
+        LegacyPermissions, FileManagerPermissions, EvaluationPermissions
     ]
 
     # Extract all string constants

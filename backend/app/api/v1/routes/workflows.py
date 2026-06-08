@@ -1,27 +1,29 @@
-import time
 import logging
+import time
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi_injector import Injected
-from app.modules.workflow.utils import generate_python_function_template
-from app.core.permissions.constants import Permissions as P
-from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
+
 from app.auth.dependencies import auth, permissions
-from app.services.llm_providers import LlmProviderService
-
-from app.services.workflow import WorkflowService
+from app.core.permissions.constants import Permissions as P
 from app.dependencies.injector import injector
-from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
-
+from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
-
-
+from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
+from app.services.llm_providers import LlmProviderService
+from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
+from app.core.utils.string_utils import truncate_for_log
+from app.services.workflow import WorkflowService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
 # Supported node types
 SUPPORTED_NODE_TYPES = [
@@ -58,6 +60,10 @@ SUPPORTED_NODE_TYPES = [
     "setStateNode",
     "guardrailProvenanceNode",
     "guardrailNliNode",
+    "fileReaderNode",
+    "externalAgentNode",
+    "ttsNode",
+    "sttNode"
 ]
 
 
@@ -137,7 +143,7 @@ async def update_workflow(
     Update a workflow
     """
     logger.info(f"Updating workflow: {workflow_id}")
-    logger.info(f"Workflow data: {workflow_data}")
+    logger.info("Workflow data: %s", truncate_for_log(str(workflow_data)))
     workflow = await service.get_by_id(workflow_id)
 
     if not workflow:
@@ -217,6 +223,10 @@ async def execute_workflow(
     if not input_data:
         raise HTTPException(status_code=400, detail="Input data is required")
 
+    # Redact cardholder data before it enters the workflow engine
+    if isinstance(input_data.get("message"), str):
+        input_data["message"] = _pii_redactor.redact(input_data["message"])
+
     try:
         # Get the workflow from the service
         workflow_service = injector.get(WorkflowService)
@@ -269,6 +279,10 @@ async def test_workflow(
     if not input_data:
         raise HTTPException(
             status_code=400, detail="Input message is required")
+
+    # Redact cardholder data before it enters the workflow engine
+    if isinstance(input_data.get("message"), str):
+        input_data["message"] = _pii_redactor.redact(input_data["message"])
 
     try:
         # Determine workflow source

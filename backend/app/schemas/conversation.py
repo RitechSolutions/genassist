@@ -58,6 +58,7 @@ class ConversationBase(BaseModel):
     status: Optional[str] = None
     conversation_type: Optional[str] = None
     finalize_llm_analyst_id: Optional[UUID] = None
+    group_id: Optional[UUID] = None
 
     model_config = ConfigDict(
         from_attributes = True
@@ -76,6 +77,7 @@ class ConversationRead(ConversationBase):
     analysis: Optional[ConversationAnalysisRead] = None
     in_progress_hostility_score: Optional[int] = None
     supervisor_id: Optional[UUID] = None
+    supervisor_username: Optional[str] = None
     topic: Optional[str] = None
     negative_reason: Optional[str] = None
     feedback: Optional[str] = None
@@ -83,6 +85,8 @@ class ConversationRead(ConversationBase):
     thumbs_down_count: int = 0
     thumbs_up_count: int = 0
     custom_attributes: Optional[dict[str, Any]] = None
+    agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
 
     model_config = ConfigDict(
         from_attributes = True
