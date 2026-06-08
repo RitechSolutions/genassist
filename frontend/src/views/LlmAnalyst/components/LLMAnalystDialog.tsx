@@ -153,10 +153,12 @@ export function LLMAnalystDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const normalizedPrompt = prompt.trim().replace(/\s+/g, " ");
+
     const requiredFields = [
       { label: "LLM Provider", isEmpty: !llmProviderId },
       { label: "Name", isEmpty: !name },
-      { label: "Prompt", isEmpty: !prompt },
+      { label: "Prompt", isEmpty: !normalizedPrompt },
     ];
 
     const missingFields = requiredFields
@@ -177,7 +179,7 @@ export function LLMAnalystDialog({
       const data = {
         name,
         llm_provider_id: llmProviderId,
-        prompt,
+        prompt: normalizedPrompt,
         is_active: isActive ? 1 : 0,
         context_enrichments: selectedEnrichments,
         settings: Object.keys(settings).length > 0 ? settings : null,
@@ -275,7 +277,7 @@ export function LLMAnalystDialog({
                 <Textarea
                   id="prompt"
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value.replace(/\s+/g, ' '))}
+                  onChange={(e) => setPrompt(e.target.value)}
                   placeholder="System prompt"
                   rows={6}
                 />

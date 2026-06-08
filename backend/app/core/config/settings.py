@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 from pydantic import ConfigDict, Field, computed_field
 from pydantic_settings import BaseSettings
@@ -97,6 +97,8 @@ class ProjectSettings(BaseSettings):
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
     LOCAL_FINE_TUNE_API_URL: Optional[str] = None
+    LOCAL_FINE_TUNE_JWT_SECRET: Optional[str] = None
+    LOCAL_FINE_TUNING_CALL_ORIGIN: str = "dev"
     WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
     WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 
@@ -214,6 +216,20 @@ class ProjectSettings(BaseSettings):
     # Rate limit storage backend (redis or memory)
     RATE_LIMIT_STORAGE_BACKEND: str = "redis"  # "redis" or "memory"
 
+    # === Microsoft Entra ID SSO (OIDC, confidential client) ===
+    SSO_MICROSOFT_ENABLED: bool = False
+    SSO_MICROSOFT_ENTRA_TENANT_ID: Optional[str] = None
+    SSO_MICROSOFT_CLIENT_ID: Optional[str] = None
+    SSO_MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    SSO_MICROSOFT_REDIRECT_URI: Optional[str] = None
+    # Frontend base URL (e.g. https://app.example.com). Success redirect: {base}/login/sso-callback?sso_code=...
+    SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL: Optional[str] = None
+    # Optional comma-separated extra allowed origins for that redirect (merged with CORS_ALLOWED_ORIGINS and POST_LOGIN URL)
+    SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST: Optional[str] = None
+    SSO_MICROSOFT_AUTO_PROVISION: bool = False
+    SSO_MICROSOFT_DEFAULT_USER_TYPE_ID: Optional[str] = None
+    SSO_MICROSOFT_DEFAULT_ROLE_IDS: Optional[str] = None
+
     # === Chroma Configuration ===
     CHROMA_HOST: str = Field(default="localhost", description="Database host")
     CHROMA_PORT: int = Field(default=8005, description="Database port")
@@ -288,6 +304,48 @@ class ProjectSettings(BaseSettings):
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
         return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}")
+
+    def microsoft_sso_allowed_origins(self) -> list[str]:
+        """Origins (scheme://host[:port]) allowed as targets for the post-SSO browser redirect."""
+        raw: list[str] = []
+        if self.SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST:
+            raw.extend(
+                p.strip()
+                for p in self.SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST.split(",")
+                if p.strip()
+            )
+        if self.CORS_ALLOWED_ORIGINS:
+            raw.extend(p.strip() for p in self.CORS_ALLOWED_ORIGINS.split(",") if p.strip())
+        if self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL:
+            parsed = urlparse(self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL.strip())
+            if parsed.scheme and parsed.netloc:
+                raw.append(f"{parsed.scheme}://{parsed.netloc}")
+        seen: set[str] = set()
+        out: list[str] = []
+        for o in raw:
+            normalized = o.rstrip("/")
+            if normalized not in seen:
+                seen.add(normalized)
+                out.append(normalized)
+        return out
+
+    def is_microsoft_sso_redirect_url_allowed(self, url: str) -> bool:
+        parsed = urlparse(url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return False
+        origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        allowed = {o.rstrip("/") for o in self.microsoft_sso_allowed_origins()}
+        return origin in allowed
+
+    def microsoft_sso_is_configured(self) -> bool:
+        return bool(
+            self.SSO_MICROSOFT_ENABLED
+            and self.SSO_MICROSOFT_ENTRA_TENANT_ID
+            and self.SSO_MICROSOFT_CLIENT_ID
+            and self.SSO_MICROSOFT_CLIENT_SECRET
+            and self.SSO_MICROSOFT_REDIRECT_URI
+            and self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL
+        )
 
     model_config = ConfigDict(
         env_file=".env",

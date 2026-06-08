@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { tryParse } from "@/helpers/utils";
 import {
   Dialog,
-  DialogDescription,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -10,7 +9,7 @@ import {
 } from "@/components/dialog";
 import { Button } from "@/components/button";
 import { JsonViewer } from "./JsonViewer";
-import { Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/skeleton";
 import { AuditLogDetailsDialogProps } from "@/interfaces/audit-log.interface";
 import { fetchAuditLogDetails } from "@/services/auditLogs";
 
@@ -108,14 +107,16 @@ export function AuditLogDetailsDialog({
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[40vw]">
           <DialogHeader>
-            <DialogTitle>Loading Details...</DialogTitle>
-            <DialogDescription>Preparing the JSON data ...</DialogDescription>
+            <Skeleton className="h-6 w-56" />
+            <Skeleton className="h-4 w-40 mt-2" />
           </DialogHeader>
+          <div className="space-y-2 py-4">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
+          </div>
           <DialogFooter>
-            <Button disabled>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading
-            </Button>
+            <Skeleton className="h-10 w-20" />
           </DialogFooter>
         </DialogContent>
       </Dialog>

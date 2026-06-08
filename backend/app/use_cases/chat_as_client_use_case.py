@@ -14,6 +14,7 @@ from app.db.base import generate_sequential_uuid
 from app.db.models.conversation import ConversationModel
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+from app.core.tenant_scope import get_tenant_context
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -27,6 +28,12 @@ from app.services.conversations import ConversationService
 from app.core.utils.custom_attributes import extract_custom_attributes
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.file_manager import FileManagerService
+from app.services.realtime_notifications import (
+    emit_notification,
+    conversation_started_notification_description,
+    notification_payload,
+    transcript_conversation_notification_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +236,8 @@ async def process_conversation_update_with_agent(
         # 1:1 chat: broadcast agent message immediately with pre-generated ID
         await send_message_to_socket(transcript_object, conversation_id, current_user_id, tenant_id)
 
+    previous_hostility_score = int(conversation.in_progress_hostility_score or 0)
+
     # update the conversation with the new messages
     updated_conversation = await service.update_in_progress_conversation(conversation_id, model)
 
@@ -269,6 +278,29 @@ async def process_conversation_update_with_agent(
             tenant_id=tenant_id,
         )
     )
+
+    current_hostility_score = int(updated_conversation.in_progress_hostility_score or 0)
+    if previous_hostility_score <= 50 < current_hostility_score:
+        emit_notification(
+            socket_connection_manager=socket_connection_manager,
+            tenant_id=tenant_id,
+            current_user_id=current_user_id,
+            payload=notification_payload(
+                notification_id=f"conversation_hostility:{updated_conversation.id}",
+                title="High Hostility Detected",
+                description=(
+                    f"Conversation {str(updated_conversation.id)[:8]}... reached hostility score "
+                    f"{current_hostility_score}%."
+                ),
+                level="warning",
+                action_url=transcript_conversation_notification_url(updated_conversation.id),
+                timestamp=updated_conversation.updated_at,
+                group_id=getattr(updated_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=updated_conversation.id,
+                event_key=f"conversation_hostility:{updated_conversation.id}",
+            ),
+        )
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
 
@@ -331,6 +363,24 @@ async def get_or_create_conversation(
             operator_id=operator_id,
         )
         open_conversation = await service.start_in_progress_conversation(new_conversation_model)
+        emit_notification(
+            socket_connection_manager=injector.get(SocketConnectionManager),
+            tenant_id=get_tenant_context(),
+            payload=notification_payload(
+                notification_id=f"conversation_started:{open_conversation.id}",
+                title="Conversation Started",
+                description=conversation_started_notification_description(
+                    open_conversation.id
+                ),
+                level="info",
+                action_url=transcript_conversation_notification_url(open_conversation.id),
+                timestamp=open_conversation.created_at,
+                group_id=getattr(open_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=open_conversation.id,
+                event_key=f"conversation_started:{open_conversation.id}",
+            ),
+        )
 
     return open_conversation
 
@@ -428,6 +478,7 @@ async def process_file_upload_from_chat(
                 "type": file_type,
                 "url": file_url,
                 "name": file_name,
+                "file_id": str(file_id),
             }
         )
 

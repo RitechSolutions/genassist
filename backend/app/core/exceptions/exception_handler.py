@@ -2,15 +2,54 @@ import json
 import logging
 import os
 import re
+
 from fastapi import Request, WebSocket, WebSocketException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
-from app.core.exceptions.error_messages import ErrorKey, get_error_message
-from app.core.exceptions.exception_classes import AppException
 
+from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.exception_classes import AppException, UpstreamServiceError
 
 logger = logging.getLogger(__name__)
+
+_SSO_CLIENT_ERROR_KEYS = frozenset(
+    {
+        ErrorKey.SSO_MICROSOFT_OAUTH_ERROR,
+        ErrorKey.SSO_MICROSOFT_USER_DENIED,
+        ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED,
+        ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED,
+        ErrorKey.SSO_MICROSOFT_DISABLED,
+    }
+)
+
+
+def _sanitize_public_error_detail(text: str, max_len: int = 450) -> str:
+    """Single-line hint for API clients; strips obvious secret patterns."""
+    if not text:
+        return ""
+    t = " ".join(str(text).split())
+    t = re.sub(
+        r"(client_secret|client_assertion|password|refresh_token|code_verifier)=[^\s&\"']+",
+        r"\1=***",
+        t,
+        flags=re.I,
+    )
+    return t[:max_len]
+
+
+def _response_error_detail(error: AppException) -> str | None:
+    raw = (error.error_detail or "").strip()
+    if not raw:
+        return None
+    sanitized = _sanitize_public_error_detail(raw)
+    if not sanitized:
+        return None
+    if os.getenv("ENV") == "dev":
+        return sanitized
+    if error.error_key in _SSO_CLIENT_ERROR_KEYS:
+        return sanitized
+    return None
 
 
 def init_error_handlers(app):
@@ -23,9 +62,16 @@ def init_error_handlers(app):
             'error': get_error_message(request=request, error_key=error.error_key, error_variables=error.error_variables),
             'error_code': error.status_code,
             'error_key': error.error_key.value,
-            'error_detail': error.error_detail if os.getenv("ENV") == "dev" else None,
+            'error_detail': _response_error_detail(error),
             }
         return JSONResponse(content=jsonable_encoder(response), status_code=error.status_code)
+
+    @app.exception_handler(UpstreamServiceError)
+    def handle_upstream_service_error(request: Request, error: UpstreamServiceError):
+        """Return the upstream response body unchanged so its error envelope
+        (already client-safe) reaches the caller without re-wrapping."""
+        logger.info(f"Forwarding upstream error: {error.status_code} {error.body}")
+        return JSONResponse(content=jsonable_encoder(error.body), status_code=error.status_code)
 
     # Regex for:  Key (name)=(Summarizer12) already exists.
     _DUP_DETAIL_RE = re.compile(

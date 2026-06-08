@@ -13,6 +13,7 @@ from app.db.models.job import JobModel
 from app.db.models.job_logs import JobLogsModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
 from app.db.models.llm_cost_rate import LlmCostRateModel
+from app.db.models.notification import NotificationModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.db.models.operator import OperatorModel, OperatorStatisticsModel
 from app.db.models.permission import PermissionModel
@@ -21,7 +22,10 @@ from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
 from app.db.models.user import UserModel
+from app.db.models.notification_recipient import NotificationRecipientModel
+from app.db.models.user_notification import UserNotificationModel
 from app.db.models.user_role import UserRoleModel
+from app.db.models.notification_type import NotificationTypeModel
 from app.db.models.user_type import UserTypeModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 
@@ -60,6 +64,10 @@ __all__ = [
     "UserTypeModel",
     "UserRoleModel",
     "UserModel",
+    "NotificationRecipientModel",
+    "NotificationModel",
+    "UserNotificationModel",
+    "NotificationTypeModel",
     "LlmAnalystModel",
     "LlmProvidersModel",
     "LlmCostRateModel",
@@ -115,6 +123,10 @@ models = [
     AgentExecutionDailyStatsModel,
     NodeExecutionDailyStatsModel,
     UserModel,
+    NotificationRecipientModel,
+    NotificationModel,
+    UserNotificationModel,
+    NotificationTypeModel,
     RoleModel,
     PermissionModel,
     RolePermissionModel,

@@ -1,4 +1,5 @@
 opik==1.9.58
+litellm>=1.83.9
 injector==0.22.0
 fastapi-injector==0.8.0
 PyMySQL==1.1.1

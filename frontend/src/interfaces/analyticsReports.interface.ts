@@ -26,6 +26,13 @@ export interface AgentDailyStatsListResponse {
   total: number;
 }
 
+export interface AgentConversationStatusByAgent {
+  agent_id: string;
+  unique_conversations: number;
+  finalized_conversations: number;
+  in_progress_conversations: number;
+}
+
 export interface AgentStatsSummaryResponse {
   agent_id: string | null;
   from_date: string | null;
@@ -41,6 +48,7 @@ export interface AgentStatsSummaryResponse {
   total_in_progress_conversations: number;
   total_thumbs_up: number;
   total_thumbs_down: number;
+  conversation_status_by_agent?: AgentConversationStatusByAgent[];
 }
 
 export interface NodeDailyStatsItem {
@@ -89,7 +97,13 @@ export interface AgentStatsSummaryWithComparison {
 
 export interface AnalyticsFilterParams {
   agent_id?: string;
+  group_id?: string;
   from_date?: string;
   to_date?: string;
   node_type?: string;
+}
+
+export interface GroupAgentItem {
+  id: string;
+  name: string;
 }

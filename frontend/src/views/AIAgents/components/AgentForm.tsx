@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import { AxiosError } from "axios";
 import {
   createAgentConfig,
   getAgentConfig,
@@ -38,9 +39,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
+import { normalizeDisclaimerHtml } from "@/helpers/disclaimerHtml";
 import { getTranslationByKey, getLanguages } from "@/services/translations";
 import { Language, Translation } from "@/interfaces/translation.interface";
 import { getTranslationCount } from "../utils";
+
+// Must match the DB column limits (agents.name VARCHAR(100), agents.description VARCHAR(200))
+// and the backend AgentBase/AgentUpdate schema constraints.
+const AGENT_NAME_MAX_LENGTH = 100;
+const AGENT_DESCRIPTION_MAX_LENGTH = 200;
 
 interface AgentFormData {
   id?: string;
@@ -75,6 +82,10 @@ interface AgentFormProps {
   hideButtons?: boolean;
   // Form ID for external button association
   formId?: string;
+  /** Optional hook to transform payload immediately before create/update (e.g. sheet footer submit). */
+  prepareSubmitData?: (
+    data: Omit<AgentFormData, "id">,
+  ) => Omit<AgentFormData, "id">;
 }
 
 interface TranslationTriggerProps {
@@ -178,6 +189,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   onSaved,
   hideButtons = false,
   formId,
+  prepareSubmitData,
 }: AgentFormProps) => {
   const id = data?.id;
   const navigate = useNavigate();
@@ -445,6 +457,17 @@ const AgentForm: React.FC<AgentFormProps> = ({
       return;
     }
 
+    if (formData.name.length > AGENT_NAME_MAX_LENGTH) {
+      toast.error(`Name must be ${AGENT_NAME_MAX_LENGTH} characters or less.`);
+      return;
+    }
+    if (formData.description.length > AGENT_DESCRIPTION_MAX_LENGTH) {
+      toast.error(
+        `Description must be ${AGENT_DESCRIPTION_MAX_LENGTH} characters or less.`,
+      );
+      return;
+    }
+
     try {
       setLoading(true);
       let agentId: string;
@@ -462,19 +485,21 @@ const AgentForm: React.FC<AgentFormProps> = ({
           }
         }
         const { id: _, ...rest } = formData;
+        const prepared = prepareSubmitData?.(rest) ?? rest;
         const dataToSubmit = {
-          ...rest,
-          possible_queries: omitEmptyStrings(rest.possible_queries),
-          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+          ...prepared,
+          possible_queries: omitEmptyStrings(prepared.possible_queries),
+          thinking_phrases: omitEmptyStrings(prepared.thinking_phrases),
         };
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
       } else {
         const { id: _, has_welcome_image, ...rest } = formData;
+        const prepared = prepareSubmitData?.(rest) ?? rest;
         const dataToSubmit = {
-          ...rest,
-          possible_queries: omitEmptyStrings(rest.possible_queries),
-          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+          ...prepared,
+          possible_queries: omitEmptyStrings(prepared.possible_queries),
+          thinking_phrases: omitEmptyStrings(prepared.thinking_phrases),
         };
         const agentConfig = await createAgentConfig({
           ...dataToSubmit,
@@ -513,6 +538,24 @@ const AgentForm: React.FC<AgentFormProps> = ({
       let errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred.";
 
+      // Surface backend validation errors (e.g. FastAPI 422 `detail`) instead of
+      // the generic axios message ("Request failed with status code 422").
+      if (err instanceof AxiosError) {
+        const detail = (err.response?.data as { detail?: unknown } | undefined)
+          ?.detail;
+        if (typeof detail === "string") {
+          errorMessage = detail;
+        } else if (Array.isArray(detail)) {
+          errorMessage = detail
+            .map((d) =>
+              d && typeof d === "object" && "msg" in d
+                ? String((d as { msg: string }).msg)
+                : String(d),
+            )
+            .join("; ");
+        }
+      }
+
       if (
         errorMessage.includes("already exists") ||
         errorMessage.includes("400")
@@ -543,24 +586,48 @@ const AgentForm: React.FC<AgentFormProps> = ({
           <div className={`${plain ? "" : "rounded-lg border bg-white p-6 "}`}>
             <div className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="name">Workflow Name</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="name">Workflow Name</Label>
+                  <span
+                    className={`text-xs tabular-nums ${
+                      formData.name.length >= AGENT_NAME_MAX_LENGTH
+                        ? "text-red-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {formData.name.length}/{AGENT_NAME_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="name"
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
                   placeholder="Enter agent name"
+                  maxLength={AGENT_NAME_MAX_LENGTH}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="description">Description</Label>
+                  <span
+                    className={`text-xs tabular-nums ${
+                      formData.description.length >= AGENT_DESCRIPTION_MAX_LENGTH
+                        ? "text-red-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {formData.description.length}/{AGENT_DESCRIPTION_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="description"
                   name="description"
                   value={formData.description}
                   onChange={handleInputChange}
                   placeholder="Enter agent description"
+                  maxLength={AGENT_DESCRIPTION_MAX_LENGTH}
                 />
               </div>
 
@@ -1163,6 +1230,13 @@ interface AgentDialogProps {
   onSaved?: () => void;
 }
 
+const prepareAgentSheetSubmitData = (
+  data: Omit<AgentFormData, "id">,
+): Omit<AgentFormData, "id"> => ({
+  ...data,
+  input_disclaimer_html: normalizeDisclaimerHtml(data.input_disclaimer_html ?? ""),
+});
+
 export const AgentFormDialog = ({
   isOpen,
   onClose,
@@ -1215,6 +1289,7 @@ export const AgentFormDialog = ({
             onSaved={onSaved}
             hideButtons={true}
             formId={formId}
+            prepareSubmitData={prepareAgentSheetSubmitData}
           />
         </div>
         {/* Sticky Footer with Action Buttons */}
