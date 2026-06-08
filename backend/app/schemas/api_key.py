@@ -54,13 +54,12 @@ class ApiKeyRotate(BaseModel):
     )
 
 
-class ApiKeyRead(ApiKeyBase):
+class ApiKeySafeRead(ApiKeyBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
     user_id: UUID
     roles: list[RoleRead] = []
-    key_val: str
     previous_hashed_expires_at: Optional[datetime] = Field(
         None,
         description="When set, the prior secret is accepted for API auth until this time (UTC).",
@@ -77,6 +76,10 @@ class ApiKeyRead(ApiKeyBase):
     model_config = ConfigDict(
             from_attributes = True,
             )
+
+
+class ApiKeyCreateRead(ApiKeySafeRead):
+    key_val: str
 
 
 class ApiKeyInternal(BaseModel):
