@@ -8,11 +8,15 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.notification import (
     NotificationAdminTargetingRead,
+    NotificationCountersResponse,
+    NotificationStateUpdate,
+    NotificationStateUpdateResponse,
     NotificationTypeTargetingRead,
     NotificationTypeTargetingUpdate,
     NotificationUserSettingsRead,
     NotificationUserSettingsUpdate,
 )
+from app.services.notification_feed import NotificationFeedService
 from app.services.notification import NotificationService
 
 router = APIRouter()
@@ -95,3 +99,39 @@ async def put_notification_admin_targeting(
     if not hasattr(request.state, "user") or not request.state.user:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
     return await service.update_admin_targeting(type_key, dto)
+
+
+@router.get(
+    "/state/counters",
+    response_model=NotificationCountersResponse,
+    dependencies=[Depends(auth)],
+)
+async def get_notification_counters(
+    request: Request,
+    service: NotificationFeedService = Injected(NotificationFeedService),
+) -> NotificationCountersResponse:
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
+    unread_count = await service.get_counters(user_id=request.state.user.id)
+    return NotificationCountersResponse(unread_count=unread_count)
+
+
+@router.patch(
+    "/state/read",
+    response_model=NotificationStateUpdateResponse,
+    dependencies=[Depends(auth)],
+)
+async def patch_notification_read_state(
+    dto: NotificationStateUpdate,
+    request: Request,
+    service: NotificationFeedService = Injected(NotificationFeedService),
+) -> NotificationStateUpdateResponse:
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
+    is_read = bool(dto.is_read) if dto.is_read is not None else True
+    updated = await service.mark_read(
+        user_id=request.state.user.id,
+        notification_ids=list(dto.notification_ids),
+        is_read=is_read,
+    )
+    return NotificationStateUpdateResponse(updated_count=updated)

@@ -97,6 +97,10 @@ export const fetchDashboardIntegrations = async (): Promise<IntegrationsResponse
 
 type NotificationFeedItemRaw = Omit<Notification, "read" | "actionUrl"> & {
   action_url: string;
+  is_read?: boolean;
+  notification_id?: string;
+  type_key?: string;
+  group_id?: string;
 };
 
 function mapNotificationFeedItems(
@@ -104,11 +108,14 @@ function mapNotificationFeedItems(
 ): Notification[] {
   return items.map((item) => ({
     id: item.id,
+    notificationId: item.notification_id,
+    typeKey: item.type_key,
+    groupId: item.group_id,
     title: item.title,
     description: item.description,
     timestamp: item.timestamp,
     type: item.type,
-    read: false,
+    read: Boolean(item.is_read),
     actionUrl: item.action_url,
   }));
 }
@@ -122,7 +129,8 @@ export type NotificationTypeFilter =
   | "all"
   | "conversation_started"
   | "conversation_hostility"
-  | "conversation_finalized_hostility";
+  | "conversation_finalized_hostility"
+  | "workflow_failed";
 
 /** Paginated notification feed (merged, sorted server-side). */
 export const fetchDashboardNotificationsPage = async (
@@ -132,7 +140,8 @@ export const fetchDashboardNotificationsPage = async (
   includeConversationHostility: boolean,
   includeConversationFinalizedHostility: boolean,
   includeWorkflowFailed: boolean,
-  notificationType: NotificationTypeFilter = "all"
+  notificationType: NotificationTypeFilter = "all",
+  notificationLevel: "all" | "info" | "success" | "warning" | "error" = "all"
 ): Promise<NotificationFeedPageResult | null> => {
   try {
     const params = new URLSearchParams();
@@ -146,6 +155,7 @@ export const fetchDashboardNotificationsPage = async (
       String(includeConversationFinalizedHostility)
     );
     params.set("include_workflow_failed", String(includeWorkflowFailed));
+    params.set("notification_level", notificationLevel);
     const response = await apiRequest<{
       items: NotificationFeedItemRaw[];
       has_more: boolean;
@@ -168,6 +178,7 @@ export type FetchDashboardNotificationsOptions = {
   includeConversationFinalizedHostility?: boolean;
   includeWorkflowFailed?: boolean;
   notificationType?: NotificationTypeFilter;
+  notificationLevel?: "all" | "info" | "success" | "warning" | "error";
 };
 
 /** First page (or window) of notifications for sidebar / bell cache. */
@@ -182,9 +193,26 @@ export const fetchDashboardNotifications = async (
     options?.includeConversationHostility ?? true,
     options?.includeConversationFinalizedHostility ?? true,
     options?.includeWorkflowFailed ?? true,
-    options?.notificationType ?? "all"
+    options?.notificationType ?? "all",
+    options?.notificationLevel ?? "all"
   );
   return page?.items ?? null;
+};
+
+export const markNotificationsRead = async (
+  notificationIds: string[],
+  isRead: boolean = true
+): Promise<boolean> => {
+  try {
+    await apiRequest<{ updated_count: number }>("patch", "/notifications/state/read", {
+      notification_ids: notificationIds,
+      is_read: isRead,
+    });
+    return true;
+  } catch (error) {
+    console.error("Error updating notification read state:", error);
+    return false;
+  }
 };
 
 /**

@@ -73,6 +73,7 @@ from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
 from app.services.realtime_notifications import (
     emit_notification,
+    conversation_started_notification_description,
     notification_payload,
     transcript_conversation_notification_url,
 )
@@ -353,11 +354,14 @@ async def start(
         payload=notification_payload(
             notification_id=f"conversation_started:{conversation.id}",
             title="Conversation Started",
-            description=f"A new conversation started (ID: {str(conversation.id)[:8]}...).",
+            description=conversation_started_notification_description(conversation.id),
             level="info",
             action_url=transcript_conversation_notification_url(conversation.id),
             timestamp=conversation.created_at,
             group_id=getattr(conversation, "group_id", None),
+            entity_kind="conversation",
+            entity_id=conversation.id,
+            event_key=f"conversation_started:{conversation.id}",
         ),
     )
 
@@ -504,6 +508,9 @@ async def update_no_agent(
                 action_url=transcript_conversation_notification_url(updated_conversation.id),
                 timestamp=updated_conversation.updated_at,
                 group_id=getattr(updated_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=updated_conversation.id,
+                event_key=f"conversation_hostility:{updated_conversation.id}",
             ),
         )
 
@@ -991,7 +998,9 @@ async def websocket_dashboard_endpoint(
     websocket: WebSocket,
     principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
-    topics: list[str] = Query(default=["message", "update", "finalize", "hostile", "statistics"]),
+    topics: list[str] = Query(
+        default=["message", "update", "finalize", "hostile", "statistics", "notification"]
+    ),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
     dashboard_service: DashboardService = Injected(DashboardService),
 ):

@@ -410,6 +410,9 @@ class ConversationService:
                         timestamp=saved_conversation.updated_at
                         or datetime.now(timezone.utc),
                         group_id=getattr(saved_conversation, "group_id", None),
+                        entity_kind="conversation",
+                        entity_id=conversation_id,
+                        event_key=f"conversation_finalized_hostility:{conversation_id}",
                     ),
                 )
             except Exception:

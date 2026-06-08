@@ -17,6 +17,7 @@ import {
   resolveTakeoverSupervisorId,
 } from "@/interfaces/websocket.interface";
 import { conversationService } from "@/services/liveConversations";
+import { NotificationFeedSync } from "@/components/NotificationFeedSync";
 
 const DEFAULT_TOPICS = [
   "message",
@@ -42,6 +43,8 @@ export interface WebSocketDashboardContextValue {
   refetch: () => void;
   finalizedIds: string[];
   resyncHint: number;
+  /** Bumped when a dashboard WS notification event arrives; refetch notification feed. */
+  notificationResyncHint: number;
   /** Subscribe to raw dashboard WS messages (e.g. notification topic). Returns unsubscribe. */
   subscribe: (listener: DashboardMessageListener) => () => void;
 }
@@ -90,6 +93,7 @@ export function WebSocketDashboardProvider({
   const [total, setTotal] = useState<number>(0);
   const [finalizedIds, setFinalizedIds] = useState<string[]>([]);
   const [resyncHint, setResyncHint] = useState<number>(0);
+  const [notificationResyncHint, setNotificationResyncHint] = useState<number>(0);
   const messageListenersRef = useRef(new Set<DashboardMessageListener>());
 
   const subscribe = useCallback((listener: DashboardMessageListener) => {
@@ -100,9 +104,10 @@ export function WebSocketDashboardProvider({
   }, []);
 
   const handleMessage = useCallback((data: Record<string, unknown>) => {
-    const topic = (data.topic || data.type) as string;
+    const topic = String(data.topic ?? data.type ?? data.msg_type ?? "");
 
     if (topic === "notification") {
+      setNotificationResyncHint((n) => n + 1);
       for (const listener of messageListenersRef.current) {
         listener(data);
       }
@@ -297,6 +302,7 @@ export function WebSocketDashboardProvider({
       refetch,
       finalizedIds,
       resyncHint,
+      notificationResyncHint,
       subscribe,
     }),
     [
@@ -307,12 +313,14 @@ export function WebSocketDashboardProvider({
       refetch,
       finalizedIds,
       resyncHint,
+      notificationResyncHint,
       subscribe,
     ]
   );
 
   return (
     <WebSocketDashboardContext.Provider value={value}>
+      <NotificationFeedSync />
       {children}
     </WebSocketDashboardContext.Provider>
   );
@@ -329,6 +337,7 @@ export function useWebSocketDashboardContext(): WebSocketDashboardContextValue {
       refetch: () => {},
       finalizedIds: [],
       resyncHint: 0,
+      notificationResyncHint: 0,
       subscribe: () => () => {},
     };
   }
