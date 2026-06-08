@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth.utils import get_current_user_id
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -89,6 +90,7 @@ class ApiKeysRepository:
                 select(ApiKeyModel)
                 .where(ApiKeyModel.id == api_key_id)
                 .options(selectinload(ApiKeyModel.api_key_roles).selectinload(ApiKeyRoleModel.role))
+                .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
         return result.scalars().first()
 
