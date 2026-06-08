@@ -6,15 +6,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
 import { Button } from "@/components/button";
 import { Checkbox } from "@/components/checkbox";
 import { ScrollArea } from "@/components/scroll-area";
 import { Badge } from "@/components/badge";
-import { Loader2, X, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, X, Plus, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
   createLLMAnalyst,
@@ -110,16 +110,25 @@ export function LLMAnalystDialog({
   };
 
   const populateFormWithAnalyst = (analyst: LLMAnalyst) => {
+    const enrichments = analyst.context_enrichments ?? [];
+    const settings = analyst.settings ?? {};
     setAnalystId(analyst.id);
     setName(analyst.name);
     setLlmProviderId(analyst.llm_provider_id);
     setPrompt(analyst.prompt);
     setIsActive(analyst.is_active === 1);
-    setSelectedEnrichments(analyst.context_enrichments ?? []);
-    setSettings(analyst.settings ?? {});
+    setSelectedEnrichments(enrichments);
+    setSettings(settings);
     setTagInputs({});
     setNewFieldKey("");
+    setShowAdvanced(enrichments.length > 0 || Object.keys(settings).length > 0);
   };
+
+  useEffect(() => {
+    if (selectedEnrichments.length > 0 || Object.keys(settings).length > 0) {
+      setShowAdvanced(true);
+    }
+  }, [selectedEnrichments, settings]);
 
   const resetForm = () => {
     setAnalystId(undefined);
@@ -127,6 +136,7 @@ export function LLMAnalystDialog({
     setLlmProviderId("");
     setPrompt("");
     setIsActive(true);
+    setShowAdvanced(false);
     setSelectedEnrichments([]);
     setNodeTypeSearch("");
     setSettings({});
@@ -143,10 +153,12 @@ export function LLMAnalystDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const normalizedPrompt = prompt.trim().replace(/\s+/g, " ");
+
     const requiredFields = [
       { label: "LLM Provider", isEmpty: !llmProviderId },
       { label: "Name", isEmpty: !name },
-      { label: "Prompt", isEmpty: !prompt },
+      { label: "Prompt", isEmpty: !normalizedPrompt },
     ];
 
     const missingFields = requiredFields
@@ -167,7 +179,7 @@ export function LLMAnalystDialog({
       const data = {
         name,
         llm_provider_id: llmProviderId,
-        prompt,
+        prompt: normalizedPrompt,
         is_active: isActive ? 1 : 0,
         context_enrichments: selectedEnrichments,
         settings: Object.keys(settings).length > 0 ? settings : null,
@@ -265,20 +277,24 @@ export function LLMAnalystDialog({
                 <Textarea
                   id="prompt"
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value.replace(/\s+/g, ' '))}
+                  onChange={(e) => setPrompt(e.target.value)}
                   placeholder="System prompt"
                   rows={6}
                 />
               </div>
 
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground w-full"
-                onClick={() => setShowAdvanced((v) => !v)}
-              >
-                {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                Advanced
-              </button>
+
+              <div className="flex items-center gap-2 border-t pt-4">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="is_active">Active</Label>
+                  <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
+                </div>
+                <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="show_advanced">Advanced</Label>
+                  <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
+                </div>
+              </div>
 
               {showAdvanced && availableEnrichments.length > 0 && (
                 <div className="space-y-2">
@@ -428,6 +444,7 @@ export function LLMAnalystDialog({
                               variant="outline"
                               size="sm"
                               className="h-7 px-2"
+                              disabled={!(tagInputs[key] ?? "").trim()}
                               onClick={() => {
                                 const val = (tagInputs[key] ?? "").trim();
                                 if (val && !(value as string[]).includes(val)) {
@@ -454,7 +471,7 @@ export function LLMAnalystDialog({
                       )}
                     </div>
                   ))}
-                  <div className="flex gap-2 pt-1 border-t">
+                  <div className={`flex gap-2 pt-1 ${Object.keys(settings).length > 0 ? 'border-t' : ''}`}>
                     <Input
                       className="h-7 text-sm"
                       placeholder="New field name..."
@@ -476,6 +493,7 @@ export function LLMAnalystDialog({
                       variant="outline"
                       size="sm"
                       className="h-7 px-2 shrink-0"
+                      disabled={!newFieldKey.trim()}
                       onClick={() => {
                         const k = newFieldKey.trim();
                         if (k && !(k in settings)) {
@@ -491,14 +509,6 @@ export function LLMAnalystDialog({
                 </div>
               </div>}
 
-              <div className="flex items-center gap-2">
-                <Label htmlFor="is_active">Active</Label>
-                <Switch
-                  id="is_active"
-                  checked={isActive}
-                  onCheckedChange={setIsActive}
-                />
-              </div>
             </div>
 
             <DialogFooter className="px-6 py-4 border-t">

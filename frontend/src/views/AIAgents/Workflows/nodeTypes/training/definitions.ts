@@ -10,12 +10,18 @@ import {
 import TrainDataSourceNode from "./trainDataSourceNode";
 import PreprocessingNode from "./preprocessingNode";
 import TrainModelNode from "./trainModelNode";
+import {
+  DATA_PREPROCESSING_HELP_CONTENT,
+  TRAIN_DATA_SOURCE_HELP_CONTENT,
+  TRAIN_MODEL_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const TRAIN_DATA_SOURCE_NODE_DEFINITION: NodeTypeDefinition<TrainDataSourceNodeData> =
   {
     type: "trainDataSourceNode",
     label: "Train Data Source",
     description: "Fetch training data from datasources or upload CSV files",
+    helpContent: TRAIN_DATA_SOURCE_HELP_CONTENT,
     category: "training",
     icon: "Database",
     defaultData: {
@@ -58,6 +64,7 @@ export const PREPROCESSING_NODE_DEFINITION: NodeTypeDefinition<PreprocessingNode
     type: "preprocessingNode",
     label: "Data Preprocessing",
     description: "Transform and clean training data using Python",
+    helpContent: DATA_PREPROCESSING_HELP_CONTENT,
     category: "training",
     icon: "Settings",
     defaultData: {
@@ -120,6 +127,7 @@ export const TRAIN_MODEL_NODE_DEFINITION: NodeTypeDefinition<TrainModelNodeData>
     type: "trainModelNode",
     label: "Train Model",
     description: "Train machine learning models on preprocessed data",
+    helpContent: TRAIN_MODEL_HELP_CONTENT,
     category: "training",
     icon: "Brain",
     defaultData: {

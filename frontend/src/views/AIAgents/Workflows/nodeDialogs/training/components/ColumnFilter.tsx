@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Badge } from "@/components/badge";
 import { ColumnFilterConfig, ColumnFilterItem } from "../preprocessingConfig";
 
@@ -181,7 +181,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         ) : (
           /* Comma-separated input when no column names available */
           <div className="space-y-3">
-            <Input
+            <RichInput
               value={commaSeparatedInput}
               onChange={(e) =>
                 handleCommaSeparatedInputChange(e.target.value)

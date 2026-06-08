@@ -12,8 +12,8 @@ import {
 } from "@/services/testSuites";
 import {TestSuite} from "@/interfaces/testSuite.interface";
 import {Button} from "@/components/button";
-import {Input} from "@/components/input";
-import {Textarea} from "@/components/textarea";
+import {Input} from "@/components/ui/input";
+import {Textarea} from "@/components/ui/textarea";
 import {Label} from "@/components/label";
 import {useNavigate} from "react-router-dom";
 import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
@@ -24,7 +24,7 @@ import type {BackendTranscript, TranscriptEntry} from "@/interfaces/transcript.i
 import {getWorkflowsMinimal} from "@/services/workflows";
 import type {WorkflowMinimal} from "@/interfaces/workflow.interface";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/select";
-import {Skeleton} from "@/components/skeleton";
+import {PageListSkeleton} from "@/components/skeletons";
 
 const CONV_PAGE_SIZE = 20;
 
@@ -264,25 +264,7 @@ const DatasetsPage: React.FC = () => {
 
       <div className="rounded-lg border bg-white overflow-hidden">
         {isLoading ? (
-          <div className="divide-y divide-gray-100">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="py-4 px-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-6 w-48" />
-                    <Skeleton className="h-4 w-64" />
-                    <Skeleton className="h-3 w-32 mt-2" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Skeleton className="h-6 w-16 rounded-md" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                    <Skeleton className="h-8 w-8 rounded" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <PageListSkeleton bordered={false} />
         ) : filteredSuites.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">
@@ -387,25 +369,29 @@ const DatasetsPage: React.FC = () => {
 
       {/* Create dataset dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-lg h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+        <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4">
             <DialogTitle>Create Dataset</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
-            <Label className="text-xs">Dataset name</Label>
-            <Input
-              value={suiteName}
-              onChange={(e) => setSuiteName(e.target.value)}
-              placeholder="e.g. FAQ Gold Set"
-            />
-            <Label className="text-xs">Description</Label>
-            <Textarea
-              value={suiteDescription}
-              onChange={(e) => setSuiteDescription(e.target.value)}
-              rows={2}
-            />
+          <div className="space-y-4 px-6 pb-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Dataset name</Label>
+              <Input
+                value={suiteName}
+                onChange={(e) => setSuiteName(e.target.value)}
+                placeholder="e.g. FAQ Gold Set"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Description</Label>
+              <Textarea
+                value={suiteDescription}
+                onChange={(e) => setSuiteDescription(e.target.value)}
+                rows={2}
+              />
+            </div>
           </div>
-          <DialogFooter className="border-t px-6 py-4 shrink-0">
+          <DialogFooter className="border-t px-6 py-4">
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               Cancel
             </Button>
@@ -418,11 +404,11 @@ const DatasetsPage: React.FC = () => {
 
       {/* Edit dataset dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-lg h-[60vh] max-h-[60vh] overflow-hidden p-0 flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+        <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4">
             <DialogTitle>Edit Dataset</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
+          <div className="space-y-3 px-6 pb-6">
             <Label className="text-xs">Dataset name</Label>
             <Input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} />
             <Label className="text-xs">Description</Label>
@@ -432,7 +418,7 @@ const DatasetsPage: React.FC = () => {
               rows={3}
             />
           </div>
-          <DialogFooter className="border-t px-6 py-4 shrink-0">
+          <DialogFooter className="border-t px-6 py-4">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancel
             </Button>
@@ -445,8 +431,8 @@ const DatasetsPage: React.FC = () => {
 
       {/* Import from conversation dialog */}
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl h-[80vh] max-h-[80vh] overflow-hidden p-0 flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+        <DialogContent className="sm:max-w-[760px] p-0 overflow-hidden flex flex-col max-h-[80vh]">
+          <DialogHeader className="p-6 pb-4 shrink-0">
             <DialogTitle>
               Import into "{importTargetSuite?.name}"
             </DialogTitle>

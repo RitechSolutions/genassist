@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 from pydantic import ConfigDict, Field, computed_field
 from pydantic_settings import BaseSettings
@@ -53,6 +53,10 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
+    # Periodic cleanup of stale direct-S3 upload sessions (companion to
+    # FILES_DIRECT_S3_UPLOAD_ENABLED). Safe to leave on even when the feature
+    # flag is off: with no direct-S3 rows the task simply finds nothing to do.
+    CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
@@ -60,6 +64,14 @@ class ProjectSettings(BaseSettings):
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+
+    # === GDPR Right-to-Erasure ===
+    # Default mode used by the admin GDPR delete endpoint when the caller does
+    # not pass an explicit `mode` query parameter. Allowed values: "soft",
+    # "anonymize", "hard". "soft" preserves backward compatibility because it
+    # only flips the existing `is_deleted` flag and scrubs PII, leaving the
+    # row in place for a manual hard purge later.
+    GDPR_DEFAULT_DELETE_MODE: str = "soft"
 
     # Number of latest messages used for in-progress hostility scoring.
     # If the conversation has fewer messages than this, all messages are used.
@@ -84,6 +96,9 @@ class ProjectSettings(BaseSettings):
         "webm",
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
+    LOCAL_FINE_TUNE_API_URL: Optional[str] = None
+    LOCAL_FINE_TUNE_JWT_SECRET: Optional[str] = None
+    LOCAL_FINE_TUNING_CALL_ORIGIN: str = "dev"
     WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
     WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 
@@ -93,7 +108,20 @@ class ProjectSettings(BaseSettings):
     RECORDINGS_DIR: str = str(DATA_VOLUME / "recordings")
 
     # === Limits ===
-    MAX_CONTENT_LENGTH: int = 50 * 1024 * 1024  # 50MB
+    # Canonical max request body / upload size (aligned with frontend nginx client_max_body_size).
+    MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 100MB
+    # Knowledge-base uploads (legacy /upload and chunked /upload-session).
+    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    KNOWLEDGE_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
+    FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
+    # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
+    # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
+    # remain fully functional regardless of this flag.
+    FILES_DIRECT_S3_UPLOAD_ENABLED: bool = False
+    FILES_DIRECT_S3_PRESIGN_EXPIRES_SECONDS: int = 600  # 10 min
     DEFAULT_WINDOW_SECONDS: int = 60
 
     # === Language ===
@@ -188,6 +216,20 @@ class ProjectSettings(BaseSettings):
     # Rate limit storage backend (redis or memory)
     RATE_LIMIT_STORAGE_BACKEND: str = "redis"  # "redis" or "memory"
 
+    # === Microsoft Entra ID SSO (OIDC, confidential client) ===
+    SSO_MICROSOFT_ENABLED: bool = False
+    SSO_MICROSOFT_ENTRA_TENANT_ID: Optional[str] = None
+    SSO_MICROSOFT_CLIENT_ID: Optional[str] = None
+    SSO_MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    SSO_MICROSOFT_REDIRECT_URI: Optional[str] = None
+    # Frontend base URL (e.g. https://app.example.com). Success redirect: {base}/login/sso-callback?sso_code=...
+    SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL: Optional[str] = None
+    # Optional comma-separated extra allowed origins for that redirect (merged with CORS_ALLOWED_ORIGINS and POST_LOGIN URL)
+    SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST: Optional[str] = None
+    SSO_MICROSOFT_AUTO_PROVISION: bool = False
+    SSO_MICROSOFT_DEFAULT_USER_TYPE_ID: Optional[str] = None
+    SSO_MICROSOFT_DEFAULT_ROLE_IDS: Optional[str] = None
+
     # === Chroma Configuration ===
     CHROMA_HOST: str = Field(default="localhost", description="Database host")
     CHROMA_PORT: int = Field(default=8005, description="Database port")
@@ -262,6 +304,48 @@ class ProjectSettings(BaseSettings):
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
         return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}")
+
+    def microsoft_sso_allowed_origins(self) -> list[str]:
+        """Origins (scheme://host[:port]) allowed as targets for the post-SSO browser redirect."""
+        raw: list[str] = []
+        if self.SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST:
+            raw.extend(
+                p.strip()
+                for p in self.SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST.split(",")
+                if p.strip()
+            )
+        if self.CORS_ALLOWED_ORIGINS:
+            raw.extend(p.strip() for p in self.CORS_ALLOWED_ORIGINS.split(",") if p.strip())
+        if self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL:
+            parsed = urlparse(self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL.strip())
+            if parsed.scheme and parsed.netloc:
+                raw.append(f"{parsed.scheme}://{parsed.netloc}")
+        seen: set[str] = set()
+        out: list[str] = []
+        for o in raw:
+            normalized = o.rstrip("/")
+            if normalized not in seen:
+                seen.add(normalized)
+                out.append(normalized)
+        return out
+
+    def is_microsoft_sso_redirect_url_allowed(self, url: str) -> bool:
+        parsed = urlparse(url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return False
+        origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        allowed = {o.rstrip("/") for o in self.microsoft_sso_allowed_origins()}
+        return origin in allowed
+
+    def microsoft_sso_is_configured(self) -> bool:
+        return bool(
+            self.SSO_MICROSOFT_ENABLED
+            and self.SSO_MICROSOFT_ENTRA_TENANT_ID
+            and self.SSO_MICROSOFT_CLIENT_ID
+            and self.SSO_MICROSOFT_CLIENT_SECRET
+            and self.SSO_MICROSOFT_REDIRECT_URI
+            and self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL
+        )
 
     model_config = ConfigDict(
         env_file=".env",

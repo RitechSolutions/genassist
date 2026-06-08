@@ -5,6 +5,7 @@ import json
 import logging
 from contextvars import Context, copy_context
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Dict, Hashable, List, Sequence, Set
 from uuid import UUID
 
@@ -48,13 +49,31 @@ class SocketConnectionManager:
         self._redis_subscriber_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
+    @staticmethod
+    def _normalize_room_id(room_id: Hashable) -> str:
+        """
+        Resolve room ids to a canonical string form.
+
+        Callers pass the dashboard room as either the ``SocketRoomType.DASHBOARD``
+        enum or the plain ``"DASHBOARD"`` string. Since ``SocketRoomType`` is a plain
+        ``Enum``, ``str(SocketRoomType.DASHBOARD)`` is ``"SocketRoomType.DASHBOARD"``,
+        which would map enum callers to a different room/Redis channel than string
+        callers and silently drop their messages (e.g. notifications never reaching
+        the standalone websocket service). Normalizing to ``.value`` keeps both forms
+        equivalent everywhere (rooms, Redis channels, disconnect lookups).
+        """
+        if isinstance(room_id, Enum):
+            return str(room_id.value)
+        return str(room_id)
+
     def _get_tenant_aware_room_id(self, room_id: Hashable, tenant_id: str | None) -> Hashable:
         """
         Create a tenant-aware room ID for proper multi-tenant isolation.
         """
+        room_key = self._normalize_room_id(room_id)
         if tenant_id:
-            return f"{tenant_id}:{room_id}"
-        return room_id
+            return f"{tenant_id}:{room_key}"
+        return room_key
 
     # ------------ lifecycle -------------------------------------------------
 
@@ -208,7 +227,7 @@ class SocketConnectionManager:
                     "type": msg_type,
                     "payload": payload,
                     "required_topic": required_topic,
-                    "room_id": str(room_id),
+                    "room_id": self._normalize_room_id(room_id),
                     "tenant_id": tenant_id,
                 }
                 await self._redis_client.publish(redis_channel, json.dumps(message_data, default=str))

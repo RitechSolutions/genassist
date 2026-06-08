@@ -28,6 +28,7 @@ class ErrorKey(Enum):
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     USER_NOT_FOUND = "USER_NOT_FOUND"
     USER_CANNOT_DELETE_SELF = "USER_CANNOT_DELETE_SELF"
+    USER_ROLES_REQUIRED = "USER_ROLES_REQUIRED"
     TRANSCRIPT_PARSE_ERROR = "TRANSCRIPT_PARSE_ERROR"
     INVALID_USERNAME_OR_PASSWORD = "INVALID_USERNAME_OR_PASSWORD"
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
@@ -75,6 +76,7 @@ class ErrorKey(Enum):
     AGENT_NOT_ACTIVE = "AGENT_NOT_ACTIVE"
     # MISSING_API_KEY_LLM_PROVIDER = "MISSING_API_KEY_LLM_PROVIDER"
     EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
+    ENTRA_OID_IN_USE = "ENTRA_OID_IN_USE"
     AGENT_INACTIVE = "AGENT_INACTIVE"
     TRANSCRIPT_ERROR_PARSING = "TRANSCRIPT_ERROR_PARSING"
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
@@ -145,6 +147,13 @@ class ErrorKey(Enum):
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
     TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
+    AZURE_INIT_FAILED = "AZURE_INIT_FAILED"
+    LLM_PROVIDER_RESIDENCY_VIOLATION = "LLM_PROVIDER_RESIDENCY_VIOLATION"
+    SSO_MICROSOFT_DISABLED = "SSO_MICROSOFT_DISABLED"
+    SSO_MICROSOFT_OAUTH_ERROR = "SSO_MICROSOFT_OAUTH_ERROR"
+    SSO_MICROSOFT_USER_DENIED = "SSO_MICROSOFT_USER_DENIED"
+    SSO_MICROSOFT_REDIRECT_NOT_ALLOWED = "SSO_MICROSOFT_REDIRECT_NOT_ALLOWED"
+    SSO_MICROSOFT_NOT_CONFIGURED = "SSO_MICROSOFT_NOT_CONFIGURED"
 
 
 ERROR_MESSAGES = {
@@ -166,6 +175,7 @@ ERROR_MESSAGES = {
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
         ErrorKey.USER_CANNOT_DELETE_SELF: "You cannot delete your own account.",
+        ErrorKey.USER_ROLES_REQUIRED: "At least one role is required.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
         ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
@@ -215,6 +225,7 @@ ERROR_MESSAGES = {
         ErrorKey.AGENT_NOT_ACTIVE: "Agent is not active.",
         # ErrorKey.MISSING_API_KEY_LLM_PROVIDER: "Missing Api Key in connection data.",
         ErrorKey.EMAIL_ALREADY_EXISTS: "Email already exists.",
+        ErrorKey.ENTRA_OID_IN_USE: "This Microsoft Entra object ID is already linked to another user.",
         ErrorKey.AGENT_INACTIVE: "Agent is inactive.",
         ErrorKey.TRANSCRIPT_ERROR_PARSING: "Couldn't parse transcript, please try again later.",
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
@@ -286,6 +297,16 @@ ERROR_MESSAGES = {
         ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
         ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
                                           "Delete the related evaluations first, then try again.",
+        ErrorKey.AZURE_INIT_FAILED: "Azure initialization failed.",
+        ErrorKey.LLM_PROVIDER_RESIDENCY_VIOLATION: (
+            "The selected LLM provider does not satisfy this tenant's data residency policy. "
+            "Ensure the provider's allowed regions include a region permitted for this tenant."
+        ),
+        ErrorKey.SSO_MICROSOFT_DISABLED: "Microsoft SSO is not enabled on this server.",
+        ErrorKey.SSO_MICROSOFT_OAUTH_ERROR: "Microsoft sign-in failed. Please try again or contact support.",
+        ErrorKey.SSO_MICROSOFT_USER_DENIED: "Your account is not provisioned for GenAssist. Contact an administrator.",
+        ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED: "SSO redirect target is not allowed by server configuration.",
+        ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

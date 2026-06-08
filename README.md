@@ -88,7 +88,7 @@ Follow Readme.md for frontend project
 
 Access the frontend app at: http://localhost
 User: admin
-Password: genadmin
+Password: value of `SEED_ADMIN_PASSWORD`
 
 ### Backend
 
@@ -131,7 +131,7 @@ npm install
 npm run build
 ```
 
-For full setup instructions, configuration options, and custom font usage, see the [plugin-js README](./plugins/plugin-js/README.md).
+For full setup instructions, configuration options, and custom font usage, see the [plugin-js README](./plugins/plugin-js/README.md). For generating `widget.iife.js` and `widget.css`, see [plugin-js BUILD.md](./plugins/plugin-js/BUILD.md).
 
 ### iOS Integration
 

@@ -3,8 +3,9 @@ from typing import Optional
 from sqlalchemy import UUID, DateTime, Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+from app.db.events.group_scope import GroupScopedMixin
 
-class ApiKeyModel(Base):
+class ApiKeyModel(Base, GroupScopedMixin):
     __tablename__ = 'api_keys'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='api_keys_pk'),

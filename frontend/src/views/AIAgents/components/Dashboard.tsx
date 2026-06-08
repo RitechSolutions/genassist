@@ -13,8 +13,11 @@ import { toast } from "react-hot-toast";
 import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 
 const DEFAULT_PAGE_SIZE = 20;
+
+type AgentTab = "all" | "system" | "user";
 
 const Dashboard: React.FC = () => {
   const [agents, setAgents] = useState<AgentListItem[]>([]);
@@ -29,6 +32,7 @@ const Dashboard: React.FC = () => {
   const [agentToDelete, setAgentToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState<AgentTab>("all");
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -56,14 +60,21 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  const fetchAgents = useCallback(async (currentPage: number, currentPageSize: number, append: boolean = false) => {
+  const getIsSystemFilter = useCallback((tab: AgentTab): boolean | null => {
+    if (tab === "system") return true;
+    if (tab === "user") return false;
+    return null;
+  }, []);
+
+  const fetchAgents = useCallback(async (currentPage: number, currentPageSize: number, append: boolean = false, tab: AgentTab = "all") => {
     try {
       if (append) {
         setLoadingMore(true);
       } else {
         setLoading(true);
       }
-      const response = await getAgentConfigsList(currentPage, currentPageSize);
+      const isSystemFilter = getIsSystemFilter(tab);
+      const response = await getAgentConfigsList(currentPage, currentPageSize, isSystemFilter);
       if (append) {
         setAgents(prev => [...prev, ...response.items]);
       } else {
@@ -79,18 +90,18 @@ const Dashboard: React.FC = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [getIsSystemFilter]);
 
   useEffect(() => {
-    fetchAgents(1, pageSize);
-  }, [pageSize, fetchAgents]);
+    fetchAgents(1, pageSize, false, activeTab);
+  }, [pageSize, fetchAgents, activeTab]);
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMore) {
       const nextPage = page + 1;
-      fetchAgents(nextPage, pageSize, true);
+      fetchAgents(nextPage, pageSize, true, activeTab);
     }
-  }, [loadingMore, hasMore, page, pageSize, fetchAgents]);
+  }, [loadingMore, hasMore, page, pageSize, fetchAgents, activeTab]);
 
   const handleDeleteClick = async (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
@@ -108,7 +119,7 @@ const Dashboard: React.FC = () => {
       await deleteAgentConfig(agentToDelete.id);
       toast.success("Agent deleted successfully.");
       // Refetch to update pagination correctly
-      await fetchAgents(page, pageSize);
+      await fetchAgents(page, pageSize, false, activeTab);
     } catch (err) {
       toast.error("Failed to delete agent.");
       setError("Failed to delete agent");
@@ -134,7 +145,7 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       setError("Failed to update agent status");
       // Refetch to ensure UI is in sync with backend
-      await fetchAgents(page, pageSize);
+      await fetchAgents(page, pageSize, false, activeTab);
     }
   };
 
@@ -175,14 +186,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center p-8">
-        Loading workflows configurations...
-      </div>
-    );
-
-  if (error) {
+  if (error && !loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-2 p-4 text-destructive bg-destructive/10 rounded-md">
@@ -210,20 +214,27 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as AgentTab);
+  };
+
   return (
-    <div className="flex-1 p-8">
+    <div className="flex-1 p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         <AgentList
           agents={agents}
           total={total}
+          loading={loading}
           onDelete={handleDeleteClick}
           onUpdate={handleUpdateAgent}
           onManageKeys={handleManageKeys}
           onGetIntegrationCode={handleGetIntegrationCode}
-          onRefresh={() => fetchAgents(1, pageSize)}
+          onRefresh={() => fetchAgents(1, pageSize, false, activeTab)}
           loadMore={loadMore}
           hasMore={hasMore}
           loadingMore={loadingMore}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
         />
 
         {modalContext && (

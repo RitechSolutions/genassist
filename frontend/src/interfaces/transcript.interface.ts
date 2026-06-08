@@ -4,9 +4,10 @@ export interface TranscriptEntry {
   start_time: number;
   end_time: number;
   create_time: string | number;
-  type?: "message" | "takeover" | string;
+  type?: "message" | "takeover" | "audio" | string;
   message_id?: string;
   feedback?: string | ConversationFeedbackEntry[] | null;
+  audio_format?: string;
 }
 
 export interface Recording {
@@ -39,6 +40,8 @@ export interface Analysis {
 
 export interface BackendTranscript {
   id: string;
+  agent_id?: string | null;
+  agent_name?: string | null;
   operator_id: string;
   data_source_id: string;
   recording_id: string | null;
@@ -57,6 +60,7 @@ export interface BackendTranscript {
   requires_supervisor?: boolean;
   in_progress_hostility_score: number;
   supervisor_id?: string | null;
+  supervisor_username?: string | null;
   recording: Recording | null;
   analysis?: Analysis | null;
   topic?: string;
@@ -105,6 +109,8 @@ export interface ConversationFeedbackEntry {
 
 export interface Transcript {
   id: string;
+  agent_id?: string | null;
+  agent_name?: string | null;
   audio: string;
   duration: number;
   recording_id: string | null;
@@ -120,6 +126,7 @@ export interface Transcript {
   word_count?: number;
   in_progress_hostility_score?: number;
   supervisor_id?: string | null;
+  supervisor_username?: string | null;
   feedback?: ConversationFeedbackEntry[];
 
   // NOTE: used to avoid parsing issues

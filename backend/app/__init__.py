@@ -20,6 +20,7 @@ from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 from app.file_system.file_system import ensure_directories
 from app.middlewares._middleware import build_middlewares
 from app.middlewares.rate_limit_middleware import init_rate_limiter
+from app.routes import health
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -50,6 +51,9 @@ def create_app() -> FastAPI:
     # TODO: retest this
     # from fastapi.staticfiles import StaticFiles
     # app.mount("/docu", StaticFiles(directory="docs-site", html=True), name="docu")
+
+    # Service-level probes (outside `/api`)
+    app.include_router(health.router)
 
     register_routers(app)
 
@@ -261,6 +265,7 @@ def create_celery():
             "app.tasks.kb_batch_tasks",
             "app.tasks.analytics_aggregation_tasks",
             "app.tasks.test_suite_tasks",
+            "app.tasks.file_upload_session_tasks",
         ],
     )
 
@@ -268,6 +273,7 @@ def create_celery():
     celery_app.conf.update(
         broker_url=settings.REDIS_URL,  # Explicitly set broker URL
         result_backend=settings.REDIS_URL,  # Explicitly set result backend
+        broker_connection_retry_on_startup=True,  # Retain pre-Celery 6.0 startup retry behavior
         broker_transport_options={
             "visibility_timeout": 3600,  # 1 hour
             "fanout_prefix": True,
@@ -288,6 +294,11 @@ def create_celery():
         task_track_started=True,
         task_time_limit=300,  # 5 minutes
         task_soft_time_limit=240,  # 4 minutes (soft limit)
+        # Hard time limits above don't apply to the solo pool we run with;
+        # enforcement happens via asyncio.wait_for inside each task body
+        # (see app/tasks/base.py::run_async_in_celery). Bound result-backend
+        # growth so a slow/wedged worker doesn't pile up Redis keys.
+        result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,
@@ -314,6 +325,14 @@ def create_celery():
             # Run at 2 minutes past every 10 minutes
             "schedule": crontab(minute="2-59/10"),
             "options": {"expires": 3600},  # Task expires after 1 hour
+        }
+
+    if settings.CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK:
+        beat_schedule["cleanup-stale-direct-upload-sessions"] = {
+            "task": "app.tasks.file_upload_session_tasks.cleanup_stale_direct_upload_sessions",
+            # Run every 5 minutes; uses FILES_DIRECT_S3_PRESIGN_EXPIRES_SECONDS for cutoff.
+            "schedule": crontab(minute="*/5"),
+            "options": {"expires": 1200},  # Task expires after 20 minutes
         }
 
     if settings.CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS:
@@ -351,9 +370,11 @@ def create_celery():
     if settings.CELERY_ENABLE_IMPORT_ZENDESK_ARTICLES_TASK:
         beat_schedule["import-zendesk-articles-to-kb"] = {
             "task": "app.tasks.zendesk_article_sync_tasks.import_zendesk_articles_to_kb",
-            # Run every 15 minutes to check for knowledge bases due for sync
-            # The task itself has cron-based scheduling logic, so this just checks periodically
-            "schedule": crontab(minute="*/1"),
+            # Beat fires every 15 minutes; the task itself has cron-based scheduling
+            # logic, so the tick only needs to be frequent enough to *check* whether
+            # a KB is due. Aligned with the 15-min expires below — every-1-minute
+            # caused queue pileup when one sync ran long.
+            "schedule": crontab(minute="*/15"),
             "options": {
                 "expires": 900,  # Task expires after 15 minutes
             },

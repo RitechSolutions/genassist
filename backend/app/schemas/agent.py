@@ -14,8 +14,10 @@ from app.schemas.common import PaginatedResponse
 
 
 class AgentBase(BaseModel):
-    name: str
-    description: str
+    name: str = Field(..., max_length=100,
+                      description="Agent name. Limited to 100 characters.")
+    description: str = Field(..., max_length=200,
+                             description="Agent description. Limited to 200 characters.")
     is_active: bool = False
     welcome_message: str = Field(..., max_length=500,
                                  description="Welcome message returned when starting a conversation with an agent.")
@@ -46,8 +48,8 @@ class AgentCreate(AgentBase):
 
 
 class AgentUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = Field(None, max_length=200)
     is_active: Optional[bool] = None
     welcome_message: Optional[str] = None
     welcome_image: Optional[bytes] = None
@@ -76,6 +78,7 @@ class AgentRead(AgentBase):
     welcome_image: Optional[bytes] = Field(None, exclude=True)
     # Flag to indicate if agent has a welcome image (avoids unnecessary fetch)
     has_welcome_image: bool = False
+    is_system: bool = False
 
     model_config = ConfigDict(extra='ignore')  # shared rules
 
@@ -169,6 +172,7 @@ class AgentListItem(BaseModel):
     workflow_id: Optional[UUID] = None
     possible_queries: List[str] = Field(default_factory=list, description="FAQ queries")
     is_active: bool = False
+    is_system: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

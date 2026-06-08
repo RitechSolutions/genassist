@@ -5,8 +5,6 @@ import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "luci
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
-import { useIsMobile } from "@/hooks/useMobile";
-import { Card, CardContent } from "@/components/card";
 import {
   Select,
   SelectContent,
@@ -14,13 +12,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { Info } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { SummaryStatsCards } from "../components/reports/SummaryStatsCards";
 import { AgentExecutionChart } from "../components/reports/AgentExecutionChart";
 import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdownDialog";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
-import { useAgentsList } from "../hooks/useAgentsList";
+import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
+import { analyticsFadeUpClass } from "../constants/animations";
+import {
+  AgentPerformanceTableEmptyState,
+  AnalyticsAggregatedDataEmptyState,
+} from "../components/AnalyticsEmptyStates";
+import { AgentPerformancePageSkeleton } from "../components/skeletons";
+import { cn } from "@/helpers/utils";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import {
   fetchAgentStatsSummary,
   fetchAgentDailyStats,
@@ -33,7 +38,6 @@ import type {
 } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 import { ExportButton } from "@/components/ui/ExportButton";
-
 const LS_KEY = (agentId: string) => `analytics_escalation_node_${agentId}`;
 
 function getResponseTimeColor(ms: number): string {
@@ -64,16 +68,23 @@ interface AgentAggregated {
 }
 
 const AgentPerformancePage = () => {
-  const isMobile = useIsMobile();
-
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [agentFilter, setAgentFilter] = useState("all");
   const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
 
-  const { agents, agentNameMap } = useAgentsList();
+  const {
+    groups,
+    showGroupFilter,
+    groupFilter,
+    setGroupFilter,
+    agentFilter,
+    setAgentFilter,
+    agents,
+    agentNameMap,
+    filterParams,
+  } = useAnalyticsFilters();
   const [summary, setSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [previousSummary, setPreviousSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [items, setItems] = useState<AgentDailyStatsItem[]>([]);
@@ -87,23 +98,22 @@ const AgentPerformancePage = () => {
 
   const loadData = async (
     range: DateRange | undefined,
-    agentId: string,
+    filters: { agent_id?: string; group_id?: string },
     compareRange: DateRange | undefined,
   ) => {
     setLoading(true);
     setError(null);
     try {
-      const agentIdParam = agentId !== "all" ? agentId : undefined;
       const { from_date, to_date } = toExpandedUTCDateRange(range);
       const params = {
         from_date,
         to_date,
-        agent_id: agentIdParam,
+        ...filters,
       };
       const compareParams = compareRange?.from && compareRange?.to
         ? {
             ...toExpandedUTCDateRange(compareRange),
-            agent_id: agentIdParam,
+            ...filters,
           }
         : undefined;
 
@@ -123,7 +133,7 @@ const AgentPerformancePage = () => {
   };
 
   useEffect(() => {
-    loadData(dateRange, agentFilter, compareDateRange);
+    loadData(dateRange, filterParams, compareDateRange);
 
     if (agentFilter !== "all") {
       setEscalationNode(localStorage.getItem(LS_KEY(agentFilter)) ?? "");
@@ -134,7 +144,13 @@ const AgentPerformancePage = () => {
       setEscalationNode("");
       setNodeBreakdown([]);
     }
-  }, [dateRange, agentFilter, compareDateRange]);
+  }, [
+    dateRange,
+    agentFilter,
+    filterParams.agent_id,
+    filterParams.group_id,
+    compareDateRange,
+  ]);
 
   const handleEscalationNodeChange = (value: string) => {
     setEscalationNode(value);
@@ -157,15 +173,24 @@ const AgentPerformancePage = () => {
       : null;
   const containmentRate = escalationRate !== null ? 1 - escalationRate : null;
 
+  const conversationStatusByAgent = useMemo(() => {
+    const map = new Map<string, { unique_conversations: number; finalized_conversations: number; in_progress_conversations: number }>();
+    for (const row of summary?.conversation_status_by_agent ?? []) {
+      map.set(row.agent_id, {
+        unique_conversations: row.unique_conversations,
+        finalized_conversations: row.finalized_conversations,
+        in_progress_conversations: row.in_progress_conversations,
+      });
+    }
+    return map;
+  }, [summary?.conversation_status_by_agent]);
+
   // When all agents shown: aggregate daily rows into one row per agent
   const aggregatedItems = useMemo<AgentAggregated[]>(() => {
     const map = new Map<string, AgentAggregated & { _totalMs: number; _msCount: number }>();
     for (const item of items) {
       const existing = map.get(item.agent_id);
       if (existing) {
-        existing.unique_conversations += item.unique_conversations;
-        existing.finalized_conversations += item.finalized_conversations;
-        existing.in_progress_conversations += item.in_progress_conversations;
         existing.execution_count += item.execution_count;
         existing.success_count += item.success_count;
         existing.error_count += item.error_count;
@@ -197,11 +222,17 @@ const AgentPerformancePage = () => {
         });
       }
     }
-    return Array.from(map.values()).map((a) => ({
-      ...a,
-      avg_response_ms: a._msCount > 0 ? a._totalMs / a._msCount : null,
-    }));
-  }, [items]);
+    return Array.from(map.values()).map((a) => {
+      const conv = conversationStatusByAgent.get(a.agent_id);
+      return {
+        ...a,
+        unique_conversations: conv?.unique_conversations ?? a.unique_conversations,
+        finalized_conversations: conv?.finalized_conversations ?? a.finalized_conversations,
+        in_progress_conversations: conv?.in_progress_conversations ?? a.in_progress_conversations,
+        avg_response_ms: a._msCount > 0 ? a._totalMs / a._msCount : null,
+      };
+    });
+  }, [items, conversationStatusByAgent]);
 
   const statsColumns = useMemo(() => {
     const statCols: Column<AgentAggregated>[] = [
@@ -304,32 +335,34 @@ const AgentPerformancePage = () => {
   }, [agentFilter, agentNameMap]);
 
   const exportParams = {
-    agent_id: agentFilter !== "all" ? agentFilter : undefined,
+    ...filterParams,
     ...toExpandedUTCDateRange(dateRange),
   };
+
+  const hasSummary = summary != null;
+  const hasDailyStats = items.length > 0;
+  const showDetailSections = hasSummary || hasDailyStats;
+  const exportRowCount =
+    agentFilter === "all" ? aggregatedItems.length : items.length;
+  const canExport = !loading && exportRowCount > 0;
 
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Header */}
-              <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold mb-1 animate-fade-down">
-                    Agent Performance
-                  </h1>
-                  <p className="text-sm text-muted-foreground animate-fade-up">
-                    Daily performance metrics per agent
-                  </p>
-                </div>
-
-                {/* Filters */}
+              <AnalyticsPageHeader
+                title="Agent Performance"
+                subtitle="Daily performance metrics per agent"
+              >
                 <AnalyticsFilters
+                  groups={showGroupFilter ? groups : undefined}
+                  groupFilter={groupFilter}
+                  onGroupFilterChange={setGroupFilter}
                   agents={agents}
                   agentFilter={agentFilter}
                   onAgentFilterChange={setAgentFilter}
@@ -342,36 +375,30 @@ const AgentPerformancePage = () => {
                     endpoint="/analytics/agents/export"
                     params={exportParams}
                     filename="agent-performance"
-                    disabled={loading || items.length === 0}
+                    disabled={!canExport}
                   />
                 </AnalyticsFilters>
-              </header>
+              </AnalyticsPageHeader>
 
-              {/* Empty-data notice */}
-              {!loading && items.length === 0 && !error && (
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Info className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                    <p className="text-sm text-blue-700">
-                      No analytics data yet. Run the aggregation task to populate the summary tables.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+              {loading ? (
+                <AgentPerformancePageSkeleton tableColumns={statsColumns.length} />
+              ) : (
+                <div className="space-y-6 sm:space-y-8">
+              {!showDetailSections && !error && <AnalyticsAggregatedDataEmptyState />}
 
-              {/* Summary cards — containment rate promoted to top-level KPI */}
+              {/* Summary KPIs — always shown when summary API returns data */}
               <SummaryStatsCards
                 summary={summary}
                 previousSummary={previousSummary}
                 compareDateRange={compareDateRange}
-                loading={loading}
+                loading={false}
                 error={error}
                 containmentRate={containmentRate}
               />
 
               {/* Escalation tracking — only when a specific agent is selected */}
-              {agentFilter !== "all" && (
-                <div className="space-y-3">
+              {summary && agentFilter !== "all" && (
+                <div className={cn("space-y-3", analyticsFadeUpClass)}>
                   {/* Escalation node config */}
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -469,22 +496,38 @@ const AgentPerformancePage = () => {
                 </div>
               )}
 
-              {/* Daily conversations chart */}
-              <AgentExecutionChart items={items} loading={loading} agentNameMap={agentNameMap} />
+              {showDetailSections && (
+                <>
+                  <AgentExecutionChart
+                    items={items}
+                    loading={false}
+                    agentNameMap={agentNameMap}
+                  />
 
-              {/* Stats table */}
-              <div>
-                <DataTable
-                  data={agentFilter === "all" ? aggregatedItems : (items as unknown as AgentAggregated[])}
-                  columns={statsColumns as Column<AgentAggregated>[]}
-                  loading={loading}
-                  error={error}
-                  emptyMessage="No data for the selected period."
-                  keyExtractor={(item) => item.id}
-                  pageSize={10}
-                  onRowClick={agentFilter !== "all" ? (item) => setSelectedItem(item as unknown as AgentDailyStatsItem) : undefined}
-                />
-              </div>
+                  <div className={analyticsFadeUpClass}>
+                    <DataTable
+                      data={
+                        agentFilter === "all"
+                          ? aggregatedItems
+                          : (items as unknown as AgentAggregated[])
+                      }
+                      columns={statsColumns as Column<AgentAggregated>[]}
+                      loading={false}
+                      error={error}
+                      emptyState={<AgentPerformanceTableEmptyState />}
+                      keyExtractor={(item) => item.id}
+                      pageSize={10}
+                      onRowClick={
+                        agentFilter !== "all"
+                          ? (item) => setSelectedItem(item as unknown as AgentDailyStatsItem)
+                          : undefined
+                      }
+                    />
+                  </div>
+                </>
+              )}
+                </div>
+              )}
 
             </div>
           </div>

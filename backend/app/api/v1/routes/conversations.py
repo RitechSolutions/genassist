@@ -10,15 +10,15 @@ from fastapi.responses import JSONResponse
 from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 
-from app.auth.dependencies import (
-    auth,
-    auth_for_conversation_update,
-    permissions,
-    socket_auth,
-)
+from app.auth.dependencies import auth, permissions, require_admin_user, socket_auth
 from app.auth.dependencies_agent_security import (
     get_agent_for_start,
     get_agent_for_update,
+)
+from app.auth.dependencies_conversations import (
+    auth_for_conversation_update,
+    permissions_for_conversation,
+    socket_auth_conversation,
 )
 from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import invalidate_cache
@@ -31,6 +31,7 @@ from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 from app.middlewares.rate_limit_middleware import (
@@ -70,6 +71,12 @@ from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
+from app.services.realtime_notifications import (
+    emit_notification,
+    conversation_started_notification_description,
+    notification_payload,
+    transcript_conversation_notification_url,
+)
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.translations import TranslationsService
 from app.use_cases.chat_as_client_use_case import (
@@ -196,7 +203,7 @@ async def get_agent_chat_locales(
     response_model=ConversationRead,
     dependencies=[
         Depends(auth),
-        # Depends(permissions(P.Conversation.READ))
+        Depends(permissions_for_conversation(P.Conversation.READ)),
     ],
 )
 async def get(
@@ -224,6 +231,7 @@ async def start(
     service: ConversationService = Injected(ConversationService),
     auth_service: AuthService = Injected(AuthService),
     translations_service: TranslationsService = Injected(TranslationsService),
+    socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
 ):
     """
     Create a new in-progress conversation and store the partial transcript.
@@ -339,6 +347,24 @@ async def start(
     json_response = JSONResponse(content=response)
     apply_agent_cors_headers(request, json_response, agent_security_settings)
 
+    emit_notification(
+        socket_connection_manager=socket_connection_manager,
+        tenant_id=tenant_id,
+        current_user_id=get_current_user_id(),
+        payload=notification_payload(
+            notification_id=f"conversation_started:{conversation.id}",
+            title="Conversation Started",
+            description=conversation_started_notification_description(conversation.id),
+            level="info",
+            action_url=transcript_conversation_notification_url(conversation.id),
+            timestamp=conversation.created_at,
+            group_id=getattr(conversation, "group_id", None),
+            entity_kind="conversation",
+            entity_id=conversation.id,
+            event_key=f"conversation_started:{conversation.id}",
+        ),
+    )
+
     return json_response
 
 
@@ -348,7 +374,7 @@ async def start(
     dependencies=[
         Depends(get_agent_for_update),
         Depends(auth_for_conversation_update),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
 @limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
@@ -380,7 +406,7 @@ async def poll_in_progress(
     "/in-progress/no-agent-update/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
         Depends(get_agent_for_update),  # Get agent early for rate limiting and CORS
     ],
 )
@@ -439,6 +465,7 @@ async def update_no_agent(
             if get_current_user_id() != conversation.supervisor_id:
                 raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER_OTHER)
 
+    previous_hostility_score = int(conversation.in_progress_hostility_score or 0)
     updated_conversation = await service.update_in_progress_conversation(conversation_id, model)
 
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
@@ -463,6 +490,29 @@ async def update_no_agent(
             tenant_id=tenant_id,
         )
     )
+
+    current_hostility_score = int(updated_conversation.in_progress_hostility_score or 0)
+    if previous_hostility_score <= 50 < current_hostility_score:
+        emit_notification(
+            socket_connection_manager=socket_connection_manager,
+            tenant_id=tenant_id,
+            current_user_id=get_current_user_id(),
+            payload=notification_payload(
+                notification_id=f"conversation_hostility:{updated_conversation.id}",
+                title="High Hostility Detected",
+                description=(
+                    f"Conversation {str(updated_conversation.id)[:8]}... reached hostility score "
+                    f"{current_hostility_score}%."
+                ),
+                level="warning",
+                action_url=transcript_conversation_notification_url(updated_conversation.id),
+                timestamp=updated_conversation.updated_at,
+                group_id=getattr(updated_conversation, "group_id", None),
+                entity_kind="conversation",
+                entity_id=updated_conversation.id,
+                event_key=f"conversation_hostility:{updated_conversation.id}",
+            ),
+        )
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
 
@@ -492,7 +542,7 @@ async def update_no_agent(
     dependencies=[
         Depends(get_agent_for_update),
         Depends(auth_for_conversation_update),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
 @limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
@@ -500,13 +550,29 @@ async def update_no_agent(
 async def update(
     request: Request,
     conversation_id: UUID,
-    model: ConversationUpdateWithRecaptchaToken,
     file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Append segments to an existing in-progress conversation.
+    Accepts JSON body (text messages) or multipart/form-data (audio messages).
     If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
+    content_type = request.headers.get("content-type", "")
+    audio_bytes: bytes | None = None
+    audio_format: str | None = None
+
+    if "multipart" in content_type:
+        form = await request.form()
+        model_json = form.get("model", "{}")
+        model = ConversationUpdateWithRecaptchaToken.model_validate_json(model_json)
+        audio_file = form.get("audio_file")
+        if audio_file is not None:
+            audio_bytes = await audio_file.read()
+            audio_format = form.get("audio_format", "webm")
+    else:
+        body = await request.json()
+        model = ConversationUpdateWithRecaptchaToken.model_validate(body)
+
     tenant_id = get_tenant_context()
 
     # Get agent from request.state (set by get_agent_for_start dependency)
@@ -537,6 +603,8 @@ async def update(
         model=model,
         tenant_id=tenant_id,
         current_user_id=get_current_user_id(),
+        audio_bytes=audio_bytes,
+        audio_format=audio_format,
     )
 
     # invalidate the cache for the conversation
@@ -550,6 +618,56 @@ async def update(
     apply_agent_cors_headers(request, json_response, agent_security_settings)
 
     return json_response
+
+
+async def _any_conversation_read(request: Request):
+    """Allow access if the caller has either READ or READ_IN_PROGRESS."""
+    from app.auth.utils import has_permission
+
+    for source in ("guest_token", "api_key", "user"):
+        obj = getattr(request.state, source, None)
+        if obj is None:
+            continue
+        perms = obj.get("permissions", []) if isinstance(obj, dict) else getattr(obj, "permissions", [])
+        if has_permission(perms, P.Conversation.READ) or has_permission(perms, P.Conversation.READ_IN_PROGRESS):
+            return
+    raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
+
+
+@router.get(
+    "/{conversation_id}/messages/{message_id}/audio",
+    dependencies=[
+        Depends(auth),
+        Depends(_any_conversation_read),
+    ],
+)
+async def get_message_audio(
+    conversation_id: UUID,
+    message_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(TranscriptMessageService),
+):
+    """Stream audio data for a transcript message."""
+    import io
+
+    from fastapi.responses import StreamingResponse
+
+    from app.core.utils.cache_headers import no_store_headers
+
+    repo = transcript_message_service.transcript_message_repo
+    message = await repo.get_message_by_message_id(message_id)
+
+    if not message or message.conversation_id != conversation_id or not message.audio_data:
+        raise AppException(error_key=ErrorKey.MESSAGE_NOT_FOUND, status_code=404)
+
+    content_type = f"audio/{message.audio_format or 'mp3'}"
+    return StreamingResponse(
+        io.BytesIO(message.audio_data),
+        media_type=content_type,
+        headers={
+            "Content-Length": str(len(message.audio_data)),
+            **no_store_headers(),
+        },
+    )
 
 
 @router.patch(
@@ -687,6 +805,40 @@ async def get_conversation_count(
     return await conversations_service.count_conversations(conversation_filter)
 
 
+@router.delete(
+    "/{conversation_id}/gdpr",
+    dependencies=[
+        Depends(auth),
+        Depends(require_admin_user),
+        Depends(permissions(P.Conversation.DELETE_GDPR)),
+    ],
+)
+async def gdpr_delete_conversation(
+    conversation_id: UUID,
+    mode: Optional[GdprDeleteMode] = Query(
+        default=None,
+        description=(
+            "Deletion mode for GDPR Right-to-Erasure. Defaults to the value "
+            "of the GDPR_DEFAULT_DELETE_MODE setting (typically 'soft')."
+        ),
+    ),
+    conversations_service: ConversationService = Injected(ConversationService),
+):
+    """Admin-only GDPR Right-to-Erasure delete for a single conversation.
+
+    The endpoint is intentionally additive: the existing internal
+    ``ConversationService.delete_conversation`` continues to work for the
+    stale-cleanup path. This route simply exposes a new admin-gated entry
+    point that supports the three documented modes (soft/anonymize/hard) so
+    deployments can pick the policy that fits their compliance posture
+    without code changes.
+    """
+    effective_mode = mode or GdprDeleteMode(settings.GDPR_DEFAULT_DELETE_MODE)
+    return await conversations_service.gdpr_delete_conversation(
+        conversation_id, effective_mode
+    )
+
+
 @router.patch(
     "/message/add-feedback/{message_id}",
     dependencies=[
@@ -807,7 +959,7 @@ async def get_agent_response_log_by_message(
 async def websocket_endpoint(
     websocket: WebSocket,
     conversation_id: UUID,
-    principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
+    principal: SocketPrincipal = socket_auth_conversation([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
@@ -846,7 +998,9 @@ async def websocket_dashboard_endpoint(
     websocket: WebSocket,
     principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
-    topics: list[str] = Query(default=["message", "update", "finalize", "hostile", "statistics"]),
+    topics: list[str] = Query(
+        default=["message", "update", "finalize", "hostile", "statistics", "notification"]
+    ),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
     dashboard_service: DashboardService = Injected(DashboardService),
 ):

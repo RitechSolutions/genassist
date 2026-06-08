@@ -32,7 +32,12 @@ async def auth_token(
 
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
     tenant_id = get_tenant_context()
-    token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
+    token_data = {
+        "sub": user.username,
+        "user_id": str(user.id),
+        "tenant_id": tenant_id,
+        "origin": settings.LOCAL_FINE_TUNING_CALL_ORIGIN,
+    }
     access_token = auth_service.create_access_token(data=token_data)
     refresh_token = auth_service.create_refresh_token(data=token_data)
     return {
@@ -54,9 +59,19 @@ async def refresh_token(
 ):
     from app.core.tenant_scope import get_tenant_context
 
-    user = await auth_service.decode_jwt(refresh_token)  # Decode user
+    # Only accept tokens with typ=refresh (rejects access tokens)
+    user = await auth_service.decode_jwt(refresh_token, expected_typ="refresh")
+
+    # Revoke the old refresh token so it cannot be reused (rotation)
+    await auth_service.revoke_refresh_token(refresh_token)
+
     tenant_id = get_tenant_context()
-    token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
+    token_data = {
+        "sub": user.username,
+        "user_id": str(user.id),
+        "tenant_id": tenant_id,
+        "origin": settings.LOCAL_FINE_TUNING_CALL_ORIGIN,
+    }
     access_token = auth_service.create_access_token(data=token_data)
     new_refresh_token = auth_service.create_refresh_token(data=token_data)
 

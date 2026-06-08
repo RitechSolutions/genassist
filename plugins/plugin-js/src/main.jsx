@@ -4,9 +4,7 @@ import { GenAgentChat } from "../../react/src";
 
 // Import CSS files
 import "./font.css";
-
-// Import index.css if you want to override the default styles
-// import "./index.css";
+import "./index.css";
 
 // Keep a reference to the React root so we can safely re-bootstrap
 let genassistRoot = null;

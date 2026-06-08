@@ -1,7 +1,8 @@
 import React, { useState, useRef } from "react";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
+import { parseDroppedVariable } from "@/helpers/variable-input/droppedVariable";
 
 interface DraggableTextAreaProps {
   id?: string;
@@ -64,48 +65,30 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
         : value.length;
 
     try {
-      const jsonData = e.dataTransfer.getData("application/json");
-
-      if (jsonData) {
-        const { path, value: droppedValue } = JSON.parse(jsonData);
-        const variableReference = path;
-        const newValue = insertAtPosition(value, variableReference, insertPos);
-        const cursorAfter = insertPos + variableReference.length;
-
-        const syntheticEvent = {
-          target: { value: newValue }
-        } as React.ChangeEvent<HTMLTextAreaElement>;
-        onChange(syntheticEvent);
-
-        setTimeout(() => {
-          if (textareaRef.current && document.activeElement === textareaRef.current) {
-            textareaRef.current.setSelectionRange(cursorAfter, cursorAfter);
-          }
-        }, 0);
-
-        if (onVariableDrop) {
-          onVariableDrop(path, droppedValue);
-        }
+      const dropped = parseDroppedVariable(e.dataTransfer);
+      if (!dropped) {
         return;
       }
 
-      const textData = e.dataTransfer.getData("text/plain");
+      const newValue = insertAtPosition(value, dropped.reference, insertPos);
+      const cursorAfter = insertPos + dropped.reference.length;
 
-      if (textData) {
-        const variableReference = textData;
-        const newValue = insertAtPosition(value, variableReference, insertPos);
-        const cursorAfter = insertPos + variableReference.length;
+      const syntheticEvent = {
+        target: { value: newValue },
+      } as React.ChangeEvent<HTMLTextAreaElement>;
+      onChange(syntheticEvent);
 
-        const syntheticEvent = {
-          target: { value: newValue }
-        } as React.ChangeEvent<HTMLTextAreaElement>;
-        onChange(syntheticEvent);
+      setTimeout(() => {
+        if (
+          textareaRef.current &&
+          document.activeElement === textareaRef.current
+        ) {
+          textareaRef.current.setSelectionRange(cursorAfter, cursorAfter);
+        }
+      }, 0);
 
-        setTimeout(() => {
-          if (textareaRef.current && document.activeElement === textareaRef.current) {
-            textareaRef.current.setSelectionRange(cursorAfter, cursorAfter);
-          }
-        }, 0);
+      if (onVariableDrop) {
+        onVariableDrop(dropped.path, dropped.value);
       }
     } catch (error) {
       // ignore
@@ -153,7 +136,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           isDragOver && "ring-2 ring-blue-500 ring-opacity-50"
         )}
       >
-        <Textarea
+        <RichTextarea
           ref={textareaRef}
           id={id}
           value={value}

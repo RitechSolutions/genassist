@@ -22,6 +22,7 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/sidebar";
 import { useLocation } from "react-router";
 import { Link } from "react-router-dom";
@@ -36,6 +37,7 @@ import {
   logout,
   hasAnyPermission,
   getAuthMe,
+  getTenantId,
 } from "@/services/auth";
 import toast from "react-hot-toast";
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -44,6 +46,7 @@ import { FeatureFlags } from "@/config/featureFlags";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { cn } from "@/helpers/utils";
 import { GenAssistLogo } from "@/components/GenAssistLogo";
+import { NotificationBellPopover } from "@/components/NotificationBellPopover";
 
 // ---------------------------------------------------------------------------
 // Types & data
@@ -69,7 +72,7 @@ const menuItems: MenuItem[] = [
     children: [
       {
         title: "AI Insights",
-        url: "/analytics",
+        url: "/analytics/ai-insights",
         permissionsRequired: ["read:dashboard"],
       },
       {
@@ -160,7 +163,6 @@ const menuItems: MenuItem[] = [
         title: "Configuration Vars",
         url: "/app-settings",
         permissionsRequired: ["read:app_setting"],
-        feature_flag: FeatureFlags.ADMIN_TOOLS.APP_SETTINGS,
       },
     ],
   },
@@ -172,6 +174,11 @@ const menuItems: MenuItem[] = [
       {
         title: "LLM Providers",
         url: "/llm-providers",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
+        title: "Audio Providers",
+        url: "/audio-providers",
         permissionsRequired: ["read:llm_provider"],
       },
       {
@@ -188,6 +195,7 @@ const menuItems: MenuItem[] = [
         title: "Local Fine-Tune",
         url: "/local-fine-tune",
         permissionsRequired: ["*", "update:llm_provider"],
+        feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE,
       },
     ],
   },
@@ -215,6 +223,11 @@ const menuItems: MenuItem[] = [
         title: "User Groups",
         url: "/user-groups",
         permissionsRequired: ["read:user_group"],
+      },
+      {
+        title: "GDPR Requests",
+        url: "/admin/gdpr-conversations",
+        permissionsRequired: ["delete:conversation:gdpr"],
       },
     ],
   },
@@ -380,9 +393,11 @@ function CollapsibleMenuItem({
 
 function UserFooter({
   username,
+  tenantId,
   onLogout,
 }: {
   username: string;
+  tenantId?: string;
   onLogout: () => void;
 }) {
   const initials = username
@@ -394,43 +409,54 @@ function UserFooter({
 
   return (
     <div className="border-t border-zinc-100 px-3 py-3">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors",
-              "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
-            )}
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
-              {initials || "U"}
-            </div>
-            <span className="truncate text-[13px] font-medium text-zinc-600">
-              {username}
-            </span>
-            <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-48">
-          <DropdownMenuItem asChild className="flex items-center gap-2">
-            <Link
-              to="/change-password"
-              className="flex items-center gap-2"
-            >
-              <Lock className="h-4 w-4" />
-              <span>Change Password</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={onLogout}
-            className="flex items-center gap-2 text-red-600"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors",
+                  "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
+                )}
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
+                  {initials || "U"}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium text-zinc-600">
+                    {username}
+                  </div>
+                  {tenantId ? (
+                    <div className="truncate text-[11px] text-zinc-400">
+                      Tenant: <span className="font-medium">{tenantId}</span>
+                    </div>
+                  ) : null}
+                </div>
+                <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-48">
+              {/* <DropdownMenuItem asChild className="flex items-center gap-2">
+                <Link
+                  to="/change-password"
+                  className="flex items-center gap-2"
+                >
+                  <Lock className="h-4 w-4" />
+                  <span>Change Password</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator /> */}
+              <DropdownMenuItem
+                onClick={onLogout}
+                className="flex items-center gap-2 text-red-600"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
     </div>
   );
 }
@@ -440,8 +466,10 @@ function UserFooter({
 // ---------------------------------------------------------------------------
 
 export function AppSidebar() {
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
   const [username, setUsername] = useState<string>("");
-  const { isEnabled } = useFeatureFlag();
+  const [tenantId, setTenantId] = useState<string>("");
+  const { getFeatureItem } = useFeatureFlag();
 
   const location = useLocation();
   const currentPath = location.pathname;
@@ -484,10 +512,12 @@ export function AppSidebar() {
     const cached = localStorage.getItem("auth_username");
     if (cached) {
       setUsername(cached);
+      setTenantId(getTenantId() ?? "");
       return;
     }
     const loadUser = async () => {
       try {
+        setTenantId(getTenantId() ?? "");
         const me = await getAuthMe();
         if (me?.username) {
           setUsername(me.username);
@@ -495,6 +525,7 @@ export function AppSidebar() {
         }
       } catch {
         setUsername("");
+        setTenantId(getTenantId() ?? "");
       }
     };
     loadUser();
@@ -517,12 +548,23 @@ export function AppSidebar() {
     }
   }, [currentPath]);
 
+  // Close the mobile drawer after successful route navigation.
+  useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [currentPath, isMobile, setOpenMobile]);
+
   const filterItems = useCallback(
     (items: MenuItem[]): MenuItem[] => {
       return items.reduce<MenuItem[]>((acc, item) => {
         if (item.permissionsRequired && !hasAnyPermission(item.permissionsRequired))
           return acc;
-        if (item.feature_flag && !isEnabled(item.feature_flag)) return acc;
+        if (item.feature_flag) {
+          // Feature-flagged navigation items should only render when the exact flag exists and is visible.
+          const featureItem = getFeatureItem(item.feature_flag);
+          if (featureItem?.visible !== true) return acc;
+        }
         if (item.children) {
           const filteredChildren = filterItems(item.children);
           if (filteredChildren.length === 0) return acc;
@@ -533,7 +575,7 @@ export function AppSidebar() {
         return acc;
       }, []);
     },
-    [isEnabled]
+    [getFeatureItem]
   );
 
   const filteredMenuItems = filterItems(menuItems);
@@ -554,6 +596,10 @@ export function AppSidebar() {
         {/* Logo */}
         <div className="flex items-center px-5 pt-5 pb-4">
           <GenAssistLogo width={150} />
+          <NotificationBellPopover
+            compact
+            className="ml-auto mr-2 shrink-0 !border-0 !bg-transparent shadow-none hover:!bg-transparent"
+          />
         </div>
 
         {/* Scrollable nav */}
@@ -582,7 +628,11 @@ export function AppSidebar() {
 
         {/* Pinned footer */}
         {username && (
-          <UserFooter username={username} onLogout={handleLogout} />
+          <UserFooter
+            username={username}
+            tenantId={tenantId}
+            onLogout={handleLogout}
+          />
         )}
       </SidebarContent>
     </Sidebar>

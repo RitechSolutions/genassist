@@ -1,15 +1,18 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 
+from app.core.utils.analytics_agent_scope import get_agents_for_group, resolve_scoped_agent_ids
 from app.core.utils.date_time_utils import previous_period
+from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import func, select, text
+from sqlalchemy import case, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
+from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.db.models.operator import OperatorModel
@@ -17,22 +20,39 @@ from app.db.models.operator import OperatorModel
 logger = logging.getLogger(__name__)
 
 
+def _apply_agent_ids(stmt, column, agent_ids: list[UUID] | None):
+    if agent_ids is None:
+        return stmt
+    if not agent_ids:
+        return stmt.where(false())
+    if len(agent_ids) == 1:
+        return stmt.where(column == agent_ids[0])
+    return stmt.where(column.in_(agent_ids))
+
+
 class AnalyticsReadRepository:
     @inject
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def get_agents_for_group(self, group_id: UUID) -> list[dict]:
+        return await get_agents_for_group(self.db, group_id)
+
     async def get_agent_daily_stats(
         self,
         agent_id: UUID | None = None,
+        group_id: UUID | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> list[AgentExecutionDailyStatsModel]:
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids:
+            return []
+
         stmt = select(AgentExecutionDailyStatsModel).where(
             AgentExecutionDailyStatsModel.is_deleted == 0
         )
-        if agent_id is not None:
-            stmt = stmt.where(AgentExecutionDailyStatsModel.agent_id == agent_id)
+        stmt = _apply_agent_ids(stmt, AgentExecutionDailyStatsModel.agent_id, agent_ids)
         if from_date is not None:
             stmt = stmt.where(AgentExecutionDailyStatsModel.stat_date >= from_date)
         if to_date is not None:
@@ -44,15 +64,19 @@ class AnalyticsReadRepository:
     async def get_node_daily_stats(
         self,
         agent_id: UUID | None = None,
+        group_id: UUID | None = None,
         node_type: str | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> list[NodeExecutionDailyStatsModel]:
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids:
+            return []
+
         stmt = select(NodeExecutionDailyStatsModel).where(
             NodeExecutionDailyStatsModel.is_deleted == 0
         )
-        if agent_id is not None:
-            stmt = stmt.where(NodeExecutionDailyStatsModel.agent_id == agent_id)
+        stmt = _apply_agent_ids(stmt, NodeExecutionDailyStatsModel.agent_id, agent_ids)
         if node_type is not None:
             stmt = stmt.where(NodeExecutionDailyStatsModel.node_type == node_type)
         if from_date is not None:
@@ -63,55 +87,219 @@ class AnalyticsReadRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_agent_stats_summary(
+    def _conversations_with_activity_subquery(
+        self,
+        agent_ids: list[UUID] | None,
+        from_date: date | None,
+        to_date: date | None,
+        group_id: UUID | None = None,
+    ):
+        """One row per (conversation, agent) with activity in the date range."""
+        conditions = [AgentResponseLogModel.is_deleted == 0]
+        if from_date is not None:
+            start = datetime.combine(from_date, time.min, tzinfo=timezone.utc)
+            conditions.append(AgentResponseLogModel.logged_at >= start)
+        if to_date is not None:
+            end = datetime.combine(to_date, time.max, tzinfo=timezone.utc)
+            conditions.append(AgentResponseLogModel.logged_at <= end)
+
+        stmt = (
+            select(
+                ConversationModel.id.label("conversation_id"),
+                AgentModel.id.label("agent_id"),
+                ConversationModel.status.label("status"),
+            )
+            .select_from(AgentResponseLogModel)
+            .join(
+                ConversationModel,
+                AgentResponseLogModel.conversation_id == ConversationModel.id,
+            )
+            .join(OperatorModel, ConversationModel.operator_id == OperatorModel.id)
+            .join(AgentModel, AgentModel.operator_id == OperatorModel.id)
+            .where(*conditions)
+            .distinct()
+        )
+        if group_id is not None:
+            scope = [ConversationModel.group_id == group_id]
+            if agent_ids is not None and len(agent_ids) == 1:
+                scope.append(AgentModel.id == agent_ids[0])
+            elif agent_ids:
+                scope.append(AgentModel.id.in_(agent_ids))
+            stmt = stmt.where(or_(*scope))
+        else:
+            stmt = _apply_agent_ids(stmt, AgentModel.id, agent_ids)
+        return stmt.subquery()
+
+    async def get_conversation_status_counts(
         self,
         agent_id: UUID | None = None,
+        group_id: UUID | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
-    ) -> dict:
-        stmt = select(
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.execution_count), 0).label("total_executions"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.success_count), 0).label("total_success"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.error_count), 0).label("total_errors"),
-            # Weighted average: avoids averaging daily averages when execution counts differ
-            (
-                func.sum(AgentExecutionDailyStatsModel.avg_response_ms * AgentExecutionDailyStatsModel.execution_count)
-                / func.nullif(func.sum(AgentExecutionDailyStatsModel.execution_count), 0)
-            ).label("avg_response_ms"),
-            func.avg(AgentExecutionDailyStatsModel.avg_success_rate).label("avg_success_rate"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.rag_used_count), 0).label("total_rag_used"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.unique_conversations), 0).label("total_unique_conversations"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.finalized_conversations), 0).label("total_finalized_conversations"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.in_progress_conversations), 0).label("total_in_progress_conversations"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.thumbs_up_count), 0).label("total_thumbs_up"),
-            func.coalesce(func.sum(AgentExecutionDailyStatsModel.thumbs_down_count), 0).label("total_thumbs_down"),
-        ).where(AgentExecutionDailyStatsModel.is_deleted == 0)
+        *,
+        group_by_agent: bool = False,
+    ) -> list[dict]:
+        """
+        Distinct conversations with agent activity in the period, split by current status.
 
-        if agent_id is not None:
-            stmt = stmt.where(AgentExecutionDailyStatsModel.agent_id == agent_id)
-        if from_date is not None:
-            stmt = stmt.where(AgentExecutionDailyStatsModel.stat_date >= from_date)
-        if to_date is not None:
-            stmt = stmt.where(AgentExecutionDailyStatsModel.stat_date <= to_date)
+        Unlike summing daily stats rows, each conversation is counted once using its
+        present status (finalized vs in_progress/takeover).
+        """
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids and group_id is None:
+            if group_by_agent:
+                return []
+            return [
+                {
+                    "total_unique_conversations": 0,
+                    "total_finalized_conversations": 0,
+                    "total_in_progress_conversations": 0,
+                }
+            ]
+
+        finalized = ConversationStatus.FINALIZED.value
+        active_statuses = (
+            ConversationStatus.IN_PROGRESS.value,
+            ConversationStatus.TAKE_OVER.value,
+        )
+        activity = self._conversations_with_activity_subquery(
+            agent_ids, from_date, to_date, group_id=group_id
+        )
+
+        if group_by_agent:
+            stmt = (
+                select(
+                    activity.c.agent_id,
+                    func.count(activity.c.conversation_id).label("unique_conversations"),
+                    func.coalesce(
+                        func.sum(
+                            case((activity.c.status == finalized, 1), else_=0)
+                        ),
+                        0,
+                    ).label("finalized_conversations"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (activity.c.status.in_(active_statuses), 1),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("in_progress_conversations"),
+                )
+                .group_by(activity.c.agent_id)
+            )
+            result = await self.db.execute(stmt)
+            return [dict(r) for r in result.mappings().all()]
+
+        stmt = select(
+            func.count(activity.c.conversation_id).label("total_unique_conversations"),
+            func.coalesce(
+                func.sum(case((activity.c.status == finalized, 1), else_=0)),
+                0,
+            ).label("total_finalized_conversations"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (activity.c.status.in_(active_statuses), 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("total_in_progress_conversations"),
+        ).select_from(activity)
 
         result = await self.db.execute(stmt)
         row = result.mappings().one()
-        return dict(row)
+        return [dict(row)]
+
+    async def get_agent_stats_summary(
+        self,
+        agent_id: UUID | None = None,
+        group_id: UUID | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> dict:
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids and group_id is None:
+            return {
+                "total_executions": 0,
+                "total_success": 0,
+                "total_errors": 0,
+                "avg_response_ms": None,
+                "avg_success_rate": None,
+                "total_rag_used": 0,
+                "total_thumbs_up": 0,
+                "total_thumbs_down": 0,
+                "total_unique_conversations": 0,
+                "total_finalized_conversations": 0,
+                "total_in_progress_conversations": 0,
+            }
+
+        row: dict
+        if agent_ids is not None and not agent_ids:
+            row = {
+                "total_executions": 0,
+                "total_success": 0,
+                "total_errors": 0,
+                "avg_response_ms": None,
+                "avg_success_rate": None,
+                "total_rag_used": 0,
+                "total_thumbs_up": 0,
+                "total_thumbs_down": 0,
+            }
+        else:
+            stmt = select(
+                func.coalesce(func.sum(AgentExecutionDailyStatsModel.execution_count), 0).label("total_executions"),
+                func.coalesce(func.sum(AgentExecutionDailyStatsModel.success_count), 0).label("total_success"),
+                func.coalesce(func.sum(AgentExecutionDailyStatsModel.error_count), 0).label("total_errors"),
+                (
+                    func.sum(
+                        AgentExecutionDailyStatsModel.avg_response_ms
+                        * AgentExecutionDailyStatsModel.execution_count
+                    )
+                    / func.nullif(func.sum(AgentExecutionDailyStatsModel.execution_count), 0)
+                ).label("avg_response_ms"),
+                func.avg(AgentExecutionDailyStatsModel.avg_success_rate).label("avg_success_rate"),
+                func.coalesce(func.sum(AgentExecutionDailyStatsModel.rag_used_count), 0).label("total_rag_used"),
+                func.coalesce(func.sum(AgentExecutionDailyStatsModel.thumbs_up_count), 0).label("total_thumbs_up"),
+                func.coalesce(func.sum(AgentExecutionDailyStatsModel.thumbs_down_count), 0).label("total_thumbs_down"),
+            ).where(AgentExecutionDailyStatsModel.is_deleted == 0)
+
+            stmt = _apply_agent_ids(stmt, AgentExecutionDailyStatsModel.agent_id, agent_ids)
+            if from_date is not None:
+                stmt = stmt.where(AgentExecutionDailyStatsModel.stat_date >= from_date)
+            if to_date is not None:
+                stmt = stmt.where(AgentExecutionDailyStatsModel.stat_date <= to_date)
+
+            result = await self.db.execute(stmt)
+            row = dict(result.mappings().one())
+
+        conv_rows = await self.get_conversation_status_counts(
+            agent_id=agent_id,
+            group_id=group_id,
+            from_date=from_date,
+            to_date=to_date,
+            group_by_agent=False,
+        )
+        row.update(conv_rows[0])
+        return row
 
     async def get_agent_stats_summary_with_comparison(
         self,
         agent_id: UUID | None = None,
+        group_id: UUID | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> dict:
         """Return current summary, previous-period summary, and computed deltas."""
-        current = await self.get_agent_stats_summary(agent_id, from_date, to_date)
+        current = await self.get_agent_stats_summary(agent_id, group_id, from_date, to_date)
 
         if from_date is None or to_date is None:
             return {"current": current, "previous": None}
 
         prev_from, prev_to = previous_period(from_date, to_date)
-        previous = await self.get_agent_stats_summary(agent_id, prev_from, prev_to)
+        previous = await self.get_agent_stats_summary(agent_id, group_id, prev_from, prev_to)
 
         return {"current": current, "previous": previous}
 
@@ -126,7 +314,6 @@ class AnalyticsReadRepository:
             func.sum(NodeExecutionDailyStatsModel.execution_count).label("execution_count"),
             func.sum(NodeExecutionDailyStatsModel.success_count).label("success_count"),
             func.sum(NodeExecutionDailyStatsModel.failure_count).label("failure_count"),
-            # Weighted average via pre-stored total_execution_ms sum
             (
                 func.sum(NodeExecutionDailyStatsModel.total_execution_ms)
                 / func.nullif(func.sum(NodeExecutionDailyStatsModel.execution_count), 0)
@@ -156,17 +343,23 @@ class AnalyticsReadRepository:
     async def get_custom_attribute_keys(
         self,
         agent_id: UUID | None = None,
+        group_id: UUID | None = None,
     ) -> list[str]:
-        """Return custom attribute keys marked as useInFilter in the workflow.
-
-        Reads keys from the workflow definition (chatInputNode inputSchema)
-        rather than from stored conversation data, so the dropdown always
-        reflects the current workflow configuration.
-        """
+        """Return custom attribute keys marked as useInFilter in the workflow."""
         from app.db.models.workflow import WorkflowModel
         from app.core.utils.custom_attributes import get_filterable_keys
 
-        if agent_id is not None:
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids and group_id is None:
+            return []
+
+        if agent_ids is not None and agent_ids:
+            stmt = (
+                select(WorkflowModel.nodes)
+                .join(AgentModel, AgentModel.workflow_id == WorkflowModel.id)
+                .where(AgentModel.id.in_(agent_ids))
+            )
+        elif agent_id is not None:
             stmt = (
                 select(WorkflowModel.nodes)
                 .join(AgentModel, AgentModel.workflow_id == WorkflowModel.id)
@@ -188,10 +381,15 @@ class AnalyticsReadRepository:
         self,
         key: str,
         agent_id: UUID | None = None,
+        group_id: UUID | None = None,
         from_date: date | datetime | None = None,
         to_date: date | datetime | None = None,
     ) -> list[dict]:
         """Group conversations by a custom attribute value with avg analysis scores."""
+        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids and group_id is None:
+            return []
+
         attr_value = ConversationModel.custom_attributes[key].astext.label("value")
 
         stmt = (
@@ -209,8 +407,15 @@ class AnalyticsReadRepository:
             .where(ConversationModel.custom_attributes[key].astext.isnot(None))
         )
 
-        if agent_id is not None:
-            stmt = stmt.where(AgentModel.id == agent_id)
+        if group_id is not None:
+            scope = [ConversationModel.group_id == group_id]
+            if agent_ids is not None and len(agent_ids) == 1:
+                scope.append(AgentModel.id == agent_ids[0])
+            elif agent_ids:
+                scope.append(AgentModel.id.in_(agent_ids))
+            stmt = stmt.where(or_(*scope))
+        else:
+            stmt = _apply_agent_ids(stmt, AgentModel.id, agent_ids)
         if from_date is not None:
             stmt = stmt.where(
                 func.coalesce(ConversationModel.conversation_date, ConversationModel.created_at) >= from_date

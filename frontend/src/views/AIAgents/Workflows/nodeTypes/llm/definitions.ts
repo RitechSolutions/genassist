@@ -3,14 +3,22 @@ import {
   NodeData,
   NodeTypeDefinition,
   AgentNodeData,
+  ExternalAgentNodeData,
   LLMModelNodeData,
   ToolBuilderNodeData,
   MCPNodeData,
 } from "../../types/nodes";
 import AgentNode from "./agentNode";
+import ExternalAgentNode from "./externalAgentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
 import MCPNode from "./mcpNode";
+import {
+  AI_AGENT_HELP_CONTENT,
+  LANGUAGE_MODEL_HELP_CONTENT,
+  MCP_SERVER_HELP_CONTENT,
+  TOOL_BUILDER_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   type: "agentNode",
@@ -18,6 +26,7 @@ export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   description:
     "Runs an AI-powered agent capable of reasoning, taking actions, and calling tools.",
   shortDescription: "Run an AI agent",
+  helpContent: AI_AGENT_HELP_CONTENT,
   configSubtitle:
     "Configure the AI agent settings, including provider, agent type, prompts, and memory.",
   category: "ai",
@@ -69,6 +78,7 @@ export const MODEL_NODE_DEFINITION: NodeTypeDefinition<LLMModelNodeData> = {
   description:
     "Runs a large language model using a prompt and adjustable model settings.",
   shortDescription: "Run a language model",
+  helpContent: LANGUAGE_MODEL_HELP_CONTENT,
   configSubtitle:
     "Configure the language model settings, including provider, prompts, and memory options.",
   category: "ai",
@@ -113,6 +123,7 @@ export const TOOL_BUILDER_NODE_DEFINITION: NodeTypeDefinition<ToolBuilderNodeDat
     description:
       "Defines a custom tool that an AI agent can call, including parameters and output templates.",
     shortDescription: "Define a custom tool",
+    helpContent: TOOL_BUILDER_HELP_CONTENT,
     configSubtitle:
       "Configure the custom tool definition, including description, parameters, and output template.",
     category: "ai",
@@ -159,9 +170,10 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
   label: "MCP Server",
   description:
     "Connects to an MCP (Model Context Protocol) server and exposes selected tools to agents.",
-  shortDescription: "Connect to MCP server",
+  shortDescription: "Remote MCP via HTTP/SSE — API key or OIDC discovery",
+  helpContent: MCP_SERVER_HELP_CONTENT,
   configSubtitle:
-    "Configure MCP server connection and select which tools to expose to your agent.",
+    "Set server URL, auth (API key or OIDC issuer URL + client credentials + scope), then pick tools.",
   category: "ai",
   icon: "Server",
   defaultData: {
@@ -187,6 +199,57 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "mcpNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const EXTERNAL_AGENT_NODE_DEFINITION: NodeTypeDefinition<ExternalAgentNodeData> = {
+  type: "externalAgentNode",
+  label: "External Agent",
+  description:
+    "Calls an external agent API and returns a response in the standard agent format (message + steps).",
+  shortDescription: "Call an external agent API",
+  configSubtitle:
+    "Configure the external agent endpoint, authentication, and response field mapping.",
+  category: "ai",
+  icon: "Plug",
+  defaultData: {
+    name: "External Agent",
+    endpoint: "https://",
+    method: "POST",
+    headers: {},
+    requestBody: "",
+    authType: "none",
+    authToken: "",
+    authHeader: "Authorization",
+    authUsername: "",
+    authPassword: "",
+    timeout: 30,
+    messageField: "message",
+    stepsField: "steps",
+    mappingScript: "",
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  },
+  component: ExternalAgentNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "externalAgentNode",
     position,
     data: {
       ...data,

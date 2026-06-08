@@ -1,7 +1,7 @@
-from typing import Tuple
+from typing import Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import select, func
+from sqlalchemy import select, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
@@ -15,6 +15,34 @@ class AgentRepository(DbRepository[AgentModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(AgentModel, db)
 
+
+    async def get_by_id(
+        self, obj_id: UUID, *, eager: Sequence[str] | None = None
+    ) -> Optional[AgentModel]:
+        """Point lookup by primary key — bypass group-scope row filtering.
+
+        Operating on a specific known agent is gated by endpoint permissions;
+        group-scope filtering is only meant for list/analytics queries.
+        """
+        stmt = (
+            self._apply_eager_options(select(AgentModel), eager)
+            .where(AgentModel.id == obj_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def get_by_operator_id(
+        self, operator_id: UUID, eager: Sequence[str] | None = None
+    ) -> Optional[AgentModel]:
+        """Point lookup by operator — bypass group-scope row filtering."""
+        stmt = (
+            self._apply_eager_options(select(AgentModel), eager)
+            .where(AgentModel.operator_id == operator_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
 
     async def get_by_id_full(self, agent_id: UUID) -> AgentModel | None:
         """
@@ -70,7 +98,7 @@ class AgentRepository(DbRepository[AgentModel]):
         return result.scalars().first()
 
     async def get_list_paginated(
-        self, filter_obj: BaseFilterModel
+        self, filter_obj: BaseFilterModel, is_system: bool | None = None
     ) -> Tuple[list[AgentModel], int]:
         """
         Return minimal agent data for list view with pagination.
@@ -83,6 +111,8 @@ class AgentRepository(DbRepository[AgentModel]):
         count_stmt = select(func.count(AgentModel.id)).where(AgentModel.is_deleted == 0)
         if group_clause is not None:
             count_stmt = count_stmt.where(group_clause)
+        if is_system is not None:
+            count_stmt = count_stmt.where(AgentModel.is_system == is_system)
         count_result = await self.db.execute(count_stmt)
         total = count_result.scalar() or 0
 
@@ -93,12 +123,25 @@ class AgentRepository(DbRepository[AgentModel]):
             AgentModel.workflow_id,
             AgentModel.possible_queries,
             AgentModel.is_active,
+            AgentModel.is_system,
         ).where(AgentModel.is_deleted == 0)
         if group_clause is not None:
             data_stmt = data_stmt.where(group_clause)
+        if is_system is not None:
+            data_stmt = data_stmt.where(AgentModel.is_system == is_system)
 
-        # Apply sorting using base repository method
-        data_stmt = self._apply_sorting(data_stmt, filter_obj)
+        # System agents first, then apply user-requested sorting
+        data_stmt = data_stmt.order_by(AgentModel.is_system.desc())
+        sort_column = self._resolve_sort_column(filter_obj.order_by) if filter_obj.order_by else AgentModel.created_at
+        sort_direction = getattr(filter_obj.sort_direction, "value", filter_obj.sort_direction) or "desc"
+        sort_direction = sort_direction.lower() if isinstance(sort_direction, str) else "desc"
+
+        if sort_column is not None:
+            order_clause = desc(sort_column) if sort_direction == "desc" else asc(sort_column)
+            data_stmt = data_stmt.order_by(order_clause)
+
+        # Stable fallback for equal timestamps to keep latest-created rows first.
+        data_stmt = data_stmt.order_by(AgentModel.id.desc())
 
         # Apply pagination using base repository method
         data_stmt = self._apply_pagination(data_stmt, filter_obj)

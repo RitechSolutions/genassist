@@ -1,3 +1,5 @@
+import type { FieldValue } from './dynamicFormSchemas.interface';
+
 export interface AppSetting {
   id: string;
   name: string;
@@ -9,8 +11,9 @@ export interface AppSetting {
     | "Slack"
     | "Jira"
     | "FileManagerSettings"
+    | "Security"
     | "Other";
-  values: Record<string, string>;
+  values: Record<string, FieldValue>;
   description?: string;
   is_active: number;
   created_at?: string;

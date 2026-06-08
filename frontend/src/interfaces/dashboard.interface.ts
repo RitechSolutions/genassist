@@ -15,6 +15,8 @@ export interface ActiveConversationItem {
   created_at: string;
   negative_reason: string | null;
   in_progress_hostility_score: number;
+  agent_id?: string | null;
+  agent_name?: string | null;
 }
 
 export interface ActiveConversationsResponse {

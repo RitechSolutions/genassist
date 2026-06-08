@@ -1,14 +1,21 @@
 import logging
-from typing import Optional, List
+import os
+import re
+from typing import List, Optional
 from uuid import UUID
+
 from injector import inject
+
+from app.core.config.settings import settings
+from app.core.permissions import sync_permissions_for_tenant
 from app.db.models.tenant import TenantModel
 from app.db.multi_tenant_session import multi_tenant_manager
-from app.core.config.settings import settings
 from app.repositories.tenant import TenantRepository
-from app.core.permissions import sync_permissions_for_tenant
 
 logger = logging.getLogger(__name__)
+
+# Regex for tenant slug
+_TENANT_SLUG_REGEX = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
 @inject
@@ -17,6 +24,26 @@ class TenantService:
 
     def __init__(self, repository: TenantRepository):
         self.repository = repository
+
+    def _check_seed_passwords_or_raise(self) -> None:
+        """
+        Fail fast if DB seeding credentials aren't configured.
+
+        Tenant creation relies on seeding to provision the initial admin user.
+        If seeding can't run (missing passwords), we should not create the tenant at all.
+        """
+        required_password_envs = (
+            "SEED_ADMIN_PASSWORD",
+            "SEED_APIUSER_PASSWORD",
+        )
+
+        missing = [k for k in required_password_envs if not os.environ.get(k)]
+        if missing:
+            raise ValueError(
+                "Missing required seed password env vars: "
+                + ", ".join(missing)
+                + ". Set them before creating a tenant."
+            )
 
     async def get_tenant_by_slug(self, tenant_slug: str) -> Optional[TenantModel]:
         """Get tenant by slug"""
@@ -46,24 +73,41 @@ class TenantService:
         description: Optional[str] = None,
         domain: Optional[str] = None,
         subdomain: Optional[str] = None,
-    ) -> Optional[TenantModel]:
+    ) -> Optional[TenantModel] | ValueError:
         """Create a new tenant using injected repository and transactional flow."""
         if not settings.MULTI_TENANT_ENABLED:
             logger.warning("Multi-tenancy is disabled, cannot create tenant")
-            return None
+            return ValueError("Multi-tenancy is disabled")
+
+        try:
+            self._check_seed_passwords_or_raise()
+        except ValueError as e:
+            logger.warning("Rejected tenant creation due to missing seed credentials")
+            return e
+
+        slug = slug.strip()
+        if not _TENANT_SLUG_REGEX.fullmatch(slug):
+            logger.warning("Rejected tenant creation due to invalid slug format")
+            return ValueError("Invalid slug format")
+
+        # Validate the final Postgres database identifier length (63 bytes max).
+        # We also ensure the DB name will be a simple identifier (hyphens -> underscores).
+        tenant_db_name = settings.get_tenant_database_name(slug)
+        if len(tenant_db_name) > 63:
+            logger.warning("Rejected tenant creation due to tenant database name length")
+            return ValueError("Tenant database name length exceeds 63 bytes")
 
         # Check if tenant already exists
         existing_tenant = await self.repository.get_by_slug(slug)
         if existing_tenant:
             logger.warning(f"Tenant with slug '{slug}' already exists")
-            return None
+            return ValueError("Tenant with slug already exists")
 
         # Prepare tenant model (no commit yet)
-        sanitized_slug = slug.replace("-", "_")
         tenant = TenantModel(
             name=name,
             slug=slug,
-            database_name=f"{settings.DB_NAME}_tenant_{sanitized_slug}",
+            database_name=tenant_db_name,
             description=description,
             domain=domain,
             subdomain=subdomain,
@@ -78,7 +122,7 @@ class TenantService:
             success = await multi_tenant_manager.create_tenant_database(slug)
             if not success:
                 logger.error(f"Failed to create database for tenant {slug}")
-                return None
+                return ValueError("Failed to create database for tenant")
 
             seed_success = await multi_tenant_manager.seed_tenant_database(slug)
             if not seed_success:

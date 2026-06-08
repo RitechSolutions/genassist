@@ -8,9 +8,11 @@ import {
   Pencil,
   Coins,
   Megaphone,
+  Share2,
+  Check,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   getAudioUrl,
   submitConversationFeedback,
@@ -19,11 +21,11 @@ import {
   type AgentResponseLogSummary,
 } from '@/services/transcripts';
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
-import { Input } from '@/components/input';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/button';
 import { askAIQuestion } from '@/services/aiChat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
-import { Textarea } from '@/components/textarea';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/useToast';
 import { formatMessageTime, formatCallTimestamp, formatDateTime, getEffectiveSentiment } from '../helpers/formatting';
 import { MetricCards } from './MetricCard';
@@ -34,12 +36,82 @@ import { ConversationEntryWrapper } from '@/views/ActiveConversations/common/Con
 import { AgentResponseLogDialog } from '@/components/AgentResponseLogDialog';
 import { Switch } from '@/components/switch';
 import { DollarSign } from 'lucide-react';
+import { formatFeedbackDate } from '@/helpers/utils';
+import { useAgentsList } from '@/views/Analytics/hooks/useAgentsList';
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When the list is filtered to one agent, pass its name so the header can show it without extra metadata on the row. */
+  agentName?: string;
 };
+
+function resolveAgentNameFromTranscript(
+  transcript: Transcript,
+  agentNameMap: Record<string, string>
+): string | undefined {
+  const attrs = transcript.custom_attributes;
+  if (!attrs) return undefined;
+
+  const entries = Object.entries(attrs);
+  const valueForKey = (...candidates: string[]) => {
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      const hit = entries.find(([k]) => k.toLowerCase() === cl);
+      const v = hit?.[1];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+
+  const fromNameKeys = valueForKey('agent_name', 'agentName', 'Agent Name', 'genassist_agent_name');
+  if (fromNameKeys) return fromNameKeys;
+
+  const idVal = valueForKey('agent_id', 'agentId', 'Agent ID', 'genassist_agent_id');
+  if (idVal && agentNameMap[idVal]) return agentNameMap[idVal];
+
+  return undefined;
+}
+
+function resolveSupervisorId(transcript: Transcript): string | undefined {
+  const directSupervisorId = transcript.supervisor_id?.trim();
+  if (directSupervisorId) return directSupervisorId;
+
+  const attrs = transcript.custom_attributes;
+  if (!attrs) return undefined;
+
+  const entries = Object.entries(attrs);
+  const valueForKey = (...candidates: string[]) => {
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      const hit = entries.find(([k]) => k.toLowerCase() === cl);
+      const v = hit?.[1];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+
+  return valueForKey('supervisor_id', 'supervisorId', 'operator_id', 'operatorId');
+}
+
+function resolveSupervisorUsernameFromAttrs(transcript: Transcript): string | undefined {
+  const attrs = transcript.custom_attributes;
+  if (!attrs) return undefined;
+
+  const entries = Object.entries(attrs);
+  const valueForKey = (...candidates: string[]) => {
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      const hit = entries.find(([k]) => k.toLowerCase() === cl);
+      const v = hit?.[1];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+
+  return valueForKey('supervisor_username', 'supervisor_user_name', 'operator_username', 'operator_user_name');
+}
 
 const isCallTranscript = (transcript: Transcript | null) => {
   if (!transcript) return false;
@@ -140,7 +212,7 @@ function MessageFeedbackButton({
   );
 }
 
-export function TranscriptDialog({ transcript, isOpen, onOpenChange }: TranscriptDialogProps) {
+export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: agentNameProp }: TranscriptDialogProps) {
   const [audioSrc, setAudioSrc] = useState<string>('');
   const [chatInput, setChatInput] = useState<string>('');
   const [aiMessagesByTranscript, setAiMessagesByTranscript] = useState<{
@@ -174,6 +246,34 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const isCall = isCallTranscript(localTranscript);
   const { toast } = useToast();
+  const [linkCopied, setLinkCopied] = useState(false);
+  const { agentNameMap } = useAgentsList();
+
+  const headerAgentName = useMemo(() => {
+    if (!localTranscript) return undefined;
+    const fromApi = localTranscript.agent_name?.trim();
+    if (fromApi) return fromApi;
+    const fromProp = agentNameProp?.trim();
+    if (fromProp) return fromProp;
+    const fromAgentId =
+      localTranscript.agent_id && agentNameMap[localTranscript.agent_id]
+        ? agentNameMap[localTranscript.agent_id]
+        : undefined;
+    if (fromAgentId) return fromAgentId;
+    return resolveAgentNameFromTranscript(localTranscript, agentNameMap);
+  }, [localTranscript, agentNameProp, agentNameMap]);
+
+  const supervisorId = useMemo(() => {
+    if (!localTranscript) return undefined;
+    return resolveSupervisorId(localTranscript);
+  }, [localTranscript]);
+
+  const supervisorDisplayName = useMemo(() => {
+    if (!localTranscript) return undefined;
+    const fromApi = localTranscript.supervisor_username?.trim();
+    if (fromApi) return fromApi;
+    return resolveSupervisorUsernameFromAttrs(localTranscript);
+  }, [localTranscript]);
 
   useEffect(() => {
     if (!localTranscript || !isCall) return;
@@ -373,15 +473,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
     }
   };
 
-  const formatFeedbackDate = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const month = date.toLocaleDateString('en-US', { month: 'long' });
-    const day = date.getDate();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${month} ${day}, ${hours}:${minutes}`;
-  };
-
   const handleMessageFeedback = async (messageId: string, feedback: 'good' | 'bad') => {
     if (!localTranscript?.id) return;
     const success = await submitMessageFeedback(messageId, feedback);
@@ -413,9 +504,45 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {isCall ? <PlayCircle className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
-            {isCall ? 'Call' : 'Chat'} #{(localTranscript?.metadata?.title ?? '----').slice(-4)}{' '}
+          <DialogTitle className="flex flex-col gap-1.5 items-start">
+            <span className="flex items-center gap-2">
+              {isCall ? <PlayCircle className="w-5 h-5 shrink-0" /> : <MessageSquare className="w-5 h-5 shrink-0" />}
+              <span>
+                {isCall ? 'Call' : 'Chat'} #{(localTranscript?.metadata?.title ?? '----').slice(-4)}
+              </span>
+              {supervisorId && (
+                <div className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-800">
+                  <span className="flex items-center gap-1.5 leading-none">
+                    <span>Supervisor:</span>
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-200 text-[10px] font-semibold uppercase text-blue-800">
+                      {(supervisorDisplayName?.charAt(0) || supervisorId.charAt(0) || 'S').toUpperCase()}
+                    </span>
+                    <span>{supervisorDisplayName || supervisorId}</span>
+                  </span>
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`ml-auto h-7 w-7 p-0 transition-colors ${linkCopied ? 'text-green-600' : ''}`}
+                title="Copy share link"
+                disabled={linkCopied}
+                onClick={async () => {
+                  const url = `${window.location.origin}/transcripts?conversation=${localTranscript?.id}`;
+                  await navigator.clipboard.writeText(url);
+                  setLinkCopied(true);
+                  toast({ title: 'Link copied to clipboard', description: 'Anyone with this link can open the conversation.' });
+                  setTimeout(() => setLinkCopied(false), 2000);
+                }}
+              >
+                {linkCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+              </Button>
+            </span>
+            {headerAgentName ? (
+              <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground pr-10">
+                {headerAgentName}
+              </span>
+            ) : null}
           </DialogTitle>
         </DialogHeader>
 
@@ -728,7 +855,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
                                     : 'bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none'
                                 }`}
                               >
-                                <ConversationEntryWrapper entry={entryObj} />
+                                <ConversationEntryWrapper entry={entryObj} conversationId={localTranscript.id} />
 
                                 <div className="flex items-center justify-end">
                                   <span

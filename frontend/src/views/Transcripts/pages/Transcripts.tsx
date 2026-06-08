@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import { type CSSProperties, useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
-import { Transcript } from "@/interfaces/transcript.interface";
+import { BackendTranscript, Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 import { enrichConversationItem } from "@/views/ActiveConversations/pages/ActiveConversations";
@@ -63,6 +63,8 @@ import { format, subDays } from "date-fns";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
+import { apiRequest } from "@/config/api";
+import { PageListSkeleton } from "@/components/skeletons";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -263,6 +265,18 @@ const Transcripts = () => {
     navigate({ search: newSearchParams.toString() }, { replace: true });
   };
 
+  const handleConversationModalOpenChange = useCallback(
+    (open: boolean) => {
+      setIsModalOpen(open);
+      if (!open) {
+        const next = new URLSearchParams(location.search);
+        next.delete("conversation");
+        navigate({ search: next.toString() }, { replace: true });
+      }
+    },
+    [location.search, navigate]
+  );
+
   const handleStatusFilterChange = (value: string) => {
     const v = value as StatusFilter;
     setStatusFilter(v);
@@ -279,6 +293,56 @@ const Transcripts = () => {
   const isLiveTranscript = (transcript: Transcript) => {
     return transcript?.status === "in_progress" || transcript?.status === "takeover";
   };
+
+  const conversationDeepLinkId = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("conversation");
+    const id = raw?.trim();
+    return id || null;
+  }, [location.search]);
+
+  // Deep link: /transcripts?conversation=<id> (e.g. from notifications)
+  useEffect(() => {
+    if (!conversationDeepLinkId) return;
+
+    let cancelled = false;
+    const id = conversationDeepLinkId;
+
+    void (async () => {
+      try {
+        const backend = await apiRequest<BackendTranscript>(
+          "get",
+          `/conversations/${encodeURIComponent(id)}?include_feedback=true`
+        );
+        if (cancelled) return;
+        const transformed = transformTranscript(backend);
+        const live =
+          transformed?.status === "in_progress" ||
+          transformed?.status === "takeover";
+        setSelectedTranscript(transformed);
+        setIsLiveTranscriptSelected(live);
+        setIsModalOpen(true);
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Could not open conversation",
+            description:
+              "This conversation may not exist or you may not have access.",
+            variant: "destructive",
+          });
+          const next = new URLSearchParams(window.location.search);
+          next.delete("conversation");
+          navigate(
+            { pathname: location.pathname, search: next.toString() },
+            { replace: true }
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationDeepLinkId, location.pathname, navigate, toast]);
 
   const isCallTranscript = (transcript: Transcript) => {
     return Boolean(transcript?.recording_id) || Boolean(transcript?.metadata?.isCall);
@@ -424,6 +488,28 @@ const Transcripts = () => {
 
   const activeSort = getSortLabel();
 
+  const hasNarrowingFilters = useMemo(
+    () =>
+      debouncedSearch.trim() !== "" ||
+      activeTab !== "all" ||
+      supportType !== "all" ||
+      statusFilter !== "all" ||
+      selectedAgentId !== "all" ||
+      activeQualityCount > 0 ||
+      activeCustomAttrCount > 0 ||
+      orderBy !== "",
+    [
+      debouncedSearch,
+      activeTab,
+      supportType,
+      statusFilter,
+      selectedAgentId,
+      activeQualityCount,
+      activeCustomAttrCount,
+      orderBy,
+    ]
+  );
+
   const handleRefreshConversations = () => {
     refetch();
     toast({
@@ -491,9 +577,9 @@ const Transcripts = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-4 w-full">
               {/* Top row: Title/Upload | Agent, Date Range, Search */}
@@ -540,7 +626,7 @@ const Transcripts = () => {
               </div>
 
               {/* Filter bar */}
-              <div className="w-full flex flex-wrap items-center gap-2 rounded-full bg-white border border-gray-100 px-3 py-1.5 shadow-sm">
+              <div className="w-full flex flex-wrap items-start gap-2 rounded-2xl sm:rounded-full bg-white border border-gray-100 px-3 py-2 sm:py-1.5 shadow-sm">
                 <Tabs
                   value={activeTab}
                   className="min-w-0"
@@ -566,7 +652,7 @@ const Transcripts = () => {
                   </TabsList>
                 </Tabs>
 
-                <div className="flex items-center gap-1.5 shrink-0 flex-wrap ml-auto">
+                <div className="flex w-full sm:w-auto items-center gap-1.5 shrink-0 flex-wrap sm:ml-auto">
                   <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
                     <SelectTrigger className="w-[120px] bg-white h-8 rounded-full text-xs">
                       <SelectValue placeholder="Status" />
@@ -863,7 +949,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <div className="flex items-center gap-1.5">
+                  <div className="ml-auto sm:ml-0 flex items-center gap-1.5">
                     <Switch
                       id="hide-empty"
                       checked={hideEmpty}
@@ -903,9 +989,7 @@ const Transcripts = () => {
 
               <Card className="divide-y divide-gray-100 bg-white shadow-sm rounded-lg overflow-hidden">
                 {loading ? (
-                  <p className="text-center text-gray-500 p-6">
-                    Loading transcripts...
-                  </p>
+                  <PageListSkeleton variant="conversation" rows={6} bordered={false} />
                 ) : error ? (
                   <p className="text-center text-red-500 p-6">
                     Error loading transcripts. Please try again.
@@ -917,14 +1001,12 @@ const Transcripts = () => {
                     <div
                       key={transcript.id}
                       onClick={() => {
-                        setSelectedTranscript(transcript);
-                        setIsLiveTranscriptSelected(isLiveTranscript(transcript));
-                        setIsModalOpen(true);
+                        updateUrlParams({ conversation: transcript.id });
                       }}
-                      className="p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
+                      className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                      <div className="flex items-start space-x-4 min-w-0">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
                         <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/5">
                           {isCallTranscript(transcript) ? (
                             <PlayCircle className="w-5 h-5 text-primary" />
@@ -946,9 +1028,9 @@ const Transcripts = () => {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             <span>Duration: {formatDuration(transcript?.metadata?.duration ?? 0)}</span>
-                            <span className="h-3 w-px bg-gray-200" aria-hidden />
+                            <span className="hidden sm:inline h-3 w-px bg-gray-200" aria-hidden />
                             <span>
                               {transcript?.timestamp
                                 ? new Date(transcript.timestamp).toLocaleString()
@@ -992,7 +1074,7 @@ const Transcripts = () => {
                           )}
                         </div>
                       </div>
-                        <div className="flex flex-col items-end gap-2 shrink-0 mt-2 sm:mt-0">
+                        <div className="mt-1 flex items-center justify-between gap-2 sm:mt-0 sm:shrink-0 sm:flex-col sm:items-end">
                           {/* Sentiment badge */}
                           {(() => {
                             const sentiment = transcript ? getEffectiveSentiment(transcript) : "Unknown";
@@ -1044,9 +1126,21 @@ const Transcripts = () => {
                     );
                   })
                 ) : (
-                    <p className="text-center text-gray-500 p-6">
-                      No transcripts found. Try adjusting your filters.
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <div className="rounded-full bg-gray-100 p-4">
+                      <MessageSquare className="h-12 w-12 text-gray-400" />
+                    </div>
+                    <h3 className="font-medium text-lg">
+                      {hasNarrowingFilters
+                        ? "No conversations match your filters"
+                        : "No transcripts yet"}
+                    </h3>
+                    <p className="text-sm text-gray-500 max-w-sm px-4">
+                      {hasNarrowingFilters
+                        ? "Try adjusting your search or filters to see more results."
+                        : "Nothing in this view yet. Try a wider date range or different filters if you expected conversations here."}
                     </p>
+                  </div>
                 )}
               </Card>
 
@@ -1069,7 +1163,7 @@ const Transcripts = () => {
         <ActiveConversationDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
           refetchConversations={refetch}
           onTakeOver={handleTakeOver}
         />
@@ -1077,7 +1171,12 @@ const Transcripts = () => {
         <TranscriptDialog
           transcript={selectedTranscript}
           isOpen={isModalOpen}
-          onOpenChange={setIsModalOpen}
+          onOpenChange={handleConversationModalOpenChange}
+          agentName={
+            selectedAgentId !== "all"
+              ? agents.find((a) => a.id === selectedAgentId)?.name
+              : undefined
+          }
         />
       )}
     </SidebarProvider>

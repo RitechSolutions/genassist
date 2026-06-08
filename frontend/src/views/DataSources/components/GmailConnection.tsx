@@ -86,7 +86,7 @@ export function GmailConnection({
       const selectedAppSettings = appSettings.find(
         (setting) => setting.id === appSettingsId
       );
-      const clientId = selectedAppSettings?.values?.gmail_client_id;
+      const clientId = selectedAppSettings?.values?.gmail_client_id as string | undefined;
 
       let datasourceId = dataSource?.id;
       if (!datasourceId) {
