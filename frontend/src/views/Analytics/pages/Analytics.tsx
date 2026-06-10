@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { subDays } from "date-fns";
-import type { DateRange } from "react-day-picker";
+import { usePersistedDateRange, COMPARE_DATE_RANGE_STORAGE_KEY } from "@/hooks/usePersistedDateRange";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
@@ -12,11 +11,14 @@ import { useAnalyticsData } from "../hooks/useAnalyticsData";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 
 const AnalyticsPage = () => {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
+  const [compareDateRange, setCompareDateRange] = usePersistedDateRange(
+    undefined,
+    COMPARE_DATE_RANGE_STORAGE_KEY,
+  );
   const {
     groups,
     showGroupFilter,

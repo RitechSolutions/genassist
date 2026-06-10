@@ -13,13 +13,29 @@ from .config import (
 )
 
 
-from .providers import SearchResult, BaseDataProvider, FinalizableProvider, LegraProvider, VectorProvider, LightRAGProvider
+from .providers import SearchResult, BaseDataProvider, FinalizableProvider
 from .providers.models import DataProviderInterface
 
 from .service import AgentRAGService
 
 # Singleton manager
 from .manager import AgentRAGServiceManager
+
+# VectorProvider / LegraProvider / LightRAGProvider pull torch/sentence_transformers/
+# faiss and the lightrag library at import. Re-export them lazily (PEP 562) so importing
+# this package — which the DI container and Celery task modules do at boot — stays
+# ML-free; they materialize on first use (runtime, in a prefork child).
+import importlib as _importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # static analyzers don't see PEP 562 __getattr__ — declare names here
+    from .providers import VectorProvider, LegraProvider, LightRAGProvider
+
+
+def __getattr__(name):
+    if name in ("VectorProvider", "LegraProvider", "LightRAGProvider"):
+        return getattr(_importlib.import_module(".providers", __name__), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
