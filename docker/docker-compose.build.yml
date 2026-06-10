@@ -138,16 +138,51 @@ services:
   # ===========================================================================
   # CELERY WORKERS
   # ===========================================================================
+  # Default Celery worker — all I/O-bound tasks on the "default" queue.
+  # Prefork pool for real concurrency: safe because CELERY_INCLUDE_ML_TASKS=false keeps
+  # the master process free of ML libs (torch/sklearn/faiss), so fork() can't hit the
+  # OpenMP/MKL locked-mutex SIGSEGV. ML/eval tasks are routed to the "ml" queue instead.
   celery_worker:
     image: genassist-app-image:dev
     pull_policy: never
-    container_name: genassist-celery-worker-dev
-    command: python /src/run_celery.py worker -l DEBUG
+    container_name: genassist-celery-worker-default-dev
+    command: python /src/run_celery.py worker -l DEBUG --pool=prefork -Q default
     environment:
       CELERY_TRACE_APP: 1
+      CELERY_WORKER_POOL: prefork
+      CELERY_INCLUDE_ML_TASKS: "false"
+      CELERY_WORKER_CONCURRENCY: 2
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT:-5432}
       WHISPER_TRANSCRIBE_SERVICE: ${WHISPER_TRANSCRIBE_SERVICE:-http://whisper:8001/transcribe}
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - genassist-network-dev
+
+  # ML Celery worker — ML pipeline / evaluation / local fine-tuning tasks on the "ml"
+  # queue. MUST stay on the solo pool: these tasks import torch/sklearn/transformers,
+  # which are fork-unsafe. Solo never forks. Scale by adding replicas/pods.
+  celery_worker_ml:
+    image: genassist-app-image:dev
+    pull_policy: never
+    container_name: genassist-celery-worker-ml-dev
+    command: python /src/run_celery.py worker -l DEBUG --pool=solo -Q ml
+    profiles: ["backend", "full", "workers"]
+    env_file:
+      - ../backend/.env
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      CELERY_TRACE_APP: 1
+      CELERY_WORKER_POOL: solo
+      CELERY_INCLUDE_ML_TASKS: "true"
+      WHISPER_TRANSCRIBE_SERVICE: ${WHISPER_TRANSCRIBE_SERVICE:-http://whisper:8001/transcribe}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
     depends_on:
       app:
         condition: service_started
@@ -197,6 +232,8 @@ services:
       - "${FLOWER_PORT_EXTERNAL:-5555}:5555"
     depends_on:
       app:
+        condition: service_started
+      celery_worker_ml:
         condition: service_started
     networks:
       - genassist-network-dev

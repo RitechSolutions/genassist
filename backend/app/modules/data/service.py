@@ -3,10 +3,16 @@ Data Source Service - Main orchestrator for vector and LEGRA providers
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .config import AgentRAGConfig, KbRAGConfig
-from .providers import SearchResult, BaseDataProvider, LegraProvider, VectorProvider, LightRAGProvider, PlainProvider
+# VectorProvider / LegraProvider / LightRAGProvider are imported lazily where they are
+# instantiated: importing them pulls torch/sentence_transformers/faiss (vector, legra)
+# and the lightrag library, which must not be loaded in a Celery prefork master process.
+from .providers import SearchResult, BaseDataProvider, PlainProvider
+
+if TYPE_CHECKING:  # for type hints only — never imported at runtime
+    from .providers import LegraProvider
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +60,7 @@ class AgentRAGService:
             if vector_config:
                 logger.info(
                     f"Initializing vector provider for KB {self.knowledge_base_id}")
+                from .providers import VectorProvider  # heavy backends — load on use only
                 vector_provider = VectorProvider(
                     vector_config, self.knowledge_base_id)
                 await vector_provider.initialize()
@@ -68,6 +75,7 @@ class AgentRAGService:
             if legra_config and legra_config.enabled:
                 logger.info(
                     f"Initializing LEGRA provider for KB {self.knowledge_base_id}")
+                from .providers import LegraProvider  # heavy: faiss/torch — load on use only
                 legra_provider = LegraProvider(
                     legra_config, self.knowledge_base_id)
                 if not legra_provider.initialize():
@@ -81,6 +89,7 @@ class AgentRAGService:
             if lightrag_config and lightrag_config.enabled:
                 logger.info(
                     f"Initializing LightRAG provider for KB {self.knowledge_base_id}")
+                from .providers import LightRAGProvider  # heavy: lightrag lib — load on use only
                 lightrag_provider = LightRAGProvider(
                     lightrag_config, self.knowledge_base_id)
                 if not await lightrag_provider.initialize():
@@ -274,7 +283,7 @@ class AgentRAGService:
 
     async def finalize_legra(self) -> bool:
         """Finalize LEGRA provider (build index and graph)"""
-        legra_provider: Optional[LegraProvider] = next(
+        legra_provider: Optional["LegraProvider"] = next(
             (provider for provider in self.data_provider if provider.name == "legra"), None)
         if not legra_provider:
             logger.error("LEGRA provider not available")
