@@ -141,13 +141,17 @@ services:
   # ===========================================================================
   # CELERY WORKERS
   # ===========================================================================
+  # Celery worker — single all-consuming worker for CI/CD. Stays on the solo pool
+  # (segfault-safe with ML libs) and consumes BOTH queues so every task type runs in
+  # one container. Production splits this into separate default(prefork)/ml(solo) pods.
   celery_worker:
     image: genassist-app-image:ci
     pull_policy: never
     container_name: genassist-celery-worker-ci
-    command: python /src/run_celery.py worker --loglevel=info --pool=solo
+    command: python /src/run_celery.py worker --loglevel=info --pool=solo -Q default,ml
     environment:
       CELERY_TRACE_APP: 1
+      CELERY_INCLUDE_ML_TASKS: "true"
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0

@@ -2,7 +2,6 @@ import logging
 from enum import Enum
 
 from fastapi import Request
-from torch.fx.immutable_collections import immutable_list
 
 from app.core.config.settings import settings
 
@@ -317,12 +316,14 @@ ERROR_MESSAGES = {
 
 
 def get_error_message(
-    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = immutable_list()
+    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = None
 ):
     """
     Retrieves an error message dynamically based on the user's language preference.
     Falls back to DEFAULT_LANGUAGE if no valid language is found.
     """
+    error_variables = error_variables or []
+
     # Ensure error_key is a valid Enum
     if not isinstance(error_key, ErrorKey):
         raise ValueError(f"Invalid error key: {error_key}")
