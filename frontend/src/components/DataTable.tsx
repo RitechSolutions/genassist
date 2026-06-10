@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { cn } from "@/helpers/utils";
 import { Card } from "@/components/card";
-import { Loader2 } from "lucide-react";
+import { TableSkeleton } from "@/components/skeletons";
 import {
   Table,
   TableBody,
@@ -19,6 +19,7 @@ interface DataTableProps<T> {
   renderRow: (item: T, index: number) => ReactNode;
   emptyMessage?: string;
   searchEmptyMessage?: string;
+  emptyState?: ReactNode;
 }
 
 export function DataTable<T>({
@@ -30,13 +31,10 @@ export function DataTable<T>({
   renderRow,
   emptyMessage = "No data found",
   searchEmptyMessage = "No data found matching your search",
+  emptyState,
 }: DataTableProps<T>) {
   if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
+    return <TableSkeleton columns={headers.length} />;
   }
 
   if (error) {
@@ -49,17 +47,21 @@ export function DataTable<T>({
 
   if (data.length === 0) {
     return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery ? searchEmptyMessage : emptyMessage}
-        </div>
+      <Card className="overflow-hidden shadow-sm">
+        {emptyState ?? (
+          <div className="p-8">
+            <div className="text-center text-muted-foreground">
+              {searchQuery ? searchEmptyMessage : emptyMessage}
+            </div>
+          </div>
+        )}
       </Card>
     );
   }
 
   return (
     <Card>
-      <Table className="table-fixed">
+      <Table>
         <TableHeader>
           <TableRow>
             {headers.map((header, index) => (

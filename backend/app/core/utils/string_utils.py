@@ -1,3 +1,12 @@
+_LOG_MAX_LEN = 200
+
+
+def truncate_for_log(value: str, max_len: int = _LOG_MAX_LEN) -> str:
+    if len(value) <= max_len:
+        return value
+    return value[:max_len] + f"... ({len(value)} chars total)"
+
+
 def replace_template_vars(template: str, values: dict) -> str:
     """
     Replace both @value and {{value}} patterns in a string with values from a dictionary.

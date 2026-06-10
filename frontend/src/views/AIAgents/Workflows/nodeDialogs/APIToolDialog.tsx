@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { APIToolNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -166,7 +166,7 @@ export const APIToolDialog: React.FC<
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}

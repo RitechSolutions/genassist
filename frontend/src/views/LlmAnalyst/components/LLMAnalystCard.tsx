@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -10,6 +10,7 @@ import { toast } from "react-hot-toast";
 interface LLMAnalystCardProps {
   analysts: LLMAnalyst[];
   searchQuery: string;
+  loading?: boolean;
   onEdit: (analyst: LLMAnalyst) => void;
   onDelete: (id: string) => Promise<void>;
 }
@@ -17,22 +18,15 @@ interface LLMAnalystCardProps {
 export function LLMAnalystCard({
   analysts,
   searchQuery,
+  loading = false,
   onEdit,
   onDelete,
 }: LLMAnalystCardProps) {
-  const [loading, setLoading] = useState(true);
   const [analystToDelete, setAnalystToDelete] = useState<LLMAnalyst | null>(
     null
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 2000);
-    return () => clearTimeout(timeout);
-  }, [analysts]);
 
   const filtered = analysts.filter((a) => {
     const name = a.name?.toLowerCase() || "";

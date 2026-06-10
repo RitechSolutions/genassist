@@ -21,9 +21,9 @@ def decrypt_key(token: str) -> str:
         # Fernet fails if FERNET_KEY differs from the one used at encrypt time, or if the
         # value is corrupt. Celery workers must use the same FERNET_KEY as the API.
         logger.warning(
-            "Error decrypting key: %s. If this appears during background jobs (e.g. Zendesk KB "
+            "Decryption failed (type=%s). If this appears during background jobs (e.g. Zendesk KB "
             "sync), verify CELERY workers load the same FERNET_KEY as the web app. "
             "After rotating FERNET_KEY, re-save affected datasource credentials.",
-            e,
+            type(e).__name__,
         )
         return token

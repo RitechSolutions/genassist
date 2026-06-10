@@ -4,7 +4,7 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 // Define compatibility types
-export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "any";
+export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "audio" | "any";
 
 // Define handler types
 export interface NodeHandler {
@@ -79,6 +79,13 @@ export interface WhatsappNodeData extends BaseNodeData {
 }
 
 export interface RouterNodeData extends BaseNodeData {
+  /** Stored as boolean; string "true"/"false" may appear from older persisted JSON. */
+  smartModeEnabled?: boolean | string;
+  providerId?: string;
+  smartPrompt?: string;
+  systemPrompt?: string;
+  /** Must be "true" or "false" when Smart Mode is on; invalid values normalize to "false" at runtime. */
+  fallbackRoute?: string;
   first_value?: string;
   compare_condition?:
     | "equal"
@@ -155,6 +162,23 @@ export interface APIToolNodeData extends BaseNodeData {
   headers: Record<string, string>;
   parameters: Record<string, string>;
   requestBody: string;
+}
+
+// External Agent Node Data
+export interface ExternalAgentNodeData extends BaseNodeData {
+  endpoint: string;
+  method: string;
+  headers: Record<string, string>;
+  requestBody: string;
+  authType: "none" | "bearer" | "api_key" | "basic";
+  authToken?: string;
+  authHeader?: string;
+  authUsername?: string;
+  authPassword?: string;
+  timeout?: number;
+  messageField: string;
+  stepsField?: string;
+  mappingScript?: string;
 }
 
 // LLM Model node data
@@ -332,6 +356,9 @@ export interface MCPTool {
 // Connection configuration types
 export type MCPConnectionType = "stdio" | "sse" | "http";
 
+export type MCPAuthType = "api_key" | "oauth2" | "none";
+export type MCPOAuth2Flow = "client_credentials";
+
 export interface STDIOConnectionConfig {
   command: string; // Required: Command to run
   args?: string[]; // Optional: Command arguments
@@ -340,7 +367,21 @@ export interface STDIOConnectionConfig {
 
 export interface HTTPConnectionConfig {
   url: string; // Required: Server URL
-  api_key?: string; // Optional: API key for auth
+  // --- Authentication ---
+  auth_type?: MCPAuthType; // "api_key" (default) | "oauth2" | "none"
+  // api_key auth
+  api_key?: string;
+  // oauth2 auth
+  oauth2_flow?: MCPOAuth2Flow; // "client_credentials" (default)
+  oauth2_client_id?: string;
+  oauth2_client_secret?: string;
+  /** Full openid-configuration URL — token_endpoint read from this document (preferred) */
+  oauth2_issuer_url?: string;
+  /** Direct token endpoint (legacy; omit when using issuer URL) */
+  oauth2_token_url?: string;
+  oauth2_scopes?: string[]; // e.g. ["openid", "mcp"]
+  oauth2_audience?: string; // Some IdPs (Auth0, etc.) require audience on token request
+  // --- General ---
   headers?: Record<string, string>; // Optional: Custom headers
   timeout?: number; // Optional: Timeout in seconds
 }
@@ -352,6 +393,18 @@ export interface MCPNodeData extends ToolBaseNodeData {
   connectionConfig: MCPConnectionConfig; // Required: Configuration based on connection type
   availableTools: MCPTool[];
   whitelistedTools: string[]; // Array of tool names to expose
+}
+
+export interface NodeHelpSection {
+  title: string;
+  body?: string;
+  bullets?: string[];
+  steps?: string[];
+}
+
+export interface NodeHelpContent {
+  intro: string;
+  sections?: NodeHelpSection[];
 }
 
 // Workflow Executor Node Data
@@ -388,6 +441,36 @@ export interface GuardrailNliNodeData extends BaseNodeData {
   nli_model_name?: string;
 }
 
+// File Reader Node Data
+export interface FileReaderNodeData extends BaseNodeData {
+  fileName?: string;
+  filePath?: string;
+  fileUrl?: string;
+  fileId?: string;
+}
+
+// TTS Node Data
+export interface TTSNodeData extends BaseNodeData {
+  text: string;
+  provider: string;
+  audioProviderId?: string;
+  voice: string;
+  model: string;
+  output_format: string;
+  speed: number;
+}
+
+// STT Node Data
+export interface STTNodeData extends BaseNodeData {
+  audio_source: string;
+  provider: string;
+  audioProviderId?: string;
+  model: string;
+  language?: string;
+  response_format: string;
+  temperature: number;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -417,17 +500,23 @@ export type NodeData =
   | HumanInTheLoopNodeData
   | SetStateNodeData
   | GuardrailProvenanceNodeData
-  | GuardrailNliNodeData;
+  | GuardrailNliNodeData
+  | FileReaderNodeData
+  | ExternalAgentNodeData
+  | TTSNodeData
+  | STTNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
   label: string;
   description: string;
   shortDescription?: string;
+  helpContent?: NodeHelpContent;
   configSubtitle?: string;
   category:
     | "io"
     | "ai"
+    | "audio"
     | "routing"
     | "integrations"
     | "formatting"

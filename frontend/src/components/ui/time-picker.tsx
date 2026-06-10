@@ -1,12 +1,5 @@
 import * as React from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 
 interface TimePickerProps {
   date: Date | undefined;

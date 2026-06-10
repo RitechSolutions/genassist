@@ -23,6 +23,8 @@ export interface AuditLogCardProps {
   users: User[];
   selectedUser: string | null;
   onViewDetails: (logId: string) => void;
+  loading?: boolean;
+  isRefreshing?: boolean;
 }
 
 export interface JsonViewerProps {

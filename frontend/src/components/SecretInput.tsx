@@ -3,7 +3,7 @@ import { Eye, EyeOff, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/helpers/utils";
 
 export type SecretInputProps = Omit<

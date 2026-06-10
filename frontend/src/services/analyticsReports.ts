@@ -6,6 +6,7 @@ import type {
   NodeDailyStatsListResponse,
   NodeTypeBreakdownResponse,
   AnalyticsFilterParams,
+  GroupAgentItem,
 } from "@/interfaces/analyticsReports.interface";
 
 function buildQueryString(params: Record<string, string | undefined>): string {
@@ -15,12 +16,24 @@ function buildQueryString(params: Record<string, string | undefined>): string {
   return parts.length > 0 ? `?${parts.join("&")}` : "";
 }
 
+export const fetchGroupAgents = async (groupId: string): Promise<GroupAgentItem[]> => {
+  try {
+    return (
+      (await apiRequest<GroupAgentItem[]>("get", `/analytics/groups/${groupId}/agents`)) ?? []
+    );
+  } catch (error) {
+    console.error("Error fetching group agents:", error);
+    return [];
+  }
+};
+
 export const fetchAgentDailyStats = async (
-  params?: Pick<AnalyticsFilterParams, "agent_id" | "from_date" | "to_date">
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id" | "from_date" | "to_date">
 ): Promise<AgentDailyStatsListResponse | null> => {
   try {
     const qs = buildQueryString({
       agent_id: params?.agent_id,
+      group_id: params?.group_id,
       from_date: params?.from_date,
       to_date: params?.to_date,
     });
@@ -32,11 +45,12 @@ export const fetchAgentDailyStats = async (
 };
 
 export const fetchAgentStatsSummary = async (
-  params?: Pick<AnalyticsFilterParams, "agent_id" | "from_date" | "to_date">
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id" | "from_date" | "to_date">
 ): Promise<AgentStatsSummaryResponse | null> => {
   try {
     const qs = buildQueryString({
       agent_id: params?.agent_id,
+      group_id: params?.group_id,
       from_date: params?.from_date,
       to_date: params?.to_date,
     });
@@ -48,11 +62,12 @@ export const fetchAgentStatsSummary = async (
 };
 
 export const fetchAgentStatsSummaryWithComparison = async (
-  params?: Pick<AnalyticsFilterParams, "agent_id" | "from_date" | "to_date">
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id" | "from_date" | "to_date">
 ): Promise<AgentStatsSummaryWithComparison | null> => {
   try {
     const qs = buildQueryString({
       agent_id: params?.agent_id,
+      group_id: params?.group_id,
       from_date: params?.from_date,
       to_date: params?.to_date,
       compare: "true",
@@ -110,10 +125,13 @@ export interface CustomAttributeBreakdownItem {
 }
 
 export const fetchCustomAttributeKeys = async (
-  agentId?: string
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id">
 ): Promise<string[]> => {
   try {
-    const qs = buildQueryString({ agent_id: agentId });
+    const qs = buildQueryString({
+      agent_id: params?.agent_id,
+      group_id: params?.group_id,
+    });
     return (await apiRequest<string[]>("get", `/analytics/custom-attributes/keys${qs}`)) ?? [];
   } catch (error) {
     console.error("Error fetching custom attribute keys:", error);
@@ -123,12 +141,13 @@ export const fetchCustomAttributeKeys = async (
 
 export const fetchCustomAttributeBreakdown = async (
   key: string,
-  params?: Pick<AnalyticsFilterParams, "agent_id" | "from_date" | "to_date">
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id" | "from_date" | "to_date">
 ): Promise<CustomAttributeBreakdownItem[]> => {
   try {
     const qs = buildQueryString({
       key,
       agent_id: params?.agent_id,
+      group_id: params?.group_id,
       from_date: params?.from_date,
       to_date: params?.to_date,
     });

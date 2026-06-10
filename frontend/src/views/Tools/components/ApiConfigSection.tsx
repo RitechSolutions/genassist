@@ -6,7 +6,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/select";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { ToolSection } from "../components/ToolSection"; 
 
 interface ApiConfigSectionProps {

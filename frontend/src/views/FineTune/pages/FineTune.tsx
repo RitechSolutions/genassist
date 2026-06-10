@@ -37,7 +37,11 @@ export default function FineTune() {
         onActionClick={() => setIsDialogOpen(true)}
       />
 
-      <FineTuneJobsCard searchQuery={searchQuery} refreshKey={refreshKey} />
+      <FineTuneJobsCard
+        searchQuery={searchQuery}
+        refreshKey={refreshKey}
+        onNewFineTuneJob={() => setIsDialogOpen(true)}
+      />
 
       <FineTuneJobDialog
         isOpen={isDialogOpen}

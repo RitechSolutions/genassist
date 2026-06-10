@@ -4,9 +4,9 @@ import { defineConfig, devices } from '@playwright/test';
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
  */
-// import dotenv from 'dotenv';
-// import path from 'path';
-// dotenv.config({ path: path.resolve(__dirname, '.env') });
+// Intentionally not loading `.env` here.
+// We load `ui_tests/.env` in `tests/fixtures.ts` to avoid module-resolution
+// issues in repo setups without a root `package.json`.
 
 /**
  * See https://playwright.dev/docs/test-configuration.

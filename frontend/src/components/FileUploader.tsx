@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/button';
 import { Label } from '@/components/label';
 import { FileText, Upload, X, Download } from 'lucide-react';
@@ -7,6 +7,7 @@ import { UploadFileResponse } from '@/interfaces/file-manager.interface';
 import { downloadFile, getFileDownloadUrl } from '@/helpers/utils';
 import { getApiUrlString } from '@/config/api';
 import toast from "react-hot-toast";
+import { Progress } from "@/components/progress";
 
 export interface FileUploaderProps {
   label: string;
@@ -14,6 +15,7 @@ export interface FileUploaderProps {
   initialOriginalFileName?: string;
   initialServerFilePath?: string;
   initialServerFileUrl?: string;
+  onUploadingChange?: (isUploading: boolean) => void;
   onUploadComplete?: (result: UploadFileResponse) => void;
   onRemove?: () => void;
   placeholder?: string;
@@ -25,6 +27,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   initialOriginalFileName = '',
   initialServerFilePath,
   initialServerFileUrl,
+  onUploadingChange,
   onUploadComplete,
   onRemove,
   placeholder = 'Select a file to upload',
@@ -34,6 +37,11 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   const [serverFilePath, setServerFilePath] = useState<string | undefined>(initialServerFilePath);
   const [serverFileUrl, setServerFileUrl] = useState<string | undefined>(initialServerFileUrl);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  useEffect(() => {
+    onUploadingChange?.(isUploading);
+  }, [isUploading, onUploadingChange]);
 
   const handleDownload = (e: React.MouseEvent, isFileUrl: boolean = false) => {
     e.stopPropagation();
@@ -111,9 +119,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     if (!targetFile) return null;
 
     setIsUploading(true);
+    setUploadProgress(0);
 
     try {
-      const result = await uploadFiles([targetFile]);
+      const result = await uploadFiles([targetFile], {
+        onProgress: (p) => setUploadProgress(p),
+      });
       if (result.length > 0) {
         const fileResponse = result[0];
         // based on the file response and file manager service, set the server file path and url
@@ -238,7 +249,16 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           </div>
         )}
 
-        {isUploading && <div className="p-2 text-sm text-muted-foreground">Uploading file... Please wait.</div>}
+        {isUploading && (
+          <div className="p-2 space-y-2">
+            <div className="text-sm text-muted-foreground">
+              {uploadProgress >= 95
+                ? "Processing on server... (almost done)"
+                : `Uploading file... ${uploadProgress > 0 ? `${uploadProgress}%` : "Please wait."}`}
+            </div>
+            <Progress value={uploadProgress} className="h-2" />
+          </div>
+        )}
       </div>
     </div>
   );

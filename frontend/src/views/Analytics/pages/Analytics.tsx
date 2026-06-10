@@ -3,38 +3,54 @@ import { subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
-import { useIsMobile } from "@/hooks/useMobile";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
+import { AnalyticsInsightsPageSkeleton } from "../components/skeletons";
 import { AttributeBreakdownChart } from "../components/reports/AttributeBreakdownChart";
 import { useAnalyticsData } from "../hooks/useAnalyticsData";
-import { useAgentsList } from "../hooks/useAgentsList";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 
 const AnalyticsPage = () => {
-  const isMobile = useIsMobile();
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
   });
-  const [agentFilter, setAgentFilter] = useState("all");
   const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
-  const { agents } = useAgentsList();
-  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter, compareDateRange);
+  const {
+    groups,
+    showGroupFilter,
+    groupFilter,
+    setGroupFilter,
+    agentFilter,
+    setAgentFilter,
+    agents,
+    filterParams,
+  } = useAnalyticsFilters();
+
+  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(
+    dateRange,
+    agentFilter,
+    compareDateRange,
+    filterParams.group_id,
+  );
 
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
-              <header className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2 animate-fade-down">AI Insights</h1>
-                  <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">AI-generated metrics from conversation analysis</p>
-                </div>
+              <AnalyticsPageHeader
+                title="AI Insights"
+                subtitle="AI-generated metrics from conversation analysis"
+              >
                 <AnalyticsFilters
+                  groups={showGroupFilter ? groups : undefined}
+                  groupFilter={groupFilter}
+                  onGroupFilterChange={setGroupFilter}
                   agents={agents}
                   agentFilter={agentFilter}
                   onAgentFilterChange={setAgentFilter}
@@ -43,23 +59,31 @@ const AnalyticsPage = () => {
                   compareDateRange={compareDateRange}
                   onCompareDateRangeChange={setCompareDateRange}
                 />
-              </header>
+              </AnalyticsPageHeader>
 
-              <AnalyticsMetricsSection
-                dateRange={dateRange}
-                agentId={agentFilter}
-                metrics={metrics}
-                deltas={deltas}
-                loading={loading}
-                refreshing={refreshing}
-                error={error}
-                compareDateRange={compareDateRange}
-              />
+              {loading ? (
+                <AnalyticsInsightsPageSkeleton />
+              ) : (
+                <div className="space-y-6 sm:space-y-8">
+                  <AnalyticsMetricsSection
+                    dateRange={dateRange}
+                    agentId={agentFilter}
+                    groupId={filterParams.group_id}
+                    metrics={metrics}
+                    deltas={deltas}
+                    loading={false}
+                    refreshing={refreshing}
+                    error={error}
+                    compareDateRange={compareDateRange}
+                  />
 
-              <AttributeBreakdownChart
-                agentId={agentFilter}
-                dateRange={dateRange}
-              />
+                  <AttributeBreakdownChart
+                    agentId={agentFilter}
+                    groupId={filterParams.group_id}
+                    dateRange={dateRange}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </main>

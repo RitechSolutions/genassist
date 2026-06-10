@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import {
@@ -19,6 +19,8 @@ import {
 } from "../types/nodes";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { useWorkflow } from "../context/WorkflowContext";
+import { PromptEditorButton } from "../components/PromptEditor/PromptEditorButton";
 
 type Props = BaseNodeDialogProps<
   GuardrailProvenanceNodeData,
@@ -28,6 +30,7 @@ type Props = BaseNodeDialogProps<
 export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
   const { isOpen, onClose, data, onUpdate } = props;
   const [localData, setLocalData] = useState<GuardrailProvenanceNodeData>(data);
+  const { workflow } = useWorkflow();
 
   const { data: providers = [] } = useQuery({
     queryKey: ["llmProviders"],
@@ -118,7 +121,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
         </div>
         <div className="space-y-2">
           <Label>Minimum provenance score (0-1)</Label>
-          <Input
+          <RichInput
             type="number"
             step="0.01"
             min={0}
@@ -236,7 +239,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             </div>
             <div className="space-y-2">
               <Label>Embedding model name</Label>
-              <Input
+              <RichInput
                 value={localData.embedding_model_name ?? ""}
                 onChange={(e) =>
                   setLocalData((prev) => ({
@@ -284,7 +287,24 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Additional judge instructions</Label>
+              <div className="flex items-center justify-between">
+                <Label>Additional judge instructions</Label>
+                {workflow?.id && props.nodeId && (
+                  <PromptEditorButton
+                    workflowId={workflow.id}
+                    nodeId={props.nodeId}
+                    promptField="llm_judge_system_prompt_suffix"
+                    currentValue={localData.llm_judge_system_prompt_suffix ?? ""}
+                    onPromptChange={(val) =>
+                      setLocalData((prev) => ({
+                        ...prev,
+                        llm_judge_system_prompt_suffix: val,
+                      }))
+                    }
+                    defaultProviderId={localData.llm_provider_id}
+                  />
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Appended to the base system prompt to fine-tune judge behaviour.
                 E.g. <em>"When no Context is available, treat the answer as supported."</em>

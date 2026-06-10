@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
-import { Skeleton } from "@/components/skeleton";
+import { AttributeBreakdownChartBodySkeleton } from "../skeletons";
 import {
   Select,
   SelectContent,
@@ -23,7 +23,10 @@ import {
   type CustomAttributeBreakdownItem,
 } from "@/services/analyticsReports";
 import type { DateRange } from "react-day-picker";
-import { format } from "date-fns";
+import { cn } from "@/helpers/utils";
+import { toMetricsApiParams } from "@/helpers/analyticsParams";
+import { AttributeBreakdownEmptyState } from "../AnalyticsEmptyStates";
+import { analyticsFadeUpClass } from "../../constants/animations";
 
 const ROW_HEIGHT = 44;
 const CHART_MIN_HEIGHT = 180;
@@ -34,11 +37,13 @@ const formatScore = (v: number | null): string =>
 
 interface AttributeBreakdownChartProps {
   agentId?: string;
+  groupId?: string;
   dateRange?: DateRange;
 }
 
 export const AttributeBreakdownChart = ({
   agentId,
+  groupId,
   dateRange,
 }: AttributeBreakdownChartProps) => {
   const [keys, setKeys] = useState<string[]>([]);
@@ -47,22 +52,20 @@ export const AttributeBreakdownChart = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const id = agentId !== "all" ? agentId : undefined;
-    fetchCustomAttributeKeys(id).then((k) => {
+    fetchCustomAttributeKeys({
+      agent_id: agentId !== "all" ? agentId : undefined,
+      group_id: groupId,
+    }).then((k) => {
       setKeys(k);
       if (k.length > 0 && !k.includes(selectedKey)) {
         setSelectedKey(k[0]);
       }
     });
-  }, [agentId]);
+  }, [agentId, groupId]);
 
-  const fromDateStr = useMemo(
-    () => (dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined),
-    [dateRange?.from?.getTime()]
-  );
-  const toDateStr = useMemo(
-    () => (dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") + " 23:59:59" : undefined),
-    [dateRange?.to?.getTime()]
+  const breakdownParams = useMemo(
+    () => toMetricsApiParams(dateRange, agentId, groupId),
+    [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId, groupId],
   );
 
   useEffect(() => {
@@ -72,13 +75,20 @@ export const AttributeBreakdownChart = ({
     }
     setLoading(true);
     fetchCustomAttributeBreakdown(selectedKey, {
-      agent_id: agentId !== "all" ? agentId : undefined,
-      from_date: fromDateStr,
-      to_date: toDateStr,
+      agent_id: breakdownParams.agent_id,
+      group_id: breakdownParams.group_id,
+      from_date: breakdownParams.from_date,
+      to_date: breakdownParams.to_date,
     })
       .then(setData)
       .finally(() => setLoading(false));
-  }, [selectedKey, agentId, fromDateStr, toDateStr]);
+  }, [
+    selectedKey,
+    breakdownParams.agent_id,
+    breakdownParams.group_id,
+    breakdownParams.from_date,
+    breakdownParams.to_date,
+  ]);
 
   if (keys.length === 0) return null;
 
@@ -86,7 +96,7 @@ export const AttributeBreakdownChart = ({
   const chartHeight = Math.max(CHART_MIN_HEIGHT, data.length * ROW_HEIGHT + CHART_PADDING);
 
   return (
-    <Card className="mt-6">
+    <Card className={cn("mt-6 bg-white", analyticsFadeUpClass)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div>
           <CardTitle className="text-base font-semibold">
@@ -113,18 +123,9 @@ export const AttributeBreakdownChart = ({
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="space-y-4 py-4">
-            {[1, 0.75, 0.5].map((w, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-8 rounded" style={{ width: `${w * 100}%` }} />
-              </div>
-            ))}
-          </div>
+          <AttributeBreakdownChartBodySkeleton />
         ) : data.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-12">
-            No data for this attribute yet.
-          </p>
+          <AttributeBreakdownEmptyState />
         ) : (
           <>
             <ResponsiveContainer width="100%" height={chartHeight}>

@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth
+from app.auth.utils import current_user_is_admin
 from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
 from app.schemas.common import PaginatedResponse
 from app.schemas.filter import BaseFilterModel
@@ -24,6 +25,7 @@ router = APIRouter()
 )
 async def get_configs_list(
     filter_obj: BaseFilterModel = Depends(),
+    is_system: bool | None = Query(None, description="Filter by system (true) or user (false) agents"),
     config_service: AgentConfigService = Injected(AgentConfigService),
 ):
     """
@@ -33,7 +35,7 @@ async def get_configs_list(
     needed for list display (id, name, workflow_id, possible_queries, is_active).
     Use GET /configs/{agent_id} to get full details when clicking on an item.
     """
-    return await config_service.get_list_paginated(filter_obj)
+    return await config_service.get_list_paginated(filter_obj, is_system=is_system)
 
 
 # TODO set permission validation
@@ -118,11 +120,11 @@ async def update_config(
     agent_config_service: AgentConfigService = Injected(AgentConfigService),
 ):
     """Update an existing agent configuration"""
+    agent = await agent_config_service.get_by_id(agent_id)
+    if agent.is_system and not current_user_is_admin():
+        raise HTTPException(status_code=403, detail="Only admins can modify system agents")
 
-    await agent_config_service.update(agent_id, agent_update)
-    # Fetch the updated agent with all relationships to ensure security_settings is included
-    agent_read = await agent_config_service.get_by_id_full(agent_id)
-    return agent_read
+    return await agent_config_service.update(agent_id, agent_update)
 
 
 @router.delete(
@@ -136,6 +138,10 @@ async def delete_config(
     agent_id: UUID, config_service: AgentConfigService = Injected(AgentConfigService)
 ):
     """Delete an agent configuration"""
+    agent = await config_service.get_by_id(agent_id)
+    if agent.is_system and not current_user_is_admin():
+        raise HTTPException(status_code=403, detail="Only admins can delete system agents")
+
     await config_service.delete(agent_id)
     return {"status": "success", "message": f"Configuration with ID {agent_id} deleted"}
 

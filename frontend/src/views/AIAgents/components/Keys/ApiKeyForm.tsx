@@ -7,15 +7,13 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
 import { Switch } from "@/components/switch";
 import { createApiKey, updateApiKey } from "@/services/apiKeys";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import toast from "react-hot-toast";
-import { Copy, Eye, EyeOff } from "lucide-react";
-import { maskInput } from "@/helpers/utils";
 import {
   Select,
   SelectContent,
@@ -48,15 +46,12 @@ export default function ApiKeyForm({
   const [name, setName] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isKeyVisible, setIsKeyVisible] = useState(false);
-  const toggleKeyVisibility = () => setIsKeyVisible((v) => !v);
   const [expiryPreset, setExpiryPreset] = useState<string>("never");
 
   useEffect(() => {
     if (existingKey) {
       setName(existingKey.name);
       setIsActive(existingKey.is_active === 1);
-      setIsKeyVisible(false);
     } else {
       setName("");
       setIsActive(true);
@@ -103,12 +98,6 @@ export default function ApiKeyForm({
     }
   }
 
-  const copyToClipboard = () => {
-    if (!existingKey?.key_val) return;
-    navigator.clipboard.writeText(existingKey.key_val);
-    toast.success("API key copied to clipboard.");
-  };
-
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl">
@@ -130,7 +119,7 @@ export default function ApiKeyForm({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
+              <RichInput
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -157,48 +146,6 @@ export default function ApiKeyForm({
                 </p>
               </div>
             ) : null}
-
-            {existingKey?.key_val && (
-              <div className="space-y-2">
-                <Label htmlFor="api_key">API Key</Label>
-                <div className="relative flex flex-row items-center">
-                  <Input
-                    id="api_key"
-                    readOnly
-                    className="w-full z-10"
-                    value={
-                      isKeyVisible
-                        ? existingKey.key_val
-                        : maskInput(existingKey.key_val || "")
-                    }
-                  />
-                  <div className="absolute right-2 flex gap-1 elevation-1 z-20">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={toggleKeyVisibility}
-                      title={isKeyVisible ? "Hide key" : "Show key"}
-                    >
-                      {isKeyVisible ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={copyToClipboard}
-                      title="Copy to clipboard"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             <div className="flex items-center gap-2">
               <Label htmlFor="is_active">Active</Label>

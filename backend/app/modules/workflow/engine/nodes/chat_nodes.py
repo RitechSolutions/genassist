@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict
 
 from app.core.config.settings import settings
+from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.utils import validate_input_schema
 
@@ -80,6 +81,16 @@ class ChatInputNode(BaseNode):
                             # Value in session but not in Redis, use session value
                             validated_data[param_name] = stateful_value
 
+            # Pass audio data through if present (for STT workflows)
+            audio_data_b64 = self.get_state().get_value("audio_data")
+            if audio_data_b64:
+                validated_data["audio_data"] = {
+                    "type": "audio",
+                    "data": audio_data_b64,
+                    "encoding": "base64",
+                    "format": self.get_state().get_value("audio_format") or "webm",
+                }
+
             self.set_node_input(validated_data)
             return validated_data
         except ValueError as e:
@@ -107,7 +118,8 @@ class ChatOutputNode(BaseNode):
         """
         # source_output = self.get_last_node_output()
         source_output = self.get_input_from_source()
-        logger.debug("ChatOutputNode %s forwarding output: %s", self.node_id, source_output)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("ChatOutputNode %s forwarding output: %s", self.node_id, truncate_for_log(str(source_output)))
 
         # Simply forward the source output
         return source_output

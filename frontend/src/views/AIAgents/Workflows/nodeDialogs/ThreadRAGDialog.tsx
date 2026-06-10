@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ThreadRAGNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
@@ -100,7 +100,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
     >
       <div className="space-y-2">
         <Label htmlFor="name">Node Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -141,7 +141,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
 
           <div className="space-y-2">
             <Label htmlFor="top_k">Top K</Label>
-            <Input
+            <RichInput
               id="top_k"
               type="number"
               value={topK}

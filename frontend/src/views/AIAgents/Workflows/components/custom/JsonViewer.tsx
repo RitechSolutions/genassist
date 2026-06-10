@@ -1,5 +1,11 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
+import {
+  buildArrayItemPath,
+  formatVariableReference,
+  isPlainObject,
+  isPrimitiveJsonValue,
+} from "@/helpers/variable-input/droppedVariable";
 
 export interface NodeMetadata {
   [nodeId: string]: {
@@ -44,13 +50,12 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
     value: unknown
   ) => {
     if (onDragStart) {
-      onDragStart(e, `{{${path}}}`, value);
+      onDragStart(e, path, value);
     }
   };
 
   const copyPath = (path: string) => {
-    const formattedPath = `{{${path}}}`;
-    navigator.clipboard.writeText(formattedPath);
+    navigator.clipboard.writeText(formatVariableReference(path));
   };
 
   const renderValue = (key: string, value: unknown, currentPath: string) => {
@@ -115,16 +120,37 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
           {isExpanded && (
             <div className="ml-4 mt-1 border-l border-gray-200 pl-3 bg-white">
               {isArray ? (
-                (value as any[]).map((item, index) => (
-                  <JsonViewer
-                    key={index}
-                    data={{ [index]: item }}
-                    level={level + 1}
-                    onDragStart={onDragStart}
-                    basePath={`${currentPath}[${index}]`}
-                    nodeMetadata={nodeMetadata}
-                  />
-                ))
+                (value as any[]).map((item, index) => {
+                  const itemPath = buildArrayItemPath(currentPath, index);
+
+                  if (isPlainObject(item)) {
+                    return (
+                      <JsonViewer
+                        key={index}
+                        data={item}
+                        level={level + 1}
+                        onDragStart={onDragStart}
+                        basePath={itemPath}
+                        nodeMetadata={nodeMetadata}
+                      />
+                    );
+                  }
+
+                  if (isPrimitiveJsonValue(item)) {
+                    return renderValue(String(index), item, itemPath);
+                  }
+
+                  return (
+                    <JsonViewer
+                      key={index}
+                      data={{ [index]: item } as Record<string, unknown>}
+                      level={level + 1}
+                      onDragStart={onDragStart}
+                      basePath={itemPath}
+                      nodeMetadata={nodeMetadata}
+                    />
+                  );
+                })
               ) : (
                 <JsonViewer
                   data={value as Record<string, unknown>}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { WhatsappNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
@@ -95,7 +95,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
       >
         <div className="space-y-2">
           <Label htmlFor="name">Tool Name</Label>
-          <Input
+          <RichInput
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}

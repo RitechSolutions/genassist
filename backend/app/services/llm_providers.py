@@ -11,8 +11,10 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
+from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
 from app.repositories.llm_providers import LlmProviderRepository
 from app.schemas.llm import LlmProviderCreate, LlmProviderMinimal, LlmProviderRead, LlmProviderUpdate
+from app.services.app_settings import AppSettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +30,30 @@ class LlmProviderService:
         "aws_secret_access_key",
     ]
 
-    def __init__(self, repository: LlmProviderRepository):
+    def __init__(self, repository: LlmProviderRepository, app_settings_service: AppSettingsService):
         self.repository = repository
+        self.app_settings_service = app_settings_service
+
+    @staticmethod
+    def _extract_vllm_fine_tuned(connection_data: Dict[str, Any], llm_model: str):
+        """
+        Extracts a clean display name from the api_url:::model_path select value
+        and stores it as llm_model. connection_data.model retains the full value
+        so the edit form can pre-select the correct deployment.
+        Returns (connection_data, display_name).
+        """
+        raw = connection_data.get("model", "")
+        if ":::" not in raw:
+            return connection_data, llm_model
+        _, model_path = raw.split(":::", 1)
+        display_name = model_path.split("/")[-1]
+        return connection_data, display_name
 
     async def create(self, data: LlmProviderCreate):
         connection_data = data.connection_data.copy()
+
+        if data.llm_model_provider == "vllm_fine_tuned":
+            connection_data, data.llm_model = self._extract_vllm_fine_tuned(connection_data, data.llm_model)
 
         api_key = connection_data.get("api_key")
         if api_key:
@@ -45,6 +66,9 @@ class LlmProviderService:
             data.connection_status = data.connection_status.model_dump(mode="json")
         else:
             data.connection_status = {"status": "Untested", "last_tested_at": None, "message": None}
+
+        regions = bedrock_regions_from_connection_data(data.llm_model_provider, data.connection_data)
+        await assert_provider_residency(regions, self.app_settings_service)
 
         model = await self.repository.create(data)
         return model
@@ -85,6 +109,11 @@ class LlmProviderService:
 
         existing_conn_data = obj.connection_data or {}
         update_conn_data = update_data.get("connection_data", {})
+
+        if obj.llm_model_provider == "vllm_fine_tuned" and ":::" in update_conn_data.get("model", ""):
+            _, update_data["llm_model"] = self._extract_vllm_fine_tuned(
+                update_conn_data, update_data.get("llm_model", "")
+            )
 
         for field_name in self.encrypted_fields:
             if field_name in update_conn_data:
@@ -130,6 +159,10 @@ class LlmProviderService:
 
         for field, value in update_data.items():
             setattr(obj, field, value)
+
+        regions = bedrock_regions_from_connection_data(obj.llm_model_provider, obj.connection_data)
+        await assert_provider_residency(regions, self.app_settings_service)
+
         model = await self.repository.update(obj)
         return model
 

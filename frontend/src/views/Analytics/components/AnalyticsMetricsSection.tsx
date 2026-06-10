@@ -1,6 +1,6 @@
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
 import { Card } from "@/components/card";
-import { Tooltip } from "@/components/tooltip";
+import { AnalyticsMetricsCardsSkeleton } from "./skeletons";
 import {
   SmileIcon,
   Award,
@@ -14,6 +14,9 @@ import {
 import { format } from "date-fns";
 import type { FetchedMetricsData, MetricsDeltas } from "@/services/metrics";
 import type { DateRange } from "react-day-picker";
+import { cn } from "@/helpers/utils";
+import { analyticsFadeUpClass, analyticsRefreshingClassName } from "../constants/animations";
+import { AnalyticsKpiStat, analyticsKpiGridClass } from "./AnalyticsKpiStat";
 
 interface MetricItem {
   title: string;
@@ -29,6 +32,7 @@ interface MetricItem {
 interface AnalyticsMetricsSectionProps {
   dateRange?: DateRange;
   agentId?: string;
+  groupId?: string;
   metrics: FetchedMetricsData | null;
   deltas: MetricsDeltas | null;
   loading: boolean;
@@ -63,11 +67,10 @@ function DeltaBadge({ delta }: { delta: number | undefined | null }) {
   );
 }
 
-const PLACEHOLDER_COUNT = 5;
-
 export const AnalyticsMetricsSection = ({
   dateRange,
   agentId,
+  groupId,
   metrics,
   deltas,
   loading,
@@ -136,13 +139,16 @@ export const AnalyticsMetricsSection = ({
     },
     {
       title: "Sentiment",
-      value: analyzedCount > 0 ? `${positivePct.toFixed(0)}% positive` : "No feedback yet",
+      value: analyzedCount > 0 ? `${positivePct.toFixed(0)}%` : "No feedback yet",
       numericValue: positivePct,
       icon: MessageSquare,
       description:
         "Overall sentiment distribution detected across analyzed conversations.",
       color: "#22c55e",
-      sub: analyzedCount > 0 ? `${negativePct.toFixed(0)}% negative · ${neutralPct.toFixed(0)}% neutral` : undefined,
+      sub:
+        analyzedCount > 0
+          ? `Positive · ${negativePct.toFixed(0)}% negative · ${neutralPct.toFixed(0)}% neutral`
+          : undefined,
       deltaKey: "Positive Sentiment",
     },
   ];
@@ -150,16 +156,7 @@ export const AnalyticsMetricsSection = ({
   if (loading) {
     return (
       <div className="space-y-6 sm:space-y-8">
-        <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8">
-            {Array.from({ length: PLACEHOLDER_COUNT }).map((_, i) => (
-              <div key={i} className="flex flex-col gap-3 py-2 sm:py-0">
-                <div className="h-7 w-16 bg-zinc-100 rounded animate-pulse" />
-                <div className="h-4 w-20 bg-zinc-100 rounded animate-pulse" />
-              </div>
-            ))}
-          </div>
-        </Card>
+        <AnalyticsMetricsCardsSkeleton showContextLine />
       </div>
     );
   }
@@ -173,14 +170,8 @@ export const AnalyticsMetricsSection = ({
   }
 
   return (
-    <div
-      className={
-        refreshing
-          ? "opacity-70 transition-opacity duration-200"
-          : "transition-opacity duration-200"
-      }
-    >
-      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up mb-6 sm:mb-8">
+    <div className={cn("space-y-6 sm:space-y-8", analyticsRefreshingClassName(refreshing))}>
+      <Card className={cn("mb-0 w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
         {/* Context line */}
         {(analyzedCount > 0 || deltas) && (
           <p className="text-xs text-muted-foreground mb-4">
@@ -189,65 +180,35 @@ export const AnalyticsMetricsSection = ({
             )}
             {deltas && compareDateRange?.from && compareDateRange?.to && (
               <span className="text-muted-foreground/60">
-                {analyzedCount > 0 ? " · " : ""}vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}
+                {analyzedCount > 0 ? " · " : ""}
+                vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}
               </span>
             )}
           </p>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8">
-          {metricCards.map((metric, index) => {
+        <div className={analyticsKpiGridClass(metricCards.length)}>
+          {metricCards.map((metric) => {
             const Icon = metric.icon;
-            const isLast = index === metricCards.length - 1;
             const delta = metric.deltaKey && deltas ? deltas[metric.deltaKey] : undefined;
             return (
-              <div key={metric.title} className="relative">
-                <div className="flex flex-col gap-1 py-2 sm:py-0">
-                  <div className="flex items-baseline gap-2">
-                    <span
-                      className={`text-xl sm:text-2xl font-bold leading-tight ${getScoreColor(metric.numericValue, analyzedCount > 0)}`}
-                    >
-                      {metric.value}
-                    </span>
-                    <DeltaBadge delta={delta} />
-                  </div>
-                  <div className="flex items-center gap-1 text-sm font-medium text-muted-foreground">
-                    <Icon
-                      className="w-3.5 h-3.5 flex-shrink-0"
-                      style={{ color: metric.color }}
-                    />
-                    <span className="truncate">{metric.title}</span>
-                    {metric.description && (
-                      <Tooltip
-                        content={
-                          <span className="whitespace-normal max-w-[200px] block">
-                            {metric.description}
-                          </span>
-                        }
-                        iconClassName="w-3 h-3"
-                        contentClassName="w-48 text-center"
-                      />
-                    )}
-                  </div>
-                  {metric.sub && (
-                    <div className="text-xs text-muted-foreground/70 leading-tight">
-                      {metric.sub}
-                    </div>
-                  )}
-                </div>
-                {!isLast && (
-                  <>
-                    <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
-                    <div className="lg:hidden border-b border-zinc-100 mt-3" />
-                  </>
-                )}
-              </div>
+              <AnalyticsKpiStat
+                key={metric.title}
+                label={metric.title}
+                value={metric.value}
+                sub={metric.sub}
+                description={metric.description}
+                valueClassName={getScoreColor(metric.numericValue, analyzedCount > 0)}
+                icon={Icon}
+                iconColor={metric.color}
+                delta={<DeltaBadge delta={delta} />}
+              />
             );
           })}
         </div>
       </Card>
 
-      <PerformanceChart dateRange={dateRange} agentId={agentId} />
+      <PerformanceChart dateRange={dateRange} agentId={agentId} groupId={groupId} />
     </div>
   );
 };

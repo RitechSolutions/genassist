@@ -12,6 +12,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_system_utils import get_safe_file_path
 from app.schemas.ml_model_pipeline import (
     MLModelPipelineArtifactRead,
@@ -305,7 +306,8 @@ async def download_artifact(
         response = FileResponse(
             path=safe_serving_path,
             filename=artifact.artifact_name,
-            media_type=media_type
+            media_type=media_type,
+            headers=no_store_headers(),
         )
         return response
     except HTTPException:

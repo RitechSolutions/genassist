@@ -13,7 +13,7 @@ import { Button, buttonVariants } from "@/components/button";
 import { Card } from "@/components/card";
 import { Badge } from "@/components/badge";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { TagsFieldInput } from "@/components/TagsFieldInput";
 import { Progress } from "@/components/progress";
 import {
@@ -39,6 +39,7 @@ import {
   getFileBase64,
   getFileManagerSettings,
   listFiles,
+  uploadFileRecordViaPresignedS3,
   uploadFileRecord,
   type FileManagerSettings,
   type FileRecord,
@@ -421,6 +422,10 @@ export function FileManagerFiles() {
 
   const fmEnabled =
     settings?.values.file_manager_enabled === true && settings.is_active === 1;
+  const provider = settings?.values.file_manager_provider || "local";
+  const isLocalProvider = provider === "local";
+  const directS3Enabled =
+    provider === "s3" && settings?.values.direct_s3_upload_enabled === true;
 
   const loadFiles = useCallback(async () => {
     if (!canRead) return;
@@ -443,8 +448,14 @@ export function FileManagerFiles() {
     getFileManagerSettings()
       .then((s) => {
         setSettings(s);
-        if (s?.values.base_path) {
-          setStoragePathInput(s.values.base_path);
+        const p = s?.values.file_manager_provider || "local";
+        if (p === "local") {
+          setStoragePathInput(s?.values.base_path ?? "");
+        } else if (p === "s3") {
+          // For S3 provider, storage_path is the bucket name (see backend provider.get_base_path()).
+          setStoragePathInput(s?.values.aws_bucket_name ?? "");
+        } else {
+          setStoragePathInput("");
         }
       })
       .finally(() => setSettingsLoaded(true));
@@ -475,7 +486,13 @@ export function FileManagerFiles() {
     fileDragDepthRef.current = 0;
     setFileDragActive(false);
     setPathInput("uploads");
-    setStoragePathInput(settings?.values.base_path ?? "");
+    if ((settings?.values.file_manager_provider || "local") === "local") {
+      setStoragePathInput(settings?.values.base_path ?? "");
+    } else if ((settings?.values.file_manager_provider || "local") === "s3") {
+      setStoragePathInput(settings?.values.aws_bucket_name ?? "");
+    } else {
+      setStoragePathInput("");
+    }
     setDescriptionInput("");
     setUploadTags([]);
     setMetadataInput("{}");
@@ -524,7 +541,11 @@ export function FileManagerFiles() {
       return;
     }
     if (!sp) {
-      toast.error("Storage path is required.");
+      toast.error(
+        isLocalProvider
+          ? "Storage path is required."
+          : "Storage bucket/path is not configured for this provider."
+      );
       return;
     }
     let metaObj: Record<string, unknown> = {};
@@ -542,12 +563,24 @@ export function FileManagerFiles() {
 
     const fd = new FormData();
     fd.append("file", uploadFile);
-    fd.append("name", uploadFile.name);
+    // For non-local providers, avoid using the original filename as the storage object name.
+    // Backend will build the final stored path from `path` + `name`.
+    const ext = (() => {
+      const parts = uploadFile.name.split(".");
+      return parts.length > 1 ? parts.pop() : "";
+    })();
+    const generatedName =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? `${crypto.randomUUID()}${ext ? `.${ext}` : ""}`
+        : uploadFile.name;
+    fd.append("name", isLocalProvider ? uploadFile.name : generatedName);
     fd.append("path", p);
+    // `storage_path` is required by the backend form schema, but for S3 this is
+    // derived from settings (bucket name). We keep it hidden in the UI.
     fd.append("storage_path", sp);
     fd.append(
       "storage_provider",
-      settings?.values.file_manager_provider || "local"
+      provider
     );
     if (descriptionInput.trim()) {
       fd.append("description", descriptionInput.trim());
@@ -562,9 +595,35 @@ export function FileManagerFiles() {
     setUploading(true);
     setUploadProgress(0);
     try {
-      await uploadFileRecord(fd, {
-        onProgress: (pct) => setUploadProgress(pct),
-      });
+      if (directS3Enabled) {
+        try {
+          await uploadFileRecordViaPresignedS3(
+            uploadFile,
+            {
+              path: p,
+              name: isLocalProvider ? uploadFile.name : generatedName,
+              description: descriptionInput.trim() || undefined,
+              tags: uploadTags.length ? uploadTags : undefined,
+              file_metadata: Object.keys(metaObj).length ? metaObj : undefined,
+            },
+            { onProgress: (pct) => setUploadProgress(pct) }
+          );
+        } catch (err) {
+          // Fall back to legacy multipart upload so a misconfigured bucket/cors doesn't block uploads.
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[file-manager] direct S3 upload failed, falling back to multipart:",
+            err
+          );
+          await uploadFileRecord(fd, {
+            onProgress: (pct) => setUploadProgress(pct),
+          });
+        }
+      } else {
+        await uploadFileRecord(fd, {
+          onProgress: (pct) => setUploadProgress(pct),
+        });
+      }
       toast.success("File uploaded.");
       setUploadOpen(false);
       resetUploadForm();
@@ -865,6 +924,7 @@ export function FileManagerFiles() {
                 Folder segment used when building the stored path (required).
               </p>
             </div>
+          {isLocalProvider && (
             <div className="space-y-2">
               <Label htmlFor="fm-sp">Storage path</Label>
               <input
@@ -875,6 +935,7 @@ export function FileManagerFiles() {
                 placeholder={settings?.values.base_path || "Base path from settings"}
               />
             </div>
+          )}
             <div className="space-y-2">
               <Label htmlFor="fm-desc">Description (optional)</Label>
               <input

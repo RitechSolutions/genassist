@@ -175,17 +175,17 @@ export function ActiveConversationsModule({
   const pageItems = displayLimit > 0 ? withMessages.slice(0, displayLimit) : withMessages;
 
   return (
-    <Card className="p-6 mb-5 shadow-sm animate-fade-up bg-white border border-border rounded-xl">
+    <Card className="mb-5 rounded-xl border border-border bg-white p-4 text-card-foreground shadow-sm animate-fade-up sm:p-6">
       <ActiveConversationsHeader title={title} />
 
-      <div className="flex gap-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         {/* Left Section - Sentiment Summary */}
-        <div className="w-60 shrink-0">
+        <div className="w-full lg:w-60 lg:shrink-0">
           <ActiveConversationsSummary total={globalTotal} counts={globalCounts} loading={isLoading} />
         </div>
 
         {/* Right Section - Conversation List */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex flex-col rounded-2xl overflow-hidden bg-muted/40 min-w-0 w-full">
             <ActiveConversationsList
               items={pageItems.map((i) => ({ ...i, transcript: getLatestMessagePreview(i.transcript) }))}

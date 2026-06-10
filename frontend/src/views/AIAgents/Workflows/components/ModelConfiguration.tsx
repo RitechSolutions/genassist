@@ -13,7 +13,7 @@ import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { Switch } from "@/components/switch";
 import { BaseLLMNodeData } from "../types/nodes";
 import { DraggableTextArea } from "./custom/DraggableTextArea";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { Info, X } from "lucide-react";
@@ -25,6 +25,8 @@ import {
 } from "@/components/RadixTooltip";
 import { Badge } from "@/components/badge";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
+import { useWorkflow } from "../context/WorkflowContext";
+import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -44,6 +46,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
   const [entityInput, setEntityInput] = useState("");
   const queryClient = useQueryClient();
+  const { workflow } = useWorkflow();
 
   const { data: providers = [] } = useQuery({
     queryKey: ["llmProviders"],
@@ -231,7 +234,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor={`name-input-${id}`}>Node Name</Label>
-        <Input
+        <RichInput
           id={`name-input-${id}`}
           value={config.name || ""}
           onChange={handleNameChange}
@@ -268,7 +271,22 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`system-prompt-input-${id}`}>System Prompt</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor={`system-prompt-input-${id}`}>System Prompt</Label>
+          {workflow?.id && (
+            <PromptEditorButton
+              workflowId={workflow.id}
+              nodeId={id}
+              promptField="systemPrompt"
+              currentValue={systemPrompt || ""}
+              onPromptChange={(val) => {
+                setSystemPrompt(val);
+                onConfigChange({ ...config, systemPrompt: val });
+              }}
+              defaultProviderId={config.providerId}
+            />
+          )}
+        </div>
         <DraggableTextArea
           id={`system-prompt-input-${id}`}
           value={systemPrompt}
@@ -277,7 +295,22 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`user-prompt-input-${id}`}>User Prompt</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor={`user-prompt-input-${id}`}>User Prompt</Label>
+          {workflow?.id && (
+            <PromptEditorButton
+              workflowId={workflow.id}
+              nodeId={id}
+              promptField="userPrompt"
+              currentValue={userPrompt || ""}
+              onPromptChange={(val) => {
+                setUserPrompt(val);
+                onConfigChange({ ...config, userPrompt: val });
+              }}
+              defaultProviderId={config.providerId}
+            />
+          )}
+        </div>
         <DraggableTextArea
           id={`user-prompt-input-${id}`}
           value={userPrompt}
@@ -322,7 +355,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               <Label htmlFor={`system-prompt-input-${id}`}>
                 Max Iterations
               </Label>
-              <Input
+              <RichInput
                 id={`max-iterations-input-${id}`}
                 value={config.maxIterations}
                 type="number"
@@ -383,7 +416,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           {config.memoryTrimmingMode === "message_count" || !config.memoryTrimmingMode ? (
             <div className="space-y-2">
               <Label htmlFor={`max-messages-${id}`}>Max Messages</Label>
-              <Input
+              <RichInput
                 id={`max-messages-${id}`}
                 type="number"
                 min={1}
@@ -413,7 +446,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`compacting-threshold-${id}`}
                   type="number"
                   min={10}
@@ -443,7 +476,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`compacting-keep-recent-${id}`}
                   type="number"
                   min={5}
@@ -510,7 +543,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                   </Tooltip>
                 </div>
                 <div className="flex gap-2">
-                  <Input
+                  <RichInput
                     value={entityInput}
                     onChange={(e) => setEntityInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -573,7 +606,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-passthrough-${id}`}
                   type="number"
                   min={4}
@@ -603,7 +636,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-group-size-${id}`}
                   type="number"
                   min={2}
@@ -633,7 +666,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-group-overlap-${id}`}
                   type="number"
                   min={0}
@@ -666,7 +699,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-query-context-${id}`}
                   type="number"
                   min={1}
@@ -696,7 +729,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-top-k-${id}`}
                   type="number"
                   min={1}
@@ -726,7 +759,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-recent-messages-${id}`}
                   type="number"
                   min={2}
@@ -755,7 +788,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-max-history-hours-${id}`}
                   type="number"
                   min={0}
@@ -794,7 +827,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`token-budget-${id}`}
                   type="number"
                   min={1000}
@@ -823,7 +856,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`conversation-history-tokens-${id}`}
                   type="number"
                   min={0}

@@ -1,7 +1,8 @@
 import React, { useState, useRef } from "react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
+import { parseDroppedVariable } from "@/helpers/variable-input/droppedVariable";
 
 interface DraggableInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   id?: string;
@@ -62,48 +63,27 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
         : value.length;
 
     try {
-      const jsonData = e.dataTransfer.getData("application/json");
-
-      if (jsonData) {
-        const { path, value: droppedValue } = JSON.parse(jsonData);
-        const variableReference = path;
-        const newValue = insertAtPosition(value, variableReference, insertPos);
-        const cursorAfter = insertPos + variableReference.length;
-
-        const syntheticEvent = {
-          target: { value: newValue }
-        } as React.ChangeEvent<HTMLInputElement>;
-        onChange(syntheticEvent);
-
-        setTimeout(() => {
-          if (inputRef.current && document.activeElement === inputRef.current) {
-            inputRef.current.setSelectionRange(cursorAfter, cursorAfter);
-          }
-        }, 0);
-
-        if (onVariableDrop) {
-          onVariableDrop(path, droppedValue);
-        }
+      const dropped = parseDroppedVariable(e.dataTransfer);
+      if (!dropped) {
         return;
       }
 
-      const textData = e.dataTransfer.getData("text/plain");
+      const newValue = insertAtPosition(value, dropped.reference, insertPos);
+      const cursorAfter = insertPos + dropped.reference.length;
 
-      if (textData) {
-        const variableReference = textData;
-        const newValue = insertAtPosition(value, variableReference, insertPos);
-        const cursorAfter = insertPos + variableReference.length;
+      const syntheticEvent = {
+        target: { value: newValue },
+      } as React.ChangeEvent<HTMLInputElement>;
+      onChange(syntheticEvent);
 
-        const syntheticEvent = {
-          target: { value: newValue }
-        } as React.ChangeEvent<HTMLInputElement>;
-        onChange(syntheticEvent);
+      setTimeout(() => {
+        if (inputRef.current && document.activeElement === inputRef.current) {
+          inputRef.current.setSelectionRange(cursorAfter, cursorAfter);
+        }
+      }, 0);
 
-        setTimeout(() => {
-          if (inputRef.current && document.activeElement === inputRef.current) {
-            inputRef.current.setSelectionRange(cursorAfter, cursorAfter);
-          }
-        }, 0);
+      if (onVariableDrop) {
+        onVariableDrop(dropped.path, dropped.value);
       }
     } catch (error) {
       // ignore
@@ -151,7 +131,7 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
           isDragOver && "ring-2 ring-blue-500 ring-opacity-50"
         )}
       >
-        <Input
+        <RichInput
           ref={inputRef}
           id={id}
           value={value}

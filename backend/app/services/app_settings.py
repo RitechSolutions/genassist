@@ -78,7 +78,7 @@ class AppSettingsService:
                 value = decrypt_key(value)
             except Exception as e:
                 logger.error(
-                    f"Error decrypting field '{field_name}' for type '{setting_type}': {e}"
+                    "Error decrypting field for type '%s': %s", setting_type, type(e).__name__
                 )
 
         return value
@@ -87,6 +87,12 @@ class AppSettingsService:
         self, setting_type: str, values: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Validate values against schema and encrypt sensitive fields."""
+        # Some settings surface server-derived, read-only capability flags to the UI.
+        # Clients may round-trip these values back during updates; we must ignore them
+        # rather than persisting or rejecting the request.
+        if setting_type == "FileManagerSettings" and isinstance(values, dict):
+            values = {k: v for k, v in values.items() if k != "direct_s3_upload_enabled"}
+
         # For "Other" type, no validation needed
         if setting_type == "Other":
             return values
@@ -137,7 +143,7 @@ class AppSettingsService:
                     ):  # Fernet encrypted strings start with this
                         encrypted_values[field_name] = encrypt_key(value)
                 except Exception as e:
-                    logger.error(f"Error encrypting field '{field_name}': {e}")
+                    logger.error("Error encrypting field for type '%s': %s", setting_type, type(e).__name__)
                     raise AppException(
                         status_code=500,
                         error_key=ErrorKey.INTERNAL_ERROR,

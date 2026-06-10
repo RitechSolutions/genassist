@@ -9,7 +9,10 @@ import {
   Cell,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
-import { Skeleton } from "@/components/skeleton";
+import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
+import { NodeBreakdownChartEmptyState } from "../AnalyticsEmptyStates";
+import { analyticsFadeUpClass } from "../../constants/animations";
+import { cn } from "@/helpers/utils";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 
@@ -87,7 +90,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) {
   if (loading) {
-    return <Skeleton className="h-[320px] rounded-xl w-full" />;
+    return <AnalyticsChartCardSkeleton variant="bar-horizontal" />;
   }
 
   const all = aggregateByNodeType(items);
@@ -98,7 +101,7 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
   const chartHeight = Math.max(data.length * ROW_HEIGHT + CHART_OVERHEAD, 120);
 
   return (
-    <Card className="bg-white shadow-sm">
+    <Card className={cn("bg-white shadow-sm", analyticsFadeUpClass)}>
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-sm font-semibold text-zinc-700">
@@ -126,9 +129,7 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
       </CardHeader>
       <CardContent className="pt-4">
         {data.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-            No node data available for the selected period.
-          </div>
+          <NodeBreakdownChartEmptyState />
         ) : (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart

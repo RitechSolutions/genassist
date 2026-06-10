@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useMemo } from "react";
 import { Card } from "@/components/card";
 import {
   Table,
@@ -8,11 +8,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/table";
-import { Loader2, View, Search, XCircle } from "lucide-react";
+import { Loader2, View, XCircle } from "lucide-react";
 import { Button } from "@/components/button";
 import { formatDate, getTimeFromDatetime } from "@/helpers/utils";
 import { AuditLogCardProps } from "@/interfaces/audit-log.interface";
+import { TableSkeleton } from "@/components/skeletons";
 import Can from "@/hooks/Can";
+
+const AUDIT_LOG_TABLE_COLUMNS = 6;
 
 export function AuditLogCard({
   searchQuery,
@@ -20,10 +23,9 @@ export function AuditLogCard({
   users,
   selectedUser,
   onViewDetails,
+  loading = false,
+  isRefreshing = false,
 }: AuditLogCardProps) {
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error] = useState<string | null>(null);
-
   const filteredAuditLogs = useMemo(() => {
     return auditLogs.filter((log) => {
       const matchesSearch =
@@ -42,46 +44,32 @@ export function AuditLogCard({
   const getUsername = (id: string) =>
     users.find((user) => user.id === id)?.username || "Unknown User";
 
-  useEffect(() => {
-    setLoading(true);
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 2000);
-    return () => clearTimeout(timeout);
-  }, []);
+  if (loading) {
+    return <TableSkeleton columns={AUDIT_LOG_TABLE_COLUMNS} rows={8} />;
+  }
 
-  if (error) {
+  if (filteredAuditLogs.length === 0) {
     return (
       <Card className="p-8">
-        <div className="text-center text-red-500">{error}</div>
+        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+          <XCircle className="w-5 h-5" />
+          <span>
+            {searchQuery
+              ? "No results found for this search query."
+              : "No audit logs available."}
+          </span>
+        </div>
       </Card>
     );
   }
 
   return (
-    <Card className="p-8">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {loading ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Loading audit logs, please wait...
-          </>
-        ) : filteredAuditLogs.length === 0 ? (
-          <>
-            <XCircle className="w-5 h-5" />
-            <span>
-              {searchQuery
-                ? "No results found for this search query."
-                : "No audit logs available."}
-            </span>
-          </>
-        ) : null}
-      </div>
-
-      {!loading && filteredAuditLogs.length > 0 && (
+    <Card className="p-8 overflow-hidden">
+      <div className="relative">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Log Id</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Table Name</TableHead>
               <TableHead>Action</TableHead>
@@ -94,6 +82,7 @@ export function AuditLogCard({
           <TableBody>
             {filteredAuditLogs.map((log) => (
               <TableRow key={log.id}>
+                <TableCell>{log.id}</TableCell>
                 <TableCell>
                   {formatDate(log.modified_at)} -{" "}
                   {getTimeFromDatetime(log.modified_at)}
@@ -117,7 +106,13 @@ export function AuditLogCard({
             ))}
           </TableBody>
         </Table>
-      )}
+
+        {isRefreshing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-md">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

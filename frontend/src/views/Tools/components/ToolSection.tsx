@@ -1,6 +1,6 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/tabs";
-import { Input } from "@/components/input";
-import { Textarea } from "@/components/textarea";
+import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Trash2 } from "lucide-react";
@@ -61,7 +61,7 @@ export function ToolSection({
 
             {items.map((item, index) => (
               <div key={item.id} className="flex items-center gap-2">
-                <Input
+                <RichInput
                   placeholder="Enter parameter name"
                   value={item.name}
                   onChange={(e) => {
@@ -71,7 +71,7 @@ export function ToolSection({
                   }}
                   className="w-2/5"
                 />
-                <Input
+                <RichInput
                   placeholder="Enter parameter value"
                   value={item.value}
                   onChange={(e) => {
@@ -101,7 +101,7 @@ export function ToolSection({
         <TabsContent value="json">
           <div className="space-y-2">
             <Label className="text-sm font-medium">JSON Body</Label>
-            <Textarea
+            <RichTextarea
               value={JSON.stringify(items, ["id","name","value"], 2)}
               onChange={(e) => {
                 try {

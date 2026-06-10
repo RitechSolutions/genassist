@@ -83,6 +83,15 @@ export function MCPServerDetailsDialog({
     return null;
   }
 
+  const av = server.auth_values ?? {};
+  const oauthDiscovery =
+    typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim() : "";
+  const displayDiscovery = oauthDiscovery;
+  const oauthScope =
+    typeof av.oauth2_scope === "string" ? av.oauth2_scope.trim() : "";
+  const oauthAudience =
+    typeof av.oauth2_audience === "string" ? av.oauth2_audience.trim() : "";
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
@@ -112,6 +121,122 @@ export function MCPServerDetailsDialog({
             </div>
           </div>
 
+          <div>
+            <Label className="text-xs text-gray-500">Authentication</Label>
+            <div className="mt-1">
+              <Badge variant="outline">
+                {server.auth_type === "oauth2" ? "OAuth 2.0 / OIDC (JWT)" : "API key"}
+              </Badge>
+            </div>
+          </div>
+
+          {server.auth_type === "oauth2" && (
+            <div className="rounded-md border bg-gray-50/80 p-4 space-y-4">
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                OAuth 2.0 configuration
+              </p>
+              <p className="text-xs text-gray-600 -mt-2">
+                Callers send a JWT with{" "}
+                <code className="text-xs bg-gray-100 px-1 rounded">Authorization: Bearer &lt;access_token&gt;</code>
+                . Genassist loads the discovery document below, then JWKS, and checks signature, issuer (
+                <code className="text-xs">iss</code> vs document <code className="text-xs">issuer</code>
+                ), optional scope/scp, and optional audience. The OAuth client id must match the application id
+                in the token (e.g. <code className="text-xs">azp</code>, <code className="text-xs">client_id</code>
+                , <code className="text-xs">appid</code>).
+              </p>
+
+              <div>
+                <Label className="text-xs text-gray-500">OIDC issuer URL</Label>
+                <div className="mt-1 flex items-start gap-2">
+                  <p className="text-sm font-mono flex-1 break-all min-w-0">
+                    {displayDiscovery || "—"}
+                  </p>
+                  {displayDiscovery && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        onClick={() => copyToClipboard(displayDiscovery, "discovery")}
+                        title="Copy issuer URL"
+                      >
+                        {copiedField === "discovery" ? (
+                          <Check className="h-3.5 w-3.5 text-green-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    )}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-500">Scope</Label>
+                <p className="text-sm font-mono mt-1 break-all">
+                  {oauthScope || "None — scope/scp not enforced"}
+                </p>
+              </div>
+
+              {oauthAudience ? (
+                <div>
+                  <Label className="text-xs text-gray-500">Expected JWT audience (legacy)</Label>
+                  <div className="mt-1 flex items-start gap-2">
+                    <p className="text-sm font-mono flex-1 break-all min-w-0">{oauthAudience}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 flex-shrink-0"
+                      onClick={() => copyToClipboard(oauthAudience, "audience")}
+                      title="Copy audience"
+                    >
+                      {copiedField === "audience" ? (
+                        <Check className="h-3.5 w-3.5 text-green-600" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div>
+                <Label className="text-xs text-gray-500">OAuth client ID</Label>
+                <p className="text-sm font-mono mt-1 break-all">
+                  {typeof server.auth_values?.oauth2_client_id === "string" &&
+                  server.auth_values.oauth2_client_id.trim()
+                    ? server.auth_values.oauth2_client_id
+                    : "—"}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Must match the id embedded in access tokens from your IdP for this app.
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-500">Client secret</Label>
+                <p className="text-sm mt-1">
+                  {server.auth_values?.oauth2_client_secret_set
+                    ? "Stored on the server (not shown). Edit the server to rotate it."
+                    : "Not set"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {server.auth_type === "api_key" && (
+            <div className="rounded-md border bg-gray-50/80 p-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                API key
+              </p>
+              <p className="text-sm font-mono">
+                {server.auth_values?.api_key === "***"
+                  ? "*** (configured — key is not shown)"
+                  : "—"}
+              </p>
+            </div>
+          )}
+
           {server.url && (
             <div>
               <Label className="text-xs text-gray-500">MCP Server URL</Label>
@@ -140,15 +265,13 @@ export function MCPServerDetailsDialog({
             </div>
           )}
 
-
-
           <div>
             <Label className="text-xs text-gray-500">Workflows</Label>
             <div className="mt-2 space-y-2">
               {server.workflows.length === 0 ? (
                 <p className="text-sm text-gray-500">No workflows configured</p>
               ) : (
-                server.workflows.map((workflow, index) => (
+                server.workflows.map((workflow) => (
                   <div
                     key={workflow.workflow_id}
                     className="border rounded-md p-3 bg-gray-50"
@@ -185,10 +308,12 @@ export function MCPServerDetailsDialog({
               Close
             </Button>
             {onEdit && (
-              <Button onClick={() => {
-                onEdit(server);
-                onOpenChange(false);
-              }}>
+              <Button
+                onClick={() => {
+                  onEdit(server);
+                  onOpenChange(false);
+                }}
+              >
                 Edit
               </Button>
             )}
@@ -198,4 +323,3 @@ export function MCPServerDetailsDialog({
     </Dialog>
   );
 }
-

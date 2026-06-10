@@ -31,6 +31,7 @@ export const useAnalyticsData = (
   dateRange: DateRange | undefined,
   agentId?: string,
   compareDateRange?: DateRange,
+  groupId?: string,
 ) => {
   const [metrics, setMetrics] = useState<FetchedMetricsData | null>(null);
   const [deltas, setDeltas] = useState<MetricsDeltas | null>(null);
@@ -41,13 +42,13 @@ export const useAnalyticsData = (
 
   useEffect(() => {
     const fetchId = ++fetchIdRef.current;
-    const params = toMetricsApiParams(dateRange, agentId);
+    const params = toMetricsApiParams(dateRange, agentId, groupId);
 
     const doFetch = async () => {
       try {
         const hasCompare = compareDateRange?.from && compareDateRange?.to;
         const compareParams = hasCompare
-          ? toMetricsApiParams(compareDateRange, agentId)
+          ? toMetricsApiParams(compareDateRange, agentId, groupId)
           : undefined;
 
         const [current, previous] = await Promise.all([
@@ -76,7 +77,14 @@ export const useAnalyticsData = (
         doFetch();
       });
     }
-  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId, compareDateRange?.from?.getTime(), compareDateRange?.to?.getTime()]);
+  }, [
+    dateRange?.from?.getTime(),
+    dateRange?.to?.getTime(),
+    agentId,
+    groupId,
+    compareDateRange?.from?.getTime(),
+    compareDateRange?.to?.getTime(),
+  ]);
 
   return { metrics, deltas, loading: initialLoading, refreshing, error };
 };

@@ -2,8 +2,8 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -13,13 +13,27 @@ import {
   ConversationListPayload,
   ConversationUpdatePayload,
   FinalizePayload,
+  TakeoverWirePayload,
+  resolveTakeoverSupervisorId,
 } from "@/interfaces/websocket.interface";
 import { conversationService } from "@/services/liveConversations";
+import { NotificationFeedSync } from "@/components/NotificationFeedSync";
 
-const DEFAULT_TOPICS = ["message", "statistics", "finalize", "hostile", "update"] as const;
-const EFFECTIVE_TOPICS = Array.from(
+const DEFAULT_TOPICS = [
+  "message",
+  "statistics",
+  "finalize",
+  "hostile",
+  "update",
+  "notification",
+] as const;
+const EFFECTIVE_TOPICS: string[] = Array.from(
   new Set([...DEFAULT_TOPICS, "message", "hostile", "update"])
 );
+
+export type DashboardMessageListener = (
+  data: Record<string, unknown>
+) => void;
 
 export interface WebSocketDashboardContextValue {
   conversations: ActiveConversation[];
@@ -29,6 +43,10 @@ export interface WebSocketDashboardContextValue {
   refetch: () => void;
   finalizedIds: string[];
   resyncHint: number;
+  /** Bumped when a dashboard WS notification event arrives; refetch notification feed. */
+  notificationResyncHint: number;
+  /** Subscribe to raw dashboard WS messages (e.g. notification topic). Returns unsubscribe. */
+  subscribe: (listener: DashboardMessageListener) => () => void;
 }
 
 const WebSocketDashboardContext =
@@ -75,9 +93,26 @@ export function WebSocketDashboardProvider({
   const [total, setTotal] = useState<number>(0);
   const [finalizedIds, setFinalizedIds] = useState<string[]>([]);
   const [resyncHint, setResyncHint] = useState<number>(0);
+  const [notificationResyncHint, setNotificationResyncHint] = useState<number>(0);
+  const messageListenersRef = useRef(new Set<DashboardMessageListener>());
+
+  const subscribe = useCallback((listener: DashboardMessageListener) => {
+    messageListenersRef.current.add(listener);
+    return () => {
+      messageListenersRef.current.delete(listener);
+    };
+  }, []);
 
   const handleMessage = useCallback((data: Record<string, unknown>) => {
-    const topic = (data.topic || data.type) as string;
+    const topic = String(data.topic ?? data.type ?? data.msg_type ?? "");
+
+    if (topic === "notification") {
+      setNotificationResyncHint((n) => n + 1);
+      for (const listener of messageListenersRef.current) {
+        listener(data);
+      }
+      return;
+    }
 
     switch (topic) {
       case "conversation_list": {
@@ -155,6 +190,10 @@ export function WebSocketDashboardProvider({
             negative_reason:
               (payload as { negative_reason?: string }).negative_reason ??
               existing?.negative_reason,
+            agent_id:
+              (payload as { agent_id?: string }).agent_id ?? existing?.agent_id,
+            agent_name:
+              (payload as { agent_name?: string }).agent_name ?? existing?.agent_name,
           };
           const enhanced = applyCachedTopic(merged);
           if (index !== -1) {
@@ -220,10 +259,10 @@ export function WebSocketDashboardProvider({
         break;
       }
       case "takeover": {
-        const payload = data.payload as {
+        const payload = data.payload as TakeoverWirePayload & {
           conversation_id?: string;
-          supervisor_id?: string;
         };
+        const supervisorId = resolveTakeoverSupervisorId(payload);
         if (payload?.conversation_id) {
           setConversations((prev) =>
             prev.map((c) =>
@@ -231,7 +270,7 @@ export function WebSocketDashboardProvider({
                 ? {
                     ...c,
                     status: "takeover" as const,
-                    supervisor_id: payload.supervisor_id || c.supervisor_id,
+                    supervisor_id: supervisorId || c.supervisor_id,
                   }
                 : c
             )
@@ -263,6 +302,8 @@ export function WebSocketDashboardProvider({
       refetch,
       finalizedIds,
       resyncHint,
+      notificationResyncHint,
+      subscribe,
     }),
     [
       conversations,
@@ -272,11 +313,14 @@ export function WebSocketDashboardProvider({
       refetch,
       finalizedIds,
       resyncHint,
+      notificationResyncHint,
+      subscribe,
     ]
   );
 
   return (
     <WebSocketDashboardContext.Provider value={value}>
+      <NotificationFeedSync />
       {children}
     </WebSocketDashboardContext.Provider>
   );
@@ -293,6 +337,8 @@ export function useWebSocketDashboardContext(): WebSocketDashboardContextValue {
       refetch: () => {},
       finalizedIds: [],
       resyncHint: 0,
+      notificationResyncHint: 0,
+      subscribe: () => () => {},
     };
   }
   return ctx;

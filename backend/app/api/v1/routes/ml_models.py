@@ -1,25 +1,26 @@
-from uuid import UUID
+import logging
 import os
-import uuid
 import tempfile
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body, Request
-from fastapi_injector import Injected
+import uuid
 from typing import Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
-from app.schemas.ml_model import MLModelRead, MLModelCreate, MLModelUpdate
-from app.schemas.file import FileBase, FileUploadResponse
-from app.services.ml_models import MLModelsService
-from app.services.ml_model_manager import get_ml_model_manager
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
-from app.core.permissions.constants import Permissions as P
-from app.services.file_manager import FileManagerService
+from app.schemas.file import FileBase, FileUploadResponse
+from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
 from app.services.app_settings import AppSettingsService
+from app.services.file_manager import FileManagerService
+from app.services.ml_model_manager import get_ml_model_manager
+from app.services.ml_models import MLModelsService
 
-import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -126,7 +127,7 @@ async def upload_pkl_file(
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         # subdir
-        sub_folder = f"ml_models"
+        sub_folder = "ml_models"
 
         # initialize the file manager service
         app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
@@ -218,7 +219,7 @@ async def validate_model_file(
     Validate a model's PKL file to check if it can be loaded safely.
     This runs validation in a subprocess to prevent segfaults from crashing the API.
     """
-    from app.core.utils.model_validator import validate_pickle_file_safe, get_model_info
+    from app.core.utils.model_validator import get_model_info
 
     # Get model from database
     ml_model = await service.get_by_id(ml_model_id)
