@@ -1,14 +1,13 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { DateRangePicker } from "@/components/date-range-picker";
-import { useState } from "react";
 import { subDays, differenceInCalendarDays } from "date-fns";
-import type { DateRange } from "react-day-picker";
+import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { KPISection } from "./Analytics";
 import { ActiveConversations } from "./ActiveConversations/pages/ActiveConversations";
 
 const Index = () => {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 30),
     to: new Date(),
   });

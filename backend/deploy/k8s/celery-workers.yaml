@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# Celery workers — two-pool split for EKS
+#
+# Why two deployments:
+#   ML libs (torch/sklearn/transformers) spawn native OpenMP/MKL threads at import.
+#   Celery's prefork pool uses fork(), which copies only the calling thread and leaves
+#   children holding mutexes locked by threads that no longer exist -> SIGSEGV. So:
+#
+#   * worker-ml      : runs the segfault-prone ML / evaluation / local-fine-tuning tasks
+#                      on the SOLO pool (never forks -> safe). Consumes the "ml" queue.
+#                      Scale throughput by raising `replicas` (each replica is a process).
+#
+#   * worker-default : runs everything else on the PREFORK pool for real in-process
+#                      concurrency. Safe because its image entrypoint (run_celery.py ->
+#                      create_celery(), no HTTP routers) plus CELERY_INCLUDE_ML_TASKS=false
+#                      keep the master process free of ML libs; prefork children may import
+#                      them lazily AFTER fork (e.g. KB ingestion), which is safe.
+#                      Consumes the "default" queue.
+#
+# Routing is configured in app/__init__.py (create_celery): task_default_queue="default",
+# task_routes pins execute_pipeline_run / execute_test_suite_run /
+# check_scheduled_pipeline_runs to the "ml" queue.
+#
+# This is a reference template — replace <IMAGE>, namespace, env/secret refs and resource
+# requests with your cluster's values. The fields that matter for the split are the
+# `command`, the CELERY_* env vars, and the `-Q` queue selector.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genassist-celery-worker-default
+  labels: { app: genassist, service: celery-worker-default }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: genassist, service: celery-worker-default }
+  template:
+    metadata:
+      labels: { app: genassist, service: celery-worker-default }
+    spec:
+      containers:
+        - name: celery-worker-default
+          image: <IMAGE>
+          command: ["python", "/src/run_celery.py", "worker", "--loglevel=info", "--pool=prefork", "-Q", "default"]
+          envFrom:
+            - secretRef: { name: genassist-env }
+          env:
+            - { name: CELERY_WORKER_POOL,        value: "prefork" }
+            - { name: CELERY_INCLUDE_ML_TASKS,   value: "false" }
+            # Keep modest: each child holds its own DB/Redis connections, and background
+            # tasks use NullPool (a fresh connection per query). Size against Postgres
+            # max_connections and Redis maxclients (concurrency x replicas x pods).
+            - { name: CELERY_WORKER_CONCURRENCY, value: "2" }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits:   { cpu: "2",    memory: "2Gi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genassist-celery-worker-ml
+  labels: { app: genassist, service: celery-worker-ml }
+spec:
+  replicas: 1   # scale ML throughput horizontally (solo = one task per process)
+  selector:
+    matchLabels: { app: genassist, service: celery-worker-ml }
+  template:
+    metadata:
+      labels: { app: genassist, service: celery-worker-ml }
+    spec:
+      containers:
+        - name: celery-worker-ml
+          image: <IMAGE>
+          command: ["python", "/src/run_celery.py", "worker", "--loglevel=info", "--pool=solo", "-Q", "ml"]
+          envFrom:
+            - secretRef: { name: genassist-env }
+          env:
+            - { name: CELERY_WORKER_POOL,      value: "solo" }
+            - { name: CELERY_INCLUDE_ML_TASKS, value: "true" }
+          resources:
+            # ML models + torch are memory-hungry; size generously.
+            requests: { cpu: "1",  memory: "2Gi" }
+            limits:   { cpu: "2",  memory: "6Gi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genassist-celery-beat
+  labels: { app: genassist, service: celery-beat }
+spec:
+  replicas: 1   # exactly one beat scheduler
+  selector:
+    matchLabels: { app: genassist, service: celery-beat }
+  template:
+    metadata:
+      labels: { app: genassist, service: celery-beat }
+    spec:
+      containers:
+        - name: celery-beat
+          image: <IMAGE>
+          # Beat only enqueues (by task name) — routing sends each task to the right
+          # queue. It runs the lean bootstrap and needs no ML libs.
+          command: ["python", "/src/run_celery.py", "beat", "--loglevel=info"]
+          envFrom:
+            - secretRef: { name: genassist-env }
+          env:
+            - { name: CELERY_INCLUDE_ML_TASKS, value: "false" }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }

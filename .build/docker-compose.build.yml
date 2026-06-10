@@ -172,16 +172,24 @@ services:
   # =========================
   # Celery Worker (owned)
   # =========================
+  # Single worker that consumes BOTH queues. Stays on the solo pool (segfault-safe with
+  # ML libs) so one container runs every task type. NOTE: ML/eval tasks are now routed to
+  # the "ml" queue (see create_celery task_routes); a worker must consume it or those
+  # tasks never run — hence -Q default,ml here. For real concurrency, split this into a
+  # prefork "default" worker + a solo "ml" worker as in docker-compose.dev.yml / the EKS
+  # manifests in backend/deploy/k8s/celery-workers.yaml.
   celery_worker:
     image: ${APP_IMAGE:-ghcr.io/${OWNER}/${REPO}/app}:${IMAGE_TAG:-prod}
     container_name: genassist_celery_worker
-    command: python /src/run_celery.py worker -l INFO
+    command: python /src/run_celery.py worker -l INFO --pool=solo -Q default,ml
     env_file:
       - ./backend/.env
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CELERY_WORKER_POOL=solo
+      - CELERY_INCLUDE_ML_TASKS=true
       - DB_HOST=db
       - DB_PORT=5432
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
