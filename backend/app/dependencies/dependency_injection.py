@@ -6,6 +6,14 @@ from injector import Module, provider, singleton
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Type annotations for different Redis clients (similar to Spring @Qualifier).
+# Defined here — before the heavy app.* service imports below — so modules pulled in
+# during those imports (e.g. workflow.agents.memory) can `from app.dependencies.
+# dependency_injection import RedisString` without hitting a partially-initialized
+# module / circular import.
+RedisString = Annotated[Redis, 'string']  # For WebSockets, conversations
+RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
+
 # Settings
 from app.core.config.settings import settings
 
@@ -89,10 +97,6 @@ from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
 
-
-# Type annotations for different Redis clients (similar to Spring @Qualifier)
-RedisString = Annotated[Redis, 'string']  # For WebSockets, conversations
-RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
 
 class Dependencies(Module):
 
