@@ -46,35 +46,82 @@ GenAssist provides a comprehensive solution for building, managing, and deployin
 - Docker and Docker Compose
 - Node.js and npm (for local development)
 - Python 3.12+ (for local development)
+- Make (optional, for convenient commands)
 
 ### Clone the Repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/RitechSolutions/genassist
 cd genassist
-
-## Docker Containers
-### Prepare .env files
-Create a ./frontend/.env environment file based on ./frontend/.env.example
-Create a ./backend/.env environment file based on ./backend/.env.example
-
-### Build containers from source
-docker compose -f docker-compose.dev.yml -p genassist_dev build app
-
-#RUN
-docker compose -f docker-compose.dev.yml -p genassist_dev up --build -d
-#STOP
-docker compose -f docker-compose.dev.yml -p genassist_dev down
 ```
 
-### Use container registry
+## Docker Setup
+
+GenAssist uses Docker Compose with a **base + override** pattern. See [docker/README.md](./docker/README.md) for detailed documentation.
+
+### 1. Setup Environment Files
+
 ```bash
-#RUN
-docker compose -f docker-compose.yml -p genassist_local_01 up -d
-#STOP
-docker compose -f docker-compose.yml -p genassist_local_01 down
+cp backend/.env.example backend/.env
+cp frontend/.env.template frontend/.env
+cp docker/.env.example docker/.env
+# Edit the .env files with your configuration
 ```
+
+### 2. Choose Your Development Approach
+
+#### Option A: Full Stack in Docker
+
+Run all services (backend, frontend, databases) in Docker containers.
+
+```bash
+# Using Make (recommended)
+make dev              # Start everything
+make dev-down         # Stop everything
+
+# Using Docker Compose (from docker/ directory)
+cd docker
+docker compose --profile full up -d --build
+docker compose --profile full down
+```
+
+#### Option B: Local Development with Docker Infrastructure
+
+Run backend/frontend locally in your IDE, with only databases in Docker.
+
+```bash
+# Using Make (recommended)
+make services         # Start infrastructure (db, redis, chroma, etc.)
+make services-down    # Stop infrastructure
+
+# Using Docker Compose (from docker/ directory)
+cd docker
+docker compose up -d db redis chroma qdrant whisper
+docker compose down
+```
+
+#### Option C: Production Deployment
+
+Use pre-built images from GitHub Container Registry.
+
+```bash
+docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.yml --profile full up -d
+```
+
+### Available Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Start full development stack |
+| `make services` | Start infrastructure only |
+| `make prod` | Start production stack |
+| `make up-db` | Start only database |
+| `make up-redis` | Start only Redis |
+| `make up-core` | Start db + redis |
+| `make logs-app` | View application logs |
+| `make shell-app` | Shell into app container |
+| `make clean` | Remove all containers |
+| `make help` | Show all commands |
 
 ## Local Development
 

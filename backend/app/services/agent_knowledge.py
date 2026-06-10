@@ -45,6 +45,7 @@ class KnowledgeBaseService:
         ]
         return PaginatedResponse.from_filter(items, total, filter_obj)
 
+
     async def get_all(self, **filters) -> List[KBRead]:
         objs = await self.repository.get_all(filters=filters or None)
         return [KBRead.model_validate(o, from_attributes=True) for o in objs]
