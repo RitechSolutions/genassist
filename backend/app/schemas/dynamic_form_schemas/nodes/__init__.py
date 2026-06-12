@@ -29,6 +29,7 @@ from .train_model_schema import TRAIN_MODEL_NODE_DIALOG_SCHEMA
 from .human_in_the_loop_schema import HUMAN_IN_THE_LOOP_NODE_DIALOG_SCHEMA
 from .tts_schema import TTS_NODE_DIALOG_SCHEMA
 from .stt_schema import STT_NODE_DIALOG_SCHEMA
+from .voice_agent_schema import VOICE_AGENT_NODE_DIALOG_SCHEMA
 
 NODE_TYPE_LABELS: Dict[str, str] = {
     "chatInputNode": "Chat Input",
@@ -60,6 +61,7 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "humanInTheLoopNode": "Human in the Loop",
     "ttsNode": "Text to Speech",
     "sttNode": "Speech to Text",
+    "voiceAgentNode": "Voice Agent",
 }
 
 NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
@@ -92,6 +94,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "humanInTheLoopNode": HUMAN_IN_THE_LOOP_NODE_DIALOG_SCHEMA,
     "ttsNode": TTS_NODE_DIALOG_SCHEMA,
     "sttNode": STT_NODE_DIALOG_SCHEMA,
+    "voiceAgentNode": VOICE_AGENT_NODE_DIALOG_SCHEMA,
 }
 
 
@@ -231,5 +234,11 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   "sttNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "audio" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "text" }
+  ],
+
+  "voiceAgentNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "input_tools", "type": "target", "position": "bottom", "compatibility": "tools" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ]
 }

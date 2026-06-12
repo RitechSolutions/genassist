@@ -216,6 +216,20 @@ export interface BaseLLMNodeData extends BaseNodeData {
 export interface AgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "Chain-of-Thought" | "ReActAgentLC";
 }
+// Voice Agent Node Data (native speech-to-speech via Gemini Live API)
+export interface VoiceAgentNodeData extends BaseNodeData {
+  voiceProviderId?: string;
+  model?: string;
+  voice?: string;
+  language?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+  maxToolCalls?: number;
+  memory: boolean;
+  piiMasking?: boolean;
+  memoryTrimmingMode?: "message_count" | "rag_retrieval";
+  maxMessages?: number;
+}
 export interface LLMModelNodeData extends BaseLLMNodeData {
   type: "Base" | "Chain-of-Thought";
 }
@@ -504,7 +518,8 @@ export type NodeData =
   | FileReaderNodeData
   | ExternalAgentNodeData
   | TTSNodeData
-  | STTNodeData;
+  | STTNodeData
+  | VoiceAgentNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

@@ -59,8 +59,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   > | null>(null);
 
   const {
-    isSTTNode, isRecording, audioFileName, fileInputRef,
-    getSTTAudioKey, handleAudioFileUpload, startRecording, stopRecording,
+    isSTTNode, isAudioInputNode, isRecording, audioFileName, fileInputRef,
+    getAudioKey, handleAudioFileUpload, startRecording, stopRecording,
   } = useAudioTest({ nodeType, nodeData, setFormData, setError });
 
   const { updateNodeOutput, getAvailableDataForNode, getNodeOutput } =
@@ -290,9 +290,9 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       // Parse input values based on their schema types
       const parsedData: Record<string, unknown> = {};
 
-      // For STT nodes, pass structured audio dict
-      if (isSTTNode) {
-        const key = getSTTAudioKey();
+      // For audio-input nodes (STT, Voice Agent), pass a structured audio dict
+      if (isAudioInputNode) {
+        const key = getAudioKey();
         const audioData = formData[key];
         if (audioData) {
           try {
@@ -418,7 +418,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
           <div className="flex flex-col space-y-4 min-w-0 w-full">
-            {isSTTNode && (
+            {isAudioInputNode && (
               <STTAudioInput
                 isLoading={isLoading}
                 isRecording={isRecording}
@@ -464,7 +464,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
             onClick={handleRun}
             disabled={
               isLoading ||
-              (isSTTNode ? !formData[getSTTAudioKey()] : inputFields.some((field) => field.required && !formData[field.id]))
+              (isSTTNode ? !formData[getAudioKey()] : inputFields.some((field) => field.required && !formData[field.id]))
             }
           >
             <Play className="h-4 w-4 mr-2" />

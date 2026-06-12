@@ -48,6 +48,7 @@ from app.modules.workflow.engine.nodes import (
     TTSNode,
     TrainModelNode,
     TrainPreprocessNode,
+    VoiceAgentNode,
     WhatsAppToolNode,
     WorkflowExecutorNode,
     ZendeskToolNode,
@@ -56,6 +57,19 @@ from app.modules.workflow.engine.workflow_state import WorkflowPausedException, 
 from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_output_for_memory(output: Any) -> Any:
+    """Strip nested audio payloads (base64 blobs) from an output before it is
+    persisted to conversation memory. A bare audio dict (e.g. a TTS node's
+    output, where the dict itself IS the audio) is kept as-is."""
+    if (
+        isinstance(output, dict)
+        and isinstance(output.get("audio"), dict)
+        and output["audio"].get("type") == "audio"
+    ):
+        return {k: v for k, v in output.items() if k != "audio"}
+    return output
 
 
 class WorkflowEngine:
@@ -116,6 +130,7 @@ class WorkflowEngine:
         cls._node_registry["fileReaderNode"] = FileReaderNode
         cls._node_registry["ttsNode"] = TTSNode
         cls._node_registry["sttNode"] = STTNode
+        cls._node_registry["voiceAgentNode"] = VoiceAgentNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -295,7 +310,7 @@ class WorkflowEngine:
                 asyncio.create_task(
                     state.get_memory().add_input_output(
                         initial_values.get("message", ""),
-                        state.output
+                        _sanitize_output_for_memory(state.output)
                     )
                 )
         except Exception as e:
