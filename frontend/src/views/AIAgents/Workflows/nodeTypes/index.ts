@@ -36,7 +36,9 @@ import {
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
+  VOICE_AGENT_NODE_DEFINITION,
 } from "./llm/definitions";
+import VoiceAgentNode from "./llm/voiceAgentNode";
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
@@ -114,6 +116,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(VOICE_AGENT_NODE_DEFINITION);
   nodeRegistry.registerNodeType(EXTERNAL_AGENT_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
@@ -158,6 +161,7 @@ export const getNodeTypes = () => {
     apiToolNode: APIToolNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
+    voiceAgentNode: VoiceAgentNode,
     externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
     sqlNode: SQLNode,
