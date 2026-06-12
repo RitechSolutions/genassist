@@ -7993,7 +7993,7 @@
         ],
         "parameters": [
           {
-            "name": "X-Tenant-ID",
+            "name": "x-tenant-id",
             "in": "header",
             "required": false,
             "schema": {

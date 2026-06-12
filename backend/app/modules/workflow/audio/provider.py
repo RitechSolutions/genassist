@@ -14,7 +14,8 @@ from app.services.audio_providers import ENCRYPTED_FIELDS
 logger = logging.getLogger(__name__)
 
 
-async def _load_connection_data(provider_id: UUID) -> tuple[str, Dict[str, Any]]:
+async def load_connection_data(provider_id: UUID) -> tuple[str, Dict[str, Any]]:
+    """Load an audio provider's type and decrypted connection data by id."""
     from app.dependencies.injector import injector
     from app.services.audio_providers import AudioProviderService
 
@@ -28,7 +29,7 @@ async def _load_connection_data(provider_id: UUID) -> tuple[str, Dict[str, Any]]
 
 
 async def get_tts_provider(provider_id: UUID) -> BaseTTSProvider:
-    provider_type, connection_data = await _load_connection_data(provider_id)
+    provider_type, connection_data = await load_connection_data(provider_id)
     registry = get_tts_registry()
     cls = registry.get(provider_type)
     if not cls:
@@ -37,7 +38,7 @@ async def get_tts_provider(provider_id: UUID) -> BaseTTSProvider:
 
 
 async def get_stt_provider(provider_id: UUID) -> BaseSTTProvider:
-    provider_type, connection_data = await _load_connection_data(provider_id)
+    provider_type, connection_data = await load_connection_data(provider_id)
     registry = get_stt_registry()
     cls = registry.get(provider_type)
     if not cls:

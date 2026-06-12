@@ -3,7 +3,7 @@ import base64
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from app.api.v1.routes.agents import run_query_agent_logic
@@ -81,7 +81,7 @@ def _extract_spoken_text(agent_response: dict) -> str:
         # First pass: look for LLM / agent node outputs (most reliable)
         for node_id, status in node_status.items():
             node_type = status.get("type", "")
-            if node_type in ("llmModelNode", "agentNode"):
+            if node_type in ("llmModelNode", "agentNode", "voiceAgentNode"):
                 output = status.get("output")
                 if isinstance(output, dict):
                     text = output.get("message", "") or output.get("response", "")
@@ -106,6 +106,21 @@ def _extract_spoken_text(agent_response: dict) -> str:
     except Exception as exc:
         logger.warning("_extract_spoken_text failed: %s", exc)
     return ""
+
+
+def _build_agent_segment(
+    now: datetime, elapsed_seconds: float, text: str, **extra: Any
+) -> TranscriptSegmentInput:
+    """Build an agent-authored transcript segment with shared id/timing fields."""
+    return TranscriptSegmentInput(
+        id=generate_sequential_uuid(),
+        create_time=now,
+        start_time=elapsed_seconds,
+        end_time=elapsed_seconds,
+        speaker="agent",
+        text=text,
+        **extra,
+    )
 
 
 async def process_conversation_update_with_agent(
@@ -192,44 +207,40 @@ async def process_conversation_update_with_agent(
             # Workflow requesting user input — send form schema as form_request
             response_output = agent_response.get("response", {})
             form_schema = response_output.get("form_schema", {}) if isinstance(response_output, dict) else {}
-            transcript_object = TranscriptSegmentInput(
-                id=generate_sequential_uuid(),
-                create_time=now,
-                start_time=elapsed_seconds,
-                end_time=elapsed_seconds,
-                speaker="agent",
-                text=json.dumps(form_schema),
-                type="form_request",
+            transcript_object = _build_agent_segment(
+                now, elapsed_seconds, json.dumps(form_schema), type="form_request"
             )
         else:
             agent_answer = agent_response.get("response", "No answer found")
 
-            if isinstance(agent_answer, dict) and agent_answer.get("type") == "audio":
-                # Audio response from TTS workflow
-                audio_b64 = agent_answer.get("data", "")
-                audio_fmt = agent_answer.get("format", "mp3")
-                spoken_text = _extract_spoken_text(agent_response)
-                transcript_object = TranscriptSegmentInput(
-                    id=generate_sequential_uuid(),
-                    create_time=now,
-                    start_time=elapsed_seconds,
-                    end_time=elapsed_seconds,
-                    speaker="agent",
-                    text=spoken_text or "[Audio response]",
+            if (
+                isinstance(agent_answer, dict)
+                and isinstance(agent_answer.get("audio"), dict)
+                and agent_answer["audio"].get("type") == "audio"
+            ):
+                # Voice agent response: text reply + nested audio payload
+                audio = agent_answer["audio"]
+                transcript_object = _build_agent_segment(
+                    now,
+                    elapsed_seconds,
+                    str(agent_answer.get("message") or "[Audio response]"),
                     type="audio",
-                    audio_data=base64.b64decode(audio_b64),
-                    audio_format=audio_fmt,
+                    audio_data=base64.b64decode(audio.get("data", "")),
+                    audio_format=audio.get("format", "wav"),
+                )
+            elif isinstance(agent_answer, dict) and agent_answer.get("type") == "audio":
+                # Audio response from TTS workflow
+                transcript_object = _build_agent_segment(
+                    now,
+                    elapsed_seconds,
+                    _extract_spoken_text(agent_response) or "[Audio response]",
+                    type="audio",
+                    audio_data=base64.b64decode(agent_answer.get("data", "")),
+                    audio_format=agent_answer.get("format", "mp3"),
                 )
             else:
                 # Normal text response
-                transcript_object = TranscriptSegmentInput(
-                    id=generate_sequential_uuid(),
-                    create_time=now,
-                    start_time=elapsed_seconds,
-                    end_time=elapsed_seconds,
-                    speaker="agent",
-                    text=str(agent_answer),
-                )
+                transcript_object = _build_agent_segment(now, elapsed_seconds, str(agent_answer))
 
         model.messages.append(transcript_object)
 
