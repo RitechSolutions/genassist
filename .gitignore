@@ -2,6 +2,9 @@
 .DS_Store
 frontend/.claude/skills/ui-skills/SKILL.md
 
+# Claude local config & templates
+.claude/
+
 # Python
 **/__pycache__/
 
