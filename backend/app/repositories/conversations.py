@@ -13,7 +13,7 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
-from app.db.events.group_scope import get_group_scope_clause
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.conversation import ConversationModel
 from starlette_context import context
 from starlette_context.errors import ContextDoesNotExistError
@@ -47,7 +47,21 @@ class ConversationRepository:
         self.db = db
 
     async def resolve_group_id_for_operator(self, operator_id: UUID) -> Optional[UUID]:
-        """User group of the agent owner (``AgentModel.created_by``), if any."""
+        """User group for an agent's operator (console user), else agent creator's group."""
+        from app.db.models.operator import OperatorModel
+
+        stmt = (
+            select(UserModel.group_id)
+            .select_from(OperatorModel)
+            .join(UserModel, UserModel.id == OperatorModel.user_id)
+            .where(OperatorModel.id == operator_id)
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        operator_group = result.scalar_one_or_none()
+        if operator_group is not None:
+            return operator_group
+
         stmt = (
             select(UserModel.group_id)
             .select_from(AgentModel)
@@ -88,6 +102,11 @@ class ConversationRepository:
                     TranscriptMessageModel.feedback
                 )
             )
+
+        # Point lookup by primary key: group-scope row filtering is meant for
+        # list/analytics queries, not for operating on a specific known
+        # conversation (already gated by conversation-scoped auth/permissions).
+        query = query.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
 
         result = await self.db.execute(query)
         return result.scalars().first()
@@ -142,6 +161,10 @@ class ConversationRepository:
                     TranscriptMessageModel.feedback
                 )
             )
+
+        # Point lookup by primary key: bypass group-scope row filtering (see
+        # fetch_conversation_by_id).
+        query = query.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
 
         result = await self.db.execute(query)
         return result.scalars().first()
@@ -620,6 +643,9 @@ class ConversationRepository:
                 .joinedload(OperatorModel.agent)
                 .joinedload(AgentModel.security_settings)
             )
+            # Point lookup used for auth/agent resolution: bypass group-scope row
+            # filtering so it also skips the joined AgentModel loader criteria.
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         )
         result = await self.db.execute(query)
         return result.unique().scalars().first()

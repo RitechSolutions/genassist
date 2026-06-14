@@ -1796,7 +1796,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeyCreateRead"
                 }
               }
             }
@@ -1963,7 +1963,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ApiKeyRead"
+                    "$ref": "#/components/schemas/ApiKeySafeRead"
                   },
                   "title": "Response Get All Api Api Keys Get"
                 }
@@ -2017,7 +2017,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeySafeRead"
                 }
               }
             }
@@ -2125,7 +2125,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeySafeRead"
                 }
               }
             }
@@ -2188,7 +2188,59 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyRead"
+                  "$ref": "#/components/schemas/ApiKeyCreateRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/{api_key_id}/reveal": {
+      "post": {
+        "tags": [
+          "v1",
+          "ApiKeys"
+        ],
+        "summary": "Reveal Api Key",
+        "operationId": "reveal_api_key_api_api_keys__api_key_id__reveal_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Api Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreateRead"
                 }
               }
             }
@@ -4312,7 +4364,7 @@
           "Dashboard"
         ],
         "summary": "Get notification feed",
-        "description": "Returns recent notification candidates from real backend events.",
+        "description": "Returns recent notifications for the authenticated user.",
         "operationId": "get_notifications_api_dashboard_notifications_get",
         "security": [
           {
@@ -4360,14 +4412,34 @@
                 "all",
                 "conversation_started",
                 "conversation_hostility",
-                "conversation_finalized_hostility"
+                "conversation_finalized_hostility",
+                "workflow_failed"
               ],
               "type": "string",
-              "description": "Server-side type filter for notification categories.",
+              "description": "Server-side type filter for persisted notification categories.",
               "default": "all",
               "title": "Notification Type"
             },
-            "description": "Server-side type filter for notification categories."
+            "description": "Server-side type filter for persisted notification categories."
+          },
+          {
+            "name": "notification_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "info",
+                "success",
+                "warning",
+                "error"
+              ],
+              "type": "string",
+              "description": "Server-side severity filter for persisted notifications.",
+              "default": "all",
+              "title": "Notification Level"
+            },
+            "description": "Server-side severity filter for persisted notifications."
           },
           {
             "name": "include_conversation_started",
@@ -13257,6 +13329,23 @@
             }
           },
           {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
             "name": "from_date",
             "in": "query",
             "required": false,
@@ -13347,6 +13436,23 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
             }
           },
           {
@@ -13461,6 +13567,23 @@
             }
           },
           {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
             "name": "from_date",
             "in": "query",
             "required": false,
@@ -13549,6 +13672,23 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
             }
           },
           {
@@ -13668,6 +13808,23 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
             }
           },
           {
@@ -13898,6 +14055,23 @@
             }
           },
           {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
             "name": "compare",
             "in": "query",
             "required": false,
@@ -13997,6 +14171,23 @@
               ],
               "title": "Agent Id"
             }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
           }
         ],
         "responses": {
@@ -14053,6 +14244,23 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
             }
           }
         ],
@@ -14130,6 +14338,23 @@
             }
           },
           {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
             "name": "from_date",
             "in": "query",
             "required": false,
@@ -14176,6 +14401,62 @@
                     "additionalProperties": true
                   },
                   "title": "Response Get Custom Attribute Breakdown Api Analytics Custom Attributes Breakdown Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/groups/{group_id}/agents": {
+      "get": {
+        "tags": [
+          "v1",
+          "Analytics"
+        ],
+        "summary": "List agents owned by users in a group",
+        "operationId": "get_group_agents_api_analytics_groups__group_id__agents_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupAgentItem"
+                  },
+                  "title": "Response Get Group Agents Api Analytics Groups  Group Id  Agents Get"
                 }
               }
             }
@@ -18910,6 +19191,716 @@
         ]
       }
     },
+    "/api/local-fine-tuning/supported-models": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Supported Models",
+        "operationId": "list_supported_models_api_local_fine_tuning_supported_models_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneSupportedModel"
+                  },
+                  "title": "Response List Supported Models Api Local Fine Tuning Supported Models Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/system/gpus": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List System Gpus",
+        "operationId": "list_system_gpus_api_local_fine_tuning_system_gpus_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemGpusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/local-fine-tuning/jobs": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_local_fine_tuning_jobs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneJob"
+                  },
+                  "type": "array",
+                  "title": "Response List Jobs Api Local Fine Tuning Jobs Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Create Job",
+        "operationId": "create_job_api_local_fine_tuning_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocalFineTuneJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Get Job",
+        "operationId": "get_job_api_local_fine_tuning_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}/events": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Job Events",
+        "operationId": "list_job_events_api_local_fine_tuning_jobs__job_id__events_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneJobEvent"
+                  },
+                  "title": "Response List Job Events Api Local Fine Tuning Jobs  Job Id  Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Cancel Job",
+        "operationId": "cancel_job_api_local_fine_tuning_jobs__job_id__cancel_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/jobs/{job_id}/files": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Delete Job Files",
+        "operationId": "delete_job_files_api_local_fine_tuning_jobs__job_id__files_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "delete_data_files",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Delete Data Files"
+            }
+          },
+          {
+            "name": "delete_checkpoints",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Delete Checkpoints"
+            }
+          },
+          {
+            "name": "delete_model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Delete Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteJobFilesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/deployments": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "List Deployments",
+        "operationId": "list_deployments_api_local_fine_tuning_deployments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocalFineTuneDeployment"
+                  },
+                  "type": "array",
+                  "title": "Response List Deployments Api Local Fine Tuning Deployments Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Create Deployment",
+        "operationId": "create_deployment_api_local_fine_tuning_deployments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneDeployment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/local-fine-tuning/deployments/{deployment_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Get Deployment",
+        "operationId": "get_deployment_api_local_fine_tuning_deployments__deployment_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneDeployment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Stop Deployment",
+        "operationId": "stop_deployment_api_local_fine_tuning_deployments__deployment_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentStopResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/deployments/{deployment_id}/health": {
+      "get": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Deployment Health",
+        "operationId": "deployment_health_api_local_fine_tuning_deployments__deployment_id__health_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalFineTuneDeploymentHealth"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-fine-tuning/deployments/{deployment_id}/test-inference": {
+      "post": {
+        "tags": [
+          "v1",
+          "Local Fine-Tuning"
+        ],
+        "summary": "Test Inference",
+        "operationId": "test_inference_api_local_fine_tuning_deployments__deployment_id__test_inference_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestInferenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestInferenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/azure-blob-storage/list": {
       "post": {
         "tags": [
@@ -20220,6 +21211,86 @@
         }
       }
     },
+    "/api/notifications/state/counters": {
+      "get": {
+        "tags": [
+          "v1",
+          "Notifications"
+        ],
+        "summary": "Get Notification Counters",
+        "operationId": "get_notification_counters_api_notifications_state_counters_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationCountersResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/notifications/state/read": {
+      "patch": {
+        "tags": [
+          "v1",
+          "Notifications"
+        ],
+        "summary": "Patch Notification Read State",
+        "operationId": "patch_notification_read_state_api_notifications_state_read_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationStateUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationStateUpdateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/customers": {
       "post": {
         "tags": [
@@ -20783,11 +21854,15 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "maxLength": 100,
+            "title": "Name",
+            "description": "Agent name. Limited to 100 characters."
           },
           "description": {
             "type": "string",
-            "title": "Description"
+            "maxLength": 200,
+            "title": "Description",
+            "description": "Agent description. Limited to 200 characters."
           },
           "is_active": {
             "type": "boolean",
@@ -21157,11 +22232,15 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "maxLength": 100,
+            "title": "Name",
+            "description": "Agent name. Limited to 100 characters."
           },
           "description": {
             "type": "string",
-            "title": "Description"
+            "maxLength": 200,
+            "title": "Description",
+            "description": "Agent description. Limited to 200 characters."
           },
           "is_active": {
             "type": "boolean",
@@ -21870,7 +22949,8 @@
           "name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 100
               },
               {
                 "type": "null"
@@ -21881,7 +22961,8 @@
           "description": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 200
               },
               {
                 "type": "null"
@@ -22143,7 +23224,7 @@
         ],
         "title": "ApiKeyCreate"
       },
-      "ApiKeyRead": {
+      "ApiKeyCreateRead": {
         "properties": {
           "name": {
             "type": "string",
@@ -22206,9 +23287,137 @@
             "title": "Roles",
             "default": []
           },
+          "previous_hashed_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Hashed Expires At",
+            "description": "When set, the prior secret is accepted for API auth until this time (UTC)."
+          },
+          "credential_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expires At",
+            "description": "When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC)."
+          },
+          "credential_expiry_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expiry Days",
+            "description": "Stored expiry selection in days (30/90/180/365). Null means Never."
+          },
           "key_val": {
             "type": "string",
             "title": "Key Val"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "created_at",
+          "updated_at",
+          "user_id",
+          "key_val"
+        ],
+        "title": "ApiKeyCreateRead"
+      },
+      "ApiKeyRotate": {
+        "properties": {
+          "overlap_seconds": {
+            "type": "integer",
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Overlap Seconds",
+            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyRotate",
+        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
+      },
+      "ApiKeySafeRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 4,
+            "title": "Name",
+            "description": "API key name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Is the key active (0/1)",
+            "default": 1
+          },
+          "assigned_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Id",
+            "description": "User id to assign this api key to an AI agent."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRead"
+            },
+            "type": "array",
+            "title": "Roles",
+            "default": []
           },
           "previous_hashed_expires_at": {
             "anyOf": [
@@ -22255,25 +23464,9 @@
           "id",
           "created_at",
           "updated_at",
-          "user_id",
-          "key_val"
+          "user_id"
         ],
-        "title": "ApiKeyRead"
-      },
-      "ApiKeyRotate": {
-        "properties": {
-          "overlap_seconds": {
-            "type": "integer",
-            "maximum": 604800.0,
-            "minimum": 0.0,
-            "title": "Overlap Seconds",
-            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
-            "default": 0
-          }
-        },
-        "type": "object",
-        "title": "ApiKeyRotate",
-        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
+        "title": "ApiKeySafeRead"
       },
       "ApiKeyUpdate": {
         "properties": {
@@ -24765,6 +25958,79 @@
         ],
         "title": "ConversationTranscriptCreate"
       },
+      "CreateDeploymentRequest": {
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "title": "Deployment Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "gpu_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Id"
+          },
+          "tensor_parallel_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tensor Parallel Size"
+          },
+          "max_model_len": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Model Len"
+          },
+          "gpu_memory_utilization": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Memory Utilization"
+          },
+          "dtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deployment_id",
+          "job_id"
+        ],
+        "title": "CreateDeploymentRequest"
+      },
       "CreateFineTuningJobRequest": {
         "properties": {
           "training_file": {
@@ -24829,6 +26095,86 @@
           "model": "gpt-4.1-nano-2025-04-14",
           "training_file": "file-RCnFCYRhFDcq1aHxiYkBHw"
         }
+      },
+      "CreateLocalFineTuneJobRequest": {
+        "properties": {
+          "training_file": {
+            "type": "string",
+            "title": "Training File"
+          },
+          "file_token": {
+            "type": "string",
+            "title": "File Token"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suffix"
+          },
+          "tool_training_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Training Mode"
+          },
+          "remote_files": {
+            "type": "boolean",
+            "title": "Remote Files"
+          },
+          "cleanup_files": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup Files"
+          },
+          "hyperparameters": {
+            "$ref": "#/components/schemas/LocalFineTuneHyperparameters"
+          },
+          "gpu_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "training_file",
+          "file_token",
+          "model_id",
+          "remote_files",
+          "hyperparameters"
+        ],
+        "title": "CreateLocalFineTuneJobRequest",
+        "description": "Request body for creating a local fine-tuning job. The backend injects `origin`."
       },
       "CustomerCreate": {
         "properties": {
@@ -25344,6 +26690,80 @@
         },
         "type": "object",
         "title": "DataSourceUpdate"
+      },
+      "DeleteJobFilesResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deleted_items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deleted Items"
+          },
+          "bytes_freed": {
+            "type": "integer",
+            "title": "Bytes Freed"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "bytes_freed",
+          "message"
+        ],
+        "title": "DeleteJobFilesResponse"
+      },
+      "DeploymentStopResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "message"
+        ],
+        "title": "DeploymentStopResponse"
       },
       "DiscoverToolsRequest": {
         "properties": {
@@ -26403,6 +27823,64 @@
         "type": "object",
         "title": "GoldSuiteLinkRequest",
         "description": "Link an existing suite or create a new one."
+      },
+      "GpuInfo": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_memory_gb": {
+            "type": "number",
+            "title": "Total Memory Gb"
+          },
+          "free_memory_gb": {
+            "type": "number",
+            "title": "Free Memory Gb"
+          },
+          "used_memory_gb": {
+            "type": "number",
+            "title": "Used Memory Gb"
+          },
+          "compute_capability": {
+            "type": "string",
+            "title": "Compute Capability"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_memory_gb",
+          "free_memory_gb",
+          "used_memory_gb",
+          "compute_capability"
+        ],
+        "title": "GpuInfo"
+      },
+      "GroupAgentItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "GroupAgentItem"
       },
       "HTTPValidationError": {
         "properties": {
@@ -28615,6 +30093,481 @@
         "type": "object",
         "title": "LlmProviderUpdate"
       },
+      "LocalFineTuneDeployment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "model_path": {
+            "type": "string",
+            "title": "Model Path"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "gpu_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Id"
+          },
+          "api_url": {
+            "type": "string",
+            "title": "Api Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "process_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Id"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "max_model_len": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Model Len"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "model_path",
+          "port",
+          "api_url"
+        ],
+        "title": "LocalFineTuneDeployment"
+      },
+      "LocalFineTuneDeploymentHealth": {
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "title": "Deployment Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "api_url": {
+            "type": "string",
+            "title": "Api Url"
+          },
+          "details": {
+            "type": "string",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "deployment_id",
+          "status",
+          "api_url",
+          "details"
+        ],
+        "title": "LocalFineTuneDeploymentHealth"
+      },
+      "LocalFineTuneHyperparameters": {
+        "properties": {
+          "num_train_epochs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Train Epochs"
+          },
+          "per_device_train_batch_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Device Train Batch Size"
+          },
+          "gradient_accumulation_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Accumulation Steps"
+          },
+          "learning_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Rate"
+          },
+          "lora_r": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora R"
+          },
+          "lora_alpha": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Alpha"
+          },
+          "max_seq_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Seq Length"
+          },
+          "logging_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logging Steps"
+          },
+          "save_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Save Steps"
+          },
+          "eval_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eval Steps"
+          },
+          "warmup_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmup Steps"
+          },
+          "fp16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fp16"
+          },
+          "bf16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bf16"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "LocalFineTuneHyperparameters"
+      },
+      "LocalFineTuneJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "training_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training File"
+          },
+          "validation_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation File"
+          },
+          "hyperparameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hyperparameters"
+          },
+          "suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suffix"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "fine_tuned_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fine Tuned Model"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalFineTuneJobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "LocalFineTuneJob"
+      },
+      "LocalFineTuneJobError": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "LocalFineTuneJobError"
+      },
+      "LocalFineTuneJobEvent": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "job_id",
+          "level",
+          "message",
+          "timestamp"
+        ],
+        "title": "LocalFineTuneJobEvent"
+      },
+      "LocalFineTuneSupportedModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LocalFineTuneSupportedModel"
+      },
       "MCPServerCreate": {
         "properties": {
           "name": {
@@ -30186,6 +32139,19 @@
         ],
         "title": "NotificationAdminTargetingRead"
       },
+      "NotificationCountersResponse": {
+        "properties": {
+          "unread_count": {
+            "type": "integer",
+            "title": "Unread Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unread_count"
+        ],
+        "title": "NotificationCountersResponse"
+      },
       "NotificationFeedResponse": {
         "properties": {
           "items": {
@@ -30199,6 +32165,11 @@
             "type": "boolean",
             "title": "Has More",
             "default": false
+          },
+          "unread_count": {
+            "type": "integer",
+            "title": "Unread Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -30212,6 +32183,28 @@
           "id": {
             "type": "string",
             "title": "Id"
+          },
+          "notification_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Id"
+          },
+          "type_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Key"
           },
           "title": {
             "type": "string",
@@ -30244,6 +32237,11 @@
               }
             ],
             "title": "Group Id"
+          },
+          "is_read": {
+            "type": "boolean",
+            "title": "Is Read",
+            "default": false
           }
         },
         "type": "object",
@@ -30256,6 +32254,44 @@
           "action_url"
         ],
         "title": "NotificationItem"
+      },
+      "NotificationStateUpdate": {
+        "properties": {
+          "notification_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Notification Ids"
+          },
+          "is_read": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Read"
+          }
+        },
+        "type": "object",
+        "title": "NotificationStateUpdate"
+      },
+      "NotificationStateUpdateResponse": {
+        "properties": {
+          "updated_count": {
+            "type": "integer",
+            "title": "Updated Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_count"
+        ],
+        "title": "NotificationStateUpdateResponse"
       },
       "NotificationTypeTargetingRead": {
         "properties": {
@@ -32062,6 +34098,27 @@
         ],
         "title": "SortField"
       },
+      "SystemGpusResponse": {
+        "properties": {
+          "cuda_available": {
+            "type": "boolean",
+            "title": "Cuda Available"
+          },
+          "gpus": {
+            "items": {
+              "$ref": "#/components/schemas/GpuInfo"
+            },
+            "type": "array",
+            "title": "Gpus"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "cuda_available"
+        ],
+        "title": "SystemGpusResponse"
+      },
       "TenantCreate": {
         "properties": {
           "name": {
@@ -32702,6 +34759,32 @@
         },
         "type": "object",
         "title": "TestEvaluationUpdate"
+      },
+      "TestInferenceRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "TestInferenceRequest"
+      },
+      "TestInferenceResponse": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "TestInferenceResponse"
       },
       "TestResult": {
         "properties": {
@@ -33535,6 +35618,7 @@
               "format": "uuid"
             },
             "type": "array",
+            "minItems": 1,
             "title": "Role Ids",
             "description": "Roles IDs"
           },
@@ -33983,7 +36067,8 @@
                   "type": "string",
                   "format": "uuid"
                 },
-                "type": "array"
+                "type": "array",
+                "minItems": 1
               },
               {
                 "type": "null"
@@ -34100,6 +36185,17 @@
             "type": "string",
             "title": "Tenant Id",
             "default": "master"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           }
         },
         "type": "object",

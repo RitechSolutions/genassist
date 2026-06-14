@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urlparse
 import copy
 import httpx
 from injector import inject
-from langchain.chat_models import init_chat_model
-from langchain_core.language_models import BaseChatModel
+if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
+    from langchain_core.language_models import BaseChatModel
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
@@ -53,6 +55,10 @@ async def build_chat_model(
         **cd,
         "model": model_name,
     }
+
+    # Imported here, not at module top level: langchain.chat_models transitively pulls
+    # torch/transformers, which must not be loaded into a Celery prefork master process.
+    from langchain.chat_models import init_chat_model
 
     return init_chat_model(**model_kwargs)
 

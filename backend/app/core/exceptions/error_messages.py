@@ -2,7 +2,6 @@ import logging
 from enum import Enum
 
 from fastapi import Request
-from torch.fx.immutable_collections import immutable_list
 
 from app.core.config.settings import settings
 
@@ -28,6 +27,7 @@ class ErrorKey(Enum):
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     USER_NOT_FOUND = "USER_NOT_FOUND"
     USER_CANNOT_DELETE_SELF = "USER_CANNOT_DELETE_SELF"
+    USER_ROLES_REQUIRED = "USER_ROLES_REQUIRED"
     TRANSCRIPT_PARSE_ERROR = "TRANSCRIPT_PARSE_ERROR"
     INVALID_USERNAME_OR_PASSWORD = "INVALID_USERNAME_OR_PASSWORD"
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
@@ -174,6 +174,7 @@ ERROR_MESSAGES = {
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
         ErrorKey.USER_CANNOT_DELETE_SELF: "You cannot delete your own account.",
+        ErrorKey.USER_ROLES_REQUIRED: "At least one role is required.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
         ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
@@ -315,12 +316,14 @@ ERROR_MESSAGES = {
 
 
 def get_error_message(
-    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = immutable_list()
+    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = None
 ):
     """
     Retrieves an error message dynamically based on the user's language preference.
     Falls back to DEFAULT_LANGUAGE if no valid language is found.
     """
+    error_variables = error_variables or []
+
     # Ensure error_key is a valid Enum
     if not isinstance(error_key, ErrorKey):
         raise ValueError(f"Invalid error key: {error_key}")

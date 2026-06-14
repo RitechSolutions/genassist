@@ -2,7 +2,6 @@
 Celery tasks for test suite run execution.
 """
 
-import asyncio
 import logging
 from typing import Any, Dict
 from uuid import UUID
@@ -10,7 +9,7 @@ from uuid import UUID
 from celery import shared_task
 
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
-from app.tasks.base import create_task_wrapper
+from app.tasks.base import create_task_wrapper, run_async_in_celery
 from app.core.tenant_scope import get_tenant_context
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
@@ -54,6 +53,9 @@ async def _execute_test_suite_run_async(
                 description=f"Test run {str(run_id)[:8]}... failed.",
                 level="error",
                 action_url="/tests/evaluations",
+                entity_kind="test_run",
+                entity_id=run_id,
+                event_key=f"workflow_failed:test:{run_id}",
             ),
         )
         return
@@ -88,11 +90,6 @@ def execute_test_suite_run_task(
     logger.info("Starting test suite run execution: %s (tenant: %s)", run_id, tenant_id)
     set_tenant_context(tenant_id)
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
         async def _run():
             async def task(**kwargs):
                 await _execute_test_suite_run_async(
@@ -108,7 +105,11 @@ def execute_test_suite_run_task(
                 technique_configs=technique_configs,
             )
 
-        loop.run_until_complete(_run())
+        run_async_in_celery(
+            _run(),
+            timeout=2 * 60 * 60,
+            task_name=f"execute_test_suite_run_task[{run_id}]",
+        )
     except Exception as exc:
         logger.error("Error in test suite run task %s: %s", run_id, exc, exc_info=True)
         raise

@@ -137,6 +137,9 @@ class UserService:
         return full
 
     async def update(self, user_id: UUID, user_data: UserUpdate):
+        if user_data.role_ids is not None and len(user_data.role_ids) == 0:
+            raise AppException(error_key=ErrorKey.USER_ROLES_REQUIRED, status_code=400)
+
         if user_data.email is not None:
             existing = await self.repository.get_by_email(
                 user_data.email, include_deleted=True

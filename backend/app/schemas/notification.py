@@ -6,17 +6,21 @@ from pydantic import BaseModel, Field
 
 class NotificationItem(BaseModel):
     id: str
+    notification_id: str | None = None
+    type_key: str | None = None
     title: str
     description: str
     timestamp: datetime
     type: str
     action_url: str
     group_id: str | None = None
+    is_read: bool = False
 
 
 class NotificationFeedResponse(BaseModel):
     items: list[NotificationItem]
     has_more: bool = False
+    unread_count: int = 0
 
 
 class NotificationUserSettingsRead(BaseModel):
@@ -51,3 +55,16 @@ class NotificationTypeTargetingUpdate(BaseModel):
     allow_all_tenant_users: bool
     user_ids: list[UUID] = Field(default_factory=list)
     group_ids: list[UUID] = Field(default_factory=list)
+
+
+class NotificationStateUpdate(BaseModel):
+    notification_ids: list[UUID] = Field(default_factory=list)
+    is_read: bool | None = None
+
+
+class NotificationStateUpdateResponse(BaseModel):
+    updated_count: int
+
+
+class NotificationCountersResponse(BaseModel):
+    unread_count: int

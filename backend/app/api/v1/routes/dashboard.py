@@ -179,7 +179,7 @@ async def get_integrations(
         Depends(permissions(P.Dashboard.READ)),
     ],
     summary="Get notification feed",
-    description="Returns recent notification candidates from real backend events.",
+    description="Returns recent notifications for the authenticated user.",
 )
 async def get_notifications(
     request: Request,
@@ -190,9 +190,14 @@ async def get_notifications(
         "conversation_started",
         "conversation_hostility",
         "conversation_finalized_hostility",
+        "workflow_failed",
     ] = Query(
         default="all",
-        description="Server-side type filter for notification categories.",
+        description="Server-side type filter for persisted notification categories.",
+    ),
+    notification_level: Literal["all", "info", "success", "warning", "error"] = Query(
+        default="all",
+        description="Server-side severity filter for persisted notifications.",
     ),
     include_conversation_started: bool = Query(
         default=True,
@@ -215,12 +220,8 @@ async def get_notifications(
     if not hasattr(request.state, "user") or not request.state.user:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
     user = request.state.user
-    gid = getattr(user, "group_id", None)
-    supervised = list(getattr(user, "supervised_group_ids", None) or [])
-    items, has_more = await notification_feed_service.get_feed(
+    items, has_more, unread_count = await notification_feed_service.get_feed(
         user_id=user.id,
-        user_group_id=gid,
-        supervised_group_ids=supervised,
         limit=limit,
         skip=skip,
         include_conversation_started=include_conversation_started,
@@ -228,5 +229,10 @@ async def get_notifications(
         include_conversation_finalized_hostility=include_conversation_finalized_hostility,
         include_workflow_failed=include_workflow_failed,
         notification_type=notification_type,
+        notification_level=notification_level,
     )
-    return NotificationFeedResponse(items=items, has_more=has_more)
+    return NotificationFeedResponse(
+        items=items,
+        has_more=has_more,
+        unread_count=unread_count,
+    )

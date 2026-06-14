@@ -33,6 +33,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { getApiUrl } from "@/config/api";
 import { isAxiosError } from "axios";
 
+// Value for the "No group" option, since Radix SelectItem cannot use an empty string value.
+const NO_GROUP_VALUE = "__none__";
+
 interface UserDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -181,12 +184,6 @@ export function UserDialog({
       );
     }
 
-    if (dialogMode !== "create") {
-      requiredFields = requiredFields.filter(
-        (field) => field.label !== "Roles"
-      );
-    }
-
     const missingFields = requiredFields
       .filter((field) => field.isEmpty)
       .map((field) => field.label);
@@ -266,6 +263,8 @@ export function UserDialog({
       if (status === 400) {
         if (data?.error_key === "EMAIL_ALREADY_EXISTS") {
           errorMessage = "A user with this email already exists.";
+        } else if (data?.error_key === "USER_ROLES_REQUIRED") {
+          errorMessage = "At least one role is required.";
         } else {
           errorMessage = "A user with this username already exists.";
         }
@@ -304,11 +303,15 @@ export function UserDialog({
   };
 
   const handleRoleToggle = (roleId: string) => {
-    setSelectedRoleIds((prev) =>
-      prev.includes(roleId)
+    setSelectedRoleIds((prev) => {
+      if (prev.includes(roleId) && prev.length === 1) {
+        toast.error("At least one role is required.");
+        return prev;
+      }
+      return prev.includes(roleId)
         ? prev.filter((id) => id !== roleId)
-        : [...prev, roleId]
-    );
+        : [...prev, roleId];
+    });
   };
 
   const isConsoleUserType = useMemo(() => {
@@ -481,11 +484,17 @@ export function UserDialog({
             {userGroups.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="group">Group</Label>
-                <Select value={groupId} onValueChange={setGroupId}>
+                <Select
+                  value={groupId || NO_GROUP_VALUE}
+                  onValueChange={(value) =>
+                    setGroupId(value === NO_GROUP_VALUE ? "" : value)
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select group (optional)" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NO_GROUP_VALUE}>No group</SelectItem>
                     {userGroups.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
                         {g.name}

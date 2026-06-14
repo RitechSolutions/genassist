@@ -2,7 +2,6 @@
 Celery tasks for ML model pipeline execution.
 """
 
-import asyncio
 import logging
 import os
 from uuid import UUID
@@ -23,7 +22,7 @@ from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
 from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
-from app.tasks.base import run_task_for_all_tenants
+from app.tasks.base import run_task_for_all_tenants, run_async_in_celery
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 from app.dependencies.injector import injector
@@ -200,6 +199,9 @@ async def execute_pipeline_run_async(run_id: UUID):
                             description=f"Pipeline run {str(run_id)[:8]}... failed.",
                             level="error",
                             action_url="/ml-models",
+                            entity_kind="pipeline_run",
+                            entity_id=run_id,
+                            event_key=f"workflow_failed:pipeline:{run_id}",
                         ),
                     )
                 except AppException as update_error:
@@ -258,13 +260,11 @@ def execute_pipeline_run_task(run_id: str):
     logger.info(f"Starting pipeline run execution: {run_id}")
 
     try:
-        # Run the async function
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        loop.run_until_complete(execute_pipeline_run_async_with_scope(UUID(run_id)))
+        run_async_in_celery(
+            execute_pipeline_run_async_with_scope(UUID(run_id)),
+            timeout=2 * 60 * 60,
+            task_name=f"execute_pipeline_run_task[{run_id}]",
+        )
 
     except Exception as e:
         logger.error(f"Error in pipeline run task {run_id}: {str(e)}", exc_info=True)
@@ -399,13 +399,10 @@ def check_scheduled_pipeline_runs():
     This should run every minute.
     """
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        loop.run_until_complete(
-            check_and_execute_scheduled_pipelines_async_with_scope()
+        run_async_in_celery(
+            check_and_execute_scheduled_pipelines_async_with_scope(),
+            timeout=50,
+            task_name="check_scheduled_pipeline_runs",
         )
     except Exception as e:
         logger.error(f"Error in scheduled pipeline check task: {str(e)}", exc_info=True)
