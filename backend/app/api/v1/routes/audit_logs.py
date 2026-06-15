@@ -45,7 +45,7 @@ async def get_by_id(
     log = await service.get_audit_log_by_id(log_id)
     if log is None:
         raise AppException(
-            error_key=ErrorKey.NOT_FOUND,
+            error_key=ErrorKey.AUDIT_LOG_NOT_FOUND,
             status_code=404,
             error_detail=f"Audit log with ID {log_id} not found",
         )
