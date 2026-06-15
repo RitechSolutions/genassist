@@ -43,9 +43,15 @@ export default function AuditLogs() {
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [tableName, setTableName] = useState<string>("");
+  const [debouncedTableName, setDebouncedTableName] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 30;
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedTableName(tableName.trim()), 1000);
+    return () => clearTimeout(timeout);
+  }, [tableName]);
 
   const isLastPage = filteredAuditLogs.length < pageSize;
   const totalPages = currentPage + (isLastPage ? 0 : 1);
@@ -64,7 +70,7 @@ export default function AuditLogs() {
         date_from,
         date_to,
         action,
-        tableName.trim(),
+        debouncedTableName,
         user,
         pageSize,
         offset
@@ -97,7 +103,7 @@ export default function AuditLogs() {
     searchQuery,
     selectedAction,
     selectedUser,
-    tableName,
+    debouncedTableName,
   ]);
 
   useEffect(() => {
@@ -127,6 +133,7 @@ export default function AuditLogs() {
     setSelectedUser(null);
     setSelectedAction(null);
     setTableName("");
+    setDebouncedTableName("");
     setCurrentPage(1);
   };
 
