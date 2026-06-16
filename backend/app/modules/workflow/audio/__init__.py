@@ -10,3 +10,4 @@ from app.modules.workflow.audio.base import (
 import app.modules.workflow.audio.openai_provider  # noqa: F401
 import app.modules.workflow.audio.google_cloud_provider  # noqa: F401
 import app.modules.workflow.audio.elevenlabs_provider  # noqa: F401
+import app.modules.workflow.audio.gemini_provider  # noqa: F401
