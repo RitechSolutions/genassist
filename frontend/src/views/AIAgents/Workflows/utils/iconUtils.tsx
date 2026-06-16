@@ -24,6 +24,9 @@ import {
   CircleAlert,
   Search,
   GitBranch,
+  MicVocal,
+  Mic,
+  Volume2,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -75,6 +78,9 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   ArrowRightFromLine: { type: "lucide", source: ArrowRightFromLine },
   ArrowRightToLine: { type: "lucide", source: ArrowRightToLine },
   Bot: { type: "lucide", source: Bot },
+  MicVocal: { type: "lucide", source: MicVocal },
+  Mic: { type: "lucide", source: Mic },
+  Volume2: { type: "lucide", source: Volume2 },
   Workflow: { type: "lucide", source: GitBranch },
   GitBranch: { type: "lucide", source: GitBranch },
 
