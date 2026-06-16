@@ -108,20 +108,32 @@ class AzureDevOpsConnector:
     async def create_work_item(
         self,
         title: str,
-        description_html: str,
+        description_html: str = "",
         *,
         tags: list[str] | None = None,
         priority: int | None = None,
         area_path: str | None = None,
+        work_item_type: str | None = None,
+        extra_fields: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        wit = (work_item_type or self.work_item_type or DEFAULT_WORK_ITEM_TYPE).strip()
         url = (
             f"{self._project_base()}/_apis/wit/workitems/"
-            f"${quote(self.work_item_type, safe='')}?api-version={API_VERSION}"
+            f"${quote(wit, safe='')}?api-version={API_VERSION}"
         )
         patch: list[dict[str, Any]] = [
             {"op": "add", "path": f"/fields/{FIELD_TITLE}", "value": title},
-            {"op": "add", "path": f"/fields/{FIELD_DESCRIPTION}", "value": description_html},
         ]
+        if description_html:
+            patch.append(
+                {"op": "add", "path": f"/fields/{FIELD_DESCRIPTION}", "value": description_html}
+            )
+        if extra_fields:
+            for field_ref, field_value in extra_fields.items():
+                if field_value:
+                    patch.append(
+                        {"op": "add", "path": f"/fields/{field_ref}", "value": field_value}
+                    )
         if tags:
             patch.append(
                 {
@@ -156,6 +168,44 @@ class AzureDevOpsConnector:
     async def get_work_item(self, work_item_id: int) -> dict[str, Any]:
         url = f"{self._project_base()}/_apis/wit/workitems/{work_item_id}?api-version={API_VERSION}"
         return await self._request("GET", url)
+
+    async def upload_attachment(
+        self,
+        file_name: str,
+        content: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> dict[str, Any]:
+        """Upload binary content as a work item attachment.
+
+        Returns the ADO attachment reference ``{"id": ..., "url": ...}``. The
+        returned ``url`` can be embedded in an HTML field (e.g. ``<img src=...>``)
+        so the attachment renders inline on the work item.
+        """
+        url = (
+            f"{self._project_base()}/_apis/wit/attachments"
+            f"?fileName={quote(file_name, safe='')}&api-version={API_VERSION}"
+        )
+        headers = {
+            **_auth_header(self.pat),
+            "Content-Type": content_type,
+        }
+        ssl = os.getenv("USE_SSL", "false").lower() == "true"
+        async with aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ssl=ssl)
+        ) as session:
+            async with session.post(url, headers=headers, data=content) as resp:
+                text = await resp.text()
+                if resp.status >= 400:
+                    logger.error(
+                        "ADO attachment upload failed: %s %s", resp.status, text[:500]
+                    )
+                    raise RuntimeError(
+                        f"Azure DevOps attachment upload error {resp.status}: {text[:300]}"
+                    )
+                try:
+                    return await resp.json()
+                except Exception:
+                    return {"raw": text}
 
     async def add_comment(self, work_item_id: int, text: str) -> dict[str, Any]:
         url = (

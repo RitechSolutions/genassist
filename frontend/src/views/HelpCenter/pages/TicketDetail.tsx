@@ -12,7 +12,22 @@ import { SupportTicket, SupportTicketComment } from "@/interfaces/helpCenter.int
 import { TicketStatusBadge } from "../components/TicketStatusBadge";
 import { PageListSkeleton } from "@/components/skeletons";
 import toast from "react-hot-toast";
-import { AlertCircle, ChevronLeft, ExternalLink, LifeBuoy } from "lucide-react";
+import { AlertCircle, ChevronLeft, LifeBuoy } from "lucide-react";
+
+function HtmlBlock({ label, html }: { label: string; html?: string | null }) {
+  const isEmpty =
+    !html || (html.replace(/<[^>]*>/g, "").trim() === "" && !/<img/i.test(html));
+  if (isEmpty) return null;
+  return (
+    <div>
+      <div className="text-sm font-medium text-gray-700 mb-1">{label}</div>
+      <div
+        className="text-sm text-gray-800 leading-relaxed [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  );
+}
 
 export default function TicketDetailPage() {
   const { ticketId } = useParams<{ ticketId: string }>();
@@ -102,15 +117,6 @@ export default function TicketDetailPage() {
               {ticket.vote_count > 1 && <span>{ticket.vote_count} reports</span>}
             </div>
           </div>
-          {ticket.azure_url && (
-            <Button variant="outline" className="shrink-0 ml-2" asChild>
-              <a href={ticket.azure_url} target="_blank" rel="noreferrer">
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Azure DevOps
-                {ticket.azure_work_item_id ? ` #${ticket.azure_work_item_id}` : ""}
-              </a>
-            </Button>
-          )}
         </div>
 
         {ticket.sync_error && (
@@ -133,38 +139,27 @@ export default function TicketDetailPage() {
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <h3 className="text-lg font-semibold">Description</h3>
+                <h3 className="text-lg font-semibold">Details</h3>
                 <p className="text-sm text-gray-500 mt-1">Issue details submitted to Help Center.</p>
               </div>
-              <div className="md:col-span-2">
-                <div className="text-sm whitespace-pre-wrap text-gray-800">{ticket.description}</div>
+              <div className="md:col-span-2 space-y-5">
+                {ticket.ticket_type === "bug" ? (
+                  <>
+                    <HtmlBlock label="Repro steps" html={ticket.repro_steps} />
+                    <HtmlBlock label="System info" html={ticket.system_info} />
+                    <HtmlBlock label="Acceptance criteria" html={ticket.acceptance_criteria} />
+                  </>
+                ) : ticket.ticket_type === "feature" ? (
+                  <>
+                    <HtmlBlock label="Description" html={ticket.description} />
+                    <HtmlBlock label="Acceptance criteria" html={ticket.acceptance_criteria} />
+                  </>
+                ) : (
+                  <HtmlBlock label="Description" html={ticket.description} />
+                )}
               </div>
             </div>
           </div>
-
-          {ticket.environment && Object.keys(ticket.environment).length > 0 && (
-            <>
-              <div className="border-t border-gray-200" />
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <h3 className="text-lg font-semibold">Environment</h3>
-                    <p className="text-sm text-gray-500 mt-1">Context provided when reporting.</p>
-                  </div>
-                  <dl className="md:col-span-2 text-sm grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {Object.entries(ticket.environment).map(([key, value]) =>
-                      value ? (
-                        <div key={key}>
-                          <dt className="text-gray-500 capitalize">{key.replace(/_/g, " ")}</dt>
-                          <dd className="font-medium mt-0.5">{String(value)}</dd>
-                        </div>
-                      ) : null
-                    )}
-                  </dl>
-                </div>
-              </div>
-            </>
-          )}
 
           <div className="border-t border-gray-200" />
 

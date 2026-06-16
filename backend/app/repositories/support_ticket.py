@@ -9,13 +9,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.core.config.azure_devops_defaults import OPEN_LOCAL_STATUSES
+from app.core.config.azure_devops_defaults import CLOSED_STATE_KEYWORDS
 from app.db.models.support_ticket import (
     SupportTicketCommentModel,
     SupportTicketEventModel,
     SupportTicketModel,
     TicketSyncOutboxModel,
 )
+from app.db.models.user import UserModel
 from app.services.support_ticket_dedup import normalize_title
 
 
@@ -29,6 +30,12 @@ class SupportTicketRepository:
         await self.db.commit()
         await self.db.refresh(ticket)
         return ticket
+
+    async def get_user_email(self, user_id: UUID) -> Optional[str]:
+        result = await self.db.execute(
+            select(UserModel.email).where(UserModel.id == user_id)
+        )
+        return result.scalar_one_or_none()
 
     async def get_by_id(self, ticket_id: UUID) -> Optional[SupportTicketModel]:
         result = await self.db.execute(
@@ -77,14 +84,13 @@ class SupportTicketRepository:
     async def find_by_fingerprint_open(
         self, fingerprint: str
     ) -> Optional[SupportTicketModel]:
-        open_statuses = list(OPEN_LOCAL_STATUSES)
         result = await self.db.execute(
             select(SupportTicketModel)
             .where(
                 SupportTicketModel.fingerprint == fingerprint,
                 SupportTicketModel.is_deleted == 0,
                 SupportTicketModel.duplicate_of_id.is_(None),
-                SupportTicketModel.status.in_(open_statuses),
+                func.lower(SupportTicketModel.status).notin_(CLOSED_STATE_KEYWORDS),
             )
             .order_by(SupportTicketModel.created_at.desc())
             .limit(1)
@@ -115,13 +121,12 @@ class SupportTicketRepository:
         if len(normalized) < 3:
             return []
         pattern = f"%{normalized[:80]}%"
-        open_statuses = list(OPEN_LOCAL_STATUSES)
         result = await self.db.execute(
             select(SupportTicketModel)
             .where(
                 SupportTicketModel.is_deleted == 0,
                 SupportTicketModel.duplicate_of_id.is_(None),
-                SupportTicketModel.status.in_(open_statuses),
+                func.lower(SupportTicketModel.status).notin_(CLOSED_STATE_KEYWORDS),
                 func.lower(SupportTicketModel.title).like(pattern),
             )
             .order_by(SupportTicketModel.vote_count.desc())
@@ -220,6 +225,22 @@ class SupportTicketRepository:
         await self.db.commit()
         await self.db.refresh(outbox)
         return outbox
+
+    async def get_pending_outbox_for_ticket(
+        self, ticket_id: UUID, limit: int = 5
+    ) -> list[TicketSyncOutboxModel]:
+        result = await self.db.execute(
+            select(TicketSyncOutboxModel)
+            .where(
+                TicketSyncOutboxModel.ticket_id == ticket_id,
+                TicketSyncOutboxModel.is_deleted == 0,
+                TicketSyncOutboxModel.status.in_(("pending", "failed")),
+                TicketSyncOutboxModel.attempts < 5,
+            )
+            .order_by(TicketSyncOutboxModel.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def get_pending_outbox(self, limit: int = 20) -> list[TicketSyncOutboxModel]:
         result = await self.db.execute(

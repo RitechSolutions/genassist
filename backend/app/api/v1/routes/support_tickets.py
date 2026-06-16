@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi_injector import Injected
 
-from app.auth.dependencies import auth, permissions
+from app.auth.dependencies import auth
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.services.support_ticket import SupportTicketService
@@ -14,7 +14,6 @@ from app.schemas.support_ticket import (
     SupportTicketCommentRead,
     SupportTicketCreate,
     SupportTicketDuplicateCandidate,
-    SupportTicketLinkDuplicate,
     SupportTicketListResponse,
     SupportTicketRead,
     SupportTicketSearchDuplicatesQuery,
@@ -35,7 +34,6 @@ def _permissions_from_request(request: Request) -> list[str]:
 @router.get(
     "/duplicates",
     response_model=list[SupportTicketDuplicateCandidate],
-    dependencies=[Depends(permissions("read:support_ticket"))],
 )
 async def search_duplicate_candidates(
     request: Request,
@@ -50,7 +48,6 @@ async def search_duplicate_candidates(
 @router.get(
     "",
     response_model=SupportTicketListResponse,
-    dependencies=[Depends(permissions("read:support_ticket"))],
 )
 async def list_support_tickets(
     request: Request,
@@ -71,26 +68,9 @@ async def list_support_tickets(
     )
 
 
-@router.get(
-    "/triage",
-    response_model=SupportTicketListResponse,
-    dependencies=[Depends(permissions("manage:support_ticket"))],
-)
-async def triage_queue(
-    request: Request,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    service: SupportTicketService = Injected(SupportTicketService),
-):
-    return await service.list_triage(
-        _permissions_from_request(request), skip=skip, limit=limit
-    )
-
-
 @router.post(
     "",
     response_model=SupportTicketRead,
-    dependencies=[Depends(permissions("create:support_ticket"))],
 )
 async def create_support_ticket(
     request: Request,
@@ -103,7 +83,6 @@ async def create_support_ticket(
 @router.get(
     "/{ticket_id}",
     response_model=SupportTicketRead,
-    dependencies=[Depends(permissions("read:support_ticket"))],
 )
 async def get_support_ticket(
     request: Request,
@@ -113,26 +92,9 @@ async def get_support_ticket(
     return await service.get_ticket(ticket_id, _permissions_from_request(request))
 
 
-@router.post(
-    "/{ticket_id}/link-duplicate",
-    response_model=SupportTicketRead,
-    dependencies=[Depends(permissions("manage:support_ticket"))],
-)
-async def link_support_ticket_duplicate(
-    request: Request,
-    ticket_id: UUID,
-    body: SupportTicketLinkDuplicate,
-    service: SupportTicketService = Injected(SupportTicketService),
-):
-    return await service.link_duplicate(
-        ticket_id, body, _permissions_from_request(request)
-    )
-
-
 @router.get(
     "/{ticket_id}/comments",
     response_model=list[SupportTicketCommentRead],
-    dependencies=[Depends(permissions("read:support_ticket"))],
 )
 async def list_ticket_comments(
     request: Request,
@@ -145,7 +107,6 @@ async def list_ticket_comments(
 @router.post(
     "/{ticket_id}/comments",
     response_model=SupportTicketCommentRead,
-    dependencies=[Depends(permissions("create:support_ticket"))],
 )
 async def add_ticket_comment(
     request: Request,

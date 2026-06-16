@@ -1,19 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import {
-  AlertCircle,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  LifeBuoy,
-  ListChecks,
-  Plus,
-} from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, LifeBuoy, Plus } from "lucide-react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor, RichTextEditorToolbar } from "@/components/RichTextEditor";
 import {
   Select,
   SelectContent,
@@ -26,8 +17,6 @@ import { PageListSkeleton } from "@/components/skeletons";
 import {
   createSupportTicket,
   listSupportTickets,
-  listTriageTickets,
-  linkTicketDuplicate,
   searchDuplicateTickets,
 } from "@/services/helpCenter";
 import {
@@ -36,21 +25,54 @@ import {
   SupportTicketType,
 } from "@/interfaces/helpCenter.interface";
 import { TicketStatusBadge } from "./TicketStatusBadge";
-import { hasAnyPermission } from "@/services/auth";
 
-type ViewMode = "list" | "form" | "triage";
+type ViewMode = "list" | "form";
 
 const TICKET_TYPE_LABELS: Record<string, string> = {
   bug: "Bug",
   feature: "Feature",
-  question: "Question",
+  task: "Task",
+};
+
+const RICH_TOOLBAR: RichTextEditorToolbar = {
+  bold: true,
+  italic: true,
+  fontSize: true,
+  link: true,
+  image: true,
+};
+
+const stripHtml = (html: string): string =>
+  html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** One-line plain-text preview of a ticket's primary content. */
+const ticketPreview = (ticket: SupportTicket): string => {
+  const raw =
+    ticket.ticket_type === "bug"
+      ? ticket.repro_steps || ticket.system_info || ""
+      : ticket.description || "";
+  const text = stripHtml(raw || "");
+  return text.length > 140 ? `${text.slice(0, 140)}…` : text;
+};
+
+const formatDate = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 };
 
 export default function HelpCenterManager() {
   const navigate = useNavigate();
   const location = useLocation();
-  const canTriage = hasAnyPermission(["manage:support_ticket", "*"]);
-  const canCreate = hasAnyPermission(["create:support_ticket", "*"]);
 
   const [view, setView] = useState<ViewMode>("list");
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -60,24 +82,16 @@ export default function HelpCenterManager() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  // Triage state
-  const [triageTickets, setTriageTickets] = useState<SupportTicket[]>([]);
-  const [triageLoading, setTriageLoading] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<Record<string, string>>({});
-
   // Form state
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [ticketType, setTicketType] = useState<SupportTicketType>("bug");
-  const [steps, setSteps] = useState("");
-  const [expected, setExpected] = useState("");
-  const [actual, setActual] = useState("");
-  const [browser, setBrowser] = useState("");
-  const [appVersion, setAppVersion] = useState("");
+  const [description, setDescription] = useState("");
+  const [reproSteps, setReproSteps] = useState("");
+  const [systemInfo, setSystemInfo] = useState("");
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [duplicates, setDuplicates] = useState<SupportTicketDuplicateCandidate[]>([]);
   const [duplicateCheckLoading, setDuplicateCheckLoading] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -92,25 +106,10 @@ export default function HelpCenterManager() {
     }
   }, []);
 
-  const fetchTriage = useCallback(async () => {
-    try {
-      setTriageLoading(true);
-      const res = await listTriageTickets();
-      setTriageTickets(res.items);
-    } catch {
-      toast.error("Failed to load triage queue");
-    } finally {
-      setTriageLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    const state = location.state as { openForm?: boolean; openTriage?: boolean } | null;
+    const state = location.state as { openForm?: boolean } | null;
     if (state?.openForm) {
       setView("form");
-      navigate("/help-center", { replace: true, state: {} });
-    } else if (state?.openTriage) {
-      setView("triage");
       navigate("/help-center", { replace: true, state: {} });
     }
   }, [location.key, navigate]);
@@ -118,10 +117,8 @@ export default function HelpCenterManager() {
   useEffect(() => {
     if (view === "list") {
       fetchTickets();
-    } else if (view === "triage") {
-      fetchTriage();
     }
-  }, [view, fetchTickets, fetchTriage]);
+  }, [view, fetchTickets]);
 
   useEffect(() => {
     if (view !== "form" || title.trim().length < 8) {
@@ -144,36 +141,17 @@ export default function HelpCenterManager() {
 
   const resetForm = () => {
     setTitle("");
-    setDescription("");
     setTicketType("bug");
-    setSteps("");
-    setExpected("");
-    setActual("");
-    setBrowser("");
-    setAppVersion("");
+    setDescription("");
+    setReproSteps("");
+    setSystemInfo("");
+    setAcceptanceCriteria("");
     setDuplicates([]);
-    setShowAdvanced(false);
   };
-
-  const hasEnvironmentValues = Boolean(browser.trim() || appVersion.trim());
-
-  useEffect(() => {
-    if (view === "form" && hasEnvironmentValues) {
-      setShowAdvanced(true);
-    }
-  }, [view, hasEnvironmentValues]);
 
   const handleCancelForm = () => {
     resetForm();
     setView("list");
-  };
-
-  const buildDescription = () => {
-    const parts = [description.trim()];
-    if (steps) parts.push(`\n\n**Steps to reproduce**\n${steps}`);
-    if (expected) parts.push(`\n\n**Expected**\n${expected}`);
-    if (actual) parts.push(`\n\n**Actual**\n${actual}`);
-    return parts.filter(Boolean).join("");
   };
 
   const submitTicket = async (opts?: { duplicateOfId?: string; forceCreate?: boolean }) => {
@@ -185,15 +163,14 @@ export default function HelpCenterManager() {
     try {
       const ticket = await createSupportTicket({
         title: title.trim(),
-        description: buildDescription(),
         ticket_type: ticketType,
-        environment: {
-          browser: browser || undefined,
-          app_version: appVersion || undefined,
-          steps_to_reproduce: steps || undefined,
-          expected_behavior: expected || undefined,
-          actual_behavior: actual || undefined,
-        },
+        description: ticketType === "bug" ? "" : description,
+        repro_steps: ticketType === "bug" ? reproSteps : undefined,
+        system_info: ticketType === "bug" ? systemInfo : undefined,
+        acceptance_criteria:
+          ticketType === "bug" || ticketType === "feature"
+            ? acceptanceCriteria
+            : undefined,
         duplicate_of_id: opts?.duplicateOfId,
         force_create: opts?.forceCreate,
       });
@@ -208,21 +185,6 @@ export default function HelpCenterManager() {
     }
   };
 
-  const handleLinkDuplicate = async (ticketId: string) => {
-    const canonicalId = linkTarget[ticketId]?.trim();
-    if (!canonicalId) {
-      toast.error("Enter canonical ticket ID");
-      return;
-    }
-    try {
-      await linkTicketDuplicate(ticketId, canonicalId);
-      toast.success("Linked as duplicate");
-      await fetchTriage();
-    } catch {
-      toast.error("Failed to link duplicate");
-    }
-  };
-
   const filteredTickets = tickets.filter((item) => {
     const matchesQuery = item.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || item.status === statusFilter;
@@ -230,9 +192,9 @@ export default function HelpCenterManager() {
     return matchesQuery && matchesStatus && matchesType;
   });
 
-  const filteredTriage = triageTickets.filter((t) =>
-    t.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Status options are derived from the live Azure DevOps states present in the
+  // loaded tickets (they vary by work item type/process), not a fixed list.
+  const statusOptions = Array.from(new Set(tickets.map((t) => t.status))).sort();
 
   if (view === "form") {
     return (
@@ -297,7 +259,7 @@ export default function HelpCenterManager() {
                   <div>
                     <h3 className="text-lg font-semibold">Issue details</h3>
                     <p className="text-sm text-gray-500 mt-1">
-                      Summary and type. A matching Azure DevOps work item is created after submit.
+                      Summary and type. The engineering team picks it up after you submit.
                     </p>
                   </div>
                   <div className="md:col-span-2 space-y-6">
@@ -322,114 +284,117 @@ export default function HelpCenterManager() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="bug">Bug</SelectItem>
-                            <SelectItem value="feature">Feature request</SelectItem>
-                            <SelectItem value="question">Question</SelectItem>
+                            <SelectItem value="feature">Feature</SelectItem>
+                            <SelectItem value="task">Task</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
-                    <div>
-                      <div className="mb-1">Description</div>
-                      <Textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="What happened?"
-                        rows={4}
-                      />
-                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="-mx-px border-t border-gray-200" />
+              <div className="border-t border-gray-200" />
 
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <h3 className="text-lg font-semibold">Reproduction</h3>
+                    <h3 className="text-lg font-semibold">
+                      {ticketType === "bug"
+                        ? "Bug details"
+                        : ticketType === "feature"
+                          ? "Feature details"
+                          : "Task details"}
+                    </h3>
                     <p className="text-sm text-gray-500 mt-1">
-                      Steps and expected vs actual behavior help engineering reproduce faster.
+                      {ticketType === "bug"
+                        ? "Repro steps, system info and acceptance criteria help the team reproduce and fix it."
+                        : ticketType === "feature"
+                          ? "Describe the feature and what done looks like."
+                          : "Describe what needs to be done."}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      Use the toolbar to format text, add links, and attach images.
                     </p>
                   </div>
-                  <div className="md:col-span-2 space-y-4">
-                    <div>
-                      <div className="mb-1">Steps to reproduce</div>
-                      <Textarea
-                        value={steps}
-                        onChange={(e) => setSteps(e.target.value)}
-                        rows={3}
-                        placeholder="1. Go to... 2. Click..."
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="md:col-span-2 space-y-5">
+                    {ticketType === "bug" ? (
+                      <>
+                        <div>
+                          <div className="mb-1 text-sm font-medium">Repro steps</div>
+                          <RichTextEditor
+                            value={reproSteps}
+                            onChange={setReproSteps}
+                            toolbar={RICH_TOOLBAR}
+                            placeholder="1. Go to… 2. Click… 3. See the error"
+                            minHeight="120px"
+                            maxHeight="360px"
+                          />
+                        </div>
+                        <div>
+                          <div className="mb-1 text-sm font-medium">System info</div>
+                          <RichTextEditor
+                            value={systemInfo}
+                            onChange={setSystemInfo}
+                            toolbar={RICH_TOOLBAR}
+                            placeholder="Browser, OS, app version, environment…"
+                            minHeight="100px"
+                            maxHeight="300px"
+                          />
+                        </div>
+                        <div>
+                          <div className="mb-1 text-sm font-medium">Acceptance criteria</div>
+                          <RichTextEditor
+                            value={acceptanceCriteria}
+                            onChange={setAcceptanceCriteria}
+                            toolbar={RICH_TOOLBAR}
+                            placeholder="What does “fixed” look like?"
+                            minHeight="100px"
+                            maxHeight="300px"
+                          />
+                        </div>
+                      </>
+                    ) : ticketType === "feature" ? (
+                      <>
+                        <div>
+                          <div className="mb-1 text-sm font-medium">Description</div>
+                          <RichTextEditor
+                            value={description}
+                            onChange={setDescription}
+                            toolbar={RICH_TOOLBAR}
+                            placeholder="Describe the feature and the problem it solves"
+                            minHeight="140px"
+                            maxHeight="400px"
+                          />
+                        </div>
+                        <div>
+                          <div className="mb-1 text-sm font-medium">Acceptance criteria</div>
+                          <RichTextEditor
+                            value={acceptanceCriteria}
+                            onChange={setAcceptanceCriteria}
+                            toolbar={RICH_TOOLBAR}
+                            placeholder="What does “done” look like?"
+                            minHeight="100px"
+                            maxHeight="300px"
+                          />
+                        </div>
+                      </>
+                    ) : (
                       <div>
-                        <div className="mb-1">Expected behavior</div>
-                        <Textarea
-                          value={expected}
-                          onChange={(e) => setExpected(e.target.value)}
-                          rows={2}
+                        <div className="mb-1 text-sm font-medium">Description</div>
+                        <RichTextEditor
+                          value={description}
+                          onChange={setDescription}
+                          toolbar={RICH_TOOLBAR}
+                          placeholder="Describe the task"
+                          minHeight="140px"
+                          maxHeight="400px"
                         />
                       </div>
-                      <div>
-                        <div className="mb-1">Actual behavior</div>
-                        <Textarea
-                          value={actual}
-                          onChange={(e) => setActual(e.target.value)}
-                          rows={2}
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
-
-              <div className="border-t border-gray-200 px-6 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced((prev) => !prev)}
-                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/40"
-                  aria-expanded={showAdvanced}
-                  aria-controls="help-center-advanced-section"
-                >
-                  <span className="text-sm font-medium">Advanced</span>
-                  {showAdvanced ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </button>
-              </div>
-
-              {showAdvanced && (
-                <div id="help-center-advanced-section" className="px-6 pb-6 space-y-3">
-                  <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
-                    <div>
-                      <h3 className="text-sm font-semibold">Environment</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Optional context about where the issue occurred.
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <div className="mb-1 text-sm">Browser</div>
-                        <Input
-                          value={browser}
-                          onChange={(e) => setBrowser(e.target.value)}
-                          placeholder="e.g. Chrome 120"
-                        />
-                      </div>
-                      <div>
-                        <div className="mb-1 text-sm">App version</div>
-                        <Input
-                          value={appVersion}
-                          onChange={(e) => setAppVersion(e.target.value)}
-                          placeholder="e.g. v1.2.0"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="flex justify-end gap-3">
@@ -446,106 +411,6 @@ export default function HelpCenterManager() {
     );
   }
 
-  if (view === "triage") {
-    return (
-      <div className="space-y-8">
-        <div className="flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              setSearchQuery("");
-              setView("list");
-            }}
-            className="mr-2"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Triage queue</h2>
-            <p className="text-sm text-gray-500">
-              Review open issues and link duplicates to a canonical ticket
-            </p>
-          </div>
-        </div>
-
-        <div className="flex w-full sm:max-w-md">
-          <SearchInput
-            placeholder="Search triage queue..."
-            className="w-full"
-            value={searchQuery}
-            onChange={setSearchQuery}
-          />
-        </div>
-
-        <div className="rounded-lg border bg-white overflow-hidden">
-          {triageLoading ? (
-            <PageListSkeleton variant="rich" bordered={false} />
-          ) : filteredTriage.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-              <div className="rounded-full bg-gray-100 p-4">
-                <ListChecks className="h-12 w-12 text-gray-400" />
-              </div>
-              <h3 className="font-medium text-lg">
-                {searchQuery ? "No tickets found" : "Triage queue is empty"}
-              </h3>
-              <p className="text-sm text-gray-500 max-w-md px-4">
-                {searchQuery
-                  ? "Try adjusting your search query."
-                  : "No open tickets need triage right now."}
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {filteredTriage.map((ticket) => (
-                <div key={ticket.id} className="px-4 py-4 sm:px-6 space-y-3">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <Link
-                        to={`/help-center/${ticket.id}`}
-                        className="text-base font-semibold hover:underline break-words"
-                      >
-                        {ticket.title}
-                      </Link>
-                      <div className="flex flex-wrap gap-2 mt-2 items-center text-sm text-gray-500">
-                        <TicketStatusBadge status={ticket.status} />
-                        <span>{ticket.vote_count} reports</span>
-                        {ticket.azure_work_item_id && (
-                          <span>ADO #{ticket.azure_work_item_id}</span>
-                        )}
-                      </div>
-                    </div>
-                    <Button variant="secondary" size="sm" asChild className="shrink-0">
-                      <Link to={`/help-center/${ticket.id}`}>View</Link>
-                    </Button>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Input
-                      placeholder="Canonical ticket ID"
-                      value={linkTarget[ticket.id] ?? ""}
-                      onChange={(e) =>
-                        setLinkTarget((prev) => ({ ...prev, [ticket.id]: e.target.value }))
-                      }
-                      className="bg-white"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => handleLinkDuplicate(ticket.id)}
-                      className="shrink-0"
-                    >
-                      Link as duplicate
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-6">
@@ -553,7 +418,7 @@ export default function HelpCenterManager() {
           <div className="min-w-0 shrink-0">
             <h2 className="text-2xl sm:text-3xl font-bold whitespace-nowrap">Help Center</h2>
             <p className="text-zinc-400 font-normal text-sm mt-0.5 hidden sm:block">
-              Report bugs and track issues synced to Azure DevOps
+              Report bugs and feature requests and track their status
             </p>
           </div>
           <div className="flex flex-nowrap items-center gap-2 min-w-0 overflow-x-auto pb-0.5 lg:overflow-visible">
@@ -563,13 +428,11 @@ export default function HelpCenterManager() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="sync_pending">Syncing</SelectItem>
-                <SelectItem value="new">New</SelectItem>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="in_progress">In progress</SelectItem>
-                <SelectItem value="resolved">Resolved</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
+                {statusOptions.map((s) => (
+                  <SelectItem key={s} value={s} className="capitalize">
+                    {s === "sync_pending" ? "Syncing" : s.replace(/_/g, " ")}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
@@ -580,7 +443,7 @@ export default function HelpCenterManager() {
                 <SelectItem value="all">All types</SelectItem>
                 <SelectItem value="bug">Bug</SelectItem>
                 <SelectItem value="feature">Feature</SelectItem>
-                <SelectItem value="question">Question</SelectItem>
+                <SelectItem value="task">Task</SelectItem>
               </SelectContent>
             </Select>
             <SearchInput
@@ -589,28 +452,13 @@ export default function HelpCenterManager() {
               value={searchQuery}
               onChange={setSearchQuery}
             />
-            {canTriage && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchQuery("");
-                  setView("triage");
-                }}
-                className="shrink-0 rounded-full whitespace-nowrap"
-              >
-                <ListChecks className="h-4 w-4 mr-2" />
-                Triage
-              </Button>
-            )}
-            {canCreate && (
-              <Button
-                onClick={() => setView("form")}
-                className="shrink-0 rounded-full whitespace-nowrap"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Report issue
-              </Button>
-            )}
+            <Button
+              onClick={() => setView("form")}
+              className="shrink-0 rounded-full whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Report issue
+            </Button>
           </div>
         </div>
 
@@ -637,76 +485,61 @@ export default function HelpCenterManager() {
               <p className="text-sm text-gray-500 max-w-md px-4">
                 {searchQuery || statusFilter !== "all" || typeFilter !== "all"
                   ? "Try adjusting your search or filters."
-                  : "Report bugs and feature requests here. Each submission creates a work item in Azure DevOps for the engineering team."}
+                  : "Report bugs and feature requests here. Each submission is routed to the engineering team."}
               </p>
-              {!searchQuery && statusFilter === "all" && typeFilter === "all" && canCreate && (
-                <Button onClick={() => setView("form")} className="rounded-full">
-                  Report your first issue
-                </Button>
-              )}
+              <Button onClick={() => setView("form")} className="rounded-full">
+                Report your first issue
+              </Button>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {filteredTickets.map((ticket) => (
-                <div
-                  key={ticket.id}
-                  className="px-4 py-4 sm:px-6 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={(e) => {
-                    if ((e.target as HTMLElement).closest("a, button")) return;
-                    navigate(`/help-center/${ticket.id}`);
-                  }}
-                >
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div className="flex-1 flex flex-col space-y-2 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-base sm:text-lg font-semibold break-words">
-                          {ticket.title}
-                        </h4>
-                        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">
-                          {TICKET_TYPE_LABELS[ticket.ticket_type] ?? ticket.ticket_type}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                        <TicketStatusBadge status={ticket.status} />
-                        {ticket.vote_count > 1 && <span>{ticket.vote_count} reports</span>}
-                        {ticket.azure_work_item_id && (
-                          <span>ADO #{ticket.azure_work_item_id}</span>
+              {filteredTickets.map((ticket) => {
+                const preview = ticketPreview(ticket);
+                return (
+                  <div
+                    key={ticket.id}
+                    className="group px-4 py-4 sm:px-6 hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/help-center/${ticket.id}`)}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 flex flex-col space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-base sm:text-lg font-semibold break-words">
+                            {ticket.title}
+                          </h4>
+                          <TicketStatusBadge status={ticket.status} />
+                        </div>
+                        {preview && (
+                          <p className="text-sm text-gray-500 line-clamp-1">{preview}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-400">
+                          <span className="font-medium text-gray-500">
+                            {TICKET_TYPE_LABELS[ticket.ticket_type] ?? ticket.ticket_type}
+                          </span>
+                          {ticket.vote_count > 1 && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>{ticket.vote_count} reports</span>
+                            </>
+                          )}
+                          {ticket.created_at && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>{formatDate(ticket.created_at)}</span>
+                            </>
+                          )}
+                        </div>
+                        {ticket.sync_error && (
+                          <p className="text-xs text-destructive truncate">
+                            Sync: {ticket.sync_error}
+                          </p>
                         )}
                       </div>
-                      {ticket.sync_error && (
-                        <p className="text-xs text-destructive truncate">
-                          Sync: {ticket.sync_error}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex gap-2 justify-end w-full md:w-auto shrink-0">
-                      {ticket.azure_url && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          asChild
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <a href={ticket.azure_url} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            Azure DevOps
-                          </a>
-                        </Button>
-                      )}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/help-center/${ticket.id}`);
-                        }}
-                      >
-                        View
-                      </Button>
+                      <ChevronRight className="h-5 w-5 shrink-0 mt-1 text-gray-300 transition-colors group-hover:text-gray-500" />
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

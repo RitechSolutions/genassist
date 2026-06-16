@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Optional
 from uuid import UUID
@@ -9,7 +8,8 @@ from injector import inject
 from starlette_context import context
 
 from app.auth.utils import current_user_is_admin, has_permission
-from app.core.config.azure_devops_defaults import OPEN_LOCAL_STATUSES
+from app.core.tenant_scope import get_tenant_context
+from app.core.config.help_center_ado import get_help_center_public_base_url, get_help_center_ado_connector
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.support_ticket import SupportTicketModel
@@ -19,17 +19,25 @@ from app.schemas.support_ticket import (
     SupportTicketCommentRead,
     SupportTicketCreate,
     SupportTicketDuplicateCandidate,
-    SupportTicketLinkDuplicate,
     SupportTicketListResponse,
     SupportTicketRead,
     SupportTicketSearchDuplicatesQuery,
 )
+from app.services.html_sanitizer import sanitize_html
 from app.services.support_ticket_dedup import compute_fingerprint
 from app.services.support_ticket_sync import SupportTicketSyncService
 
 logger = logging.getLogger(__name__)
 
 MAX_TICKETS_PER_USER_PER_DAY = 10
+
+
+def _merge_help_center_tags(tags: list[str] | None, ticket_type: str) -> list[str]:
+    merged = list(tags or [])
+    for tag in ("genassist", f"help-center-{ticket_type}"):
+        if tag not in merged:
+            merged.append(tag)
+    return merged
 
 
 @inject
@@ -41,6 +49,19 @@ class SupportTicketService:
     ):
         self.repo = repo
         self.sync_service = sync_service
+
+    async def _build_environment(
+        self, user_id: UUID, base: Optional[dict] = None
+    ) -> Optional[dict]:
+        """Merge reporter identity (email, tenant) into the environment payload."""
+        environment = dict(base or {})
+        email = await self.repo.get_user_email(user_id)
+        if email:
+            environment["reporter_email"] = email
+        tenant = get_tenant_context()
+        if tenant and tenant != "master":
+            environment["tenant"] = tenant
+        return environment or None
 
     def _current_user_id(self) -> UUID:
         user_id = context.get("user_id")
@@ -96,6 +117,16 @@ class SupportTicketService:
         user_id = self._current_user_id()
         fingerprint = compute_fingerprint(data.title, data.ticket_type, data.tags)
 
+        # Rich-text fields are stored as sanitized HTML.
+        description = sanitize_html(data.description)
+        repro_steps = sanitize_html(data.repro_steps) or None
+        system_info = sanitize_html(data.system_info) or None
+        acceptance_criteria = sanitize_html(data.acceptance_criteria) or None
+
+        # Capture reporter identity now (tenant is request-scoped and unavailable
+        # during background sync) so it can be surfaced on the Azure work item.
+        environment = await self._build_environment(user_id, data.environment)
+
         if not data.force_create and not data.duplicate_of_id:
             recent = await self.repo.find_recent_duplicate_by_user(user_id, fingerprint)
             if recent:
@@ -121,12 +152,15 @@ class SupportTicketService:
             ticket = SupportTicketModel(
                 reporter_user_id=user_id,
                 title=data.title,
-                description=data.description,
+                description=description,
+                repro_steps=repro_steps,
+                system_info=system_info,
+                acceptance_criteria=acceptance_criteria,
                 ticket_type=data.ticket_type,
                 status=canonical.status,
                 priority=data.priority or canonical.priority,
                 tags=data.tags or canonical.tags,
-                environment=data.environment,
+                environment=environment,
                 duplicate_of_id=canonical.id,
                 fingerprint=fingerprint,
                 vote_count=0,
@@ -158,12 +192,15 @@ class SupportTicketService:
         ticket = SupportTicketModel(
             reporter_user_id=user_id,
             title=data.title.strip(),
-            description=data.description,
+            description=description,
+            repro_steps=repro_steps,
+            system_info=system_info,
+            acceptance_criteria=acceptance_criteria,
             ticket_type=data.ticket_type,
             status="sync_pending",
             priority=data.priority,
-            tags=data.tags or [],
-            environment=data.environment,
+            tags=_merge_help_center_tags(data.tags, data.ticket_type),
+            environment=environment,
             fingerprint=fingerprint,
             vote_count=1,
         )
@@ -173,20 +210,23 @@ class SupportTicketService:
         await self.repo.enqueue_outbox(
             ticket.id,
             "create_work_item",
-            payload={},
+            payload={"app_base_url": get_help_center_public_base_url()},
         )
-        asyncio.create_task(self._process_outbox_async(ticket.id))
+        await self._process_outbox_for_ticket(ticket.id)
+
+        refreshed = await self.repo.get_by_id(ticket.id)
+        if refreshed:
+            ticket = refreshed
 
         return SupportTicketRead.model_validate(ticket, from_attributes=True)
 
-    async def _process_outbox_async(self, ticket_id: UUID) -> None:
+    async def _process_outbox_for_ticket(self, ticket_id: UUID) -> None:
         try:
-            entries = await self.repo.get_pending_outbox(limit=5)
+            entries = await self.repo.get_pending_outbox_for_ticket(ticket_id)
             for entry in entries:
-                if entry.ticket_id == ticket_id:
-                    await self.sync_service.process_outbox_entry(entry)
+                await self.sync_service.process_outbox_entry(entry)
         except Exception:
-            logger.exception("Background support ticket sync failed for %s", ticket_id)
+            logger.exception("Support ticket ADO sync failed for %s", ticket_id)
 
     async def list_tickets(
         self,
@@ -220,40 +260,8 @@ class SupportTicketService:
         if not ticket:
             raise AppException(status_code=404, error_key=ErrorKey.MISSING_PARAMETER)
         self._ensure_ticket_access(ticket, self._current_user_id(), permissions)
+        ticket = await self.sync_service.refresh_status(ticket)
         return SupportTicketRead.model_validate(ticket, from_attributes=True)
-
-    async def link_duplicate(
-        self,
-        ticket_id: UUID,
-        body: SupportTicketLinkDuplicate,
-        permissions: list[str],
-    ) -> SupportTicketRead:
-        if not self._can_manage_all(permissions):
-            raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE)
-
-        ticket = await self.repo.get_by_id(ticket_id)
-        if not ticket:
-            raise AppException(status_code=404, error_key=ErrorKey.MISSING_PARAMETER)
-
-        canonical = await self.repo.get_by_id(body.duplicate_of_id)
-        if not canonical:
-            raise AppException(status_code=404, error_key=ErrorKey.MISSING_PARAMETER)
-
-        ticket.duplicate_of_id = canonical.id
-        ticket.azure_work_item_id = canonical.azure_work_item_id
-        ticket.azure_url = canonical.azure_url
-        ticket.azure_project = canonical.azure_project
-        ticket.status = canonical.status
-        await self.repo.increment_vote(canonical.id)
-        await self.repo.add_event(
-            ticket.id,
-            "admin_linked_duplicate",
-            payload={"canonical_id": str(canonical.id)},
-            actor_user_id=self._current_user_id(),
-        )
-        return SupportTicketRead.model_validate(
-            await self.repo.save(ticket), from_attributes=True
-        )
 
     async def add_comment(
         self,
@@ -275,12 +283,19 @@ class SupportTicketService:
 
         comment = await self.repo.add_comment(ticket_id, user_id, data.body)
         if root.azure_work_item_id:
-            await self.repo.enqueue_outbox(
-                root.id,
-                "add_comment",
-                payload={"text": data.body},
-            )
-            asyncio.create_task(self._process_outbox_async(root.id))
+            try:
+                connector = get_help_center_ado_connector()
+                await connector.add_comment(root.azure_work_item_id, data.body)
+            except Exception:
+                logger.exception(
+                    "Failed to sync comment to Azure DevOps for ticket %s", root.id
+                )
+                await self.repo.enqueue_outbox(
+                    root.id,
+                    "add_comment",
+                    payload={"text": data.body},
+                )
+                await self._process_outbox_for_ticket(root.id)
         return SupportTicketCommentRead.model_validate(comment, from_attributes=True)
 
     async def list_comments(
@@ -294,23 +309,3 @@ class SupportTicketService:
         return [
             SupportTicketCommentRead.model_validate(c, from_attributes=True) for c in comments
         ]
-
-    async def list_triage(
-        self, permissions: list[str], *, skip: int = 0, limit: int = 50
-    ) -> SupportTicketListResponse:
-        if not self._can_manage_all(permissions):
-            raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE)
-        items, total = await self.repo.list_tickets(
-            include_all=True,
-            skip=skip,
-            limit=limit,
-        )
-        open_items = [
-            t
-            for t in items
-            if t.status in OPEN_LOCAL_STATUSES and t.duplicate_of_id is None
-        ]
-        return SupportTicketListResponse(
-            items=[SupportTicketRead.model_validate(t, from_attributes=True) for t in open_items],
-            total=total,
-        )

@@ -242,7 +242,6 @@ const menuItems: MenuItem[] = [
     title: "Help Center",
     icon: LifeBuoy,
     url: "/help-center",
-    permissionsRequired: ["read:support_ticket"],
   },
   {
     title: "Settings",

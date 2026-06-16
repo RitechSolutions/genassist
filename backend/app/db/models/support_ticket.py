@@ -16,7 +16,7 @@ from app.db.base import Base
 class SupportTicketType(str, enum.Enum):
     BUG = "bug"
     FEATURE = "feature"
-    QUESTION = "question"
+    TASK = "task"
 
 
 class SupportTicketStatus(str, enum.Enum):
@@ -51,6 +51,12 @@ class SupportTicketModel(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Rich-text (HTML) fields shown per ticket type, mirroring the Azure DevOps
+    # work item form: Bug -> repro_steps/system_info/acceptance_criteria,
+    # Feature -> description/acceptance_criteria, Task -> description.
+    repro_steps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    system_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    acceptance_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ticket_type: Mapped[str] = mapped_column(String(32), nullable=False, default="bug")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="sync_pending")
     priority: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

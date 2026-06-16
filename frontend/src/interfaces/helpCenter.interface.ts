@@ -1,10 +1,13 @@
-export type SupportTicketType = "bug" | "feature" | "question";
+export type SupportTicketType = "bug" | "feature" | "task";
 
 export interface SupportTicket {
   id: string;
   reporter_user_id: string;
   title: string;
   description: string;
+  repro_steps?: string | null;
+  system_info?: string | null;
+  acceptance_criteria?: string | null;
   ticket_type: SupportTicketType;
   status: string;
   priority?: number | null;
@@ -40,6 +43,9 @@ export interface SupportTicketListResponse {
 export interface SupportTicketCreatePayload {
   title: string;
   description: string;
+  repro_steps?: string;
+  system_info?: string;
+  acceptance_criteria?: string;
   ticket_type: SupportTicketType;
   priority?: number;
   tags?: string[];

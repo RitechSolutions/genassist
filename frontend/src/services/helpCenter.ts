@@ -31,15 +31,6 @@ export const listSupportTickets = async (params?: {
   );
 };
 
-export const listTriageTickets = async (): Promise<SupportTicketListResponse> => {
-  return (
-    (await apiRequest<SupportTicketListResponse>("GET", `${BASE}/triage`)) ?? {
-      items: [],
-      total: 0,
-    }
-  );
-};
-
 export const getSupportTicket = async (id: string): Promise<SupportTicket | null> => {
   return (await apiRequest<SupportTicket>("GET", `${BASE}/${id}`)) ?? null;
 };
@@ -60,17 +51,6 @@ export const searchDuplicateTickets = async (
   return (
     (await apiRequest<SupportTicketDuplicateCandidate[]>("GET", `${BASE}/duplicates?${qs}`)) ?? []
   );
-};
-
-export const linkTicketDuplicate = async (
-  ticketId: string,
-  duplicateOfId: string
-): Promise<SupportTicket> => {
-  const data = await apiRequest<SupportTicket>("POST", `${BASE}/${ticketId}/link-duplicate`, {
-    duplicate_of_id: duplicateOfId,
-  });
-  if (!data) throw new Error("Failed to link duplicate");
-  return data;
 };
 
 export const listTicketComments = async (ticketId: string): Promise<SupportTicketComment[]> => {

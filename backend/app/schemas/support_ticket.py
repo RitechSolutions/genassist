@@ -7,7 +7,11 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-SupportTicketTypeLiteral = Literal["bug", "feature", "question"]
+SupportTicketTypeLiteral = Literal["bug", "feature", "task"]
+
+# Rich-text (HTML) fields can embed inline base64 images, so allow a generous
+# size. Images are capped client-side; this is a server-side safety ceiling.
+RICH_FIELD_MAX_LEN = 8_000_000
 
 
 class SupportTicketEnvironment(BaseModel):
@@ -23,7 +27,10 @@ class SupportTicketEnvironment(BaseModel):
 
 class SupportTicketCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=500)
-    description: str = Field(default="", max_length=50000)
+    description: str = Field(default="", max_length=RICH_FIELD_MAX_LEN)
+    repro_steps: Optional[str] = Field(default=None, max_length=RICH_FIELD_MAX_LEN)
+    system_info: Optional[str] = Field(default=None, max_length=RICH_FIELD_MAX_LEN)
+    acceptance_criteria: Optional[str] = Field(default=None, max_length=RICH_FIELD_MAX_LEN)
     ticket_type: SupportTicketTypeLiteral = "bug"
     priority: Optional[int] = Field(default=None, ge=1, le=4)
     tags: list[str] = Field(default_factory=list)
@@ -47,6 +54,9 @@ class SupportTicketRead(BaseModel):
     reporter_user_id: UUID
     title: str
     description: str
+    repro_steps: Optional[str] = None
+    system_info: Optional[str] = None
+    acceptance_criteria: Optional[str] = None
     ticket_type: str
     status: str
     priority: Optional[int] = None
@@ -84,10 +94,6 @@ class SupportTicketCommentRead(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
-
-
-class SupportTicketLinkDuplicate(BaseModel):
-    duplicate_of_id: UUID
 
 
 class SupportTicketSearchDuplicatesQuery(BaseModel):

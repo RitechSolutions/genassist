@@ -200,6 +200,8 @@ class ProjectSettings(BaseSettings):
     AZURE_DEVOPS_PROJECT: Optional[str] = None
     AZURE_DEVOPS_PAT: Optional[str] = None
     AZURE_DEVOPS_WORK_ITEM_TYPE: Optional[str] = "Bug"
+    AZURE_DEVOPS_FEATURE_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_TASK_WORK_ITEM_TYPE: Optional[str] = None
     AZURE_DEVOPS_DEFAULT_AREA_PATH: Optional[str] = None
     AZURE_DEVOPS_WEBHOOK_SECRET: Optional[str] = None
     HELP_CENTER_PUBLIC_BASE_URL: Optional[str] = None
