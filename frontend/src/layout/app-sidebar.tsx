@@ -90,8 +90,20 @@ const menuItems: MenuItem[] = [
   {
     title: "Conversations",
     icon: MessageSquare,
-    url: "/transcripts",
+    url: "#",
     permissionsRequired: ["read:conversation"],
+    children: [
+      {
+        title: "Conversations",
+        url: "/transcripts",
+        permissionsRequired: ["read:conversation"],
+      },
+      {
+        title: "Reported Feedback",
+        url: "/reported-feedback",
+        permissionsRequired: ["read:conversation"],
+      },
+    ],
   },
   {
     title: "Operators",
@@ -245,6 +257,7 @@ const menuItems: MenuItem[] = [
 ];
 
 const STORAGE_KEYS = [
+  "isConversationsOpen",
   "isAnalyticsOpen",
   "isTestsOpen",
   "isIntegrationOpen",
@@ -475,6 +488,8 @@ export function AppSidebar() {
   const currentPath = location.pathname;
 
   // Persisted collapsible state
+  const [isConversationsOpen, toggleConversations, setConversationsOpen] =
+    usePersistedState("isConversationsOpen", false);
   const [isAnalyticsOpen, toggleAnalytics, setAnalyticsOpen] =
     usePersistedState("isAnalyticsOpen", false);
   const [isTestsOpen, toggleTests, setTestsOpen] =
@@ -488,24 +503,26 @@ export function AppSidebar() {
 
   const toggleMap: Record<string, () => void> = useMemo(
     () => ({
+      Conversations: toggleConversations,
       Analytics: toggleAnalytics,
       Tests: toggleTests,
       Integrations: toggleIntegrations,
       "LLM Settings": toggleLLMSettings,
       Admin: toggleAdmin,
     }),
-    [toggleAnalytics, toggleTests, toggleIntegrations, toggleLLMSettings, toggleAdmin]
+    [toggleConversations, toggleAnalytics, toggleTests, toggleIntegrations, toggleLLMSettings, toggleAdmin]
   );
 
   const openMap: Record<string, boolean> = useMemo(
     () => ({
+      Conversations: isConversationsOpen,
       Analytics: isAnalyticsOpen,
       Tests: isTestsOpen,
       Integrations: isIntegrationsOpen,
       "LLM Settings": isLLMSettingsOpen,
       Admin: isAdminOpen,
     }),
-    [isAnalyticsOpen, isTestsOpen, isIntegrationsOpen, isLLMSettingsOpen, isAdminOpen]
+    [isConversationsOpen, isAnalyticsOpen, isTestsOpen, isIntegrationsOpen, isLLMSettingsOpen, isAdminOpen]
   );
 
   useEffect(() => {
@@ -534,6 +551,7 @@ export function AppSidebar() {
   // Auto-expand section when navigating directly to a child route
   useEffect(() => {
     const setterMap: Record<string, (v: boolean) => void> = {
+      Conversations: setConversationsOpen,
       Analytics: setAnalyticsOpen,
       Tests: setTestsOpen,
       Integrations: setIntegrationsOpen,
