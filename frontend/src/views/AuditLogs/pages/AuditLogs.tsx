@@ -7,6 +7,7 @@ import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDeta
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { Select, SelectItem, SelectContent, SelectTrigger } from "@/components/select";
+import { Input } from "@/components/ui/input";
 import { format, startOfDay, subDays, endOfDay, addDays } from "date-fns";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
@@ -41,9 +42,16 @@ export default function AuditLogs() {
   const [dateRange, setDateRange] = usePersistedDateRange(defaultRange);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  const [tableName, setTableName] = useState<string>("");
+  const [debouncedTableName, setDebouncedTableName] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 30;
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedTableName(tableName.trim()), 1000);
+    return () => clearTimeout(timeout);
+  }, [tableName]);
 
   const isLastPage = filteredAuditLogs.length < pageSize;
   const totalPages = currentPage + (isLastPage ? 0 : 1);
@@ -62,6 +70,7 @@ export default function AuditLogs() {
         date_from,
         date_to,
         action,
+        debouncedTableName,
         user,
         pageSize,
         offset
@@ -94,6 +103,7 @@ export default function AuditLogs() {
     searchQuery,
     selectedAction,
     selectedUser,
+    debouncedTableName,
   ]);
 
   useEffect(() => {
@@ -122,6 +132,8 @@ export default function AuditLogs() {
     setDateRange(defaultRange);
     setSelectedUser(null);
     setSelectedAction(null);
+    setTableName("");
+    setDebouncedTableName("");
     setCurrentPage(1);
   };
 
@@ -176,6 +188,15 @@ export default function AuditLogs() {
                         <SelectItem value="Delete">Delete</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="w-40">
+                    <Input
+                      value={tableName}
+                      onChange={(e) => setTableName(e.target.value)}
+                      placeholder="Table name"
+                      className="text-sm bg-white"
+                    />
                   </div>
 
                   {/* add refresh button */}

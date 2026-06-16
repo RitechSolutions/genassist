@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback } from "react";
+import { useCallback } from "react";
 import { NodeData } from "../types/nodes";
+import { useAudioCapture } from "./useAudioCapture";
 
 interface UseAudioTestOptions {
   nodeType: string;
@@ -8,15 +9,22 @@ interface UseAudioTestOptions {
   setError: (error: string | null) => void;
 }
 
-export function useAudioTest({ nodeType, nodeData, setFormData, setError }: UseAudioTestOptions) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [audioFileName, setAudioFileName] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export function buildAudioPayload(base64: string, format: string): string {
+  return JSON.stringify({
+    type: "audio",
+    format,
+    encoding: "base64",
+    data: base64,
+  });
+}
 
+export function useAudioTest({ nodeType, nodeData, setFormData, setError }: UseAudioTestOptions) {
   const isSTTNode = nodeType === "sttNode";
   const isTTSNode = nodeType === "ttsNode";
+  // The voice agent reads audio from the `audio_data` state key and requires
+  // WAV input (the Live API has no webm decoder).
+  const isVoiceAgentNode = nodeType === "voiceAgentNode";
+  const isAudioInputNode = isSTTNode || isVoiceAgentNode;
 
   const getSTTAudioKey = useCallback((): string => {
     const audioSource = (nodeData as unknown as Record<string, unknown>).audio_source;
@@ -27,88 +35,70 @@ export function useAudioTest({ nodeType, nodeData, setFormData, setError }: UseA
     return "source.output";
   }, [nodeData]);
 
-  const buildAudioPayload = useCallback((base64: string, format: string): string => {
-    return JSON.stringify({
-      type: "audio",
-      format,
-      encoding: "base64",
-      data: base64,
-    });
-  }, []);
+  const getAudioKey = useCallback(
+    (): string => (isVoiceAgentNode ? "audio_data" : getSTTAudioKey()),
+    [isVoiceAgentNode, getSTTAudioKey]
+  );
 
-  const handleAudioFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAudioFileName(file.name);
-    const ext = file.name.split(".").pop()?.toLowerCase() || "mp3";
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      const key = getSTTAudioKey();
-      setFormData((prev) => ({ ...prev, [key]: buildAudioPayload(base64, ext) }));
-    };
-    reader.readAsDataURL(file);
-  }, [getSTTAudioKey, setFormData, buildAudioPayload]);
+  const onAudio = useCallback(
+    (base64: string, format: string) => {
+      setFormData((prev) => ({ ...prev, [getAudioKey()]: buildAudioPayload(base64, format) }));
+    },
+    [getAudioKey, setFormData]
+  );
 
-  const startRecording = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        stream.getTracks().forEach((t) => t.stop());
-        setAudioFileName("recording.webm");
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(",")[1];
-          const key = getSTTAudioKey();
-          setFormData((prev) => ({ ...prev, [key]: buildAudioPayload(base64, "webm") }));
-        };
-        reader.readAsDataURL(blob);
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch {
-      setError("Microphone access denied");
-    }
-  }, [getSTTAudioKey, setFormData, setError]);
-
-  const stopRecording = useCallback(() => {
-    mediaRecorderRef.current?.stop();
-    setIsRecording(false);
-  }, []);
+  const { isRecording, audioFileName, fileInputRef, handleAudioFileUpload, startRecording, stopRecording } =
+    useAudioCapture({ convertToWav: isVoiceAgentNode, onAudio, onError: setError });
 
   return {
     isSTTNode,
     isTTSNode,
+    isVoiceAgentNode,
+    isAudioInputNode,
     isRecording,
     audioFileName,
     fileInputRef,
     getSTTAudioKey,
+    getAudioKey,
     handleAudioFileUpload,
     startRecording,
     stopRecording,
   };
 }
 
-export function getAudioUrl(outputData: unknown): string | null {
-  if (!outputData || typeof outputData !== "object") return null;
-  const obj = outputData as Record<string, unknown>;
-  const out = obj.output;
-  if (out && typeof out === "object") {
-    const audioOut = out as Record<string, unknown>;
-    if (audioOut.type === "audio" && audioOut.data && audioOut.encoding === "base64") {
-      const fmt = (audioOut.format as string) || "mp3";
-      return `data:audio/${fmt};base64,${audioOut.data}`;
-    }
+// Find a base64 audio payload in a node/workflow result, handling all shapes:
+//  - a bare audio dict (TTS node output IS the audio)
+//  - nested under `audio` (Voice Agent output: { message, audio: {...} })
+//  - wrapped under `output` (full test response: { status, output: {...} })
+function findAudioPayload(value: unknown): { data: string; format: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  if (obj.type === "audio" && typeof obj.data === "string" && obj.encoding === "base64") {
+    return { data: obj.data, format: (obj.format as string) || "mp3" };
   }
-  return null;
+  return findAudioPayload(obj.audio) || findAudioPayload(obj.output);
+}
+
+export function getAudioUrl(outputData: unknown): string | null {
+  const payload = findAudioPayload(outputData);
+  return payload ? `data:audio/${payload.format};base64,${payload.data}` : null;
+}
+
+// Replace base64 audio blobs with a short placeholder so result JSON stays
+// readable (the audio is surfaced via a player instead).
+export function stripAudioDataForDisplay(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripAudioDataForDisplay);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(obj)) {
+      if (key === "data" && obj.type === "audio" && typeof v === "string") {
+        out[key] = `<${v.length} chars base64 audio>`;
+      } else {
+        out[key] = stripAudioDataForDisplay(v);
+      }
+    }
+    return out;
+  }
+  return value;
 }

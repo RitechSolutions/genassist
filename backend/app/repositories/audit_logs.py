@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.audit_log import AuditLogModel
-from app.schemas.audit_log import AuditLogSearchParams
+from app.schemas.filter import AuditLogFilter
 
 @inject
 class AuditLogRepository:
@@ -13,7 +13,7 @@ class AuditLogRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def search_logs(self, search_params: AuditLogSearchParams) -> list[AuditLogModel]:
+    async def search_logs(self, search_params: AuditLogFilter) -> list[AuditLogModel]:
         """
         Search audit logs with filters. Excludes json_changes for performance.
         """
