@@ -236,7 +236,9 @@ class DashboardRepository:
             conv_count_by_operator = {row.operator_id: row.count for row in conv_count_result.all()}
 
         # Fetch avg response times for all operators in a single query
-        avg_response_by_operator = await self._calculate_response_times_for_operators(operator_ids)
+        avg_response_by_operator = await self._calculate_response_times_for_operators(
+            operator_ids, from_date=from_date, to_date=to_date
+        )
 
         agent_stats = []
         for agent in agents:
@@ -258,7 +260,10 @@ class DashboardRepository:
         return agent_stats
 
     async def _calculate_response_times_for_operators(
-        self, operator_ids: list[UUID]
+        self,
+        operator_ids: list[UUID],
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
     ) -> dict[UUID, int]:
         """Calculate average response time per operator in a single SQL query."""
         if not operator_ids:
@@ -287,6 +292,11 @@ class DashboardRepository:
             )
             .group_by(ConversationModel.operator_id)
         )
+
+        if from_date:
+            query = query.where(ConversationModel.conversation_date >= from_date)
+        if to_date:
+            query = query.where(ConversationModel.conversation_date <= to_date)
 
         result = await self.db.execute(query)
         return {
