@@ -113,6 +113,9 @@ async def get_agent_info(
     response = {
         "agent_id": str(agent.id),
         "agent_available_languages": available_languages,
+        # True when the agent's workflow contains a voiceAgentNode, so the widget can
+        # switch to voice-only mode without the integrator passing a prop.
+        "live_voice_enabled": bool(getattr(request.state, "agent_live_voice_enabled", False)),
     }
 
     agent_security_settings = agent.security_settings if hasattr(agent, "security_settings") else None

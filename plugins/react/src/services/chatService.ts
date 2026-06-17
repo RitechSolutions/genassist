@@ -313,6 +313,7 @@ export class ChatService {
       return {
         agent_id: agentId,
         agent_available_languages: availableLanguages,
+        live_voice_enabled: data.live_voice_enabled === true,
       };
     } catch (_error) {
       return null;

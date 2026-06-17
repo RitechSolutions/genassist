@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { VoiceAgentNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
@@ -21,6 +22,16 @@ type VoiceAgentDialogProps = BaseNodeDialogProps<
   VoiceAgentNodeData,
   VoiceAgentNodeData
 >;
+
+/** Parse a numeric input value, mapping blank/invalid (e.g. "-", ".") to undefined. */
+const toNumberOrUndef = (
+  value: string,
+  parse: (v: string) => number,
+): number | undefined => {
+  if (value === "") return undefined;
+  const n = parse(value);
+  return Number.isNaN(n) ? undefined : n;
+};
 
 const LIVE_MODELS = [
   {
@@ -49,10 +60,21 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
 
   const [config, setConfig] = useState<VoiceAgentNodeData>(data);
 
+  const hasAdvanced = (d: VoiceAgentNodeData) =>
+    d.temperature != null ||
+    d.maxOutputTokens != null ||
+    d.vadSilenceMs != null ||
+    !!d.vadStartSensitivity ||
+    !!d.vadEndSensitivity ||
+    !!d.proactiveAudio ||
+    !!d.contextCompression;
+  const [showAdvanced, setShowAdvanced] = useState(() => hasAdvanced(data));
+
   // Reset state when the dialog is opened to reflect the current node data
   useEffect(() => {
     if (isOpen) {
       setConfig(data);
+      setShowAdvanced(hasAdvanced(data));
     }
   }, [isOpen, data]);
 
@@ -318,6 +340,169 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
               setConfig((prev) => ({ ...prev, piiMasking: checked }))
             }
           />
+        </div>
+
+        {/* --- Advanced live tuning (collapsed; unset = Gemini Live defaults) --- */}
+        <div className="pt-2 border-t border-border">
+          <button
+            type="button"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
+            {showAdvanced ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+            Advanced: live tuning
+          </button>
+
+          {showAdvanced && (
+            <div className="space-y-3 mt-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="temperature">Temperature</Label>
+                  <RichInput
+                    id="temperature"
+                    type="number"
+                    value={config.temperature != null ? String(config.temperature) : ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setConfig((prev) => ({
+                        ...prev,
+                        temperature: toNumberOrUndef(v, parseFloat),
+                      }));
+                    }}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    placeholder="model default"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="maxOutputTokens">Max Output Tokens</Label>
+                  <RichInput
+                    id="maxOutputTokens"
+                    type="number"
+                    value={config.maxOutputTokens != null ? String(config.maxOutputTokens) : ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setConfig((prev) => ({
+                        ...prev,
+                        maxOutputTokens: toNumberOrUndef(v, (s) => parseInt(s, 10)),
+                      }));
+                    }}
+                    min={1}
+                    step={1}
+                    placeholder="no cap"
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="vadSilenceMs">End-of-turn Silence (ms)</Label>
+                <p className="text-xs text-muted-foreground mb-1">
+                  How long a pause counts as "you finished". Lower = snappier turn-taking.
+                </p>
+                <RichInput
+                  id="vadSilenceMs"
+                  type="number"
+                  value={config.vadSilenceMs != null ? String(config.vadSilenceMs) : ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setConfig((prev) => ({
+                      ...prev,
+                      vadSilenceMs: toNumberOrUndef(v, (s) => parseInt(s, 10)),
+                    }));
+                  }}
+                  min={0}
+                  step={50}
+                  placeholder="model default"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Start Sensitivity</Label>
+                  <Select
+                    value={config.vadStartSensitivity || "default"}
+                    onValueChange={(value) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        vadStartSensitivity:
+                          value === "default"
+                            ? undefined
+                            : (value as VoiceAgentNodeData["vadStartSensitivity"]),
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default</SelectItem>
+                      <SelectItem value="START_SENSITIVITY_HIGH">High (eager)</SelectItem>
+                      <SelectItem value="START_SENSITIVITY_LOW">Low (cautious)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>End Sensitivity</Label>
+                  <Select
+                    value={config.vadEndSensitivity || "default"}
+                    onValueChange={(value) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        vadEndSensitivity:
+                          value === "default"
+                            ? undefined
+                            : (value as VoiceAgentNodeData["vadEndSensitivity"]),
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default</SelectItem>
+                      <SelectItem value="END_SENSITIVITY_HIGH">High (sooner)</SelectItem>
+                      <SelectItem value="END_SENSITIVITY_LOW">Low (waits)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="voice-agent-proactive">Proactive Audio</Label>
+                <Switch
+                  id="voice-agent-proactive"
+                  checked={config.proactiveAudio || false}
+                  onCheckedChange={(checked) =>
+                    setConfig((prev) => ({ ...prev, proactiveAudio: checked }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="voice-agent-compression">Context Compression</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Sliding-window so long calls stay within the context limit.
+                  </p>
+                </div>
+                <Switch
+                  id="voice-agent-compression"
+                  checked={config.contextCompression || false}
+                  onCheckedChange={(checked) =>
+                    setConfig((prev) => ({ ...prev, contextCompression: checked }))
+                  }
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </NodeConfigPanel>

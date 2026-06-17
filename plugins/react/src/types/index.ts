@@ -60,6 +60,8 @@ export interface StartConversationResponse {
 export interface AgentInfoResponse {
   agent_id?: string;
   agent_available_languages?: string[];
+  /** True when the agent's workflow contains a Voice Agent node (voice-only mode). */
+  live_voice_enabled?: boolean;
 }
 
 /** Per-locale agent strings (welcome, quick queries, thinking) from GET .../agent-chat-locales */

@@ -28,8 +28,17 @@ async def get_agent_for_start(
     agent = await agent_config_service.get_by_user_id(userid, with_workflow=True)
 
     test_input = None
+    live_voice_enabled = False
     if agent.workflow:
-        test_input = agent.workflow.get('testInput', None) 
+        # A live-voice agent's workflow contains exactly one voiceAgentNode. Detect
+        # it here while the full workflow dict is still loaded (it's overwritten with
+        # testInput just below), so callers can enable voice-only mode without a flag.
+        nodes = agent.workflow.get('nodes') or []
+        live_voice_enabled = any(
+            isinstance(node, dict) and node.get('type') == 'voiceAgentNode' for node in nodes
+        )
+
+        test_input = agent.workflow.get('testInput', None)
 
         # remove message from testInput with pop()
         if test_input and 'message' in test_input:
@@ -37,6 +46,7 @@ async def get_agent_for_start(
         agent.workflow = test_input
 
     request.state.agent = agent
+    request.state.agent_live_voice_enabled = live_voice_enabled
     return agent
 
 

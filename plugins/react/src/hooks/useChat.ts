@@ -84,6 +84,8 @@ export const useChat = ({
   const [inputDisclaimerHtml, setInputDisclaimerHtml] = useState<string | null>(null);
   const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [agentLiveVoiceEnabled, setAgentLiveVoiceEnabled] = useState<boolean>(false);
   const [availableLanguages, setAvailableLanguages] = useState<string[] | null>(
     null,
   );
@@ -354,6 +356,10 @@ export const useChat = ({
         if (info && Array.isArray(info.agent_available_languages)) {
           setAvailableLanguages(info.agent_available_languages);
         }
+        if (info?.agent_id) {
+          setAgentId(info.agent_id);
+        }
+        setAgentLiveVoiceEnabled(info?.live_voice_enabled === true);
 
         if (cancelled) return;
         if (info && Array.isArray(info.agent_available_languages)) {
@@ -1063,5 +1069,7 @@ export const useChat = ({
     thinkingDelayMs,
     availableLanguages,
     chatInputMetadata,
+    agentId,
+    agentLiveVoiceEnabled,
   };
 };
