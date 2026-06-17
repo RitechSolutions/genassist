@@ -1,7 +1,7 @@
-import base64
 import logging
 from typing import Any, Dict
 
+from app.modules.workflow.audio.audio_input import build_audio_payload
 from app.modules.workflow.engine.base_node import BaseNode
 
 logger = logging.getLogger(__name__)
@@ -25,15 +25,8 @@ class TTSNode(BaseNode):
 
             provider = await get_tts_provider(audio_provider_id)
             audio_bytes = await provider.synthesize(text, config)
-            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-            output_format = config.get("output_format", "mp3")
-            return {
-                "type": "audio",
-                "format": output_format,
-                "encoding": "base64",
-                "data": audio_base64,
-            }
+            return build_audio_payload(audio_bytes, config.get("output_format", "mp3"))
         except Exception as e:
             error_msg = f"TTS generation failed: {str(e)}"
             logger.error(error_msg, exc_info=True)

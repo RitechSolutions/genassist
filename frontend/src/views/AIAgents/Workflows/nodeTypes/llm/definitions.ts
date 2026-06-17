@@ -7,8 +7,10 @@ import {
   LLMModelNodeData,
   ToolBuilderNodeData,
   MCPNodeData,
+  VoiceAgentNodeData,
 } from "../../types/nodes";
 import AgentNode from "./agentNode";
+import VoiceAgentNode from "./voiceAgentNode";
 import ExternalAgentNode from "./externalAgentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
@@ -65,6 +67,62 @@ export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "agentNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const VOICE_AGENT_NODE_DEFINITION: NodeTypeDefinition<VoiceAgentNodeData> = {
+  type: "voiceAgentNode",
+  label: "Voice Agent",
+  description:
+    "Native speech-to-speech AI agent: one Gemini Live model hears the user, calls tools, and answers with voice.",
+  shortDescription: "Native speech-to-speech agent",
+  configSubtitle:
+    "Configure the Gemini voice provider, live model, voice, prompts, tools, and memory.",
+  category: "ai",
+  icon: "MicVocal",
+  defaultData: {
+    name: "Voice Agent",
+    voiceProviderId: undefined,
+    model: "gemini-3.1-flash-live-preview",
+    voice: "Kore",
+    language: undefined,
+    systemPrompt:
+      "You are a helpful voice assistant. Keep your spoken answers concise.",
+    userPrompt: "{{session.message}}",
+    maxToolCalls: 10,
+    memory: false,
+    piiMasking: false,
+    memoryTrimmingMode: "message_count",
+    maxMessages: 10,
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "input_tools",
+        type: "target",
+        compatibility: "tools",
+        position: "bottom",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  },
+  component: VoiceAgentNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "voiceAgentNode",
     position,
     data: {
       ...data,
