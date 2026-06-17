@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
     NOT_FOUND = "not_found"
+    AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
@@ -159,6 +160,7 @@ ERROR_MESSAGES = {
     "en": {
         ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
+        ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",

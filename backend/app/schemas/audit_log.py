@@ -3,16 +3,6 @@ from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
-class AuditLogSearchParams(BaseModel):
-    start_date: Optional[datetime] | None = None
-    end_date: Optional[datetime] | None = None
-    action: Optional[str] | None = None
-    table_name: Optional[str] | None = None
-    entity_id: Optional[UUID] | None = None
-    modified_by: Optional[UUID] | None = None
-    limit:  Optional[int] = None
-    offset: Optional[int] = None
-
 class AuditLogBase(BaseModel):
     """Base schema for audit log with common fields."""
     id: int

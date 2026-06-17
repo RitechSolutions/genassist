@@ -3831,7 +3831,7 @@
           "Audit Logs"
         ],
         "summary": "Search",
-        "description": "Search audit logs with optional filters:\n- start_date: Filter logs from this date\n- end_date: Filter logs until this date\n- action: Filter by action type (Insert, Update, Delete)\n- table_name: Filter by table name\n- entity_id: Filter by record UUID\n- modified_by: Filter by user UUID who made the change",
+        "description": "Search audit logs with optional filters:\n- date_from: Filter logs from this date\n- date_to: Filter logs until this date\n- action: Filter by action type (Insert, Update, Delete)\n- table_name: Filter by table name\n- entity_id: Filter by record UUID\n- user: Filter by user UUID who made the change",
         "operationId": "search_api_audit_logs_search_get",
         "security": [
           {
@@ -3847,8 +3847,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date-time",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Date From"
             }
           },
@@ -3857,8 +3864,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date-time",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Date To"
             }
           },
@@ -3867,7 +3881,14 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Action"
             }
           },
@@ -3876,7 +3897,14 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Table Name"
             }
           },
@@ -3885,8 +3913,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "uuid",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Entity Id"
             }
           },
@@ -3895,8 +3930,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "uuid",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "User"
             }
           },
