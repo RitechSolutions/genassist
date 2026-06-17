@@ -115,6 +115,7 @@ class AzureDevOpsConnector:
         area_path: str | None = None,
         work_item_type: str | None = None,
         extra_fields: dict[str, str] | None = None,
+        attachments: list[str] | None = None,
     ) -> dict[str, Any]:
         wit = (work_item_type or self.work_item_type or DEFAULT_WORK_ITEM_TYPE).strip()
         url = (
@@ -158,6 +159,22 @@ class AzureDevOpsConnector:
                     "value": area_path,
                 }
             )
+        if attachments:
+            # Link uploaded attachments to the work item. Without this association
+            # Azure DevOps strips inline <img> tags that reference them, so the
+            # images never render in the work item's HTML fields.
+            for attachment_url in attachments:
+                patch.append(
+                    {
+                        "op": "add",
+                        "path": "/relations/-",
+                        "value": {
+                            "rel": "AttachedFile",
+                            "url": attachment_url,
+                            "attributes": {"comment": "Inline image from Help Center"},
+                        },
+                    }
+                )
         return await self._request(
             "POST",
             url,

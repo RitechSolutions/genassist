@@ -67,15 +67,19 @@ def _reporter_tags(ticket: SupportTicketModel) -> list[str]:
     return tags
 
 
-async def _upload_inline_images(connector: AzureDevOpsConnector, html_value: str) -> str:
+async def _upload_inline_images(
+    connector: AzureDevOpsConnector, html_value: str
+) -> tuple[str, list[str]]:
     """Upload inline base64 images to ADO and rewrite to attachment URLs.
 
     Azure DevOps HTML fields do not render base64 data URIs, so each embedded
     image is uploaded as a work item attachment and the ``src`` is swapped for
-    the returned attachment URL (which ADO renders inline).
+    the returned attachment URL. Returns the rewritten HTML plus the list of
+    uploaded attachment URLs, which the caller must link to the work item (as
+    AttachedFile relations) or Azure strips the inline images.
     """
     if not html_value or "data:image/" not in html_value:
-        return html_value
+        return html_value, []
 
     replacements: dict[str, str] = {}
     for index, match in enumerate(_DATA_URI_IMG_RE.finditer(html_value)):
@@ -91,9 +95,7 @@ async def _upload_inline_images(connector: AzureDevOpsConnector, html_value: str
         ext = _EXT_BY_SUBTYPE.get(subtype, subtype)
         try:
             uploaded = await connector.upload_attachment(
-                f"helpcenter-image-{index + 1}.{ext}",
-                content,
-                content_type=f"image/{subtype}",
+                f"helpcenter-image-{index + 1}.{ext}", content
             )
         except Exception:
             logger.exception("Failed to upload inline image to Azure DevOps")
@@ -105,7 +107,7 @@ async def _upload_inline_images(connector: AzureDevOpsConnector, html_value: str
     result = html_value
     for data_uri, attachment_url in replacements.items():
         result = result.replace(data_uri, attachment_url)
-    return result
+    return result, list(replacements.values())
 
 
 @inject
@@ -153,8 +155,12 @@ class SupportTicketSyncService:
         base_url = payload.get("app_base_url") or get_help_center_public_base_url()
         footer = _footer_html(ticket, app_base_url=base_url)
 
+        attachment_urls: list[str] = []
+
         async def prep(value: Optional[str]) -> str:
-            return await _upload_inline_images(connector, value or "")
+            rewritten, urls = await _upload_inline_images(connector, value or "")
+            attachment_urls.extend(urls)
+            return rewritten
 
         # Map the per-type rich-text fields onto the Azure DevOps work item form.
         # Bug -> Repro Steps / System Info / Acceptance Criteria,
@@ -192,6 +198,7 @@ class SupportTicketSyncService:
             area_path=payload.get("area_path") or get_help_center_default_area_path(),
             work_item_type=resolve_work_item_type(ticket.ticket_type),
             extra_fields=extra_fields,
+            attachments=attachment_urls,
         )
         work_item_id = result.get("id")
         if not work_item_id:

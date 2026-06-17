@@ -37,8 +37,27 @@ def get_help_center_ado_connector() -> AzureDevOpsConnector:
 
 
 def get_help_center_default_area_path() -> str | None:
+    """Azure DevOps Area Path for Help Center (client-reported) work items.
+
+    Setting ``AZURE_DEVOPS_DEFAULT_AREA_PATH`` routes every Help Center submission
+    into a dedicated Azure Boards Area (e.g. "Client Reported Bugs"), keeping them
+    separate from work items created manually. The value may be either:
+
+    * a bare area name ("Client Reported Bugs") — automatically prefixed with the
+      project, yielding "<Project>\\Client Reported Bugs"; or
+    * a full path ("GenAssist\\Client Reported Bugs", "/" separators accepted).
+
+    Returns ``None`` when unset, so work items fall back to the project root area.
+    """
     value = (settings.AZURE_DEVOPS_DEFAULT_AREA_PATH or "").strip()
-    return value or None
+    if not value:
+        return None
+    # Azure area paths are backslash-separated; accept "/" for convenience.
+    value = value.replace("/", "\\").strip("\\")
+    project = (settings.AZURE_DEVOPS_PROJECT or "").strip()
+    if "\\" not in value and project and value.lower() != project.lower():
+        return f"{project}\\{value}"
+    return value
 
 
 def get_help_center_public_base_url() -> str:
