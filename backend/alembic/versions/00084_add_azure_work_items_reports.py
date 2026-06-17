@@ -1,7 +1,7 @@
 """add_azure_work_items_reports
 
 Revision ID: c2bce7366f69
-Revises: 5d4d7a65f44b
+Revises: 753019ca4eb2
 Create Date: 2026-06-15 16:10:03.163069
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "c2bce7366f69"
-down_revision: Union[str, None] = "5d4d7a65f44b"
+down_revision: Union[str, None] = "753019ca4eb2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
