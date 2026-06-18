@@ -178,6 +178,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     availableLanguages: agentAvailableLanguages,
     agentId,
     agentLiveVoiceEnabled,
+    agentLiveVoiceReady,
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
@@ -405,7 +406,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   };
 
+  // Neutral, user-facing notice shown when a live call can't start / fails. The
+  // message is already neutral (the backend never sends internal config detail), so
+  // it's safe for public widgets — it just avoids a confusing silent close.
+  const [liveVoiceNotice, setLiveVoiceNotice] = useState<string | null>(null);
+
   const handleVoiceError = (error: Error) => {
+    setLiveVoiceNotice(error.message || 'Voice is currently unavailable');
     if (onError) {
       onError(error);
     }
@@ -415,6 +422,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // workflow contains a Voice Agent node (auto-detected by the backend and
   // surfaced through `agentLiveVoiceEnabled`). No integrator prop is involved.
   const liveVoiceEnabled = agentLiveVoiceEnabled;
+  // Whether live voice can actually run (a Gemini provider with a key is configured).
+  // When false we keep voice-only mode but disable the call control with a neutral
+  // message — the specific reason stays server-side, never shown to public users.
+  const liveVoiceReady = agentLiveVoiceReady;
 
   // Live (continuous) voice conversation against the agent's Voice Agent node.
   // `liveCaption` is the in-progress turn (streams as you speak); `liveTurns` are
@@ -456,6 +467,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   // Starting a fresh call clears the previous call's transcript bubbles + caption.
   const startLiveCall = useCallback(() => {
+    setLiveVoiceNotice(null);
     setLiveCaption({ user: '', agent: '', createTime: 0 });
     setLiveTurns([]);
     liveVoice.start();
@@ -1132,6 +1144,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
 
+        {liveVoiceNotice && (
+          <div
+            style={{
+              margin: '0 16px 8px',
+              padding: '10px 14px',
+              backgroundColor: '#FFF3E0',
+              color: '#E65100',
+              borderRadius: '12px',
+              fontSize,
+              fontFamily,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexShrink: 0,
+            }}
+            role="alert"
+          >
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span>{liveVoiceNotice}</span>
+          </div>
+        )}
+
         {useFile && attachments.length > 0 && (
           <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {attachments.map((att, index) => (
@@ -1185,7 +1219,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
               <div style={inputWrapperStyle}>
                 <span style={getLiveVoiceHintStyle(textAreaFontSize, fontFamily)}>
-                  {t('liveVoice.tapToStart', 'Tap to start a voice conversation')}
+                  {liveVoiceReady
+                    ? t('liveVoice.tapToStart', 'Tap to start a voice conversation')
+                    : t('liveVoice.unavailable', 'Voice is currently unavailable')}
                 </span>
                 <LiveCallControl
                   status={liveVoice.status}
@@ -1193,7 +1229,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   onStart={startLiveCall}
                   onStop={endLiveCall}
                   theme={theme}
-                  disabled={!agentId}
+                  disabled={!agentId || !liveVoiceReady}
                 />
               </div>
               {agentDisclaimerContent && (

@@ -86,6 +86,7 @@ export const useChat = ({
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [agentLiveVoiceEnabled, setAgentLiveVoiceEnabled] = useState<boolean>(false);
+  const [agentLiveVoiceReady, setAgentLiveVoiceReady] = useState<boolean>(false);
   const [availableLanguages, setAvailableLanguages] = useState<string[] | null>(
     null,
   );
@@ -360,6 +361,7 @@ export const useChat = ({
           setAgentId(info.agent_id);
         }
         setAgentLiveVoiceEnabled(info?.live_voice_enabled === true);
+        setAgentLiveVoiceReady(info?.live_voice_ready === true);
 
         if (cancelled) return;
         if (info && Array.isArray(info.agent_available_languages)) {
@@ -1071,5 +1073,6 @@ export const useChat = ({
     chatInputMetadata,
     agentId,
     agentLiveVoiceEnabled,
+    agentLiveVoiceReady,
   };
 };

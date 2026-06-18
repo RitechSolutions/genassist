@@ -87,6 +87,13 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
   const geminiProviders = audioProviders?.filter(
     (p) => p.provider_type === "gemini"
   );
+  // Flag a configured-but-keyless provider so the operator fixes it before it
+  // silently fails at runtime (the widget only ever shows a neutral "unavailable").
+  const selectedProvider = geminiProviders?.find(
+    (p) => p.id === config.voiceProviderId
+  );
+  const selectedProviderMissingKey =
+    !!selectedProvider && !selectedProvider.connection_data?.api_key;
 
   const handleSave = () => {
     onUpdate({
@@ -152,6 +159,12 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           {geminiProviders && geminiProviders.length === 0 && (
             <p className="text-xs text-destructive">
               No Gemini audio provider configured yet.
+            </p>
+          )}
+          {selectedProviderMissingKey && (
+            <p className="text-xs text-destructive">
+              The selected Gemini provider has no API key. Live voice won&apos;t
+              work until you add one under Settings → Audio Providers.
             </p>
           )}
         </div>

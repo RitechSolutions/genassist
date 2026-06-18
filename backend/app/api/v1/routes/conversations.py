@@ -88,6 +88,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _voice_provider_has_key(provider_id) -> bool:
+    """Best-effort check that the live-voice node's provider is a Gemini provider
+    with an API key. Returns False (never raises) on any problem — the widget only
+    needs a yes/no, and a wrong 'not ready' is safer than failing the bootstrap."""
+    if not provider_id:
+        return False
+    try:
+        from uuid import UUID
+
+        from app.modules.workflow.audio.provider import load_connection_data
+
+        provider_type, connection_data = await load_connection_data(UUID(str(provider_id)))
+        return provider_type == "gemini" and bool(connection_data.get("api_key"))
+    except Exception as exc:
+        logger.warning("Live-voice readiness check failed for provider %s: %s", provider_id, exc)
+        return False
+
+
 @router.get(
     "/in-progress/agent-info",
     dependencies=[
@@ -110,12 +128,22 @@ async def get_agent_info(
 
     available_languages = await translations_service.get_languages_for_prefix(f"agent.{agent.id}.")
 
+    # True when the agent's workflow contains a voiceAgentNode (so the widget can
+    # switch to voice-only mode without an integrator prop). `live_voice_ready` then
+    # tells the widget whether a usable Gemini key is configured — only a boolean is
+    # exposed, never the reason, since the widget can be shown to public end users.
+    live_voice_enabled = bool(getattr(request.state, "agent_live_voice_enabled", False))
+    live_voice_ready = False
+    if live_voice_enabled:
+        live_voice_ready = await _voice_provider_has_key(
+            getattr(request.state, "agent_voice_provider_id", None)
+        )
+
     response = {
         "agent_id": str(agent.id),
         "agent_available_languages": available_languages,
-        # True when the agent's workflow contains a voiceAgentNode, so the widget can
-        # switch to voice-only mode without the integrator passing a prop.
-        "live_voice_enabled": bool(getattr(request.state, "agent_live_voice_enabled", False)),
+        "live_voice_enabled": live_voice_enabled,
+        "live_voice_ready": live_voice_ready,
     }
 
     agent_security_settings = agent.security_settings if hasattr(agent, "security_settings") else None

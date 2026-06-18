@@ -62,6 +62,8 @@ export interface AgentInfoResponse {
   agent_available_languages?: string[];
   /** True when the agent's workflow contains a Voice Agent node (voice-only mode). */
   live_voice_enabled?: boolean;
+  /** True when live voice is usable (a Gemini provider with an API key is configured). */
+  live_voice_ready?: boolean;
 }
 
 /** Per-locale agent strings (welcome, quick queries, thinking) from GET .../agent-chat-locales */

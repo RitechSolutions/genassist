@@ -27,6 +27,19 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+async def _fail(websocket: WebSocket, message: str) -> None:
+    """Send a neutral error event (no internal detail) to an accepted socket, then
+    close it. Used when the live session can't start; the real reason is logged."""
+    try:
+        await websocket.send_json({"type": "error", "message": message})
+    except Exception:
+        pass
+    try:
+        await websocket.close()
+    except Exception:
+        pass
+
+
 async def _recv_from_client(websocket: WebSocket, audio_in: asyncio.Queue) -> None:
     """Pump inbound binary mic frames into the audio queue until disconnect."""
     try:
@@ -53,7 +66,12 @@ async def ws_live_voice(
     """Hold a live voice conversation against an agent's Voice Agent node."""
     tenant_id = getattr(principal, "tenant_id", None) or "master"
 
-    # Resolve the node + its live config BEFORE accepting, so we can reject cleanly.
+    # Accept first so we can send a (neutral) error event the client can surface,
+    # then resolve the node + its live config. The specific reason (e.g. a missing
+    # Gemini key) is logged server-side only — the widget can be shown to public end
+    # users, so it never receives internal configuration details.
+    await websocket.accept()
+
     try:
         from app.modules.workflow.engine.nodes.voice_agent_node import VoiceAgentNode
 
@@ -61,14 +79,14 @@ async def ws_live_voice(
         cfg = await node.build_live_session_config()
     except Exception as exc:
         logger.warning("Live voice setup failed for agent %s: %s", agent_id, exc)
-        await websocket.close(code=4404)
+        await _fail(websocket, "Voice is currently unavailable.")
         return
 
     try:  # the SDK must be installed
         from google import genai  # noqa: F401
     except ImportError:
         logger.error("google-genai not installed")
-        await websocket.close(code=4500)
+        await _fail(websocket, "Voice is currently unavailable.")
         return
 
     async def _set_transcript(transcript: str) -> None:
@@ -142,7 +160,6 @@ async def ws_live_voice(
         persist_turn=_persist,
     )
 
-    await websocket.accept()
     logger.info("Live voice accepted: agent=%s thread=%s user=%s", agent_id, thread_id, principal.user_id)
 
     audio_in: asyncio.Queue = asyncio.Queue()

@@ -314,6 +314,7 @@ export class ChatService {
         agent_id: agentId,
         agent_available_languages: availableLanguages,
         live_voice_enabled: data.live_voice_enabled === true,
+        live_voice_ready: data.live_voice_ready === true,
       };
     } catch (_error) {
       return null;
