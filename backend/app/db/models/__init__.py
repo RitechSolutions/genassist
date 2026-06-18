@@ -37,6 +37,7 @@ from .files_upload_session import FilesUploadSessionModel
 from .fine_tuning import FineTuningEventModel, FineTuningJobModel, OpenAIFileModel
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
+from .message_issue import MessageIssueModel
 from .ml_model import MLModel
 from .ml_model_pipeline import (
     ArtifactType,
@@ -114,6 +115,7 @@ __all__ = [
     "PromptConfigModel",
     "FilesUploadSessionModel",
     "AudioProvidersModel",
+    "MessageIssueModel",
 ]
 
 models = [
@@ -166,6 +168,7 @@ models = [
     PromptVersionModel,
     PromptConfigModel,
     AudioProvidersModel,
+    MessageIssueModel,
 ]
 
 auto_register_updated_by(models)

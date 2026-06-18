@@ -58,7 +58,12 @@ from app.schemas.conversation_transcript import (
     InProgressConversationTranscriptFinalize,
     TranscriptSegmentFeedback,
 )
-from app.schemas.filter import ConversationFilter
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import ConversationFilter, MessageIssueFilter
+from app.schemas.message_issue import (
+    IssueStatusUpdate,
+    ReportedIssueRead,
+)
 from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
@@ -196,6 +201,23 @@ async def get_agent_chat_locales(
     json_response = JSONResponse(content=response)
     apply_agent_cors_headers(request, json_response, agent_security_settings)
     return json_response
+
+
+@router.get(
+    "/issues",
+    response_model=PaginatedResponse[ReportedIssueRead],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_message_issues(
+    filter_obj: MessageIssueFilter = Depends(),
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Paginated list of messages with an admin/supervisor comment (reported
+    issues), newest first, with conversation + agent/workflow context and the
+    tracked resolution status. Group-scoped; all filters applied server-side."""
+    return await transcript_message_service.get_message_issues(filter_obj)
 
 
 @router.get(
@@ -805,6 +827,24 @@ async def get_conversation_count(
     return await conversations_service.count_conversations(conversation_filter)
 
 
+@router.patch(
+    "/issues/{message_feedback_id}/status",
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def update_message_issue_status(
+    message_feedback_id: UUID,
+    payload: IssueStatusUpdate,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Set the resolution status of a reported issue (a message comment)."""
+    issue = await transcript_message_service.set_issue_status(
+        message_feedback_id, payload.status
+    )
+    return {"message_feedback_id": str(message_feedback_id), "status": issue.status}
+
+
 @router.delete(
     "/{conversation_id}/gdpr",
     dependencies=[
@@ -856,18 +896,21 @@ async def add_message_feedback(
         message_id, transcript_feedback
     )
 
-    # Get the conversation and update thumbs up/down counts
-    conversation = await conversation_service.get_conversation_by_id(conversation_id, raise_not_found=True)
+    # Only adjust thumbs counters/analytics when an actual rating is supplied.
+    # A comment-only update (feedback is None) must not affect thumbs up/down.
+    if transcript_feedback.feedback is not None:
+        # Get the conversation and update thumbs up/down counts
+        conversation = await conversation_service.get_conversation_by_id(conversation_id, raise_not_found=True)
 
-    # Update conversation thumbs up/down counts based on feedback type
-    increment_feedback(conversation, transcript_feedback, previous_feedback)
+        # Update conversation thumbs up/down counts based on feedback type
+        increment_feedback(conversation, transcript_feedback, previous_feedback)
 
-    # Persist the updated conversation
-    await conversation_service.update_conversation(conversation)
+        # Persist the updated conversation
+        await conversation_service.update_conversation(conversation)
 
-    # Fire incremental analytics update for thumbs in background
-    is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
-    _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
+        # Fire incremental analytics update for thumbs in background
+        is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
+        _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
 
     return {"message": f"Successfully added message feedback, for message id:{message_id} "}
 
