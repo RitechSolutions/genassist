@@ -1,5 +1,4 @@
 import logging
-from datetime import date, datetime
 from injector import inject
 from sqlalchemy import UUID
 
@@ -9,7 +8,9 @@ from app.core.utils.enums.issue_status_enum import IssueStatus
 from app.db.models.message_issue import MessageIssueModel
 from app.db.models.message_model import MessageFeedbackModel
 from app.repositories.transcript_message import TranscriptMessageRepository
+from app.schemas.common import PaginatedResponse
 from app.schemas.conversation_transcript import (TranscriptSegmentFeedback)
+from app.schemas.filter import MessageIssueFilter
 from app.schemas.message_issue import ReportedIssueRead
 
 
@@ -38,23 +39,17 @@ class TranscriptMessageService:
         return feedback, conversation_id, previous_feedback
 
     async def get_message_issues(
-        self,
-        skip: int = 0,
-        limit: int = 20,
-        status: IssueStatus | None = None,
-        from_date: date | None = None,
-        to_date: datetime | None = None,
-        workflow_id: UUID | None = None,
-    ) -> tuple[list[ReportedIssueRead], int]:
-        """Return commented messages (reported issues, newest first) with the
-        context needed to act on them, plus the total count, for the review list."""
+        self, filter_obj: MessageIssueFilter
+    ) -> PaginatedResponse[ReportedIssueRead]:
+        """Return a paginated list of commented messages (reported issues,
+        newest first) with the context needed to act on them, for the review list."""
         rows, total = await self.transcript_message_repo.get_message_issues(
-            skip=skip,
-            limit=limit,
-            status=status.value if status else None,
-            from_date=from_date,
-            to_date=to_date,
-            workflow_id=workflow_id,
+            skip=filter_obj.skip,
+            limit=filter_obj.limit,
+            status=filter_obj.status.value if filter_obj.status else None,
+            from_date=filter_obj.from_date,
+            to_date=filter_obj.to_date,
+            workflow_id=filter_obj.workflow_id,
         )
 
         items = [
@@ -84,7 +79,7 @@ class TranscriptMessageService:
                 issue_status,
             ) in rows
         ]
-        return items, total
+        return PaginatedResponse.from_filter(items, total, filter_obj)
 
     async def set_issue_status(
         self, message_feedback_id: UUID, status: IssueStatus

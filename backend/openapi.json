@@ -5341,6 +5341,190 @@
         ]
       }
     },
+    "/api/conversations/issues": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Message Issues",
+        "description": "Paginated list of messages with an admin/supervisor comment (reported\nissues), newest first, with conversation + agent/workflow context and the\ntracked resolution status. Group-scoped; all filters applied server-side.",
+        "operationId": "get_message_issues_api_conversations_issues_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "operator_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operator Id"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SortField"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "created_at",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "sort_direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SortDirection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "desc",
+              "title": "Sort Direction"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IssueStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "workflow_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ReportedIssueRead_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/{conversation_id}": {
       "get": {
         "tags": [
@@ -7489,6 +7673,67 @@
         }
       }
     },
+    "/api/conversations/issues/{message_feedback_id}/status": {
+      "patch": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Update Message Issue Status",
+        "description": "Set the resolution status of a reported issue (a message comment).",
+        "operationId": "update_message_issue_status_api_conversations_issues__message_feedback_id__status_patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "message_feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Feedback Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/{conversation_id}/gdpr": {
       "delete": {
         "tags": [
@@ -8035,7 +8280,7 @@
         ],
         "parameters": [
           {
-            "name": "x-tenant-id",
+            "name": "X-Tenant-ID",
             "in": "header",
             "required": false,
             "schema": {
@@ -28095,6 +28340,30 @@
         "title": "IntegrationsResponse",
         "description": "Integrations section response."
       },
+      "IssueStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "in_progress",
+          "resolved",
+          "wont_fix"
+        ],
+        "title": "IssueStatus",
+        "description": "Lifecycle status of a reported issue (a comment left on a message)."
+      },
+      "IssueStatusUpdate": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/IssueStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "IssueStatusUpdate",
+        "description": "Body for changing a reported issue's status."
+      },
       "JSONRPCRequest": {
         "properties": {
           "jsonrpc": {
@@ -33015,6 +33284,42 @@
         ],
         "title": "PaginatedResponse[KBListItem]"
       },
+      "PaginatedResponse_ReportedIssueRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportedIssueRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "PaginatedResponse[ReportedIssueRead]"
+      },
       "PasswordUpdateRequest": {
         "properties": {
           "username": {
@@ -33859,6 +34164,127 @@
           "updated_at"
         ],
         "title": "RecordingRead"
+      },
+      "ReportedIssueRead": {
+        "properties": {
+          "feedback_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Feedback Id"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "speaker": {
+            "type": "string",
+            "title": "Speaker"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reported_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported By"
+          },
+          "reported_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reported At"
+          },
+          "conversation_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Topic"
+          },
+          "conversation_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feedback_id",
+          "message_id",
+          "conversation_id",
+          "text",
+          "speaker",
+          "comment",
+          "status",
+          "reported_at"
+        ],
+        "title": "ReportedIssueRead",
+        "description": "A message that an admin/supervisor commented on, plus its resolution status\nand the context needed to navigate to the conversation or the agent's workflow."
       },
       "RoleCreate": {
         "properties": {
@@ -35419,7 +35845,14 @@
       "TranscriptSegmentFeedback": {
         "properties": {
           "feedback": {
-            "$ref": "#/components/schemas/Feedback"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Feedback"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "feedback_message": {
             "type": "string",
@@ -35427,9 +35860,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "feedback"
-        ],
         "title": "TranscriptSegmentFeedback"
       },
       "TranscriptSegmentInput": {

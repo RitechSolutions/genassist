@@ -30,18 +30,6 @@ class ReportedIssueRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ReportedIssuePaginatedResponse(BaseModel):
-    """Paginated response for the reported-issues review list."""
-
-    items: list[ReportedIssueRead]
-    total: int
-    page: int
-    page_size: int
-    has_more: bool
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class IssueStatusUpdate(BaseModel):
     """Body for changing a reported issue's status."""
 

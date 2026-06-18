@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -32,7 +32,6 @@ from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
-from app.core.utils.enums.issue_status_enum import IssueStatus
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 from app.middlewares.rate_limit_middleware import (
@@ -59,10 +58,11 @@ from app.schemas.conversation_transcript import (
     InProgressConversationTranscriptFinalize,
     TranscriptSegmentFeedback,
 )
-from app.schemas.filter import ConversationFilter
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import ConversationFilter, MessageIssueFilter
 from app.schemas.message_issue import (
     IssueStatusUpdate,
-    ReportedIssuePaginatedResponse,
+    ReportedIssueRead,
 )
 from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
@@ -205,16 +205,11 @@ async def get_agent_chat_locales(
 
 @router.get(
     "/issues",
-    response_model=ReportedIssuePaginatedResponse,
+    response_model=PaginatedResponse[ReportedIssueRead],
     dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
 )
 async def get_message_issues(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    status: Optional[IssueStatus] = Query(default=None),
-    from_date: Optional[date] = Query(default=None, description="Filter by reported time (YYYY-MM-DD)"),
-    to_date: Optional[datetime] = Query(default=None, description="Filter by reported time (YYYY-MM-DD 23:59:59)"),
-    workflow_id: Optional[UUID] = Query(default=None),
+    filter_obj: MessageIssueFilter = Depends(),
     transcript_message_service: TranscriptMessageService = Injected(
         TranscriptMessageService
     ),
@@ -222,25 +217,7 @@ async def get_message_issues(
     """Paginated list of messages with an admin/supervisor comment (reported
     issues), newest first, with conversation + agent/workflow context and the
     tracked resolution status. Group-scoped; all filters applied server-side."""
-    items, total = await transcript_message_service.get_message_issues(
-        skip=skip,
-        limit=limit,
-        status=status,
-        from_date=from_date,
-        to_date=to_date,
-        workflow_id=workflow_id,
-    )
-
-    page = (skip // limit) + 1 if limit > 0 else 1
-    has_more = (skip + len(items)) < total
-
-    return ReportedIssuePaginatedResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=limit,
-        has_more=has_more,
-    )
+    return await transcript_message_service.get_message_issues(filter_obj)
 
 
 @router.get(

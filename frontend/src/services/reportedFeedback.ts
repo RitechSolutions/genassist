@@ -25,7 +25,7 @@ export interface ReportedFeedbackResult {
   total: number;
   page: number;
   page_size: number;
-  has_more: boolean;
+  total_pages: number;
 }
 
 export interface FetchReportedFeedbackParams {
@@ -45,7 +45,7 @@ const EMPTY_RESULT: ReportedFeedbackResult = {
   total: 0,
   page: 1,
   page_size: 20,
-  has_more: false,
+  total_pages: 0,
 };
 
 export const fetchReportedFeedback = async (
