@@ -42,22 +42,20 @@ class WorkflowScheduleRepository(DbRepository[WorkflowScheduleModel]):
         )
         return await super().create(schedule)
 
-    # Base get_by_id ignores soft-delete and returns None; we need a strict,
-    # soft-delete-aware lookup that raises NOT_FOUND.
+    # Base get_by_id returns None for soft-deleted rows (the global soft-delete
+    # filter excludes them); we just upgrade the miss to a NOT_FOUND error.
     async def get_by_id(
         self, schedule_id: UUID, *, eager: Sequence[str] | None = None
     ) -> WorkflowScheduleModel:
         schedule = await super().get_by_id(schedule_id, eager=eager)
-        if not schedule or schedule.is_deleted:
+        if not schedule:
             raise AppException(error_key=ErrorKey.NOT_FOUND)
         return schedule
 
     async def list(
         self, is_active: Optional[bool] = None
     ) -> List[WorkflowScheduleModel]:
-        query = select(WorkflowScheduleModel).where(
-            WorkflowScheduleModel.is_deleted == 0
-        )
+        query = select(WorkflowScheduleModel)
         if is_active is not None:
             query = query.where(WorkflowScheduleModel.is_active == is_active)
         query = query.order_by(WorkflowScheduleModel.created_at.desc())
@@ -65,11 +63,10 @@ class WorkflowScheduleRepository(DbRepository[WorkflowScheduleModel]):
         return list(result.scalars().all())
 
     async def get_active_with_cron(self) -> List[WorkflowScheduleModel]:
-        """Schedules eligible for the beat task: active, not deleted, with a cron."""
+        """Schedules eligible for the beat task: active, with a cron."""
         query = select(WorkflowScheduleModel).where(
             WorkflowScheduleModel.is_active.is_(True),
             WorkflowScheduleModel.cron_schedule.isnot(None),
-            WorkflowScheduleModel.is_deleted == 0,
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())

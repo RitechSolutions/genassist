@@ -52,7 +52,7 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
         self, run_id: UUID, *, eager: Sequence[str] | None = None
     ) -> WorkflowScheduleRunModel:
         run = await super().get_by_id(run_id, eager=eager)
-        if not run or run.is_deleted:
+        if not run:
             raise AppException(error_key=ErrorKey.NOT_FOUND)
         return run
 
@@ -65,7 +65,6 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
     ) -> List[WorkflowScheduleRunModel]:
         query = select(WorkflowScheduleRunModel).where(
             WorkflowScheduleRunModel.schedule_id == schedule_id,
-            WorkflowScheduleRunModel.is_deleted == 0,
         )
         if status:
             query = query.where(WorkflowScheduleRunModel.status == status)
@@ -82,10 +81,7 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
     ) -> Optional[WorkflowScheduleRunModel]:
         query = (
             select(WorkflowScheduleRunModel)
-            .where(
-                WorkflowScheduleRunModel.schedule_id == schedule_id,
-                WorkflowScheduleRunModel.is_deleted == 0,
-            )
+            .where(WorkflowScheduleRunModel.schedule_id == schedule_id)
             .order_by(WorkflowScheduleRunModel.created_at.desc())
             .limit(1)
         )

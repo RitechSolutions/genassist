@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 
 const DEFAULT_PAGE_SIZE = 20;
 
-type AgentTab = "all" | "system" | "user";
+type AgentTab = "all" | "system" | "user" | "scheduling";
 
 const Dashboard: React.FC = () => {
   const [agents, setAgents] = useState<AgentListItem[]>([]);

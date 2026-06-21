@@ -29,6 +29,7 @@ import { getAgentConfig } from "@/services/api";
 import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { PageListSkeleton } from "@/components/skeletons";
+import SchedulingView from "../Scheduling/SchedulingView";
 
 interface AgentListProps {
   agents: AgentListItem[];
@@ -305,21 +306,23 @@ const AgentList: React.FC<AgentListProps> = ({
             </span>
           </div>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <SearchInput
-            value={searchTerm}
-            onChange={setSearchTerm}
-            placeholder="Search agents..."
-            className="w-full sm:w-[200px]"
-          />
-          <Button
-            className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
-            onClick={() => setOpenAgentForm(true)}
-          >
-            <Plus className="h-4 w-4" />
-            New Workflow
-          </Button>
-        </div>
+        {activeTab !== "scheduling" && (
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <SearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search agents..."
+              className="w-full sm:w-[200px]"
+            />
+            <Button
+              className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
+              onClick={() => setOpenAgentForm(true)}
+            >
+              <Plus className="h-4 w-4" />
+              New Workflow
+            </Button>
+          </div>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={onTabChange}>
@@ -327,9 +330,13 @@ const AgentList: React.FC<AgentListProps> = ({
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="user">My Agents</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="scheduling">Scheduling</TabsTrigger>
         </TabsList>
       </Tabs>
 
+      {activeTab === "scheduling" ? (
+        <SchedulingView />
+      ) : (
       <div className="rounded-md border bg-card shadow-sm overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="agent" rows={5} bordered={false} />
@@ -381,6 +388,7 @@ const AgentList: React.FC<AgentListProps> = ({
           </>
         )}
       </div>
+      )}
       <AgentFormDialog
         isOpen={openAgentForm}
         onClose={handleFormClose}
