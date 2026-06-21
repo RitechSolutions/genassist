@@ -53,8 +53,11 @@ from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
 from .webhook import WebhookModel
 from .workflow import WorkflowModel
+from .workflow_schedule import WorkflowScheduleModel, WorkflowScheduleRunModel
 
 __all__ = [
+    "WorkflowScheduleModel",
+    "WorkflowScheduleRunModel",
     # Primary model class names
     "OperatorModel",
     "OperatorStatisticsModel",
