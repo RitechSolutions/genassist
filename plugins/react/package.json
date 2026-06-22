@@ -1,6 +1,6 @@
 {
   "name": "genassist-chat-react",
-  "version": "1.0.38",
+  "version": "1.0.39",
   "description": "React chat component for GenAssist",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
