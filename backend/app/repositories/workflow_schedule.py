@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from uuid import UUID
 from typing import List, Optional, Sequence
 
@@ -87,4 +88,18 @@ class WorkflowScheduleRepository(DbRepository[WorkflowScheduleModel]):
         except (LookupError, ContextDoesNotExistError):
             pass
 
+        return await super().update(schedule)
+
+    async def set_last_run_at(
+        self, schedule_id: UUID, when: datetime
+    ) -> WorkflowScheduleModel:
+        schedule = await self.get_by_id(schedule_id)
+        schedule.last_run_at = when
+        return await super().update(schedule)
+
+    async def set_fixed_thread_id(
+        self, schedule_id: UUID, thread_id: str
+    ) -> WorkflowScheduleModel:
+        schedule = await self.get_by_id(schedule_id)
+        schedule.fixed_thread_id = thread_id
         return await super().update(schedule)

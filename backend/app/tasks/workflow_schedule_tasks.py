@@ -235,19 +235,26 @@ async def check_and_execute_scheduled_workflows_async():
                         schedule_id=schedule.id,
                         agent_id=schedule.agent_id,
                     )
-                    await schedule_repository.set_last_run_at(schedule.id, current_time)
 
-                    from app.tasks.workflow_schedule_tasks import (
-                        execute_workflow_run_task,
-                    )
-
+                    # Dispatch first so a metadata-write hiccup can never block
+                    # the actual execution.
                     execute_workflow_run_task.delay(str(run.id))
                     executed_count += 1
                     logger.info(
                         f"Scheduled workflow run created: {run.id} for schedule {schedule.id}"
                     )
+
+                    # Best-effort: record last run time for display/dedup.
+                    try:
+                        await schedule_repository.set_last_run_at(
+                            schedule.id, current_time
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            f"Failed to set last_run_at for schedule {schedule.id}: {str(e)}"
+                        )
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"Error checking cron schedule for schedule {schedule.id}: {str(e)}"
                     )
 
@@ -255,7 +262,7 @@ async def check_and_execute_scheduled_workflows_async():
                 logger.info(f"Dispatched {executed_count} scheduled workflow runs")
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error checking scheduled workflows: {str(e)}", exc_info=True
             )
         finally:
