@@ -16,6 +16,7 @@ import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { DraggableInput } from "../components/custom/DraggableInput";
 import { getAgentConfigsList } from "@/services/api";
 import { AgentListItem } from "@/interfaces/ai-agent.interface";
 
@@ -74,23 +75,10 @@ export const CreateWorkflowScheduleDialog: React.FC<
   }, [isOpen, data, toast]);
 
   const handleSave = () => {
-    // Validate the optional additional-input JSON before saving.
-    if (inputData.trim()) {
-      try {
-        const parsed = JSON.parse(inputData);
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-          throw new Error("not an object");
-        }
-      } catch {
-        toast({
-          title: "Invalid JSON",
-          description: "Additional input fields must be a valid JSON object.",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
+    // Note: we intentionally do NOT hard-validate the additional-input JSON
+    // here. The field supports dropped source variables (e.g. {{source.id}}),
+    // which aren't valid JSON at design time; the backend resolves templates
+    // first and then parses leniently, ignoring anything it can't read.
     onUpdate({
       ...data,
       name,
@@ -170,7 +158,7 @@ export const CreateWorkflowScheduleDialog: React.FC<
 
       <div className="space-y-2">
         <Label htmlFor="scheduleName">Schedule Name</Label>
-        <RichInput
+        <DraggableInput
           id="scheduleName"
           value={scheduleName}
           onChange={(e) => setScheduleName(e.target.value)}
@@ -181,7 +169,7 @@ export const CreateWorkflowScheduleDialog: React.FC<
 
       <div className="space-y-2">
         <Label htmlFor="cron">Cron Schedule</Label>
-        <RichInput
+        <DraggableInput
           id="cron"
           value={cronSchedule}
           onChange={(e) => setCronSchedule(e.target.value)}
@@ -239,7 +227,7 @@ export const CreateWorkflowScheduleDialog: React.FC<
       {threadIdMode === "fixed" && (
         <div className="space-y-2">
           <Label htmlFor="fixedThreadId">Fixed Thread ID</Label>
-          <RichInput
+          <DraggableInput
             id="fixedThreadId"
             value={fixedThreadId}
             onChange={(e) => setFixedThreadId(e.target.value)}
