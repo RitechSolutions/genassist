@@ -33,6 +33,39 @@ from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
+# Lazily-built PII redactor. Constructed with no entity restriction so it
+# redacts the anonymizer's full default set (email, phone, credit card, IP,
+# IBAN, SSN, ITIN, passport, driver license, NHS, medical license) — not just
+# cardholder data. Built on first use so importing this module (e.g. in celery
+# beat) stays cheap.
+_pii_redactor = None
+
+
+def _get_pii_redactor():
+    global _pii_redactor
+    if _pii_redactor is None:
+        from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
+
+        _pii_redactor = PIIAnonymizer()
+    return _pii_redactor
+
+
+def _redact_structure(value):
+    """Recursively redact PII from every string in a JSON-like structure
+    (dict/list/str). Used to sanitize execution_output before it is persisted to
+    the run history. Best-effort: a failure on one string leaves that string
+    unchanged rather than dropping the whole record."""
+    if isinstance(value, str):
+        try:
+            return _get_pii_redactor().redact(value)
+        except Exception:
+            return value
+    if isinstance(value, dict):
+        return {k: _redact_structure(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_structure(v) for v in value]
+    return value
+
 
 # ==================== Execution ====================
 
@@ -103,7 +136,11 @@ async def execute_workflow_run_async(run_id: UUID):
                 state = await workflow_engine.execute_from_node(
                     input_data=input_data, thread_id=thread_id
                 )
-                execution_output = state.format_state_as_response()
+                # Redact cardholder data from the output before persisting it to
+                # the run history (it is stored raw/JSONB otherwise).
+                execution_output = _redact_structure(
+                    state.format_state_as_response()
+                )
 
                 await run_repository.update_status(
                     run_id,
