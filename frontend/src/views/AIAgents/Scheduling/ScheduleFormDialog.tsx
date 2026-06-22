@@ -185,10 +185,10 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Agent</Label>
+            <Label>Workflow</Label>
             <Select value={agentId} onValueChange={setAgentId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select an agent" />
+                <SelectValue placeholder="Select a workflow" />
               </SelectTrigger>
               <SelectContent>
                 {agents.map((a) => (
@@ -199,7 +199,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              The agent's current (latest) workflow version runs each time.
+              The latest published version of this workflow runs each time.
             </p>
           </div>
 
