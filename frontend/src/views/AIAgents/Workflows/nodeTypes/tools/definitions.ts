@@ -3,6 +3,7 @@ import {
   APIToolNodeData,
   OpenApiNodeData,
   KnowledgeBaseNodeData,
+  CreateWorkflowScheduleNodeData,
   NodeData,
   NodeTypeDefinition,
   PythonCodeNodeData,
@@ -15,6 +16,7 @@ import {
 import APIToolNode from "./apiToolNode";
 import OpenApiNode from "./openApiNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
+import CreateWorkflowScheduleNode from "./createWorkflowScheduleNode";
 import PythonCodeNode from "./pythonCodeNode";
 import SQLNode from "./sqlNode";
 import MLModelInferenceNode from "./mlModelInferenceNode";
@@ -23,6 +25,7 @@ import WorkflowExecutorNode from "./workflowExecutorNode";
 import {
   API_CONNECTOR_HELP_CONTENT,
   KNOWLEDGE_QUERY_HELP_CONTENT,
+  CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
   ML_MODEL_INFERENCE_HELP_CONTENT,
   OPENAPI_EXPLORER_HELP_CONTENT,
   PYTHON_EXECUTOR_HELP_CONTENT,
@@ -154,6 +157,56 @@ export const KNOWLEDGE_BASE_NODE_DEFINITION: NodeTypeDefinition<KnowledgeBaseNod
     createNode: (id, position, data) => ({
       id,
       type: "knowledgeBaseNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
+export const CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION: NodeTypeDefinition<CreateWorkflowScheduleNodeData> =
+  {
+    type: "createWorkflowScheduleNode",
+    label: "Create Workflow Schedule",
+    description:
+      "Creates a recurring schedule that runs an agent's latest workflow on a cron expression.",
+    shortDescription: "Schedule a workflow run",
+    helpContent: CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
+    configSubtitle:
+      "Configure which workflow to schedule, the cron expression, and run parameters.",
+    category: "tools",
+    icon: "CalendarClock",
+    defaultData: {
+      name: "Create Workflow Schedule",
+      agentId: "",
+      scheduleName: "",
+      cronSchedule: "0 0 * * *",
+      isActive: true,
+      threadIdMode: "per_run",
+      fixedThreadId: "",
+      message: "",
+      inputData: "",
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    } as CreateWorkflowScheduleNodeData,
+    component: CreateWorkflowScheduleNode as React.ComponentType<
+      NodeProps<NodeData>
+    >,
+    createNode: (id, position, data) => ({
+      id,
+      type: "createWorkflowScheduleNode",
       position,
       data: {
         ...data,

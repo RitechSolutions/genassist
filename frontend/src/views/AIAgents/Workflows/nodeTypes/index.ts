@@ -15,6 +15,7 @@ import {
   API_TOOL_NODE_DEFINITION,
   OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
+  CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION,
   PYTHON_CODE_NODE_DEFINITION,
   SQL_NODE_DEFINITION,
   ML_MODEL_INFERENCE_NODE_DEFINITION,
@@ -22,6 +23,7 @@ import {
   WORKFLOW_EXECUTOR_NODE_DEFINITION,
 } from "./tools/definitions";
 import KnowledgeBaseNode from "./tools/knowledgeBaseNode";
+import CreateWorkflowScheduleNode from "./tools/createWorkflowScheduleNode";
 import SQLNode from "./tools/sqlNode";
 import MLModelInferenceNode from "./tools/mlModelInferenceNode";
 import ThreadRAGNode from "./tools/threadRAGNode";
@@ -110,6 +112,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GMAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(KNOWLEDGE_BASE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(SQL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(ML_MODEL_INFERENCE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(READ_MAILS_NODE_DEFINITION);
@@ -164,6 +167,7 @@ export const getNodeTypes = () => {
     voiceAgentNode: VoiceAgentNode,
     externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
+    createWorkflowScheduleNode: CreateWorkflowScheduleNode,
     sqlNode: SQLNode,
     mlModelInferenceNode: MLModelInferenceNode,
     threadRAGNode: ThreadRAGNode,

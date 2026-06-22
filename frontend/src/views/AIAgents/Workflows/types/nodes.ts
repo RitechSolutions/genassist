@@ -241,6 +241,18 @@ export interface KnowledgeBaseNodeData extends BaseNodeData {
   force?: boolean;
 }
 
+// Create Workflow Schedule node data
+export interface CreateWorkflowScheduleNodeData extends BaseNodeData {
+  agentId: string;
+  scheduleName?: string;
+  cronSchedule: string;
+  isActive?: boolean;
+  threadIdMode?: "per_run" | "fixed";
+  fixedThreadId?: string;
+  message?: string;
+  inputData?: string;
+}
+
 // SQL Node Data
 export type SQLMode = "sqlQuery" | "humanQuery";
 
