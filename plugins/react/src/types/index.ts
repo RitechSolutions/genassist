@@ -150,7 +150,7 @@ export interface GenAgentChatProps {
     fontSize?: string;
     backgroundColor?: string;
     textColor?: string;
-    chatBubbleIcon?: React.ReactElement;
+    chatBubbleIcon?: 'message' | 'sparkles' | 'x';
   };
   headerTitle?: string;
   description?: string;
