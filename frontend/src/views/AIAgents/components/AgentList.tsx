@@ -13,6 +13,7 @@ import {
   Shield,
   Loader2,
   Workflow,
+  CalendarClock,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -26,6 +27,7 @@ import { AgentFormDialog } from "./AgentForm";
 import { SearchInput } from "@/components/SearchInput";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { getAgentConfig } from "@/services/api";
+import { getWorkflowSchedules } from "@/services/workflowSchedules";
 import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { PageListSkeleton } from "@/components/skeletons";
@@ -65,6 +67,35 @@ const AgentList: React.FC<AgentListProps> = ({
   const navigate = useNavigate();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useMemo(() => currentUserIsAdmin(), []);
+
+  // Per-agent schedule status: "active" if the agent has at least one active
+  // schedule, "inactive" if it has schedules but none active, absent if none.
+  const [scheduleStatusByAgent, setScheduleStatusByAgent] = useState<
+    Record<string, "active" | "inactive">
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    getWorkflowSchedules()
+      .then((schedules) => {
+        if (cancelled) return;
+        const map: Record<string, "active" | "inactive"> = {};
+        schedules.forEach((s) => {
+          if (s.is_active) {
+            map[s.agent_id] = "active";
+          } else if (!map[s.agent_id]) {
+            map[s.agent_id] = "inactive";
+          }
+        });
+        setScheduleStatusByAgent(map);
+      })
+      .catch(() => {
+        /* non-critical: badge simply won't show */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Infinite scroll using IntersectionObserver
   useEffect(() => {
@@ -190,6 +221,23 @@ const AgentList: React.FC<AgentListProps> = ({
                   Inactive
                 </span>
               )}
+              {scheduleStatusByAgent[agent.id] && (
+                <span
+                  className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
+                    scheduleStatusByAgent[agent.id] === "active"
+                      ? "text-green-700 bg-green-50"
+                      : "text-gray-600 bg-gray-100"
+                  }`}
+                  title={
+                    scheduleStatusByAgent[agent.id] === "active"
+                      ? "Has an active schedule"
+                      : "Has schedules, none active"
+                  }
+                >
+                  <CalendarClock className="h-3 w-3" />
+                  Scheduled
+                </span>
+              )}
             </div>
             <div className="space-y-1 text-sm text-muted-foreground break-all">
               <div>
@@ -247,6 +295,12 @@ const AgentList: React.FC<AgentListProps> = ({
                     <Link to={`/ai-agents/security/${agent.id}`}>
                       <Shield className="mr-2 h-4 w-4" />
                       <span>Security</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to={`/ai-agents/scheduling/${agent.id}`}>
+                      <CalendarClock className="mr-2 h-4 w-4" />
+                      <span>Scheduling</span>
                     </Link>
                   </DropdownMenuItem>
                   {(!agent.is_system || isAdmin) && (

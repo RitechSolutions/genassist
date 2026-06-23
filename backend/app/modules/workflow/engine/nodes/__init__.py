@@ -10,9 +10,11 @@ from .calendar_events_node import CalendarEventsNode
 from .chat_nodes import ChatInputNode, ChatOutputNode
 from .data_mapper_node import DataMapperNode
 from .file_reader_node import FileReaderNode
+from .finalize_conversation_node import FinalizeConversationNode
 from .gmail_tool_node import GmailToolNode
 from .guardrail_nli_node import GuardrailNliNode
 from .guardrail_provenance_node import GuardrailProvenanceNode
+from .create_workflow_schedule_node import CreateWorkflowScheduleNode
 from .human_in_the_loop_node import HumanInTheLoopNode
 from .jira_node import JiraNode
 from .knowledge_tool_node import KnowledgeToolNode
@@ -52,6 +54,7 @@ __all__ = [
     "TemplateNode",
     "LLMModelNode",
     "KnowledgeToolNode",
+    "CreateWorkflowScheduleNode",
     "PythonToolNode",
     "DataMapperNode",
     "ToolBuilderNode",
@@ -79,4 +82,5 @@ __all__ = [
     "TTSNode",
     "STTNode",
     "VoiceAgentNode",
+    "FinalizeConversationNode",
 ]

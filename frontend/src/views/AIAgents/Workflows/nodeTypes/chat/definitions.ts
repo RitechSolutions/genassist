@@ -1,6 +1,7 @@
 import {
   ChatInputNodeData,
   ChatOutputNodeData,
+  FinalizeConversationNodeData,
   NodeData,
   NodeTypeDefinition,
   SetStateNodeData,
@@ -10,6 +11,7 @@ import SetStateNode from "../chat/setStateNode";
 
 import { NodeProps } from "reactflow";
 import ChatOutputNode from "./chatOutputNode";
+import FinalizeConversationNode from "./finalizeConversationNode";
 import { createSimpleSchema } from "../../types/schemas";
 import {
   FINISH_NODE_HELP_CONTENT,
@@ -81,6 +83,45 @@ export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData>
     createNode: (id, position, data) => ({
       id,
       type: "chatOutputNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
+export const FINALIZE_CONVERSATION_NODE_DEFINITION: NodeTypeDefinition<FinalizeConversationNodeData> =
+  {
+    type: "finalizeConversationNode",
+    label: "End Conversation",
+    description:
+      "Finalizes the active conversation when the workflow reaches this node, producing the same outcome as the platform's finalize action. Pass-through: downstream nodes still run.",
+    shortDescription: "Finalize the active conversation",
+    configSubtitle: "Optionally set a display name for this node.",
+    category: "io",
+    icon: "MessageCircle",
+    defaultData: {
+      name: "End Conversation",
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    },
+    component:
+      FinalizeConversationNode as React.ComponentType<NodeProps<NodeData>>,
+    createNode: (id, position, data) => ({
+      id,
+      type: "finalizeConversationNode",
       position,
       data: {
         ...data,

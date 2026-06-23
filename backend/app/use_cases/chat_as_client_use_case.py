@@ -123,6 +123,70 @@ def _build_agent_segment(
     )
 
 
+def _agent_text_from_answer(agent_answer: Any) -> str:
+    """Displayable text for a plain answer, which may be a string or a
+    {"message"/"response", ...} dict — avoids stringifying the whole dict into the chat."""
+    if isinstance(agent_answer, dict):
+        return agent_answer.get("message") or agent_answer.get("response") or str(agent_answer)
+    return str(agent_answer)
+
+
+def _build_agent_transcript_segment(
+    agent_response: dict,
+    metadata: Optional[dict],
+    now: datetime,
+    elapsed_seconds: float,
+) -> TranscriptSegmentInput:
+    """Turn an agent run result into the agent transcript segment to persist/broadcast.
+
+    Picks the segment shape from what the workflow returned (first match wins):
+      - awaiting_input -> form_request segment carrying the form schema
+      - live_result    -> live-voice reply (authoritative text carried in metadata; the
+                          DAG output can be a raw/stringified dict depending on which
+                          node finishes last, so we don't trust it here)
+      - nested audio   -> voice agent reply (text + audio payload)
+      - typed audio    -> audio response from a TTS workflow
+      - otherwise      -> plain text (extracting message/response from a dict answer)
+    """
+    if agent_response.get("status") == "awaiting_input":
+        response_output = agent_response.get("response", {})
+        form_schema = response_output.get("form_schema", {}) if isinstance(response_output, dict) else {}
+        return _build_agent_segment(now, elapsed_seconds, json.dumps(form_schema), type="form_request")
+
+    live_result = (metadata or {}).get("live_result")
+    if isinstance(live_result, dict) and live_result.get("message"):
+        return _build_agent_segment(now, elapsed_seconds, str(live_result["message"]))
+
+    agent_answer = agent_response.get("response", "No answer found")
+
+    if (
+        isinstance(agent_answer, dict)
+        and isinstance(agent_answer.get("audio"), dict)
+        and agent_answer["audio"].get("type") == "audio"
+    ):
+        audio = agent_answer["audio"]
+        return _build_agent_segment(
+            now,
+            elapsed_seconds,
+            str(agent_answer.get("message") or "[Audio response]"),
+            type="audio",
+            audio_data=base64.b64decode(audio.get("data", "")),
+            audio_format=audio.get("format", "wav"),
+        )
+
+    if isinstance(agent_answer, dict) and agent_answer.get("type") == "audio":
+        return _build_agent_segment(
+            now,
+            elapsed_seconds,
+            _extract_spoken_text(agent_response) or "[Audio response]",
+            type="audio",
+            audio_data=base64.b64decode(agent_answer.get("data", "")),
+            audio_format=agent_answer.get("format", "mp3"),
+        )
+
+    return _build_agent_segment(now, elapsed_seconds, _agent_text_from_answer(agent_answer))
+
+
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
@@ -203,44 +267,9 @@ async def process_conversation_update_with_agent(
         now = datetime.now(timezone.utc)
         elapsed_seconds = (now - conversation.created_at).total_seconds()
 
-        if agent_response.get("status") == "awaiting_input":
-            # Workflow requesting user input — send form schema as form_request
-            response_output = agent_response.get("response", {})
-            form_schema = response_output.get("form_schema", {}) if isinstance(response_output, dict) else {}
-            transcript_object = _build_agent_segment(
-                now, elapsed_seconds, json.dumps(form_schema), type="form_request"
-            )
-        else:
-            agent_answer = agent_response.get("response", "No answer found")
-
-            if (
-                isinstance(agent_answer, dict)
-                and isinstance(agent_answer.get("audio"), dict)
-                and agent_answer["audio"].get("type") == "audio"
-            ):
-                # Voice agent response: text reply + nested audio payload
-                audio = agent_answer["audio"]
-                transcript_object = _build_agent_segment(
-                    now,
-                    elapsed_seconds,
-                    str(agent_answer.get("message") or "[Audio response]"),
-                    type="audio",
-                    audio_data=base64.b64decode(audio.get("data", "")),
-                    audio_format=audio.get("format", "wav"),
-                )
-            elif isinstance(agent_answer, dict) and agent_answer.get("type") == "audio":
-                # Audio response from TTS workflow
-                transcript_object = _build_agent_segment(
-                    now,
-                    elapsed_seconds,
-                    _extract_spoken_text(agent_response) or "[Audio response]",
-                    type="audio",
-                    audio_data=base64.b64decode(agent_answer.get("data", "")),
-                    audio_format=agent_answer.get("format", "mp3"),
-                )
-            else:
-                # Normal text response
-                transcript_object = _build_agent_segment(now, elapsed_seconds, str(agent_answer))
+        transcript_object = _build_agent_transcript_segment(
+            agent_response, model.metadata, now, elapsed_seconds
+        )
 
         model.messages.append(transcript_object)
 

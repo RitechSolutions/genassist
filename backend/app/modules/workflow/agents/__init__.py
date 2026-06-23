@@ -5,16 +5,19 @@ if TYPE_CHECKING:  # static analyzers don't see PEP 562 __getattr__ — declare 
     from .react_agent import ReActAgent
     from .tool_agent import ToolAgent
     from .cot_agent import ChainOfThoughtAgent
+    from .live_agent_gemini import GeminiLiveAgent
 
 # The agent classes pull heavy ML deps (torch/transformers) transitively through their
 # tooling/LLM stack. They are runtime constructs (instantiated during workflow
 # execution). Resolve them lazily (PEP 562) so importing this package — which the DI
 # container reaches via ThreadScopedRAG (.rag) at boot — stays ML-free; the agents
 # materialize on first use, in a prefork child (post-fork).
+# (GeminiLiveAgent is import-light, but is registered here for a consistent surface.)
 _LAZY = {
     "ReActAgent": ".react_agent",
     "ToolAgent": ".tool_agent",
     "ChainOfThoughtAgent": ".cot_agent",
+    "GeminiLiveAgent": ".live_agent_gemini",
 }
 
 
@@ -24,4 +27,4 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["ReActAgent", "ToolAgent", "ChainOfThoughtAgent"]
+__all__ = ["ReActAgent", "ToolAgent", "ChainOfThoughtAgent", "GeminiLiveAgent"]
