@@ -47,8 +47,9 @@ export function getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth,
           ? '700px'
           : '600px',
     minHeight: isFloatingDocked ? 0 : undefined,
-    width: isFullscreen ? '100vw' : '380px',
-    maxWidth: isFullscreen ? '100vw' : '400px',
+    // When docked, fill the floating wrapper so its (possibly expanded) width drives the size.
+    width: isFullscreen ? '100vw' : isFloatingDocked ? '100%' : '380px',
+    maxWidth: isFullscreen ? '100vw' : isFloatingDocked ? '100%' : '400px',
     border: isFullscreen ? 'none' : '1px solid #e0e0e0',
     borderRadius: isFullscreen ? '0' : '32px',
     overflow: 'hidden',
@@ -66,55 +67,103 @@ export function getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth,
 
 export function getHeaderStyle(t: ThemeParams): React.CSSProperties {
   return {
-    padding: '15px',
+    padding: '12px 14px',
     backgroundColor: t.secondaryColor,
     color: '#111111',
     fontWeight: 'bold',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: '8px',
     position: 'relative',
   };
 }
 
-export const logoContainerStyle: React.CSSProperties = {
+// Left/right header zones. Both grow equally (flex: 1) so the centered pill
+// stays optically centered regardless of how many buttons sit on each side.
+export const headerLeftContainerStyle: React.CSSProperties = {
+  flex: 1,
   display: 'flex',
   alignItems: 'center',
-  gap: '10px',
+  justifyContent: 'flex-start',
+  gap: '4px',
   position: 'relative',
-  zIndex: 1,
+  zIndex: 2,
+  minWidth: 0,
+};
+
+export const headerRightContainerStyle: React.CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: '4px',
+  position: 'relative',
+  zIndex: 2,
+  minWidth: 0,
+};
+
+// Floating, centered logo + name pill.
+export const headerPillStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  backgroundColor: '#ffffff',
+  padding: '6px 16px 6px 8px',
+  borderRadius: '999px',
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+  maxWidth: '70%',
+  flexShrink: 1,
+  minWidth: 0,
+  position: 'relative',
+  // Above the header color-sweep backlight (zIndex 1) so it can't cover the title.
+  zIndex: 2,
 };
 
 export const logoStyle: React.CSSProperties = {
-  width: '28px',
-  height: '28px',
+  width: '26px',
+  height: '26px',
+  borderRadius: '50%',
+  objectFit: 'cover',
+  flexShrink: 0,
 };
 
-export const headerTitleContainerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-};
-
-export function getHeaderTitleStyle(fontFamily: string): React.CSSProperties {
+export function getHeaderPillTitleStyle(fontFamily: string): React.CSSProperties {
   return {
-    fontSize: '16px',
-    fontWeight: 'bold',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#111111',
     margin: 0,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
     fontFamily,
   };
 }
 
-export function getHeaderSubtitleStyle(fontFamily: string): React.CSSProperties {
+export const headerPillTextColumnStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  minWidth: 0,
+};
+
+export function getHeaderDescriptionTextStyle(fontFamily: string): React.CSSProperties {
   return {
-    fontSize: '14px',
-    fontWeight: 'normal',
+    fontSize: '12px',
+    fontWeight: 400,
+    color: '#6b7280',
     margin: 0,
+    paddingTop: '1px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
     fontFamily,
   };
 }
 
 export const menuButtonStyle: React.CSSProperties = {
-  backgroundColor: 'transparent',
+  // No inline backgroundColor here: it would override the `.ga-header-btn:hover` fill.
   color: '#111111',
   border: 'none',
   borderRadius: '50%',
@@ -425,9 +474,10 @@ export function getChatPositionStyles({ position, offsetX, offsetY }: PositionPa
 interface ResponsiveDimensionParams {
   isFullscreen: boolean;
   mode: string;
+  isExpanded?: boolean;
 }
 
-export function getResponsiveDimensions({ isFullscreen, mode }: ResponsiveDimensionParams): React.CSSProperties {
+export function getResponsiveDimensions({ isFullscreen, mode, isExpanded = false }: ResponsiveDimensionParams): React.CSSProperties {
   const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
   const fallbackHeight = isFullscreen ? '100vh' : '60vh';
 
@@ -442,7 +492,7 @@ export function getResponsiveDimensions({ isFullscreen, mode }: ResponsiveDimens
     if (screenWidth <= 768) {
       return { width: '350px' };
     }
-    return { width: '380px' };
+    return { width: isExpanded ? '540px' : '380px' };
   }
 
   if (screenWidth <= 480) {
@@ -459,17 +509,19 @@ interface FloatingShellParams {
   windowHeight: number;
   offsetY: number;
   position: string;
+  isExpanded?: boolean;
 }
 
-export function getFloatingShellStyle({ windowHeight, offsetY, position }: FloatingShellParams): React.CSSProperties {
+export function getFloatingShellStyle({ windowHeight, offsetY, position, isExpanded = false }: FloatingShellParams): React.CSSProperties {
   const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
   const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
   const margin = 10;
-  const usableHeight = Math.max(280, windowHeight - offsetY - margin * 10);
+  // Expansion is width-focused; expanded uses most of the available height.
+  const usableHeight = Math.max(280, windowHeight - offsetY - margin * (isExpanded ? 2 : 10));
   let maxHeight: number | string = usableHeight;
 
   if (screenWidth >= 765 && screenHeight >= 1070) {
-    maxHeight = '60vh';
+    maxHeight = isExpanded ? '86vh' : '60vh';
   }
 
   return {
@@ -491,11 +543,24 @@ interface FloatingContainerParams {
   position: string;
   offsetX: number;
   offsetY: number;
+  isExpanded?: boolean;
+}
+
+// Anchor the open/close scale animation to the corner nearest the launcher bubble.
+function getTransformOrigin(position: string): string {
+  switch (position) {
+    case 'bottom-left': return 'bottom left';
+    case 'top-right': return 'top right';
+    case 'top-left': return 'top left';
+    case 'bottom-right':
+    default: return 'bottom right';
+  }
 }
 
 export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSSProperties {
   return {
-    ...((p.mode === 'fullscreen' || (p.isFullscreen && p.windowWidth <= 768))
+    transformOrigin: getTransformOrigin(p.position),
+    ...((p.mode === 'fullscreen' || p.isFullscreen)
       ? {
           position: 'fixed' as const,
           top: 0,
@@ -507,8 +572,10 @@ export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSS
         }
       : {
           ...getChatPositionStyles({ position: p.position, offsetX: p.offsetX, offsetY: p.offsetY }),
-          ...getResponsiveDimensions({ isFullscreen: p.isFullscreen, mode: p.mode }),
-          ...(p.mode === 'floating' && !p.isFullscreen ? getFloatingShellStyle({ windowHeight: p.windowHeight, offsetY: p.offsetY, position: p.position }) : {}),
+          ...getResponsiveDimensions({ isFullscreen: p.isFullscreen, mode: p.mode, isExpanded: p.isExpanded }),
+          ...(p.mode === 'floating' && !p.isFullscreen ? getFloatingShellStyle({ windowHeight: p.windowHeight, offsetY: p.offsetY, position: p.position, isExpanded: p.isExpanded }) : {}),
+          // Smooth, simple ease for the maximize/minimize (expand/collapse) resize.
+          transition: 'width 280ms cubic-bezier(0.16, 1, 0.3, 1), height 280ms cubic-bezier(0.16, 1, 0.3, 1), max-height 280ms cubic-bezier(0.16, 1, 0.3, 1)',
         }
     ),
   };
@@ -538,6 +605,43 @@ export const CSS_KEYFRAMES = `
   @keyframes ga-backlight-sweep2 { 0% { transform: translateX(-35%); } 100% { transform: translateX(105%); } }
   @keyframes ga-backlight-pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
   @keyframes ga-think-change { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes ga-widget-in {
+    from { opacity: 0; transform: translateY(16px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes ga-widget-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to   { opacity: 0; transform: translateY(16px) scale(0.96); }
+  }
+  /* fill backwards (not both): keep the entrance-from state, but drop the transform at rest so it
+     does not become a containing block for the inner fixed-position fullscreen panel. */
+  .ga-widget-in  { animation: ga-widget-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+  .ga-widget-out { animation: ga-widget-out 200ms cubic-bezier(0.4, 0, 1, 1) both; }
+  @keyframes ga-bubble-in {
+    from { opacity: 0; transform: scale(0.8); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes ga-quickinput-in {
+    from { opacity: 0; transform: scale(0.94); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .ga-quick .ga-quick-x {
+    opacity: 0;
+    transform: scale(0.8);
+    pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+  .ga-quick:hover .ga-quick-x {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  .ga-header-btn { background-color: transparent; transition: background-color 0.15s ease; }
+  .ga-header-btn:hover { background-color: rgba(0, 0, 0, 0.06); }
+  @media (prefers-reduced-motion: reduce) {
+    .ga-widget-in, .ga-widget-out { animation: none !important; }
+    .ga-quick { animation: none !important; }
+  }
   .grecaptcha-badge {
     display: none !important;
     visibility: hidden !important;

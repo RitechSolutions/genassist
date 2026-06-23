@@ -166,6 +166,7 @@ export interface GenAgentChatProps {
   translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
   reCaptchaKey?: string; // ReCaptcha key for the chat
   widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
+  quickInput?: boolean; // If true (default), shows a quick-message input beside the launcher bubble in floating mode.
   useAudio?: boolean; // If false, hides the mic component and voice input. Defaults to false.
   useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
   noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.

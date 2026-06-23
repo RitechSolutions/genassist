@@ -9,8 +9,8 @@ import { useFileAttachments } from '../hooks/useFileAttachments';
 import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
-import { ChatBubble } from './ChatBubble';
+import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
+import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
@@ -28,11 +28,13 @@ import {
   hexToRgba,
   getContainerStyle,
   getHeaderStyle,
-  logoContainerStyle,
+  headerLeftContainerStyle,
+  headerRightContainerStyle,
+  headerPillStyle,
   logoStyle,
-  headerTitleContainerStyle,
-  getHeaderTitleStyle,
-  getHeaderSubtitleStyle,
+  getHeaderPillTitleStyle,
+  headerPillTextColumnStyle,
+  getHeaderDescriptionTextStyle,
   menuButtonStyle,
   getMenuPopupStyle,
   getMenuItemStyle,
@@ -52,7 +54,6 @@ import {
   getConfirmButtonStyle,
   getContentCardStyle,
   getDisclaimerStyle,
-  getPositionStyles,
   getFloatingContainerStyle,
   CSS_KEYFRAMES,
 } from '../styles/genAgentChatStyles';
@@ -83,6 +84,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   translations: customTranslations,
   reCaptchaKey,
   widget = false,
+  quickInput = true,
   useAudio = false,
   useFile = false,
   noColorAnimation = false,
@@ -144,6 +146,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+  // Keeps the floating panel in the DOM through its close animation before unmounting.
+  const [isPanelMounted, setIsPanelMounted] = useState(false);
+  // Quick-message input beside the launcher bubble (dismissal persists across loads).
+  const [quickInputDismissed, setQuickInputDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem('genassist_quick_input_dismissed') === '1'; } catch { return false; }
+  });
   const [submittedForms, setSubmittedForms] = useState<Set<number>>(new Set());
   const [submittingFormIndex, setSubmittingFormIndex] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -151,6 +160,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
   const [showBacklight, setShowBacklight] = useState(false);
+  // Header pill expands to reveal the agent description on click.
+  const [showHeaderDescription, setShowHeaderDescription] = useState(false);
 
   const {
     messages,
@@ -213,6 +224,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     windowHeight,
     isFullscreen,
     handleFullscreenToggle,
+    isExpanded,
+    handleExpandToggle,
   } = useViewportManager({
     mode,
     widget,
@@ -264,6 +277,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   useEffect(() => {
     if (mode === 'fullscreen' && !isFloatingOpen) {
       setIsFloatingOpen(true);
+    }
+  }, [mode, isFloatingOpen]);
+
+  // Mount the floating panel as soon as it opens; unmount happens on close-animation end.
+  useEffect(() => {
+    if (mode === 'floating' && isFloatingOpen) {
+      setIsPanelMounted(true);
     }
   }, [mode, isFloatingOpen]);
 
@@ -474,6 +494,26 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   };
 
+  const handleDismissQuickInput = () => {
+    setQuickInputDismissed(true);
+    try { localStorage.setItem('genassist_quick_input_dismissed', '1'); } catch { /* ignore */ }
+  };
+
+  // Quick input next to the bubble: open the panel, start a conversation if needed, then send.
+  const handleQuickInputSend = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setIsFloatingOpen(true);
+    try {
+      if (!conversationId) {
+        await startConversation(reCaptchaTokenRef.current);
+      }
+      await sendMessage(trimmed, [], undefined, reCaptchaTokenRef.current);
+    } catch (error) {
+      // ignore
+    }
+  };
+
   const handleMenuClick = () => {
     setShowMenu(prev => !prev);
   };
@@ -541,8 +581,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // Computed styles
   const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams });
   const headerStyle = getHeaderStyle(themeParams);
-  const headerTitleStyle = getHeaderTitleStyle(fontFamily);
-  const headerSubtitleStyle = getHeaderSubtitleStyle(fontFamily);
+  const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily);
+  const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily);
+  const headerDescription = (description ?? t('header.subtitle') ?? '').trim();
+  const hasHeaderDescription = headerDescription.length > 0;
+  const toggleHeaderDescription = () => {
+    if (!hasHeaderDescription) return;
+    setShowHeaderDescription((prev) => !prev);
+  };
   const menuPopupStyle = getMenuPopupStyle(backgroundColor);
   const menuItemStyle = getMenuItemStyle(themeParams);
   const contentCardStyle = getContentCardStyle(backgroundColor);
@@ -621,6 +667,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     position,
     offsetX,
     offsetY,
+    isExpanded,
   });
 
   const renderLanguageSelector = () => {
@@ -663,30 +710,90 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     <div style={containerStyle} data-genassist-root="true">
       <style>{CSS_KEYFRAMES}</style>
       <div style={headerStyle} ref={headerRef}>
-        <div style={logoContainerStyle}>
+        {/* Left: expand / collapse the docked widget (not fullscreen) */}
+        <div style={headerLeftContainerStyle}>
+          {mode === 'floating' && !isFullscreen && windowWidth > 768 && (
+            <button
+              className="ga-header-btn"
+              style={menuButtonStyle}
+              onClick={handleExpandToggle}
+              title={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
+              aria-label={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
+            >
+              {isExpanded ? (
+                <Minimize2 size={20} color="#111111" />
+              ) : (
+                <Maximize2 size={20} color="#111111" />
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Center: floating logo + name pill (click to reveal description) */}
+        <div
+          style={{
+            ...headerPillStyle,
+            cursor: hasHeaderDescription ? 'pointer' : 'default',
+            userSelect: 'none',
+          }}
+          onClick={toggleHeaderDescription}
+          role={hasHeaderDescription ? 'button' : undefined}
+          aria-expanded={hasHeaderDescription ? showHeaderDescription : undefined}
+          tabIndex={hasHeaderDescription ? 0 : undefined}
+          onKeyDown={(e) => {
+            if (!hasHeaderDescription) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleHeaderDescription();
+            }
+          }}
+        >
           <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
-          <div style={headerTitleContainerStyle}>
-            <div style={headerTitleStyle}>{headerTitle}</div>
-            <div style={headerSubtitleStyle}>
-              {description ?? t('header.subtitle')}
-            </div>
+          <div style={headerPillTextColumnStyle}>
+            <span style={headerPillTitleStyle} title={headerTitle}>{headerTitle}</span>
+            {hasHeaderDescription && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateRows: showHeaderDescription ? '1fr' : '0fr',
+                  transition: 'grid-template-rows 260ms cubic-bezier(0.16, 1, 0.3, 1)',
+                }}
+              >
+                <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                  <span
+                    style={{
+                      ...headerDescriptionTextStyle,
+                      display: 'block',
+                      opacity: showHeaderDescription ? 1 : 0,
+                      transition: 'opacity 200ms ease',
+                    }}
+                  >
+                    {headerDescription}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+        {/* Right: menu + close */}
+        <div style={headerRightContainerStyle}>
           <button
+            className="ga-header-btn"
             style={menuButtonStyle}
             onClick={handleMenuClick}
             title={t('menu.title')}
           >
-            <MoreVertical size={24} color="#111111" />
+            <MoreHorizontal size={22} color="#111111" />
           </button>
           {mode === 'floating' && (
             <button
+              className="ga-header-btn"
               style={menuButtonStyle}
               onClick={() => setIsFloatingOpen(false)}
               title="Close chat"
             >
-              <X size={24} color="#111111" />
+              <X size={22} color="#111111" />
             </button>
           )}
         </div>
@@ -1155,20 +1262,40 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   );
 
   if (mode === 'floating') {
+    const isPanelClosing = isPanelMounted && !isFloatingOpen;
     return (
       <>
-        {!isFloatingOpen && (
-          <ChatBubble
-            showChat={isFloatingOpen}
-            onClick={() => setIsFloatingOpen(prev => !prev)}
+        {/* Keyframes/animation classes must exist even while the panel is unmounted. */}
+        <style>{CSS_KEYFRAMES}</style>
+        {!isPanelMounted && (
+          <BubbleDock
             primaryColor={primaryColor}
-            style={getPositionStyles({ position, offsetX, offsetY })}
+            position={position}
+            offsetX={offsetX}
+            offsetY={offsetY}
+            windowWidth={windowWidth}
+            placeholder={inputPlaceholder}
+            fontFamily={fontFamily}
+            fontSize={fontSize}
             chatBubbleIcon={theme?.chatBubbleIcon}
+            showQuickInput={quickInput && !quickInputDismissed && Boolean(conversationId) && !isFinalized}
+            onOpen={() => setIsFloatingOpen(true)}
+            onSend={handleQuickInputSend}
+            onDismissQuickInput={handleDismissQuickInput}
           />
         )}
 
-        {isFloatingOpen && (
-          <div style={floatingContainerStyle} data-genassist-container="floating">
+        {isPanelMounted && (
+          <div
+            style={floatingContainerStyle}
+            className={isPanelClosing ? 'ga-widget-out' : 'ga-widget-in'}
+            onAnimationEnd={(e) => {
+              // Ignore bubbled child animations; only react to the panel's own close.
+              if (e.target !== e.currentTarget) return;
+              if (isPanelClosing) setIsPanelMounted(false);
+            }}
+            data-genassist-container="floating"
+          >
             {renderWithReCaptcha(renderChatComponent())}
           </div>
         )}
