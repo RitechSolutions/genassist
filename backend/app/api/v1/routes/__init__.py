@@ -59,6 +59,8 @@ from app.api.v1.routes import (
     workflow_manager,
     workflows,
     zendesk,
+    support_tickets,
+    azure_devops_webhook,
 )
 
 # Disable redirect slashes for all routes
@@ -113,6 +115,14 @@ router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Work
 router.include_router(reports.router, tags=["Reports"])
 
 router.include_router(zendesk.router, prefix="/zendesk", tags=["Zendesk"])
+router.include_router(
+    support_tickets.router, prefix="/help-center/tickets", tags=["Help Center"]
+)
+router.include_router(
+    azure_devops_webhook.router,
+    prefix="/integrations/azure-devops",
+    tags=["Azure DevOps"],
+)
 router.include_router(gmail.router, prefix="/gmail", tags=["Gmail"])
 
 router.include_router(office365.router, prefix="/office365", tags=["Office365"])
