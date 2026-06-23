@@ -9,11 +9,12 @@ task resolves the agent's *current* workflow version and runs it.
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from celery import shared_task
 
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
@@ -328,5 +329,80 @@ def check_scheduled_workflow_runs():
     except Exception as e:
         logger.error(
             f"Error in scheduled workflow check task: {str(e)}", exc_info=True
+        )
+        raise
+
+
+# ==================== Reconciliation (crash recovery) ====================
+#
+# Runs are dispatched with Celery's default early-ack, so a run whose worker/pod
+# dies mid-execution is never redelivered and would otherwise sit in
+# PENDING/RUNNING forever. This sweep marks such runs FAILED once they exceed
+# safe age thresholds so the run history stays truthful. It deliberately does
+# NOT re-dispatch them, to avoid duplicating side effects (a partially-run
+# workflow may already have created tickets, sent messages, etc.). Re-run via
+# "Run now" if needed.
+
+_STUCK_RUN_ERROR = (
+    "Run did not complete — the worker/pod was lost or restarted "
+    "mid-execution and the task was not resumed."
+)
+
+
+async def reconcile_stuck_workflow_runs_async():
+    """Fail runs left stuck by a crashed worker for the current tenant."""
+    tenant_id = get_tenant_context()
+    session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
+
+    async with session_factory() as session:
+        try:
+            run_repository = WorkflowScheduleRunRepository(session)
+            now = datetime.now(timezone.utc)
+            pending_before = now - timedelta(
+                seconds=settings.WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS
+            )
+            running_before = now - timedelta(
+                seconds=settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS
+            )
+            failed = await run_repository.mark_stuck_as_failed(
+                pending_before=pending_before,
+                running_before=running_before,
+                error_message=_STUCK_RUN_ERROR,
+            )
+            if failed:
+                logger.warning(
+                    f"Reconciled {failed} stuck workflow schedule run(s) as FAILED "
+                    f"for tenant {tenant_id}"
+                )
+        except Exception as e:
+            logger.error(
+                f"Error reconciling stuck workflow runs: {str(e)}", exc_info=True
+            )
+        finally:
+            await session.close()
+
+
+async def reconcile_stuck_workflow_runs_async_with_scope():
+    """Run the stuck-run reconciliation for all tenants."""
+    from app.tasks.base import run_task_with_tenant_support
+
+    return await run_task_with_tenant_support(
+        reconcile_stuck_workflow_runs_async,
+        "reconcile stuck workflow runs",
+    )
+
+
+@shared_task
+def reconcile_stuck_workflow_runs():
+    """Celery beat task to fail runs orphaned by a worker/pod crash."""
+    try:
+        run_async_in_celery(
+            reconcile_stuck_workflow_runs_async_with_scope(),
+            timeout=50,
+            task_name="reconcile_stuck_workflow_runs",
+        )
+    except Exception as e:
+        logger.error(
+            f"Error in stuck-run reconciliation task: {str(e)}", exc_info=True
         )
         raise

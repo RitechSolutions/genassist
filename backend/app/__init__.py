@@ -338,6 +338,7 @@ def create_celery():
             "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs": {"queue": "ml"},
             "execute_workflow_run": {"queue": "ml"},
             "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs": {"queue": "ml"},
+            "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs": {"queue": "ml"},
         },
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
@@ -456,6 +457,13 @@ def create_celery():
         beat_schedule["check-scheduled-workflow-runs"] = {
             "task": "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs",
             "schedule": 60.0,  # Every minute (60 seconds)
+        }
+
+    # Reconcile workflow runs orphaned by a worker/pod crash every 5 minutes
+    if settings.CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK:
+        beat_schedule["reconcile-stuck-workflow-runs"] = {
+            "task": "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
         }
 
     # Sync active KB's jobs every 5 minutes

@@ -4,6 +4,7 @@ from typing import List, Optional, Sequence
 from datetime import datetime, timezone
 
 from injector import inject
+from sqlalchemy import and_, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from starlette_context import context
@@ -125,3 +126,50 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
             pass
 
         return await super().update(run)
+
+    async def mark_stuck_as_failed(
+        self,
+        pending_before: datetime,
+        running_before: datetime,
+        error_message: str,
+    ) -> int:
+        """Atomically fail runs left stuck by a worker/pod crash:
+        - PENDING created before `pending_before` (never picked up), and
+        - RUNNING whose start (or creation) precedes `running_before` (the
+          worker died mid-execution; past the max execution time).
+
+        A single UPDATE avoids races with a run that completes concurrently.
+        Returns the number of rows transitioned to FAILED.
+        """
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(WorkflowScheduleRunModel)
+            .where(
+                WorkflowScheduleRunModel.is_deleted == 0,
+                or_(
+                    and_(
+                        WorkflowScheduleRunModel.status
+                        == WorkflowScheduleRunStatus.PENDING,
+                        WorkflowScheduleRunModel.created_at < pending_before,
+                    ),
+                    and_(
+                        WorkflowScheduleRunModel.status
+                        == WorkflowScheduleRunStatus.RUNNING,
+                        func.coalesce(
+                            WorkflowScheduleRunModel.started_at,
+                            WorkflowScheduleRunModel.created_at,
+                        )
+                        < running_before,
+                    ),
+                ),
+            )
+            .values(
+                status=WorkflowScheduleRunStatus.FAILED,
+                completed_at=now,
+                error_message=error_message,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        return result.rowcount or 0
