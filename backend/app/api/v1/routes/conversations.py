@@ -58,7 +58,12 @@ from app.schemas.conversation_transcript import (
     InProgressConversationTranscriptFinalize,
     TranscriptSegmentFeedback,
 )
-from app.schemas.filter import ConversationFilter
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import ConversationFilter, MessageIssueFilter
+from app.schemas.message_issue import (
+    IssueStatusUpdate,
+    ReportedIssueRead,
+)
 from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
@@ -88,6 +93,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _voice_provider_has_key(provider_id) -> bool:
+    """Best-effort check that the live-voice node's provider is a Gemini provider
+    with an API key. Returns False (never raises) on any problem — the widget only
+    needs a yes/no, and a wrong 'not ready' is safer than failing the bootstrap."""
+    if not provider_id:
+        return False
+    try:
+        from uuid import UUID
+
+        from app.modules.workflow.audio.provider import load_connection_data
+
+        provider_type, connection_data = await load_connection_data(UUID(str(provider_id)))
+        return provider_type == "gemini" and bool(connection_data.get("api_key"))
+    except Exception as exc:
+        logger.warning("Live-voice readiness check failed for provider %s: %s", provider_id, exc)
+        return False
+
+
 @router.get(
     "/in-progress/agent-info",
     dependencies=[
@@ -110,9 +133,22 @@ async def get_agent_info(
 
     available_languages = await translations_service.get_languages_for_prefix(f"agent.{agent.id}.")
 
+    # True when the agent's workflow contains a voiceAgentNode (so the widget can
+    # switch to voice-only mode without an integrator prop). `live_voice_ready` then
+    # tells the widget whether a usable Gemini key is configured — only a boolean is
+    # exposed, never the reason, since the widget can be shown to public end users.
+    live_voice_enabled = bool(getattr(request.state, "agent_live_voice_enabled", False))
+    live_voice_ready = False
+    if live_voice_enabled:
+        live_voice_ready = await _voice_provider_has_key(
+            getattr(request.state, "agent_voice_provider_id", None)
+        )
+
     response = {
         "agent_id": str(agent.id),
         "agent_available_languages": available_languages,
+        "live_voice_enabled": live_voice_enabled,
+        "live_voice_ready": live_voice_ready,
     }
 
     agent_security_settings = agent.security_settings if hasattr(agent, "security_settings") else None
@@ -196,6 +232,23 @@ async def get_agent_chat_locales(
     json_response = JSONResponse(content=response)
     apply_agent_cors_headers(request, json_response, agent_security_settings)
     return json_response
+
+
+@router.get(
+    "/issues",
+    response_model=PaginatedResponse[ReportedIssueRead],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_message_issues(
+    filter_obj: MessageIssueFilter = Depends(),
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Paginated list of messages with an admin/supervisor comment (reported
+    issues), newest first, with conversation + agent/workflow context and the
+    tracked resolution status. Group-scoped; all filters applied server-side."""
+    return await transcript_message_service.get_message_issues(filter_obj)
 
 
 @router.get(
@@ -805,6 +858,24 @@ async def get_conversation_count(
     return await conversations_service.count_conversations(conversation_filter)
 
 
+@router.patch(
+    "/issues/{message_feedback_id}/status",
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def update_message_issue_status(
+    message_feedback_id: UUID,
+    payload: IssueStatusUpdate,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Set the resolution status of a reported issue (a message comment)."""
+    issue = await transcript_message_service.set_issue_status(
+        message_feedback_id, payload.status
+    )
+    return {"message_feedback_id": str(message_feedback_id), "status": issue.status}
+
+
 @router.delete(
     "/{conversation_id}/gdpr",
     dependencies=[
@@ -856,18 +927,21 @@ async def add_message_feedback(
         message_id, transcript_feedback
     )
 
-    # Get the conversation and update thumbs up/down counts
-    conversation = await conversation_service.get_conversation_by_id(conversation_id, raise_not_found=True)
+    # Only adjust thumbs counters/analytics when an actual rating is supplied.
+    # A comment-only update (feedback is None) must not affect thumbs up/down.
+    if transcript_feedback.feedback is not None:
+        # Get the conversation and update thumbs up/down counts
+        conversation = await conversation_service.get_conversation_by_id(conversation_id, raise_not_found=True)
 
-    # Update conversation thumbs up/down counts based on feedback type
-    increment_feedback(conversation, transcript_feedback, previous_feedback)
+        # Update conversation thumbs up/down counts based on feedback type
+        increment_feedback(conversation, transcript_feedback, previous_feedback)
 
-    # Persist the updated conversation
-    await conversation_service.update_conversation(conversation)
+        # Persist the updated conversation
+        await conversation_service.update_conversation(conversation)
 
-    # Fire incremental analytics update for thumbs in background
-    is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
-    _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
+        # Fire incremental analytics update for thumbs in background
+        is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
+        _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
 
     return {"message": f"Successfully added message feedback, for message id:{message_id} "}
 

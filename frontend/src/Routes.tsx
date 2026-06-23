@@ -10,6 +10,7 @@ import Operators from "./views/Operators";
 import Analytics from "@/views/Analytics";
 import AgentPerformancePage from "@/views/Analytics/pages/AgentPerformancePage";
 import NodeAnalyticsPage from "@/views/Analytics/pages/NodeAnalyticsPage";
+import ReportedFeedback from "@/views/ReportedFeedback/Index";
 import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
 import NotFound from "@/views/NotFound";
@@ -175,6 +176,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:dashboard"]}>
                   <NodeAnalyticsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "reported-feedback",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:conversation"]}>
+                  <ReportedFeedback />
                 </ProtectedRoute>
               ),
             },

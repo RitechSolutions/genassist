@@ -52,6 +52,7 @@ from app.api.v1.routes import (
     user_types,
     users,
     voice,
+    voice_live,
     webhook,
     webhook_execute,
     workflow_builder,
@@ -95,6 +96,7 @@ router.include_router(
     conversations.router, prefix="/conversations", tags=["Conversations"]
 )
 router.include_router(voice.router, prefix="/voice", tags=["Voice"])
+router.include_router(voice_live.router, prefix="/voice", tags=["Voice"])
 
 # router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
 

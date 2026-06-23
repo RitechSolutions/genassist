@@ -899,7 +899,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                             </div>
                           ) : (
                             <JsonViewer
-                              data={stripAudioDataForDisplay(response.output)}
+                              data={stripAudioDataForDisplay(response.output) as unknown as never}
                               onCopy={(data) => {
                                 navigator.clipboard.writeText(
                                   JSON.stringify(data, null, 2)
@@ -918,7 +918,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                             Debug View
                           </div>
                           <JsonViewer
-                            data={stripAudioDataForDisplay(response)}
+                            data={stripAudioDataForDisplay(response) as unknown as never}
                             onCopy={(data) => {
                               navigator.clipboard.writeText(
                                 JSON.stringify(data, null, 2)

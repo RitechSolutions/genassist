@@ -229,6 +229,14 @@ export interface VoiceAgentNodeData extends BaseNodeData {
   piiMasking?: boolean;
   memoryTrimmingMode?: "message_count" | "rag_retrieval";
   maxMessages?: number;
+  // Live tuning (optional; unset = Gemini Live defaults)
+  temperature?: number;
+  maxOutputTokens?: number;
+  vadSilenceMs?: number;
+  vadStartSensitivity?: "START_SENSITIVITY_HIGH" | "START_SENSITIVITY_LOW";
+  vadEndSensitivity?: "END_SENSITIVITY_HIGH" | "END_SENSITIVITY_LOW";
+  proactiveAudio?: boolean;
+  contextCompression?: boolean;
 }
 export interface LLMModelNodeData extends BaseLLMNodeData {
   type: "Base" | "Chain-of-Thought";

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_topic_enum import ConversationTopic
+from app.core.utils.enums.issue_status_enum import IssueStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.enums.sort_field_enum import SortField
@@ -92,6 +93,11 @@ class ConversationFilter(BaseFilterModel):
             return parsed if isinstance(parsed, dict) else None
         except (json.JSONDecodeError, TypeError):
             return None
+
+
+class MessageIssueFilter(BaseFilterModel):
+    status: Optional[IssueStatus] = Field(None, description="Filter by tracked resolution status")
+    workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
 
 
 class ApiKeysFilter(BaseFilterModel):

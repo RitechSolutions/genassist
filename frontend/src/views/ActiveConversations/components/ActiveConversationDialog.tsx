@@ -787,7 +787,7 @@ function TranscriptDialogContent({
                       variant="outline"
                       className="w-full text-sm flex items-center gap-2"
                       onClick={() => {
-                        setFeedbackType(userFeedback.feedback);
+                        setFeedbackType(userFeedback.feedback || null);
                         setFeedbackMessage(userFeedback.feedback_message);
                         setUserFeedback(null);
                       }}
