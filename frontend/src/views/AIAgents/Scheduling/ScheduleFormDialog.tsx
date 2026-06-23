@@ -37,6 +37,9 @@ interface ScheduleFormDialogProps {
   onClose: () => void;
   onSaved: () => void;
   schedule?: WorkflowSchedule | null;
+  // When set, the schedule is locked to this agent and the workflow selector
+  // is hidden (the dialog is opened from that agent's Scheduling page).
+  lockedAgentId?: string;
 }
 
 // 5-field cron validation (mirrors KnowledgeBaseForm / ML pipeline).
@@ -51,6 +54,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
   onClose,
   onSaved,
   schedule,
+  lockedAgentId,
 }) => {
   const isEdit = Boolean(schedule);
 
@@ -91,7 +95,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
       );
     } else {
       setName("");
-      setAgentId("");
+      setAgentId(lockedAgentId || "");
       setCron("0 0 * * *");
       setIsActive(true);
       setThreadIdMode("per_run");
@@ -99,7 +103,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
       setMessage("");
       setExtraInputJson("");
     }
-  }, [isOpen, schedule]);
+  }, [isOpen, schedule, lockedAgentId]);
 
   const cronValid = useMemo(() => isValidCron(cron), [cron]);
 
@@ -184,24 +188,26 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Workflow</Label>
-            <Select value={agentId} onValueChange={setAgentId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a workflow" />
-              </SelectTrigger>
-              <SelectContent>
-                {agents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              The latest published version of this workflow runs each time.
-            </p>
-          </div>
+          {!lockedAgentId && (
+            <div className="space-y-1.5">
+              <Label>Workflow</Label>
+              <Select value={agentId} onValueChange={setAgentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a workflow" />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The latest published version of this workflow runs each time.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="schedule-cron">Schedule (cron)</Label>

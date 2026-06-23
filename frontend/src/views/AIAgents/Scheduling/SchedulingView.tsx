@@ -48,7 +48,13 @@ const statusVariant = (
   }
 };
 
-const SchedulingView: React.FC = () => {
+interface SchedulingViewProps {
+  // When set, the view is scoped to a single agent: the list is filtered to
+  // that agent and new/edited schedules are locked to it.
+  agentId?: string;
+}
+
+const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId }) => {
   const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
   const [agentNames, setAgentNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -86,10 +92,12 @@ const SchedulingView: React.FC = () => {
 
   const filtered = useMemo(
     () =>
-      schedules.filter((s) =>
-        s.name.toLowerCase().includes(searchTerm.toLowerCase())
+      schedules.filter(
+        (s) =>
+          (!agentId || s.agent_id === agentId) &&
+          s.name.toLowerCase().includes(searchTerm.toLowerCase())
       ),
-    [schedules, searchTerm]
+    [schedules, searchTerm, agentId]
   );
 
   const handleToggleActive = async (schedule: WorkflowSchedule) => {
@@ -265,6 +273,7 @@ const SchedulingView: React.FC = () => {
         onClose={() => setFormOpen(false)}
         onSaved={fetchData}
         schedule={editing}
+        lockedAgentId={agentId}
       />
 
       <RunHistoryDialog
