@@ -53,7 +53,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
-    "genassist-chat-react": "^1.0.38",
+    "genassist-chat-react": "^1.0.39",
     "input-otp": "^1.2.4",
     "jwt-decode": "^4.0.0",
     "lodash": "^4.18.1",
@@ -67,13 +67,13 @@
     "react-hook-form": "^7.53.0",
     "react-hot-toast": "^2.5.2",
     "react-resizable-panels": "^2.1.3",
-    "react-router-dom": "^6.26.2",
+    "react-router-dom": "^6.30.4",
     "reactflow": "^11.11.4",
     "recharts": "^2.12.7",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "uuid": "^11.1.0",
+    "uuid": "^11.1.1",
     "vaul": "^0.9.3",
     "zod": "^3.23.8"
   },
@@ -90,11 +90,11 @@
     "eslint-plugin-react-refresh": "^0.4.9",
     "globals": "^15.9.0",
     "lovable-tagger": "^1.1.3",
-    "postcss": "^8.4.47",
+    "postcss": "^8.5.10",
     "prettier": "^3.3.3",
     "tailwindcss": "^3.4.11",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
-    "vite": "^5.4.21"
+    "vite": "^6.4.3"
   }
 }

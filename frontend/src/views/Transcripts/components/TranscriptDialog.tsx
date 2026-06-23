@@ -161,33 +161,30 @@ function MessageFeedbackButton({
   const handleSave = async () => {
     if (!messageId || !localTranscript) return;
 
-    const base = (localTranscript.messages ?? localTranscript.messages) || [];
-    const msg = base.find((entry) => entry.message_id === messageId);
-    if (!msg) return;
-
-    const existingFeedback =
-      Array.isArray(msg.feedback) && msg.feedback.length > 0 ? msg.feedback[msg.feedback.length - 1] : null;
-
-    const feedbackType = existingFeedback ? existingFeedback.feedback : 'good';
-    const success = await submitMessageFeedback(messageId, feedbackType, text);
+    // A comment must never create or change a thumbs rating, so don't send one.
+    const success = await submitMessageFeedback(messageId, undefined, text);
 
     if (success) {
       setLocalTranscript((currentTranscript) => {
         if (!currentTranscript) return null;
-        const b = (currentTranscript.messages ?? currentTranscript.messages) || [];
+        const b = currentTranscript.messages || [];
         const newTranscriptEntries = b.map((entry) => {
-          if (entry.message_id === messageId) {
-            const newFeedbackEntry: ConversationFeedbackEntry = {
-              feedback: feedbackType,
+          if (entry.message_id !== messageId) return entry;
+          const arr = Array.isArray(entry.feedback) ? [...entry.feedback] : [];
+          if (arr.length > 0) {
+            // Attach the comment to the latest feedback entry, keeping its rating.
+            const idx = arr.length - 1;
+            arr[idx] = { ...arr[idx], feedback_message: text };
+          } else {
+            // Comment with no rating yet (feedback "" => no thumbs).
+            arr.push({
+              feedback: '',
               feedback_message: text,
               feedback_timestamp: new Date().toISOString(),
               feedback_user_id: '',
-            };
-            const existingFeedbackArr = Array.isArray(entry.feedback) ? entry.feedback : [];
-            const otherFeedback = existingFeedbackArr.filter((f) => f.feedback !== feedbackType);
-            return { ...entry, feedback: [...otherFeedback, newFeedbackEntry] };
+            });
           }
-          return entry;
+          return { ...entry, feedback: arr };
         });
         return { ...currentTranscript, messages: newTranscriptEntries, transcript: newTranscriptEntries };
       });
@@ -467,7 +464,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
 
   const handleEditFeedback = () => {
     if (userFeedback) {
-      setFeedbackType(userFeedback.feedback);
+      setFeedbackType(userFeedback.feedback || null);
       setFeedbackMessage(userFeedback.feedback_message);
       setIsEditing(true);
     }
@@ -475,23 +472,28 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
 
   const handleMessageFeedback = async (messageId: string, feedback: 'good' | 'bad') => {
     if (!localTranscript?.id) return;
+    // Rating only — don't pass a comment so an existing comment is preserved.
     const success = await submitMessageFeedback(messageId, feedback);
     if (success) {
       setLocalTranscript((currentTranscript) => {
         if (!currentTranscript) return null;
-        const base = (currentTranscript.messages ?? currentTranscript.messages) || [];
+        const base = currentTranscript.messages || [];
         const newTranscriptEntries = base.map((entry) => {
-          if (entry.message_id === messageId) {
-            const newFeedback: ConversationFeedbackEntry = {
+          if (entry.message_id !== messageId) return entry;
+          const arr = Array.isArray(entry.feedback) ? [...entry.feedback] : [];
+          if (arr.length > 0) {
+            // Set the rating on the latest entry, keeping its comment.
+            const idx = arr.length - 1;
+            arr[idx] = { ...arr[idx], feedback };
+          } else {
+            arr.push({
               feedback,
               feedback_message: '',
               feedback_timestamp: new Date().toISOString(),
               feedback_user_id: '',
-            };
-            const existingFeedback = Array.isArray(entry.feedback) ? entry.feedback : [];
-            return { ...entry, feedback: [...existingFeedback, newFeedback] };
+            });
           }
-          return entry;
+          return { ...entry, feedback: arr };
         });
         return { ...currentTranscript, messages: newTranscriptEntries, transcript: newTranscriptEntries };
       });
@@ -777,6 +779,12 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                         : [];
                       const hasGood = messageFeedbackArr.some((f) => f.feedback === 'good');
                       const hasBad = messageFeedbackArr.some((f) => f.feedback === 'bad');
+                      const hasComment = messageFeedbackArr.some(
+                        (f) => Boolean(f.feedback_message && f.feedback_message.trim())
+                      );
+                      // Keep the controls pinned once there's any feedback (rating or comment),
+                      // so the comment indicator doesn't vanish when the hover ends.
+                      const hasFeedback = hasGood || hasBad || hasComment;
                       const speakerName = isAgent ? 'Operator' : 'Customer';
 
                       return (
@@ -786,66 +794,48 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                         >
                           <span className="text-[11px] text-black font-medium mb-1">{speakerName}</span>
                           <div className="relative">
-                            {isAgent && (
-                              <>
-                                {/* No feedback given. Show on hover. */}
-                                {!hasGood && !hasBad && (
-                                  <div
-                                    className={`absolute -left-28 top-1/2 -translate-y-1/2 ${openPopoverMessageId === messageId ? 'flex' : 'hidden group-hover:flex'} items-center gap-2 z-10`}
-                                  >
-                                    <div className="flex items-center bg-white rounded-lg shadow-sm border border-gray-200">
-                                      <button
-                                        className="p-2 hover:bg-gray-100 rounded-l-lg"
-                                        title="Good response"
-                                        onClick={() => handleMessageFeedback(messageId, 'good')}
-                                      >
-                                        <ThumbsUp className="w-4 h-4 text-yellow-500" />
-                                      </button>
-                                      <div className="h-4 w-px bg-gray-200" />
-                                      <button
-                                        className="p-2 hover:bg-gray-100 rounded-r-lg"
-                                        title="Bad response"
-                                        onClick={() => handleMessageFeedback(messageId, 'bad')}
-                                      >
-                                        <ThumbsDown className="w-4 h-4 text-yellow-500" />
-                                      </button>
-                                    </div>
-                                    {messageId && (
-                                      <MessageFeedbackButton
-                                        messageId={messageId}
-                                        localTranscript={localTranscript}
-                                        setLocalTranscript={setLocalTranscript}
-                                        onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
-                                      />
-                                    )}
+                            {isAgent && messageId && (
+                              <div
+                                className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 ${
+                                  hasFeedback || openPopoverMessageId === messageId
+                                    ? 'flex'
+                                    : 'hidden group-hover:flex'
+                                } items-center gap-2 z-10`}
+                              >
+                                {hasGood ? (
+                                  <div className="flex items-center bg-white rounded-lg shadow-sm border border-green-200 p-2">
+                                    <ThumbsUp className="w-4 h-4 text-green-600" />
+                                  </div>
+                                ) : hasBad ? (
+                                  <div className="flex items-center bg-white rounded-lg shadow-sm border border-red-200 p-2">
+                                    <ThumbsDown className="w-4 h-4 text-red-600" />
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center bg-white rounded-lg shadow-sm border border-gray-200">
+                                    <button
+                                      className="p-2 hover:bg-gray-100 rounded-l-lg"
+                                      title="Good response"
+                                      onClick={() => handleMessageFeedback(messageId, 'good')}
+                                    >
+                                      <ThumbsUp className="w-4 h-4 text-yellow-500" />
+                                    </button>
+                                    <div className="h-4 w-px bg-gray-200" />
+                                    <button
+                                      className="p-2 hover:bg-gray-100 rounded-r-lg"
+                                      title="Bad response"
+                                      onClick={() => handleMessageFeedback(messageId, 'bad')}
+                                    >
+                                      <ThumbsDown className="w-4 h-4 text-yellow-500" />
+                                    </button>
                                   </div>
                                 )}
-
-                                {/* Thumbs up or down selected. */}
-                                {(hasGood || hasBad) && (
-                                  <div className="absolute -left-20 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
-                                    {/* Show selected icon permanently */}
-                                    {hasGood && (
-                                      <div className="flex items-center bg-white rounded-lg shadow-sm border border-green-200 p-2">
-                                        <ThumbsUp className="w-4 h-4 text-green-600" />
-                                      </div>
-                                    )}
-                                    {hasBad && (
-                                      <div className="flex items-center bg-white rounded-lg shadow-sm border border-red-200 p-2">
-                                        <ThumbsDown className="w-4 h-4 text-red-600" />
-                                      </div>
-                                    )}
-                                    {messageId && (
-                                      <MessageFeedbackButton
-                                        messageId={messageId}
-                                        localTranscript={localTranscript}
-                                        setLocalTranscript={setLocalTranscript}
-                                        onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
-                                      />
-                                    )}
-                                  </div>
-                                )}
-                              </>
+                                <MessageFeedbackButton
+                                  messageId={messageId}
+                                  localTranscript={localTranscript}
+                                  setLocalTranscript={setLocalTranscript}
+                                  onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
+                                />
+                              </div>
                             )}
                             <div className={`p-2 flex flex-col gap-1`} style={{ maxWidth: '400px' }}>
                               <div

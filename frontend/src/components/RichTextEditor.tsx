@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useEffect, useState } from "react";
-import { Bold, Italic, Type, Link2, Undo2, Redo2 } from "lucide-react";
+import { Bold, Italic, Type, Link2, ImagePlus, Undo2, Redo2 } from "lucide-react";
+import toast from "react-hot-toast";
 import { Toggle } from "@/components/toggle";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import { Separator } from "@/components/separator";
@@ -12,8 +13,12 @@ export interface RichTextEditorToolbar {
   italic?: boolean;
   fontSize?: boolean;
   link?: boolean;
+  image?: boolean;
   undoRedo?: boolean;
 }
+
+/** Max inline image size (base64-embedded). Larger files are rejected. */
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 export interface RichTextEditorProps {
   /** Current HTML string value */
@@ -57,6 +62,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   disabled = false,
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const lastEmittedRef = useRef(value);
   const [, forceUpdate] = useState(0);
 
@@ -81,8 +87,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const emitChange = useCallback(() => {
     if (!editorRef.current) return;
     const html = editorRef.current.innerHTML;
+    // Empty unless there is text or embedded media (e.g. an image-only field).
+    const hasMedia = /<img\b/i.test(html);
     const cleaned =
-      html === "<br>" || html.replace(/<[^>]*>/g, "").trim() === ""
+      !hasMedia && (html === "<br>" || html.replace(/<[^>]*>/g, "").trim() === "")
         ? ""
         : html;
     lastEmittedRef.current = cleaned;
@@ -147,6 +155,44 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       });
     emitChange();
   }, [exec, emitChange, isInsideLink]);
+
+  const insertImageFromFile = useCallback(
+    (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please choose an image file");
+        return;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        toast.error("Image is too large (max 2 MB)");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        editorRef.current?.focus();
+        document.execCommand("insertImage", false, dataUrl);
+        // Constrain newly inserted images so they fit the editor/preview.
+        editorRef.current?.querySelectorAll<HTMLImageElement>("img:not([data-rte])").forEach((img) => {
+          img.setAttribute("data-rte", "1");
+          img.style.maxWidth = "100%";
+          img.style.height = "auto";
+        });
+        emitChange();
+        forceUpdate((n) => n + 1);
+      };
+      reader.readAsDataURL(file);
+    },
+    [emitChange],
+  );
+
+  const handleImageSelected = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) insertImageFromFile(file);
+    },
+    [insertImageFromFile],
+  );
 
   // Detect active formatting state for toggle pressed styling
   const isBold = document.queryCommandState?.("bold") ?? false;
@@ -235,6 +281,18 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             </Toggle>
           )}
 
+          {toolbar.image && (
+            <Toggle
+              size="sm"
+              pressed={false}
+              className="h-7 w-7 p-0 rounded-md"
+              aria-label="Insert image"
+              onPressedChange={() => fileInputRef.current?.click()}
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+            </Toggle>
+          )}
+
           {toolbar.undoRedo && (
             <>
               <Separator orientation="vertical" className="mx-0.5 h-4" />
@@ -261,11 +319,21 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         </div>
       )}
 
+      {toolbar.image && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSelected}
+        />
+      )}
+
       {/* Editable area */}
       <div
         ref={editorRef}
         contentEditable={!disabled}
-        className="overflow-y-auto px-3 py-2 text-sm outline-none focus:ring-0 [&_a]:text-primary [&_a]:underline"
+        className="overflow-y-auto px-3 py-2 text-sm outline-none focus:ring-0 [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_img]:my-1"
         style={{ minHeight, maxHeight }}
         onInput={emitChange}
         onBlur={emitChange}

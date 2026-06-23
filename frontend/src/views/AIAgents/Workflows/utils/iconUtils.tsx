@@ -27,6 +27,7 @@ import {
   MicVocal,
   Mic,
   Volume2,
+  CalendarClock,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -60,6 +61,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   Wrench: { type: "lucide", source: Wrench },
   MailOpen: { type: "lucide", source: MailOpen },
   Calendar: { type: "lucide", source: Calendar },
+  CalendarClock: { type: "lucide", source: CalendarClock },
   Split: { type: "lucide", source: Split },
   SplitRotated: {
     type: "lucide",

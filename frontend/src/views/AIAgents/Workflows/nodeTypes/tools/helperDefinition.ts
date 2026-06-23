@@ -109,6 +109,35 @@ export const KNOWLEDGE_QUERY_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Create Workflow Schedule node creates a recurring schedule that runs an agent's latest workflow on a cron expression — the same scheduling you can set up manually from the Scheduling tab in Agent Studio.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Create Workflow Schedule node when you need to:",
+      bullets: [
+        "Let an agent set up a recurring run on demand",
+        "Schedule another agent's workflow on a cron expression",
+        "Pass a fixed message and input parameters to each run",
+        "Choose a fresh or shared conversation thread per run",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Select the Workflow (agent) to schedule.",
+        "Enter the Schedule name and a Cron expression (minute hour day month weekday).",
+        "Optionally set the Message and conversation thread behaviour.",
+        "Decide whether the schedule starts active.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
 export const SQL_EXECUTOR_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The SQL Executor node runs SQL queries against a selected data source. It is useful when you want to query relational data directly inside a workflow.",

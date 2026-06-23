@@ -9,21 +9,25 @@ collected for conversation memory and the chat UI.
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
 
 from app.modules.workflow.audio.audio_input import (
-    LIVE_API_INPUT_MIME,
     build_audio_payload,
     extract_audio_input,
     pcm_to_wav,
     wav_to_pcm16k,
 )
+from app.modules.workflow.audio.gemini_live import (
+    build_live_config,
+    explain_live_error,
+    history_text,
+    history_to_live_turns,
+)
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LIVE_MODEL = "gemini-3.1-flash-live-preview"
 GEMINI_PROVIDER_TYPE = "gemini"
-DEFAULT_VOICE = "Kore"
 # Hard ceiling for one turn (history replay + tool calls + audio generation).
 TURN_TIMEOUT_SECONDS = 180
 
@@ -31,20 +35,6 @@ TURN_TIMEOUT_SECONDS = 180
 def _error(message: str, detail: str) -> Dict[str, Any]:
     """Build the standard user-facing error result for the voice agent."""
     return {"message": message, "error": detail}
-
-
-def _explain_live_error(error_message: str) -> str:
-    """Append a hint for the Live API's opaque 1007 session-setup rejection."""
-    if "1007" in error_message or "invalid argument" in error_message.lower():
-        # The Live API closes the websocket with 1007 INVALID_ARGUMENT when the
-        # session setup is rejected (wrong/unavailable model name for this API
-        # key, or an invalid tool schema).
-        return (
-            f"{error_message} — the Live API rejected the session setup. Check that "
-            "the configured Live model is available for this API key and that "
-            "connected tool schemas are valid."
-        )
-    return error_message
 
 
 class VoiceAgentNode(AgentNode):
@@ -57,6 +47,15 @@ class VoiceAgentNode(AgentNode):
     """
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        # Live-voice "full workflow per turn": the persistent Gemini Live session
+        # (held by the live endpoint) already produced this turn's reply, then runs
+        # the full DAG for side-effect nodes with the result injected as
+        # `live_result`. Surface it instead of opening a new Live turn — so there's
+        # no double Gemini call / double tool execution.
+        live_result = self.get_state().get_value("live_result")
+        if live_result:
+            return live_result
+
         api_key, error = await self._resolve_api_key(config)
         if error:
             return error
@@ -73,6 +72,16 @@ class VoiceAgentNode(AgentNode):
             self._wrap_tools_for_pii_unmask(tools)
 
         history_turns = await self._build_history_turns(config, system_prompt, user_prompt)
+        if history_turns:
+            # Native-audio Live models reject send_client_content mid-session
+            # (1007 INVALID_ARGUMENT) and the installed SDK lacks
+            # initial_history_in_client_content, so conversation history is
+            # replayed inside the system instruction instead.
+            system_prompt = (
+                f"{system_prompt}\n\n# Conversation so far\n"
+                f"{history_text(history_turns)}\n\n"
+                "Continue the conversation naturally from here."
+            )
 
         self.set_node_input({
             "system_prompt": system_prompt,
@@ -82,13 +91,12 @@ class VoiceAgentNode(AgentNode):
 
         try:
             result = await asyncio.wait_for(
-                self._run_live_turn(
+                self._run_turn(
                     api_key=api_key,
                     config=config,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     pcm_input=pcm_input,
-                    history_turns=history_turns,
                     tools=tools,
                 ),
                 timeout=TURN_TIMEOUT_SECONDS,
@@ -101,7 +109,7 @@ class VoiceAgentNode(AgentNode):
             )
         except Exception as e:
             logger.exception("Error processing voice agent node")
-            detail = _explain_live_error(str(e))
+            detail = explain_live_error(str(e))
             return _error(f"The voice agent could not complete your request: {detail}", detail)
 
         transcript = result.get("transcript")
@@ -170,138 +178,47 @@ class VoiceAgentNode(AgentNode):
         history = await self._get_chat_history_for_agent(
             self.get_memory(), config, config.get("voiceProviderId"), system_prompt, user_prompt
         )
-        return _history_to_live_turns(history)
+        return history_to_live_turns(history)
 
-    async def _run_live_turn(
+    async def _run_turn(
         self,
         api_key: str,
         config: Dict[str, Any],
         system_prompt: str,
         user_prompt: str,
         pcm_input: Optional[bytes],
-        history_turns: List[Dict[str, Any]],
         tools: List[Any],
     ) -> Dict[str, Any]:
-        """Run one conversational turn against the Gemini Live API."""
-        from google import genai
-        from google.genai import types
+        """Run one record/send turn through the shared `GeminiLiveAgent`.
 
-        # Native-audio Live models reject send_client_content mid-session
-        # (1007 INVALID_ARGUMENT) and the installed SDK lacks
-        # initial_history_in_client_content, so conversation history is
-        # replayed inside the system instruction instead.
-        if history_turns:
-            system_prompt = (
-                f"{system_prompt}\n\n# Conversation so far\n"
-                f"{_history_text(history_turns)}\n\n"
-                "Continue the conversation naturally from here."
-            )
+        Same Gemini Live engine as the persistent live call, driven single-shot
+        via `invoke()`: feed one input, collect the full reply. The agent executes
+        its own `tools` here (no override needed — record/send has no live
+        transcript to inject). `system_prompt` already has any replayed history
+        folded in by `process`.
+        """
+        from app.modules.workflow.agents.live_agent_gemini import GeminiLiveAgent
 
-        live_config: Dict[str, Any] = {
-            "response_modalities": ["AUDIO"],
-            "system_instruction": system_prompt,
-            "speech_config": {
-                "voice_config": {
-                    "prebuilt_voice_config": {
-                        "voice_name": config.get("voice") or DEFAULT_VOICE,
-                    }
-                }
-            },
-            "input_audio_transcription": {},
-            "output_audio_transcription": {},
-        }
-        language = config.get("language")
-        if language:
-            live_config["speech_config"]["language_code"] = language
-        declarations = _tool_declarations(tools)
-        if declarations:
-            live_config["tools"] = [{"function_declarations": declarations}]
+        live_config = build_live_config(config, system_prompt=system_prompt, tools=tools)
 
-        client = genai.Client(api_key=api_key)
-        model = config.get("model") or DEFAULT_LIVE_MODEL
-        max_tool_calls = int(config.get("maxToolCalls", 10))
-        logger.debug(
-            "Voice agent Live session: model=%s, tools=%s, config=%s",
-            model,
-            [d["name"] for d in declarations],
-            {k: v for k, v in live_config.items() if k != "system_instruction"},
+        agent = GeminiLiveAgent(
+            api_key=api_key,
+            model=config.get("model"),
+            live_config=live_config,
+            tools=tools,
+            max_tool_calls=int(config.get("maxToolCalls", 10)),
         )
-
-        audio_out = bytearray()
-        input_tx: List[str] = []
-        output_tx: List[str] = []
-        steps: List[Dict[str, Any]] = []
-
-        async with client.aio.live.connect(model=model, config=live_config) as session:
-            if pcm_input is not None:
-                await session.send_realtime_input(
-                    audio=types.Blob(data=pcm_input, mime_type=LIVE_API_INPUT_MIME)
-                )
-                await session.send_realtime_input(audio_stream_end=True)
-            else:
-                # Native-audio models require realtime input for text too
-                await session.send_realtime_input(text=user_prompt)
-
-            async for message in session.receive():
-                if message.tool_call and message.tool_call.function_calls:
-                    await self._handle_tool_calls(
-                        session, message.tool_call.function_calls, tools, steps, max_tool_calls
-                    )
-                    continue
-
-                server_content = message.server_content
-                if not server_content:
-                    continue
-                if server_content.input_transcription and server_content.input_transcription.text:
-                    input_tx.append(server_content.input_transcription.text)
-                if server_content.output_transcription and server_content.output_transcription.text:
-                    output_tx.append(server_content.output_transcription.text)
-                if server_content.model_turn:
-                    for part in server_content.model_turn.parts or []:
-                        if part.inline_data and part.inline_data.data:
-                            audio_out.extend(part.inline_data.data)
-                if server_content.turn_complete:
-                    break
-
-        transcript = "".join(input_tx).strip() or None
-        message_text = "".join(output_tx).strip()
+        result = await agent.invoke(pcm_input=pcm_input, text_input=user_prompt)
 
         output: Dict[str, Any] = {
-            "message": message_text or "[Audio response]",
-            "steps": steps,
+            "message": result["message"] or "[Audio response]",
+            "steps": result["steps"],
         }
-        if transcript:
-            output["transcript"] = transcript
-        if audio_out:
-            output["audio"] = build_audio_payload(pcm_to_wav(bytes(audio_out)), "wav")
+        if result.get("transcript"):
+            output["transcript"] = result["transcript"]
+        if result.get("audio"):
+            output["audio"] = build_audio_payload(pcm_to_wav(result["audio"]), "wav")
         return output
-
-    async def _handle_tool_calls(
-        self,
-        session: Any,
-        function_calls: List[Any],
-        tools: List[Any],
-        steps: List[Dict[str, Any]],
-        max_tool_calls: int,
-    ) -> None:
-        """Execute the model's tool calls and send results back to the session."""
-        from google.genai import types
-
-        responses = []
-        for fc in function_calls:
-            if len(steps) >= max_tool_calls:
-                responses.append(
-                    types.FunctionResponse(
-                        id=fc.id, name=fc.name, response={"error": "Tool call limit reached"}
-                    )
-                )
-                continue
-            tool_result = await _execute_tool(tools, fc.name, fc.args or {})
-            steps.append({"tool": fc.name, "input": fc.args or {}, "output": tool_result})
-            responses.append(
-                types.FunctionResponse(id=fc.id, name=fc.name, response={"result": tool_result})
-            )
-        await session.send_tool_response(function_responses=responses)
 
     def _get_input_audio(self, config: Dict[str, Any]) -> Tuple[Optional[bytes], str]:
         """Locate input audio, in priority order: explicit config -> source node
@@ -334,105 +251,82 @@ class VoiceAgentNode(AgentNode):
             "format": self.get_state().get_value("audio_format") or "wav",
         }
 
+    # ------------------------------------------------------------------
+    # Persistent live session support.
+    #
+    # The live voice endpoint holds one long-lived Gemini Live session (via
+    # `GeminiLiveAgent`) outside the per-message DAG run. These methods let it
+    # reuse this node without executing the workflow: materialize the node,
+    # build the session config, and execute a connected tool per turn — so the
+    # node stays the single source of truth for its config + tools.
+    # ------------------------------------------------------------------
 
-# Workflow tool parameter types (agent_utils.convert_parameter_type) -> Gemini schema types
-_GEMINI_TYPE_MAP = {
-    "string": "string",
-    "str": "string",
-    "text": "string",
-    "number": "number",
-    "float": "number",
-    "integer": "integer",
-    "int": "integer",
-    "boolean": "boolean",
-    "bool": "boolean",
-    "array": "array",
-    "list": "array",
-    "object": "object",
-    "dict": "object",
-}
+    @classmethod
+    async def materialize(
+        cls, agent_service: Any, agent_id: str, thread_id: str
+    ) -> "VoiceAgentNode":
+        """Build an agent's single Voice Agent node (+ its connected tools, lazily
+        via ``get_connected_nodes``) for a live session — without running the DAG.
+        """
+        from app.core.exceptions.error_messages import ErrorKey
+        from app.core.exceptions.exception_classes import AppException
+        from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+        from app.modules.workflow.engine.workflow_state import WorkflowState
 
+        agent = await agent_service.get_by_id_full(UUID(agent_id))
+        if not getattr(agent, "workflow", None):
+            raise AppException(
+                status_code=404, error_key=ErrorKey.AGENT_NOT_FOUND,
+                error_detail="Agent has no workflow",
+            )
 
-def _tool_declarations(tools: List[Any]) -> List[Dict[str, Any]]:
-    """Map workflow BaseTool objects (agents/base_tool.py) to Live API function declarations.
+        engine = WorkflowEngine(agent.workflow)
+        voice_nodes = [n for n in engine.workflow["nodes"] if n.get("type") == "voiceAgentNode"]
+        if len(voice_nodes) != 1:
+            raise AppException(
+                status_code=400, error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=f"Agent must contain exactly one voiceAgentNode (found {len(voice_nodes)})",
+            )
 
-    Tool parameters use the workflow format {name: {type, description, required, default}}
-    (see agent_utils.validate_tool_parameters).
-    """
-    declarations = []
-    for tool in tools:
-        declaration: Dict[str, Any] = {
-            "name": tool.name,
-            "description": tool.description or "",
+        state = WorkflowState(
+            workflow=engine.workflow, thread_id=thread_id, initial_values={"message": ""}
+        )
+        return engine.executable_node(voice_nodes[0]["id"], state)
+
+    async def build_live_session_config(self) -> Dict[str, Any]:
+        """Everything the live session needs to open a Gemini Live connection:
+        the resolved Gemini key, model, tool-call ceiling, the connected tools
+        (PII-wrapped if enabled, since the agent executes them itself), and the
+        fully-assembled `LiveConnectConfig` (built by the shared `build_live_config`).
+        """
+        from app.core.exceptions.error_messages import ErrorKey
+        from app.core.exceptions.exception_classes import AppException
+
+        cfg = self.node_data
+        api_key, error = await self._resolve_api_key(cfg)
+        if error:
+            raise AppException(
+                status_code=400, error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=error.get("error"),
+            )
+        tools = self.get_connected_nodes("tools") or []
+        if cfg.get("piiMasking") and tools:
+            self._wrap_tools_for_pii_unmask(tools)
+        system_prompt = cfg.get("systemPrompt") or "You are a helpful voice assistant."
+        return {
+            "api_key": api_key,
+            "model": cfg.get("model"),
+            "max_tool_calls": int(cfg.get("maxToolCalls", 10)),
+            "tools": tools,
+            "live_config": build_live_config(cfg, system_prompt=system_prompt, tools=tools),
         }
-        parameters = getattr(tool, "parameters", None) or {}
-        if parameters:
-            properties: Dict[str, Any] = {}
-            required: List[str] = []
-            for param_name, param_info in parameters.items():
-                if not isinstance(param_info, dict):
-                    param_info = {}
-                prop: Dict[str, Any] = {
-                    "type": _GEMINI_TYPE_MAP.get(str(param_info.get("type", "string")).lower(), "string"),
-                }
-                if param_info.get("description"):
-                    prop["description"] = param_info["description"]
-                properties[param_name] = prop
-                if param_info.get("required"):
-                    required.append(param_name)
-            schema: Dict[str, Any] = {"type": "object", "properties": properties}
-            if required:
-                schema["required"] = required
-            declaration["parameters"] = schema
-        declarations.append(declaration)
-    return declarations
 
+    def set_live_transcript(self, transcript: str) -> None:
+        """Expose the live user transcript to tools templating ``{{session.message}}``.
 
-async def _execute_tool(tools: List[Any], name: str, args: Dict[str, Any]) -> Any:
-    """Execute a connected workflow tool by name; errors become tool output."""
-    tool = next((t for t in tools if t.name == name), None)
-    if tool is None:
-        return {"error": f"Unknown tool: {name}"}
-    try:
-        from app.modules.workflow.agents.agent_utils import validate_tool_parameters
-
-        validated_args = validate_tool_parameters(tool, args or {})
-        # BaseTool.invoke wraps node.execute, which is async (same calling
-        # convention as ToolAgent._execute_single_tool).
-        result = await tool.invoke(**validated_args)
-        if isinstance(result, (dict, list, str, int, float, bool)) or result is None:
-            return result
-        return str(result)
-    except Exception as e:
-        logger.error("Voice agent tool '%s' failed: %s", name, e, exc_info=True)
-        return {"error": str(e)}
-
-
-def _history_text(turns: List[Dict[str, Any]]) -> str:
-    """Render history turns as plain text for system-instruction replay."""
-    lines = []
-    for turn in turns:
-        speaker = "Assistant" if turn["role"] == "model" else "User"
-        lines.append(f"{speaker}: {turn['parts'][0]['text']}")
-    return "\n".join(lines)
-
-
-def _history_to_live_turns(history: Any) -> List[Dict[str, Any]]:
-    """Convert conversation memory messages into Live API content turns."""
-    turns: List[Dict[str, Any]] = []
-    if isinstance(history, str):
-        if history.strip():
-            turns.append({"role": "user", "parts": [{"text": history}]})
-        return turns
-    for msg in history or []:
-        role = msg.get("role", "user") if isinstance(msg, dict) else "user"
-        content = msg.get("content") if isinstance(msg, dict) else msg
-        if isinstance(content, dict):
-            content = content.get("message") or content.get("response") or str(content)
-        if not isinstance(content, str) or not content.strip():
-            continue
-        turns.append({
-            "role": "model" if role in ("assistant", "ai", "model") else "user",
-            "parts": [{"text": content}],
-        })
-    return turns
+        Called once per turn (before its tools run) by the live agent; the agent
+        executes the connected tools itself, so this only contributes the
+        engine-state piece it can't reach.
+        """
+        if transcript:
+            self.get_state().set_value("session.message", transcript)

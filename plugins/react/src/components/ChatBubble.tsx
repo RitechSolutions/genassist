@@ -38,11 +38,9 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     ...style,
   };
 
-  console.log('chatBubbleIcon', chatBubbleIcon);
-
   return (
     <div style={chatBubbleStyle} onClick={onClick}>
-      {showChat ? <X size={24} /> : chatBubbleIcon === 'message' ? <MessageCircle size={30} /> : chatBubbleIcon === 'sparkles' ? <Sparkles size={24} /> : <X size={24} />}
+      {showChat ? <X size={24} /> : chatBubbleIcon === 'message' ? <MessageCircle size={30} /> : chatBubbleIcon === 'x' ? <X size={24} /> : <Sparkles size={24} />}
     </div>
   );
 };

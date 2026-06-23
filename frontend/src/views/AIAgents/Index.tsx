@@ -7,6 +7,7 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"; 
 import SecurityPage from "@/views/AIAgents/components/Customer/SecurityPage";
+import SchedulingPage from "@/views/AIAgents/Scheduling/SchedulingPage";
 import AgentStudioPage from './Workflows/Index';
 // import Tools from '../Tools/Index';
 
@@ -29,6 +30,7 @@ const AIAgentsView: React.FC = () => {
                 <Route path="workflow/:agentId" element={<AgentStudioPage />} />
                 <Route path="integration/:agentId" element={<ChatAsCustomer />} />
                 <Route path="security/:agentId" element={<SecurityPage />} />
+                <Route path="scheduling/:agentId" element={<SchedulingPage />} />
               </Routes>
           </div>
         </main>

@@ -122,6 +122,12 @@ async def seed_roles_and_permissions(session: AsyncSession) -> dict:
         "in_progress_conversation")
     app_settings_permissions = create_crud_permissions("app_settings")
     feature_flag_permissions = create_crud_permissions("feature_flag")
+    support_ticket_permissions = create_crud_permissions("support_ticket")
+    manage_support_ticket_permission = PermissionModel(
+        name="manage:support_ticket",
+        description="Triage Help Center tickets and link duplicates",
+        is_active=True,
+    )
 
     takeover_supervisor_permission = PermissionModel(name='takeover_in_progress_conversation',
                                                      description='Allow takeover of in progress conversation.',
@@ -149,6 +155,7 @@ async def seed_roles_and_permissions(session: AsyncSession) -> dict:
             data_sources_permissions + role_permissions + audit_log_permissions +
             conversation_in_progress_permissions + metrics_permissions +
             non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions
+            + support_ticket_permissions + [manage_support_ticket_permission]
     ):
         admin_role.role_permissions.append(
             RolePermissionModel(permission=permission))
@@ -173,6 +180,16 @@ async def seed_roles_and_permissions(session: AsyncSession) -> dict:
             operator_role.role_permissions.append(
                 RolePermissionModel(permission=permission))
 
+    for permission in support_ticket_permissions:
+        if permission.name in ("create:support_ticket", "read:support_ticket"):
+            operator_role.role_permissions.append(
+                RolePermissionModel(permission=permission))
+            supervisor_role.role_permissions.append(
+                RolePermissionModel(permission=permission))
+
+    supervisor_role.role_permissions.append(
+        RolePermissionModel(permission=manage_support_ticket_permission))
+
     # Assign api role permissions
     for permission in operator_permissions:
         if permission.name == "read:operator":
@@ -188,8 +205,9 @@ async def seed_roles_and_permissions(session: AsyncSession) -> dict:
     session.add_all(
         user_permissions + llm_analyst_permissions + llm_provider_permissions +
         operator_permissions + data_sources_permissions + non_standard_crud_permissions +
-        app_settings_permissions + feature_flag_permissions +
-        [admin_role, supervisor_role, operator_role, api_role, agent_role]
+        app_settings_permissions + feature_flag_permissions + support_ticket_permissions
+        + [manage_support_ticket_permission]
+        + [admin_role, supervisor_role, operator_role, api_role, agent_role]
     )
 
     return {

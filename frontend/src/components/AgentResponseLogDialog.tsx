@@ -83,7 +83,7 @@ export function AgentResponseLogDialog({
         }
       }}
     >
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="w-[95vw] max-w-[min(1100px,95vw)] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Agent response log</DialogTitle>
         </DialogHeader>
@@ -115,7 +115,7 @@ export function AgentResponseLogDialog({
                 {parsedResponse != null && typeof parsedResponse === "object" ? (
                   <div className="border border-gray-200 rounded-md overflow-hidden">
                     <JsonViewer
-                      data={parsedResponse as Record<string, unknown>}
+                      data={parsedResponse as unknown as never}
                       onCopy={(d) => navigator.clipboard.writeText(JSON.stringify(d, null, 2))}
                     />
                   </div>

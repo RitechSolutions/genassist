@@ -64,7 +64,8 @@ SUPPORTED_NODE_TYPES = [
     "externalAgentNode",
     "ttsNode",
     "sttNode",
-    "voiceAgentNode"
+    "voiceAgentNode",
+    "createWorkflowScheduleNode"
 ]
 
 

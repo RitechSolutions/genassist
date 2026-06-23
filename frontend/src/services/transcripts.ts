@@ -238,15 +238,17 @@ export interface ConversationFeedback {
 
 export const submitMessageFeedback = async (
   messageId: string,
-  feedback: "good" | "bad",
+  feedback?: "good" | "bad",
   feedbackMessage?: string
 ): Promise<boolean> => {
   try {
-    const payload = {
+    // Omit `feedback` for comment-only updates (keep the existing rating), and
+    // omit `feedback_message` for rating-only updates (keep the existing comment).
+    const payload: Record<string, unknown> = {
       message_id: messageId,
-      feedback,
-      feedback_message: feedbackMessage ?? "",
     };
+    if (feedback) payload.feedback = feedback;
+    if (feedbackMessage !== undefined) payload.feedback_message = feedbackMessage;
 
     await apiRequest(
       "PATCH",

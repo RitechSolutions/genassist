@@ -101,7 +101,7 @@ export interface TranscriptMetadata {
 }
 
 export interface ConversationFeedbackEntry {
-  feedback: "good" | "bad";
+  feedback: "good" | "bad" | "";
   feedback_timestamp: string;
   feedback_user_id: string;
   feedback_message: string;

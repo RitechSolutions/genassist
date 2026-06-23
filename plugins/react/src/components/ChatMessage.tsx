@@ -79,7 +79,11 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   const isWelcomeMessage = !isUser && !isSpecial && isFirstMessage;
   const [isHovered, setIsHovered] = React.useState(false);
   const [editingFeedback] = React.useState(false);
-  const [displayText] = React.useState<string>(message.text);
+  // Track the message text directly (don't snapshot on mount): live-voice caption
+  // bubbles grow their text as the transcript streams, and a frozen snapshot would
+  // pin them to the first chunk. Normal messages have stable text, so this is a
+  // no-op for them. (The disabled typewriter below can re-introduce local state.)
+  const displayText = message.text;
   const contentBlocks = React.useMemo(
     () => parseInteractiveContentBlocks(displayText, message?.type as 'file' | 'message' | undefined),
     [displayText]
