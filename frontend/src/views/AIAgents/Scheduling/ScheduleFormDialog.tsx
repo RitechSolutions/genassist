@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { JsonInput } from "@/components/JsonInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import {
@@ -67,6 +68,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
   const [fixedThreadId, setFixedThreadId] = useState("");
   const [message, setMessage] = useState("");
   const [extraInputJson, setExtraInputJson] = useState("");
+  const [extraInputValid, setExtraInputValid] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -123,16 +125,16 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
 
     let extra: Record<string, unknown> = {};
     if (extraInputJson.trim()) {
-      try {
-        const parsed = JSON.parse(extraInputJson);
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-          throw new Error("not an object");
-        }
-        extra = parsed as Record<string, unknown>;
-      } catch {
-        toast.error("Additional input must be a valid JSON object");
+      if (!extraInputValid) {
+        toast.error("Additional input fields must be valid JSON");
         return;
       }
+      const parsed = JSON.parse(extraInputJson);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        toast.error("Additional input fields must be a JSON object");
+        return;
+      }
+      extra = parsed as Record<string, unknown>;
     }
 
     const inputData: Record<string, unknown> = { message, ...extra };
@@ -270,18 +272,16 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="schedule-extra">Additional input fields (JSON)</Label>
-            <Textarea
-              id="schedule-extra"
+            <JsonInput
               value={extraInputJson}
-              onChange={(e) => setExtraInputJson(e.target.value)}
+              onChange={setExtraInputJson}
+              onValidChange={(valid) => setExtraInputValid(valid)}
+              label="Additional input fields (JSON)"
+              description="Optional extra input-node fields merged into the run payload."
               placeholder='{ "customer_id": "123" }'
               rows={3}
-              className="font-mono text-xs"
+              allowEmpty
             />
-            <p className="text-xs text-muted-foreground">
-              Optional extra input-node fields merged into the run payload.
-            </p>
           </div>
         </div>
 
