@@ -490,6 +490,12 @@ def create_celery():
             "options": {"expires": 7200},
         }
 
+    beat_schedule["process-support-ticket-sync-outbox"] = {
+        "task": "app.tasks.support_ticket_tasks.process_support_ticket_sync_outbox_task",
+        "schedule": crontab(minute="*/2"),
+        "options": {"expires": 300},
+    }
+
     celery_app.conf.beat_schedule = beat_schedule
 
     return celery_app

@@ -204,6 +204,17 @@ class ProjectSettings(BaseSettings):
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
 
+    # Help Center → company Azure DevOps Boards (platform ops; not user App Settings)
+    AZURE_DEVOPS_ORGANIZATION_URL: Optional[str] = None
+    AZURE_DEVOPS_PROJECT: Optional[str] = None
+    AZURE_DEVOPS_PAT: Optional[str] = None
+    AZURE_DEVOPS_WORK_ITEM_TYPE: Optional[str] = "Bug"
+    AZURE_DEVOPS_FEATURE_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_TASK_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_DEFAULT_AREA_PATH: Optional[str] = None
+    AZURE_DEVOPS_WEBHOOK_SECRET: Optional[str] = None
+    HELP_CENTER_PUBLIC_BASE_URL: Optional[str] = None
+
     AWS_RECORDINGS_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
     AWS_S3_TEST_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
 

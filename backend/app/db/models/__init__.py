@@ -54,6 +54,12 @@ from .user_supervised_group import UserSupervisedGroupModel
 from .webhook import WebhookModel
 from .workflow import WorkflowModel
 from .workflow_schedule import WorkflowScheduleModel, WorkflowScheduleRunModel
+from .support_ticket import (
+    SupportTicketCommentModel,
+    SupportTicketEventModel,
+    SupportTicketModel,
+    TicketSyncOutboxModel,
+)
 
 __all__ = [
     "WorkflowScheduleModel",
@@ -119,6 +125,10 @@ __all__ = [
     "FilesUploadSessionModel",
     "AudioProvidersModel",
     "MessageIssueModel",
+    "SupportTicketModel",
+    "SupportTicketCommentModel",
+    "SupportTicketEventModel",
+    "TicketSyncOutboxModel",
 ]
 
 models = [
@@ -172,6 +182,10 @@ models = [
     PromptConfigModel,
     AudioProvidersModel,
     MessageIssueModel,
+    SupportTicketModel,
+    SupportTicketCommentModel,
+    SupportTicketEventModel,
+    TicketSyncOutboxModel,
 ]
 
 auto_register_updated_by(models)

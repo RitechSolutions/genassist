@@ -1,7 +1,7 @@
 """add_workflow_schedule_tables
 
-Revision ID: c8d9e0f1a2b3
-Revises: b7c8d9e0f1a2
+Revision ID: 494257fd515b
+Revises: c2bce7366f69
 Create Date: 2026-06-21 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '494257fd515b'
-down_revision: Union[str, None] = 'b7c8d9e0f1a2'
+down_revision: Union[str, None] = 'c2bce7366f69'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
