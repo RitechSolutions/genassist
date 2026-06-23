@@ -57,6 +57,7 @@ from app.api.v1.routes import (
     webhook_execute,
     workflow_builder,
     workflow_manager,
+    workflow_schedule,
     workflows,
     zendesk,
     support_tickets,
@@ -111,6 +112,11 @@ router.include_router(
     agent_knowledge.router, prefix="/genagent/knowledge", tags=["Knowledge Base"]
 )
 router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Workflows"])
+router.include_router(
+    workflow_schedule.router,
+    prefix="/genagent/workflow-schedules",
+    tags=["Workflow Schedules"],
+)
 
 router.include_router(reports.router, tags=["Reports"])
 

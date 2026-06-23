@@ -53,6 +53,7 @@ from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
 from .webhook import WebhookModel
 from .workflow import WorkflowModel
+from .workflow_schedule import WorkflowScheduleModel, WorkflowScheduleRunModel
 from .support_ticket import (
     SupportTicketCommentModel,
     SupportTicketEventModel,
@@ -61,6 +62,8 @@ from .support_ticket import (
 )
 
 __all__ = [
+    "WorkflowScheduleModel",
+    "WorkflowScheduleRunModel",
     # Primary model class names
     "OperatorModel",
     "OperatorStatisticsModel",

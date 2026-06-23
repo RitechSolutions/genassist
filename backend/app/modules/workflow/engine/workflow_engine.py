@@ -25,6 +25,7 @@ from app.modules.workflow.engine.nodes import (
     DataMapperNode,
     FileReaderNode,
     GmailToolNode,
+    CreateWorkflowScheduleNode,
     GuardrailNliNode,
     GuardrailProvenanceNode,
     HumanInTheLoopNode,
@@ -104,6 +105,7 @@ class WorkflowEngine:
         cls._node_registry["templateNode"] = TemplateNode
         cls._node_registry["llmModelNode"] = LLMModelNode
         cls._node_registry["knowledgeBaseNode"] = KnowledgeToolNode
+        cls._node_registry["createWorkflowScheduleNode"] = CreateWorkflowScheduleNode
         cls._node_registry["pythonCodeNode"] = PythonToolNode
         cls._node_registry["dataMapperNode"] = DataMapperNode
         cls._node_registry["toolBuilderNode"] = ToolBuilderNode
