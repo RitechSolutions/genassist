@@ -9,6 +9,7 @@ import PythonCodeNode from "./tools/pythonCodeNode";
 import {
   CHAT_INPUT_NODE_DEFINITION,
   CHAT_OUTPUT_NODE_DEFINITION,
+  FINALIZE_CONVERSATION_NODE_DEFINITION,
   SET_STATE_NODE_DEFINITION,
 } from "./chat/definitions";
 import {
@@ -30,6 +31,7 @@ import MCPNode from "./llm/mcpNode";
 import ReadMailsNode from "./integrations/readMailsNode";
 import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
+import FinalizeConversationNode from "./chat/finalizeConversationNode";
 import {
   AGENT_NODE_DEFINITION,
   EXTERNAL_AGENT_NODE_DEFINITION,
@@ -107,6 +109,8 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(CHAT_OUTPUT_NODE_DEFINITION);
 
+  nodeRegistry.registerNodeType(FINALIZE_CONVERSATION_NODE_DEFINITION);
+
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GMAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(KNOWLEDGE_BASE_NODE_DEFINITION);
@@ -158,6 +162,7 @@ export const getNodeTypes = () => {
     llmModelNode: LLMModelNode,
     templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,
+    finalizeConversationNode: FinalizeConversationNode,
     apiToolNode: APIToolNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
