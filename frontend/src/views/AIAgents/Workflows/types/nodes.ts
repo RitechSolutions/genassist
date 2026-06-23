@@ -64,6 +64,9 @@ export interface TemplateNodeData extends BaseNodeData {
 // Chat Output node data
 export type ChatOutputNodeData = BaseNodeData;
 
+// Finalize Conversation ("End Conversation") node data — pass-through, optional display name only
+export type FinalizeConversationNodeData = BaseNodeData;
+
 // Slack Output node data
 export interface SlackOutputNodeData extends BaseNodeData {
   channel: string; // target Slack channel or user ID/email
@@ -511,6 +514,7 @@ export type NodeData =
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData
+  | FinalizeConversationNodeData
   | APIToolNodeData
   | AgentNodeData
   | KnowledgeBaseNodeData

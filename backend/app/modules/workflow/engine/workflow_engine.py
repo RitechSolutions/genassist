@@ -24,6 +24,7 @@ from app.modules.workflow.engine.nodes import (
     ChatOutputNode,
     DataMapperNode,
     FileReaderNode,
+    FinalizeConversationNode,
     GmailToolNode,
     CreateWorkflowScheduleNode,
     GuardrailNliNode,
@@ -133,6 +134,7 @@ class WorkflowEngine:
         cls._node_registry["ttsNode"] = TTSNode
         cls._node_registry["sttNode"] = STTNode
         cls._node_registry["voiceAgentNode"] = VoiceAgentNode
+        cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
