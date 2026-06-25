@@ -5,6 +5,8 @@ Configuration schemas for the data module service
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 
+from app.core.config.settings import settings
+
 from .providers import VectorConfig, LegraConfig, LightRAGConfig
 from .providers.vector import ChunkConfig, EmbeddingConfig, VectorDBConfig
 from .schema_utils import get_schema_default
@@ -102,7 +104,9 @@ class KbRAGConfig(BaseModel):
             "device": vector_data.get("embedding_device_type", get_schema_default("vector", "embedding_device_type", "cpu")),
             "batch_size": vector_data.get("embedding_batch_size", get_schema_default("vector", "embedding_batch_size", 32)),
             "normalize_embeddings": vector_data.get("embedding_normalize_embeddings", get_schema_default("vector", "embedding_normalize_embeddings", True)),
-            "api_key": vector_data.get("embedding_api_key"),  # For OpenAI provider
+            # No api_key is collected in the UI; always use the environment key.
+            # A legacy stored value (older KBs) still wins so nothing breaks.
+            "api_key": vector_data.get("embedding_api_key") or settings.OPENAI_API_KEY,
             "base_url": vector_data.get("embedding_base_url"),  # For OpenAI provider
         }
 

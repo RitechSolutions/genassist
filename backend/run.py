@@ -25,11 +25,11 @@ app = create_app()
 
 if __name__ == "__main__":
     os.environ.setdefault("ALEMBIC_SKIP_FILECONFIG", "1")
-    run_migrations(settings.DATABASE_URL_SYNC)
-
-    # Run migrations for all active tenant databases
-    from migrations import run_migrations_for_all_tenants
-    run_migrations_for_all_tenants()
+    # run_migrations(settings.DATABASE_URL_SYNC)
+    #
+    # # Run migrations for all active tenant databases
+    # from migrations import run_migrations_for_all_tenants
+    # run_migrations_for_all_tenants()
 
     port = int(os.environ.get("FASTAPI_RUN_PORT", 8000))
     debug_mode = os.environ.get("RELOAD", "False").lower() == "true"
