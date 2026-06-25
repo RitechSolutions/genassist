@@ -16,6 +16,11 @@ from app.db.base import generate_sequential_uuid
 
 logger = logging.getLogger(__name__)
 
+# Max rows per INSERT ... ON CONFLICT statement. Each row binds ~20 params and
+# Postgres caps a statement at 65535 bind params, so keep batches well under that
+# (also bounds the size of a single backfill statement at scale).
+_UPSERT_BATCH_SIZE = 500
+
 
 class AnalyticsAggregationRepository:
     @inject
@@ -128,31 +133,33 @@ class AnalyticsAggregationRepository:
                 }
             )
 
-        stmt = insert(AgentExecutionDailyStatsModel).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_agent_execution_daily_stats_agent_date",
-            set_={
-                "execution_count": stmt.excluded.execution_count,
-                "success_count": stmt.excluded.success_count,
-                "error_count": stmt.excluded.error_count,
-                "avg_response_ms": stmt.excluded.avg_response_ms,
-                "min_response_ms": stmt.excluded.min_response_ms,
-                "max_response_ms": stmt.excluded.max_response_ms,
-                "total_response_ms": stmt.excluded.total_response_ms,
-                "total_nodes_executed": stmt.excluded.total_nodes_executed,
-                "avg_success_rate": stmt.excluded.avg_success_rate,
-                "total_success_rate_sum": stmt.excluded.total_success_rate_sum,
-                "rag_used_count": stmt.excluded.rag_used_count,
-                "unique_conversations": stmt.excluded.unique_conversations,
-                "finalized_conversations": stmt.excluded.finalized_conversations,
-                "in_progress_conversations": stmt.excluded.in_progress_conversations,
-                "thumbs_up_count": stmt.excluded.thumbs_up_count,
-                "thumbs_down_count": stmt.excluded.thumbs_down_count,
-                "last_aggregated_at": stmt.excluded.last_aggregated_at,
-                "updated_at": stmt.excluded.updated_at,
-            },
-        )
-        await self.db.execute(stmt)
+        for start in range(0, len(rows), _UPSERT_BATCH_SIZE):
+            chunk = rows[start:start + _UPSERT_BATCH_SIZE]
+            stmt = insert(AgentExecutionDailyStatsModel).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_agent_execution_daily_stats_agent_date",
+                set_={
+                    "execution_count": stmt.excluded.execution_count,
+                    "success_count": stmt.excluded.success_count,
+                    "error_count": stmt.excluded.error_count,
+                    "avg_response_ms": stmt.excluded.avg_response_ms,
+                    "min_response_ms": stmt.excluded.min_response_ms,
+                    "max_response_ms": stmt.excluded.max_response_ms,
+                    "total_response_ms": stmt.excluded.total_response_ms,
+                    "total_nodes_executed": stmt.excluded.total_nodes_executed,
+                    "avg_success_rate": stmt.excluded.avg_success_rate,
+                    "total_success_rate_sum": stmt.excluded.total_success_rate_sum,
+                    "rag_used_count": stmt.excluded.rag_used_count,
+                    "unique_conversations": stmt.excluded.unique_conversations,
+                    "finalized_conversations": stmt.excluded.finalized_conversations,
+                    "in_progress_conversations": stmt.excluded.in_progress_conversations,
+                    "thumbs_up_count": stmt.excluded.thumbs_up_count,
+                    "thumbs_down_count": stmt.excluded.thumbs_down_count,
+                    "last_aggregated_at": stmt.excluded.last_aggregated_at,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            await self.db.execute(stmt)
         await self.db.commit()
 
     async def upsert_node_daily_stats(self, stats_list: list[dict]) -> None:
@@ -189,22 +196,24 @@ class AnalyticsAggregationRepository:
                 }
             )
 
-        stmt = insert(NodeExecutionDailyStatsModel).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_node_execution_daily_stats_agent_node_date",
-            set_={
-                "execution_count": stmt.excluded.execution_count,
-                "success_count": stmt.excluded.success_count,
-                "failure_count": stmt.excluded.failure_count,
-                "unique_conversations": stmt.excluded.unique_conversations,
-                "thumbs_up_count": stmt.excluded.thumbs_up_count,
-                "thumbs_down_count": stmt.excluded.thumbs_down_count,
-                "avg_execution_ms": stmt.excluded.avg_execution_ms,
-                "min_execution_ms": stmt.excluded.min_execution_ms,
-                "max_execution_ms": stmt.excluded.max_execution_ms,
-                "total_execution_ms": stmt.excluded.total_execution_ms,
-                "updated_at": stmt.excluded.updated_at,
-            },
-        )
-        await self.db.execute(stmt)
+        for start in range(0, len(rows), _UPSERT_BATCH_SIZE):
+            chunk = rows[start:start + _UPSERT_BATCH_SIZE]
+            stmt = insert(NodeExecutionDailyStatsModel).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_node_execution_daily_stats_agent_node_date",
+                set_={
+                    "execution_count": stmt.excluded.execution_count,
+                    "success_count": stmt.excluded.success_count,
+                    "failure_count": stmt.excluded.failure_count,
+                    "unique_conversations": stmt.excluded.unique_conversations,
+                    "thumbs_up_count": stmt.excluded.thumbs_up_count,
+                    "thumbs_down_count": stmt.excluded.thumbs_down_count,
+                    "avg_execution_ms": stmt.excluded.avg_execution_ms,
+                    "min_execution_ms": stmt.excluded.min_execution_ms,
+                    "max_execution_ms": stmt.excluded.max_execution_ms,
+                    "total_execution_ms": stmt.excluded.total_execution_ms,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            await self.db.execute(stmt)
         await self.db.commit()
