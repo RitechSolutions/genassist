@@ -219,7 +219,7 @@ class ProjectSettings(BaseSettings):
     # Global fallback SMTP account. Used when a tenant has no SMTP entry in its
     # App Settings (mirrors the Zendesk env-var fallback pattern). Per-tenant
     # config in AppSettings (type="SMTP") always takes precedence.
-    EMAIL_ENABLED: bool = False  # Master switch; when False, EmailService logs instead of sending.
+    EMAIL_ENABLED: bool = True  # Master switch; when False, EmailService logs instead of sending.
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587  # 587 = STARTTLS, 465 = implicit TLS, 25 = plain
     SMTP_USER: Optional[str] = None
