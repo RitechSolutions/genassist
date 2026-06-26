@@ -52,12 +52,16 @@ from app.api.v1.routes import (
     user_types,
     users,
     voice,
+    voice_live,
     webhook,
     webhook_execute,
     workflow_builder,
     workflow_manager,
+    workflow_schedule,
     workflows,
     zendesk,
+    support_tickets,
+    azure_devops_webhook,
 )
 
 # Disable redirect slashes for all routes
@@ -93,6 +97,7 @@ router.include_router(
     conversations.router, prefix="/conversations", tags=["Conversations"]
 )
 router.include_router(voice.router, prefix="/voice", tags=["Voice"])
+router.include_router(voice_live.router, prefix="/voice", tags=["Voice"])
 
 # router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
 
@@ -107,10 +112,23 @@ router.include_router(
     agent_knowledge.router, prefix="/genagent/knowledge", tags=["Knowledge Base"]
 )
 router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Workflows"])
+router.include_router(
+    workflow_schedule.router,
+    prefix="/genagent/workflow-schedules",
+    tags=["Workflow Schedules"],
+)
 
 router.include_router(reports.router, tags=["Reports"])
 
 router.include_router(zendesk.router, prefix="/zendesk", tags=["Zendesk"])
+router.include_router(
+    support_tickets.router, prefix="/help-center/tickets", tags=["Help Center"]
+)
+router.include_router(
+    azure_devops_webhook.router,
+    prefix="/integrations/azure-devops",
+    tags=["Azure DevOps"],
+)
 router.include_router(gmail.router, prefix="/gmail", tags=["Gmail"])
 
 router.include_router(office365.router, prefix="/office365", tags=["Office365"])

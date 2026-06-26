@@ -50,6 +50,15 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK: bool = True
     CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
+    CELERY_ENABLE_CHECK_SCHEDULED_WORKFLOW_RUNS_TASK: bool = True
+    CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK: bool = True
+    # A scheduled run still PENDING after this many seconds is presumed orphaned
+    # (its worker never picked it up / crashed before starting) and marked FAILED.
+    WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS: int = 900  # 15 minutes
+    # A scheduled run still RUNNING after this many seconds is presumed orphaned
+    # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
+    # genuinely long run is never failed prematurely.
+    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
@@ -194,6 +203,17 @@ class ProjectSettings(BaseSettings):
     ZENDESK_EMAIL: Optional[str] = "<enter-value-here>"
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
+
+    # Help Center → company Azure DevOps Boards (platform ops; not user App Settings)
+    AZURE_DEVOPS_ORGANIZATION_URL: Optional[str] = None
+    AZURE_DEVOPS_PROJECT: Optional[str] = None
+    AZURE_DEVOPS_PAT: Optional[str] = None
+    AZURE_DEVOPS_WORK_ITEM_TYPE: Optional[str] = "Bug"
+    AZURE_DEVOPS_FEATURE_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_TASK_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_DEFAULT_AREA_PATH: Optional[str] = None
+    AZURE_DEVOPS_WEBHOOK_SECRET: Optional[str] = None
+    HELP_CENTER_PUBLIC_BASE_URL: Optional[str] = None
 
     AWS_RECORDINGS_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
     AWS_S3_TEST_BUCKET: Optional[str] = "genassist-dev-temp-bucket"

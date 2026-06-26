@@ -8,6 +8,8 @@ import { useViewportManager } from '../hooks/useViewportManager';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
 import { VoiceInput } from './VoiceInput';
+import { LiveCallControl } from './LiveCallControl';
+import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
 import { AudioService } from '../services/audioService';
 import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
 import { BubbleDock } from './BubbleDock';
@@ -42,6 +44,7 @@ import {
   inputContainerStyle,
   inputWrapperStyle,
   getTextAreaStyle,
+  getLiveVoiceHintStyle,
   attachButtonStyle,
   getSendButtonStyle,
   sendButtonDisabledStyle,
@@ -59,6 +62,12 @@ import {
 } from '../styles/genAgentChatStyles';
 
 const SHOW_CHAT_LANGUAGE_SELECTOR = true;
+
+/** One completed (or in-progress) live-voice exchange: what the user said + the reply. */
+type LiveTurn = { user: string; agent: string; createTime: number };
+
+/** Current time in epoch seconds (the timestamp format ChatMessage expects). */
+const nowSec = () => Math.floor(Date.now() / 1000);
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -178,6 +187,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     isAgentTyping,
     addFeedback,
     availableLanguages: agentAvailableLanguages,
+    agentId,
+    agentLiveVoiceEnabled,
+    agentLiveVoiceReady,
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
@@ -414,11 +426,106 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   };
 
+  // Neutral, user-facing notice shown when a live call can't start / fails. The
+  // message is already neutral (the backend never sends internal config detail), so
+  // it's safe for public widgets — it just avoids a confusing silent close.
+  const [liveVoiceNotice, setLiveVoiceNotice] = useState<string | null>(null);
+
   const handleVoiceError = (error: Error) => {
+    setLiveVoiceNotice(error.message || 'Voice is currently unavailable');
     if (onError) {
       onError(error);
     }
   };
+
+  // Voice-only mode is driven purely by the agent: it's on when the agent's
+  // workflow contains a Voice Agent node (auto-detected by the backend and
+  // surfaced through `agentLiveVoiceEnabled`). No integrator prop is involved.
+  const liveVoiceEnabled = agentLiveVoiceEnabled;
+  // Whether live voice can actually run (a Gemini provider with a key is configured).
+  // When false we keep voice-only mode but disable the call control with a neutral
+  // message — the specific reason stays server-side, never shown to public users.
+  const liveVoiceReady = agentLiveVoiceReady;
+
+  // Live (continuous) voice conversation against the agent's Voice Agent node.
+  // `liveCaption` is the in-progress turn (streams as you speak); `liveTurns` are
+  // completed turns kept locally so they stay on screen across turns. `createTime`
+  // is captured once per turn so the bubble timestamp doesn't jitter on re-render.
+  const [liveCaption, setLiveCaption] = useState<LiveTurn>({ user: '', agent: '', createTime: 0 });
+  const [liveTurns, setLiveTurns] = useState<LiveTurn[]>([]);
+  const liveVoice = useLiveVoiceSession({
+    baseUrl,
+    apiKey,
+    guestToken,
+    tenant,
+    agentId,
+    conversationId,
+    language: resolvedLanguage,
+    onError: handleVoiceError,
+    onInputTranscript: (text) =>
+      setLiveCaption((c) => ({ ...c, user: c.user + text, createTime: c.createTime || nowSec() })),
+    onOutputTranscript: (text) =>
+      setLiveCaption((c) => ({ ...c, agent: c.agent + text, createTime: c.createTime || nowSec() })),
+    onTurnComplete: (turn) => {
+      // Commit the finished turn so it stays visible; clear the in-progress caption.
+      setLiveTurns((prev) => [...prev, { user: turn.transcript, agent: turn.response, createTime: nowSec() }]);
+      setLiveCaption({ user: '', agent: '', createTime: 0 });
+    },
+  });
+
+  // Full conversation reset: new thread + cleared input/attachments/forms and any
+  // live-voice transcript. Shared by the reset-confirm dialog and the end-call button.
+  const performReset = useCallback(async () => {
+    setInputValue('');
+    clearAttachments();
+    await resetConversation(reCaptchaTokenRef.current);
+    setSelectedFaqQuery(null);
+    setSubmittedForms(new Set());
+    setSubmittingFormIndex(null);
+    setLiveTurns([]);
+  }, [clearAttachments, resetConversation]);
+
+  // Starting a fresh call clears the previous call's transcript bubbles + caption.
+  const startLiveCall = useCallback(() => {
+    setLiveVoiceNotice(null);
+    setLiveCaption({ user: '', agent: '', createTime: 0 });
+    setLiveTurns([]);
+    liveVoice.start();
+  }, [liveVoice]);
+  // Ending a call stops the audio stream and resets the conversation — same as the
+  // "reset conversation" action — so the next call starts from a clean thread.
+  const endLiveCall = useCallback(() => {
+    liveVoice.stop();
+    setLiveCaption({ user: '', agent: '', createTime: 0 });
+    void performReset();
+  }, [liveVoice, performReset]);
+
+  // Keep the live transcript in view as it grows (the scroll manager only reacts
+  // to committed chat messages, not these local live bubbles).
+  useEffect(() => {
+    if (!liveVoice.isActive) return;
+    const el = chatContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [liveCaption, liveTurns, liveVoice.isActive, chatContainerRef]);
+
+  // Render a single live-voice bubble (committed turn or streaming caption) as an
+  // ordinary chat message, so it looks identical to text-mode bubbles.
+  const renderLiveBubble = (
+    speaker: 'customer' | 'agent',
+    text: string,
+    createTime: number,
+    key?: string,
+  ) => (
+    <ChatMessageComponent
+      key={key}
+      message={{ create_time: createTime, start_time: 0, end_time: 0.01, speaker, text }}
+      theme={theme}
+      enableTypewriter={false}
+      translations={translations}
+      language={resolvedLanguage}
+      agentName={agentName}
+    />
+  );
 
   const playResponseAudio = async (text: string) => {
     if (!audioService.current || isPlayingAudio) return;
@@ -523,15 +630,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setShowResetConfirm(true);
   };
 
-  const handleConfirmReset = async () => {
-    setInputValue('');
-    clearAttachments();
-
-    await resetConversation(reCaptchaTokenRef.current);
-    setSelectedFaqQuery(null);
-    setSubmittedForms(new Set());
-    setSubmittingFormIndex(null);
+  const handleConfirmReset = () => {
     setShowResetConfirm(false);
+    // endLiveCall stops any active call and runs the full reset; harmless if no
+    // call is active, so both entry points share one code path.
+    endLiveCall();
   };
 
   const handleCancelReset = () => {
@@ -961,8 +1064,19 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           {(() => {
             const firstAgentIndex = messages.findIndex(m => m.speaker === 'agent');
 
-            const applyMessageFilter = (message: any) => {
-              return message.type !== 'file';
+            // Live-voice turns are rendered locally (below) the moment they finish.
+            // Each is also persisted and broadcast back into `messages`; suppress that
+            // copy so a turn isn't shown twice (and never blinks as the two swap).
+            const liveTurnKeys = new Set<string>();
+            for (const turn of liveTurns) {
+              if (turn.user.trim()) liveTurnKeys.add(`customer:${turn.user.trim()}`);
+              if (turn.agent.trim()) liveTurnKeys.add(`agent:${turn.agent.trim()}`);
+            }
+
+            const applyMessageFilter = (message: ChatMessage) => {
+              if (message.type === 'file') return false;
+              if (liveTurnKeys.has(`${message.speaker}:${(message.text || '').trim()}`)) return false;
+              return true;
             }
 
             return messages.filter(applyMessageFilter).map((message, index) => {
@@ -1071,6 +1185,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               </div>
             </div>
           )}
+          {/* Completed live-voice turns, rendered as ordinary chat bubbles and kept
+              in local state so they stay visible across turns. The persisted copy of
+              each turn is filtered out of `messages` above, so these are the single
+              source of truth on screen — they never get hidden, so nothing blinks. */}
+          {liveTurns.map((turn, i) => (
+            <React.Fragment key={`live-turn-${i}`}>
+              {turn.user.trim() !== '' && renderLiveBubble('customer', turn.user, turn.createTime)}
+              {turn.agent.trim() !== '' && renderLiveBubble('agent', turn.agent, turn.createTime)}
+            </React.Fragment>
+          ))}
+          {/* In-progress turn: streams the partial transcript live (ChatMessage now
+              tracks its text prop, so these update in place as chunks arrive). */}
+          {liveVoice.isActive && liveCaption.user.trim() !== '' &&
+            renderLiveBubble('customer', liveCaption.user, liveCaption.createTime, '__live_caption_user__')}
+          {liveVoice.isActive && liveCaption.agent.trim() !== '' &&
+            renderLiveBubble('agent', liveCaption.agent, liveCaption.createTime, '__live_caption_agent__')}
           <div ref={messagesEndRef} />
         </div>
         {showWelcomeBeforeStart && (() => {
@@ -1121,6 +1251,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
 
+        {liveVoiceNotice && (
+          <div
+            style={{
+              margin: '0 16px 8px',
+              padding: '10px 14px',
+              backgroundColor: '#FFF3E0',
+              color: '#E65100',
+              borderRadius: '12px',
+              fontSize,
+              fontFamily,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexShrink: 0,
+            }}
+            role="alert"
+          >
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span>{liveVoiceNotice}</span>
+          </div>
+        )}
+
         {useFile && attachments.length > 0 && (
           <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {attachments.map((att, index) => (
@@ -1166,6 +1318,33 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 {agentDisclaimerContent}
               </div>
             )}
+          </div>
+        ) : liveVoiceEnabled ? (
+          // Live voice mode is voice-only: no text box, attach, or send button —
+          // the only way to talk to the agent is to start a live call.
+          <div style={inputContainerStyle}>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
+              <div style={inputWrapperStyle}>
+                <span style={getLiveVoiceHintStyle(textAreaFontSize, fontFamily)}>
+                  {liveVoiceReady
+                    ? t('liveVoice.tapToStart', 'Tap to start a voice conversation')
+                    : t('liveVoice.unavailable', 'Voice is currently unavailable')}
+                </span>
+                <LiveCallControl
+                  status={liveVoice.status}
+                  isActive={liveVoice.isActive}
+                  onStart={startLiveCall}
+                  onStop={endLiveCall}
+                  theme={theme}
+                  disabled={!agentId || !liveVoiceReady}
+                />
+              </div>
+              {agentDisclaimerContent && (
+                <div className="ga-input-disclaimer" style={disclaimerStyle}>
+                  {agentDisclaimerContent}
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={inputContainerStyle}>

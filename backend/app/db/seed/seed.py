@@ -120,6 +120,12 @@ async def seed_data(session: AsyncSession, injector: Injector):
         "in_progress_conversation")
     app_settings_permissions = create_crud_permissions("app_settings")
     feature_flag_permissions = create_crud_permissions("feature_flag")
+    support_ticket_permissions = create_crud_permissions("support_ticket")
+    manage_support_ticket_permission = PermissionModel(
+        name="manage:support_ticket",
+        description="Triage Help Center tickets and link duplicates",
+        is_active=True,
+    )
 
     takeover_supervisor_permission = PermissionModel(name='takeover_in_progress_conversation',
                                                      description='Allow takeover of in progress conversation.',
@@ -153,7 +159,8 @@ async def seed_data(session: AsyncSession, injector: Injector):
             conversation_permissions + llm_analyst_permissions + llm_provider_permissions + operator_permissions +
             data_sources_permissions + role_permissions + audit_log_permissions +
             conversation_in_progress_permissions + metrics_permissions +
-            non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions + dashboard_permissions
+            non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions
+            + dashboard_permissions + support_ticket_permissions + [manage_support_ticket_permission]
     ):
         admin_role.role_permissions.append(
             RolePermissionModel(permission=permission))
@@ -177,6 +184,16 @@ async def seed_data(session: AsyncSession, injector: Injector):
         if permission.name == "read:conversation":
             operator_role.role_permissions.append(
                 RolePermissionModel(permission=permission))
+
+    for permission in support_ticket_permissions:
+        if permission.name in ("create:support_ticket", "read:support_ticket"):
+            operator_role.role_permissions.append(
+                RolePermissionModel(permission=permission))
+            supervisor_role.role_permissions.append(
+                RolePermissionModel(permission=permission))
+
+    supervisor_role.role_permissions.append(
+        RolePermissionModel(permission=manage_support_ticket_permission))
 
     # Assign api role permissions
     for permission in operator_permissions:
@@ -210,8 +227,9 @@ async def seed_data(session: AsyncSession, injector: Injector):
     session.add_all(
         user_permissions + llm_analyst_permissions + llm_provider_permissions +
         operator_permissions + data_sources_permissions + non_standard_crud_permissions +
-        app_settings_permissions + feature_flag_permissions + dashboard_permissions +
-        evaluation_permissions + [eval_run_permission] +
+        app_settings_permissions + feature_flag_permissions + dashboard_permissions
+        + support_ticket_permissions + [manage_support_ticket_permission]
+        + evaluation_permissions + [eval_run_permission] +
         [admin_role, supervisor_role, operator_role, api_role, agent_role]
     )
 

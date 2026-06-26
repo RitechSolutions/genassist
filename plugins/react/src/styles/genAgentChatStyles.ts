@@ -272,6 +272,21 @@ export function getTextAreaStyle(p: TextAreaStyleParams): React.CSSProperties {
   };
 }
 
+/** Placeholder hint shown in the voice-only footer ("Tap to start a voice conversation"). */
+export function getLiveVoiceHintStyle(fontSize: string, fontFamily: string): React.CSSProperties {
+  return {
+    flex: 1,
+    color: '#9ca3af',
+    fontSize,
+    fontFamily,
+    paddingRight: 44,
+    userSelect: 'none',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  };
+}
+
 export const attachButtonStyle: React.CSSProperties = {
   backgroundColor: 'transparent',
   border: 'none',

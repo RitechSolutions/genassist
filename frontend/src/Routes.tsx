@@ -51,6 +51,9 @@ import { useServerStatus } from "@/context/ServerStatusContext";
 import { GmailOAuthCallback } from "./views/DataSources/components/GmailOAuthCallback";
 import { Office365OAuthCallback  } from "./views/DataSources/components/Office365OAuthCallback";
 import WebhookListPage from "@/views/Webhooks/pages/Webhooks";
+import HelpCenterIndex from "@/views/HelpCenter/Index";
+import NewTicketPage from "@/views/HelpCenter/pages/NewTicket";
+import TicketDetailPage from "@/views/HelpCenter/pages/TicketDetail";
 import MCPServersPage from "@/views/MCPServers/pages/MCPServers";
 import TestSuitesIndex from "@/views/TestSuites/Index";
 import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
@@ -491,6 +494,18 @@ export const RoutesProvider = () => {
                   <WebhookListPage />
                 </ProtectedRoute>
               ),
+            },
+            {
+              path: "help-center",
+              element: <HelpCenterIndex />,
+            },
+            {
+              path: "help-center/new",
+              element: <NewTicketPage />,
+            },
+            {
+              path: "help-center/:ticketId",
+              element: <TicketDetailPage />,
             },
             {
               path: "mcp-servers",
