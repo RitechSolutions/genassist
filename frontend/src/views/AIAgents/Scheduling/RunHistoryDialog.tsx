@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { Clock, Loader2, RefreshCw } from "lucide-react";
+import { Clock, Loader2, RefreshCw, Timer } from "lucide-react";
 
 import {
   Dialog,
@@ -83,10 +83,10 @@ const RunHistoryDialog: React.FC<RunHistoryDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-[min(1100px,95vw)] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
-            <span>Run history — {schedule?.name}</span>
+            <span>Run history: {schedule?.name}</span>
             <Button
               variant="outline"
               size="sm"
@@ -131,7 +131,8 @@ const RunHistoryDialog: React.FC<RunHistoryDialogProps> = ({
                           : "—"}
                       </span>
                       {duration && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground/70">
+                          <Timer className="h-3 w-3" />
                           {duration}
                         </span>
                       )}
