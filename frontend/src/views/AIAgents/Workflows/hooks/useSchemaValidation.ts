@@ -26,7 +26,7 @@ const findHandler = (handlers: NodeHandler[], id: string): NodeHandler | undefin
 };
 
 export const useSchemaValidation = () => {
-  const { getNode } = useReactFlow();
+  const { getNode, getEdges } = useReactFlow();
 
   const validateConnection = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) return false;
@@ -49,6 +49,23 @@ export const useSchemaValidation = () => {
       return false;
     }
 
+    // Restrict each target (input) handle to a single incoming connection.
+    // The backend only supports one upstream input per node — except:
+    //   - aggregator nodes, which are designed to merge many branches, and
+    //   - tool-attachment handles, where many tools/MCPs feed one agent.
+    const allowsMultipleInputs =
+      targetNode.type === 'aggregatorNode' ||
+      targetHandler.compatibility === 'tools';
+
+    if (!allowsMultipleInputs) {
+      const handleAlreadyConnected = getEdges().some(
+        (edge) =>
+          edge.target === connection.target &&
+          edge.targetHandle === connection.targetHandle,
+      );
+      if (handleAlreadyConnected) return false;
+    }
+
     // If either handler doesn't have a schema, allow the connection
     if (!sourceHandler.schema || !targetHandler.schema) return true;
 
@@ -63,7 +80,7 @@ export const useSchemaValidation = () => {
     }
 
     return true;
-  }, [getNode]);
+  }, [getNode, getEdges]);
 
   return {
     validateConnection
