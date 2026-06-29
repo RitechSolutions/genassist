@@ -228,6 +228,12 @@ async def process_conversation_update_with_agent(
         if message.text:
             message.text = _pii_redactor.redact(message.text)
 
+    # A start-form trigger is an invisible message the chat plugin sends right after the
+    # conversation opens, to run the workflow up to a "show_on_start" Human In The Loop
+    # node so its form appears immediately. It must not be shown to the visitor nor kept
+    # in the transcript — only the resulting form (the agent reply) is broadcast/persisted.
+    is_start_form_trigger = bool(model.metadata and model.metadata.get("start_form_trigger"))
+
     # Tag user message with audio data if present
     user_message = model.messages[0]
     if audio_bytes:
@@ -238,7 +244,8 @@ async def process_conversation_update_with_agent(
             user_message.text = "[Voice message]"
 
     # 1:1 chat: broadcast user message immediately with pre-generated ID
-    await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
+    if not is_start_form_trigger:
+        await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
         agent = await agent_config_service.get_by_user_id(current_user_id, with_workflow=True)
@@ -271,7 +278,12 @@ async def process_conversation_update_with_agent(
             agent_response, model.metadata, now, elapsed_seconds
         )
 
-        model.messages.append(transcript_object)
+        # For a start-form trigger, drop the invisible trigger message so only the form
+        # (agent reply) is persisted; otherwise keep both the user message and the reply.
+        if is_start_form_trigger:
+            model.messages = [transcript_object]
+        else:
+            model.messages.append(transcript_object)
 
         # 1:1 chat: broadcast agent message immediately with pre-generated ID
         await send_message_to_socket(transcript_object, conversation_id, current_user_id, tenant_id)

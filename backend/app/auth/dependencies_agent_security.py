@@ -16,6 +16,41 @@ from app.core.exceptions.error_messages import ErrorKey
 logger = logging.getLogger(__name__)
 
 
+def workflow_has_start_form(nodes, edges) -> bool:
+    """True when a Human In The Loop node with "show_on_start" enabled is wired directly
+    after the Chat Input (Start) node.
+
+    In that case the chat plugin auto-runs the workflow as the conversation opens (an
+    invisible system-trigger message) so the form appears immediately, instead of waiting
+    for the visitor's first message.
+    """
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return False
+
+    start_node = next(
+        (n for n in nodes if isinstance(n, dict) and n.get("type") == "chatInputNode"),
+        None,
+    )
+    if not start_node or not start_node.get("id"):
+        return False
+    start_id = start_node["id"]
+
+    for edge in edges:
+        if not isinstance(edge, dict) or edge.get("source") != start_id:
+            continue
+        target = next(
+            (n for n in nodes if isinstance(n, dict) and n.get("id") == edge.get("target")),
+            None,
+        )
+        if not target or target.get("type") != "humanInTheLoopNode":
+            continue
+        data = target.get("data") or {}
+        form_fields = data.get("form_fields")
+        if data.get("show_on_start") is True and isinstance(form_fields, list) and form_fields:
+            return True
+    return False
+
+
 async def get_agent_for_start(
     request: Request,
     agent_config_service: AgentConfigService = Injected(AgentConfigService),
@@ -30,6 +65,7 @@ async def get_agent_for_start(
     test_input = None
     live_voice_enabled = False
     voice_provider_id = None
+    trigger_start_form = False
     if agent.workflow:
         # A live-voice agent's workflow contains exactly one voiceAgentNode. Detect
         # it here while the full workflow dict is still loaded (it's overwritten with
@@ -45,6 +81,12 @@ async def get_agent_for_start(
         if voice_node:
             voice_provider_id = (voice_node.get('data') or {}).get('voiceProviderId')
 
+        # Likewise, while the full workflow is loaded, detect a Human In The Loop node
+        # wired directly after Start with "show_on_start" on, so the start endpoint can
+        # tell the plugin to auto-run the workflow (the nodes/edges are gone after the
+        # overwrite below, which replaces agent.workflow with testInput).
+        trigger_start_form = workflow_has_start_form(nodes, agent.workflow.get('edges') or [])
+
         test_input = agent.workflow.get('testInput', None)
 
         # remove message from testInput with pop()
@@ -55,6 +97,7 @@ async def get_agent_for_start(
     request.state.agent = agent
     request.state.agent_live_voice_enabled = live_voice_enabled
     request.state.agent_voice_provider_id = voice_provider_id
+    request.state.agent_trigger_start_form = trigger_start_form
     return agent
 
 

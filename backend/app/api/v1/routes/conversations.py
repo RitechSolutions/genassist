@@ -365,6 +365,7 @@ async def start(
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
         "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
         "agent_chat_input_metadata": agent_data.get("workflow"),
+        "agent_trigger_start_form": getattr(request.state, "agent_trigger_start_form", False),
         "agent_input_disclaimer_html": input_disclaimer_html,
         "agent_available_languages": available_languages,
     }

@@ -169,6 +169,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     uploadFile,
     resetConversation,
     startConversation,
+    triggerStartForm,
+    shouldTriggerStartForm,
     conversationId,
     guestToken,
     possibleQueries,
@@ -264,6 +266,34 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const reCaptchaTokenRef = useRef<string | undefined>(undefined);
 
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
+
+  // When a Human In The Loop node with "show_on_start" is wired directly after Start, run
+  // the workflow once as the conversation opens so its form appears immediately, before
+  // any visitor message. Fires only on a fresh conversation: no visitor messages yet and
+  // no form already present (a welcome message may exist; a persisted form must not
+  // re-trigger on reload).
+  const hasFormRequest = messages.some((m) => m.type === 'form_request');
+  const startFormTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (
+      shouldTriggerStartForm &&
+      conversationId &&
+      !isFinalized &&
+      !hasUserMessages &&
+      !hasFormRequest &&
+      !startFormTriggeredRef.current
+    ) {
+      startFormTriggeredRef.current = true;
+      triggerStartForm(reCaptchaTokenRef.current);
+    }
+  }, [shouldTriggerStartForm, conversationId, isFinalized, hasUserMessages, hasFormRequest, triggerStartForm]);
+
+  // Allow a fresh trigger after a reset (new conversation id / cleared messages).
+  useEffect(() => {
+    if (!conversationId) {
+      startFormTriggeredRef.current = false;
+    }
+  }, [conversationId]);
 
   useEffect(() => {
     audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });

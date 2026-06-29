@@ -41,6 +41,9 @@ export class ChatService {
   private welcomeData: AgentWelcomeData = {};
   private thinkingConfig: AgentThinkingConfig = { phrases: [], delayMs: 1000 };
   private chatInputMetadata: Record<string, unknown> = {};
+  // Set from the start response: when true, a Human In The Loop node with "show_on_start"
+  // is wired directly after Start, so the widget auto-runs the workflow as the chat opens.
+  private triggerStartForm: boolean = false;
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
@@ -272,6 +275,14 @@ export class ChatService {
    */
   getChatInputMetadata(): Record<string, unknown> {
     return { ...this.chatInputMetadata };
+  }
+
+  /**
+   * Whether the widget should auto-run the workflow as the conversation opens to surface
+   * a Human In The Loop form wired directly after Start (its "show_on_start" is enabled).
+   */
+  shouldTriggerStartForm(): boolean {
+    return this.triggerStartForm;
   }
 
   /**
@@ -571,6 +582,7 @@ export class ChatService {
     this.welcomeData = {};
     this.thinkingConfig = { phrases: [], delayMs: 1000 };
     this.chatInputMetadata = {};
+    this.triggerStartForm = false;
     if (this.welcomeObjectUrl) {
       try {
         URL.revokeObjectURL(this.welcomeObjectUrl);
@@ -673,6 +685,7 @@ export class ChatService {
       } else {
         this.chatInputMetadata = {};
       }
+      this.triggerStartForm = anyData.agent_trigger_start_form === true;
       this.persistAndEmitAgentMetadata(this.chatInputMetadata);
       const welcomeTitle: string | undefined = anyData.agent_welcome_title;
       const welcomeImageUrl: string | undefined =
@@ -737,7 +750,8 @@ export class ChatService {
     message: string,
     attachments?: Attachment[],
     extraMetadata?: Record<string, any>,
-    reCaptchaToken?: string
+    reCaptchaToken?: string,
+    opts?: { silent?: boolean }
   ): Promise<void> {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
@@ -753,7 +767,9 @@ export class ChatService {
       attachments: attachments,
     };
 
-    if (this.messageHandler) {
+    // `silent` suppresses the optimistic user bubble — used by the invisible start-form
+    // trigger, which must run the workflow without showing or storing a user message.
+    if (this.messageHandler && !opts?.silent) {
       this.messageHandler(chatMessage);
     }
 
@@ -869,6 +885,22 @@ export class ChatService {
 
       throw error;
     }
+  }
+
+  /**
+   * Run the workflow as the conversation opens to surface a Human In The Loop form wired
+   * directly after Start (its "show_on_start" is enabled). Sends an empty, invisible
+   * trigger message flagged so the backend runs the workflow but neither shows nor stores
+   * it — only the resulting form comes back through the normal response/WS path.
+   */
+  async sendStartFormTrigger(reCaptchaToken?: string): Promise<void> {
+    await this.sendMessage(
+      "",
+      [],
+      { start_form_trigger: true },
+      reCaptchaToken,
+      { silent: true }
+    );
   }
 
   async sendAudioMessage(

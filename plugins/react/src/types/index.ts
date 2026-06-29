@@ -52,6 +52,7 @@ export interface StartConversationResponse {
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
   agent_chat_input_metadata?: Record<string, unknown>; // Metadata keys/defaults from the workflow's Chat Input node
+  agent_trigger_start_form?: boolean; // Auto-run the workflow on open (HITL show_on_start after Start)
   agent_input_disclaimer_html?: string;
   create_time?: number;
   guest_token?: string;

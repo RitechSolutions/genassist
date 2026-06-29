@@ -93,6 +93,7 @@ export const useChat = ({
   const [chatInputMetadata, setChatInputMetadata] = useState<
     Record<string, unknown>
   >({});
+  const [shouldTriggerStartForm, setShouldTriggerStartForm] = useState<boolean>(false);
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
 
@@ -753,6 +754,9 @@ export const useChat = ({
         if (meta && typeof meta === "object" && Object.keys(meta).length > 0) {
           setChatInputMetadata(meta);
         }
+        setShouldTriggerStartForm(
+          chatServiceRef.current.shouldTriggerStartForm?.() ?? false,
+        );
         onConfigLoadedRef.current?.({
           chatInputMetadata:
             chatServiceRef.current.getChatInputMetadata?.() ?? {},
@@ -930,6 +934,24 @@ export const useChat = ({
     [isTakenOver, isTokenExpiredError, resetToInitialState],
   );
 
+  // Invisible trigger that runs the workflow as the conversation opens so a Human In The
+  // Loop form (show_on_start, wired after Start) appears without a first user message.
+  const triggerStartForm = useCallback(async (reCaptchaToken?: string | undefined) => {
+    if (!chatServiceRef.current) return;
+    try {
+      if (!isTakenOver) {
+        setIsAgentTyping(true);
+      }
+      await chatServiceRef.current.sendStartFormTrigger(reCaptchaToken);
+    } catch (error: any) {
+      setIsAgentTyping(false);
+      if (isTokenExpiredError(error)) {
+        resetToInitialState();
+      }
+      // Best-effort: if it fails the visitor can still type normally.
+    }
+  }, [isTakenOver, isTokenExpiredError, resetToInitialState]);
+
   const startConversation = useCallback(
     async (reCaptchaToken?: string | undefined) => {
       if (!chatServiceRef.current) {
@@ -981,6 +1003,9 @@ export const useChat = ({
         if (meta && typeof meta === "object" && Object.keys(meta).length > 0) {
           setChatInputMetadata(meta);
         }
+        setShouldTriggerStartForm(
+          chatServiceRef.current.shouldTriggerStartForm?.() ?? false,
+        );
         onConfigLoadedRef.current?.({
           chatInputMetadata:
             chatServiceRef.current.getChatInputMetadata?.() ?? {},
@@ -1055,6 +1080,8 @@ export const useChat = ({
     uploadFile,
     resetConversation,
     startConversation,
+    triggerStartForm,
+    shouldTriggerStartForm,
     connectionState,
     conversationId,
     guestToken,
