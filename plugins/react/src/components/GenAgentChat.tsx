@@ -295,6 +295,16 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   }, [conversationId]);
 
+  // Form-submission state is keyed by message index, which is only meaningful within a
+  // single conversation. Clear it whenever the conversation changes so a form submitted in
+  // a previous conversation doesn't mark a new conversation's form (at the same index) as
+  // already answered — which would wrongly hide it on Start (Reset cleared it, plain Start
+  // did not). The reload case stays correct: it relies on isFormAnswered's transcript check.
+  useEffect(() => {
+    setSubmittedForms(new Set());
+    setSubmittingFormIndex(null);
+  }, [conversationId]);
+
   useEffect(() => {
     audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });
   }, [baseUrl, websocketUrl, apiKey]);
