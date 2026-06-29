@@ -25,6 +25,7 @@ from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
+from app.services.translations import TranslationsService
 from app.core.utils.custom_attributes import extract_custom_attributes
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.file_manager import FileManagerService
@@ -187,6 +188,71 @@ def _build_agent_transcript_segment(
     return _build_agent_segment(now, elapsed_seconds, _agent_text_from_answer(agent_answer))
 
 
+async def _localize_form_schema(agent_response: dict, agent_id: Any, language: Optional[str]) -> None:
+    """Translate a Human In The Loop form's user-facing strings into the conversation
+    language, in place. No-op unless the workflow paused with a form_schema.
+
+    Mirrors agent-field translation: keys are `agent.{agent_id}.node.{node_id}.*`, resolved
+    with the same fallback chain (language -> stored default -> source English). The chat
+    plugin renders whatever labels it receives, so resolving here keeps it untouched.
+    """
+    if agent_response.get("status") != "awaiting_input":
+        return
+    response_output = agent_response.get("response")
+    if not isinstance(response_output, dict):
+        return
+    form_schema = response_output.get("form_schema")
+    if not isinstance(form_schema, dict):
+        return
+    node_id = form_schema.get("node_id")
+    if not node_id:
+        return
+
+    prefix = f"agent.{agent_id}.node.{node_id}"
+    fields = [f for f in (form_schema.get("fields") or []) if isinstance(f, dict)]
+
+    # Collect every translatable string -> its source value (the resolver's fallback).
+    items: dict[str, Optional[str]] = {}
+    message_key = f"{prefix}.message"
+    if form_schema.get("message"):
+        items[message_key] = form_schema.get("message")
+    for field in fields:
+        fname = field.get("name")
+        if not fname:
+            continue
+        fkey = f"{prefix}.fields.{fname}"
+        for attr in ("label", "placeholder", "description"):
+            if field.get(attr):
+                items[f"{fkey}.{attr}"] = field.get(attr)
+        for opt in (field.get("options") or []):
+            if isinstance(opt, dict) and opt.get("value") and opt.get("label"):
+                items[f"{fkey}.options.{opt['value']}.label"] = opt.get("label")
+
+    if not items:
+        return
+
+    translations_service = injector.get(TranslationsService)
+    resolved = await translations_service.resolve_many_for_lang(items, language)
+
+    # Apply resolved values back (fall back to the original if a key wasn't resolved).
+    if message_key in items:
+        form_schema["message"] = resolved.get(message_key) or form_schema.get("message")
+    for field in fields:
+        fname = field.get("name")
+        if not fname:
+            continue
+        fkey = f"{prefix}.fields.{fname}"
+        for attr in ("label", "placeholder", "description"):
+            akey = f"{fkey}.{attr}"
+            if akey in items:
+                field[attr] = resolved.get(akey) or field.get(attr)
+        for opt in (field.get("options") or []):
+            if isinstance(opt, dict) and opt.get("value"):
+                okey = f"{fkey}.options.{opt['value']}.label"
+                if okey in items:
+                    opt["label"] = resolved.get(okey) or opt.get("label")
+
+
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
@@ -268,6 +334,12 @@ async def process_conversation_update_with_agent(
             str(agent.id),
             session_message=model.messages[-1].text,
             metadata=model.metadata,
+        )
+
+        # Translate a Human In The Loop form to the conversation language (no-op for any
+        # other response) so its labels match the agent's other translated content.
+        await _localize_form_schema(
+            agent_response, agent.id, (model.metadata or {}).get("language")
         )
 
         # Set formatted agent message in transcript

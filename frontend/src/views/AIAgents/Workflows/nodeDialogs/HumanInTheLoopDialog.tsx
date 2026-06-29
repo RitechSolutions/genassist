@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import { HumanInTheLoopNodeData, HumanInTheLoopFormField } from "../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -22,6 +23,9 @@ import { Plus, Pencil, Trash2, Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { TranslationTrigger } from "../../components/TranslationTrigger";
+import { getLanguages } from "@/services/translations";
+import { Language } from "@/interfaces/translation.interface";
 
 const FIELD_TYPES = [
   { value: "text", label: "Text" },
@@ -51,7 +55,19 @@ interface FieldDialogState {
 export const HumanInTheLoopDialog: React.FC<
   BaseNodeDialogProps<HumanInTheLoopNodeData, HumanInTheLoopNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data, onUpdate, nodeId } = props;
+  const { agentId } = useParams<{ agentId: string }>();
+
+  // Active languages, loaded once per open so each per-field trigger reuses the same list.
+  const [languages, setLanguages] = useState<Language[]>([]);
+
+  // Translation keys are scoped under the agent + node so they never collide with other
+  // nodes or with agent-level keys, while keeping the `agent.{id}.` prefix the chat
+  // language selector already aggregates. null when the node/agent context is unknown.
+  const nodePrefix =
+    agentId && nodeId ? `agent.${agentId}.node.${nodeId}` : null;
+  const fieldKey = (fieldName: string, attr: string) =>
+    `${nodePrefix}.fields.${fieldName}.${attr}`;
 
   const [name, setName] = useState(data.name || "");
   const [message, setMessage] = useState(
@@ -78,6 +94,18 @@ export const HumanInTheLoopDialog: React.FC<
       setFormFields(data.form_fields || []);
     }
   }, [isOpen, data]);
+
+  // Load the active language list once when the panel opens (only when translations are
+  // actually usable, i.e. the agent/node context is known), shared by every trigger.
+  useEffect(() => {
+    if (isOpen && nodePrefix && languages.length === 0) {
+      getLanguages()
+        .then(setLanguages)
+        .catch(() => {
+          /* non-fatal: dialog still opens, triggers will self-fetch if needed */
+        });
+    }
+  }, [isOpen, nodePrefix, languages.length]);
 
   const handleSave = () => {
     onUpdate({
@@ -198,7 +226,16 @@ export const HumanInTheLoopDialog: React.FC<
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="message">Message</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="message">Message</Label>
+          {nodePrefix && message.trim() && (
+            <TranslationTrigger
+              translationKey={`${nodePrefix}.message`}
+              currentValue={message}
+              languages={languages}
+            />
+          )}
+        </div>
         <DraggableTextArea
           id="message"
           value={message}
@@ -249,37 +286,84 @@ export const HumanInTheLoopDialog: React.FC<
           {formFields.map((field, index) => (
             <div
               key={index}
-              className="flex items-center justify-between gap-2 p-2.5 bg-gray-50 rounded-lg border"
+              className="p-2.5 bg-gray-50 rounded-lg border space-y-2"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium truncate">
-                  {field.label}
-                </span>
-                <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-gray-200 rounded">
-                  {field.type}
-                </span>
-                {field.required && (
-                  <span className="text-red-500 text-xs">*</span>
-                )}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium truncate">
+                    {field.label}
+                  </span>
+                  <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-gray-200 rounded">
+                    {field.type}
+                  </span>
+                  {field.required && (
+                    <span className="text-red-500 text-xs">*</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => openEditFieldDialog(index)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-red-500 hover:text-red-700"
+                    onClick={() => handleDeleteField(index)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => openEditFieldDialog(index)}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-red-500 hover:text-red-700"
-                  onClick={() => handleDeleteField(index)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+
+              {/* Per-field translation triggers — same UX as agent fields, scoped to this
+                  node + field. Only shown once the field has a name (its key segment). */}
+              {nodePrefix && field.name && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-200">
+                  <span className="text-xs text-muted-foreground mr-0.5">
+                    Translate:
+                  </span>
+                  {field.label && (
+                    <TranslationTrigger
+                      label="Label"
+                      translationKey={fieldKey(field.name, "label")}
+                      currentValue={field.label}
+                      languages={languages}
+                    />
+                  )}
+                  {field.placeholder && (
+                    <TranslationTrigger
+                      label="Placeholder"
+                      translationKey={fieldKey(field.name, "placeholder")}
+                      currentValue={field.placeholder}
+                      languages={languages}
+                    />
+                  )}
+                  {field.description && (
+                    <TranslationTrigger
+                      label="Description"
+                      translationKey={fieldKey(field.name, "description")}
+                      currentValue={field.description}
+                      languages={languages}
+                    />
+                  )}
+                  {(field.options || [])
+                    .filter((opt) => opt.value && opt.label)
+                    .map((opt) => (
+                      <TranslationTrigger
+                        key={opt.value}
+                        label={`Option: ${opt.label}`}
+                        translationKey={`${fieldKey(field.name, "options")}.${opt.value}.label`}
+                        currentValue={opt.label}
+                        languages={languages}
+                      />
+                    ))}
+                </div>
+              )}
             </div>
           ))}
 

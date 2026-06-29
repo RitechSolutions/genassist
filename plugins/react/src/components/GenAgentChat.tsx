@@ -370,21 +370,55 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     await submitMessage();
   };
 
-  const getFormNodeId = (messageIndex: number): string | undefined => {
+  type FormSchemaField = {
+    name?: string;
+    label?: string;
+    options?: Array<{ value?: string; label?: string }>;
+  };
+
+  const getFormSchema = (
+    messageIndex: number,
+  ): { node_id?: string; message?: string; fields?: FormSchemaField[] } | null => {
     const msg = messages[messageIndex];
     if (msg?.type === 'form_request' && msg.text) {
-      try { return JSON.parse(msg.text).node_id; } catch { /* skip */ }
+      try { return JSON.parse(msg.text); } catch { /* skip */ }
     }
-    return undefined;
+    return null;
+  };
+
+  const getFormNodeId = (messageIndex: number): string | undefined =>
+    getFormSchema(messageIndex)?.node_id;
+
+  // Build the human-readable customer message from the submitted form. We show each field's
+  // label, and for option-based fields (e.g. select) the chosen option's label instead of
+  // its raw value — both already in the conversation language, since the form schema is
+  // translated. The payload (`human_in_the_loop_from_form`) keeps the raw keys/values.
+  const buildFormSummary = (
+    formData: Record<string, unknown>,
+    messageIndex: number,
+  ): string => {
+    const fieldByName: Record<string, FormSchemaField> = {};
+    for (const f of getFormSchema(messageIndex)?.fields ?? []) {
+      if (f && typeof f.name === 'string') fieldByName[f.name] = f;
+    }
+    return Object.entries(formData)
+      .map(([key, value]) => {
+        const field = fieldByName[key];
+        const label = field?.label || key;
+        const option = field?.options?.find(
+          (o) => o && String(o.value) === String(value),
+        );
+        const display = option?.label || value;
+        return `${label}: ${display}`;
+      })
+      .join('\n');
   };
 
   const handleFormSubmit = async (formData: Record<string, unknown>, messageIndex: number) => {
     if (submittingFormIndex !== null || isAgentTyping) return;
     setSubmittingFormIndex(messageIndex);
     try {
-      const summaryText = Object.entries(formData)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(', ');
+      const summaryText = buildFormSummary(formData, messageIndex);
       const nodeId = getFormNodeId(messageIndex);
       await sendMessage(summaryText, [], {
         human_in_the_loop_from_form: formData,
@@ -710,20 +744,33 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     textColor,
   });
 
-  const hasPendingForm = messages.some((msg, idx) => {
-    if (msg.type !== 'form_request' || msg.speaker !== 'agent') return false;
-    return !submittedForms.has(idx);
-  });
+  // A form_request is "answered" once the visitor has responded to it. Besides the
+  // optimistic in-session flag (`submittedForms`), we also treat it as answered when a
+  // later customer message exists — that survives a page reload (where `submittedForms`
+  // is gone), so a completed form never reappears after refresh.
+  const isFormAnswered = (index: number): boolean => {
+    if (submittedForms.has(index)) return true;
+    for (let j = index + 1; j < messages.length; j++) {
+      if (messages[j].speaker === 'customer') return true;
+    }
+    return false;
+  };
+
+  const hasPendingForm = messages.some(
+    (msg, idx) =>
+      msg.type === 'form_request' && msg.speaker === 'agent' && !isFormAnswered(idx),
+  );
 
   const pendingForm = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      if (msg.type === 'form_request' && msg.speaker === 'agent' && !submittedForms.has(i)) {
+      if (msg.type === 'form_request' && msg.speaker === 'agent' && !isFormAnswered(i)) {
         try { return { schema: JSON.parse(msg.text), index: i }; }
         catch { /* skip */ }
       }
     }
     return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, submittedForms]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
@@ -1006,7 +1053,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               if (message.type === 'form_request' && message.speaker === 'agent') {
                 try {
                   const formSchema = JSON.parse(message.text);
-                  const isPending = !submittedForms.has(index);
+                  // Use the real message position (filtering can shift the map index) so the
+                  // answered check matches the overlay/footer path and survives reload.
+                  const originalIndex = messages.indexOf(message);
+                  const isPending = !isFormAnswered(originalIndex);
                   return (
                     <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
                       <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
@@ -1015,9 +1065,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                       {formDisplay === 'inline' && isPending ? (
                         <DynamicFormMessage
                           schema={formSchema}
-                          onSubmit={(data) => handleFormSubmit(data, index)}
-                          onCancel={() => handleFormCancel(index)}
-                          isSubmitting={submittingFormIndex === index}
+                          onSubmit={(data) => handleFormSubmit(data, originalIndex)}
+                          onCancel={() => handleFormCancel(originalIndex)}
+                          isSubmitting={submittingFormIndex === originalIndex}
                           isSubmitted={false}
                           primaryColor={primaryColor}
                           fontFamily={fontFamily}
@@ -1033,11 +1083,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                           fontFamily,
                         }}>
                           {formSchema.message || 'Please fill the form below.'}
-                          {isPending && (
-                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                              Fill the form below to continue.
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1220,28 +1265,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               {t('buttons.startConversation')}
             </button>
           </div>
-        ) : pendingForm && formDisplay === 'footer' ? (
-          <div style={{
-            ...inputContainerStyle,
-            flexDirection: 'column',
-            borderTop: '1px solid #e5e7eb',
-          }}>
-            <DynamicFormMessage
-              schema={pendingForm.schema}
-              onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
-              onCancel={() => handleFormCancel(pendingForm.index)}
-              isSubmitting={submittingFormIndex === pendingForm.index}
-              isSubmitted={false}
-              primaryColor={primaryColor}
-              fontFamily={fontFamily}
-              variant="footer"
-            />
-            {agentDisclaimerContent && (
-              <div className="ga-input-disclaimer" style={disclaimerStyle}>
-                {agentDisclaimerContent}
-              </div>
-            )}
-          </div>
         ) : liveVoiceEnabled ? (
           // Live voice mode is voice-only: no text box, attach, or send button —
           // the only way to talk to the agent is to start a live call.
@@ -1347,6 +1370,34 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             )}
             </div>
           </form>
+        )}
+
+        {/* Full-screen form: when a Human In The Loop form is pending, it takes over the
+            whole chat panel (the node's message shown as a heading on top) instead of a
+            cramped footer. Inline mode keeps rendering the form within the message list. */}
+        {pendingForm && formDisplay !== 'inline' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 30,
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: backgroundColor || '#ffffff',
+            }}
+          >
+            <DynamicFormMessage
+              schema={pendingForm.schema}
+              onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
+              onCancel={() => handleFormCancel(pendingForm.index)}
+              isSubmitting={submittingFormIndex === pendingForm.index}
+              isSubmitted={false}
+              primaryColor={primaryColor}
+              fontFamily={fontFamily}
+              variant="fullscreen"
+              title={agentName || undefined}
+            />
+          </div>
         )}
       </div>
 
