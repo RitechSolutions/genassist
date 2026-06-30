@@ -40,6 +40,50 @@ logger = logging.getLogger(__name__)
 
 _pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
+# Base instruction used when an agent greets the visitor on conversation start. The agent's
+# optional `greeting_prompt` is appended to extend (not replace) it. The reply language is
+# stated explicitly below (there is no visitor message yet to infer it from).
+DEFAULT_GREETING_PROMPT = (
+    "You are starting a new conversation with a user who has just opened the chat. "
+    "Greet them warmly and briefly, in one or two short sentences, and invite them to ask "
+    "their question or tell you what they need. Do not make up details about the user; "
+    "do not ask for information unless the workflow requires it."
+)
+
+# Display names for the languages the platform seeds/supports, so the greeting instruction
+# can name the target language instead of passing a bare code the model may misread.
+_LANGUAGE_DISPLAY_NAMES = {
+    "en": "English", "es": "Spanish", "fr": "French", "de": "German",
+    "pt": "Portuguese", "it": "Italian", "zh": "Chinese", "ar": "Arabic", "sq": "Albanian",
+}
+
+
+async def _build_start_greeting_message(agent, language: Optional[str]) -> str:
+    """Greeting instruction sent (invisibly) to the workflow on conversation start.
+
+    Combines the default prompt with the agent's optional `greeting_prompt` (resolved to the
+    conversation language if a translation exists), then states the reply language explicitly
+    — at conversation open there is no visitor message for the model to infer language from.
+    """
+    extension = (getattr(agent, "greeting_prompt", None) or "").strip()
+    if extension and language:
+        key = f"agent.{agent.id}.greeting_prompt"
+        try:
+            translations_service = injector.get(TranslationsService)
+            resolved = await translations_service.resolve_many_for_lang({key: extension}, language)
+            extension = (resolved.get(key) or extension).strip()
+        except Exception as exc:  # translation is best-effort; fall back to the source text
+            logger.debug("greeting_prompt translation lookup failed: %s", exc)
+
+    parts = [DEFAULT_GREETING_PROMPT]
+    if extension:
+        parts.append(extension)
+    if language:
+        code = str(language).split("-")[0].lower()
+        name = _LANGUAGE_DISPLAY_NAMES.get(code, code)
+        parts.append(f"Write your greeting in {name}.")
+    return "\n\n".join(parts)
+
 
 # send message to the socket
 async def send_message_to_socket(
@@ -294,10 +338,12 @@ async def process_conversation_update_with_agent(
         if message.text:
             message.text = _pii_redactor.redact(message.text)
 
-    # A start-form trigger is an invisible message the chat plugin sends right after the
-    # conversation opens, to run the workflow up to a "show_on_start" Human In The Loop
-    # node so its form appears immediately. It must not be shown to the visitor nor kept
-    # in the transcript — only the resulting form (the agent reply) is broadcast/persisted.
+    # A start trigger is an invisible message the chat plugin sends right after the
+    # conversation opens (when the agent's greet_on_start is enabled). It runs the workflow
+    # with a greeting instruction so the agent greets the visitor — and if a Human In The
+    # Loop node is wired right after Chat Input, it pauses and shows its form instead. The
+    # trigger itself is never shown to the visitor nor kept in the transcript; only the
+    # resulting agent reply (greeting or form) is broadcast/persisted.
     is_start_form_trigger = bool(model.metadata and model.metadata.get("start_form_trigger"))
 
     # Tag user message with audio data if present
@@ -329,11 +375,22 @@ async def process_conversation_update_with_agent(
             model.metadata["audio_data"] = base64.b64encode(audio_bytes).decode("utf-8")
             model.metadata["audio_format"] = audio_format or "webm"
 
+        # On a start trigger, feed the workflow the greeting instruction (default + the
+        # agent's optional extension, in the conversation language) so the agent greets;
+        # don't persist it to chat memory.
+        if is_start_form_trigger:
+            session_message = await _build_start_greeting_message(
+                agent, (model.metadata or {}).get("language")
+            )
+        else:
+            session_message = model.messages[-1].text
+
         agent_response = await run_query_agent_logic(
             agent_service,
             str(agent.id),
-            session_message=model.messages[-1].text,
+            session_message=session_message,
             metadata=model.metadata,
+            persist=not is_start_form_trigger,
         )
 
         # Translate a Human In The Loop form to the conversation language (no-op for any

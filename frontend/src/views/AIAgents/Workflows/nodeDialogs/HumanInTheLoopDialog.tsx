@@ -74,7 +74,6 @@ export const HumanInTheLoopDialog: React.FC<
     data.message || "Please provide the following information:"
   );
   const [askOnce, setAskOnce] = useState(data.ask_once !== false);
-  const [showOnStart, setShowOnStart] = useState(data.show_on_start === true);
   const [formFields, setFormFields] = useState<HumanInTheLoopFormField[]>(
     data.form_fields || []
   );
@@ -90,7 +89,6 @@ export const HumanInTheLoopDialog: React.FC<
       setName(data.name || "");
       setMessage(data.message || "Please provide the following information:");
       setAskOnce(data.ask_once !== false);
-      setShowOnStart(data.show_on_start === true);
       setFormFields(data.form_fields || []);
     }
   }, [isOpen, data]);
@@ -113,7 +111,6 @@ export const HumanInTheLoopDialog: React.FC<
       name,
       message,
       ask_once: askOnce,
-      show_on_start: showOnStart,
       form_fields: formFields,
     });
     onClose();
@@ -210,7 +207,6 @@ export const HumanInTheLoopDialog: React.FC<
         name,
         message,
         ask_once: askOnce,
-        show_on_start: showOnStart,
         form_fields: formFields,
       }}
     >
@@ -254,18 +250,6 @@ export const HumanInTheLoopDialog: React.FC<
           id="ask_once"
           checked={askOnce}
           onCheckedChange={(val) => setAskOnce(val)}
-        />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <Label htmlFor="show_on_start" className="text-sm font-medium">Show on conversation start</Label>
-          <p className="text-xs text-muted-foreground">When enabled and this node is connected directly after the Start node, the form appears as soon as the chat opens.</p>
-        </div>
-        <Switch
-          id="show_on_start"
-          checked={showOnStart}
-          onCheckedChange={(val) => setShowOnStart(val)}
         />
       </div>
 

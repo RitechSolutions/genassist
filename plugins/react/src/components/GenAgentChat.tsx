@@ -1104,7 +1104,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
-              const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+              // When the agent greets on start, that greeting is a normal reply — not the
+              // "welcome" message — so don't give it the first-message welcome treatment
+              // (which would split its text into a big title + body).
+              const isFirstAgentMessage =
+                index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages && !shouldTriggerStartForm;
               const displayMessage =
                 isFirstAgentMessage && welcomeMessage
                   ? { ...message, text: welcomeMessage }

@@ -43,14 +43,6 @@ const HumanInTheLoopNode: React.FC<NodeProps<HumanInTheLoopNodeData>> = ({
       value: fieldsSummary,
       placeholder: "No fields configured",
     },
-    ...(data.show_on_start
-      ? [
-          {
-            label: "On start",
-            value: "Shown when wired after Start",
-          } as NodeContentRow,
-        ]
-      : []),
   ];
 
   return (

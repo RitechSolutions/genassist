@@ -54,10 +54,6 @@ export interface HumanInTheLoopNodeData extends BaseNodeData {
   message?: string;
   form_fields: HumanInTheLoopFormField[];
   ask_once?: boolean;
-  // When true AND this node is wired directly after the Start (Chat Input) node, the
-  // chat plugin auto-runs the workflow as the conversation opens so the form appears
-  // immediately, instead of waiting for the visitor's first message. No effect otherwise.
-  show_on_start?: boolean;
 }
 
 // Prompt Template node data

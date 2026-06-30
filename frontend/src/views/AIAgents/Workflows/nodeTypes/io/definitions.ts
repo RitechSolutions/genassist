@@ -22,7 +22,6 @@ export const HUMAN_IN_THE_LOOP_NODE_DEFINITION: NodeTypeDefinition<HumanInTheLoo
       message: "Please provide the following information:",
       form_fields: [],
       ask_once: true,
-      show_on_start: false,
       handlers: [
         {
           id: "input",

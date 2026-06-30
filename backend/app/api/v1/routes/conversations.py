@@ -354,6 +354,17 @@ async def start(
     ]
     available_languages = await translations_service.get_languages_for_prefix(f"agent.{agent.id}.")
 
+    # When the agent greets on start, the dynamic greeting replaces the static welcome
+    # screen — suppress the welcome message/title/FAQs/image so they don't show alongside
+    # it (and so the greeting, the first agent message, isn't overridden by the welcome
+    # message on the client).
+    greet_on_start = bool(getattr(request.state, "agent_trigger_start_form", False))
+    if greet_on_start:
+        welcome_message = None
+        welcome_title = None
+        resolved_queries = []
+    has_welcome_image = agent_data.get("welcome_image") is not None and not greet_on_start
+
     response = {
         "message": "Conversation started",
         "conversation_id": str(conversation.id),
@@ -363,9 +374,9 @@ async def start(
         "agent_possible_queries": resolved_queries,
         "agent_thinking_phrases": resolved_phrases,
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
-        "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
+        "agent_has_welcome_image": has_welcome_image,
         "agent_chat_input_metadata": agent_data.get("workflow"),
-        "agent_trigger_start_form": getattr(request.state, "agent_trigger_start_form", False),
+        "agent_trigger_start_form": greet_on_start,
         "agent_input_disclaimer_html": input_disclaimer_html,
         "agent_available_languages": available_languages,
     }
