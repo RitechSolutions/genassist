@@ -28,14 +28,21 @@ import {
 import { Language, Translation } from "@/interfaces/translation.interface";
 
 interface TranslationRow {
+  /** Stable identity so React keys by row, not array index (Radix Select
+   * desyncs when rows shift on deletion — see handleRemoveRow). */
+  id: string;
   langCode: string;
   value: string;
 }
+
+let rowIdSeq = 0;
+const nextRowId = () => `trow-${rowIdSeq++}`;
 
 function translationsToRows(
   translations: Record<string, string>
 ): TranslationRow[] {
   return Object.entries(translations).map(([langCode, value]) => ({
+    id: nextRowId(),
     langCode,
     value,
   }));
@@ -160,7 +167,13 @@ export function TranslationDialog({
             "en";
           setRows(
             initialDefaultValue
-              ? [{ langCode: firstLang, value: initialDefaultValue }]
+              ? [
+                  {
+                    id: nextRowId(),
+                    langCode: firstLang,
+                    value: initialDefaultValue,
+                  },
+                ]
               : []
           );
           setDefaultLangCode(initialDefaultValue ? firstLang : null);
@@ -219,7 +232,10 @@ export function TranslationDialog({
   const handleAddRow = useCallback(() => {
     if (availableLanguages.length === 0) return;
     const newCode = availableLanguages[0].code;
-    setRows((prev) => [...prev, { langCode: newCode, value: "" }]);
+    setRows((prev) => [
+      ...prev,
+      { id: nextRowId(), langCode: newCode, value: "" },
+    ]);
     setDefaultLangCode((prev) => prev ?? newCode);
   }, [availableLanguages]);
 
@@ -385,7 +401,7 @@ export function TranslationDialog({
               )}
 
               {rows.map((row, index) => (
-                <div key={index} className="flex items-start gap-2">
+                <div key={row.id} className="flex items-start gap-2">
                   <input
                     type="radio"
                     name="default-lang"
