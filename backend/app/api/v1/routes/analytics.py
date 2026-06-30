@@ -48,6 +48,50 @@ async def get_agent_daily_stats(
     )
 
 
+@router.post(
+    "/backfill",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.AppSettings.WRITE)),
+    ],
+    summary="Trigger a one-time re-aggregation (backfill) of agent/node daily stats",
+)
+async def trigger_analytics_backfill(
+    from_date: date | None = Query(
+        default=None,
+        description="Inclusive start date (YYYY-MM-DD). Omit to start from the earliest log.",
+    ),
+    to_date: date | None = Query(
+        default=None,
+        description="Inclusive end date (YYYY-MM-DD). Omit to run up to now.",
+    ),
+):
+    """Enqueue the one-time backfill task on the Celery worker.
+
+    Recomputes agent and node daily stats for the caller's tenant over the given
+    window, repopulating columns that were added after rows were first aggregated
+    (e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs
+    asynchronously and is idempotent — at large scale, call it in slices (e.g. one
+    month per request). Returns the Celery task id for monitoring (e.g. in Flower).
+    """
+    from app.core.tenant_scope import get_tenant_context
+    from app.tasks.analytics_aggregation_tasks import backfill_agent_analytics
+
+    tenant_id = get_tenant_context()
+    result = backfill_agent_analytics.delay(
+        tenant_id=tenant_id,
+        from_date=from_date.isoformat() if from_date else None,
+        to_date=to_date.isoformat() if to_date else None,
+    )
+    return {
+        "status": "queued",
+        "task_id": result.id,
+        "tenant_id": tenant_id,
+        "from_date": from_date.isoformat() if from_date else None,
+        "to_date": to_date.isoformat() if to_date else None,
+    }
+
+
 @router.get(
     "/agents/summary",
     dependencies=[

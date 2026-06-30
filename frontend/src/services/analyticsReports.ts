@@ -61,6 +61,29 @@ export const fetchAgentStatsSummary = async (
   }
 };
 
+export interface AnalyticsBackfillResponse {
+  status: string;
+  task_id: string;
+  from_date: string | null;
+  to_date: string | null;
+}
+
+/**
+ * Trigger a one-time re-aggregation (backfill) of agent/node daily stats.
+ * Requires the "write:app_settings" permission. Runs asynchronously on the
+ * Celery worker; errors are intentionally NOT swallowed so callers can surface
+ * them (e.g. via a toast / useMutation onError).
+ */
+export const triggerAnalyticsBackfill = async (
+  params?: { from_date?: string; to_date?: string }
+): Promise<AnalyticsBackfillResponse | null> => {
+  const qs = buildQueryString({
+    from_date: params?.from_date,
+    to_date: params?.to_date,
+  });
+  return await apiRequest<AnalyticsBackfillResponse>("post", `/analytics/backfill${qs}`);
+};
+
 export const fetchAgentStatsSummaryWithComparison = async (
   params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id" | "from_date" | "to_date">
 ): Promise<AgentStatsSummaryWithComparison | null> => {

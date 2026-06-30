@@ -171,9 +171,18 @@ const AgentPerformancePage = () => {
   const escalationItem = nodeBreakdown.find((n) => n.node_type === escalationNode);
   const totalConversations = summary?.total_unique_conversations ?? 0;
 
+  // The node breakdown's unique_conversations is summed per day, so a conversation
+  // active on multiple days is counted once per day — it can exceed the distinct
+  // total_unique_conversations. A conversation can escalate at most once and only
+  // existing conversations can escalate, so cap the count at the total; this keeps
+  // the escalation rate in [0, 100%] (and containment in [0, 100%]).
+  const escalatedConversations = escalationItem
+    ? Math.min(escalationItem.unique_conversations, totalConversations)
+    : 0;
+
   const escalationRate =
     escalationItem && totalConversations > 0
-      ? escalationItem.unique_conversations / totalConversations
+      ? escalatedConversations / totalConversations
       : null;
   const containmentRate = escalationRate !== null ? 1 - escalationRate : null;
 
@@ -449,7 +458,7 @@ const AgentPerformancePage = () => {
                             />
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {escalationItem!.unique_conversations.toLocaleString()} of {totalConversations.toLocaleString()} conversations escalated to <span className="font-medium text-zinc-600">{nodeTypeLabel(escalationNode)}</span>
+                            {escalatedConversations.toLocaleString()} of {totalConversations.toLocaleString()} conversations escalated to <span className="font-medium text-zinc-600">{nodeTypeLabel(escalationNode)}</span>
                           </p>
                           <div className="flex items-center gap-3 pt-1">
                             <span className="flex items-center gap-1 text-xs text-emerald-600">
