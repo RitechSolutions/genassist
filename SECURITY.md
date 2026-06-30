@@ -61,6 +61,18 @@ Given that GenAssist handles AI workflows, user data, and integrates with variou
 - Role-based access control (RBAC)
 - API key management and secure storage
 
+### Public embed integrations (browser widgets)
+
+**Never ship GenAssist API keys in static JS, CSS, HTML, or source maps** served to anonymous visitors or shared backoffice bundles. Browser credentials are public to every user and script on that origin.
+
+Supported pattern for public help centers and similar surfaces:
+
+1. **Customer BFF** — a server you operate holds the API key and calls `POST /api/conversations/in-progress/start`.
+2. **Guest JWT** — enable `token_based_auth` on the agent; return `guest_token` to the browser for update/poll/WebSocket only.
+3. **Agent security** — reCAPTCHA, CORS allowlists, rate limits, and API key expiry (`expires_in_days`).
+
+See [docs/integrations/public-embed-security.md](docs/integrations/public-embed-security.md) for the full checklist and BFF example.
+
 ### Data Protection
 - Encryption of sensitive data at rest and in transit
 - Secure handling of conversation data and transcripts

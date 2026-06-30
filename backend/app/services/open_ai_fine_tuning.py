@@ -87,14 +87,14 @@ class OpenAIFineTuningService:
             await file.seek(0)
 
             # Upload to OpenAI
-            logger.info(f"Uploading file {file.filename} ({len(file_content)} bytes) to OpenAI")
+            logger.info("Uploading file (%d bytes) to OpenAI", len(file_content))
 
             response = await self.client.files.create(
                     file=(file.filename, file_content),
                     purpose=purpose
                     )
 
-            logger.info(f"Successfully uploaded file to OpenAI. File ID: {response.id}")
+            logger.info("Successfully uploaded file to OpenAI. File ID: %s", response.id)
 
             # Store in database and return the DB record so callers have the internal UUID
             db_record = await self.repository.create_file_record(
@@ -493,7 +493,7 @@ class OpenAIFineTuningService:
             OpenAI file ID (e.g., "file-abc123")
         """
         try:
-            logger.info(f"Uploading file {filename} from {file_url} to OpenAI for chat")
+            logger.info("Uploading file to OpenAI for chat")
             
             # Read file content
             with open(file_url, "rb") as f:

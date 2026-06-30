@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import { AxiosError } from "axios";
 import {
   createAgentConfig,
   getAgentConfig,
@@ -12,10 +13,12 @@ import {
 import { getAllLLMAnalysts } from "@/services/llmAnalyst";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import {
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Trash2,
   Plus,
@@ -24,8 +27,6 @@ import {
   X,
   Languages,
   Bot,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import {
   Sheet,
@@ -35,13 +36,18 @@ import {
   SheetDescription,
   SheetClose,
 } from "@/components/sheet";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
+import { normalizeDisclaimerHtml } from "@/helpers/disclaimerHtml";
 import { getTranslationByKey, getLanguages } from "@/services/translations";
 import { Language, Translation } from "@/interfaces/translation.interface";
 import { getTranslationCount } from "../utils";
-import { Toggle } from "@/components/toggle";
+
+// Must match the DB column limits (agents.name VARCHAR(100), agents.description VARCHAR(200))
+// and the backend AgentBase/AgentUpdate schema constraints.
+const AGENT_NAME_MAX_LENGTH = 100;
+const AGENT_DESCRIPTION_MAX_LENGTH = 200;
 
 interface AgentFormData {
   id?: string;
@@ -76,6 +82,10 @@ interface AgentFormProps {
   hideButtons?: boolean;
   // Form ID for external button association
   formId?: string;
+  /** Optional hook to transform payload immediately before create/update (e.g. sheet footer submit). */
+  prepareSubmitData?: (
+    data: Omit<AgentFormData, "id">,
+  ) => Omit<AgentFormData, "id">;
 }
 
 interface TranslationTriggerProps {
@@ -179,6 +189,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   onSaved,
   hideButtons = false,
   formId,
+  prepareSubmitData,
 }: AgentFormProps) => {
   const id = data?.id;
   const navigate = useNavigate();
@@ -230,6 +241,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const [imageDeleting, setImageDeleting] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(data?.llm_analyst_id ? true : false);
+
+  useEffect(() => {
+    if (formData.llm_analyst_id) setShowAdvanced(true);
+  }, [formData.llm_analyst_id]);
 
   /** Avoids a slow GET welcome-image finishing after the user picked a replacement and overwriting preview/state. */
   const imageFileRef = useRef<File | null>(null);
@@ -442,6 +457,17 @@ const AgentForm: React.FC<AgentFormProps> = ({
       return;
     }
 
+    if (formData.name.length > AGENT_NAME_MAX_LENGTH) {
+      toast.error(`Name must be ${AGENT_NAME_MAX_LENGTH} characters or less.`);
+      return;
+    }
+    if (formData.description.length > AGENT_DESCRIPTION_MAX_LENGTH) {
+      toast.error(
+        `Description must be ${AGENT_DESCRIPTION_MAX_LENGTH} characters or less.`,
+      );
+      return;
+    }
+
     try {
       setLoading(true);
       let agentId: string;
@@ -459,19 +485,21 @@ const AgentForm: React.FC<AgentFormProps> = ({
           }
         }
         const { id: _, ...rest } = formData;
+        const prepared = prepareSubmitData?.(rest) ?? rest;
         const dataToSubmit = {
-          ...rest,
-          possible_queries: omitEmptyStrings(rest.possible_queries),
-          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+          ...prepared,
+          possible_queries: omitEmptyStrings(prepared.possible_queries),
+          thinking_phrases: omitEmptyStrings(prepared.thinking_phrases),
         };
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
       } else {
         const { id: _, has_welcome_image, ...rest } = formData;
+        const prepared = prepareSubmitData?.(rest) ?? rest;
         const dataToSubmit = {
-          ...rest,
-          possible_queries: omitEmptyStrings(rest.possible_queries),
-          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+          ...prepared,
+          possible_queries: omitEmptyStrings(prepared.possible_queries),
+          thinking_phrases: omitEmptyStrings(prepared.thinking_phrases),
         };
         const agentConfig = await createAgentConfig({
           ...dataToSubmit,
@@ -510,6 +538,24 @@ const AgentForm: React.FC<AgentFormProps> = ({
       let errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred.";
 
+      // Surface backend validation errors (e.g. FastAPI 422 `detail`) instead of
+      // the generic axios message ("Request failed with status code 422").
+      if (err instanceof AxiosError) {
+        const detail = (err.response?.data as { detail?: unknown } | undefined)
+          ?.detail;
+        if (typeof detail === "string") {
+          errorMessage = detail;
+        } else if (Array.isArray(detail)) {
+          errorMessage = detail
+            .map((d) =>
+              d && typeof d === "object" && "msg" in d
+                ? String((d as { msg: string }).msg)
+                : String(d),
+            )
+            .join("; ");
+        }
+      }
+
       if (
         errorMessage.includes("already exists") ||
         errorMessage.includes("400")
@@ -540,24 +586,48 @@ const AgentForm: React.FC<AgentFormProps> = ({
           <div className={`${plain ? "" : "rounded-lg border bg-white p-6 "}`}>
             <div className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="name">Workflow Name</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="name">Workflow Name</Label>
+                  <span
+                    className={`text-xs tabular-nums ${
+                      formData.name.length >= AGENT_NAME_MAX_LENGTH
+                        ? "text-red-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {formData.name.length}/{AGENT_NAME_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="name"
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
                   placeholder="Enter agent name"
+                  maxLength={AGENT_NAME_MAX_LENGTH}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="description">Description</Label>
+                  <span
+                    className={`text-xs tabular-nums ${
+                      formData.description.length >= AGENT_DESCRIPTION_MAX_LENGTH
+                        ? "text-red-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {formData.description.length}/{AGENT_DESCRIPTION_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="description"
                   name="description"
                   value={formData.description}
                   onChange={handleInputChange}
                   placeholder="Enter agent description"
+                  maxLength={AGENT_DESCRIPTION_MAX_LENGTH}
                 />
               </div>
 
@@ -990,19 +1060,29 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 </p>
               </div>
 
+              <div className="border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((prev) => !prev)}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/40"
+                  aria-expanded={showAdvanced}
+                  aria-controls="advanced-section"
+                >
+                  <span className="text-sm font-medium">Advanced</span>
+                  {showAdvanced ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+              </div>
+
               <div className="space-y-3">
-                <div className="flex items-center cursor-pointer" onClick={() => setShowAdvanced(!showAdvanced)}>
-                  <Toggle pressed={showAdvanced}>
-                    {showAdvanced ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </Toggle>
-                  <Label className="text-sm font-medium cursor-pointer" htmlFor="show_advanced">Advanced Configurations</Label>
-                </div>
                 {showAdvanced && (
-                  <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                  <div
+                    id="advanced-section"
+                    className="space-y-2 rounded-lg border bg-muted/30 p-4"
+                  >
                     <div className="flex items-center gap-2">
                       <Bot className="h-4 w-4 text-muted-foreground" />
                       <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
@@ -1150,6 +1230,13 @@ interface AgentDialogProps {
   onSaved?: () => void;
 }
 
+const prepareAgentSheetSubmitData = (
+  data: Omit<AgentFormData, "id">,
+): Omit<AgentFormData, "id"> => ({
+  ...data,
+  input_disclaimer_html: normalizeDisclaimerHtml(data.input_disclaimer_html ?? ""),
+});
+
 export const AgentFormDialog = ({
   isOpen,
   onClose,
@@ -1202,6 +1289,7 @@ export const AgentFormDialog = ({
             onSaved={onSaved}
             hideButtons={true}
             formId={formId}
+            prepareSubmitData={prepareAgentSheetSubmitData}
           />
         </div>
         {/* Sticky Footer with Action Buttons */}

@@ -5,6 +5,7 @@ import {
 } from "../../types/nodes";
 import HumanInTheLoopNode from "./humanInTheLoopNode";
 import { NodeProps } from "reactflow";
+import { HUMAN_IN_THE_LOOP_HELP_CONTENT } from "./helperDefinition";
 
 export const HUMAN_IN_THE_LOOP_NODE_DEFINITION: NodeTypeDefinition<HumanInTheLoopNodeData> =
   {
@@ -13,6 +14,7 @@ export const HUMAN_IN_THE_LOOP_NODE_DEFINITION: NodeTypeDefinition<HumanInTheLoo
     description:
       "Pauses the workflow to collect human input via a dynamic form.",
     shortDescription: "Collect human input",
+    helpContent: HUMAN_IN_THE_LOOP_HELP_CONTENT,
     category: "io",
     icon: "ClipboardList",
     defaultData: {

@@ -84,6 +84,9 @@ export const useChat = ({
   const [inputDisclaimerHtml, setInputDisclaimerHtml] = useState<string | null>(null);
   const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [agentLiveVoiceEnabled, setAgentLiveVoiceEnabled] = useState<boolean>(false);
+  const [agentLiveVoiceReady, setAgentLiveVoiceReady] = useState<boolean>(false);
   const [availableLanguages, setAvailableLanguages] = useState<string[] | null>(
     null,
   );
@@ -354,6 +357,11 @@ export const useChat = ({
         if (info && Array.isArray(info.agent_available_languages)) {
           setAvailableLanguages(info.agent_available_languages);
         }
+        if (info?.agent_id) {
+          setAgentId(info.agent_id);
+        }
+        setAgentLiveVoiceEnabled(info?.live_voice_enabled === true);
+        setAgentLiveVoiceReady(info?.live_voice_ready === true);
 
         if (cancelled) return;
         if (info && Array.isArray(info.agent_available_languages)) {
@@ -736,7 +744,6 @@ export const useChat = ({
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
         if (chatServiceRef.current.getAvailableLanguages) {
-          debugger;
           const langs = chatServiceRef.current.getAvailableLanguages();
           if (Array.isArray(langs)) {
             setAvailableLanguages(langs);
@@ -897,6 +904,32 @@ export const useChat = ({
     ],
   );
 
+  const sendAudioMessage = useCallback(
+    async (audioBlob: Blob, audioFormat: string) => {
+      if (!chatServiceRef.current) {
+        throw new Error("Chat service not initialized");
+      }
+
+      try {
+        setIsLoading(true);
+        if (!isTakenOver) {
+          setIsAgentTyping(true);
+        }
+        await chatServiceRef.current.sendAudioMessage(audioBlob, audioFormat);
+      } catch (error: any) {
+        setIsAgentTyping(false);
+        if (isTokenExpiredError(error)) {
+          resetToInitialState();
+        } else if (onErrorRef.current && error instanceof Error) {
+          onErrorRef.current(error);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isTakenOver, isTokenExpiredError, resetToInitialState],
+  );
+
   const startConversation = useCallback(
     async (reCaptchaToken?: string | undefined) => {
       if (!chatServiceRef.current) {
@@ -1018,6 +1051,7 @@ export const useChat = ({
     messages,
     isLoading,
     sendMessage,
+    sendAudioMessage,
     uploadFile,
     resetConversation,
     startConversation,
@@ -1037,5 +1071,8 @@ export const useChat = ({
     thinkingDelayMs,
     availableLanguages,
     chatInputMetadata,
+    agentId,
+    agentLiveVoiceEnabled,
+    agentLiveVoiceReady,
   };
 };

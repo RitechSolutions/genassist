@@ -68,8 +68,20 @@ def _format_period(from_date: Optional[date], to_date: Optional[date]) -> str:
 
 # ── aggregation ────────────────────────────────────────────────────────────────
 
+def _conversation_counts_by_agent(summary: AgentStatsSummaryResponse) -> dict[str, dict]:
+    return {
+        str(row.agent_id): {
+            "unique_conversations": row.unique_conversations,
+            "finalized_conversations": row.finalized_conversations,
+            "in_progress_conversations": row.in_progress_conversations,
+        }
+        for row in summary.conversation_status_by_agent
+    }
+
+
 def _aggregate_agent_items(
     items: list[AgentDailyStatsItem],
+    conversation_by_agent: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Roll up daily rows into one dict per agent (weighted-avg for ms)."""
     agg: dict[str, dict] = {}
@@ -92,9 +104,6 @@ def _aggregate_agent_items(
                 "_ms_count": 0,
             }
         a = agg[aid]
-        a["unique_conversations"] += item.unique_conversations
-        a["finalized_conversations"] += item.finalized_conversations
-        a["in_progress_conversations"] += item.in_progress_conversations
         a["execution_count"] += item.execution_count
         a["success_count"] += item.success_count
         a["error_count"] += item.error_count
@@ -109,6 +118,12 @@ def _aggregate_agent_items(
     result = []
     for a in agg.values():
         a["avg_response_ms"] = (a["_total_ms"] / a["_ms_count"]) if a["_ms_count"] > 0 else None
+        if conversation_by_agent:
+            conv = conversation_by_agent.get(a["agent_id"])
+            if conv:
+                a["unique_conversations"] = conv["unique_conversations"]
+                a["finalized_conversations"] = conv["finalized_conversations"]
+                a["in_progress_conversations"] = conv["in_progress_conversations"]
         result.append(a)
     return sorted(result, key=lambda x: x["execution_count"], reverse=True)
 
@@ -203,7 +218,7 @@ def _export_agents_csv(
     else:
         # per-agent aggregated
         w.writerow(["By Agent"])
-        rows_agg = _aggregate_agent_items(items)
+        rows_agg = _aggregate_agent_items(items, _conversation_counts_by_agent(summary))
         _csv_write_rows(w,
             ["Agent", "Conversations", "Completed", "In Progress", "Success Rate", "Avg Response (ms)", "Thumbs Up", "Thumbs Down"],
             [
@@ -392,7 +407,7 @@ def _export_agents_excel(
         ]
     else:
         headers = ["Agent", "Conversations", "Completed", "In Progress", "Success Rate", "Avg Response (ms)", "Thumbs Up", "Thumbs Down"]
-        rows_agg = _aggregate_agent_items(items)
+        rows_agg = _aggregate_agent_items(items, _conversation_counts_by_agent(summary))
         data_rows = [
             [
                 _agent_name(a["agent_id"], agent_names),
@@ -593,7 +608,7 @@ def _export_agents_pdf(
         )
     else:
         _pdf_section_header(pdf, "By Agent")
-        rows_agg = _aggregate_agent_items(items)
+        rows_agg = _aggregate_agent_items(items, _conversation_counts_by_agent(summary))
         data_rows = [
             [
                 _agent_name(a["agent_id"], agent_names),

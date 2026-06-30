@@ -1,6 +1,7 @@
 import {
   ChatInputNodeData,
   ChatOutputNodeData,
+  FinalizeConversationNodeData,
   NodeData,
   NodeTypeDefinition,
   SetStateNodeData,
@@ -10,7 +11,13 @@ import SetStateNode from "../chat/setStateNode";
 
 import { NodeProps } from "reactflow";
 import ChatOutputNode from "./chatOutputNode";
+import FinalizeConversationNode from "./finalizeConversationNode";
 import { createSimpleSchema } from "../../types/schemas";
+import {
+  FINISH_NODE_HELP_CONTENT,
+  SET_STATE_NODE_HELP_CONTENT,
+  START_NODE_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
   {
@@ -19,6 +26,7 @@ export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
     description:
       "Defines the entry point of the workflow where inputs are received.",
     shortDescription: "Start workflow execution",
+    helpContent: START_NODE_HELP_CONTENT,
     category: "io",
     icon: "ArrowRightFromLine",
     defaultData: {
@@ -57,6 +65,7 @@ export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData>
     description:
       "Defines the endpoint of the workflow where final outputs are delivered.",
     shortDescription: "Finish workflow execution",
+    helpContent: FINISH_NODE_HELP_CONTENT,
     category: "io",
     icon: "ArrowRightToLine",
     defaultData: {
@@ -81,12 +90,52 @@ export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData>
     }),
   };
 
+export const FINALIZE_CONVERSATION_NODE_DEFINITION: NodeTypeDefinition<FinalizeConversationNodeData> =
+  {
+    type: "finalizeConversationNode",
+    label: "End Conversation",
+    description:
+      "Finalizes the active conversation when the workflow reaches this node, producing the same outcome as the platform's finalize action. Pass-through: downstream nodes still run.",
+    shortDescription: "Finalize the active conversation",
+    configSubtitle: "Optionally set a display name for this node.",
+    category: "io",
+    icon: "MessageCircle",
+    defaultData: {
+      name: "End Conversation",
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    },
+    component:
+      FinalizeConversationNode as React.ComponentType<NodeProps<NodeData>>,
+    createNode: (id, position, data) => ({
+      id,
+      type: "finalizeConversationNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
 export const SET_STATE_NODE_DEFINITION: NodeTypeDefinition<SetStateNodeData> = {
   type: "setStateNode",
   label: "Set State",
   description:
     "Sets the value of a stateful parameter that persists across workflow executions.",
   shortDescription: "Set stateful parameter value",
+  helpContent: SET_STATE_NODE_HELP_CONTENT,
   configSubtitle:
     "Configure which stateful parameter to update and what value to set.",
   category: "io",

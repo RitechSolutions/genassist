@@ -2,55 +2,76 @@
 Workflow engine for building and executing workflows with state management.
 """
 
-from app.modules.workflow.utils import process_path_based_input_data
-from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.workflow_state import WorkflowState, WorkflowPausedException
-from app.modules.workflow.engine.nodes import (
-    ChatInputNode,
-    ChatOutputNode,
-    RouterNode,
-    AgentNode,
-    ApiToolNode,
-    OpenAPINode,
-    TemplateNode,
-    LLMModelNode,
-    KnowledgeToolNode,
-    PythonToolNode,
-    DataMapperNode,
-    ToolBuilderNode,
-    SlackToolNode,
-    CalendarEventsNode,
-    ReadMailsToolNode,
-    GmailToolNode,
-    WhatsAppToolNode,
-    ZendeskToolNode,
-    SQLNode,
-    AggregatorNode,
-    JiraNode,
-    MLModelInferenceNode,
-    TrainDataSourceNode,
-    TrainPreprocessNode,
-    TrainModelNode,
-    ThreadRAGNode,
-    MCPNode,
-    WorkflowExecutorNode,
-    HumanInTheLoopNode,
-    SetStateNode,
-    GuardrailProvenanceNode,
-    GuardrailNliNode,
-)
-from typing import Dict, Any, List, Optional, Set
-import logging
 import asyncio
-from collections import defaultdict
+import logging
 import uuid
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Set
+
 from fastapi_injector import RequestScopeFactory
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies.injector import injector
-from app.core.tenant_scope import get_tenant_context, set_tenant_context
 
+from app.core.tenant_scope import get_tenant_context, set_tenant_context
+from app.dependencies.injector import injector
+from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.nodes import (
+    AgentNode,
+    ExternalAgentNode,
+    AggregatorNode,
+    ApiToolNode,
+    CalendarEventsNode,
+    ChatInputNode,
+    ChatOutputNode,
+    DataMapperNode,
+    FileReaderNode,
+    FinalizeConversationNode,
+    GmailToolNode,
+    CreateWorkflowScheduleNode,
+    GuardrailNliNode,
+    GuardrailProvenanceNode,
+    HumanInTheLoopNode,
+    JiraNode,
+    KnowledgeToolNode,
+    LLMModelNode,
+    MCPNode,
+    MLModelInferenceNode,
+    OpenAPINode,
+    PythonToolNode,
+    ReadMailsToolNode,
+    RouterNode,
+    SetStateNode,
+    SlackToolNode,
+    SQLNode,
+    STTNode,
+    TemplateNode,
+    ThreadRAGNode,
+    ToolBuilderNode,
+    TrainDataSourceNode,
+    TTSNode,
+    TrainModelNode,
+    TrainPreprocessNode,
+    VoiceAgentNode,
+    WhatsAppToolNode,
+    WorkflowExecutorNode,
+    ZendeskToolNode,
+)
+from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
+from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_output_for_memory(output: Any) -> Any:
+    """Strip nested audio payloads (base64 blobs) from an output before it is
+    persisted to conversation memory. A bare audio dict (e.g. a TTS node's
+    output, where the dict itself IS the audio) is kept as-is."""
+    if (
+        isinstance(output, dict)
+        and isinstance(output.get("audio"), dict)
+        and output["audio"].get("type") == "audio"
+    ):
+        return {k: v for k, v in output.items() if k != "audio"}
+    return output
 
 
 class WorkflowEngine:
@@ -79,11 +100,13 @@ class WorkflowEngine:
         cls._node_registry["chatOutputNode"] = ChatOutputNode
         cls._node_registry["routerNode"] = RouterNode
         cls._node_registry["agentNode"] = AgentNode
+        cls._node_registry["externalAgentNode"] = ExternalAgentNode
         cls._node_registry["apiToolNode"] = ApiToolNode
         cls._node_registry["openApiNode"] = OpenAPINode
         cls._node_registry["templateNode"] = TemplateNode
         cls._node_registry["llmModelNode"] = LLMModelNode
         cls._node_registry["knowledgeBaseNode"] = KnowledgeToolNode
+        cls._node_registry["createWorkflowScheduleNode"] = CreateWorkflowScheduleNode
         cls._node_registry["pythonCodeNode"] = PythonToolNode
         cls._node_registry["dataMapperNode"] = DataMapperNode
         cls._node_registry["toolBuilderNode"] = ToolBuilderNode
@@ -107,6 +130,11 @@ class WorkflowEngine:
         cls._node_registry["setStateNode"] = SetStateNode
         cls._node_registry["guardrailProvenanceNode"] = GuardrailProvenanceNode
         cls._node_registry["guardrailNliNode"] = GuardrailNliNode
+        cls._node_registry["fileReaderNode"] = FileReaderNode
+        cls._node_registry["ttsNode"] = TTSNode
+        cls._node_registry["sttNode"] = STTNode
+        cls._node_registry["voiceAgentNode"] = VoiceAgentNode
+        cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -286,7 +314,7 @@ class WorkflowEngine:
                 asyncio.create_task(
                     state.get_memory().add_input_output(
                         initial_values.get("message", ""),
-                        state.output
+                        _sanitize_output_for_memory(state.output)
                     )
                 )
         except Exception as e:

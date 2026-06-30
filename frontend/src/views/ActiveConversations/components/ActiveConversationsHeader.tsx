@@ -8,8 +8,8 @@ interface HeaderProps {
 
 export function ActiveConversationsHeader({ title }: HeaderProps) {
   return (
-    <div className="flex items-center justify-between gap-3 mb-6">
-      <div className="flex items-center gap-2">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
+      <div className="flex min-w-0 items-center gap-2">
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
         <Badge className="bg-emerald-600 text-primary-foreground border-transparent px-2.5 py-0.5">
           Live
@@ -18,7 +18,7 @@ export function ActiveConversationsHeader({ title }: HeaderProps) {
       <Link to="/transcripts?status=in_progress&status=takeover">
         <Button 
           variant="outline" 
-          className="h-10 px-4 py-2 rounded-full border-input"
+          className="h-9 rounded-full border-input px-4 py-2 sm:h-10"
         >
           View all
         </Button>

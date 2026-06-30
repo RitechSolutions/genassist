@@ -1,21 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AxiosError } from "axios";
 import { DataTable } from "@/components/DataTable";
+import { ListEmptyState } from "@/components/ListEmptyState";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TableCell, TableRow } from "@/components/table";
+import { Button } from "@/components/button";
 import { getAllUserGroups, deleteUserGroup } from "@/services/userGroups";
 import { formatDate } from "@/helpers/utils";
 import { UserGroup } from "@/interfaces/userGroup.interface";
 import { toast } from "react-hot-toast";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
+import { UsersRound, Plus } from "lucide-react";
 
 interface UserGroupsCardProps {
   searchQuery: string;
   refreshKey?: number;
   onEditGroup: (group: UserGroup) => void;
   updatedGroup?: UserGroup | null;
+  onCreateGroup: () => void;
 }
 
 export function UserGroupsCard({
@@ -23,6 +27,7 @@ export function UserGroupsCard({
   refreshKey = 0,
   onEditGroup,
   updatedGroup = null,
+  onCreateGroup,
 }: UserGroupsCardProps) {
   const PAGE_SIZE = 10;
   const [groups, setGroups] = useState<UserGroup[]>([]);
@@ -114,6 +119,38 @@ export function UserGroupsCard({
     </TableRow>
   );
 
+  const isSearchActive = searchQuery.trim().length > 0;
+
+  const emptyState = useMemo(
+    () => (
+      <ListEmptyState
+        icon={<UsersRound className="h-12 w-12 text-gray-400" />}
+        title={
+          isSearchActive
+            ? "No matching user groups"
+            : "No user groups yet"
+        }
+        description={
+          isSearchActive
+            ? "Try adjusting your search query."
+            : "Create a group to scope which agents and conversations members can see."
+        }
+        action={
+          !isSearchActive ? (
+            <Button
+              onClick={onCreateGroup}
+              className="rounded-full flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add New Group
+            </Button>
+          ) : undefined
+        }
+      />
+    ),
+    [isSearchActive, onCreateGroup]
+  );
+
   return (
     <>
       <DataTable
@@ -125,6 +162,7 @@ export function UserGroupsCard({
         renderRow={renderRow}
         emptyMessage="No user groups found"
         searchEmptyMessage="No user groups found matching your search"
+        emptyState={emptyState}
       />
 
       <PaginationBar

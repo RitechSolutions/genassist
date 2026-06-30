@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ReadMailsNodeData, SearchCriteria } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Checkbox } from "@/components/checkbox";
 import {
@@ -128,7 +128,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
-          <Input
+          <RichInput
             id="node-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -276,7 +276,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
 
         <div className="space-y-2">
           <Label htmlFor="max_results">Max Results</Label>
-          <Input
+          <RichInput
             id="max_results"
             type="number"
             value={searchCriteria.max_results}

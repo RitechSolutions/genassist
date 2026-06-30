@@ -1,12 +1,15 @@
 import json
-from sqlalchemy import UUID, Column, String, Text, DateTime, event, Integer
-from sqlalchemy.orm import attributes, Session
+import uuid
+
+from sqlalchemy import UUID, Column, DateTime, Integer, String, Text, event
 from sqlalchemy.ext.declarative import DeclarativeMeta
+from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import Session, attributes
+
 from app.auth.utils import get_current_user_id
 from app.core.utils.date_time_utils import utc_now
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.db.base import Base
-from sqlalchemy.inspection import inspect
-import uuid
 
 
 # Define the AuditLog model
@@ -48,8 +51,49 @@ class AlchemyEncoder(json.JSONEncoder):
 
         try:
             return json.JSONEncoder.default(self, obj)
-        except:
+        except Exception:
             return str(obj)
+
+
+def _redact_if_sensitive(field_name: str, value):
+    looking_fields = ["text", "message", "text_search"]
+
+    if field_name not in looking_fields:
+        return value
+
+    # For free-form text fields, preserve non-sensitive context and redact only
+    # matching secret/PII substrings (email/JWT/etc).
+    return redact_sensitive_substrings(value)
+
+def _audit_snapshot_payload(instance) -> dict:
+    """
+    Snapshot payload for Insert/Delete.
+    - Includes column values for non-sensitive fields (truncated/summarized)
+    - Includes sensitive field keys with value \"[REDACTED]\"
+    """
+    inspected = inspect(instance, raiseerr=False)
+    if inspected is None:
+        return {"fields": [], "values": {}}
+
+    field_names = sorted([c.key for c in inspected.mapper.column_attrs])
+
+    values: dict[str, object] = {}
+    for name in field_names:
+        raw = stringify_value(getattr(instance, name))
+        raw = _redact_if_sensitive(name, raw)
+
+        if isinstance(raw, str):
+            values[name] = raw
+        elif isinstance(raw, (list, tuple)):
+            # avoid large snapshots
+            values[name] = {"type": "list", "len": len(raw)}
+        elif isinstance(raw, dict):
+            # avoid large snapshots
+            values[name] = {"type": "dict", "keys": len(raw)}
+        else:
+            values[name] = raw
+
+    return {"fields": field_names, "values": values}
 
 
 def stringify_value(value):
@@ -88,6 +132,8 @@ def before_flush(session, flush_context, instances):
             instance, (AuditLogModel)
         ):  # Skip logging of AuditLog changes themselves
             continue
+        if inspect(instance, raiseerr=False) is None:
+            continue
 
         tablename = instance.__tablename__
         setattr(instance, "created_by", get_current_user_id())
@@ -96,6 +142,8 @@ def before_flush(session, flush_context, instances):
         if isinstance(
             instance, (AuditLogModel)
         ):  # Skip logging of AuditLog changes themselves
+            continue
+        if inspect(instance, raiseerr=False) is None:
             continue
 
         tablename = instance.__tablename__
@@ -113,7 +161,10 @@ def before_flush(session, flush_context, instances):
                 new_value = stringify_value(history.added[0] if history.added else None)
 
                 if old_value != new_value:  # Only log if there's an actual change.
-                    changes[key.key] = {"old": old_value, "new": new_value}
+                    changes[key.key] = {
+                        "old": _redact_if_sensitive(key.key, old_value),
+                        "new": _redact_if_sensitive(key.key, new_value),
+                    }
 
         audit_log = AuditLogModel(
             table_name=tablename,
@@ -130,31 +181,19 @@ def before_flush(session, flush_context, instances):
             instance, (AuditLogModel)
         ):  # Avoid infinite recursion if you're deleting audit logs.
             continue
+        if inspect(instance, raiseerr=False) is None:
+            continue
 
         tablename = instance.__tablename__
         record_id = getattr(instance, "id")  # Get record ID
-        state = attributes.instance_state(instance)
-
-        changes = {}
-        for key in state.attrs:
-            history = attributes.get_history(instance, key.key)
-            if history.has_changes():
-                old_value = stringify_value(
-                    history.deleted[0] if history.deleted else None
-                )
-                new_value = stringify_value(history.added[0] if history.added else None)
-
-                if old_value != new_value:  # Only log if there's an actual change.
-                    changes[key.key] = {"old": old_value, "new": new_value}
+        payload = {"id": stringify_value(record_id), **_audit_snapshot_payload(instance)}
 
         # Log the deletion of the record
         audit_log = AuditLogModel(
             table_name=tablename,
             record_id=record_id,
             action_name="Delete",  # Special column to mark deletion
-            json_changes=json.dumps(
-                instance, cls=AlchemyEncoder
-            ),  # str(changes),  # Store representation of the deleted object
+            json_changes=json.dumps(payload),
             modified_at=utc_now(),
             modified_by=get_current_user_id(),
         )
@@ -169,28 +208,18 @@ def after_flush(session, flush_context):
             instance, (AuditLogModel)
         ):  # Skip logging of AuditLog changes themselves
             continue
+        if inspect(instance, raiseerr=False) is None:
+            continue
 
         tablename = instance.__tablename__
         record_id = getattr(instance, "id")  # Get record ID
-        state = attributes.instance_state(instance)
-
-        changes = {}
-        for key in state.attrs:
-            history = attributes.get_history(instance, key.key)
-            if history.has_changes():
-                old_value = stringify_value(
-                    history.deleted[0] if history.deleted else None
-                )
-                new_value = stringify_value(history.added[0] if history.added else None)
-
-                if old_value != new_value:  # Only log if there's an actual change.
-                    changes[key.key] = {"old": old_value, "new": new_value}
+        payload = {"id": stringify_value(record_id), **_audit_snapshot_payload(instance)}
 
         audit_log = AuditLogModel(
             table_name=tablename,
             record_id=record_id,
             action_name="Insert",
-            json_changes=json.dumps(model_to_dict(instance)),  # str(changes),
+            json_changes=json.dumps(payload),
             modified_at=utc_now(),
             modified_by=get_current_user_id(),
         )

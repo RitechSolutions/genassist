@@ -88,20 +88,38 @@ class AudioService:
         return self.gpt_question_answerer_service.answer_question(transcript_json, question)
 
 
-    async def fetch_and_calculate_metrics(self, from_date: datetime.datetime | None = None,
-            to_date: datetime.datetime | None = None, agent_id: uuid.UUID | None = None, ):
-        return await self.recording_repo.get_metrics(from_date=from_date, to_date=to_date, agent_id=agent_id)
+    async def fetch_and_calculate_metrics(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+        group_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics(
+            from_date=from_date, to_date=to_date, agent_id=agent_id, group_id=group_id
+        )
 
+    async def fetch_metrics_with_comparison(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+        group_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics_with_comparison(
+            from_date=from_date, to_date=to_date, agent_id=agent_id, group_id=group_id
+        )
 
-    async def fetch_metrics_with_comparison(self, from_date: datetime.datetime | None = None,
-            to_date: datetime.datetime | None = None, agent_id: uuid.UUID | None = None, ):
-        return await self.recording_repo.get_metrics_with_comparison(from_date=from_date, to_date=to_date,
-                                                                     agent_id=agent_id)
-
-
-    async def fetch_metrics_per_day(self, from_date: datetime.datetime | None = None,
-            to_date: datetime.datetime | None = None, agent_id: uuid.UUID | None = None, ):
-        return await self.recording_repo.get_metrics_per_day(from_date=from_date, to_date=to_date, agent_id=agent_id)
+    async def fetch_metrics_per_day(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+        group_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics_per_day(
+            from_date=from_date, to_date=to_date, agent_id=agent_id, group_id=group_id
+        )
 
 
     async def _separate_speakers_gpt(self, transcription_object, llm_analyst: LlmAnalystModel) -> list[dict]:

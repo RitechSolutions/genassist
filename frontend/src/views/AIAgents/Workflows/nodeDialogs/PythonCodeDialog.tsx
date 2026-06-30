@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 
 type PythonCodeDialogProps = BaseNodeDialogProps<
   PythonCodeNodeData,
@@ -94,7 +94,7 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
       >
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
-          <Input
+          <RichInput
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}

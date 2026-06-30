@@ -3,6 +3,7 @@ import {
   APIToolNodeData,
   OpenApiNodeData,
   KnowledgeBaseNodeData,
+  CreateWorkflowScheduleNodeData,
   NodeData,
   NodeTypeDefinition,
   PythonCodeNodeData,
@@ -15,11 +16,23 @@ import {
 import APIToolNode from "./apiToolNode";
 import OpenApiNode from "./openApiNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
+import CreateWorkflowScheduleNode from "./createWorkflowScheduleNode";
 import PythonCodeNode from "./pythonCodeNode";
 import SQLNode from "./sqlNode";
 import MLModelInferenceNode from "./mlModelInferenceNode";
 import ThreadRAGNode from "./threadRAGNode";
 import WorkflowExecutorNode from "./workflowExecutorNode";
+import {
+  API_CONNECTOR_HELP_CONTENT,
+  KNOWLEDGE_QUERY_HELP_CONTENT,
+  CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
+  ML_MODEL_INFERENCE_HELP_CONTENT,
+  OPENAPI_EXPLORER_HELP_CONTENT,
+  PYTHON_EXECUTOR_HELP_CONTENT,
+  SQL_EXECUTOR_HELP_CONTENT,
+  THREAD_RAG_HELP_CONTENT,
+  WORKFLOW_EXECUTOR_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   type: "apiToolNode",
@@ -27,6 +40,7 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   description:
     "Makes HTTP requests to external APIs using configurable methods, headers, and bodies.",
   shortDescription: "Call an external API",
+  helpContent: API_CONNECTOR_HELP_CONTENT,
   configSubtitle:
     "Configure API request settings, including endpoint, method, headers, and body.",
   category: "tools",
@@ -70,6 +84,7 @@ export const OPEN_API_NODE_DEFINITION: NodeTypeDefinition<OpenApiNodeData> = {
   description:
     "Uses an OpenAPI specification and an LLM to answer questions about an API.",
   shortDescription: "Explore an API specification",
+  helpContent: OPENAPI_EXPLORER_HELP_CONTENT,
   configSubtitle:
     "Select an LLM provider, upload an OpenAPI spec, and define the query.",
   category: "tools",
@@ -112,6 +127,7 @@ export const KNOWLEDGE_BASE_NODE_DEFINITION: NodeTypeDefinition<KnowledgeBaseNod
     description:
       "Queries connected knowledge bases to retrieve relevant information.",
     shortDescription: "Query knowledge bases",
+    helpContent: KNOWLEDGE_QUERY_HELP_CONTENT,
     configSubtitle:
       "Configure knowledge base query settings, including selected sources and limits.",
     category: "tools",
@@ -148,6 +164,56 @@ export const KNOWLEDGE_BASE_NODE_DEFINITION: NodeTypeDefinition<KnowledgeBaseNod
     }),
   };
 
+export const CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION: NodeTypeDefinition<CreateWorkflowScheduleNodeData> =
+  {
+    type: "createWorkflowScheduleNode",
+    label: "Create Workflow Schedule",
+    description:
+      "Creates a recurring schedule that runs an agent's latest workflow on a cron expression.",
+    shortDescription: "Schedule a workflow run",
+    helpContent: CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
+    configSubtitle:
+      "Configure which workflow to schedule, the cron expression, and run parameters.",
+    category: "tools",
+    icon: "CalendarClock",
+    defaultData: {
+      name: "Create Workflow Schedule",
+      agentId: "",
+      scheduleName: "",
+      cronSchedule: "0 0 * * *",
+      isActive: true,
+      threadIdMode: "per_run",
+      fixedThreadId: "",
+      message: "",
+      inputData: "",
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    } as CreateWorkflowScheduleNodeData,
+    component: CreateWorkflowScheduleNode as React.ComponentType<
+      NodeProps<NodeData>
+    >,
+    createNode: (id, position, data) => ({
+      id,
+      type: "createWorkflowScheduleNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
 export const PYTHON_CODE_NODE_DEFINITION: NodeTypeDefinition<PythonCodeNodeData> =
   {
     type: "pythonCodeNode",
@@ -155,6 +221,7 @@ export const PYTHON_CODE_NODE_DEFINITION: NodeTypeDefinition<PythonCodeNodeData>
     description:
       "Executes Python code to transform data or perform custom logic.",
     shortDescription: "Execute Python code",
+    helpContent: PYTHON_EXECUTOR_HELP_CONTENT,
     configSubtitle:
       "Configure the Python execution environment, including script and parameters.",
     category: "tools",
@@ -208,6 +275,7 @@ export const SQL_NODE_DEFINITION: NodeTypeDefinition<SQLNodeData> = {
   description:
     "Executes SQL queries on a configured database. Write SQL manually or generate it from text.",
   shortDescription: "Execute SQL queries",
+  helpContent: SQL_EXECUTOR_HELP_CONTENT,
   configSubtitle:
     "Configure SQL generation settings, including model provider, data source, and prompts.",
   category: "tools",
@@ -251,6 +319,7 @@ export const ML_MODEL_INFERENCE_NODE_DEFINITION: NodeTypeDefinition<MLModelInfer
     type: "mlModelInferenceNode",
     label: "ML Model Inference",
     description: "Run inference using a trained ML model",
+    helpContent: ML_MODEL_INFERENCE_HELP_CONTENT,
     category: "tools",
     icon: "Brain",
     defaultData: {
@@ -290,6 +359,7 @@ export const THREAD_RAG_NODE_DEFINITION: NodeTypeDefinition<ThreadRAGNodeData> =
     type: "threadRAGNode",
     label: "Thread RAG",
     description: "Retrieve context from or add messages to thread RAG",
+    helpContent: THREAD_RAG_HELP_CONTENT,
     category: "tools",
     icon: "Database",
     defaultData: {
@@ -330,6 +400,7 @@ export const WORKFLOW_EXECUTOR_NODE_DEFINITION: NodeTypeDefinition<WorkflowExecu
     description:
       "Executes another workflow as a sub-workflow, allowing you to compose workflows together.",
     shortDescription: "Execute another workflow",
+    helpContent: WORKFLOW_EXECUTOR_HELP_CONTENT,
     configSubtitle:
       "Select a workflow to execute and configure its input parameters.",
     category: "tools",

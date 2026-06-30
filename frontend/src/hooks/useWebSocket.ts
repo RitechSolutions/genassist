@@ -23,6 +23,14 @@ export interface UseWebSocketReturn {
   send: (data: unknown) => void;
 }
 
+/** Collapse duplicate path slashes without breaking the ws(s):// protocol. */
+function normalizeWebSocketUrl(url: string): string {
+  const match = url.match(/^(wss?:\/\/)(.*)$/i);
+  if (!match) return url;
+  const [, protocol, rest] = match;
+  return protocol + rest.replace(/\/{2,}/g, "/");
+}
+
 function buildWebSocketUrl(
   roomType: WebSocketRoomType,
   conversationId: string | undefined,
@@ -67,7 +75,13 @@ export function useWebSocket({
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const connectionIdRef = useRef(0);
   const reconnectAttempts = useRef(0);
+  const shouldReconnectRef = useRef(true);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const topicsRef = useRef(topics);
+  topicsRef.current = topics;
+  const topicsKey = topics.join("\0");
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
@@ -76,8 +90,21 @@ export function useWebSocket({
     if (!token) return;
     if (roomType === "conversation" && !conversationId) return;
 
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+
+    const connectionId = ++connectionIdRef.current;
+
     getWsUrl()
       .then(async (wsBaseUrl) => {
+        if (connectionId !== connectionIdRef.current) return;
         if (!isWsEnabled || !token) return;
         if (roomType === "conversation" && !conversationId) return;
 
@@ -85,16 +112,22 @@ export function useWebSocket({
         // replace http with ws
         baseApiUrl = baseApiUrl.replace("http", "ws");
 
-        const wsUrl = buildWebSocketUrl(
-          roomType,
-          conversationId,
-          token,
-          topics,
-          lang,
-          wsBaseUrl || baseApiUrl
-        )?.replace(/\/\//g, "/");
+        const wsUrl = normalizeWebSocketUrl(
+          buildWebSocketUrl(
+            roomType,
+            conversationId,
+            token,
+            topicsRef.current,
+            lang,
+            wsBaseUrl || baseApiUrl
+          )
+        );
 
         const socket = new WebSocket(wsUrl);
+        if (connectionId !== connectionIdRef.current) {
+          socket.close();
+          return;
+        }
         socketRef.current = socket;
 
         socket.onopen = () => {
@@ -106,7 +139,6 @@ export function useWebSocket({
         socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as Record<string, unknown>;
-            const topic = (data.topic ?? data.type) as string;
 
             // Handle ping from server (dashboard)
             if (data.type === "ping") {
@@ -127,6 +159,9 @@ export function useWebSocket({
 
         socket.onclose = () => {
           setIsConnected(false);
+          if (!shouldReconnectRef.current) return;
+          if (connectionId !== connectionIdRef.current) return;
+
           const shouldReconnect =
             enableReconnect !== false &&
             roomType === "dashboard" &&
@@ -138,7 +173,10 @@ export function useWebSocket({
               1000 * reconnectAttempts.current,
               10000
             );
-            setTimeout(connect, delay);
+            reconnectTimeoutRef.current = setTimeout(() => {
+              reconnectTimeoutRef.current = null;
+              connect();
+            }, delay);
           } else if (roomType === "dashboard" && reconnectAttempts.current >= maxReconnectAttempts) {
             setError(new Error("Failed to reconnect"));
           }
@@ -147,11 +185,18 @@ export function useWebSocket({
       .catch((e) => {
         setError(e instanceof Error ? e : new Error(String(e)));
       });
-  }, [token, roomType, conversationId, topics, lang, enableReconnect, maxReconnectAttempts]);
+  }, [token, roomType, conversationId, topicsKey, lang, enableReconnect, maxReconnectAttempts]);
 
   useEffect(() => {
+    shouldReconnectRef.current = true;
     connect();
     return () => {
+      shouldReconnectRef.current = false;
+      connectionIdRef.current += 1;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       if (socketRef.current) {
         socketRef.current.close();
         socketRef.current = null;

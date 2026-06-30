@@ -8,8 +8,8 @@ interface PageHeaderProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchPlaceholder: string;
-  actionButtonText: string;
-  onActionClick: () => void;
+  actionButtonText?: string;
+  onActionClick?: () => void;
   secondaryActionButtonText?: React.ReactNode;
   onSecondaryActionClick?: () => void;
 }
@@ -48,10 +48,12 @@ export function PageHeader({
               {secondaryActionButtonText}
             </Button>
           ) : null}
-          <Button className="flex items-center gap-2 w-full sm:w-auto justify-center rounded-full" onClick={onActionClick}>
-            <Plus className="w-4 h-4" />
-            {actionButtonText}
-          </Button>
+          {actionButtonText && onActionClick && (
+            <Button className="flex items-center gap-2 w-full sm:w-auto justify-center rounded-full" onClick={onActionClick}>
+              <Plus className="w-4 h-4" />
+              {actionButtonText}
+            </Button>
+          )}
         </div>
       </div>
     </div>

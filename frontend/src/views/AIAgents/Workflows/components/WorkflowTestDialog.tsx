@@ -8,9 +8,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import { Checkbox } from "@/components/checkbox";
 import {
   Select,
@@ -26,6 +26,7 @@ import {
   ChevronRight,
   RefreshCw,
   ClipboardList,
+  Volume2,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
@@ -34,7 +35,13 @@ import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { getValueFromPath, parseInputValue, truncateNodeOutput, valueToString } from "../utils/helpers";
+import { useAudioCapture } from "../hooks/useAudioCapture";
+import { getAudioUrl, stripAudioDataForDisplay } from "../hooks/useAudioTest";
+import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
+
+// Node types that consume audio input from the workflow's session state.
+const AUDIO_INPUT_NODE_TYPES = ["voiceAgentNode", "sttNode"];
 
 interface PausedFormSchema {
   message: string;
@@ -61,6 +68,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const [testing, setTesting] = useState(false);
   const [response, setResponse] = useState<WorkflowTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [audioData, setAudioData] = useState<{ data: string; format: string } | null>(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [inputSchema, setInputSchema] = useState<NodeSchema | null>(null);
   const [showMetadata, setShowMetadata] = useState(false);
@@ -83,6 +91,23 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   };
 
   const { state: executionState } = useWorkflowExecution();
+
+  // Show audio capture when the workflow contains a node that consumes audio.
+  const hasAudioNode = !!workflow?.nodes.some((n) =>
+    AUDIO_INPUT_NODE_TYPES.includes(n.type)
+  );
+  const {
+    isRecording,
+    audioFileName,
+    fileInputRef,
+    handleAudioFileUpload,
+    startRecording,
+    stopRecording,
+  } = useAudioCapture({
+    convertToWav: true,
+    onAudio: (data, format) => setAudioData({ data, format }),
+    onError: setError,
+  });
 
   // Find chatInputNode and get its inputSchema
   useEffect(() => {
@@ -209,6 +234,8 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
           return field.required && !field.stateful;
         })
         .some(([key, field]: [string, SchemaField]) => {
+          // A recorded/uploaded voice message stands in for the text message.
+          if (key === "message" && audioData) return false;
           const value = testInput[key];
           if (!value) return true;
           // For string types, check if trimmed value is empty
@@ -265,6 +292,19 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
             parsedInputs[key] = value;
           }
         });
+      }
+
+      // Attach a recorded/uploaded voice message so audio-consuming nodes
+      // (Voice Agent, STT) receive it from the workflow session state.
+      // Mirror the real chat flow: `audio_data` is a base64 string and the
+      // format is carried separately (the Chat Input node wraps these into the
+      // audio payload its downstream nodes consume).
+      if (audioData) {
+        parsedInputs.audio_data = audioData.data;
+        parsedInputs.audio_format = audioData.format;
+        if (!parsedInputs.message) {
+          parsedInputs.message = "[Voice message]";
+        }
       }
 
       const res = await testWorkflow({
@@ -404,7 +444,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                   </span>
                 )}
               </div>
-              <Input
+              <RichInput
                 id="test-input-message"
                 placeholder="Enter your message"
                 value={testInput.message || ""}
@@ -422,6 +462,18 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                 }`}
               />
             </div>
+
+            {hasAudioNode && !pausedFormSchema && (
+              <STTAudioInput
+                isLoading={testing}
+                isRecording={isRecording}
+                audioFileName={audioFileName}
+                fileInputRef={fileInputRef}
+                onFileUpload={handleAudioFileUpload}
+                onStartRecording={startRecording}
+                onStopRecording={stopRecording}
+              />
+            )}
 
             {inputSchema && (
               <div className="space-y-2">
@@ -451,7 +503,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                         </Label>
                       </div>
                       <div className="flex gap-2">
-                        <Input
+                        <RichInput
                           id="test-input-thread_id"
                           type="text"
                           placeholder="Thread ID will be auto-generated"
@@ -534,7 +586,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                 </Label>
                               </div>
                             ) : isObjectOrArray ? (
-                              <Textarea
+                              <RichTextarea
                                 id={`test-input-${key}`}
                                 placeholder={`Enter ${field.description || key} as JSON`}
                                 value={testInput[key] || ""}
@@ -553,7 +605,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                 rows={4}
                               />
                             ) : (
-                              <Input
+                              <RichInput
                                 id={`test-input-${key}`}
                                 type={isNumber ? "number" : "text"}
                                 placeholder={`Enter ${field.description || key}`}
@@ -696,7 +748,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Input
+                          <RichInput
                             id={fieldKey}
                             type={
                               field.type === "number"
@@ -793,6 +845,19 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                           >
                             Response
                           </div>
+                          {/* Play synthesized voice when the response carries audio */}
+                          {(() => {
+                            const audioUrl = getAudioUrl(response.output);
+                            return audioUrl ? (
+                              <div className="mb-3 space-y-2">
+                                <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2">
+                                  <Volume2 className="h-4 w-4" />
+                                  Voice response
+                                </div>
+                                <audio controls className="w-full" src={audioUrl} />
+                              </div>
+                            ) : null;
+                          })()}
                           {/* Explicitly surface SQL node parameters if present */}
                           {typeof response.output === "object" &&
                             response.output &&
@@ -834,7 +899,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                             </div>
                           ) : (
                             <JsonViewer
-                              data={response.output}
+                              data={stripAudioDataForDisplay(response.output) as unknown as never}
                               onCopy={(data) => {
                                 navigator.clipboard.writeText(
                                   JSON.stringify(data, null, 2)
@@ -853,7 +918,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                             Debug View
                           </div>
                           <JsonViewer
-                            data={response}
+                            data={stripAudioDataForDisplay(response) as unknown as never}
                             onCopy={(data) => {
                               navigator.clipboard.writeText(
                                 JSON.stringify(data, null, 2)

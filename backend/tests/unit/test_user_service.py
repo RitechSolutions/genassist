@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -97,6 +98,22 @@ async def test_create_user_duplicate_email(user_service, mock_repository, sample
     mock_repository.create.assert_not_called()
 
 @pytest.mark.asyncio
+async def test_create_user_duplicate_entra_oid(user_service, mock_repository, sample_user_data):
+    oid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    sample_user_data["entra_oid"] = oid
+    user_create = UserCreate(**sample_user_data)
+    mock_repository.get_by_username.return_value = None
+    mock_repository.get_by_email.return_value = None
+    mock_repository.get_by_entra_oid.return_value = MagicMock()
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.create(user_create)
+
+    assert exc_info.value.error_key == ErrorKey.ENTRA_OID_IN_USE
+    mock_repository.get_by_entra_oid.assert_called_once_with(oid)
+    mock_repository.create.assert_not_called()
+
+@pytest.mark.asyncio
 async def test_get_user_by_id_success(user_service, mock_repository):
     # Setup
     user_id = uuid4()
@@ -148,7 +165,7 @@ async def test_get_user_by_username_success(user_service, mock_repository):
     result = await user_service.get_by_username(username)
 
     # Assert
-    mock_repository.get_by_username.assert_called_once_with(username)
+    mock_repository.get_by_username.assert_called_once_with(username, include_deleted=False)
     assert result == mock_user
 
 @pytest.mark.asyncio
@@ -162,7 +179,7 @@ async def test_get_user_by_username_not_found(user_service, mock_repository):
         await user_service.get_by_username(username)
 
     assert exc_info.value.error_key == ErrorKey.USER_NOT_FOUND
-    mock_repository.get_by_username.assert_called_once_with(username)
+    mock_repository.get_by_username.assert_called_once_with(username, include_deleted=False)
 
 @pytest.mark.asyncio
 async def test_get_user_by_username_not_found_no_throw(user_service, mock_repository):
@@ -174,7 +191,7 @@ async def test_get_user_by_username_not_found_no_throw(user_service, mock_reposi
     result = await user_service.get_by_username(username, throw_not_found=False)
 
     # Assert
-    mock_repository.get_by_username.assert_called_once_with(username)
+    mock_repository.get_by_username.assert_called_once_with(username, include_deleted=False)
     assert result is None
 
 @pytest.mark.asyncio
@@ -210,6 +227,22 @@ async def test_update_user_success(user_service, mock_repository):
     mock_repository.get_full.assert_called_once_with(mock_updated_user.id)
     assert result == mock_updated_user
 
+def test_user_update_rejects_empty_role_ids():
+    with pytest.raises(ValidationError):
+        UserUpdate(role_ids=[])
+
+@pytest.mark.asyncio
+async def test_update_user_empty_role_ids(user_service, mock_repository):
+    user_id = uuid4()
+    update_data = UserUpdate.model_construct(role_ids=[])
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.update(user_id, update_data)
+
+    assert exc_info.value.error_key == ErrorKey.USER_ROLES_REQUIRED
+    assert exc_info.value.status_code == 400
+    mock_repository.update.assert_not_called()
+
 @pytest.mark.asyncio
 async def test_update_user_duplicate_email(user_service, mock_repository):
     user_id = uuid4()
@@ -225,6 +258,51 @@ async def test_update_user_duplicate_email(user_service, mock_repository):
         update_data.email, include_deleted=True
     )
     mock_repository.update.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_update_user_entra_oid_conflict(user_service, mock_repository):
+    user_id = uuid4()
+    other_id = uuid4()
+    update_data = UserUpdate(entra_oid="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    mock_repository.get_by_entra_oid.return_value = MagicMock(id=other_id)
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.update(user_id, update_data)
+
+    assert exc_info.value.error_key == ErrorKey.ENTRA_OID_IN_USE
+    assert exc_info.value.status_code == 409
+    mock_repository.get_by_entra_oid.assert_called_once_with(update_data.entra_oid)
+    mock_repository.update.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_update_user_entra_oid_same_user_allowed(user_service, mock_repository):
+    user_id = uuid4()
+    oid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    update_data = UserUpdate(entra_oid=oid)
+    mock_repository.get_by_entra_oid.return_value = MagicMock(id=user_id)
+    mock_updated_user = UserRead(
+        id=user_id,
+        username="testuser",
+        email="test@example.com",
+        is_active=1,
+        roles=[],
+        user_type=UserTypeRead(
+            id=UUID("00000196-edb1-2b80-a681-167fc2a697dd"),
+            name="interactive",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        ),
+        api_keys=[],
+        entra_oid=oid,
+    )
+    mock_repository.update.return_value = mock_updated_user
+    mock_repository.get_full.return_value = mock_updated_user
+
+    result = await user_service.update(user_id, update_data)
+
+    mock_repository.get_by_entra_oid.assert_called_once_with(oid)
+    mock_repository.update.assert_called_once_with(user_id, update_data)
+    assert result == mock_updated_user
 
 @pytest.mark.asyncio
 async def test_get_all_users(user_service, mock_repository):
