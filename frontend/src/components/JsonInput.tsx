@@ -128,8 +128,10 @@ const highlightJson = (text: string): React.ReactNode[] => {
           i++;
         }
       }
-      str += '"';
-      i++;
+      if (text[i] === '"') {
+        str += '"';
+        i++;
+      }
 
       // Check if this is a key (followed by colon)
       let j = i;

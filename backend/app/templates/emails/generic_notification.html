@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% if heading %}
+  <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#111827;">{{ heading }}</h1>
+  {% endif %}
+
+  {% if greeting %}
+  <p style="margin:0 0 16px;">{{ greeting }}</p>
+  {% endif %}
+
+  {% for paragraph in body_paragraphs %}
+  <p style="margin:0 0 16px;">{{ paragraph }}</p>
+  {% endfor %}
+
+  {% if cta_url and cta_label %}
+  <p style="margin:24px 0;">
+    <a href="{{ cta_url }}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">{{ cta_label }}</a>
+  </p>
+  <p style="margin:0 0 8px;color:#8a8f98;font-size:13px;">If the button doesn't work, copy and paste this link into your browser:</p>
+  <p style="margin:0;word-break:break-all;font-size:13px;"><a href="{{ cta_url }}" style="color:#2563eb;">{{ cta_url }}</a></p>
+  {% endif %}
+{% endblock %}

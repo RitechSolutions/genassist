@@ -8,7 +8,7 @@ import { SettingSection } from '../components/SettingSection';
 import { useSettings } from '../hooks/useSettings';
 import { settingSections } from '../helpers/settingsData';
 import { Link } from 'react-router-dom';
-import { getAuthMe } from '@/services/auth';
+import { getAuthMe, hasPermission } from '@/services/auth';
 import { getFileManagerSettings, type FileManagerSettings } from '@/services/fileManager';
 import { getSecuritySettings, type SecuritySettings } from '@/services/appSettings';
 import { FileManagerSettingsCard } from '../components/FileManagerSettingsCard';
@@ -146,6 +146,19 @@ const SettingsPage = () => {
                           </Button>
                         </Link>
                       </div>
+                      {hasPermission("write:app_settings") && (
+                        <div className="flex flex-col">
+                          <h3 className="font-medium animate-fade-up animate-delay-100">Maintenance</h3>
+                          <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
+                            Run one-off background jobs and data maintenance tasks
+                          </p>
+                          <Link to="/settings/maintenance">
+                            <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
+                              Open Maintenance
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>

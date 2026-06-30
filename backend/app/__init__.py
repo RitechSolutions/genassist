@@ -284,6 +284,7 @@ def create_celery():
         "app.tasks.kb_batch_tasks",
         "app.tasks.analytics_aggregation_tasks",
         "app.tasks.file_upload_session_tasks",
+        "app.tasks.email_tasks",
     ]
     if settings.CELERY_INCLUDE_ML_TASKS:
         include += ML_TASK_MODULES

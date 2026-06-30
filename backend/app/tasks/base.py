@@ -184,6 +184,51 @@ async def run_task_with_tenant_support(
         logger.info(f"{task_name} task finished.")
 
 
+async def run_task_for_tenant(
+    task_func: Callable[..., Awaitable[Any]],
+    task_name: str,
+    tenant_id: str,
+    **kwargs,
+) -> dict:
+    """Run a task for a SINGLE tenant (the caller's), not every tenant.
+
+    Mirrors ``run_task_with_tenant_support`` but scopes execution to one tenant:
+    the tenant context is set to ``tenant_id`` (slug) before the task runs inside a
+    fresh request scope, then cleared. Pass ``"master"`` (or empty) to run with no
+    tenant context against the master database.
+
+    Args:
+        task_func: The actual async task function to run.
+        task_name: Name of the task for logging purposes.
+        tenant_id: Tenant slug to scope execution to (from ``get_tenant_context()``).
+        **kwargs: Arguments forwarded to the task function.
+    """
+    settings.BACKGROUND_TASK = True
+    try:
+        logger.info(f"Starting {task_name} task for tenant '{tenant_id}'...")
+
+        if tenant_id and tenant_id != "master":
+            set_tenant_context(tenant_id)
+        else:
+            clear_tenant_context()
+
+        wrapper = create_task_wrapper(task_func)
+        result = await wrapper(**kwargs)
+
+        logger.info(f"{task_name} completed for tenant '{tenant_id}'")
+        return {"status": "success", "tenant_id": tenant_id, "result": result}
+    except Exception as e:
+        logger.error(
+            f"Error in {task_name} task for tenant '{tenant_id}': {str(e)}",
+            exc_info=True,
+        )
+        return {"status": "failed", "tenant_id": tenant_id, "error": str(e)}
+    finally:
+        clear_tenant_context()
+        settings.BACKGROUND_TASK = False
+        logger.info(f"{task_name} task finished for tenant '{tenant_id}'.")
+
+
 async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
     """
     Helper to run a task function for all active tenants and master database.

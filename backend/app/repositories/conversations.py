@@ -321,6 +321,7 @@ class ConversationRepository:
             ).exists()
             query = query.where(
                 or_(
+                    cast(ConversationModel.id, String).ilike(search_term),
                     ConversationModel.topic.ilike(search_term),
                     analysis_match,
                     message_exists,

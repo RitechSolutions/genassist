@@ -43,6 +43,7 @@ import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
 import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
 import { NotificationsSettings } from "./views/Settings/pages/Notifications";
+import { Maintenance } from "./views/Settings/pages/Maintenance";
 import { FeatureFlags as FeatureFlagKeys } from "@/config/featureFlags";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { GlobalChat } from "./components/GlobalChat";
@@ -230,6 +231,14 @@ export const RoutesProvider = () => {
             {
               path: "settings/notifications",
               element: <NotificationsSettings />,
+            },
+            {
+              path: "settings/maintenance",
+              element: (
+                <ProtectedRoute requiredPermissions={["write:app_settings"]}>
+                  <Maintenance />
+                </ProtectedRoute>
+              ),
             },
             {
               path: "users",

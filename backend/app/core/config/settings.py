@@ -215,6 +215,20 @@ class ProjectSettings(BaseSettings):
     AZURE_DEVOPS_WEBHOOK_SECRET: Optional[str] = None
     HELP_CENTER_PUBLIC_BASE_URL: Optional[str] = None
 
+    # === SMTP / Email ===
+    # Global fallback SMTP account. Used when a tenant has no SMTP entry in its
+    # App Settings (mirrors the Zendesk env-var fallback pattern). Per-tenant
+    # config in AppSettings (type="SMTP") always takes precedence.
+    EMAIL_ENABLED: bool = True  # Master switch; when False, EmailService logs instead of sending.
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587  # 587 = STARTTLS, 465 = implicit TLS, 25 = plain
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_FROM_NAME: str = "GenAssist"
+    SMTP_USE_TLS: bool = True  # STARTTLS for port 587
+    SMTP_TIMEOUT: int = 15
+
     AWS_RECORDINGS_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
     AWS_S3_TEST_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
 

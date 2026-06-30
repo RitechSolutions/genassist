@@ -354,13 +354,6 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
                             description="OpenAI embedding model name",
                         ),
                         FieldSchema(
-                            name="embedding_api_key",
-                            type="text",
-                            label="API Key",
-                            required=True,
-                            description="OpenAI API key",
-                        ),
-                        FieldSchema(
                             name="embedding_base_url",
                             type="text",
                             label="Base URL",

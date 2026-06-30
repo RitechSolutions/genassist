@@ -3,7 +3,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Loader2, Square, HeartPulse, MessageSquare } from "lucide-react";
+import { Loader2, Square, HeartPulse, MessageSquare, AlertCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { LocalFineTuneDeployment } from "@/interfaces/localFineTune.interface";
 import { stopDeployment, checkDeploymentHealth } from "@/services/localFineTune";
@@ -57,9 +57,12 @@ function renderDeploymentStatus(deployment: LocalFineTuneDeployment) {
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex flex-col gap-0.5 cursor-default w-fit">
+            <div className="flex flex-col items-start gap-1 cursor-default max-w-[220px]">
               {badge}
-              <span className="text-[11px] text-destructive truncate max-w-[180px]">{msg}</span>
+              <span className="flex items-start gap-1 text-[11px] leading-snug text-muted-foreground">
+                <AlertCircle className="h-3 w-3 shrink-0 mt-px text-destructive/80" />
+                <span className="line-clamp-2 break-words">{msg}</span>
+              </span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="right" className="max-w-xs break-words">
@@ -102,6 +105,7 @@ export function LocalFineTuneDeploymentsCard({
   const [isStopDialogOpen, setIsStopDialogOpen] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [checkingHealthId, setCheckingHealthId] = useState<string | null>(null);
+  const [healthyIds, setHealthyIds] = useState<Set<string>>(new Set());
   const healthCheckInFlight = useRef<Set<string>>(new Set());
   const [deploymentToTest, setDeploymentToTest] = useState<LocalFineTuneDeployment | null>(null);
 
@@ -127,13 +131,26 @@ export function LocalFineTuneDeploymentsCard({
     try {
       const result = await checkDeploymentHealth(deployment.id);
       if (result.status === "healthy") {
+        setHealthyIds((prev) => new Set(prev).add(deployment.id));
         toast.success(`Healthy — ${result.details}`);
-      } else if (isRecentDeployment(deployment)) {
-        toast(`Service may need a few seconds to become accessible`, { icon: "⚠️" });
       } else {
-        toast.error(`Unhealthy — ${result.details}`);
+        setHealthyIds((prev) => {
+          const next = new Set(prev);
+          next.delete(deployment.id);
+          return next;
+        });
+        if (isRecentDeployment(deployment)) {
+          toast(`Service may need a few seconds to become accessible`, { icon: "⚠️" });
+        } else {
+          toast.error(`Unhealthy — ${result.details}`);
+        }
       }
     } catch (err: unknown) {
+      setHealthyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deployment.id);
+        return next;
+      });
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 401) {
         toast.error("Session expired — please refresh the page");
@@ -223,7 +240,12 @@ export function LocalFineTuneDeploymentsCard({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                title="Test model"
+                title={
+                  healthyIds.has(d.id)
+                    ? "Test model"
+                    : "Run a health check first to enable testing"
+                }
+                disabled={!healthyIds.has(d.id)}
                 onClick={(e) => {
                   e.stopPropagation();
                   setDeploymentToTest(d);
@@ -268,7 +290,7 @@ export function LocalFineTuneDeploymentsCard({
         ),
       },
     ],
-    [checkingHealthId]
+    [checkingHealthId, healthyIds]
   );
 
   return (

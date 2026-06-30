@@ -3,11 +3,10 @@ import os
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 # from opik.integrations.openai import track_openai
-from opik import track
-from opik.integrations.langchain import OpikTracer
+# from opik import track
+# from opik.integrations.langchain import OpikTracer
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
@@ -22,12 +21,24 @@ class QuestionAnswerer:
     def __init__(self, llm_model: str = settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature: float = 0.0):
         self.llm_model = llm_model
         self.temperature = temperature
-        if USE_OPIK:
-            self.opik_tracer = OpikTracer()
-            self.llm = ChatOpenAI(model=llm_model, temperature=temperature, stream_usage=True, callbacks=[self.opik_tracer])
-        else:
-            self.llm = ChatOpenAI(model=llm_model, temperature=temperature)
+        self._llm = None
         logger.debug(f"Initialized TranscriptQuestionAnswerer with model: {llm_model}")
+
+    @property
+    def llm(self):
+        # Built on first use, not in __init__: langchain_openai transitively pulls
+        # torch/transformers, and this service is *eagerly* instantiated by the DI
+        # container at boot — constructing the client here keeps the Celery prefork
+        # master process free of ML libs (it loads later, in a child, post-fork).
+        if self._llm is None:
+            from langchain_openai import ChatOpenAI
+
+            if USE_OPIK:
+                # self.opik_tracer = OpikTracer()
+                self._llm = ChatOpenAI(model=self.llm_model, temperature=self.temperature, stream_usage=True, callbacks=[self.opik_tracer])
+            else:
+                self._llm = ChatOpenAI(model=self.llm_model, temperature=self.temperature)
+        return self._llm
 
     def answer_question(self, transcript_json: str, question: str) -> str:
 
@@ -61,6 +72,7 @@ class QuestionAnswerer:
 
 # Conditionally assign the method after class definition
 if USE_OPIK:
-    QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
+    pass
+    # QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
 else:
     QuestionAnswerer.answer_question = QuestionAnswerer.answer_question
