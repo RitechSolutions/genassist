@@ -14569,6 +14569,85 @@
         }
       }
     },
+    "/api/analytics/backfill": {
+      "post": {
+        "tags": [
+          "v1",
+          "Analytics"
+        ],
+        "summary": "Trigger a one-time re-aggregation (backfill) of agent/node daily stats",
+        "description": "Enqueue the one-time backfill task on the Celery worker.\n\nRecomputes agent and node daily stats for the caller's tenant over the given\nwindow, repopulating columns that were added after rows were first aggregated\n(e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs\nasynchronously and is idempotent \u2014 at large scale, call it in slices (e.g. one\nmonth per request). Returns the Celery task id for monitoring (e.g. in Flower).",
+        "operationId": "trigger_analytics_backfill_api_analytics_backfill_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (YYYY-MM-DD). Omit to start from the earliest log.",
+              "title": "From Date"
+            },
+            "description": "Inclusive start date (YYYY-MM-DD). Omit to start from the earliest log."
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (YYYY-MM-DD). Omit to run up to now.",
+              "title": "To Date"
+            },
+            "description": "Inclusive end date (YYYY-MM-DD). Omit to run up to now."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics/agents/summary": {
       "get": {
         "tags": [

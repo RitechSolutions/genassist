@@ -67,6 +67,7 @@ from app.services.app_settings import AppSettingsService
 from app.services.audio import AudioService
 from app.services.audit_logs import AuditLogService
 from app.services.auth import AuthService
+from app.services.email import EmailService
 from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.conversations import ConversationService
 from app.services.datasources import DataSourceService
@@ -235,6 +236,8 @@ class Dependencies(Module):
 
         binder.bind(AppSettingsService, scope=request_scope)
         binder.bind(AppSettingsRepository, scope=request_scope)
+
+        binder.bind(EmailService, scope=request_scope)
 
         binder.bind(AuditLogService, scope=request_scope)
         binder.bind(AuditLogRepository, scope=request_scope)
