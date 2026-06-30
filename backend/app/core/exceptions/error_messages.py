@@ -2,7 +2,6 @@ import logging
 from enum import Enum
 
 from fastapi import Request
-from torch.fx.immutable_collections import immutable_list
 
 from app.core.config.settings import settings
 
@@ -12,6 +11,7 @@ logger = logging.getLogger(__name__)
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
     NOT_FOUND = "not_found"
+    AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
@@ -160,6 +160,7 @@ ERROR_MESSAGES = {
     "en": {
         ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
+        ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
@@ -317,12 +318,14 @@ ERROR_MESSAGES = {
 
 
 def get_error_message(
-    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = immutable_list()
+    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = None
 ):
     """
     Retrieves an error message dynamically based on the user's language preference.
     Falls back to DEFAULT_LANGUAGE if no valid language is found.
     """
+    error_variables = error_variables or []
+
     # Ensure error_key is a valid Enum
     if not isinstance(error_key, ErrorKey):
         raise ValueError(f"Invalid error key: {error_key}")

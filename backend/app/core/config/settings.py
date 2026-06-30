@@ -50,6 +50,15 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK: bool = True
     CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
+    CELERY_ENABLE_CHECK_SCHEDULED_WORKFLOW_RUNS_TASK: bool = True
+    CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK: bool = True
+    # A scheduled run still PENDING after this many seconds is presumed orphaned
+    # (its worker never picked it up / crashed before starting) and marked FAILED.
+    WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS: int = 900  # 15 minutes
+    # A scheduled run still RUNNING after this many seconds is presumed orphaned
+    # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
+    # genuinely long run is never failed prematurely.
+    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
@@ -58,9 +67,29 @@ class ProjectSettings(BaseSettings):
     # flag is off: with no direct-S3 rows the task simply finds nothing to do.
     CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
-    # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
-    # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
+    # Worker pool. "solo" is required for the ML worker: ML libs (torch/sklearn/
+    # transformers) spawn native OpenMP/MKL threads at import, and fork() copies
+    # only the calling thread, leaving the child with locked mutexes -> SIGSEGV.
+    # The "default" worker can run "prefork" for true concurrency *because* its boot
+    # import graph is ML-free (see CELERY_INCLUDE_ML_TASKS and the lean worker
+    # bootstrap in run_celery.py): prefork children may lazily import ML libs after
+    # fork safely; only the parent (master) must stay clean.
     CELERY_WORKER_POOL: str = "solo"
+
+    # Role selector for the two-worker split. When True (default — preserves the
+    # legacy single-worker behavior), the Celery app includes the ML/evaluation task
+    # modules (ml_model_pipeline_tasks, test_suite_tasks), which top-level import the
+    # workflow engine and therefore pull sklearn into the process at boot. The
+    # prefork "default" worker MUST set this False so its master process never imports
+    # those modules; ML/eval tasks are routed to the dedicated "ml" queue instead.
+    CELERY_INCLUDE_ML_TASKS: bool = True
+
+    # Explicit prefork concurrency (number of child worker processes). Leave None to
+    # use Celery's default (CPU count) — but for the prefork "default" worker set a
+    # modest value (e.g. 2-4): each child holds its own DB/Redis connections, and
+    # background tasks use NullPool (a fresh connection per query), so unbounded
+    # concurrency can exhaust Postgres max_connections / Redis maxclients.
+    CELERY_WORKER_CONCURRENCY: int | None = None
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
@@ -109,9 +138,9 @@ class ProjectSettings(BaseSettings):
 
     # === Limits ===
     # Canonical max request body / upload size (aligned with frontend nginx client_max_body_size).
-    MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 100MB
+    MAX_CONTENT_LENGTH: int = 200 * 1024 * 1024  # 200MB
     # Knowledge-base uploads (legacy /upload and chunked /upload-session).
-    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 200 * 1024 * 1024  # 200MB
     KNOWLEDGE_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
@@ -174,6 +203,31 @@ class ProjectSettings(BaseSettings):
     ZENDESK_EMAIL: Optional[str] = "<enter-value-here>"
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
+
+    # Help Center → company Azure DevOps Boards (platform ops; not user App Settings)
+    AZURE_DEVOPS_ORGANIZATION_URL: Optional[str] = None
+    AZURE_DEVOPS_PROJECT: Optional[str] = None
+    AZURE_DEVOPS_PAT: Optional[str] = None
+    AZURE_DEVOPS_WORK_ITEM_TYPE: Optional[str] = "Bug"
+    AZURE_DEVOPS_FEATURE_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_TASK_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_DEFAULT_AREA_PATH: Optional[str] = None
+    AZURE_DEVOPS_WEBHOOK_SECRET: Optional[str] = None
+    HELP_CENTER_PUBLIC_BASE_URL: Optional[str] = None
+
+    # === SMTP / Email ===
+    # Global fallback SMTP account. Used when a tenant has no SMTP entry in its
+    # App Settings (mirrors the Zendesk env-var fallback pattern). Per-tenant
+    # config in AppSettings (type="SMTP") always takes precedence.
+    EMAIL_ENABLED: bool = True  # Master switch; when False, EmailService logs instead of sending.
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587  # 587 = STARTTLS, 465 = implicit TLS, 25 = plain
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_FROM_NAME: str = "GenAssist"
+    SMTP_USE_TLS: bool = True  # STARTTLS for port 587
+    SMTP_TIMEOUT: int = 15
 
     AWS_RECORDINGS_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
     AWS_S3_TEST_BUCKET: Optional[str] = "genassist-dev-temp-bucket"

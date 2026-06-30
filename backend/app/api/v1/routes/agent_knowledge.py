@@ -11,6 +11,8 @@ from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.config.settings import file_storage_settings
 from app.core.config.settings import settings as project_settings
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
@@ -279,10 +281,7 @@ async def upload_file(
             )
 
             if file.size is not None and file.size > max_kb:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File exceeds maximum allowed size ({max_kb} bytes).",
-                )
+                raise AppException(ErrorKey.FILE_SIZE_TOO_LARGE)
 
             # Generate a unique filename
             file_extension = file.filename.split(".")[-1] if "." in file.filename else ""

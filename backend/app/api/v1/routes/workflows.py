@@ -63,7 +63,9 @@ SUPPORTED_NODE_TYPES = [
     "fileReaderNode",
     "externalAgentNode",
     "ttsNode",
-    "sttNode"
+    "sttNode",
+    "voiceAgentNode",
+    "createWorkflowScheduleNode"
 ]
 
 

@@ -9,12 +9,14 @@ import PythonCodeNode from "./tools/pythonCodeNode";
 import {
   CHAT_INPUT_NODE_DEFINITION,
   CHAT_OUTPUT_NODE_DEFINITION,
+  FINALIZE_CONVERSATION_NODE_DEFINITION,
   SET_STATE_NODE_DEFINITION,
 } from "./chat/definitions";
 import {
   API_TOOL_NODE_DEFINITION,
   OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
+  CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION,
   PYTHON_CODE_NODE_DEFINITION,
   SQL_NODE_DEFINITION,
   ML_MODEL_INFERENCE_NODE_DEFINITION,
@@ -22,6 +24,7 @@ import {
   WORKFLOW_EXECUTOR_NODE_DEFINITION,
 } from "./tools/definitions";
 import KnowledgeBaseNode from "./tools/knowledgeBaseNode";
+import CreateWorkflowScheduleNode from "./tools/createWorkflowScheduleNode";
 import SQLNode from "./tools/sqlNode";
 import MLModelInferenceNode from "./tools/mlModelInferenceNode";
 import ThreadRAGNode from "./tools/threadRAGNode";
@@ -30,13 +33,16 @@ import MCPNode from "./llm/mcpNode";
 import ReadMailsNode from "./integrations/readMailsNode";
 import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
+import FinalizeConversationNode from "./chat/finalizeConversationNode";
 import {
   AGENT_NODE_DEFINITION,
   EXTERNAL_AGENT_NODE_DEFINITION,
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
+  VOICE_AGENT_NODE_DEFINITION,
 } from "./llm/definitions";
+import VoiceAgentNode from "./llm/voiceAgentNode";
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
@@ -105,15 +111,19 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(CHAT_OUTPUT_NODE_DEFINITION);
 
+  nodeRegistry.registerNodeType(FINALIZE_CONVERSATION_NODE_DEFINITION);
+
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GMAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(KNOWLEDGE_BASE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(SQL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(ML_MODEL_INFERENCE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(READ_MAILS_NODE_DEFINITION);
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(VOICE_AGENT_NODE_DEFINITION);
   nodeRegistry.registerNodeType(EXTERNAL_AGENT_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
@@ -155,11 +165,14 @@ export const getNodeTypes = () => {
     llmModelNode: LLMModelNode,
     templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,
+    finalizeConversationNode: FinalizeConversationNode,
     apiToolNode: APIToolNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
+    voiceAgentNode: VoiceAgentNode,
     externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
+    createWorkflowScheduleNode: CreateWorkflowScheduleNode,
     sqlNode: SQLNode,
     mlModelInferenceNode: MLModelInferenceNode,
     threadRAGNode: ThreadRAGNode,

@@ -40,7 +40,8 @@ class TranscriptSegmentInput(BaseModel):
 
 
 class TranscriptSegmentFeedback(BaseModel):
-    feedback: Feedback = Field(...)
+    # Optional so a comment can be added without imposing/changing a thumbs rating.
+    feedback: Optional[Feedback] = Field(default=None)
     feedback_message: str = Field(None)
 
     model_config = ConfigDict(

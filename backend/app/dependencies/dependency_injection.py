@@ -6,6 +6,14 @@ from injector import Module, provider, singleton
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Type annotations for different Redis clients (similar to Spring @Qualifier).
+# Defined here — before the heavy app.* service imports below — so modules pulled in
+# during those imports (e.g. workflow.agents.memory) can `from app.dependencies.
+# dependency_injection import RedisString` without hitting a partially-initialized
+# module / circular import.
+RedisString = Annotated[Redis, 'string']  # For WebSockets, conversations
+RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
+
 # Settings
 from app.core.config.settings import settings
 
@@ -36,6 +44,7 @@ from app.repositories.llm_providers import LlmProviderRepository
 from app.repositories.operator_statistics import OperatorStatisticsRepository
 from app.repositories.operators import OperatorRepository
 from app.repositories.notification import NotificationRepository, PersistedNotificationRepository
+from app.repositories.support_ticket import SupportTicketRepository
 from app.repositories.permissions import PermissionsRepository
 from app.repositories.recordings import RecordingsRepository
 from app.repositories.role_permissions import RolePermissionsRepository
@@ -58,6 +67,7 @@ from app.services.app_settings import AppSettingsService
 from app.services.audio import AudioService
 from app.services.audit_logs import AuditLogService
 from app.services.auth import AuthService
+from app.services.email import EmailService
 from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.conversations import ConversationService
 from app.services.datasources import DataSourceService
@@ -77,6 +87,8 @@ from app.services.operators import OperatorService
 from app.services.notification_feed import NotificationFeedService
 from app.services.notification_orchestrator import NotificationOrchestratorService
 from app.services.notification import NotificationService
+from app.services.support_ticket import SupportTicketService
+from app.services.support_ticket_sync import SupportTicketSyncService
 from app.services.permissions import PermissionsService
 from app.services.role_permissions import RolePermissionsService
 from app.services.roles import RolesService
@@ -89,10 +101,6 @@ from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
 
-
-# Type annotations for different Redis clients (similar to Spring @Qualifier)
-RedisString = Annotated[Redis, 'string']  # For WebSockets, conversations
-RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
 
 class Dependencies(Module):
 
@@ -205,6 +213,9 @@ class Dependencies(Module):
         binder.bind(NotificationService, scope=request_scope)
         binder.bind(NotificationOrchestratorService, scope=request_scope)
         binder.bind(NotificationFeedService, scope=request_scope)
+        binder.bind(SupportTicketRepository, scope=request_scope)
+        binder.bind(SupportTicketSyncService, scope=request_scope)
+        binder.bind(SupportTicketService, scope=request_scope)
 
         binder.bind(AgentRepository, scope=request_scope)
         binder.bind(AgentConfigService, scope=request_scope)
@@ -225,6 +236,8 @@ class Dependencies(Module):
 
         binder.bind(AppSettingsService, scope=request_scope)
         binder.bind(AppSettingsRepository, scope=request_scope)
+
+        binder.bind(EmailService, scope=request_scope)
 
         binder.bind(AuditLogService, scope=request_scope)
         binder.bind(AuditLogRepository, scope=request_scope)

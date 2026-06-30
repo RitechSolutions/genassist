@@ -37,6 +37,7 @@ from .files_upload_session import FilesUploadSessionModel
 from .fine_tuning import FineTuningEventModel, FineTuningJobModel, OpenAIFileModel
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
+from .message_issue import MessageIssueModel
 from .ml_model import MLModel
 from .ml_model_pipeline import (
     ArtifactType,
@@ -52,8 +53,17 @@ from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
 from .webhook import WebhookModel
 from .workflow import WorkflowModel
+from .workflow_schedule import WorkflowScheduleModel, WorkflowScheduleRunModel
+from .support_ticket import (
+    SupportTicketCommentModel,
+    SupportTicketEventModel,
+    SupportTicketModel,
+    TicketSyncOutboxModel,
+)
 
 __all__ = [
+    "WorkflowScheduleModel",
+    "WorkflowScheduleRunModel",
     # Primary model class names
     "OperatorModel",
     "OperatorStatisticsModel",
@@ -114,6 +124,11 @@ __all__ = [
     "PromptConfigModel",
     "FilesUploadSessionModel",
     "AudioProvidersModel",
+    "MessageIssueModel",
+    "SupportTicketModel",
+    "SupportTicketCommentModel",
+    "SupportTicketEventModel",
+    "TicketSyncOutboxModel",
 ]
 
 models = [
@@ -166,6 +181,11 @@ models = [
     PromptVersionModel,
     PromptConfigModel,
     AudioProvidersModel,
+    MessageIssueModel,
+    SupportTicketModel,
+    SupportTicketCommentModel,
+    SupportTicketEventModel,
+    TicketSyncOutboxModel,
 ]
 
 auto_register_updated_by(models)

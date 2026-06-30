@@ -64,6 +64,9 @@ export interface TemplateNodeData extends BaseNodeData {
 // Chat Output node data
 export type ChatOutputNodeData = BaseNodeData;
 
+// Finalize Conversation ("End Conversation") node data — pass-through, optional display name only
+export type FinalizeConversationNodeData = BaseNodeData;
+
 // Slack Output node data
 export interface SlackOutputNodeData extends BaseNodeData {
   channel: string; // target Slack channel or user ID/email
@@ -216,6 +219,28 @@ export interface BaseLLMNodeData extends BaseNodeData {
 export interface AgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "Chain-of-Thought" | "ReActAgentLC";
 }
+// Voice Agent Node Data (native speech-to-speech via Gemini Live API)
+export interface VoiceAgentNodeData extends BaseNodeData {
+  voiceProviderId?: string;
+  model?: string;
+  voice?: string;
+  language?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+  maxToolCalls?: number;
+  memory: boolean;
+  piiMasking?: boolean;
+  memoryTrimmingMode?: "message_count" | "rag_retrieval";
+  maxMessages?: number;
+  // Live tuning (optional; unset = Gemini Live defaults)
+  temperature?: number;
+  maxOutputTokens?: number;
+  vadSilenceMs?: number;
+  vadStartSensitivity?: "START_SENSITIVITY_HIGH" | "START_SENSITIVITY_LOW";
+  vadEndSensitivity?: "END_SENSITIVITY_HIGH" | "END_SENSITIVITY_LOW";
+  proactiveAudio?: boolean;
+  contextCompression?: boolean;
+}
 export interface LLMModelNodeData extends BaseLLMNodeData {
   type: "Base" | "Chain-of-Thought";
 }
@@ -225,6 +250,18 @@ export interface KnowledgeBaseNodeData extends BaseNodeData {
   query: string;
   limit?: number;
   force?: boolean;
+}
+
+// Create Workflow Schedule node data
+export interface CreateWorkflowScheduleNodeData extends BaseNodeData {
+  agentId: string;
+  scheduleName?: string;
+  cronSchedule: string;
+  isActive?: boolean;
+  threadIdMode?: "per_run" | "fixed";
+  fixedThreadId?: string;
+  message?: string;
+  inputData?: string;
 }
 
 // SQL Node Data
@@ -477,6 +514,7 @@ export type NodeData =
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData
+  | FinalizeConversationNodeData
   | APIToolNodeData
   | AgentNodeData
   | KnowledgeBaseNodeData
@@ -504,7 +542,8 @@ export type NodeData =
   | FileReaderNodeData
   | ExternalAgentNodeData
   | TTSNodeData
-  | STTNodeData;
+  | STTNodeData
+  | VoiceAgentNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
