@@ -4,7 +4,7 @@ Adds agent-level "greet on conversation start" settings: a boolean toggle and an
 optional greeting-prompt extension (appended to the built-in default greeting prompt).
 
 Revision ID: a3b4c5d6e7f8
-Revises: 494257fd515b
+Revises: 9f1df080dab5
 Create Date: 2026-06-30 12:00:00.000000
 
 """
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 
 revision: str = "a3b4c5d6e7f8"
-down_revision: Union[str, None] = "494257fd515b"
+down_revision: Union[str, None] = "9f1df080dab5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
