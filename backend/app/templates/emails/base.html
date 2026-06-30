@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}{{ subject | default("Notification") }}{% endblock %}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e6e8eb;">
+            <tr>
+              <td style="background:#111827;padding:20px 32px;">
+                <span style="color:#ffffff;font-size:18px;font-weight:600;">{{ brand_name | default("GenAssist") }}</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;line-height:1.6;font-size:15px;">
+                {% block content %}{% endblock %}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 32px;background:#fafafa;border-top:1px solid #e6e8eb;color:#8a8f98;font-size:12px;line-height:1.5;">
+                {% block footer %}
+                You're receiving this email from {{ brand_name | default("GenAssist") }}.
+                {% endblock %}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

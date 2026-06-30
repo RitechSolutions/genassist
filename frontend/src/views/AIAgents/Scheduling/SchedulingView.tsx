@@ -8,6 +8,7 @@ import {
   History,
   CalendarClock,
   MoreVertical,
+  ArrowLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/button";
@@ -52,9 +53,12 @@ interface SchedulingViewProps {
   // When set, the view is scoped to a single agent: the list is filtered to
   // that agent and new/edited schedules are locked to it.
   agentId?: string;
+  // Optional back-navigation handler. When provided, a back button is rendered
+  // before the page title.
+  onBack?: () => void;
 }
 
-const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId }) => {
+const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId, onBack }) => {
   const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
   const [agentNames, setAgentNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -152,21 +156,42 @@ const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId }) => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <SearchInput
-          value={searchTerm}
-          onChange={setSearchTerm}
-          placeholder="Search schedules..."
-          className="w-full sm:w-[220px]"
-        />
-        <Button
-          className="flex items-center justify-center gap-2 rounded-full"
-          onClick={openCreate}
-        >
-          <Plus className="h-4 w-4" />
-          New Schedule
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onBack}
+              className="shrink-0 rounded-full"
+              aria-label="Back to AI Agents"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="min-w-0">
+            <h2 className="text-3xl font-bold">Scheduling</h2>
+            <p className="text-zinc-400 font-normal mt-1">
+              Schedule recurring runs of this workflow
+            </p>
+          </div>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <SearchInput
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="Search schedules..."
+            className="w-full sm:w-[200px]"
+          />
+          <Button
+            className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
+            onClick={openCreate}
+          >
+            <Plus className="h-4 w-4" />
+            New Schedule
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border bg-card shadow-sm overflow-hidden">
