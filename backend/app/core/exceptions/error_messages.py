@@ -67,6 +67,8 @@ class ErrorKey(Enum):
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
+    FALLBACK_CHAIN_NOT_FOUND = "FALLBACK_CHAIN_NOT_FOUND"
+    FALLBACK_CHAIN_INVALID_PROVIDER = "FALLBACK_CHAIN_INVALID_PROVIDER"
     NOT_AUTHORIZED_TO_TAKE_OVER = "NOT_AUTHORIZED_TO_TAKE_OVER"
     TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
     TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED"
@@ -217,6 +219,8 @@ ERROR_MESSAGES = {
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
+        ErrorKey.FALLBACK_CHAIN_NOT_FOUND: "Fallback chain not found.",
+        ErrorKey.FALLBACK_CHAIN_INVALID_PROVIDER: "Fallback chain references an LLM provider that does not exist.",
         ErrorKey.NOT_AUTHORIZED_TO_TAKE_OVER: "You are not authorized to take over conversations.",
         ErrorKey.TOOL_NOT_FOUND: "Tool not found.",
         ErrorKey.TOOL_CREATION_FAILED: "Tool creation failed.",

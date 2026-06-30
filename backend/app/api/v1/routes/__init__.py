@@ -16,6 +16,7 @@ from app.api.v1.routes import (
     customers,
     dashboard,
     datasources,
+    fallback_chains,
     feature_flags,
     file_manager,
     gmail,
@@ -102,6 +103,7 @@ router.include_router(voice_live.router, prefix="/voice", tags=["Voice"])
 # router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
 
 router.include_router(llm_providers.router, prefix="/llm-providers", tags=["LlmProviders"])
+router.include_router(fallback_chains.router, prefix="/fallback-chains", tags=["FallbackChains"])
 router.include_router(audio_providers.router, prefix="/audio-providers", tags=["AudioProviders"])
 router.include_router(llm_cost_rates.router, prefix="/llm-cost-rates", tags=["LlmCostRates"])
 router.include_router(llm_analysts.router, prefix="/llm-analyst", tags=["LlmAnalyst"])

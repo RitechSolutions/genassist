@@ -164,6 +164,22 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
+        return await self._build_from_provider(llm_provider)
+
+    async def _build_one(self, model_id: str) -> BaseChatModel:
+        """Build a single chat model from a stored provider id.
+
+        Shared by get_model and get_model_with_fallback so residency checks,
+        decryption, and init_chat_model stay in one place.
+        """
+        from app.dependencies.injector import injector
+        llm_provider_service = injector.get(LlmProviderService)
+
+        llm_provider = await llm_provider_service.get_by_id(model_id)
+        return await self._build_from_provider(llm_provider)
+
+    async def _build_from_provider(self, llm_provider) -> BaseChatModel:
+        from app.dependencies.injector import injector
         from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
         from app.services.app_settings import AppSettingsService
 
@@ -199,3 +215,89 @@ class LLMProvider:
             raise
 
         return llm
+
+    async def get_model_for_node(
+        self,
+        provider_id: str | None,
+        fallback_chain_id: str | None = None,
+    ) -> BaseChatModel:
+        """Resolve the model a node should use, honoring an optional fallback chain.
+
+        Without a chain this behaves exactly like get_model(provider_id). With a
+        chain, the node's own provider stays the primary (highest priority) and the
+        chain's providers are appended as ordered fallbacks; the chain's retry policy
+        is applied per provider.
+        """
+        if not fallback_chain_id:
+            return await self.get_model(provider_id)
+
+        from app.dependencies.injector import injector
+        from app.services.fallback_chains import FallbackChainService
+
+        chain = await injector.get(FallbackChainService).get_by_id(fallback_chain_id)
+
+        chain_ids = [str(pid) for pid in (chain.provider_ids or []) if pid]
+        if provider_id:
+            effective_ids = [str(provider_id)] + [pid for pid in chain_ids if pid != str(provider_id)]
+        else:
+            effective_ids = chain_ids
+
+        retry_policy = chain.retry_policy.model_dump() if chain.retry_policy else None
+        return await self.get_model_with_fallback(effective_ids, retry_policy)
+
+    async def get_model_with_fallback(
+        self,
+        provider_ids: list[str],
+        retry_policy: Optional[Dict[str, Any]] = None,
+    ) -> BaseChatModel:
+        """Build a chat model that fails over across an ordered list of providers.
+
+        Each provider is built via _build_one and wrapped with per-model retry
+        (exponential backoff). The list is composed into a FallbackChatModel that
+        tries each provider in order on transient errors. When there is a single
+        provider and no retry policy, the bare model is returned unchanged so
+        existing single-provider nodes behave exactly as before.
+
+        Args:
+            provider_ids: Ordered provider ids; index 0 is the primary.
+            retry_policy: Optional ``{"retry_count": int, "backoff_seconds": float}``.
+        """
+        ids = [pid for pid in (provider_ids or []) if pid]
+        if not ids:
+            raise ValueError("get_model_with_fallback requires at least one provider id")
+
+        retry_count = int((retry_policy or {}).get("retry_count", 0) or 0)
+        backoff_seconds = float((retry_policy or {}).get("backoff_seconds", 0) or 0)
+        has_retry = retry_count > 0
+
+        # Fast path: single provider, no retries → no wrapper, zero behavior change.
+        if len(ids) == 1 and not has_retry:
+            return await self._build_one(ids[0])
+
+        from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
+
+        children: list[Any] = []
+        kept_ids: list[str] = []
+        for pid in ids:
+            try:
+                # Children stay as raw chat models (NOT wrapped with .with_retry, which
+                # returns a RunnableRetry lacking bind_tools and would break the agent
+                # path). Per-provider retry is handled inside FallbackChatModel instead.
+                model = await self._build_one(pid)
+            except Exception as e:
+                # A provider that can't even be instantiated (e.g. deleted) is skipped
+                # so the rest of the chain can still serve the request.
+                logger.error(f"Skipping fallback provider {pid}: failed to build ({e})")
+                continue
+            children.append(model)
+            kept_ids.append(pid)
+
+        if not children:
+            raise ValueError("get_model_with_fallback: no providers could be built")
+
+        return FallbackChatModel(
+            models=children,
+            provider_ids=kept_ids,
+            retry_count=retry_count,
+            retry_backoff_seconds=backoff_seconds,
+        )
