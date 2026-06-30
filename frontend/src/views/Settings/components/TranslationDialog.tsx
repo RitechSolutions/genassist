@@ -76,6 +76,7 @@ export function TranslationDialog({
   const [key, setKey] = useState("");
   const [defaultLangCode, setDefaultLangCode] = useState<string | null>(null);
   const [rows, setRows] = useState<TranslationRow[]>([]);
+  const [originalLangCodes, setOriginalLangCodes] = useState<string[]>([]);
   const [fetchedLanguages, setFetchedLanguages] = useState<Language[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -114,6 +115,7 @@ export function TranslationDialog({
         setKey(translationToEdit.key || "");
         const builtRows = translationsToRows(translationToEdit.translations);
         setRows(builtRows);
+        setOriginalLangCodes(builtRows.map((r) => r.langCode));
         setDefaultLangCode(
           findDefaultLangCode(translationToEdit.default, builtRows)
         );
@@ -146,10 +148,12 @@ export function TranslationDialog({
             );
           }
           setRows(rowsToSet);
+          setOriginalLangCodes(builtRows.map((r) => r.langCode));
           setDefaultLangCode(defaultLang);
         } else {
           setDialogMode("create");
           setKey(initialKey);
+          setOriginalLangCodes([]);
           const firstLang =
             langs.find((l) => l.code === "en")?.code ??
             langs[0]?.code ??
@@ -187,6 +191,7 @@ export function TranslationDialog({
     setKey("");
     setDefaultLangCode(null);
     setRows([]);
+    setOriginalLangCodes([]);
   };
 
   const usedCodes = useMemo(
@@ -280,6 +285,14 @@ export function TranslationDialog({
         const trimmed = row.value.trim();
         if (trimmed && row.langCode) {
           cleanTranslations[row.langCode] = trimmed;
+        }
+      }
+
+      if (dialogMode === "edit") {
+        for (const code of originalLangCodes) {
+          if (!(code in cleanTranslations)) {
+            cleanTranslations[code] = "";
+          }
         }
       }
 
