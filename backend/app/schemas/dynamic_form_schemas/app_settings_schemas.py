@@ -42,6 +42,38 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
             ),
         ],
     ),
+    "Salesforce": TypeSchema(
+        name="Salesforce",
+        fields=[
+            FieldSchema(
+                name="salesforce_instance_url",
+                label="Instance URL",
+                type="text",
+                required=True,
+                placeholder="https://myorg.my.salesforce.com",
+                description="Your SalesForce instance (My Domain) URL",
+                encrypted=False,
+            ),
+            FieldSchema(
+                name="salesforce_client_id",
+                label="Client ID (Consumer Key)",
+                type="text",
+                required=True,
+                placeholder="Enter Connected App Consumer Key",
+                description="OAuth2 Connected App consumer key",
+                encrypted=False,
+            ),
+            FieldSchema(
+                name="salesforce_client_secret",
+                label="Client Secret (Consumer Secret)",
+                type="password",
+                required=True,
+                placeholder="Enter Connected App Consumer Secret",
+                description="OAuth2 Connected App consumer secret (client-credentials flow)",
+                encrypted=True,
+            ),
+        ],
+    ),
     "WhatsApp": TypeSchema(
         name="WhatsApp",
         fields=[

@@ -234,6 +234,9 @@ class DataSourceService:
             elif source_type_lower == "zendesk":
                 from app.modules.integration.zendesk import ZendeskConnector
                 return await ZendeskConnector.test_connection(cd)
+            elif source_type_lower == "salesforce":
+                from app.modules.integration.salesforce import SalesforceConnector
+                return await SalesforceConnector.test_connection(cd)
             elif source_type_lower == "smb_share_folder":
                 from app.services.smb_share_service import SMBShareFSService
                 return await SMBShareFSService.test_connection(cd)

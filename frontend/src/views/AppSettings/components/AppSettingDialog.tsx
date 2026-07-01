@@ -2,7 +2,12 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/dialog';
 import { Button } from '@/components/button';
 import { Input } from '@/components/ui/input';
-import { createAppSetting, getAppSettingsFormSchemas, updateAppSetting } from '@/services/appSettings';
+import {
+  createAppSetting,
+  getAppSettingsFormSchemas,
+  testAppSettingConnection,
+  updateAppSetting,
+} from '@/services/appSettings';
 import { Switch } from '@/components/switch';
 import { Label } from '@/components/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
@@ -11,6 +16,11 @@ import { Loader2, Plus, X } from 'lucide-react';
 import { AppSetting } from '@/interfaces/app-setting.interface';
 import { useQuery } from '@tanstack/react-query';
 import { SchemaFormRenderer } from '@/components/SchemaFormRenderer';
+import { ConnectionTestPanel } from '@/components/ConnectionTestPanel';
+import { CollapsibleSection } from '@/components/CollapsibleSection';
+import { CredentialSetupGuidePanel } from './CredentialSetupGuidePanel';
+import { CREDENTIAL_SETUP_GUIDES } from './credentialSetupGuides';
+import type { ConnectionStatus } from '@/interfaces/connectionStatus.interface';
 import type { FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 
 interface AppSettingDialogProps {
@@ -39,7 +49,21 @@ export function AppSettingDialog({
   const [description, setDescription] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
+  const [testedValues, setTestedValues] = useState<Record<string, FieldValue> | null>(null);
   const [customFields, setCustomFields] = useState<Array<{ key: string; value: string }>>([{ key: '', value: '' }]);
+
+  // Types whose credentials support a connection test (backend dispatch in
+  // AppSettingsService.test_connection).
+  const TESTABLE_TYPES: Array<AppSetting['type']> = ['Salesforce', 'Zendesk'];
+  const canTestConnection = TESTABLE_TYPES.includes(type);
+  const setupGuide = CREDENTIAL_SETUP_GUIDES[type];
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const hasChangedSinceTest =
+    testStatus !== null &&
+    testedValues !== null &&
+    JSON.stringify(values) !== JSON.stringify(testedValues);
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ['appSettingSchemas'],
@@ -67,6 +91,8 @@ export function AppSettingDialog({
     setDescription('');
     setIsActive(true);
     setCustomFields([{ key: '', value: '' }]);
+    setTestStatus(null);
+    setTestedValues(null);
   };
 
   const populateFormWithSetting = (setting: AppSetting) => {
@@ -196,6 +222,46 @@ export function AppSettingDialog({
     }
   };
 
+  const handleTestConnection = async () => {
+    // Validate required schema fields before hitting the connector.
+    const schema = appSettingSchemas[type];
+    if (schema) {
+      const schemaMissing = schema.fields
+        .filter((field) => {
+          if (!field.required) return false;
+          const value = values[field.name];
+          return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+        })
+        .map((field) => field.label);
+
+      if (schemaMissing.length > 0) {
+        toast.error(`Please provide: ${schemaMissing.join(', ')}.`);
+        return;
+      }
+    }
+
+    setIsTesting(true);
+    setTestStatus(null);
+    try {
+      const result = await testAppSettingConnection(type, values);
+      setTestStatus({
+        status: result.success ? 'Connected' : 'Error',
+        last_tested_at: new Date().toISOString(),
+        message: result.message,
+      });
+      setTestedValues(structuredClone(values));
+    } catch {
+      setTestStatus({
+        status: 'Error',
+        last_tested_at: new Date().toISOString(),
+        message: 'Test failed.',
+      });
+      setTestedValues(structuredClone(values));
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   const hasOptionalFields =
     type !== 'Other' && appSettingSchemas[type] ? appSettingSchemas[type].fields.some((f) => !f.required) : false;
 
@@ -226,6 +292,12 @@ export function AppSettingDialog({
                     const newType = value as AppSetting['type'];
                     setType(newType);
 
+                    // A prior test result / open guide belongs to the old type — clear
+                    // them so the panel and guide reflect the newly selected type.
+                    setTestStatus(null);
+                    setTestedValues(null);
+                    setShowSetupGuide(false);
+
                     if (newType === 'Other') {
                       setValues({});
                       setCustomFields([{ key: '', value: '' }]);
@@ -253,6 +325,16 @@ export function AppSettingDialog({
                 </Select>
               )}
             </div>
+
+            {setupGuide && (
+              <CollapsibleSection
+                title={setupGuide.title ?? 'How to get these values'}
+                open={showSetupGuide}
+                onOpenChange={() => setShowSetupGuide((prev) => !prev)}
+              >
+                <CredentialSetupGuidePanel guide={setupGuide} />
+              </CollapsibleSection>
+            )}
 
             {type && (
               <>
@@ -312,6 +394,14 @@ export function AppSettingDialog({
                           advancedOnly={true}
                         />
                       </div>
+                    )}
+                    {canTestConnection && (
+                      <ConnectionTestPanel
+                        isTesting={isTesting}
+                        testStatus={testStatus}
+                        hasChangedSinceTest={hasChangedSinceTest}
+                        onTest={handleTestConnection}
+                      />
                     )}
                   </div>
                 )}
