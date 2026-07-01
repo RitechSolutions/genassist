@@ -48,7 +48,7 @@ export function FallbackChainDialog({
   const [providerIds, setProviderIds] = useState<string[]>([]);
   const [retryCount, setRetryCount] = useState(2);
   const [backoffSeconds, setBackoffSeconds] = useState(1);
-  const [timeoutSeconds, setTimeoutSeconds] = useState(0);
+  const [timeoutSeconds, setTimeoutSeconds] = useState<number | "">("");
   const [providerTimeouts, setProviderTimeouts] = useState<Record<string, number>>({});
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,8 +67,18 @@ export function FallbackChainDialog({
     setProviderIds(chainToEdit?.provider_ids ?? []);
     setRetryCount(chainToEdit?.retry_policy?.retry_count ?? 2);
     setBackoffSeconds(chainToEdit?.retry_policy?.backoff_seconds ?? 1);
-    setTimeoutSeconds(chainToEdit?.retry_policy?.timeout_seconds ?? 0);
-    setProviderTimeouts(chainToEdit?.retry_policy?.provider_timeouts ?? {});
+    setTimeoutSeconds(
+      Number(chainToEdit?.retry_policy?.timeout_seconds) > 0
+        ? (chainToEdit!.retry_policy!.timeout_seconds as number)
+        : ""
+    );
+    setProviderTimeouts(
+      Object.fromEntries(
+        Object.entries(chainToEdit?.retry_policy?.provider_timeouts ?? {}).filter(
+          ([, v]) => Number(v) > 0
+        )
+      )
+    );
     setIsActive(chainToEdit ? chainToEdit.is_active === 1 : true);
   }, [isOpen, chainToEdit]);
 
@@ -92,8 +102,19 @@ export function FallbackChainDialog({
     });
   };
 
-  const setProviderTimeout = (id: string, value: number) =>
-    setProviderTimeouts((prev) => ({ ...prev, [id]: value }));
+  // Blank/0/invalid clears the override (the provider then inherits the chain
+  // default), so the field shows empty rather than a confusing 0.
+  const setProviderTimeout = (id: string, raw: string) =>
+    setProviderTimeouts((prev) => {
+      const next = { ...prev };
+      const n = Number(raw);
+      if (raw === "" || Number.isNaN(n) || n <= 0) {
+        delete next[id];
+      } else {
+        next[id] = n;
+      }
+      return next;
+    });
 
   const move = (index: number, delta: number) => {
     setProviderIds((prev) => {
@@ -207,7 +228,7 @@ export function FallbackChainDialog({
                       placeholder="timeout s"
                       title="Response timeout for this provider (seconds). Empty/0 uses the default."
                       value={providerTimeouts[id] ?? ""}
-                      onChange={(e) => setProviderTimeout(id, Number(e.target.value))}
+                      onChange={(e) => setProviderTimeout(id, e.target.value)}
                     />
                     <Button
                       type="button"
@@ -294,8 +315,11 @@ export function FallbackChainDialog({
                 min={0}
                 max={600}
                 step={1}
+                placeholder="no limit"
                 value={timeoutSeconds}
-                onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
+                onChange={(e) =>
+                  setTimeoutSeconds(e.target.value === "" ? "" : Number(e.target.value))
+                }
               />
             </div>
           </div>
