@@ -69,6 +69,7 @@ class ErrorKey(Enum):
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
     FALLBACK_CHAIN_NOT_FOUND = "FALLBACK_CHAIN_NOT_FOUND"
     FALLBACK_CHAIN_INVALID_PROVIDER = "FALLBACK_CHAIN_INVALID_PROVIDER"
+    LLM_PROVIDER_IN_USE_BY_CHAIN = "LLM_PROVIDER_IN_USE_BY_CHAIN"
     NOT_AUTHORIZED_TO_TAKE_OVER = "NOT_AUTHORIZED_TO_TAKE_OVER"
     TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
     TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED"
@@ -221,6 +222,7 @@ ERROR_MESSAGES = {
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
         ErrorKey.FALLBACK_CHAIN_NOT_FOUND: "Fallback chain not found.",
         ErrorKey.FALLBACK_CHAIN_INVALID_PROVIDER: "Fallback chain references an LLM provider that does not exist.",
+        ErrorKey.LLM_PROVIDER_IN_USE_BY_CHAIN: "This LLM provider is used by one or more fallback chains. Remove it from those chains before deleting.",
         ErrorKey.NOT_AUTHORIZED_TO_TAKE_OVER: "You are not authorized to take over conversations.",
         ErrorKey.TOOL_NOT_FOUND: "Tool not found.",
         ErrorKey.TOOL_CREATION_FAILED: "Tool creation failed.",

@@ -48,6 +48,8 @@ export function FallbackChainDialog({
   const [providerIds, setProviderIds] = useState<string[]>([]);
   const [retryCount, setRetryCount] = useState(2);
   const [backoffSeconds, setBackoffSeconds] = useState(1);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(0);
+  const [providerTimeouts, setProviderTimeouts] = useState<Record<string, number>>({});
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const queryClient = useQueryClient();
@@ -65,6 +67,8 @@ export function FallbackChainDialog({
     setProviderIds(chainToEdit?.provider_ids ?? []);
     setRetryCount(chainToEdit?.retry_policy?.retry_count ?? 2);
     setBackoffSeconds(chainToEdit?.retry_policy?.backoff_seconds ?? 1);
+    setTimeoutSeconds(chainToEdit?.retry_policy?.timeout_seconds ?? 0);
+    setProviderTimeouts(chainToEdit?.retry_policy?.provider_timeouts ?? {});
     setIsActive(chainToEdit ? chainToEdit.is_active === 1 : true);
   }, [isOpen, chainToEdit]);
 
@@ -79,8 +83,17 @@ export function FallbackChainDialog({
     if (id && !providerIds.includes(id)) setProviderIds((prev) => [...prev, id]);
   };
 
-  const removeProvider = (id: string) =>
+  const removeProvider = (id: string) => {
     setProviderIds((prev) => prev.filter((p) => p !== id));
+    setProviderTimeouts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const setProviderTimeout = (id: string, value: number) =>
+    setProviderTimeouts((prev) => ({ ...prev, [id]: value }));
 
   const move = (index: number, delta: number) => {
     setProviderIds((prev) => {
@@ -110,6 +123,12 @@ export function FallbackChainDialog({
         retry_policy: {
           retry_count: Number(retryCount) || 0,
           backoff_seconds: Number(backoffSeconds) || 0,
+          timeout_seconds: Number(timeoutSeconds) || 0,
+          provider_timeouts: Object.fromEntries(
+            providerIds
+              .filter((id) => Number(providerTimeouts[id]) > 0)
+              .map((id) => [id, Number(providerTimeouts[id])])
+          ),
         },
         is_active: isActive ? 1 : 0,
       };
@@ -179,6 +198,17 @@ export function FallbackChainDialog({
                     <span className="flex-1 truncate text-sm">
                       {providerName(id)}
                     </span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={600}
+                      step={1}
+                      className="w-32"
+                      placeholder="timeout s"
+                      title="Response timeout for this provider (seconds). Empty/0 uses the default."
+                      value={providerTimeouts[id] ?? ""}
+                      onChange={(e) => setProviderTimeout(id, Number(e.target.value))}
+                    />
                     <Button
                       type="button"
                       variant="ghost"
@@ -232,7 +262,7 @@ export function FallbackChainDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="retry-count">Retries per provider</Label>
               <Input
@@ -256,7 +286,25 @@ export function FallbackChainDialog({
                 onChange={(e) => setBackoffSeconds(Number(e.target.value))}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="timeout-seconds">Default timeout (s)</Label>
+              <Input
+                id="timeout-seconds"
+                type="number"
+                min={0}
+                max={600}
+                step={1}
+                value={timeoutSeconds}
+                onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
+              />
+            </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Response timeout: if a provider takes longer than this to reply, the
+            attempt is cancelled and treated as a failure so the next provider is
+            tried. Set a value per provider in the list above; the default applies
+            to providers without their own value. 0 = no limit.
+          </p>
 
           <div className="flex items-center gap-2">
             <Switch checked={isActive} onCheckedChange={setIsActive} id="chain-active" />

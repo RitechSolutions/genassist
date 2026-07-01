@@ -35806,6 +35806,22 @@
             "title": "Backoff Seconds",
             "description": "Initial backoff seconds; doubles each retry.",
             "default": 0.0
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 0.0,
+            "title": "Timeout Seconds",
+            "description": "Default max seconds to wait for a provider's reply before failing over (0 = no limit).",
+            "default": 0.0
+          },
+          "provider_timeouts": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Provider Timeouts",
+            "description": "Per-provider response timeout overrides, keyed by provider id (seconds). Overrides timeout_seconds for that provider."
           }
         },
         "type": "object",

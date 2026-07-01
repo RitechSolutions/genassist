@@ -1,6 +1,10 @@
 export interface RetryPolicy {
   retry_count: number;
   backoff_seconds: number;
+  /** Default max seconds to wait for a provider's reply before failing over (0 = no limit). */
+  timeout_seconds?: number;
+  /** Per-provider response timeout overrides, keyed by provider id (seconds). */
+  provider_timeouts?: Record<string, number>;
 }
 
 export interface FallbackChain {

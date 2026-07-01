@@ -85,7 +85,7 @@ export function FallbackChainCard({
     (c.name ?? "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const headers = ["Name", "Providers (priority order)", "Retry", "Status", "Actions"];
+  const headers = ["Name", "Providers (priority order)", "Retry / Timeout", "Status", "Actions"];
 
   const renderRow = (chain: FallbackChain) => (
     <TableRow key={chain.id}>
@@ -95,6 +95,9 @@ export function FallbackChainCard({
       </TableCell>
       <TableCell className="truncate">
         {chain.retry_policy?.retry_count ?? 0}× / {chain.retry_policy?.backoff_seconds ?? 0}s
+        {chain.retry_policy?.timeout_seconds
+          ? ` · ${chain.retry_policy.timeout_seconds}s timeout`
+          : ""}
       </TableCell>
       <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <Badge variant={chain.is_active ? "default" : "secondary"}>

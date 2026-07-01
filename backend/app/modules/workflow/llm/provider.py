@@ -260,7 +260,10 @@ class LLMProvider:
 
         Args:
             provider_ids: Ordered provider ids; index 0 is the primary.
-            retry_policy: Optional ``{"retry_count": int, "backoff_seconds": float}``.
+            retry_policy: Optional dict with ``retry_count``, ``backoff_seconds``,
+                a default ``timeout_seconds``, and a per-provider
+                ``provider_timeouts`` map ``{provider_id: seconds}`` that overrides
+                the default for specific providers.
         """
         ids = [pid for pid in (provider_ids or []) if pid]
         if not ids:
@@ -268,10 +271,23 @@ class LLMProvider:
 
         retry_count = int((retry_policy or {}).get("retry_count", 0) or 0)
         backoff_seconds = float((retry_policy or {}).get("backoff_seconds", 0) or 0)
-        has_retry = retry_count > 0
+        default_timeout = float((retry_policy or {}).get("timeout_seconds", 0) or 0)
+        provider_timeouts = (retry_policy or {}).get("provider_timeouts") or {}
 
-        # Fast path: single provider, no retries → no wrapper, zero behavior change.
-        if len(ids) == 1 and not has_retry:
+        def _timeout_for(pid: str) -> float:
+            # Per-provider override falls back to the chain default (0 = no limit).
+            raw = provider_timeouts.get(pid, default_timeout)
+            try:
+                return float(raw or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        has_retry = retry_count > 0
+        has_timeout = default_timeout > 0 or any(_timeout_for(pid) > 0 for pid in ids)
+
+        # Fast path: single provider, no retries, no timeout → no wrapper, zero
+        # behavior change for plain single-provider nodes.
+        if len(ids) == 1 and not has_retry and not has_timeout:
             return await self._build_one(ids[0])
 
         from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
@@ -300,4 +316,5 @@ class LLMProvider:
             provider_ids=kept_ids,
             retry_count=retry_count,
             retry_backoff_seconds=backoff_seconds,
+            request_timeouts=[_timeout_for(pid) for pid in kept_ids],
         )

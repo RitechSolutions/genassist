@@ -29,19 +29,55 @@ class FallbackChainService:
         self.repository = repository
         self.llm_provider_repository = llm_provider_repository
 
+    async def _provider_exists(self, pid) -> bool:
+        try:
+            obj = await self.llm_provider_repository.get_by_id(UUID(str(pid)))
+        except (ValueError, TypeError):
+            obj = None
+        return bool(obj)
+
     async def _validate_provider_ids(self, provider_ids: list[str] | None):
-        """Reject chains that reference providers which don't exist."""
+        """Reject chains that reference providers which don't exist (used on create)."""
         for pid in provider_ids or []:
-            try:
-                obj = await self.llm_provider_repository.get_by_id(UUID(str(pid)))
-            except (ValueError, TypeError):
-                obj = None
-            if not obj:
+            if not await self._provider_exists(pid):
                 raise AppException(
                     error_key=ErrorKey.FALLBACK_CHAIN_INVALID_PROVIDER,
                     status_code=400,
                     error_detail=str(pid),
                 )
+
+    async def _prune_missing_providers(self, update_data: dict) -> None:
+        """Drop provider ids (and their timeout overrides) that no longer exist.
+
+        Used on update so a chain whose provider was deleted out from under it can
+        still be edited/saved instead of being blocked by strict validation.
+        Mutates update_data in place.
+        """
+        if "provider_ids" not in update_data:
+            return
+        kept: list[str] = []
+        for pid in update_data["provider_ids"] or []:
+            if await self._provider_exists(pid):
+                kept.append(str(pid))
+        update_data["provider_ids"] = kept
+
+        retry_policy = update_data.get("retry_policy")
+        if isinstance(retry_policy, dict):
+            pt = retry_policy.get("provider_timeouts")
+            if isinstance(pt, dict):
+                retry_policy["provider_timeouts"] = {
+                    k: v for k, v in pt.items() if k in kept
+                }
+
+    async def chains_referencing_provider(self, provider_id) -> list[str]:
+        """Return the names of active chains that reference the given provider id."""
+        pid = str(provider_id)
+        chains = await self.repository.get_all()
+        return [
+            (c.name or str(c.id))
+            for c in chains
+            if pid in [str(x) for x in (c.provider_ids or [])]
+        ]
 
     @staticmethod
     def _dump(data) -> dict:
@@ -88,8 +124,9 @@ class FallbackChainService:
             raise AppException(error_key=ErrorKey.FALLBACK_CHAIN_NOT_FOUND, status_code=404)
 
         update_data = self._dump(data)
-        if "provider_ids" in update_data:
-            await self._validate_provider_ids(update_data["provider_ids"])
+        # Prune references to providers that were deleted so the edit isn't blocked
+        # by a stale id the user never touched.
+        await self._prune_missing_providers(update_data)
 
         for field, value in update_data.items():
             setattr(obj, field, value)

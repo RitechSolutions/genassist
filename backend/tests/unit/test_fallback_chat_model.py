@@ -136,14 +136,73 @@ class TestFallbackChatModel:
         out = "".join([chunk.content async for chunk in fm.astream([HumanMessage(content="hi")])])
         assert out == "streamed"
 
+    async def test_slow_provider_times_out_and_falls_over(self):
+        import asyncio as _asyncio
+
+        class _SlowModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "slow"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise NotImplementedError
+
+            async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+                await _asyncio.sleep(5)  # far longer than the timeout
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content="too late"))])
+
+            def bind_tools(self, tools, **kwargs):
+                return self
+
+        # Per-provider timeouts: slow provider gets 0.05s (times out), fast gets 0 (no limit).
+        fm = FallbackChatModel(
+            models=[_SlowModel(), _FakeModel(behavior="ok", text="fast-fallback")],
+            provider_ids=["slow", "fast"],
+            request_timeouts=[0.05, 0],
+        )
+        resp = await fm.ainvoke([HumanMessage(content="hi")])
+        assert resp.content == "fast-fallback"
+        assert resp.response_metadata.get(FALLBACK_PROVIDER_ID_KEY) == "fast"
+
+    async def test_per_provider_timeout_only_applies_to_its_own_provider(self):
+        import asyncio as _asyncio
+
+        class _SlowModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "slow"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise NotImplementedError
+
+            async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+                await _asyncio.sleep(0.2)
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content="slow-but-ok"))])
+
+            def bind_tools(self, tools, **kwargs):
+                return self
+
+        # First provider has a generous timeout (0.5s) so its 0.2s reply succeeds;
+        # it should answer and the fast fallback is never reached.
+        fm = FallbackChatModel(
+            models=[_SlowModel(), _FakeModel(behavior="ok", text="fallback")],
+            provider_ids=["slow", "fast"],
+            request_timeouts=[0.5, 0],
+        )
+        resp = await fm.ainvoke([HumanMessage(content="hi")])
+        assert resp.content == "slow-but-ok"
+        assert resp.response_metadata.get(FALLBACK_PROVIDER_ID_KEY) == "slow"
+
     async def test_bind_tools_preserves_wrapper_and_settings(self):
         fm = FallbackChatModel(
             models=[_FakeModel(behavior="ok"), _FakeModel(behavior="ok")],
             provider_ids=["p1", "p2"],
             retry_count=3,
             retry_backoff_seconds=1.5,
+            request_timeouts=[12, 30],
         )
         bound = fm.bind_tools([{"type": "function"}])
         assert isinstance(bound, FallbackChatModel)
         assert bound.retry_count == 3 and bound.retry_backoff_seconds == 1.5
+        assert bound.request_timeouts == [12, 30]
         assert all(getattr(m, "tools_bound", None) for m in bound.models)

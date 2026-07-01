@@ -59,12 +59,17 @@ class FallbackChatModel(BaseChatModel):
             responding provider onto `response_metadata`. May be shorter/empty.
         retry_count: Extra attempts per provider beyond the first (0 = no retry).
         retry_backoff_seconds: Initial backoff; doubles each retry (0 = no wait).
+        request_timeouts: Per-provider max wall-clock seconds to wait for a single
+            attempt's reply before cancelling it and treating it as a retryable
+            failure. Parallel to `models` (0 or missing = no limit for that
+            provider). For streaming this bounds time-to-first-token.
     """
 
     models: List[Any]
     provider_ids: List[str] = []
     retry_count: int = 0
     retry_backoff_seconds: float = 0.0
+    request_timeouts: List[float] = []
 
     @property
     def _llm_type(self) -> str:
@@ -74,6 +79,12 @@ class FallbackChatModel(BaseChatModel):
         if 0 <= idx < len(self.provider_ids):
             return self.provider_ids[idx]
         return None
+
+    def _timeout_at(self, idx: int) -> float:
+        """Response timeout for the provider at `idx` (0 = no limit)."""
+        if 0 <= idx < len(self.request_timeouts):
+            return self.request_timeouts[idx] or 0.0
+        return 0.0
 
     def _backoff_for(self, attempt: int) -> float:
         """Backoff before retry `attempt` (1-based) of the same provider."""
@@ -101,7 +112,23 @@ class FallbackChatModel(BaseChatModel):
             provider_ids=list(self.provider_ids),
             retry_count=self.retry_count,
             retry_backoff_seconds=self.retry_backoff_seconds,
+            request_timeouts=list(self.request_timeouts),
         )
+
+    async def _ainvoke_one(
+        self, model: Any, messages: List[BaseMessage], invoke_kwargs: dict, timeout: float
+    ) -> AIMessage:
+        """Invoke a single child, enforcing this provider's timeout if set.
+
+        A timeout raises asyncio.TimeoutError, which is_retryable() treats as a
+        transient failure, so the caller will retry / fall over to the next provider.
+        """
+        if timeout and timeout > 0:
+            return await asyncio.wait_for(
+                model.ainvoke(messages, **invoke_kwargs),
+                timeout=timeout,
+            )
+        return await model.ainvoke(messages, **invoke_kwargs)
 
     # ----- async (primary path) --------------------------------------------
 
@@ -118,9 +145,10 @@ class FallbackChatModel(BaseChatModel):
 
         last_exc: Optional[BaseException] = None
         for idx, model in enumerate(self.models):
+            timeout = self._timeout_at(idx)
             for attempt in range(self.retry_count + 1):
                 try:
-                    ai = await model.ainvoke(messages, **invoke_kwargs)
+                    ai = await self._ainvoke_one(model, messages, invoke_kwargs, timeout)
                 except BaseException as exc:  # noqa: BLE001 - re-raised below when not retryable
                     if not is_retryable(exc):
                         raise
@@ -161,15 +189,26 @@ class FallbackChatModel(BaseChatModel):
 
         last_exc: Optional[BaseException] = None
         for idx, model in enumerate(self.models):
+            _t = self._timeout_at(idx)
+            timeout = _t if _t > 0 else None
             for attempt in range(self.retry_count + 1):
                 emitted = False
                 try:
-                    async for chunk in model.astream(messages, **invoke_kwargs):
+                    aiter = model.astream(messages, **invoke_kwargs).__aiter__()
+                    while True:
+                        # Bound time-to-first-token by the request timeout. Subsequent
+                        # chunks are not individually timed (mid-stream stalls are rare
+                        # and can't be cleanly failed over once tokens are emitted).
+                        if not emitted and timeout is not None:
+                            chunk = await asyncio.wait_for(aiter.__anext__(), timeout=timeout)
+                        else:
+                            chunk = await aiter.__anext__()
                         if not emitted:
                             self._stamp(chunk, idx)
                             emitted = True
                         yield ChatGenerationChunk(message=chunk)
-                    return
+                except StopAsyncIteration:
+                    return  # stream finished normally
                 except BaseException as exc:  # noqa: BLE001
                     # Mid-stream failover is not supported: once tokens have been emitted
                     # to the consumer we cannot cleanly replay them on another provider.
