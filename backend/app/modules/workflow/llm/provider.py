@@ -303,7 +303,7 @@ class LLMProvider:
             except Exception as e:
                 # A provider that can't even be instantiated (e.g. deleted) is skipped
                 # so the rest of the chain can still serve the request.
-                logger.error(f"Skipping fallback provider {pid}: failed to build ({e})")
+                logger.exception(f"Skipping fallback provider {pid}: failed to build ({e})")
                 continue
             children.append(model)
             kept_ids.append(pid)
