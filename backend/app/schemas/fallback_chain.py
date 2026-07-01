@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -7,6 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field
 class RetryPolicy(BaseModel):
     retry_count: int = Field(default=0, ge=0, le=10, description="Extra attempts per provider beyond the first.")
     backoff_seconds: float = Field(default=0.0, ge=0, le=30, description="Initial backoff seconds; doubles each retry.")
+    timeout_seconds: float = Field(
+        default=0.0,
+        ge=0,
+        le=600,
+        description="Default max seconds to wait for a provider's reply before failing over (0 = no limit).",
+    )
+    provider_timeouts: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-provider response timeout overrides, keyed by provider id (seconds). Overrides timeout_seconds for that provider.",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
