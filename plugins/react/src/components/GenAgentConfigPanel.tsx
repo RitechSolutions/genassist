@@ -15,6 +15,7 @@ export interface ChatSettingsConfig {
   description: string;
   agentName: string;
   logoUrl?: string;
+  brandLogoUrl?: string;
 }
 
 export interface FeatureFlags {
@@ -22,6 +23,7 @@ export interface FeatureFlags {
   useFile?: boolean;
   useWs?: boolean;
   usePoll?: boolean;
+  quickInput?: boolean;
 }
 
 type ParamType = 'string' | 'number' | 'boolean';
@@ -70,6 +72,7 @@ const defaultSettings: ChatSettingsConfig = {
   description: 'Support',
   agentName: 'Agent',
   logoUrl: '',
+  brandLogoUrl: '',
 };
 
 const defaultFeatureFlags: FeatureFlags = {
@@ -77,6 +80,7 @@ const defaultFeatureFlags: FeatureFlags = {
   useFile: false,
   useWs: false,
   usePoll: false,
+  quickInput: false,
 };
 
 function objectToParams(obj: Record<string, any> | undefined): MetadataParam[] {
@@ -526,7 +530,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 onChange={(e) => handleSettingChange('agentName', e.target.value)}
               />
             </div>
-            <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ padding: '0 16px 12px' }}>
               <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Logo URL</label>
               <input
                 type="text"
@@ -535,6 +539,19 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 onChange={(e) => handleSettingChange('logoUrl', e.target.value)}
                 placeholder="https://example.com/logo.png"
               />
+            </div>
+            <div style={{ padding: '0 16px 16px' }}>
+              <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Full Logo URL</label>
+              <input
+                type="text"
+                style={{ ...inputStyle, height: 40, padding: '0 12px', boxSizing: 'border-box' }}
+                value={chatSettings.brandLogoUrl || ''}
+                onChange={(e) => handleSettingChange('brandLogoUrl', e.target.value)}
+                placeholder="https://example.com/full-logo.png"
+              />
+              <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
+                When set, replaces the small logo + name with this full logo.
+              </div>
             </div>
             <div style={{ padding: '16px', borderTop: '1px solid #e0e0e0', marginTop: 8 }}>
               <div style={{ fontSize: 13, color: '#555', marginBottom: 12, fontWeight: 500 }}>
@@ -573,6 +590,15 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                   type="checkbox"
                   checked={!!featureFlags.usePoll}
                   onChange={(e) => handleFeatureFlagChange('usePoll', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Quick Message Input</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.quickInput}
+                  onChange={(e) => handleFeatureFlagChange('quickInput', e.target.checked)}
                   style={{ width: 20, height: 20, cursor: 'pointer' }}
                 />
               </div>

@@ -11,7 +11,7 @@ import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
+import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle, Fullscreen } from 'lucide-react';
 import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
@@ -34,6 +34,7 @@ import {
   headerRightContainerStyle,
   headerPillStyle,
   logoStyle,
+  brandLogoStyle,
   getHeaderPillTitleStyle,
   headerPillTextColumnStyle,
   getHeaderDescriptionTextStyle,
@@ -86,6 +87,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   placeholder,
   agentName,
   logoUrl,
+  brandLogoUrl,
   mode = 'embedded',
   onExitFullscreen,
   floatingConfig = {},
@@ -93,7 +95,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   translations: customTranslations,
   reCaptchaKey,
   widget = false,
-  quickInput = true,
+  quickInput = false,
   useAudio = false,
   useFile = false,
   noColorAnimation = false,
@@ -169,8 +171,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
   const [showBacklight, setShowBacklight] = useState(false);
-  // Header pill expands to reveal the agent description on click.
-  const [showHeaderDescription, setShowHeaderDescription] = useState(false);
 
   const {
     messages,
@@ -687,13 +687,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily);
   const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily);
   const headerDescription = (description ?? t('header.subtitle') ?? '').trim();
-  const hasHeaderDescription = headerDescription.length > 0;
-  const toggleHeaderDescription = () => {
-    if (!hasHeaderDescription) return;
-    setShowHeaderDescription((prev) => !prev);
-  };
+  const brandLogo = brandLogoUrl?.trim() ?? '';
+  const hasBrandLogo = brandLogo.length > 0;
+  // Description reveal only applies to the small-logo layout; the full brand logo replaces the text.
+  const hasHeaderDescription = !hasBrandLogo && headerDescription.length > 0;
   const menuPopupStyle = getMenuPopupStyle(backgroundColor);
   const menuItemStyle = getMenuItemStyle(themeParams);
+  // Hover fill for menu items / outline buttons — theme-aware, matches the web app's bg-accent.
+  const menuHoverBg = theme?.secondaryColor || '#f4f4f5';
   const contentCardStyle = getContentCardStyle(backgroundColor);
   const sendButtonStyle = getSendButtonStyle(primaryColor);
   const possibleQueriesContainerStyle = getPossibleQueriesContainerStyle(fontFamily);
@@ -810,15 +811,16 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [reCaptchaKey, handleReCaptchaVerify]);
 
   const renderChatComponent = () => (
-    <div style={containerStyle} data-genassist-root="true">
+    <div style={{ ...containerStyle, ['--ga-hover' as string]: menuHoverBg }} data-genassist-root="true">
       <style>{CSS_KEYFRAMES}</style>
-      <div style={headerStyle} ref={headerRef}>
-        {/* Left: expand / collapse the docked widget (not fullscreen) */}
-        <div style={headerLeftContainerStyle}>
+      <div className="ga-header" style={headerStyle} ref={headerRef}>
+        {/* Left: hidden expand button (revealed on hover) + logo/name group.
+            Hovering this section expands the button from 0 width, sliding the group right. */}
+        <div className="ga-header-left" style={headerLeftContainerStyle}>
           {mode === 'floating' && !isFullscreen && windowWidth > 768 && (
             <button
-              className="ga-header-btn"
-              style={menuButtonStyle}
+              className="ga-header-btn ga-header-expand-btn"
+              style={{ ...menuButtonStyle, width: undefined, flexShrink: 0 }}
               onClick={handleExpandToggle}
               title={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
               aria-label={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
@@ -830,51 +832,32 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               )}
             </button>
           )}
-        </div>
 
-        {/* Center: floating logo + name pill (click to reveal description) */}
-        <div
-          style={{
-            ...headerPillStyle,
-            cursor: hasHeaderDescription ? 'pointer' : 'default',
-            userSelect: 'none',
-          }}
-          onClick={toggleHeaderDescription}
-          role={hasHeaderDescription ? 'button' : undefined}
-          aria-expanded={hasHeaderDescription ? showHeaderDescription : undefined}
-          tabIndex={hasHeaderDescription ? 0 : undefined}
-          onKeyDown={(e) => {
-            if (!hasHeaderDescription) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleHeaderDescription();
-            }
-          }}
-        >
-          <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
-          <div style={headerPillTextColumnStyle}>
-            <span style={headerPillTitleStyle} title={headerTitle}>{headerTitle}</span>
-            {hasHeaderDescription && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateRows: showHeaderDescription ? '1fr' : '0fr',
-                  transition: 'grid-template-rows 260ms cubic-bezier(0.16, 1, 0.3, 1)',
-                }}
-              >
-                <div style={{ overflow: 'hidden', minHeight: 0 }}>
-                  <span
-                    style={{
-                      ...headerDescriptionTextStyle,
-                      display: 'block',
-                      opacity: showHeaderDescription ? 1 : 0,
-                      transition: 'opacity 200ms ease',
-                    }}
-                  >
-                    {headerDescription}
-                  </span>
+          <div
+            style={headerPillStyle}
+            tabIndex={hasHeaderDescription ? 0 : undefined}
+          >
+            {hasBrandLogo ? (
+              <img src={brandLogo} alt={headerTitle} style={brandLogoStyle} />
+            ) : (
+              <>
+                <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
+                <div style={headerPillTextColumnStyle}>
+                  <span style={headerPillTitleStyle} title={headerTitle}>{headerTitle}</span>
+                  {hasHeaderDescription && (
+                    <div className="ga-header-desc">
+                      <div className="ga-header-desc-inner">
+                        <span
+                          className="ga-header-desc-text"
+                          style={{ ...headerDescriptionTextStyle, display: 'block' }}
+                        >
+                          {headerDescription}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -935,19 +918,20 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
       {showMenu && (
         <div ref={menuRef} style={menuPopupStyle}>
-          <div style={menuItemStyle} onClick={handleResetClick}>
+          <div className="ga-menu-item" style={menuItemStyle} onClick={handleResetClick}>
             <RefreshCw size={16} />
             {t('menu.resetConversation')}
           </div>
           {mode !== 'fullscreen' && (
-            <div style={menuItemStyle} onClick={handleFullscreenToggle}>
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            <div className="ga-menu-item" style={menuItemStyle} onClick={handleFullscreenToggle}>
+              <Fullscreen size={16} />
               {t('menu.fullscreen')}
             </div>
           )}
           {hasLanguageOptions && (
             <div
-              style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
+              className="ga-menu-item"
+              style={{ ...menuItemStyle, position: 'relative' }}
               onClick={(e) => {
                 e.stopPropagation();
                 setShowLanguageDropdown(!showLanguageDropdown);
@@ -963,8 +947,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     top: '100%',
                     marginTop: '4px',
                     backgroundColor: backgroundColor,
-                    borderRadius: '8px',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+                    borderRadius: '10px',
+                    border: '1px solid #e4e4e7',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+                    padding: '4px',
                     minWidth: '180px',
                     maxWidth: '200px',
                     overflow: 'hidden',
@@ -972,27 +958,27 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {availableLanguages.map((lang, index) => (
+                  {availableLanguages.map((lang) => (
                     <div
                       key={lang.code}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        padding: '10px 15px',
+                        padding: '6px 8px',
+                        borderRadius: '8px',
                         color: textColor,
                         backgroundColor: resolvedLanguage === lang.code
-                          ? (theme?.secondaryColor || '#f5f5f5')
+                          ? menuHoverBg
                           : 'transparent',
-                        borderBottom: index < availableLanguages.length - 1 ? '1px solid #f0f0f0' : 'none',
                         cursor: 'pointer',
                         fontSize,
                         fontFamily,
-                        transition: 'background-color 0.2s ease',
+                        transition: 'background-color 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
                         if (resolvedLanguage !== lang.code) {
-                          e.currentTarget.style.backgroundColor = theme?.secondaryColor || '#f5f5f5';
+                          e.currentTarget.style.backgroundColor = menuHoverBg;
                         }
                       }}
                       onMouseLeave={(e) => {
@@ -1429,11 +1415,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
-          <h3 style={{fontFamily, marginTop: 0}}>{t('dialog.resetConversation.title')}</h3>
-          <p style={{fontFamily, fontSize}}>{t('dialog.resetConversation.message')}</p>
+          <h3 style={{ fontFamily, margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('dialog.resetConversation.title')}</h3>
+          <p style={{ fontFamily, fontSize: '14px', color: '#71717a', margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
           <div style={confirmButtonsStyle}>
-            <button style={{...getConfirmButtonStyle(false, themeParams), color: textColor}} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
-            <button style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
+            <button className="ga-confirm-btn--cancel" style={{ ...getConfirmButtonStyle(false, themeParams), color: textColor }} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
+            <button className="ga-confirm-btn--danger" style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
           </div>
         </div>
       </div>

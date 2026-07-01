@@ -79,8 +79,8 @@ export function getHeaderStyle(t: ThemeParams): React.CSSProperties {
   };
 }
 
-// Left/right header zones. Both grow equally (flex: 1) so the centered pill
-// stays optically centered regardless of how many buttons sit on each side.
+// Left header zone grows to fill (flex: 1) and holds the logo/name group +
+// hover-revealed expand button; the right zone shrinks to its buttons.
 export const headerLeftContainerStyle: React.CSSProperties = {
   flex: 1,
   display: 'flex',
@@ -93,25 +93,21 @@ export const headerLeftContainerStyle: React.CSSProperties = {
 };
 
 export const headerRightContainerStyle: React.CSSProperties = {
-  flex: 1,
+  flex: '0 0 auto',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'flex-end',
   gap: '4px',
   position: 'relative',
   zIndex: 2,
-  minWidth: 0,
 };
 
-// Floating, centered logo + name pill.
+// Left-aligned logo + name group. Slides right on header hover (see .ga-header CSS).
 export const headerPillStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
-  backgroundColor: '#ffffff',
-  padding: '6px 16px 6px 8px',
-  borderRadius: '999px',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+  padding: 0,
   maxWidth: '70%',
   flexShrink: 1,
   minWidth: 0,
@@ -126,6 +122,18 @@ export const logoStyle: React.CSSProperties = {
   borderRadius: '50%',
   objectFit: 'cover',
   flexShrink: 0,
+};
+
+// Full brand logo/wordmark shown instead of the small logo + title + description.
+// Fixed height fills the header; width stays auto and clamps to the group's maxWidth.
+export const brandLogoStyle: React.CSSProperties = {
+  height: '30px',
+  width: 'auto',
+  maxWidth: '100%',
+  objectFit: 'contain',
+  display: 'block',
+  flexShrink: 1,
+  minWidth: 0,
 };
 
 export function getHeaderPillTitleStyle(fontFamily: string): React.CSSProperties {
@@ -178,31 +186,37 @@ export const menuButtonStyle: React.CSSProperties = {
   zIndex: 1,
 };
 
+// Popover styling mirrors the web app's shadcn dropdown-menu: rounded-md (10px),
+// 1px border, shadow-md, p-1 (4px) padding around rounded, hover-highlighted items.
 export function getMenuPopupStyle(backgroundColor: string): React.CSSProperties {
   return {
     position: 'absolute',
     top: '50px',
     right: '15px',
     backgroundColor,
-    borderRadius: '8px',
-    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+    borderRadius: '10px',
+    border: '1px solid #e4e4e7',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+    padding: '4px',
     zIndex: 1000,
-    minWidth: '150px',
+    minWidth: '160px',
     overflow: 'visible',
   };
 }
 
+// Menu item mirrors shadcn DropdownMenuItem: rounded-sm (8px), px-2 py-1.5, text-sm,
+// hover:bg-accent. Hover fill comes from the --ga-hover CSS var (see .ga-menu-item).
 export function getMenuItemStyle(t: ThemeParams): React.CSSProperties {
   return {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    padding: '10px 15px',
+    padding: '6px 8px',
+    borderRadius: '8px',
     color: t.textColor,
     cursor: 'pointer',
     fontSize: t.fontSize,
     fontFamily: t.fontFamily,
-    borderBottom: '1px solid #f0f0f0',
   };
 }
 
@@ -374,20 +388,27 @@ export function getConfirmOverlayStyle(showResetConfirm: boolean): React.CSSProp
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    // Matches the web app's AlertDialog overlay (bg-black/80).
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     zIndex: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: '16px',
   };
 }
 
+// Dialog mirrors shadcn AlertDialogContent: rounded-lg (12px), p-6 (24px),
+// 1px border, shadow-lg, left-aligned text.
 export function getConfirmDialogStyle(t: ThemeParams): React.CSSProperties {
   return {
     backgroundColor: t.backgroundColor,
-    padding: '20px',
-    borderRadius: '8px',
-    maxWidth: '300px',
-    textAlign: 'center',
+    padding: '24px',
+    borderRadius: '12px',
+    border: '1px solid #e4e4e7',
+    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+    maxWidth: '320px',
+    width: '100%',
+    textAlign: 'left',
     fontFamily: t.fontFamily,
     color: t.textColor,
   };
@@ -395,21 +416,25 @@ export function getConfirmDialogStyle(t: ThemeParams): React.CSSProperties {
 
 export const confirmButtonsStyle: React.CSSProperties = {
   display: 'flex',
-  justifyContent: 'center',
-  marginTop: '15px',
-  gap: '10px',
+  justifyContent: 'flex-end',
+  marginTop: '20px',
+  gap: '8px',
 };
 
+// Buttons mirror shadcn Button: pill (rounded-full), text-sm font-medium.
+// Confirm = destructive (red-600), Cancel = outline. Hover via .ga-confirm-btn CSS.
 export function getConfirmButtonStyle(isConfirm: boolean, t: ThemeParams): React.CSSProperties {
   return {
     padding: '8px 16px',
-    backgroundColor: isConfirm ? '#F44336' : '#e0e0e0',
+    backgroundColor: isConfirm ? '#dc2626' : 'transparent',
     color: isConfirm ? '#ffffff' : t.textColor,
-    border: 'none',
-    borderRadius: '4px',
+    border: isConfirm ? 'none' : '1px solid #e4e4e7',
+    borderRadius: '9999px',
     cursor: 'pointer',
     fontFamily: t.fontFamily,
     fontSize: t.fontSize,
+    fontWeight: 500,
+    transition: 'background-color 0.15s ease',
   };
 }
 
@@ -653,6 +678,49 @@ export const CSS_KEYFRAMES = `
   }
   .ga-header-btn { background-color: transparent; transition: background-color 0.15s ease; }
   .ga-header-btn:hover { background-color: rgba(0, 0, 0, 0.06); }
+  /* Menu popover items: shadcn-style hover highlight (bg-accent). --ga-hover is the
+     theme's secondary color, set on the widget root. */
+  .ga-menu-item { transition: background-color 0.15s ease; }
+  .ga-menu-item:hover { background-color: var(--ga-hover, #f4f4f5); }
+  /* Reset dialog buttons: destructive hover (red-700) + outline-cancel hover (bg-accent). */
+  .ga-confirm-btn--danger:hover { background-color: #b91c1c; }
+  .ga-confirm-btn--cancel:hover { background-color: var(--ga-hover, #f4f4f5); }
+  /* Hovering the left logo section reveals the expand button (collapsed to 0 width
+     by default), which pushes the logo/name group to the right for a slide-in.
+     Scoped to .ga-header-left so hovering the right-side buttons never triggers it. */
+  .ga-header-expand-btn {
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: scale(0.85);
+    pointer-events: none;
+    transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease, transform 200ms ease;
+  }
+  .ga-header-left:hover .ga-header-expand-btn,
+  .ga-header-left:focus-within .ga-header-expand-btn {
+    width: 32px;
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  /* Hovering the left logo section reveals the agent description (collapsed by default). */
+  .ga-header-desc {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ga-header-left:hover .ga-header-desc,
+  .ga-header-left:focus-within .ga-header-desc {
+    grid-template-rows: 1fr;
+  }
+  .ga-header-desc-inner { overflow: hidden; min-height: 0; }
+  .ga-header-desc-text { opacity: 0; transition: opacity 200ms ease; }
+  .ga-header-left:hover .ga-header-desc-text,
+  .ga-header-left:focus-within .ga-header-desc-text { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .ga-header-expand-btn, .ga-header-desc, .ga-header-desc-text { transition: none !important; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .ga-widget-in, .ga-widget-out { animation: none !important; }
     .ga-quick { animation: none !important; }
