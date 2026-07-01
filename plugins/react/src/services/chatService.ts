@@ -4,6 +4,7 @@ import {
   AgentInfoResponse,
   AgentChatLocalesResponse,
   AgentChatLocaleContent,
+  FormNodeLocale,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
@@ -442,6 +443,17 @@ export class ChatService {
       thinkingPhrases: [...this.thinkingConfig.phrases],
       thinkingDelayMs: this.thinkingConfig.delayMs,
     };
+  }
+
+  /** HITL form strings from the locale bundle, as `{ lang: { nodeId: slice } }`. */
+  getFormNodeLocales(): Record<string, Record<string, FormNodeLocale>> {
+    const out: Record<string, Record<string, FormNodeLocale>> = {};
+    for (const [code, slice] of Object.entries(this.agentChatLocales || {})) {
+      if (slice && slice.nodes && Object.keys(slice.nodes).length > 0) {
+        out[code.toLowerCase()] = slice.nodes;
+      }
+    }
+    return out;
   }
 
   /**

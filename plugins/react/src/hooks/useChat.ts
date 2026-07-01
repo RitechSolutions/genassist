@@ -6,6 +6,7 @@ import {
   Attachment,
   MessageFeedback,
   InProgressPollMessage,
+  FormNodeLocale,
 } from "../types";
 
 export interface UseChatProps {
@@ -84,6 +85,10 @@ export const useChat = ({
   const [inputDisclaimerHtml, setInputDisclaimerHtml] = useState<string | null>(null);
   const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
+  // HITL form strings per locale ({ lang: { nodeId: slice } }) for live form re-localization.
+  const [formNodeLocales, setFormNodeLocales] = useState<
+    Record<string, Record<string, FormNodeLocale>>
+  >({});
   const [agentId, setAgentId] = useState<string | null>(null);
   const [agentLiveVoiceEnabled, setAgentLiveVoiceEnabled] = useState<boolean>(false);
   const [agentLiveVoiceReady, setAgentLiveVoiceReady] = useState<boolean>(false);
@@ -373,6 +378,10 @@ export const useChat = ({
         if (!cancelled && applied) {
           setThinkingPhrases(applied.thinkingPhrases);
           setThinkingDelayMs(applied.thinkingDelayMs);
+        }
+        const nodeLocales = service.getFormNodeLocales?.();
+        if (!cancelled && nodeLocales) {
+          setFormNodeLocales(nodeLocales);
         }
         const meta = service.getChatInputMetadata?.();
         if (
@@ -1096,6 +1105,7 @@ export const useChat = ({
     inputDisclaimerHtml,
     thinkingPhrases,
     thinkingDelayMs,
+    formNodeLocales,
     availableLanguages,
     chatInputMetadata,
     agentId,

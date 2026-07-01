@@ -187,6 +187,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     inputDisclaimerHtml,
     thinkingPhrases,
     thinkingDelayMs,
+    formNodeLocales,
   } = useChat({
     baseUrl,
     websocketUrl,
@@ -386,12 +387,47 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     options?: Array<{ value?: string; label?: string }>;
   };
 
+  // Overlay a form schema with the selected language's strings from the locale bundle
+  // (keyed by node id), so a displayed form re-localizes on language switch. Falls back
+  // to the schema's own strings when a translation is missing.
+  const localizeForm = useCallback(
+    (schema: any): any => {
+      if (!schema || typeof schema !== 'object') return schema;
+      const code = resolvedLanguage.toLowerCase().split('-')[0];
+      const slice = formNodeLocales?.[code]?.[schema.node_id];
+      if (!slice) return schema;
+      return {
+        ...schema,
+        message: slice.message ?? schema.message,
+        fields: Array.isArray(schema.fields)
+          ? schema.fields.map((f: any) => {
+              const t = f?.name ? slice.fields?.[f.name] : undefined;
+              if (!t) return f;
+              return {
+                ...f,
+                label: t.label ?? f.label,
+                placeholder: t.placeholder ?? f.placeholder,
+                description: t.description ?? f.description,
+                options: Array.isArray(f.options)
+                  ? f.options.map((o: any) => ({
+                      ...o,
+                      label: t.options?.[String(o?.value)] ?? o?.label,
+                    }))
+                  : f.options,
+              };
+            })
+          : schema.fields,
+      };
+    },
+    [resolvedLanguage, formNodeLocales],
+  );
+
   const getFormSchema = (
     messageIndex: number,
   ): { node_id?: string; message?: string; fields?: FormSchemaField[] } | null => {
     const msg = messages[messageIndex];
     if (msg?.type === 'form_request' && msg.text) {
-      try { return JSON.parse(msg.text); } catch { /* skip */ }
+      try { return localizeForm(JSON.parse(msg.text)); } catch { /* skip */ }
     }
     return null;
   };
@@ -775,13 +811,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       if (msg.type === 'form_request' && msg.speaker === 'agent' && !isFormAnswered(i)) {
-        try { return { schema: JSON.parse(msg.text), index: i }; }
+        try { return { schema: localizeForm(JSON.parse(msg.text)), index: i }; }
         catch { /* skip */ }
       }
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, submittedForms]);
+  }, [messages, submittedForms, localizeForm]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
 
@@ -1062,7 +1098,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             return messages.filter(applyMessageFilter).map((message, index) => {
               if (message.type === 'form_request' && message.speaker === 'agent') {
                 try {
-                  const formSchema = JSON.parse(message.text);
+                  const formSchema = localizeForm(JSON.parse(message.text));
                   // Use the real message position (filtering can shift the map index) so the
                   // answered check matches the overlay/footer path and survives reload.
                   const originalIndex = messages.indexOf(message);
