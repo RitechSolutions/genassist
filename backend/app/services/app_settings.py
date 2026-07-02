@@ -30,6 +30,52 @@ class AppSettingsService:
         rows = await self.repo.get_all()
         return [AppSettingsRead.model_validate(r, from_attributes=True) for r in rows]
 
+    async def test_connection(
+        self, setting_type: str, values: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Test a Configuration Vars connection, mirroring the datasources
+        ``/test-connection`` flow but for App Settings credential types.
+
+        Encrypted fields are decrypted first (tolerant: plaintext values entered in
+        the form pass through unchanged, stored ciphertext is decrypted), then the
+        request is dispatched to the matching connector's ``test_connection``.
+        """
+        encrypted_fields = set(get_encrypted_fields_for_type(setting_type))
+        cd = {
+            key: (
+                decrypt_key(value)
+                if key in encrypted_fields and isinstance(value, str) and value
+                else value
+            )
+            for key, value in (values or {}).items()
+        }
+
+        setting_type_lower = (setting_type or "").lower()
+        try:
+            if setting_type_lower == "salesforce":
+                from app.modules.integration.salesforce import SalesforceConnector
+
+                # SalesforceConnector.test_connection accepts salesforce_* keys.
+                return await SalesforceConnector.test_connection(cd)
+            if setting_type_lower == "zendesk":
+                from app.modules.integration.zendesk import ZendeskConnector
+
+                # ZendeskConnector.test_connection expects unprefixed keys.
+                return await ZendeskConnector.test_connection(
+                    {
+                        "subdomain": cd.get("zendesk_subdomain"),
+                        "email": cd.get("zendesk_email"),
+                        "api_token": cd.get("zendesk_api_token"),
+                    }
+                )
+            return {
+                "success": False,
+                "message": f"Test connection is not supported for {setting_type}.",
+            }
+        except Exception as e:
+            logger.error("App settings test connection failed for '%s': %s", setting_type, e)
+            return {"success": False, "message": str(e)}
+
     async def get_by_id(self, id: UUID) -> AppSettingsRead:
         row = await self.repo.get_by_id(id)
         if not row:
@@ -119,15 +165,23 @@ class AppSettingsService:
                 error_detail=f"Missing required fields: {', '.join(missing_fields)}",
             )
 
-        # Validate that only schema fields are present
+        # Drop fields that are not in the current schema instead of rejecting them.
+        # A type's schema can lose fields over time (e.g. Salesforce dropped the
+        # username/password/security_token fields when it moved to the
+        # client-credentials flow); existing rows still carry the old keys, and an
+        # update must not fail on them — the stale keys are simply not persisted.
         schema_field_names = {field.name for field in schema.fields}
         extra_fields = set(values.keys()) - schema_field_names
         if extra_fields:
-            raise AppException(
-                status_code=400,
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail=f"Unknown fields for type '{setting_type}': {', '.join(extra_fields)}",
+            # Surface at WARNING: this legitimately drops stale keys from schema
+            # evolution (e.g. Salesforce's removed username/password), but it would
+            # also hide a client sending a mistyped field name.
+            logger.warning(
+                "Dropping unknown field(s) for type '%s': %s",
+                setting_type,
+                ", ".join(sorted(extra_fields)),
             )
+            values = {k: v for k, v in values.items() if k in schema_field_names}
 
         # Encrypt sensitive fields
         encrypted_values = values.copy()

@@ -4,6 +4,7 @@ import {
   NodeData,
   NodeTypeDefinition,
   ReadMailsNodeData,
+  SalesforceCaseNodeData,
   SlackOutputNodeData,
   WhatsappNodeData,
   ZendeskTicketNodeData,
@@ -12,6 +13,7 @@ import GmailNode from "./gmailNode";
 import { GmailNodeData } from "../../types/nodes";
 import { NodeProps } from "reactflow";
 import ZendeskTicketNode from "./zendeskTicketNode";
+import SalesforceCaseNode from "./salesforceCaseNode";
 import SlackOutputNode from "./slackOutputNode";
 import WhatsAppNode from "./whatsappNode";
 import CalendarEventNode from "./calendarEventNode";
@@ -22,6 +24,7 @@ import {
   EMAIL_READER_HELP_CONTENT,
   EMAIL_SENDER_HELP_CONTENT,
   JIRA_TASK_CREATOR_HELP_CONTENT,
+  SALESFORCE_CASE_CREATOR_HELP_CONTENT,
   SLACK_MESSENGER_HELP_CONTENT,
   WHATSAPP_MESSENGER_HELP_CONTENT,
   ZENDESK_TICKET_CREATOR_HELP_CONTENT,
@@ -114,6 +117,53 @@ export const ZENDESK_TICKET_NODE_DEFINITION: NodeTypeDefinition<ZendeskTicketNod
     createNode: (id, position, data) => ({
       id,
       type: "zendeskTicketNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
+export const SALESFORCE_CASE_NODE_DEFINITION: NodeTypeDefinition<SalesforceCaseNodeData> =
+  {
+    type: "salesforceCaseNode",
+    label: "Salesforce Case Creator",
+    description:
+      "Creates a new Case in Salesforce with the given subject, description, labels, and custom fields.",
+    shortDescription: "Create a Salesforce Case",
+    helpContent: SALESFORCE_CASE_CREATOR_HELP_CONTENT,
+    configSubtitle:
+      "Configure Salesforce Case fields, including labels (Topics) and custom fields.",
+    category: "integrations",
+    icon: "Salesforce",
+    defaultData: {
+      name: "Salesforce Case Creator",
+      subject: "",
+      description: "",
+      labels: [],
+      custom_fields: [],
+      app_settings_id: undefined,
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "text",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    },
+    component: SalesforceCaseNode as React.ComponentType<
+      NodeProps<SalesforceCaseNodeData>
+    >,
+    createNode: (id, position, data) => ({
+      id,
+      type: "salesforceCaseNode",
       position,
       data: {
         ...data,

@@ -31,6 +31,7 @@ from .prompt_node import TemplateNode
 from .python_tool_node import PythonToolNode
 from .read_mails_tool_node import ReadMailsToolNode
 from .router_node import RouterNode
+from .salesforce_tool_node import SalesforceToolNode
 from .set_state_node import SetStateNode
 from .slack_tool_node import SlackToolNode
 from .stt_node import STTNode
@@ -64,6 +65,7 @@ __all__ = [
     "GmailToolNode",
     "WhatsAppToolNode",
     "ZendeskToolNode",
+    "SalesforceToolNode",
     "SQLNode",
     "AggregatorNode",
     "JiraNode",

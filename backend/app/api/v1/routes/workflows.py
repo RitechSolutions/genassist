@@ -45,6 +45,7 @@ SUPPORTED_NODE_TYPES = [
     "gmailNode",
     "whatsappToolNode",
     "zendeskTicketNode",
+    "salesforceCaseNode",
     "pythonCodeNode",
     "sqlNode",
     "aggregatorNode",

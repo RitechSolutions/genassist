@@ -17,6 +17,7 @@ from .read_mails_schema import READ_MAILS_NODE_DIALOG_SCHEMA
 from .gmail_schema import GMAIL_NODE_DIALOG_SCHEMA
 from .whatsapp_schema import WHATSAPP_NODE_DIALOG_SCHEMA
 from .zendesk_ticket_schema import ZENDESK_TICKET_NODE_DIALOG_SCHEMA
+from .salesforce_schema import SALESFORCE_CASE_NODE_DIALOG_SCHEMA
 from .python_code_schema import PYTHON_CODE_NODE_DIALOG_SCHEMA
 from .sql_schema import SQL_NODE_DIALOG_SCHEMA
 from .aggregator_schema import AGGREGATOR_NODE_DIALOG_SCHEMA
@@ -50,6 +51,7 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "gmailNode": "Gmail",
     "whatsappToolNode": "WhatsApp",
     "zendeskTicketNode": "Zendesk Ticket",
+    "salesforceCaseNode": "Salesforce Case",
     "pythonCodeNode": "Python Code",
     "sqlNode": "SQL",
     "aggregatorNode": "Aggregator",
@@ -84,6 +86,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "gmailNode": GMAIL_NODE_DIALOG_SCHEMA,
     "whatsappToolNode": WHATSAPP_NODE_DIALOG_SCHEMA,
     "zendeskTicketNode": ZENDESK_TICKET_NODE_DIALOG_SCHEMA,
+    "salesforceCaseNode": SALESFORCE_CASE_NODE_DIALOG_SCHEMA,
     "pythonCodeNode": PYTHON_CODE_NODE_DIALOG_SCHEMA,
     "sqlNode": SQL_NODE_DIALOG_SCHEMA,
     "aggregatorNode": AGGREGATOR_NODE_DIALOG_SCHEMA,
@@ -169,6 +172,11 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
 
   "zendeskTicketNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "text" }
+  ],
+
+  "salesforceCaseNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "text" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],
 
   "gmailNode": [

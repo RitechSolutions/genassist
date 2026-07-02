@@ -78,6 +78,21 @@ export const deleteAppSetting = async (id: string): Promise<void> => {
   }
 };
 
+export interface TestConnectionResult {
+  success: boolean;
+  message: string;
+}
+
+export const testAppSettingConnection = async (
+  type: AppSetting["type"],
+  values: Record<string, unknown>
+): Promise<TestConnectionResult> => {
+  return await apiRequest<TestConnectionResult>("POST", "app-settings/test-connection", {
+    type,
+    values,
+  });
+};
+
 export const getAppSettingsFormSchemas = async (): Promise<DynamicFormSchema> => {
   try {
     return await apiRequest<DynamicFormSchema>("GET", "/app-settings/form_schemas");

@@ -204,6 +204,10 @@ class ProjectSettings(BaseSettings):
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
 
+    SALESFORCE_INSTANCE_URL: Optional[str] = None
+    SALESFORCE_CLIENT_ID: Optional[str] = None
+    SALESFORCE_CLIENT_SECRET: Optional[str] = None
+
     # Help Center → company Azure DevOps Boards (platform ops; not user App Settings)
     AZURE_DEVOPS_ORGANIZATION_URL: Optional[str] = None
     AZURE_DEVOPS_PROJECT: Optional[str] = None

@@ -58,10 +58,12 @@ import FileReaderNode from './utils/fileReaderNode';
 import SetStateNode from "./chat/setStateNode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
+import SalesforceCaseNode from "./integrations/salesforceCaseNode";
 import GmailNode from "./integrations/gmailNode";
 import {
   GMAIL_NODE_DEFINITION,
   ZENDESK_TICKET_NODE_DEFINITION,
+  SALESFORCE_CASE_NODE_DEFINITION,
   SLACK_OUTPUT_NODE_DEFINITION,
   CALENDAR_EVENT_NODE_DEFINITION,
   READ_MAILS_NODE_DEFINITION,
@@ -114,6 +116,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(FINALIZE_CONVERSATION_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(SALESFORCE_CASE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GMAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(KNOWLEDGE_BASE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION);
@@ -180,6 +183,7 @@ export const getNodeTypes = () => {
     slackMessageNode: SlackOutputNode,
     whatsappToolNode: WhatsAppNode,
     zendeskTicketNode: ZendeskTicketNode,
+    salesforceCaseNode: SalesforceCaseNode,
     gmailNode: GmailNode,
     readMailsNode: ReadMailsNode,
     pythonCodeNode: PythonCodeNode,

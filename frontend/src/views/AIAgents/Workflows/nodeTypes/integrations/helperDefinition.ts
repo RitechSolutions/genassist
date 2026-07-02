@@ -108,6 +108,35 @@ export const ZENDESK_TICKET_CREATOR_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const SALESFORCE_CASE_CREATOR_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Salesforce Case Creator node creates new Salesforce Cases from workflow data. It is useful for turning detected issues, requests, or support events into trackable Case records in your Salesforce org.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Salesforce Case Creator node when you need to:",
+      bullets: [
+        "Create support Cases automatically",
+        "Escalate workflow events to Salesforce",
+        "Route customer requests into your CRM",
+        "Standardize support operations",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure Salesforce Case Creator dialog will open.",
+        "Enter the Node Name.",
+        "Select the Configuration Vars (Salesforce credential) to use.",
+        "Fill in the Case Subject and Description.",
+        "Add any Labels (assigned as Salesforce Topics) and Custom Fields (by Case field API name) needed for the Case.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
 export const EMAIL_SENDER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The Email Sender node sends email messages from a workflow. It is useful for notifications, confirmations, reports, and outbound communication triggered by workflow events.",

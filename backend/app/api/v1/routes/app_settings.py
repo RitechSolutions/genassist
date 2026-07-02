@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi_injector import Injected
 
 from app.schemas.app_settings import (
-    AppSettingsCreate, AppSettingsUpdate, AppSettingsRead
+    AppSettingsCreate, AppSettingsUpdate, AppSettingsRead, AppSettingsTestConnection
 )
 from app.services.app_settings import AppSettingsService
 from app.auth.dependencies import auth, permissions
@@ -23,6 +23,15 @@ async def list_settings(svc: AppSettingsService = Injected(AppSettingsService)):
 async def get_schemas(svc: AppSettingsService = Injected(AppSettingsService)):
     """Get field schemas for all AppSettings types."""
     return await svc.get_schemas()
+
+@router.post("/test-connection", response_model=Dict[str, Any],
+             dependencies=[Depends(auth), Depends(permissions(P.AppSettings.READ))])
+async def test_connection(
+    dto: AppSettingsTestConnection,
+    svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Test a Configuration Vars connection for the given type + values."""
+    return await svc.test_connection(dto.type, dto.values)
 
 @router.get("/{setting_id}", response_model=AppSettingsRead,
             dependencies=[Depends(auth), Depends(permissions(P.AppSettings.READ))])
