@@ -1,7 +1,7 @@
 """Human In The Loop node that collects user data via a dynamic form."""
 
-from typing import Any, Dict
 import logging
+from typing import Any, Dict
 
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException
@@ -63,6 +63,19 @@ class HumanInTheLoopNode(BaseNode):
             if paused_outputs:
                 self.get_state().node_outputs.update(paused_outputs)
 
+            # Fill in context captured before the pause (session, conversation_history,
+            # stateful values) that the chat input node computed and that never re-runs on
+            # resume. The resume request itself carries the real turn — the form-submission
+            # message and current metadata — so it wins; the snapshot only backfills what
+            # the resume request lacks. The invisible start-form trigger flag must not leak
+            # into this real turn.
+            paused_context = await self.get_memory().get_metadata("paused_request_context")
+            if paused_context:
+                self.get_state().restore_resume_context(
+                    paused_context,
+                    drop_keys={"start_form_trigger", "message"},
+                )
+
             cancelled = self.state.initial_values.get("human_in_the_loop_cancelled", False)
             output_data = {**human_in_the_loop_from_form, "_cancelled": True} if cancelled else human_in_the_loop_from_form
             # Cache for ask_once
@@ -77,9 +90,16 @@ class HumanInTheLoopNode(BaseNode):
             logger.info(f"HumanInTheLoopNode {self.node_id}: using provided input values")
             return provided_values
 
-        # 4. Pause workflow — save state and raise exception to propagate through all layers
+        # 4. Pause workflow — save state and raise exception to propagate through all layers.
+        # Snapshot both the node outputs produced so far and the request context (message,
+        # session, conversation_history, stateful values, metadata) so the resume — which
+        # starts a fresh state at this node and skips the upstream chat input — continues as
+        # the same logical execution rather than with blank inputs.
         await self.get_memory().set_metadata(
             "paused_node_outputs", self.get_state().node_outputs
+        )
+        await self.get_memory().set_metadata(
+            "paused_request_context", self.get_state().capture_resume_context()
         )
 
         form_schema = {

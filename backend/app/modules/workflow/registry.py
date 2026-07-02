@@ -41,8 +41,12 @@ class RegistryItem:
             self.workflow_engine = None
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
-    async def execute(self, session_message: str, metadata: dict) -> dict:
-        """Execute a workflow, optionally resuming from a specific node."""
+    async def execute(self, session_message: str, metadata: dict, persist: bool = True) -> dict:
+        """Execute a workflow, optionally resuming from a specific node.
+
+        persist=False skips writing this turn to conversation memory (used by the
+        start greeting trigger so its synthetic instruction isn't kept in history).
+        """
         if self.workflow_engine is None:
             raise ValueError(
                 f"Cannot execute workflow for agent {self.agent_name} ({self.agent_id}): "
@@ -61,6 +65,7 @@ class RegistryItem:
             start_node_id=start_node_id,
             input_data=input_data,
             thread_id=thread_id,
+            persist=persist,
         )
 
         return state.format_state_as_response()

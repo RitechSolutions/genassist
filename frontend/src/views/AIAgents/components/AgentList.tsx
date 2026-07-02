@@ -162,6 +162,8 @@ const AgentList: React.FC<AgentListProps> = ({
         thinking_phrase_delay: config.thinking_phrase_delay ?? 0,
         possible_queries: config.possible_queries ?? [],
         thinking_phrases: config.thinking_phrases ?? [],
+        greet_on_start: config.greet_on_start ?? false,
+        greeting_prompt: config.greeting_prompt ?? "",
         is_active: config.is_active,
         llm_analyst_id: config.llm_analyst_id ?? null,
         has_welcome_image: config?.has_welcome_image ?? false,

@@ -37,6 +37,7 @@ import {
   SheetClose,
 } from "@/components/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/switch";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
 import { normalizeDisclaimerHtml } from "@/helpers/disclaimerHtml";
@@ -63,6 +64,8 @@ interface AgentFormData {
   workflow_id?: string;
   has_welcome_image?: boolean;
   llm_analyst_id?: string | null;
+  greet_on_start?: boolean;
+  greeting_prompt?: string;
 }
 
 function omitEmptyStrings(items: string[] | undefined): string[] {
@@ -211,6 +214,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
       thinking_phrases: [],
       has_welcome_image: data?.has_welcome_image || false,
       llm_analyst_id: null,
+      greet_on_start: false,
+      greeting_prompt: "",
     }),
     possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
     thinking_phrases:
@@ -870,6 +875,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter welcome message"
                 />
               </div>
+
               <div className="border border-border rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
                   <div className="flex items-center gap-2">
@@ -1058,6 +1064,54 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 <p className="text-xs text-muted-foreground">
                   Supports text, bold, font size, and links.
                 </p>
+              </div>
+
+              {/* Greet on conversation start: when on, the agent greets the moment the chat
+                  opens (and a Human In The Loop node wired right after Chat Input shows its
+                  form). The instructions extend a built-in default; translate them so the
+                  agent greets each visitor in their language. */}
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Greet on conversation start</span>
+                  </div>
+                  <Switch
+                    id="greet_on_start"
+                    checked={formData.greet_on_start ?? false}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({ ...prev, greet_on_start: checked }))
+                    }
+                  />
+                </div>
+                {formData.greet_on_start && (
+                  <div className="px-4 py-3 space-y-2 bg-white">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="greeting_prompt">Greeting instructions (optional)</Label>
+                      {isEditMode && id && (
+                        <TranslationTrigger
+                          translationKey={`agent.${id}.greeting_prompt`}
+                          currentValue={formData.greeting_prompt || ""}
+                          languages={editFormLanguages}
+                          onTranslationDefaultSaved={(text) =>
+                            setFormData((prev) => ({ ...prev, greeting_prompt: text }))
+                          }
+                        />
+                      )}
+                    </div>
+                    <Textarea
+                      id="greeting_prompt"
+                      name="greeting_prompt"
+                      value={formData.greeting_prompt || ""}
+                      onChange={handleInputChange}
+                      placeholder="e.g. Mention our weekend promotion and ask which product they're interested in."
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Added on top of the default greeting. Translate it (globe icon) so the
+                      agent greets each visitor in their language. Leave empty to use the default.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="border-t pt-4">

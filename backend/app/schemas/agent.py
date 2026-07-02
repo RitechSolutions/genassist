@@ -27,6 +27,10 @@ class AgentBase(BaseModel):
                                          description="Welcome title displayed when starting a conversation with an agent.")
     input_disclaimer_html: Optional[str] = Field(None,
                                                   description="HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links.")
+    greet_on_start: bool = Field(False,
+                                 description="When true, the agent greets the visitor as the conversation opens (and triggers a Human In The Loop node wired right after Chat Input).")
+    greeting_prompt: Optional[str] = Field(None,
+                                           description="Optional extra instructions appended to the default greeting prompt used when greet_on_start is enabled.")
     possible_queries: list[str] = Field(...,
                                         description="Possible queries, suggested when starting a conversation with an agent.")
     thinking_phrases: Optional[list[str]] = Field(
@@ -55,6 +59,8 @@ class AgentUpdate(BaseModel):
     welcome_image: Optional[bytes] = None
     welcome_title: Optional[str] = None
     input_disclaimer_html: Optional[str] = None
+    greet_on_start: Optional[bool] = None
+    greeting_prompt: Optional[str] = None
     possible_queries: Optional[list[str]] = None
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None

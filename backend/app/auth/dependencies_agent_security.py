@@ -30,6 +30,7 @@ async def get_agent_for_start(
     test_input = None
     live_voice_enabled = False
     voice_provider_id = None
+    workflow_nodes: list = []
     if agent.workflow:
         # A live-voice agent's workflow contains exactly one voiceAgentNode. Detect
         # it here while the full workflow dict is still loaded (it's overwritten with
@@ -37,6 +38,8 @@ async def get_agent_for_start(
         # Also capture its configured voice provider so the caller can check whether
         # a usable Gemini key exists (live-voice readiness) without re-loading nodes.
         nodes = agent.workflow.get('nodes') or []
+        # Keep the node graph for callers; agent.workflow is replaced with testInput below.
+        workflow_nodes = nodes
         voice_node = next(
             (n for n in nodes if isinstance(n, dict) and n.get('type') == 'voiceAgentNode'),
             None,
@@ -53,8 +56,13 @@ async def get_agent_for_start(
         agent.workflow = test_input
 
     request.state.agent = agent
+    request.state.agent_workflow_nodes = workflow_nodes
     request.state.agent_live_voice_enabled = live_voice_enabled
     request.state.agent_voice_provider_id = voice_provider_id
+    # Agent-level toggle: greet the visitor (and trigger a HITL form wired right after
+    # Chat Input) as the conversation opens. Plain scalar column, unaffected by the
+    # workflow→testInput swap above.
+    request.state.agent_trigger_start_form = bool(getattr(agent, "greet_on_start", False))
     return agent
 
 

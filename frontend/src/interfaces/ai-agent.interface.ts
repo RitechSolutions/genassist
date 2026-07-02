@@ -47,6 +47,8 @@ export interface AgentConfig {
   thinking_phrase_delay?: number;
   possible_queries?: string[];
   thinking_phrases?: string[];
+  greet_on_start?: boolean;
+  greeting_prompt?: string;
   workflow_id: string;
   user_id: string;
   llm_analyst_id?: string | null;

@@ -139,6 +139,8 @@ const AGENT_UPDATE_ALLOWED_KEYS = [
   "possible_queries",
   "thinking_phrases",
   "thinking_phrase_delay",
+  "greet_on_start",
+  "greeting_prompt",
   "workflow_id",
   "llm_analyst_id",
   "security_settings",
