@@ -5,6 +5,7 @@ export interface AppSetting {
   name: string;
   type:
     | "Zendesk"
+    | "Salesforce"
     | "WhatsApp"
     | "Gmail"
     | "Microsoft"
