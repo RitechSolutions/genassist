@@ -18,7 +18,13 @@ import {
   SelectItem,
 } from "@/components/select";
 import { Badge } from "@/components/badge";
-import { Loader2, ArrowUp, ArrowDown, X } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
+import { Loader2, ArrowUp, ArrowDown, X, Info } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -283,52 +289,104 @@ export function FallbackChainDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="retry-count">Retries per provider</Label>
-              <Input
-                id="retry-count"
-                type="number"
-                min={0}
-                max={10}
-                value={retryCount}
-                onChange={(e) => setRetryCount(Number(e.target.value))}
-              />
+          <TooltipProvider>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="retry-count" className="whitespace-nowrap">Retries</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Retries per provider info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Extra attempts for the same provider (on retryable errors like
+                      timeouts, rate limits, or 5xx) before moving to the next provider
+                      in the chain. Total attempts = retries + 1. 0 = try once, then fail
+                      over.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="retry-count"
+                  type="number"
+                  min={0}
+                  max={10}
+                  value={retryCount}
+                  onChange={(e) => setRetryCount(Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="backoff-seconds" className="whitespace-nowrap">Backoff (s)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Initial backoff info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Seconds to wait before retrying the same provider. It doubles each
+                      retry (exponential backoff): e.g. 1s → 2s → 4s. 0 = retry
+                      immediately with no wait.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="backoff-seconds"
+                  type="number"
+                  min={0}
+                  max={30}
+                  step={0.5}
+                  value={backoffSeconds}
+                  onChange={(e) => setBackoffSeconds(Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="timeout-seconds" className="whitespace-nowrap">Timeout (s)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Default timeout info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      If a provider takes longer than this to reply, the attempt is
+                      cancelled and treated as a failure so the next provider is tried.
+                      Applies to providers without their own per-provider timeout set in
+                      the list above. Empty = no limit.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="timeout-seconds"
+                  type="number"
+                  min={0}
+                  max={600}
+                  step={1}
+                  placeholder="no limit"
+                  value={timeoutSeconds}
+                  onChange={(e) =>
+                    setTimeoutSeconds(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="backoff-seconds">Initial backoff (s)</Label>
-              <Input
-                id="backoff-seconds"
-                type="number"
-                min={0}
-                max={30}
-                step={0.5}
-                value={backoffSeconds}
-                onChange={(e) => setBackoffSeconds(Number(e.target.value))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="timeout-seconds">Default timeout (s)</Label>
-              <Input
-                id="timeout-seconds"
-                type="number"
-                min={0}
-                max={600}
-                step={1}
-                placeholder="no limit"
-                value={timeoutSeconds}
-                onChange={(e) =>
-                  setTimeoutSeconds(e.target.value === "" ? "" : Number(e.target.value))
-                }
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Response timeout: if a provider takes longer than this to reply, the
-            attempt is cancelled and treated as a failure so the next provider is
-            tried. Set a value per provider in the list above; the default applies
-            to providers without their own value. 0 = no limit.
-          </p>
+          </TooltipProvider>
 
           <div className="flex items-center gap-2">
             <Switch checked={isActive} onCheckedChange={setIsActive} id="chain-active" />
