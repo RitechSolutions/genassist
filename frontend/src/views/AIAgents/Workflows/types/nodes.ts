@@ -120,6 +120,15 @@ export interface ZendeskTicketNodeData extends BaseNodeData {
   app_settings_id?: string;
 }
 
+export interface SalesforceCaseNodeData extends BaseNodeData {
+  subject: string;
+  description: string;
+  /** Assigned to the created Case as SalesForce Topics. */
+  labels?: string[];
+  custom_fields?: Array<{ key: string; value: string }>;
+  app_settings_id?: string;
+}
+
 export type GmailOperation =
   | "send_email"
   | "get_messages"

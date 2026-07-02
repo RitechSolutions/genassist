@@ -3,7 +3,7 @@
 Adds 'SMTP' to the allowed values of the app_settings.type check constraint so
 tenants can store per-tenant SMTP/email credentials via App Settings.
 
-Revision ID: a1f2c3d4e5b6
+Revision ID: 9f1df080dab5
 Revises: 494257fd515b
 Create Date: 2026-06-24 00:00:00.000000
 

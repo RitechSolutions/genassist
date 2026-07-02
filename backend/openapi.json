@@ -2977,6 +2977,59 @@
         ]
       }
     },
+    "/api/app-settings/test-connection": {
+      "post": {
+        "tags": [
+          "v1",
+          "AppSettings"
+        ],
+        "summary": "Test Connection",
+        "description": "Test a Configuration Vars connection for the given type + values.",
+        "operationId": "test_connection_api_app_settings_test_connection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettingsTestConnection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Test Connection Api App Settings Test Connection Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/app-settings/{setting_id}": {
       "get": {
         "tags": [
@@ -8280,7 +8333,7 @@
         ],
         "parameters": [
           {
-            "name": "X-Tenant-ID",
+            "name": "x-tenant-id",
             "in": "header",
             "required": false,
             "schema": {
@@ -25103,6 +25156,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "Salesforce",
               "FileManagerSettings",
               "Security",
               "Other"
@@ -25154,6 +25208,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "Salesforce",
               "FileManagerSettings",
               "Security",
               "Other"
@@ -25208,6 +25263,38 @@
         ],
         "title": "AppSettingsRead"
       },
+      "AppSettingsTestConnection": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Zendesk",
+              "WhatsApp",
+              "Gmail",
+              "Microsoft",
+              "Slack",
+              "Jira",
+              "Salesforce",
+              "FileManagerSettings",
+              "Security",
+              "Other"
+            ],
+            "title": "Type"
+          },
+          "values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Values"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "values"
+        ],
+        "title": "AppSettingsTestConnection",
+        "description": "Request body for testing a Configuration Vars (App Setting) connection.\n\n``values`` carries the credential fields the user has entered (or the stored,\nstill-encrypted values when re-testing an existing setting); the service\ndecrypts the encrypted fields before dispatching to the connector."
+      },
       "AppSettingsUpdate": {
         "properties": {
           "name": {
@@ -25232,6 +25319,7 @@
                   "Microsoft",
                   "Slack",
                   "Jira",
+                  "Salesforce",
                   "FileManagerSettings",
                   "Security",
                   "Other"
