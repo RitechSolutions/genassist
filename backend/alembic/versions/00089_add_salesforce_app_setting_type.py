@@ -4,7 +4,7 @@ Adds 'Salesforce' to the allowed values of the app_settings.type check constrain
 so tenants can store per-tenant SalesForce OAuth2 credentials via App Settings.
 
 Revision ID: b2c3d4e5f6a7
-Revises: 9f1df080dab5
+Revises: a3b4c5d6e7f8
 Create Date: 2026-06-30 00:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'b2c3d4e5f6a7'
-down_revision: Union[str, None] = '9f1df080dab5'
+down_revision: Union[str, None] = 'a3b4c5d6e7f8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
