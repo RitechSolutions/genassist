@@ -109,6 +109,21 @@ class TestIsRetryable:
         assert is_retryable(client_err("AccessDeniedException", 403)) is False
         assert is_retryable(client_err("ValidationException", 400)) is False
 
+    def test_gemini_google_classification(self):
+        """Gemini/Vertex errors come from google.api_core (HTTP status on `.code`)."""
+        import google.api_core.exceptions as g
+
+        # Transient → retryable
+        assert is_retryable(g.ResourceExhausted("rate")) is True       # 429
+        assert is_retryable(g.ServiceUnavailable("down")) is True      # 503
+        assert is_retryable(g.DeadlineExceeded("slow")) is True        # 504
+        assert is_retryable(g.InternalServerError("boom")) is True     # 500
+
+        # Permanent → fail fast
+        assert is_retryable(g.BadRequest("bad")) is False              # 400
+        assert is_retryable(g.Unauthorized("no")) is False             # 401
+        assert is_retryable(g.Forbidden("no")) is False                # 403
+
 
 @pytest.mark.asyncio
 class TestFallbackChatModel:

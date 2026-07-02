@@ -89,6 +89,13 @@ def _collect_base_exceptions() -> tuple[type[BaseException], ...]:
     except Exception:  # pragma: no cover - SDK optional
         logger.debug("botocore not importable; skipping its exceptions in fallback classification")
 
+    try:
+        import google.api_core.exceptions as g_exc  # Gemini / Vertex via LangChain
+
+        bases.append(g_exc.GoogleAPIError)
+    except Exception:  # pragma: no cover - SDK optional
+        logger.debug("google.api_core not importable; skipping its exceptions in fallback classification")
+
     # De-duplicate while preserving order.
     seen: set[type[BaseException]] = set()
     unique: list[type[BaseException]] = []
@@ -129,6 +136,12 @@ def _extract_status_code(exc: BaseException) -> int | None:
             status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
             if isinstance(status, int):
                 return status
+    # Google (google.api_core / google.genai) exposes the HTTP status as `.code`
+    # (an HTTPStatus IntEnum, which is an int). Accept it only in the HTTP range so
+    # we don't misread an unrelated int `.code` on some other exception type.
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and 100 <= int(code) <= 599:
+        return int(code)
     return None
 
 
@@ -198,6 +211,29 @@ def is_retryable(exc: BaseException) -> bool:
         if aws_code in RETRYABLE_AWS_ERROR_CODES:
             return True
         # fall through to the status-code check below (e.g. AccessDenied -> 403 -> fail fast)
+
+    # Google (Gemini / Vertex via google.api_core): transient types. Most also carry
+    # an HTTP `.code` handled below, but a few (e.g. RetryError) do not.
+    try:
+        import google.api_core.exceptions as g_exc
+
+        transient_google = tuple(
+            getattr(g_exc, n)
+            for n in (
+                "ServiceUnavailable",
+                "DeadlineExceeded",
+                "ResourceExhausted",
+                "TooManyRequests",
+                "InternalServerError",
+                "Aborted",
+                "RetryError",
+            )
+            if hasattr(g_exc, n)
+        )
+        if transient_google and isinstance(exc, transient_google):
+            return True
+    except Exception:  # pragma: no cover - SDK optional
+        pass
 
     # Status-code based classification for everything else.
     status = _extract_status_code(exc)
