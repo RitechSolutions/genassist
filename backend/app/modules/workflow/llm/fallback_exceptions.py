@@ -31,6 +31,25 @@ RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 # HTTP status codes that represent a permanent/client error — never retry these.
 FAIL_FAST_STATUS_CODES = frozenset({400, 401, 403, 404, 405, 406, 422})
 
+# AWS Bedrock / botocore error codes (exc.response["Error"]["Code"]) that are
+# transient. botocore doesn't expose a `.status_code`, so we match on these too.
+RETRYABLE_AWS_ERROR_CODES = frozenset(
+    {
+        "ThrottlingException",
+        "Throttling",
+        "TooManyRequestsException",
+        "ProvisionedThroughputExceededException",
+        "ServiceUnavailableException",
+        "ServiceUnavailable",
+        "InternalServerException",
+        "InternalFailure",
+        "ModelTimeoutException",
+        "ModelNotReadyException",
+        "RequestTimeout",
+        "RequestTimeoutException",
+    }
+)
+
 
 def _collect_base_exceptions() -> tuple[type[BaseException], ...]:
     """Build the broad tuple of exception classes worth catching.
@@ -61,6 +80,14 @@ def _collect_base_exceptions() -> tuple[type[BaseException], ...]:
         bases.append(httpx.HTTPError)
     except Exception:  # pragma: no cover - SDK optional
         logger.debug("httpx not importable; skipping its exceptions in fallback classification")
+
+    try:
+        import botocore.exceptions as boto_exc  # AWS Bedrock
+
+        bases.append(boto_exc.BotoCoreError)  # connection/read timeouts, etc.
+        bases.append(boto_exc.ClientError)  # throttling / service errors
+    except Exception:  # pragma: no cover - SDK optional
+        logger.debug("botocore not importable; skipping its exceptions in fallback classification")
 
     # De-duplicate while preserving order.
     seen: set[type[BaseException]] = set()
@@ -93,9 +120,25 @@ def _extract_status_code(exc: BaseException) -> int | None:
         return status
     response = getattr(exc, "response", None)
     if response is not None:
+        # openai/anthropic/httpx expose an object with .status_code ...
         status = getattr(response, "status_code", None)
         if isinstance(status, int):
             return status
+        # ... botocore (Bedrock) exposes a dict: response["ResponseMetadata"]["HTTPStatusCode"].
+        if isinstance(response, dict):
+            status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+            if isinstance(status, int):
+                return status
+    return None
+
+
+def _aws_error_code(exc: BaseException) -> str | None:
+    """Extract the AWS/botocore error code (e.g. 'ThrottlingException'), if any."""
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = (response.get("Error") or {}).get("Code")
+        if isinstance(code, str):
+            return code
     return None
 
 
@@ -131,6 +174,30 @@ def is_retryable(exc: BaseException) -> bool:
                 return True
         except Exception:  # pragma: no cover - SDK optional
             continue
+
+    # AWS Bedrock (botocore): connection/read timeouts have no status code, and
+    # throttle/service errors carry the status in a dict + an error Code string.
+    try:
+        import botocore.exceptions as boto_exc
+
+        if isinstance(
+            exc,
+            (
+                boto_exc.ReadTimeoutError,
+                boto_exc.ConnectTimeoutError,
+                boto_exc.ConnectionError,
+                boto_exc.EndpointConnectionError,
+            ),
+        ):
+            return True
+    except Exception:  # pragma: no cover - SDK optional
+        pass
+
+    aws_code = _aws_error_code(exc)
+    if aws_code is not None:
+        if aws_code in RETRYABLE_AWS_ERROR_CODES:
+            return True
+        # fall through to the status-code check below (e.g. AccessDenied -> 403 -> fail fast)
 
     # Status-code based classification for everything else.
     status = _extract_status_code(exc)

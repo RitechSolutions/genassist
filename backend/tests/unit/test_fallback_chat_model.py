@@ -86,6 +86,29 @@ class TestIsRetryable:
     def test_unknown_exception_fails_fast(self):
         assert is_retryable(ValueError("nonsense")) is False
 
+    def test_bedrock_botocore_classification(self):
+        """AWS Bedrock errors come from botocore (dict response, no .status_code)."""
+        import botocore.exceptions as be
+
+        def client_err(code: str, http: int) -> be.ClientError:
+            return be.ClientError(
+                {"Error": {"Code": code, "Message": "x"},
+                 "ResponseMetadata": {"HTTPStatusCode": http}},
+                "InvokeModel",
+            )
+
+        # Transient Bedrock errors → retryable
+        assert is_retryable(client_err("ThrottlingException", 429)) is True
+        assert is_retryable(client_err("ServiceUnavailableException", 503)) is True
+        assert is_retryable(client_err("ModelTimeoutException", 408)) is True
+        assert is_retryable(be.ReadTimeoutError(endpoint_url="https://b")) is True
+        assert is_retryable(be.ConnectTimeoutError(endpoint_url="https://b")) is True
+        assert is_retryable(be.EndpointConnectionError(endpoint_url="https://b")) is True
+
+        # Permanent Bedrock errors → fail fast
+        assert is_retryable(client_err("AccessDeniedException", 403)) is False
+        assert is_retryable(client_err("ValidationException", 400)) is False
+
 
 @pytest.mark.asyncio
 class TestFallbackChatModel:
