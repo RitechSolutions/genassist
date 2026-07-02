@@ -52,6 +52,7 @@ export interface StartConversationResponse {
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
   agent_chat_input_metadata?: Record<string, unknown>; // Metadata keys/defaults from the workflow's Chat Input node
+  agent_trigger_start_form?: boolean; // Auto-run the workflow on open (HITL show_on_start after Start)
   agent_input_disclaimer_html?: string;
   create_time?: number;
   guest_token?: string;
@@ -66,6 +67,20 @@ export interface AgentInfoResponse {
   live_voice_ready?: boolean;
 }
 
+/** HITL form field strings for one locale; `options` maps option value -> label. */
+export interface FormFieldLocale {
+  label?: string;
+  placeholder?: string;
+  description?: string;
+  options?: Record<string, string>;
+}
+
+/** One HITL node's form strings for a locale, keyed by field name. */
+export interface FormNodeLocale {
+  message?: string;
+  fields?: Record<string, FormFieldLocale>;
+}
+
 /** Per-locale agent strings (welcome, quick queries, thinking) from GET .../agent-chat-locales */
 export interface AgentChatLocaleContent {
   welcome_message?: string | null;
@@ -73,6 +88,8 @@ export interface AgentChatLocaleContent {
   input_disclaimer_html?: string | null;
   possible_queries?: string[];
   thinking_phrases?: string[];
+  /** HITL form strings, keyed by node id. */
+  nodes?: Record<string, FormNodeLocale>;
 }
 
 export interface AgentChatLocalesResponse {
