@@ -3,8 +3,8 @@
 Reusable, named ordered lists of LLM providers (with a retry policy) that workflow
 LLM/Agent nodes can reference for automatic provider failover.
 
-Revision ID: c4d5e6f7a8b9
-Revises: 9f1df080dab5
+Revision ID: 66c71887a6da
+Revises: b2c3d4e5f6a7
 Create Date: 2026-06-30 00:00:00.000000
 
 """
@@ -16,7 +16,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "66c71887a6da"
-down_revision: Union[str, None] = "9f1df080dab5"
+down_revision: Union[str, None] = "b2c3d4e5f6a7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
