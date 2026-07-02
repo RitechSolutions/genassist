@@ -8333,7 +8333,7 @@
         ],
         "parameters": [
           {
-            "name": "x-tenant-id",
+            "name": "X-Tenant-ID",
             "in": "header",
             "required": false,
             "schema": {
@@ -23527,6 +23527,24 @@
             "title": "Input Disclaimer Html",
             "description": "HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links."
           },
+          "greet_on_start": {
+            "type": "boolean",
+            "title": "Greet On Start",
+            "description": "When true, the agent greets the visitor as the conversation opens (and triggers a Human In The Loop node wired right after Chat Input).",
+            "default": false
+          },
+          "greeting_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting Prompt",
+            "description": "Optional extra instructions appended to the default greeting prompt used when greet_on_start is enabled."
+          },
           "possible_queries": {
             "items": {
               "type": "string"
@@ -23891,6 +23909,24 @@
             ],
             "title": "Input Disclaimer Html",
             "description": "HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links."
+          },
+          "greet_on_start": {
+            "type": "boolean",
+            "title": "Greet On Start",
+            "description": "When true, the agent greets the visitor as the conversation opens (and triggers a Human In The Loop node wired right after Chat Input).",
+            "default": false
+          },
+          "greeting_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting Prompt",
+            "description": "Optional extra instructions appended to the default greeting prompt used when greet_on_start is enabled."
           },
           "possible_queries": {
             "items": {
@@ -24639,6 +24675,28 @@
               }
             ],
             "title": "Input Disclaimer Html"
+          },
+          "greet_on_start": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greet On Start"
+          },
+          "greeting_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting Prompt"
           },
           "possible_queries": {
             "anyOf": [
