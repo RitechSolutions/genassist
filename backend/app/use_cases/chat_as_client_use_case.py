@@ -26,7 +26,8 @@ from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
 from app.services.translations import TranslationsService
-from app.core.utils.custom_attributes import extract_custom_attributes
+from app.core.utils.custom_attributes import extract_custom_attributes, get_hidden_keys
+from app.core.utils.sensitive_data_utils import build_hidden_value_map, mask_hidden_values
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.file_manager import FileManagerService
 from app.services.realtime_notifications import (
@@ -398,6 +399,29 @@ async def process_conversation_update_with_agent(
         await _localize_form_schema(
             agent_response, agent.id, (model.metadata or {}).get("language")
         )
+
+        # Mask any Chat Input parameters marked "hidden" before the agent response
+        # and messages are persisted/logged. The workflow already executed with the
+        # real values (and Redis functional stores already hold them), so this only
+        # affects stored/displayed data: agent_response_logs.raw_response,
+        # transcript_messages.text, and conversations.custom_attributes.
+        hidden_keys = get_hidden_keys(agent.workflow.get("nodes") if agent.workflow else None)
+        if hidden_keys:
+            node_statuses = (
+                agent_response.get("row_agent_response", {})
+                .get("state", {})
+                .get("nodeExecutionStatus", {})
+            )
+            hidden_value_map = build_hidden_value_map(
+                hidden_keys,
+                node_statuses=node_statuses,
+                fallback_values=model.metadata,
+            )
+            if hidden_value_map:
+                agent_response = mask_hidden_values(agent_response, hidden_value_map)
+                for msg in model.messages:
+                    if msg.text:
+                        msg.text = mask_hidden_values(msg.text, hidden_value_map)
 
         # Set formatted agent message in transcript
         now = datetime.now(timezone.utc)

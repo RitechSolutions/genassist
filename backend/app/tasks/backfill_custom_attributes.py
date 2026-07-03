@@ -3,7 +3,14 @@ import logging
 
 from celery import shared_task
 
-from app.core.utils.custom_attributes import extract_custom_attributes_from_state
+from app.core.utils.custom_attributes import (
+    extract_custom_attributes_from_state,
+    get_hidden_keys,
+)
+from app.core.utils.sensitive_data_utils import (
+    build_hidden_value_map,
+    mask_hidden_values,
+)
 from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
@@ -125,6 +132,14 @@ async def backfill_custom_attributes_async(force: bool = False):
                 attrs = extract_custom_attributes_from_state(
                     node_statuses, workflow_nodes=workflow_nodes
                 )
+
+                # Mask any filterable parameters that are also marked "hidden".
+                hidden_keys = get_hidden_keys(workflow_nodes)
+                if attrs and hidden_keys:
+                    hidden_value_map = build_hidden_value_map(
+                        hidden_keys, node_statuses=node_statuses
+                    )
+                    attrs = mask_hidden_values(attrs, hidden_value_map)
 
                 if attrs:
                     await db.execute(
