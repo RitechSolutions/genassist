@@ -13,6 +13,10 @@ from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowMinimal, WorkflowUpdate
+from app.core.utils.workflow_secrets import (
+    decrypt_hidden_defaults,
+    encrypt_hidden_defaults,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ class WorkflowService:
         result: List[WorkflowInDB] = []
         for o in orm_objs:
             wf = WorkflowInDB.model_validate(o, from_attributes=True)
+            wf.nodes = decrypt_hidden_defaults(wf.nodes)
             # "who modified last": prefer updated_by, fall back to the creator
             # for workflows that have never been edited since creation.
             editor_id = o.updated_by or o.created_by
@@ -70,18 +75,30 @@ class WorkflowService:
         orm_obj = await self.repository.get_by_id(workflow_id)
         if not orm_obj:
             raise AppException(error_key=ErrorKey.WORKFLOW_NOT_FOUND, status_code=404)
-        return WorkflowInDB.model_validate(orm_obj, from_attributes=True)
+        wf = WorkflowInDB.model_validate(orm_obj, from_attributes=True)
+        wf.nodes = decrypt_hidden_defaults(wf.nodes)
+        return wf
 
     async def get_by_ids(self, ids: List[UUID]) -> List[WorkflowInDB]:
         orm_objs = await self.repository.get_by_ids(ids)
-        return [WorkflowInDB.model_validate(o, from_attributes=True) for o in orm_objs]
+        result: List[WorkflowInDB] = []
+        for o in orm_objs:
+            wf = WorkflowInDB.model_validate(o, from_attributes=True)
+            wf.nodes = decrypt_hidden_defaults(wf.nodes)
+            result.append(wf)
+        return result
 
     # ---------- WRITE ----------
     async def create(self, data: WorkflowCreate) -> WorkflowInDB:
         # convert schema ➜ ORM
-        new_workflow = WorkflowModel(**data.model_dump())
+        payload = data.model_dump()
+        # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
+        payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
+        new_workflow = WorkflowModel(**payload)
         created = await self.repository.create(new_workflow)
-        return WorkflowInDB.model_validate(created, from_attributes=True)
+        result = WorkflowInDB.model_validate(created, from_attributes=True)
+        result.nodes = decrypt_hidden_defaults(result.nodes)
+        return result
 
     async def update(self, workflow_id: UUID, data: WorkflowUpdate) -> WorkflowInDB:
         orm_obj = await self.repository.get_by_id(workflow_id, eager=["agent"])
@@ -89,13 +106,18 @@ class WorkflowService:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
         # mutate ORM object in place
-        for field, value in data.model_dump().items():
+        payload = data.model_dump()
+        # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
+        payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
+        for field, value in payload.items():
             setattr(orm_obj, field, value)
 
         updated = await self.repository.update(orm_obj)
         if updated.agent:
             await self._invalidate_agent_caches(updated.agent.id)
-        return WorkflowInDB.model_validate(updated, from_attributes=True)
+        result = WorkflowInDB.model_validate(updated, from_attributes=True)
+        result.nodes = decrypt_hidden_defaults(result.nodes)
+        return result
 
     async def delete(self, workflow_id: UUID) -> None:
         orm_obj = await self.repository.get_by_id(workflow_id, eager=["agent"])
