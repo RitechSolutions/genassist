@@ -210,6 +210,169 @@ async def test_create_case_returns_error_envelope_with_real_status_and_detail():
     assert result == {"status": 400, "data": {"error": '{"error":"invalid_client"}'}}
 
 
+def _extract_soql(url: str) -> str:
+    """Decode the SOQL query string from a /query/?q=<encoded> URL."""
+    from urllib.parse import unquote
+
+    marker = "/query/?q="
+    assert marker in url
+    return unquote(url.split(marker, 1)[1])
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_builds_soql_and_normalizes():
+    """FR-3/4/5: SOQL filters to Online articles and records are normalized."""
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {
+            "done": True,
+            "records": [
+                {
+                    "Id": "kav-1",
+                    "KnowledgeArticleId": "ka-1",
+                    "ArticleNumber": "000001",
+                    "Title": "How to reset",
+                    "Summary": "A summary",
+                    "Body__c": "<p>Body HTML</p>",
+                    "LastPublishedDate": "2026-01-01T00:00:00.000+0000",
+                }
+            ],
+        }
+
+    with patch.object(
+        connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request
+    ) as mock_request:
+        articles = await connector.fetch_knowledge_articles(content_field="Body__c")
+
+    # The query call is the second call (after the token exchange).
+    soql = _extract_soql(mock_request.await_args_list[1].args[1])
+    assert "FROM Knowledge__kav" in soql
+    assert "PublishStatus='Online'" in soql
+    assert "Body__c" in soql
+    assert "Language=" not in soql
+    assert "WITH DATA CATEGORY" not in soql
+
+    assert articles == [
+        {
+            "id": "ka-1",
+            "title": "How to reset",
+            "summary": "A summary",
+            "body": "<p>Body HTML</p>",
+            "updated_at": "2026-01-01T00:00:00.000+0000",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_includes_language_filter():
+    """FR-5: the Language predicate is added to the WHERE clause when provided."""
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {"done": True, "records": []}
+
+    with patch.object(
+        connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request
+    ) as mock_request:
+        await connector.fetch_knowledge_articles(content_field="Body__c", language="en_US")
+
+    soql = _extract_soql(mock_request.await_args_list[1].args[1])
+    assert "PublishStatus='Online'" in soql
+    assert "Language='en_US'" in soql
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_data_category_after_where():
+    """FR-5: WITH DATA CATEGORY appears AFTER the WHERE clause (distinct SOQL syntax)."""
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {"done": True, "records": []}
+
+    with patch.object(
+        connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request
+    ) as mock_request:
+        await connector.fetch_knowledge_articles(
+            content_field="Body__c",
+            language="en_US",
+            data_category="Geography__c ABOVE usa__c",
+        )
+
+    soql = _extract_soql(mock_request.await_args_list[1].args[1])
+    assert "WITH DATA CATEGORY Geography__c ABOVE usa__c" in soql
+    # data category clause must come after the WHERE clause
+    assert soql.index("WHERE") < soql.index("WITH DATA CATEGORY")
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_follows_next_records_url():
+    """FR-3: pagination follows nextRecordsUrl until done == true."""
+    connector = _connector()
+    next_url = "/services/data/v60.0/query/01g000000000000AAA-2000"
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        if url.endswith(next_url):
+            return {
+                "done": True,
+                "records": [{"KnowledgeArticleId": "ka-2", "Body__c": "b2"}],
+            }
+        # first page
+        return {
+            "done": False,
+            "nextRecordsUrl": next_url,
+            "records": [{"KnowledgeArticleId": "ka-1", "Body__c": "b1"}],
+        }
+
+    with patch.object(
+        connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request
+    ) as mock_request:
+        articles = await connector.fetch_knowledge_articles(content_field="Body__c")
+
+    ids = [a["id"] for a in articles]
+    assert ids == ["ka-1", "ka-2"]
+    # token + first page + next page = 3 requests, and the next page uses the token instance_url
+    assert mock_request.await_count == 3
+    assert mock_request.await_args_list[2].args[1] == (
+        f"https://myorg.my.salesforce.com{next_url}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_rejects_invalid_content_field():
+    """A missing/invalid content_field raises a clear error before any request."""
+    connector = _connector()
+    with pytest.raises(ValueError):
+        await connector.fetch_knowledge_articles(content_field="")
+    with pytest.raises(ValueError):
+        await connector.fetch_knowledge_articles(content_field="Body__c; DROP")
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_rejects_injected_data_category():
+    """FR-5/security: a data_category that isn't a well-formed WITH DATA CATEGORY filter
+    (contains quotes/keywords for injection, or lacks a category selector) is rejected."""
+    connector = _connector()
+    # Injection attempt via a string literal / extra clause.
+    with pytest.raises(ValueError):
+        await connector.fetch_knowledge_articles(
+            content_field="Body__c", data_category="Geo__c AT usa__c' OR '1'='1"
+        )
+    # Missing the AT/ABOVE/BELOW/ABOVE_OR_BELOW selector.
+    with pytest.raises(ValueError):
+        await connector.fetch_knowledge_articles(
+            content_field="Body__c", data_category="LIMIT 1"
+        )
+
+
 @pytest.mark.asyncio
 async def test_test_connection_success():
     """FR-11: test_connection performs the token exchange and reports success."""
