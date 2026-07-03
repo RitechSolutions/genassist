@@ -46,6 +46,7 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_TRANSCRIBE_S3_FILES_TASK: bool = True
     CELERY_ENABLE_ZENDESK_ANALYSIS_TASK: bool = True
     CELERY_ENABLE_IMPORT_ZENDESK_ARTICLES_TASK: bool = True
+    CELERY_ENABLE_IMPORT_SALESFORCE_ARTICLES_TASK: bool = True
     CELERY_ENABLE_IMPORT_SHAREPOINT_FILES_TASK: bool = True
     CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK: bool = True
     CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
@@ -203,6 +204,10 @@ class ProjectSettings(BaseSettings):
     ZENDESK_EMAIL: Optional[str] = "<enter-value-here>"
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
+
+    SALESFORCE_INSTANCE_URL: Optional[str] = None
+    SALESFORCE_CLIENT_ID: Optional[str] = None
+    SALESFORCE_CLIENT_SECRET: Optional[str] = None
 
     # Help Center → company Azure DevOps Boards (platform ops; not user App Settings)
     AZURE_DEVOPS_ORGANIZATION_URL: Optional[str] = None

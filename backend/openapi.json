@@ -2977,6 +2977,59 @@
         ]
       }
     },
+    "/api/app-settings/test-connection": {
+      "post": {
+        "tags": [
+          "v1",
+          "AppSettings"
+        ],
+        "summary": "Test Connection",
+        "description": "Test a Configuration Vars connection for the given type + values.",
+        "operationId": "test_connection_api_app_settings_test_connection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettingsTestConnection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Test Connection Api App Settings Test Connection Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/app-settings/{setting_id}": {
       "get": {
         "tags": [
@@ -8280,7 +8333,7 @@
         ],
         "parameters": [
           {
-            "name": "X-Tenant-ID",
+            "name": "x-tenant-id",
             "in": "header",
             "required": false,
             "schema": {
@@ -23198,6 +23251,24 @@
             "title": "Input Disclaimer Html",
             "description": "HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links."
           },
+          "greet_on_start": {
+            "type": "boolean",
+            "title": "Greet On Start",
+            "description": "When true, the agent greets the visitor as the conversation opens (and triggers a Human In The Loop node wired right after Chat Input).",
+            "default": false
+          },
+          "greeting_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting Prompt",
+            "description": "Optional extra instructions appended to the default greeting prompt used when greet_on_start is enabled."
+          },
           "possible_queries": {
             "items": {
               "type": "string"
@@ -23562,6 +23633,24 @@
             ],
             "title": "Input Disclaimer Html",
             "description": "HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links."
+          },
+          "greet_on_start": {
+            "type": "boolean",
+            "title": "Greet On Start",
+            "description": "When true, the agent greets the visitor as the conversation opens (and triggers a Human In The Loop node wired right after Chat Input).",
+            "default": false
+          },
+          "greeting_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting Prompt",
+            "description": "Optional extra instructions appended to the default greeting prompt used when greet_on_start is enabled."
           },
           "possible_queries": {
             "items": {
@@ -24311,6 +24400,28 @@
             ],
             "title": "Input Disclaimer Html"
           },
+          "greet_on_start": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greet On Start"
+          },
+          "greeting_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting Prompt"
+          },
           "possible_queries": {
             "anyOf": [
               {
@@ -24827,6 +24938,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "Salesforce",
               "FileManagerSettings",
               "Security",
               "Other"
@@ -24878,6 +24990,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "Salesforce",
               "FileManagerSettings",
               "Security",
               "Other"
@@ -24932,6 +25045,38 @@
         ],
         "title": "AppSettingsRead"
       },
+      "AppSettingsTestConnection": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Zendesk",
+              "WhatsApp",
+              "Gmail",
+              "Microsoft",
+              "Slack",
+              "Jira",
+              "Salesforce",
+              "FileManagerSettings",
+              "Security",
+              "Other"
+            ],
+            "title": "Type"
+          },
+          "values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Values"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "values"
+        ],
+        "title": "AppSettingsTestConnection",
+        "description": "Request body for testing a Configuration Vars (App Setting) connection.\n\n``values`` carries the credential fields the user has entered (or the stored,\nstill-encrypted values when re-testing an existing setting); the service\ndecrypts the encrypted fields before dispatching to the connector."
+      },
       "AppSettingsUpdate": {
         "properties": {
           "name": {
@@ -24956,6 +25101,7 @@
                   "Microsoft",
                   "Slack",
                   "Jira",
+                  "Salesforce",
                   "FileManagerSettings",
                   "Security",
                   "Other"
@@ -29495,7 +29641,8 @@
               "smb_share_folder",
               "azure_blob",
               "google_bucket",
-              "zendesk"
+              "zendesk",
+              "salesforce"
             ],
             "title": "Type",
             "default": "file"
@@ -29761,7 +29908,8 @@
               "smb_share_folder",
               "azure_blob",
               "google_bucket",
-              "zendesk"
+              "zendesk",
+              "salesforce"
             ],
             "title": "Type",
             "default": "file"
@@ -30144,7 +30292,8 @@
               "smb_share_folder",
               "azure_blob",
               "google_bucket",
-              "zendesk"
+              "zendesk",
+              "salesforce"
             ],
             "title": "Type",
             "default": "file"

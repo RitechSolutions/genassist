@@ -26,6 +26,12 @@ class AgentModel(Base, GroupScopedMixin):
     input_disclaimer_html: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
     llm_analyst_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # When true, the chat auto-runs the workflow as the conversation opens (an invisible
+    # system trigger) so the agent greets the visitor — and a Human In The Loop node wired
+    # directly after Chat Input still shows its form, with no node-level toggle needed.
+    greet_on_start: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Optional extra instructions appended to the built-in default greeting prompt.
+    greeting_prompt: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
 
     # Relationships
     operator = relationship("OperatorModel", back_populates="agent", uselist=False)

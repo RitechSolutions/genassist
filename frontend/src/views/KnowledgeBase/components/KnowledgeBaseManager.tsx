@@ -34,6 +34,7 @@ const KB_TYPE_OPTIONS = [
   { value: 'azure_blob', label: 'Azure Blob Storage' },
   { value: 'google_bucket', label: 'Google Bucket Storage' },
   { value: 'zendesk', label: 'Zendesk' },
+  { value: 'salesforce', label: 'SalesForce' },
 ] as const;
 
 const KnowledgeBaseManager: React.FC = () => {

@@ -70,6 +70,53 @@ async def test_get_schemas_endpoint(authorized_client):
         assert isinstance(zendesk_schema["fields"], list)
 
 @pytest.mark.asyncio
+async def test_schemas_endpoint_includes_salesforce(authorized_client):
+    """FR-11: /app-settings/form_schemas exposes the Salesforce credential type."""
+    response = authorized_client.get("/api/app-settings/form_schemas")
+    assert response.status_code == 200
+    data = response.json()
+    assert "Salesforce" in data
+    salesforce_schema = data["Salesforce"]
+    assert "name" in salesforce_schema
+    assert "fields" in salesforce_schema
+    assert isinstance(salesforce_schema["fields"], list)
+    field_names = {field["name"] for field in salesforce_schema["fields"]}
+    assert {
+        "salesforce_instance_url",
+        "salesforce_client_id",
+        "salesforce_client_secret",
+    } <= field_names
+
+
+@pytest.mark.asyncio
+async def test_create_salesforce_app_setting_round_trips(authorized_client):
+    """FR-3: an app-setting of type 'Salesforce' can be created and read back."""
+    payload = {
+        "name": "My SalesForce Org",
+        "type": "Salesforce",
+        "values": {
+            "salesforce_instance_url": "https://myorg.my.salesforce.com",
+            "salesforce_client_id": "client-id",
+            "salesforce_client_secret": "client-secret",
+        },
+        "description": "SalesForce credentials for integration tests",
+        "is_active": 1,
+    }
+    response = authorized_client.post("/api/app-settings/", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["type"] == "Salesforce"
+    setting_id = data["id"]
+
+    get_response = authorized_client.get(f"/api/app-settings/{setting_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["type"] == "Salesforce"
+
+    # cleanup
+    authorized_client.delete(f"/api/app-settings/{setting_id}")
+
+
+@pytest.mark.asyncio
 async def test_update_app_setting(authorized_client, new_app_setting_data):
     setting_id = new_app_setting_data["id"]
     update_payload = {
