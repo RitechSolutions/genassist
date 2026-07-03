@@ -129,6 +129,106 @@ class SalesforceConnector:
         self._token_instance_url = (result.get("instance_url") or self.instance_url).rstrip("/")
         return access_token
 
+    async def fetch_knowledge_articles(
+        self,
+        content_field: str,
+        language: Optional[str] = None,
+        data_category: Optional[str] = None,
+        page_size: int = 200,
+    ) -> List[Dict[str, Any]]:
+        """Fetch published SalesForce Knowledge articles via SOQL over ``Knowledge__kav``.
+
+        Selects ``Id, KnowledgeArticleId, ArticleNumber, Title, Summary, {content_field},
+        LastPublishedDate`` for ``PublishStatus='Online'`` articles, optionally filtered by
+        ``Language`` and/or a ``WITH DATA CATEGORY`` clause. Results are paginated from
+        scratch via the REST ``nextRecordsUrl`` cursor (looping until ``done == true``).
+
+        Each record is normalized to
+        ``{"id": <KnowledgeArticleId>, "title", "summary", "body": <content_field>,
+        "updated_at": <LastPublishedDate>}``.
+        """
+        if not content_field or not isinstance(content_field, str) or not content_field.strip():
+            raise ValueError(
+                "SalesForce content_field is required (the article-body field API name)."
+            )
+        content_field = content_field.strip()
+        # Guard against SOQL injection through the (operator-supplied) field name: a field
+        # API name is alphanumeric + underscore (custom fields end in "__c").
+        if not all(c.isalnum() or c == "_" for c in content_field):
+            raise ValueError(
+                f"Invalid SalesForce content_field {content_field!r}: must be a field API name."
+            )
+
+        # WITH DATA CATEGORY uses a dedicated SOQL syntax (not a WHERE predicate), so its
+        # (operator-supplied) value is interpolated raw and must be validated up front — before
+        # any network call — to prevent SOQL injection. A data-category filter is category/group
+        # API names (alphanumeric + underscore, optionally grouped with parentheses) joined by the
+        # selectors AT / ABOVE / BELOW / ABOVE_OR_BELOW (and AND/OR). Reject anything else.
+        data_category = data_category.strip() if data_category else data_category
+        if data_category:
+            if not all(c.isalnum() or c in "_() " for c in data_category):
+                raise ValueError(
+                    f"Invalid SalesForce data_category {data_category!r}: only category/group "
+                    "API names, parentheses, and AT/ABOVE/BELOW/ABOVE_OR_BELOW selectors are allowed."
+                )
+            tokens = {t.upper() for t in data_category.replace("(", " ").replace(")", " ").split()}
+            if not tokens & {"AT", "ABOVE", "BELOW", "ABOVE_OR_BELOW"}:
+                raise ValueError(
+                    f"Invalid SalesForce data_category {data_category!r}: must be a WITH DATA "
+                    "CATEGORY filter, e.g. 'Region__c AT Europe__c'."
+                )
+
+        access_token = await self._get_access_token()
+        instance_url = self._token_instance_url or self.instance_url
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+        base = f"{instance_url}/services/data/{SALESFORCE_API_VERSION}"
+
+        select_clause = (
+            f"SELECT Id, KnowledgeArticleId, ArticleNumber, Title, Summary, "
+            f"{content_field}, LastPublishedDate FROM Knowledge__kav"
+        )
+        where_clause = "WHERE PublishStatus='Online'"
+        if language:
+            # Escape for a SOQL string literal (backslash then single-quote), as in _find_topic.
+            escaped_lang = language.replace("\\", "\\\\").replace("'", "\\'")
+            where_clause += f" AND Language='{escaped_lang}'"
+
+        soql = f"{select_clause} {where_clause}"
+        # WITH DATA CATEGORY must follow the WHERE clause (before ORDER BY/LIMIT). The value was
+        # validated up front (see the guard near content_field) so it is safe to interpolate.
+        if data_category:
+            soql += f" WITH DATA CATEGORY {data_category}"
+        soql += f" LIMIT {int(page_size)}"
+
+        articles: List[Dict[str, Any]] = []
+        response = await self._make_request(
+            "GET", f"{base}/query/?q={quote(soql)}", headers=headers
+        )
+        while True:
+            for record in response.get("records") or []:
+                articles.append(
+                    {
+                        "id": record.get("KnowledgeArticleId"),
+                        "title": record.get("Title"),
+                        "summary": record.get("Summary"),
+                        "body": record.get(content_field),
+                        "updated_at": record.get("LastPublishedDate"),
+                    }
+                )
+            if response.get("done", True):
+                break
+            next_url = response.get("nextRecordsUrl")
+            if not next_url:
+                break
+            response = await self._make_request(
+                "GET", f"{instance_url}{next_url}", headers=headers
+            )
+
+        return articles
+
     async def create_case(
         self,
         subject: str,

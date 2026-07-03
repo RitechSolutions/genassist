@@ -36,6 +36,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { GmailConnection } from "./GmailConnection";
 import { Office365Connection } from "./Office365Connection";
+import { SalesforceConnection } from "./SalesforceConnection";
 import { SchemaFormRenderer } from "@/components/SchemaFormRenderer";
 import type { FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 
@@ -234,6 +235,11 @@ export function DataSourceDialog({
       return;
     }
 
+    if (sourceType === "salesforce" && !connectionData.app_settings_id) {
+      toast.error("Configuration Vars are required.");
+      return;
+    }
+
     if (["gmail", "o365"].includes(sourceType)) {
       const oauthDataSource =
         currentDataSource ||
@@ -339,6 +345,7 @@ export function DataSourceDialog({
   };
 
   const isOAuthType = ["gmail", "o365"].includes(sourceType);
+  const isSalesforce = sourceType === "salesforce";
   const schema = dataSourceSchemas[sourceType];
   const hasAdvancedFields =
     schema?.fields.some((f) => {
@@ -446,8 +453,15 @@ export function DataSourceDialog({
                   />
                 )}
 
+                {isSalesforce && (
+                  <SalesforceConnection
+                    connectionData={connectionData}
+                    onChange={handleConnectionDataChange}
+                  />
+                )}
+
                 {/* Required fields */}
-                {!isOAuthType && schema?.fields && (
+                {!isOAuthType && !isSalesforce && schema?.fields && (
                   <SchemaFormRenderer
                     schema={{ fields: schema.fields }}
                     connectionData={connectionData}
@@ -463,7 +477,7 @@ export function DataSourceDialog({
                     <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
                   </div>
                   <div className="flex-1" />
-                  {!isOAuthType && hasAdvancedFields && (
+                  {!isOAuthType && !isSalesforce && hasAdvancedFields && (
                     <div className="flex items-center gap-2">
                       <Label htmlFor="show_advanced">Advanced</Label>
                       <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
@@ -472,7 +486,7 @@ export function DataSourceDialog({
                 </div>
 
                 {/* Advanced fields */}
-                {!isOAuthType && showAdvanced && schema?.fields && (
+                {!isOAuthType && !isSalesforce && showAdvanced && schema?.fields && (
                   <SchemaFormRenderer
                     schema={{ fields: schema.fields }}
                     connectionData={connectionData}

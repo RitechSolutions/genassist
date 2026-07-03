@@ -277,6 +277,7 @@ def create_celery():
         "app.tasks.conversations_tasks",
         "app.tasks.zendesk_tasks",
         "app.tasks.zendesk_article_sync_tasks",
+        "app.tasks.salesforce_article_sync_tasks",
         "app.tasks.audio_tasks",
         "app.tasks.sharepoint_tasks",
         "app.tasks.fine_tune_job_sync_tasks",
@@ -417,6 +418,18 @@ def create_celery():
             # logic, so the tick only needs to be frequent enough to *check* whether
             # a KB is due. Aligned with the 15-min expires below — every-1-minute
             # caused queue pileup when one sync ran long.
+            "schedule": crontab(minute="*/15"),
+            "options": {
+                "expires": 900,  # Task expires after 15 minutes
+            },
+        }
+
+    if settings.CELERY_ENABLE_IMPORT_SALESFORCE_ARTICLES_TASK:
+        beat_schedule["import-salesforce-articles-to-kb"] = {
+            "task": "app.tasks.salesforce_article_sync_tasks.import_salesforce_articles_to_kb",
+            # Beat fires every 15 minutes; the task itself has cron-based scheduling
+            # logic, so the tick only needs to be frequent enough to *check* whether
+            # a KB is due. Aligned with the 15-min expires below.
             "schedule": crontab(minute="*/15"),
             "options": {
                 "expires": 900,  # Task expires after 15 minutes

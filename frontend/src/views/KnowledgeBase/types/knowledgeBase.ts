@@ -22,7 +22,7 @@ export interface UploadResult {
     name: string;
     description: string;
     content: string;
-    type: "text" | "file" | "url" | "s3" | "sharepoint" | "smb_share_folder" | "azure_blob" | "google_bucket" | "zendesk";
+    type: "text" | "file" | "url" | "s3" | "sharepoint" | "smb_share_folder" | "azure_blob" | "google_bucket" | "zendesk" | "salesforce";
     sync_source_id: string;
     llm_provider_id?: string | null;
     sync_schedule?: string;
