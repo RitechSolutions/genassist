@@ -98,8 +98,8 @@ class FallbackChainService:
         key_builder=fallback_chain_id_key_builder,
         coder=PickleCoder,
     )
-    async def get_by_id(self, chain_id: UUID):
-        obj = await self.repository.get_by_id(chain_id)
+    async def get_by_id(self, fallback_chain_id: UUID):
+        obj = await self.repository.get_by_id(fallback_chain_id)
         if not obj:
             raise AppException(error_key=ErrorKey.FALLBACK_CHAIN_NOT_FOUND, status_code=404)
         return FallbackChainRead.model_validate(obj)
