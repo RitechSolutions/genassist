@@ -8333,7 +8333,7 @@
         ],
         "parameters": [
           {
-            "name": "x-tenant-id",
+            "name": "X-Tenant-ID",
             "in": "header",
             "required": false,
             "schema": {
@@ -8576,6 +8576,282 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fallback-chains": {
+      "get": {
+        "tags": [
+          "v1",
+          "FallbackChains"
+        ],
+        "summary": "Get All",
+        "operationId": "get_all_api_fallback_chains_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FallbackChainRead"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Api Fallback Chains Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "FallbackChains"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_fallback_chains_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FallbackChainCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FallbackChainRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/fallback-chains/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "FallbackChains"
+        ],
+        "summary": "Get All Minimal",
+        "operationId": "get_all_minimal_api_fallback_chains_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FallbackChainMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Minimal Api Fallback Chains Minimal Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/fallback-chains/{chain_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "FallbackChains"
+        ],
+        "summary": "Get",
+        "operationId": "get_api_fallback_chains__chain_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chain_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chain Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FallbackChainRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "v1",
+          "FallbackChains"
+        ],
+        "summary": "Update",
+        "operationId": "update_api_fallback_chains__chain_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chain_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chain Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FallbackChainUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FallbackChainRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "FallbackChains"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_api_fallback_chains__chain_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chain_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chain Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -28319,6 +28595,235 @@
         "type": "object",
         "title": "ExistsRequest"
       },
+      "FallbackChainCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "provider_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Provider Ids"
+          },
+          "retry_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetryPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "provider_ids"
+        ],
+        "title": "FallbackChainCreate"
+      },
+      "FallbackChainMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "FallbackChainMinimal"
+      },
+      "FallbackChainRead": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "provider_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Ids",
+            "description": "Ordered LLM provider ids; index 0 is highest priority."
+          },
+          "retry_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetryPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "FallbackChainRead"
+      },
+      "FallbackChainUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "provider_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Ids",
+            "description": "Ordered LLM provider ids; index 0 is highest priority."
+          },
+          "retry_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetryPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "title": "FallbackChainUpdate"
+      },
       "FeatureFlagCreate": {
         "properties": {
           "key": {
@@ -35432,6 +35937,44 @@
         ],
         "title": "ReportedIssueRead",
         "description": "A message that an admin/supervisor commented on, plus its resolution status\nand the context needed to navigate to the conversation or the agent's workflow."
+      },
+      "RetryPolicy": {
+        "properties": {
+          "retry_count": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Retry Count",
+            "description": "Extra attempts per provider beyond the first.",
+            "default": 0
+          },
+          "backoff_seconds": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Backoff Seconds",
+            "description": "Initial backoff seconds; doubles each retry.",
+            "default": 0.0
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 0.0,
+            "title": "Timeout Seconds",
+            "description": "Default max seconds to wait for a provider's reply before failing over (0 = no limit).",
+            "default": 0.0
+          },
+          "provider_timeouts": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Provider Timeouts",
+            "description": "Per-provider response timeout overrides, keyed by provider id (seconds). Overrides timeout_seconds for that provider."
+          }
+        },
+        "type": "object",
+        "title": "RetryPolicy"
       },
       "RoleCreate": {
         "properties": {

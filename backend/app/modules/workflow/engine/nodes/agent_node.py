@@ -196,6 +196,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         """
         # Get configuration values (already resolved by BaseNode)
         provider_id: str | None = config.get("providerId", None)
+        fallback_chain_id: str | None = config.get("fallbackChainId", None)
         # ToolSelector, ReActAgent
         agent_type: str = config.get("type", "ToolSelector")
         max_iterations = config.get("maxIterations", 7)
@@ -230,7 +231,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         try:
             from app.dependencies.injector import injector
             llm_provider = injector.get(LLMProvider)
-            llm_model = await llm_provider.get_model(provider_id)
+            llm_model = await llm_provider.get_model_for_node(provider_id, fallback_chain_id)
             logger.info("Agent type selected: %s, LLM model: %s",
                         agent_type, llm_model)
 

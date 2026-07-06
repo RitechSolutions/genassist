@@ -16,6 +16,13 @@ AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         required=True
     ),
     FieldSchema(
+        name="fallbackChainId",
+        type="select",
+        label="Fallback Chain",
+        required=False,
+        description="Optional ordered list of backup providers to try if the primary fails (timeouts, rate limits, service errors)."
+    ),
+    FieldSchema(
         name="systemPrompt",
         type="text",
         label="System Prompt",
