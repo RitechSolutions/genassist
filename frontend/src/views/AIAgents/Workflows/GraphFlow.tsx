@@ -925,7 +925,8 @@ const GraphFlowContent: React.FC = () => {
     [nodeSearchAgentMode, showChatInput]
   );
 
-  // Shortcut: ⌘K / Ctrl+K (anywhere) or "/" (when not typing) opens search; Esc closes it.
+  // Shortcuts: ⌘K/Ctrl+K (or "/") opens the command palette; ⌘I/Ctrl+I toggles the
+  // Available Nodes panel; Esc closes the palette.
   useEffect(() => {
     const handleSearchKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -938,6 +939,16 @@ const GraphFlowContent: React.FC = () => {
         setNodeSearchAgentMode(false);
         setNodeSearchQuery("");
         setNodeSearchOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
+        e.preventDefault();
+        const willOpen = !showNodePanel;
+        setShowNodePanel(willOpen);
+        if (willOpen) {
+          // Opening the Available Nodes panel closes the workflows panel and
+          // lands on the nodes tab (not the conversational tab).
+          setShowWorkflowPanel(false);
+          setConversationalTabActive(false);
+        }
       } else if (e.key === "/" && !isTyping && !nodeSearchOpen) {
         e.preventDefault();
         setNodeSearchAgentMode(false);
@@ -950,7 +961,7 @@ const GraphFlowContent: React.FC = () => {
     };
     window.addEventListener("keydown", handleSearchKey);
     return () => window.removeEventListener("keydown", handleSearchKey);
-  }, [nodeSearchOpen, closeNodeSearch]);
+  }, [nodeSearchOpen, closeNodeSearch, showNodePanel]);
 
   // Close search on any canvas click (pane or node)
   const handleCanvasClickClose = useCallback(() => {
