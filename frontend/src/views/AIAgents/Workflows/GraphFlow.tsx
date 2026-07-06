@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import ReactFlow, {
   Background,
   useNodesState,
@@ -44,9 +44,10 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X, Plus, Sparkles, ArrowUp } from "lucide-react";
+import { History, ChevronLeft, X, Plus } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
+import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
 import { getAllAppSettings } from "@/services/appSettings";
 import { getAllDataSources } from "@/services/dataSources";
@@ -90,6 +91,12 @@ const GraphFlowContent: React.FC = () => {
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
+
+  // Node search state (spotlight search — opened via ⌘K / Ctrl+K or "/")
+  const [nodeSearchOpen, setNodeSearchOpen] = useState(false);
+  const [nodeSearchQuery, setNodeSearchQuery] = useState("");
+  // When true the overlay is in "agent" mode (an /agent badge + messages go to the AI assistant)
+  const [nodeSearchAgentMode, setNodeSearchAgentMode] = useState(false);
 
   // Setup wizard — show when arriving from onboarding workflow creation
   const [searchParams, setSearchParams] = useSearchParams();
@@ -361,7 +368,6 @@ const GraphFlowContent: React.FC = () => {
   // Canvas AI assistant
   const [conversationalTabActive, setConversationalTabActive] = useState(false);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
-  const [bottomInputMessage, setBottomInputMessage] = useState("");
   const assistant = useCanvasAssistant({
     nodes,
     edges,
@@ -702,6 +708,255 @@ const GraphFlowContent: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [copySelectedNodes, pasteFromClipboard, undo, redo]);
 
+  // ---- Node search / command palette --------------------------------------
+  const closeNodeSearch = useCallback(() => {
+    setNodeSearchOpen(false);
+    setNodeSearchQuery("");
+    setNodeSearchAgentMode(false);
+  }, []);
+
+  // Overlay mode derived from state + input text:
+  //  - "agent":   /agent was picked — typed text is sent to the AI assistant
+  //  - "command": input starts with "/" — show the /agent command + node list
+  //  - "search":  default — spotlight matching nodes on the canvas
+  const nodeSearchModeType: "agent" | "command" | "search" = nodeSearchAgentMode
+    ? "agent"
+    : nodeSearchQuery.startsWith("/")
+    ? "command"
+    : "search";
+
+  // Text after the leading "/" in command mode (filters both the node list and /agent)
+  const nodeSearchCommandFilter =
+    nodeSearchModeType === "command"
+      ? nodeSearchQuery.slice(1).trim().toLowerCase()
+      : "";
+
+  // IDs of nodes matching the current query (null unless in search mode with text)
+  const nodeSearchMatchIds = useMemo(() => {
+    const query = nodeSearchQuery.trim().toLowerCase();
+    if (!nodeSearchOpen || nodeSearchModeType !== "search" || !query) return null;
+
+    const terms = query.split(/\s+/).filter(Boolean);
+    const ids = new Set<string>();
+    for (const node of nodes) {
+      const label = nodeRegistry.getNodeType(node.type ?? "")?.label ?? "";
+      const name = typeof node.data?.name === "string" ? node.data.name : "";
+      const haystack = `${name} ${label} ${node.type ?? ""}`.toLowerCase();
+      if (terms.every((term) => haystack.includes(term))) {
+        ids.add(node.id);
+      }
+    }
+    return ids;
+  }, [nodes, nodeSearchOpen, nodeSearchModeType, nodeSearchQuery]);
+
+  // Nodes/edges with presentational search classNames layered on top of state.
+  // Kept separate from `nodes`/`edges` so search never dirties or persists onto the workflow.
+  const displayNodes = useMemo(() => {
+    if (!nodeSearchMatchIds) return nodes;
+    return nodes.map((node) => ({
+      ...node,
+      className: [
+        node.className,
+        nodeSearchMatchIds.has(node.id) ? "node-search-match" : "node-search-dim",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    }));
+  }, [nodes, nodeSearchMatchIds]);
+
+  const displayEdges = useMemo(() => {
+    if (!nodeSearchMatchIds) return edges;
+    return edges.map((edge) => {
+      // Keep an edge lit only when both endpoints matched; otherwise dim it.
+      const connectsMatches =
+        nodeSearchMatchIds.has(edge.source) && nodeSearchMatchIds.has(edge.target);
+      if (connectsMatches) return edge;
+      return {
+        ...edge,
+        className: [edge.className, "edge-search-dim"].filter(Boolean).join(" "),
+      };
+    });
+  }, [edges, nodeSearchMatchIds]);
+
+  const nodeSearchMatchCount = nodeSearchMatchIds?.size ?? 0;
+
+  // Enter → fit the viewport to the matched node(s)
+  const focusSearchMatches = useCallback(() => {
+    if (!reactFlowInstance || !nodeSearchMatchIds || nodeSearchMatchIds.size === 0) return;
+    const matched = nodes
+      .filter((n) => nodeSearchMatchIds.has(n.id))
+      .map((n) => ({ id: n.id }));
+    reactFlowInstance.fitView({
+      nodes: matched,
+      duration: 500,
+      padding: 0.4,
+      maxZoom: 1.4,
+    });
+  }, [reactFlowInstance, nodeSearchMatchIds, nodes]);
+
+  // Results shown in the overlay: existing canvas nodes that matched the query.
+  const nodeSearchExistingResults = useMemo(() => {
+    if (!nodeSearchMatchIds) return [];
+    return nodes
+      .filter((n) => nodeSearchMatchIds.has(n.id))
+      .map((n) => {
+        const def = nodeRegistry.getNodeType(n.type ?? "");
+        const name =
+          typeof n.data?.name === "string" && n.data.name.trim()
+            ? n.data.name
+            : def?.label ?? n.type ?? "Node";
+        return {
+          id: n.id,
+          name,
+          typeLabel: def?.label ?? n.type ?? "",
+          icon: def?.icon ?? "Box",
+          category: def?.category ?? "utils",
+        };
+      });
+  }, [nodes, nodeSearchMatchIds]);
+
+  // Registry node types offered in the results list (as "add new").
+  //  - search mode:  fuzzy match to the query, capped
+  //  - command mode: match the text after "/", full list
+  //  - agent mode:   none
+  const nodeSearchAddResults = useMemo(() => {
+    if (!nodeSearchOpen) return [];
+
+    let terms: string[];
+    let cap: number;
+    if (nodeSearchModeType === "command") {
+      terms = nodeSearchCommandFilter.split(/\s+/).filter(Boolean);
+      cap = Infinity;
+    } else if (nodeSearchModeType === "search") {
+      const query = nodeSearchQuery.trim().toLowerCase();
+      if (!query) return [];
+      terms = query.split(/\s+/).filter(Boolean);
+      cap = 8;
+    } else {
+      return [];
+    }
+
+    const matches = nodeRegistry.getAllNodeTypes().filter((def) => {
+      const haystack = `${def.label} ${def.description} ${def.type}`.toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
+
+    return (Number.isFinite(cap) ? matches.slice(0, cap) : matches).map((def) => ({
+      type: def.type,
+      label: def.label,
+      description: def.description,
+      icon: def.icon,
+      category: def.category,
+    }));
+  }, [nodeSearchOpen, nodeSearchModeType, nodeSearchQuery, nodeSearchCommandFilter]);
+
+  // Whether the /agent command is offered (respects the chat-input feature flag)
+  const showAgentCommand =
+    showChatInput &&
+    nodeSearchModeType === "command" &&
+    (nodeSearchCommandFilter === "" || "agent".includes(nodeSearchCommandFilter));
+
+  // Focus/center the viewport on a single node picked from the results list.
+  const focusNodeFromSearch = useCallback(
+    (nodeId: string) => {
+      if (!reactFlowInstance) return;
+      reactFlowInstance.fitView({
+        nodes: [{ id: nodeId }],
+        duration: 500,
+        padding: 0.5,
+        maxZoom: 1.4,
+      });
+    },
+    [reactFlowInstance]
+  );
+
+  // Add a new node (from the "add new" results) at the center of the viewport, then close search.
+  const addNodeFromSearch = useCallback(
+    (nodeType: string) => {
+      const position = reactFlowInstance
+        ? reactFlowInstance.screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          })
+        : undefined;
+      addNewNode(nodeType, position);
+      closeNodeSearch();
+    },
+    [reactFlowInstance, addNewNode, closeNodeSearch]
+  );
+
+  // Enter agent mode (picked the /agent command) — swaps the "/…" text for an /agent badge
+  const enterNodeSearchAgentMode = useCallback(() => {
+    setNodeSearchAgentMode(true);
+    setNodeSearchQuery("");
+  }, []);
+
+  // Leave agent mode (badge removed) — back to a blank search
+  const exitNodeSearchAgentMode = useCallback(() => {
+    setNodeSearchAgentMode(false);
+    setNodeSearchQuery("");
+  }, []);
+
+  // Send the typed message to the AI assistant, then hand off to the conversational panel.
+  const sendAgentMessageFromSearch = useCallback(
+    (message: string) => {
+      const text = message.trim();
+      if (!text) return;
+      assistant.sendMessage(text);
+      setHasStartedConversation(true);
+      setShowNodePanel(true);
+      setConversationalTabActive(true);
+      closeNodeSearch();
+    },
+    [assistant, closeNodeSearch]
+  );
+
+  // Update the overlay query. Typing "/agent " (the command followed by a space)
+  // auto-activates agent mode, turning it into a badge and keeping any trailing text.
+  const handleNodeSearchQueryChange = useCallback(
+    (value: string) => {
+      if (!nodeSearchAgentMode && showChatInput && /^\/agent\s/i.test(value)) {
+        setNodeSearchAgentMode(true);
+        setNodeSearchQuery(value.replace(/^\/agent\s+/i, ""));
+        return;
+      }
+      setNodeSearchQuery(value);
+    },
+    [nodeSearchAgentMode, showChatInput]
+  );
+
+  // Shortcut: ⌘K / Ctrl+K (anywhere) or "/" (when not typing) opens search; Esc closes it.
+  useEffect(() => {
+    const handleSearchKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isTyping = !!target.closest(
+        "input, textarea, select, [contenteditable='true'], .ace_editor"
+      );
+
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setNodeSearchAgentMode(false);
+        setNodeSearchQuery("");
+        setNodeSearchOpen(true);
+      } else if (e.key === "/" && !isTyping && !nodeSearchOpen) {
+        e.preventDefault();
+        setNodeSearchAgentMode(false);
+        setNodeSearchQuery("/"); // open straight into the command palette
+        setNodeSearchOpen(true);
+      } else if (e.key === "Escape" && nodeSearchOpen) {
+        e.preventDefault();
+        closeNodeSearch();
+      }
+    };
+    window.addEventListener("keydown", handleSearchKey);
+    return () => window.removeEventListener("keydown", handleSearchKey);
+  }, [nodeSearchOpen, closeNodeSearch]);
+
+  // Close search on any canvas click (pane or node)
+  const handleCanvasClickClose = useCallback(() => {
+    if (nodeSearchOpen) closeNodeSearch();
+  }, [nodeSearchOpen, closeNodeSearch]);
+
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
@@ -720,8 +975,8 @@ const GraphFlowContent: React.FC = () => {
                 className="h-full w-full"
               >
                 <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
+                  nodes={displayNodes}
+                  edges={displayEdges}
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
@@ -733,6 +988,8 @@ const GraphFlowContent: React.FC = () => {
                   onSelectionChange={onSelectionChange}
                   onDragOver={onDragOver}
                   onDrop={onDrop}
+                  onPaneClick={handleCanvasClickClose}
+                  onNodeClick={handleCanvasClickClose}
                   onNodeDoubleClick={onNodeDoubleClick}
                   onReconnect={onReconnect}
                   onReconnectStart={onReconnectStart}
@@ -839,46 +1096,6 @@ const GraphFlowContent: React.FC = () => {
               onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
             />
 
-            {showChatInput && !hasStartedConversation && (
-              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xl px-4">
-                <div className="relative flex items-center">
-                  <Sparkles className="absolute left-4 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
-                  <input
-                    type="text"
-                    value={bottomInputMessage}
-                    onChange={(e) => setBottomInputMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && bottomInputMessage.trim()) {
-                        e.preventDefault();
-                        assistant.sendMessage(bottomInputMessage.trim());
-                        setBottomInputMessage("");
-                        setHasStartedConversation(true);
-                        setShowNodePanel(true);
-                        setConversationalTabActive(true);
-                      }
-                    }}
-                    placeholder="Ask AI to update your workflow..."
-                    className="w-full h-12 bg-white rounded-full pl-10 pr-12 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 shadow-lg transition-all"
-                  />
-                  <button
-                    onClick={() => {
-                      if (bottomInputMessage.trim()) {
-                        assistant.sendMessage(bottomInputMessage.trim());
-                        setBottomInputMessage("");
-                        setHasStartedConversation(true);
-                        setShowNodePanel(true);
-                        setConversationalTabActive(true);
-                      }
-                    }}
-                    disabled={!bottomInputMessage.trim()}
-                    className="absolute right-2 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 disabled:opacity-100 disabled:cursor-not-allowed h-8 w-8 flex items-center justify-center transition-opacity"
-                  >
-                    <ArrowUp className="h-4 w-4 text-white" />
-                  </button>
-                </div>
-              </div>
-            )}
-
             {showSetupWizard ? (
               <SetupWizardPanel
                 nodes={nodes}
@@ -889,6 +1106,25 @@ const GraphFlowContent: React.FC = () => {
             ) : wizardWasShown ? (
               <SetupWizardReopenButton onClick={() => setShowSetupWizard(true)} />
             ) : null}
+
+            {nodeSearchOpen && (
+              <WorkflowCommandPalette
+                mode={nodeSearchModeType}
+                query={nodeSearchQuery}
+                onQueryChange={handleNodeSearchQueryChange}
+                onClose={closeNodeSearch}
+                onSubmit={focusSearchMatches}
+                matchCount={nodeSearchMatchCount}
+                existingResults={nodeSearchExistingResults}
+                addResults={nodeSearchAddResults}
+                onFocusNode={focusNodeFromSearch}
+                onAddNode={addNodeFromSearch}
+                showAgentCommand={showAgentCommand}
+                onSelectAgent={enterNodeSearchAgentMode}
+                onExitAgent={exitNodeSearchAgentMode}
+                onSendAgentMessage={sendAgentMessageFromSearch}
+              />
+            )}
           </div>
         </div>
       </WorkflowExecutionProvider>
