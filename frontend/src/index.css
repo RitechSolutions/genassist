@@ -268,6 +268,15 @@ input[type="checkbox"]:hover {
   overflow: hidden;
 }
 
+/* Zoom controls pill — rounded/clipped group, used inside the bottom-left controls stack */
+.wf-zoom-controls {
+  display: flex;
+  flex-direction: column;
+  border-radius: 32px;
+  overflow: hidden;
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+}
+
 /* Custom React Flow controls buttons with Lucide icons */
 .react-flow__controls-button {
   display: flex;
