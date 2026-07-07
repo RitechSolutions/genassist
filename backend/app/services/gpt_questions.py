@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 
 # from opik.integrations.openai import track_openai
-# from opik import track
-# from opik.integrations.langchain import OpikTracer
+from opik import track
+from opik.integrations.langchain import OpikTracer
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
@@ -34,7 +34,7 @@ class QuestionAnswerer:
             from langchain_openai import ChatOpenAI
 
             if USE_OPIK:
-                # self.opik_tracer = OpikTracer()
+                self.opik_tracer = OpikTracer()
                 self._llm = ChatOpenAI(model=self.llm_model, temperature=self.temperature, stream_usage=True, callbacks=[self.opik_tracer])
             else:
                 self._llm = ChatOpenAI(model=self.llm_model, temperature=self.temperature)
@@ -72,7 +72,6 @@ class QuestionAnswerer:
 
 # Conditionally assign the method after class definition
 if USE_OPIK:
-    pass
-    # QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
+    QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
 else:
     QuestionAnswerer.answer_question = QuestionAnswerer.answer_question
