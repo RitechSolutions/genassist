@@ -5,7 +5,6 @@ import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup
 from playwright.async_api import Route, async_playwright
 
 _HTTPX_TIMEOUT = 10  # seconds
@@ -22,6 +21,8 @@ _FORWARDED_HEADER_ALLOWLIST = frozenset({
     "if-modified-since",
     "if-none-match",
 })
+
+_LINK_TITLE_RE = re.compile(r'(\]\(\S+?)\s+"[^"]*"(\))')
 
 def _is_blocked_ip(addr: str) -> bool:
     try:
@@ -124,10 +125,23 @@ async def fetch_from_url(
         return html
 
 
-def html2text(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    for bad in soup(["script", "style", "noscript"]):
-        bad.extract()
-    text = soup.get_text(separator="\n")
-    text = re.sub(r"\n\s*\n", "\n\n", text)
-    return text.strip()
+def _normalize_whitespace(s: str) -> str:
+    s = re.sub(r"[ \t]+\n", "\n", s)   # strip trailing spaces before newlines
+    s = re.sub(r"\n{3,}", "\n\n", s)   # collapse 3+ blank lines to 2
+    s = re.sub(r"[ \t]{2,}", " ", s)   # collapse runs of spaces/tabs (does NOT touch newlines)
+    return s.strip()
+
+
+def _strip_link_titles(md: str) -> str:
+    return _LINK_TITLE_RE.sub(r"\1\2", md)
+
+
+def html2markdown(html: str, base_url: str | None = None) -> str:
+    import html2text as _html2text
+
+    # baseurl resolves relative hrefs to absolute URLs
+    h = _html2text.HTML2Text(baseurl=base_url or "")
+    h.ignore_links = False   # keep links as [text](url)
+    h.ignore_images = True
+    h.body_width = 0         # no hard wraps
+    return _normalize_whitespace(_strip_link_titles(h.handle(html or "")))
