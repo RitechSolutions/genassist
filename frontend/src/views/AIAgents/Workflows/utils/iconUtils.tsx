@@ -24,16 +24,22 @@ import {
   CircleAlert,
   Search,
   GitBranch,
-  MicVocal,
+  AudioLines,
   Mic,
   Volume2,
   CalendarClock,
-  Cloud,
+  ServerCog,
+  MessageCircleX,
+  UserCheck,
+  ShieldQuestion as ShieldQuestionMark,
+  ShieldAlert,
+  TextSearch,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
 import JiraLogo from "@/assets/jira-logo.png";
 import ZendeskLogo from "@/assets/zendesk-logo.png";
+import SalesforceLogo from "@/assets/salesforce-logo.png";
 
 // Types for icon configuration
 export type IconType = "lucide" | "asset";
@@ -81,18 +87,25 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   ArrowRightFromLine: { type: "lucide", source: ArrowRightFromLine },
   ArrowRightToLine: { type: "lucide", source: ArrowRightToLine },
   Bot: { type: "lucide", source: Bot },
-  MicVocal: { type: "lucide", source: MicVocal },
+  AudioLines: { type: "lucide", source: AudioLines },
   Mic: { type: "lucide", source: Mic },
   Volume2: { type: "lucide", source: Volume2 },
   Workflow: { type: "lucide", source: GitBranch },
   GitBranch: { type: "lucide", source: GitBranch },
-  Salesforce: { type: "lucide", source: Cloud },
+  ServerCog: { type: "lucide", source: ServerCog },
+  MessageCircleX: { type: "lucide", source: MessageCircleX },
+  UserCheck: { type: "lucide", source: UserCheck },
+  // ShieldQuestionMark maps to lucide's ShieldQuestion (renamed in later versions)
+  ShieldQuestionMark: { type: "lucide", source: ShieldQuestionMark },
+  ShieldAlert: { type: "lucide", source: ShieldAlert },
+  TextSearch: { type: "lucide", source: TextSearch },
 
   // Custom asset icons
   Slack: { type: "asset", source: SlackLogo },
   Whatsapp: { type: "asset", source: WhatsAppLogo },
   Jira: { type: "asset", source: JiraLogo },
   Zendesk: { type: "asset", source: ZendeskLogo },
+  Salesforce: { type: "asset", source: SalesforceLogo },
 
   // Legacy kebab-case mappings for backward compatibility
   "message-circle": { type: "lucide", source: MessageCircle },

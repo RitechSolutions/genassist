@@ -196,6 +196,7 @@ export interface ExternalAgentNodeData extends BaseNodeData {
 // LLM Model node data
 export interface BaseLLMNodeData extends BaseNodeData {
   providerId: string;
+  fallbackChainId?: string;
   memory: boolean;
   piiMasking?: boolean;
   systemPrompt?: string;

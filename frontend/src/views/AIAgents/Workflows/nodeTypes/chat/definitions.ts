@@ -99,7 +99,7 @@ export const FINALIZE_CONVERSATION_NODE_DEFINITION: NodeTypeDefinition<FinalizeC
     shortDescription: "Finalize the active conversation",
     configSubtitle: "Optionally set a display name for this node.",
     category: "io",
-    icon: "MessageCircle",
+    icon: "MessageCircleX",
     defaultData: {
       name: "End Conversation",
       handlers: [

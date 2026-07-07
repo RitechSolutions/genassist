@@ -83,7 +83,7 @@ export const VOICE_AGENT_NODE_DEFINITION: NodeTypeDefinition<VoiceAgentNodeData>
   configSubtitle:
     "Configure the Gemini voice provider, live model, voice, prompts, tools, and memory.",
   category: "ai",
-  icon: "MicVocal",
+  icon: "AudioLines",
   defaultData: {
     name: "Voice Agent",
     voiceProviderId: undefined,
@@ -233,7 +233,7 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
   configSubtitle:
     "Set server URL, auth (API key or OIDC issuer URL + client credentials + scope), then pick tools.",
   category: "ai",
-  icon: "Server",
+  icon: "ServerCog",
   defaultData: {
     name: "MCP Server",
     description: "MCP server tool connector",

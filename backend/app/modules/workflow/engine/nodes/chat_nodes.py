@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from app.core.config.settings import settings
 from app.core.utils.string_utils import truncate_for_log
+from app.core.utils.workflow_secrets import decrypt_hidden_defaults_in_schema
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.utils import validate_input_schema
 
@@ -31,8 +32,10 @@ class ChatInputNode(BaseNode):
         Returns:
             Dictionary with the message
         """
-        # For chat input nodes, get the message from state or config
-        input_schema = config.get("inputSchema", {})
+        # For chat input nodes, get the message from state or config.
+        # Decrypt any hidden params' default values (stored encrypted in the
+        # workflow definition) so they can be used as normal at runtime.
+        input_schema = decrypt_hidden_defaults_in_schema(config.get("inputSchema", {}))
         logger.debug("ChatInputNode %s processed: %s", self.node_id, input_schema.keys())
 
         # Validate and get values using the reusable validation function

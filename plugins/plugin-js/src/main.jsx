@@ -28,6 +28,7 @@ function bootstrap() {
       agentName={cfg.agentName ?? "GenAssist"}
       description={cfg.description ?? "Your Virtual Assistant"}
       logoUrl={cfg.logoUrl}
+      brandLogoUrl={cfg.brandLogoUrl}
       mode={cfg.mode ?? "floating"}
       serverUnavailableMessage={
         cfg.serverUnavailableMessage ??
@@ -38,6 +39,7 @@ function bootstrap() {
       useWs={cfg.useWs ?? false}
       useFiles={cfg.useFiles ?? false}
       usePoll={cfg.usePoll ?? false}
+      quickInput={cfg.quickInput ?? false}
     />,
   );
 }

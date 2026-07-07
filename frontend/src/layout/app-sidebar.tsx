@@ -190,6 +190,11 @@ const menuItems: MenuItem[] = [
         permissionsRequired: ["read:llm_provider"],
       },
       {
+        title: "Fallback Chains",
+        url: "/fallback-chains",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
         title: "Audio Providers",
         url: "/audio-providers",
         permissionsRequired: ["read:llm_provider"],

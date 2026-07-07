@@ -214,5 +214,11 @@ async def invalidate_audio_provider_cache(provider_id: UUID | None = None):
     await invalidate_cache("audio_providers:get_all", None)
 
 
+async def invalidate_fallback_chain_cache(chain_id: UUID | None = None):
+    if chain_id:
+        await invalidate_cache("fallback_chains:get_by_id", str(chain_id))
+    await invalidate_cache("fallback_chains:get_all", None)
+
+
 async def invalidate_user_cache(user_id: UUID):
     await invalidate_cache("users:get_by_id_for_auth", user_id)

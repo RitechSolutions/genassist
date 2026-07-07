@@ -9,6 +9,7 @@ from app.db.models.audit_log import AuditLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
+from app.db.models.fallback_chain import FallbackChainModel
 from app.db.models.job import JobModel
 from app.db.models.job_logs import JobLogsModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
@@ -124,6 +125,7 @@ __all__ = [
     "PromptConfigModel",
     "FilesUploadSessionModel",
     "AudioProvidersModel",
+    "FallbackChainModel",
     "MessageIssueModel",
     "SupportTicketModel",
     "SupportTicketCommentModel",
@@ -181,6 +183,7 @@ models = [
     PromptVersionModel,
     PromptConfigModel,
     AudioProvidersModel,
+    FallbackChainModel,
     MessageIssueModel,
     SupportTicketModel,
     SupportTicketCommentModel,

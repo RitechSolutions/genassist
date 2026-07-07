@@ -13,6 +13,7 @@ export interface SchemaField {
   defaultValue?: string;
   stateful?: boolean; // If true, this parameter persists across workflow executions
   useInFilter?: boolean; // If true, this parameter is stored as a custom attribute for filtering & analytics
+  hidden?: boolean; // If true, this parameter's value is masked as [PARAM_NAME] wherever it is persisted or logged
   properties?: Record<string, SchemaField>; // For object types
   items?: SchemaField; // For array types
 }

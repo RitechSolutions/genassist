@@ -127,7 +127,7 @@ export const GUARDRAIL_PROVENANCE_NODE_DEFINITION: NodeTypeDefinition<GuardrailP
     configSubtitle:
       "Configure which fields contain the answer and context, and the minimum provenance score.",
     category: "utils",
-    icon: "ShieldCheck",
+    icon: "ShieldQuestionMark",
     defaultData: {
       name: "Guardrail Provenance",
       answer_field: "",

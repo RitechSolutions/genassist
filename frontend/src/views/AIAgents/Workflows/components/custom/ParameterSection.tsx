@@ -1,6 +1,6 @@
 import { FC, useState, useEffect } from "react";
 import { Button } from "@/components/button";
-import { Plus } from "lucide-react";
+import { Plus, Info } from "lucide-react";
 import { RichInput } from "@/components/richInput";
 import {
   Select,
@@ -18,6 +18,12 @@ import {
   DialogFooter,
 } from "@/components/dialog";
 import { Checkbox } from "@/components/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 import { NodeSchema, SchemaField, SchemaType } from "../../types/schemas";
 import {
   DropdownMenu,
@@ -44,6 +50,7 @@ interface ParameterSectionProps {
   listSuggestedParams?: NodeSchema;
   allowStateful?: boolean; // Only allow stateful parameters in chatInputNode
   allowFilter?: boolean; // Show "Use in filter" checkbox for filtering & analytics
+  allowHidden?: boolean; // Show "Hidden" checkbox to mask the value in persisted data
 }
 
 interface ParameterDialogProps {
@@ -58,6 +65,7 @@ interface ParameterDialogProps {
   suggestedParams?: NodeSchema;
   allowStateful?: boolean; // Only allow stateful parameters in chatInputNode
   allowFilter?: boolean; // Show "Use in filter" checkbox
+  allowHidden?: boolean; // Show "Hidden" checkbox
 }
 
 interface ParameterBadgesProps {
@@ -115,6 +123,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
   totalParams,
   allowStateful = false,
   allowFilter = false,
+  allowHidden = false,
 }) => {
   const [formData, setFormData] = useState<{
     name: string;
@@ -124,6 +133,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     defaultValue?: string;
     stateful?: boolean;
     useInFilter?: boolean;
+    hidden?: boolean;
   }>({
     name: "",
     type: "string",
@@ -132,6 +142,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     defaultValue: "",
     stateful: false,
     useInFilter: false,
+    hidden: false,
   });
 
   useEffect(() => {
@@ -146,6 +157,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           // Only preserve stateful if allowStateful is true, otherwise reset to false
           stateful: allowStateful ? (param.stateful || false) : false,
           useInFilter: allowFilter ? (param.useInFilter || false) : false,
+          hidden: allowHidden ? (param.hidden || false) : false,
         });
       } else {
         setFormData({
@@ -156,10 +168,11 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           defaultValue: "",
           stateful: false,
           useInFilter: false,
+          hidden: false,
         });
       }
     }
-  }, [isOpen, mode, paramName, param, allowStateful, allowFilter]);
+  }, [isOpen, mode, paramName, param, allowStateful, allowFilter, allowHidden]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +183,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
       defaultValue: formData.defaultValue,
       stateful: allowStateful ? formData.stateful : false,
       useInFilter: allowFilter ? formData.useInFilter : false,
+      hidden: allowHidden ? formData.hidden : false,
     });
     onOpenChange(false);
   };
@@ -285,6 +299,43 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
               </p>
             </div>
           )}
+          {allowHidden && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="hidden"
+                  checked={formData.hidden || false}
+                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, hidden: checked === true }))}
+                />
+                <label htmlFor="hidden" className="text-sm font-medium cursor-pointer">
+                  Hidden (value masked in saved data &amp; logs)
+                </label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Hidden parameter info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Masking replaces the value wherever it appears in saved text, so pick a
+                      distinctive value. Very short or common values (e.g. a single digit or a word
+                      like &quot;yes&quot;) can collide with unrelated text. For that reason, values
+                      shorter than 2 characters are not masked.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <p className="text-xs text-gray-500">
+                When enabled, this parameter is still used at runtime, but its value is stored as
+                [{(formData.name || "PARAM_NAME").toUpperCase()}] in messages, response logs and custom attributes
+              </p>
+            </div>
+          )}
           {!formData.required && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Default Value</label>
@@ -332,6 +383,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   listSuggestedParams = {},
   allowStateful = false,
   allowFilter = false,
+  allowHidden = false,
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedParamName, setSelectedParamName] = useState<string | null>(
@@ -465,6 +517,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
         totalParams={Object.keys(dynamicParams ?? {}).length}
         allowStateful={allowStateful}
         allowFilter={allowFilter}
+        allowHidden={allowHidden}
       />
     </div>
   );

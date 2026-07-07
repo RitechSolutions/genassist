@@ -48,3 +48,23 @@ class TestExtractUsageFromAIMessage:
 
     def test_none_message_returns_none(self):
         assert extract_usage_from_aimessage(None) is None
+
+    def test_stamps_fallback_provider_id_when_present(self):
+        from app.modules.workflow.llm.fallback_exceptions import FALLBACK_PROVIDER_ID_KEY
+
+        class MockMessage:
+            response_metadata = {
+                "token_usage": {"prompt_tokens": 3, "completion_tokens": 4},
+                FALLBACK_PROVIDER_ID_KEY: "provider-2",
+            }
+
+        result = extract_usage_from_aimessage(MockMessage())
+        assert result["provider_id"] == "provider-2"
+        assert result["input_tokens"] == 3 and result["output_tokens"] == 4
+
+    def test_no_provider_id_key_when_absent(self):
+        class MockMessage:
+            response_metadata = {"token_usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+        result = extract_usage_from_aimessage(MockMessage())
+        assert "provider_id" not in result

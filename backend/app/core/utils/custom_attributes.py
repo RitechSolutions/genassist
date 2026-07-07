@@ -45,6 +45,31 @@ def get_filterable_keys(workflow_nodes: list[dict] | None) -> set[str]:
     return keys
 
 
+def get_hidden_keys(workflow_nodes: list[dict] | None) -> set[str]:
+    """Return the set of parameter names marked as ``hidden`` in the workflow.
+
+    Scans the chatInputNode's ``inputSchema`` for fields with ``hidden: true``.
+    A hidden parameter keeps its real value at runtime but is masked as
+    ``[PARAM_NAME]`` wherever it is persisted or logged.
+    """
+    if not workflow_nodes:
+        return set()
+
+    keys: set[str] = set()
+    for node in workflow_nodes:
+        if not isinstance(node, dict):
+            continue
+        # ReactFlow stores type at root level, inputSchema inside data
+        if node.get("type") == "chatInputNode":
+            input_schema = node.get("data", {}).get("inputSchema", {})
+            if isinstance(input_schema, dict):
+                for key, field in input_schema.items():
+                    if isinstance(field, dict) and field.get("hidden", False):
+                        keys.add(key)
+            break  # Only one chatInputNode per workflow
+    return keys
+
+
 def _collect_filterable_values(
     node_statuses: dict,
     filterable_keys: set[str],

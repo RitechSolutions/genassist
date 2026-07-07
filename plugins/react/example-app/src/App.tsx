@@ -38,6 +38,7 @@ function App() {
     description: "Support",
     agentName: "Agent",
     logoUrl: "",
+    brandLogoUrl: "https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg",
     baseUrl: import.meta.env.VITE_GENASSIST_CHAT_APIURL || "",
     websocketUrl: import.meta.env.VITE_GENASSIST_CHAT_WEBSOCKET_URL || "",
     apiKey: import.meta.env.VITE_GENASSIST_CHAT_APIKEY || "",
@@ -47,9 +48,10 @@ function App() {
 
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
     useAudio: false,
-    useFile: false,
+    useFile: true,
     useWs: false,
     usePoll: false,
+    quickInput: true,
   });
 
   const [customLogo, setCustomLogo] = useState<FileState>({
@@ -925,7 +927,7 @@ function App() {
                   }
                 />
               </div>
-              <div style={{ padding: "0 16px 16px", borderBottom: "none" }}>
+              <div style={{ padding: "0 16px 12px" }}>
                 <label
                   style={{
                     ...labelStyle,
@@ -952,6 +954,37 @@ function App() {
                   }
                   placeholder="https://example.com/logo.png"
                 />
+              </div>
+              <div style={{ padding: "0 16px 16px", borderBottom: "none" }}>
+                <label
+                  style={{
+                    ...labelStyle,
+                    display: "block",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Full Logo URL
+                </label>
+                <input
+                  type="text"
+                  style={{
+                    width: "100%",
+                    height: "40px",
+                    padding: "0 12px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                  value={chatSettings.brandLogoUrl || ""}
+                  onChange={(e) =>
+                    handleSettingChange("brandLogoUrl", e.target.value)
+                  }
+                  placeholder="https://example.com/full-logo.png"
+                />
+                <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
+                  When set, replaces the small logo + name with this full logo.
+                </div>
               </div>
               <div style={{ padding: "16px", borderTop: "1px solid #e0e0e0", marginTop: 8 }}>
                 <div style={{ fontSize: 13, color: "#555", marginBottom: 12, fontWeight: 500 }}>
@@ -990,6 +1023,15 @@ function App() {
                     type="checkbox"
                     checked={featureFlags.usePoll}
                     onChange={(e) => handleFeatureFlagChange("usePoll", e.target.checked)}
+                    style={{ width: 20, height: 20, cursor: "pointer" }}
+                  />
+                </div>
+                <div style={formGroupStyle}>
+                  <label style={labelStyle}>Quick Message Input</label>
+                  <input
+                    type="checkbox"
+                    checked={!!featureFlags.quickInput}
+                    onChange={(e) => handleFeatureFlagChange("quickInput", e.target.checked)}
                     style={{ width: 20, height: 20, cursor: "pointer" }}
                   />
                 </div>
@@ -1076,8 +1118,10 @@ function App() {
         headerTitle={chatSettings.name}
         agentName={chatSettings.agentName}
         logoUrl={chatSettings.logoUrl}
+        brandLogoUrl={chatSettings.brandLogoUrl}
         useWs={featureFlags.useWs}
         usePoll={featureFlags.usePoll}
+        quickInput={featureFlags.quickInput}
         serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
         serverUnavailableContactUrl="https://www.ritech.co/"
         serverUnavailableContactLabel="Contact Support"

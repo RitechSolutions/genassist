@@ -48,6 +48,11 @@ class WorkflowInDB(WorkflowBase):
     user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+    created_by: Optional[UUID] = None
+    updated_by: Optional[UUID] = None
+    # Human-readable name of the user who last modified the workflow (resolved
+    # from updated_by, falling back to created_by for never-edited workflows).
+    updated_by_username: Optional[str] = None
 
     model_config = ConfigDict(
         from_attributes=True

@@ -68,6 +68,9 @@ import { apiRequest } from "@/config/api";
 import { PageListSkeleton } from "@/components/skeletons";
 
 const ITEMS_PER_PAGE = 10;
+// Minimum characters required before a search is sent to the backend. Short
+// queries (1-2 chars) match nearly everything and are extremely slow server-side.
+const MIN_SEARCH_LENGTH = 3;
 
 type QualityFilterKey = "customer_satisfaction" | "quality_of_service" | "resolution_rate" | "efficiency";
 type QualityLevel = "all" | "low" | "medium" | "high";
@@ -126,7 +129,9 @@ const Transcripts = () => {
   const [activeTab, setActiveTab] = useState(searchParams.get("sentiment") || "all");
   const [supportType, setSupportType] = useState(searchParams.get("type") || "all");
   const [searchQuery, setSearchQuery] = useState(searchParams.get("query") || "");
-  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  // The value actually sent to the backend. Only updated when the user submits
+  // the search (Enter / button) so we never query on partial input.
+  const [committedSearch, setCommittedSearch] = useState(searchQuery);
   const [currentPage, setCurrentPage] = useState(
     Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
   );
@@ -201,12 +206,6 @@ const Transcripts = () => {
     fetchCustomAttributeKeys(agentId).then(setAvailableAttrKeys);
   }, [selectedAgentId]);
 
-  // Debounce search query to avoid API call on every keystroke
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
   const {
     conversations: wsConversations,
     resyncHint,
@@ -227,7 +226,7 @@ const Transcripts = () => {
     to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd 23:59:59") : undefined,
     exclude_empty: hideEmpty || undefined,
     custom_attributes: activeCustomAttrCount > 0 ? customAttrFilters : undefined,
-    search: debouncedSearch.trim() || undefined,
+    search: committedSearch.trim() || undefined,
   });
 
   const isMobile = useIsMobile();
@@ -432,7 +431,21 @@ const Transcripts = () => {
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
-    updateUrlParams({ query: value || null, page: 1 });
+    // Clearing the input should immediately clear the active search.
+    if (value.trim() === "") {
+      setCommittedSearch("");
+      setCurrentPage(1);
+      updateUrlParams({ query: null, page: 1 });
+    }
+  };
+
+  const handleSearchSubmit = (value: string) => {
+    const trimmed = value.trim();
+    // Guard against short queries; empty is allowed (clears the search).
+    if (trimmed !== "" && trimmed.length < MIN_SEARCH_LENGTH) return;
+    setCommittedSearch(trimmed);
+    setCurrentPage(1);
+    updateUrlParams({ query: trimmed || null, page: 1 });
   };
 
   const handlePageChange = (newPage: number) => {
@@ -491,7 +504,7 @@ const Transcripts = () => {
 
   const hasNarrowingFilters = useMemo(
     () =>
-      debouncedSearch.trim() !== "" ||
+      committedSearch.trim() !== "" ||
       activeTab !== "all" ||
       supportType !== "all" ||
       statusFilter !== "all" ||
@@ -500,7 +513,7 @@ const Transcripts = () => {
       activeCustomAttrCount > 0 ||
       orderBy !== "",
     [
-      debouncedSearch,
+      committedSearch,
       activeTab,
       supportType,
       statusFilter,
@@ -621,7 +634,10 @@ const Transcripts = () => {
                   <SearchInput
                     value={searchQuery}
                     onChange={handleSearchChange}
+                    onSearch={handleSearchSubmit}
+                    minLength={MIN_SEARCH_LENGTH}
                     placeholder="Search conversations..."
+                    className="sm:w-[420px]"
                   />
                 </div>
               </div>

@@ -95,4 +95,15 @@ def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, int]]:
     if not metadata:
         return None
 
-    return extract_usage_from_response_metadata(metadata)
+    usage = extract_usage_from_response_metadata(metadata)
+
+    # If this response came from a FallbackChatModel, record which provider actually
+    # answered so usage can be attributed correctly (the primary may have failed over).
+    if usage is not None and isinstance(metadata, dict):
+        from app.modules.workflow.llm.fallback_exceptions import FALLBACK_PROVIDER_ID_KEY
+
+        responding_provider_id = metadata.get(FALLBACK_PROVIDER_ID_KEY)
+        if responding_provider_id:
+            usage["provider_id"] = responding_provider_id
+
+    return usage

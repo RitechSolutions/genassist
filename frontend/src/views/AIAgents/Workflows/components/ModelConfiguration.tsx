@@ -9,6 +9,7 @@ import {
 } from "@/components/select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAllLLMProviders } from "@/services/llmProviders";
+import { getAllFallbackChains } from "@/services/fallbackChains";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { Switch } from "@/components/switch";
 import { BaseLLMNodeData } from "../types/nodes";
@@ -53,6 +54,27 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     queryFn: getAllLLMProviders,
     select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
+
+  const { data: allFallbackChains = [] } = useQuery({
+    queryKey: ["fallbackChains"],
+    queryFn: getAllFallbackChains,
+  });
+
+  const activeFallbackChains = allFallbackChains.filter(
+    (c) => c.is_active === 1,
+  );
+  const selectedFallbackChain = allFallbackChains.find(
+    (c) => c.id === config.fallbackChainId,
+  );
+  const selectedFallbackChainInactive =
+    !!selectedFallbackChain && selectedFallbackChain.is_active !== 1;
+
+  const handleFallbackChainSelect = (value: string) => {
+    onConfigChange({
+      ...config,
+      fallbackChainId: value === "__none__" ? undefined : value,
+    });
+  };
 
   // Reset local state when config changes
   useEffect(() => {
@@ -269,6 +291,36 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
             <CreateNewSelectItem />
           </SelectContent>
         </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`fallback-chain-select-${id}`}>Fallback Chain (optional)</Label>
+        <Select
+          value={config.fallbackChainId || "__none__"}
+          onValueChange={handleFallbackChainSelect}
+        >
+          <SelectTrigger id={`fallback-chain-select-${id}`} className="w-full">
+            <SelectValue placeholder="None (use provider only)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None</SelectItem>
+            {activeFallbackChains.map((chain) => (
+              <SelectItem key={chain.id} value={chain.id}>
+                {chain.name}
+              </SelectItem>
+            ))}
+            {selectedFallbackChainInactive && (
+              <SelectItem value={selectedFallbackChain.id} disabled>
+                {selectedFallbackChain.name} (inactive)
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        {selectedFallbackChainInactive && (
+          <p className="text-xs text-muted-foreground">
+            This fallback chain has been deactivated. Choose an active chain or
+            None to change it.
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">

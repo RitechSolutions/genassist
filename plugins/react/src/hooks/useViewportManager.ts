@@ -28,6 +28,8 @@ export function useViewportManager({
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 700);
   const [isFullscreenToggled, setIsFullscreenToggled] = useState(false);
+  // Partial "expand" of the docked floating widget (wider + a bit taller) — distinct from fullscreen.
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const isFullscreen = useMemo(() => {
     if (mode === 'fullscreen') return true;
@@ -39,6 +41,10 @@ export function useViewportManager({
   const handleFullscreenToggle = () => {
     setIsFullscreenToggled(prev => !prev);
     setShowMenu(false);
+  };
+
+  const handleExpandToggle = () => {
+    setIsExpanded(prev => !prev);
   };
 
   useEffect(() => {
@@ -64,6 +70,12 @@ export function useViewportManager({
         return;
       }
 
+      if (isExpanded && !isFullscreen) {
+        e.preventDefault();
+        setIsExpanded(false);
+        return;
+      }
+
       if (!isFullscreen) return;
 
       if (isFullscreenToggled) {
@@ -83,6 +95,7 @@ export function useViewportManager({
     isFloatingOpen,
     isFullscreen,
     isFullscreenToggled,
+    isExpanded,
     mode,
     onExitFullscreen,
     showLanguageDropdown,
@@ -123,5 +136,7 @@ export function useViewportManager({
     isFullscreen,
     isFullscreenToggled,
     handleFullscreenToggle,
+    isExpanded,
+    handleExpandToggle,
   };
 }

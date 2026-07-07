@@ -184,6 +184,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
         """
         # Get configuration values (already resolved by BaseNode)
         provider_id = config.get("providerId")
+        fallback_chain_id = config.get("fallbackChainId")
         system_prompt = config.get("systemPrompt", "You are a helpful assistant.")
         prompt = config.get("userPrompt", "Hello, how can you help me?")
         _type = config.get("type", "base")
@@ -199,7 +200,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             from app.dependencies.injector import injector
 
             llm_provider = injector.get(LLMProvider)
-            llm = await llm_provider.get_model(provider_id)
+            llm = await llm_provider.get_model_for_node(provider_id, fallback_chain_id)
 
             memory = self.get_memory() if memory_enabled else None
 
@@ -246,8 +247,14 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             # Extract and record token usage
             usage = extract_usage_from_aimessage(response)
             if usage:
+                # Attribute usage to the provider that actually answered. With a
+                # fallback chain a different provider may have served the request;
+                # FallbackChatModel stamps its id onto response_metadata.
+                from app.modules.workflow.llm.fallback_chat_model import FALLBACK_PROVIDER_ID_KEY
+
+                responding_id = (response.response_metadata or {}).get(FALLBACK_PROVIDER_ID_KEY) or provider_id
                 llm_service = injector.get(LlmProviderService)
-                provider_info = await llm_service.get_by_id(provider_id)
+                provider_info = await llm_service.get_by_id(responding_id)
                 provider = (provider_info.llm_model_provider or "").lower()
                 model = provider_info.llm_model or ""
                 self.get_state().add_llm_usage(

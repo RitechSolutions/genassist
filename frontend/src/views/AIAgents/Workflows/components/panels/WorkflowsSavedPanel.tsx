@@ -36,6 +36,19 @@ interface WorkflowsSavedPanelProps {
   onSaveWorkflow: () => Promise<void>;
 }
 
+// Format an ISO timestamp for the "Edited … · <when>" line on version cards.
+const formatEditedAt = (iso: string): string => {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   isOpen,
   onClose,
@@ -361,6 +374,24 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                   <span className="inline-flex items-center gap-1 text-xs text-white bg-gray-400 px-2 py-0.5 rounded-full">
                     v{workflow.version}
                   </span>
+                  {workflow.updated_at && (
+                    <div className="text-[11px] text-gray-400 mt-1">
+                      <div
+                        className="truncate"
+                        title={
+                          workflow.updated_by_username
+                            ? `Edited by ${workflow.updated_by_username}`
+                            : "Edited"
+                        }
+                      >
+                        Edited
+                        {workflow.updated_by_username
+                          ? ` by ${workflow.updated_by_username}`
+                          : ""}
+                      </div>
+                      <div>{formatEditedAt(workflow.updated_at)}</div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center space-x-1">
                   <DropdownMenu>
