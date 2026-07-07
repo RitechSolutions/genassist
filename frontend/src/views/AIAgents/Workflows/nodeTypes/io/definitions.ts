@@ -16,7 +16,7 @@ export const HUMAN_IN_THE_LOOP_NODE_DEFINITION: NodeTypeDefinition<HumanInTheLoo
     shortDescription: "Collect human input",
     helpContent: HUMAN_IN_THE_LOOP_HELP_CONTENT,
     category: "io",
-    icon: "ClipboardList",
+    icon: "UserCheck",
     defaultData: {
       name: "Human In The Loop",
       message: "Please provide the following information:",
