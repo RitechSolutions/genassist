@@ -2,6 +2,7 @@
 Enhanced workflow state management for execution tracking and performance metrics.
 """
 
+import copy
 import logging
 import time
 import uuid
@@ -452,6 +453,61 @@ class WorkflowState:
     def get_memory(self) -> BaseConversationMemory:
         """Get the conversation memory for this workflow execution"""
         return self.memory
+
+    def capture_resume_context(self) -> dict:
+        """Snapshot the request context a paused execution needs to resume as the same
+        logical run.
+
+        A node that pauses (e.g. HumanInTheLoop) stores this; on resume the engine starts
+        a fresh WorkflowState at the paused node, so without rehydration the original
+        request inputs and session (the message, conversation_history, stateful values and
+        any metadata the pre-pause nodes saw) would be lost. node_outputs is captured
+        separately by the pausing node.
+        """
+        # Deep copy so a later resume (which restores this) can't alias and mutate the
+        # values this execution is still using; also matches the JSON round-trip the Redis
+        # memory backend performs, keeping behaviour identical across backends.
+        return copy.deepcopy({
+            "initial_values": self.initial_values,
+            "session": self.get_session(),
+        })
+
+    def restore_resume_context(
+        self, snapshot: dict, drop_keys: set[str] | None = None
+    ) -> None:
+        """Rehydrate request context captured by capture_resume_context() into this state.
+
+        The CURRENT (resume) request defines the turn — its message, metadata and submitted
+        form data always win. The snapshot only fills in context the resume request lacks
+        (e.g. stateful/session values the pre-pause chat input computed), so downstream
+        nodes keep that context without losing the user's actual submission. Keys in
+        drop_keys are never imported from the snapshot — turn-specific flags (e.g. the
+        invisible start-form trigger) must not leak into the resumed turn.
+        """
+        if not snapshot:
+            return
+        drop_keys = drop_keys or set()
+
+        saved_initial = {
+            k: v
+            for k, v in (snapshot.get("initial_values") or {}).items()
+            if k not in drop_keys
+        }
+        if saved_initial:
+            # Current request wins; the snapshot only fills keys the resume request lacks.
+            merged = {**saved_initial, **self.initial_values}
+            self.initial_values = merged
+            self.session = merged
+            self._apply_initial_values(merged)
+
+        saved_session = snapshot.get("session")
+        if saved_session:
+            current_session = self.get_session()
+            filled = {
+                **{k: v for k, v in saved_session.items() if k not in drop_keys},
+                **current_session,
+            }
+            self.set_value("session", filled)
 
     def record_workflow_output(self, output: Any) -> None:
         """Record the final output of the workflow execution"""

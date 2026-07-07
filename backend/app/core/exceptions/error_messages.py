@@ -2,7 +2,6 @@ import logging
 from enum import Enum
 
 from fastapi import Request
-from torch.fx.immutable_collections import immutable_list
 
 from app.core.config.settings import settings
 
@@ -12,6 +11,7 @@ logger = logging.getLogger(__name__)
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
     NOT_FOUND = "not_found"
+    AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
@@ -28,6 +28,7 @@ class ErrorKey(Enum):
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     USER_NOT_FOUND = "USER_NOT_FOUND"
     USER_CANNOT_DELETE_SELF = "USER_CANNOT_DELETE_SELF"
+    USER_ROLES_REQUIRED = "USER_ROLES_REQUIRED"
     TRANSCRIPT_PARSE_ERROR = "TRANSCRIPT_PARSE_ERROR"
     INVALID_USERNAME_OR_PASSWORD = "INVALID_USERNAME_OR_PASSWORD"
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
@@ -66,6 +67,9 @@ class ErrorKey(Enum):
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
+    FALLBACK_CHAIN_NOT_FOUND = "FALLBACK_CHAIN_NOT_FOUND"
+    FALLBACK_CHAIN_INVALID_PROVIDER = "FALLBACK_CHAIN_INVALID_PROVIDER"
+    LLM_PROVIDER_IN_USE_BY_CHAIN = "LLM_PROVIDER_IN_USE_BY_CHAIN"
     NOT_AUTHORIZED_TO_TAKE_OVER = "NOT_AUTHORIZED_TO_TAKE_OVER"
     TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
     TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED"
@@ -75,6 +79,7 @@ class ErrorKey(Enum):
     AGENT_NOT_ACTIVE = "AGENT_NOT_ACTIVE"
     # MISSING_API_KEY_LLM_PROVIDER = "MISSING_API_KEY_LLM_PROVIDER"
     EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
+    ENTRA_OID_IN_USE = "ENTRA_OID_IN_USE"
     AGENT_INACTIVE = "AGENT_INACTIVE"
     TRANSCRIPT_ERROR_PARSING = "TRANSCRIPT_ERROR_PARSING"
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
@@ -146,12 +151,19 @@ class ErrorKey(Enum):
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
     TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
     AZURE_INIT_FAILED = "AZURE_INIT_FAILED"
+    LLM_PROVIDER_RESIDENCY_VIOLATION = "LLM_PROVIDER_RESIDENCY_VIOLATION"
+    SSO_MICROSOFT_DISABLED = "SSO_MICROSOFT_DISABLED"
+    SSO_MICROSOFT_OAUTH_ERROR = "SSO_MICROSOFT_OAUTH_ERROR"
+    SSO_MICROSOFT_USER_DENIED = "SSO_MICROSOFT_USER_DENIED"
+    SSO_MICROSOFT_REDIRECT_NOT_ALLOWED = "SSO_MICROSOFT_REDIRECT_NOT_ALLOWED"
+    SSO_MICROSOFT_NOT_CONFIGURED = "SSO_MICROSOFT_NOT_CONFIGURED"
 
 
 ERROR_MESSAGES = {
     "en": {
         ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
+        ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
@@ -167,6 +179,7 @@ ERROR_MESSAGES = {
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
         ErrorKey.USER_CANNOT_DELETE_SELF: "You cannot delete your own account.",
+        ErrorKey.USER_ROLES_REQUIRED: "At least one role is required.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
         ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
@@ -207,6 +220,9 @@ ERROR_MESSAGES = {
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
+        ErrorKey.FALLBACK_CHAIN_NOT_FOUND: "Fallback chain not found.",
+        ErrorKey.FALLBACK_CHAIN_INVALID_PROVIDER: "Fallback chain references an LLM provider that does not exist.",
+        ErrorKey.LLM_PROVIDER_IN_USE_BY_CHAIN: "This LLM provider is used by one or more fallback chains. Remove it from those chains before deleting.",
         ErrorKey.NOT_AUTHORIZED_TO_TAKE_OVER: "You are not authorized to take over conversations.",
         ErrorKey.TOOL_NOT_FOUND: "Tool not found.",
         ErrorKey.TOOL_CREATION_FAILED: "Tool creation failed.",
@@ -216,6 +232,7 @@ ERROR_MESSAGES = {
         ErrorKey.AGENT_NOT_ACTIVE: "Agent is not active.",
         # ErrorKey.MISSING_API_KEY_LLM_PROVIDER: "Missing Api Key in connection data.",
         ErrorKey.EMAIL_ALREADY_EXISTS: "Email already exists.",
+        ErrorKey.ENTRA_OID_IN_USE: "This Microsoft Entra object ID is already linked to another user.",
         ErrorKey.AGENT_INACTIVE: "Agent is inactive.",
         ErrorKey.TRANSCRIPT_ERROR_PARSING: "Couldn't parse transcript, please try again later.",
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
@@ -288,6 +305,15 @@ ERROR_MESSAGES = {
         ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
                                           "Delete the related evaluations first, then try again.",
         ErrorKey.AZURE_INIT_FAILED: "Azure initialization failed.",
+        ErrorKey.LLM_PROVIDER_RESIDENCY_VIOLATION: (
+            "The selected LLM provider does not satisfy this tenant's data residency policy. "
+            "Ensure the provider's allowed regions include a region permitted for this tenant."
+        ),
+        ErrorKey.SSO_MICROSOFT_DISABLED: "Microsoft SSO is not enabled on this server.",
+        ErrorKey.SSO_MICROSOFT_OAUTH_ERROR: "Microsoft sign-in failed. Please try again or contact support.",
+        ErrorKey.SSO_MICROSOFT_USER_DENIED: "Your account is not provisioned for GenAssist. Contact an administrator.",
+        ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED: "SSO redirect target is not allowed by server configuration.",
+        ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
@@ -298,12 +324,14 @@ ERROR_MESSAGES = {
 
 
 def get_error_message(
-    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = immutable_list()
+    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = None
 ):
     """
     Retrieves an error message dynamically based on the user's language preference.
     Falls back to DEFAULT_LANGUAGE if no valid language is found.
     """
+    error_variables = error_variables or []
+
     # Ensure error_key is a valid Enum
     if not isinstance(error_key, ErrorKey):
         raise ValueError(f"Invalid error key: {error_key}")

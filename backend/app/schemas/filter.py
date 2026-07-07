@@ -4,10 +4,11 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_topic_enum import ConversationTopic
+from app.core.utils.enums.issue_status_enum import IssueStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.enums.sort_field_enum import SortField
@@ -68,6 +69,15 @@ class ConversationFilter(BaseFilterModel):
     to_create_datetime_messages: Optional[datetime] = Field(None, description="End datetime message was created")
     workflow_id: Optional[UUID] = Field(None, description="Filter conversations by the workflow used by the agent")
     search: Optional[str] = Field(None, description="Search conversations by topic or message (case-insensitive)")
+    email: Optional[str] = Field(
+        None,
+        description=(
+            "Search conversations by an email address: matches "
+            "custom_attributes.pii.requester_email exactly (case-insensitive) and "
+            "falls back to full-text search over transcript_messages.text. Used "
+            "primarily for GDPR Right-to-Erasure flows."
+        ),
+    )
     id_suffix: Optional[str] = Field(None, description="Filter conversations by the last N characters of the UUID")
     custom_attributes: Optional[str] = Field(
         None,
@@ -85,6 +95,11 @@ class ConversationFilter(BaseFilterModel):
             return None
 
 
+class MessageIssueFilter(BaseFilterModel):
+    status: Optional[IssueStatus] = Field(None, description="Filter by tracked resolution status")
+    workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
+
+
 class ApiKeysFilter(BaseFilterModel):
     user_id: Optional[UUID] = Field(None, description="Agent who's user owns the api key")
 
@@ -96,3 +111,16 @@ class RecordingFilter(BaseFilterModel):
 class AgentResponseLogFilter(BaseModel):
     conversation_id: UUID
     node_type: Optional[str] = Field(None, description="Filter by node type found in state.nodeExecutionStatus[*].type")
+
+
+class AuditLogFilter(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    start_date: Optional[datetime] = Field(None, alias="date_from", description="Filter logs from this date")
+    end_date: Optional[datetime] = Field(None, alias="date_to", description="Filter logs until this date")
+    action: Optional[str] = Field(None, description="Filter by action type (Insert, Update, Delete)")
+    table_name: Optional[str] = Field(None, description="Filter by table name")
+    entity_id: Optional[UUID] = Field(None, description="Filter by record UUID")
+    modified_by: Optional[UUID] = Field(None, alias="user", description="Filter by user UUID who made the change")
+    limit: Optional[int] = Field(None, ge=1, le=500, description="Max number of rows to return")
+    offset: Optional[int] = Field(None, ge=0, description="Number of rows to skip before returning results")

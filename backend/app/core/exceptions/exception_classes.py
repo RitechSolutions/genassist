@@ -1,7 +1,4 @@
-from torch.fx.immutable_collections import immutable_list
-
 from app.core.exceptions.error_messages import ErrorKey
-
 
 class AppException(Exception):
     """
@@ -28,11 +25,26 @@ class AppException(Exception):
             AppException: When an application-specific error occurs.
         """
     def __init__(self, error_key: ErrorKey, status_code=400, error_detail="", error_obj= None,
-                 error_variables: list[str] = immutable_list()):
+                 error_variables: list[str] = None):
         self.error_key: ErrorKey = error_key
         self.status_code = status_code
         self.error_detail = error_detail
         self.error_obj = error_obj
-        self.error_variables = error_variables
+        self.error_variables = error_variables if error_variables is not None else []
         super().__init__(error_key.value)
+
+
+class UpstreamServiceError(Exception):
+    """Forwards an external service's error response through this backend verbatim.
+
+    Use this when proxying a remote service whose error envelope is already
+    client-safe (e.g. another internal service that does its own gating). The
+    registered handler returns the upstream JSON body and status code unchanged,
+    bypassing this backend's error-message translation and `error_detail` gating.
+    """
+
+    def __init__(self, status_code: int, body):
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"upstream {status_code}")
 

@@ -9,18 +9,15 @@ from celery.schedules import crontab
 from fastapi import FastAPI
 from fastapi_injector import InjectorMiddleware, RequestScopeOptions, attach_injector
 
-from app.api.v1.routes._routes import register_routers
-from app.cache.redis_cache import init_fastapi_cache_with_redis
 from app.core.config.logging import init_logging
 from app.core.config.settings import settings
-from app.core.exceptions.exception_handler import init_error_handlers
-from app.db.multi_tenant_session import multi_tenant_manager
-from app.dependencies.injector import injector
-from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
-from app.file_system.file_system import ensure_directories
-from app.middlewares._middleware import build_middlewares
-from app.middlewares.rate_limit_middleware import init_rate_limiter
-from app.routes import health
+
+# NOTE: Only logging + settings are imported at module top level. Everything else
+# (routers, the DI injector, middleware, multi-tenant DB) is imported lazily inside
+# create_app()/the lifespan helpers. This keeps importing the `app` package free of
+# the heavy ML/RAG import graph (torch/sklearn/transformers/legra), so the Celery
+# worker can build its app via create_celery() without loading native-thread ML libs
+# into the prefork master process (which would SIGSEGV on fork()).
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -31,6 +28,15 @@ def create_app() -> FastAPI:
     Application-factory entry-point.
     Only orchestration happens here – all heavy lifting lives in helpers.
     """
+    # Imported lazily (not at module top level) so importing the `app` package
+    # stays free of the heavy ML/RAG import graph — see note at top of module.
+    from app.api.v1.routes._routes import register_routers
+    from app.core.exceptions.exception_handler import init_error_handlers
+    from app.file_system.file_system import ensure_directories
+    from app.middlewares._middleware import build_middlewares
+    from app.middlewares.rate_limit_middleware import init_rate_limiter
+    from app.routes import health
+
     app = FastAPI(
         lifespan=_lifespan,
         middleware=build_middlewares(),
@@ -65,6 +71,8 @@ def create_app() -> FastAPI:
 
 
 def add_di_middleware(app):
+    from app.dependencies.injector import injector
+
     app.add_middleware(InjectorMiddleware, injector=injector)
     # Enable cleanup - fastapi-injector will handle AsyncSession through context managers
     options = RequestScopeOptions(enable_cleanup=True)
@@ -94,7 +102,9 @@ async def _initialize_redis_services(app: FastAPI):
     """
     from redis.asyncio import Redis
 
+    from app.cache.redis_cache import init_fastapi_cache_with_redis
     from app.dependencies.dependency_injection import RedisBinary, RedisString
+    from app.dependencies.injector import injector
 
     logger.info("Initializing Redis services...")
 
@@ -160,6 +170,7 @@ async def _initialize_websocket_services():
     This includes:
     - SocketConnectionManager (WebSocket rooms and Redis Pub/Sub)
     """
+    from app.dependencies.injector import injector
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
     logger.info("Initializing WebSocket services (legacy mode)...")
@@ -181,6 +192,7 @@ async def _cleanup_websocket_services():
     - Closing all WebSocket connections
     - Shutting down Redis Pub/Sub subscriber
     """
+    from app.dependencies.injector import injector
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
     logger.info("Cleaning up WebSocket services...")
@@ -207,6 +219,9 @@ async def _lifespan(app: FastAPI):
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """
+    from app.db.multi_tenant_session import multi_tenant_manager
+    from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
+
     logger.debug("Running lifespan startup tasks...")
 
     # Generate OpenAPI schema
@@ -255,31 +270,46 @@ def create_celery():
     logger.debug("Creating new Celery app instance")
     logger.debug(f"Redis URL: {settings.REDIS_URL}")
 
+    # Task modules that top-level import the workflow engine (-> sklearn at boot).
+    # They run only on the dedicated "ml" (solo) worker and are routed to the "ml"
+    # queue. The prefork "default" worker excludes them (CELERY_INCLUDE_ML_TASKS=False)
+    # so its master process never loads ML libs and is safe to fork.
+    ML_TASK_MODULES = [
+        "app.tasks.ml_model_pipeline_tasks",
+        "app.tasks.test_suite_tasks",
+        "app.tasks.workflow_schedule_tasks",
+    ]
+    include = [
+        "app.tasks.base",
+        "app.tasks.s3_tasks",
+        "app.tasks.conversations_tasks",
+        "app.tasks.zendesk_tasks",
+        "app.tasks.zendesk_article_sync_tasks",
+        "app.tasks.salesforce_article_sync_tasks",
+        "app.tasks.audio_tasks",
+        "app.tasks.sharepoint_tasks",
+        "app.tasks.fine_tune_job_sync_tasks",
+        "app.tasks.share_folder_tasks",
+        "app.tasks.kb_batch_tasks",
+        "app.tasks.analytics_aggregation_tasks",
+        "app.tasks.file_upload_session_tasks",
+        "app.tasks.email_tasks",
+    ]
+    if settings.CELERY_INCLUDE_ML_TASKS:
+        include += ML_TASK_MODULES
+
     celery_app = Celery(
         "genassist_celery_tasks",
         broker=settings.REDIS_URL,
         backend=settings.REDIS_URL,
-        include=[
-            "app.tasks.base",
-            "app.tasks.s3_tasks",
-            "app.tasks.conversations_tasks",
-            "app.tasks.zendesk_tasks",
-            "app.tasks.zendesk_article_sync_tasks",
-            "app.tasks.audio_tasks",
-            "app.tasks.sharepoint_tasks",
-            "app.tasks.fine_tune_job_sync_tasks",
-            "app.tasks.share_folder_tasks",
-            "app.tasks.ml_model_pipeline_tasks",
-            "app.tasks.kb_batch_tasks",
-            "app.tasks.analytics_aggregation_tasks",
-            "app.tasks.test_suite_tasks",
-        ],
+        include=include,
     )
 
     # Configure Celery
     celery_app.conf.update(
         broker_url=settings.REDIS_URL,  # Explicitly set broker URL
         result_backend=settings.REDIS_URL,  # Explicitly set result backend
+        broker_connection_retry_on_startup=True,  # Retain pre-Celery 6.0 startup retry behavior
         broker_transport_options={
             "visibility_timeout": 3600,  # 1 hour
             "fanout_prefix": True,
@@ -300,14 +330,35 @@ def create_celery():
         task_track_started=True,
         task_time_limit=300,  # 5 minutes
         task_soft_time_limit=240,  # 4 minutes (soft limit)
+        # Hard time limits above don't apply to the solo pool we run with;
+        # enforcement happens via asyncio.wait_for inside each task body
+        # (see app/tasks/base.py::run_async_in_celery). Bound result-backend
+        # growth so a slow/wedged worker doesn't pile up Redis keys.
+        result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,
+        # Queue routing for the two-worker split. Everything defaults to "default"
+        # (consumed by the prefork worker); the ML/evaluation tasks are pinned to the
+        # "ml" queue, consumed only by the solo worker that can safely import ML libs.
+        task_default_queue="default",
+        task_routes={
+            "execute_pipeline_run": {"queue": "ml"},
+            "execute_test_suite_run": {"queue": "ml"},
+            "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs": {"queue": "ml"},
+            "execute_workflow_run": {"queue": "ml"},
+            "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs": {"queue": "ml"},
+            "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs": {"queue": "ml"},
+        },
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
         # Prevent Celery from hijacking root logger and writing to stderr (Datadog-friendly)
         worker_hijack_root_logger=False,
     )
+
+    # Explicit prefork concurrency when configured (ignored by the solo pool).
+    if settings.CELERY_WORKER_CONCURRENCY is not None:
+        celery_app.conf.worker_concurrency = settings.CELERY_WORKER_CONCURRENCY
 
     # Configure periodic tasks (conditionally enabled via settings)
     beat_schedule = {}
@@ -326,6 +377,14 @@ def create_celery():
             # Run at 2 minutes past every 10 minutes
             "schedule": crontab(minute="2-59/10"),
             "options": {"expires": 3600},  # Task expires after 1 hour
+        }
+
+    if settings.CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK:
+        beat_schedule["cleanup-stale-direct-upload-sessions"] = {
+            "task": "app.tasks.file_upload_session_tasks.cleanup_stale_direct_upload_sessions",
+            # Run every 5 minutes; uses FILES_DIRECT_S3_PRESIGN_EXPIRES_SECONDS for cutoff.
+            "schedule": crontab(minute="*/5"),
+            "options": {"expires": 1200},  # Task expires after 20 minutes
         }
 
     if settings.CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS:
@@ -363,9 +422,23 @@ def create_celery():
     if settings.CELERY_ENABLE_IMPORT_ZENDESK_ARTICLES_TASK:
         beat_schedule["import-zendesk-articles-to-kb"] = {
             "task": "app.tasks.zendesk_article_sync_tasks.import_zendesk_articles_to_kb",
-            # Run every 15 minutes to check for knowledge bases due for sync
-            # The task itself has cron-based scheduling logic, so this just checks periodically
-            "schedule": crontab(minute="*/1"),
+            # Beat fires every 15 minutes; the task itself has cron-based scheduling
+            # logic, so the tick only needs to be frequent enough to *check* whether
+            # a KB is due. Aligned with the 15-min expires below — every-1-minute
+            # caused queue pileup when one sync ran long.
+            "schedule": crontab(minute="*/15"),
+            "options": {
+                "expires": 900,  # Task expires after 15 minutes
+            },
+        }
+
+    if settings.CELERY_ENABLE_IMPORT_SALESFORCE_ARTICLES_TASK:
+        beat_schedule["import-salesforce-articles-to-kb"] = {
+            "task": "app.tasks.salesforce_article_sync_tasks.import_salesforce_articles_to_kb",
+            # Beat fires every 15 minutes; the task itself has cron-based scheduling
+            # logic, so the tick only needs to be frequent enough to *check* whether
+            # a KB is due. Aligned with the 15-min expires below.
+            "schedule": crontab(minute="*/15"),
             "options": {
                 "expires": 900,  # Task expires after 15 minutes
             },
@@ -401,6 +474,20 @@ def create_celery():
             "schedule": 60.0,  # Every minute (60 seconds)
         }
 
+    # Check for scheduled workflow runs every minute
+    if settings.CELERY_ENABLE_CHECK_SCHEDULED_WORKFLOW_RUNS_TASK:
+        beat_schedule["check-scheduled-workflow-runs"] = {
+            "task": "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs",
+            "schedule": 60.0,  # Every minute (60 seconds)
+        }
+
+    # Reconcile workflow runs orphaned by a worker/pod crash every 5 minutes
+    if settings.CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK:
+        beat_schedule["reconcile-stuck-workflow-runs"] = {
+            "task": "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        }
+
     # Sync active KB's jobs every 5 minutes
     if settings.CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK:
         beat_schedule["summarize-files-from-azure"] = {
@@ -424,6 +511,12 @@ def create_celery():
             "schedule": crontab(minute="0", hour="3"),
             "options": {"expires": 7200},
         }
+
+    beat_schedule["process-support-ticket-sync-outbox"] = {
+        "task": "app.tasks.support_ticket_tasks.process_support_ticket_sync_outbox_task",
+        "schedule": crontab(minute="*/2"),
+        "options": {"expires": 300},
+    }
 
     celery_app.conf.beat_schedule = beat_schedule
 

@@ -7,9 +7,10 @@ import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDeta
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { Select, SelectItem, SelectContent, SelectTrigger } from "@/components/select";
+import { Input } from "@/components/ui/input";
 import { format, startOfDay, subDays, endOfDay, addDays } from "date-fns";
-import { Calendar } from "@/components/calendar";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/popover";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import {
   Pagination,
   PaginationContent,
@@ -38,20 +39,27 @@ export default function AuditLogs() {
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateRange, setDateRange] = useState(defaultRange);
+  const [dateRange, setDateRange] = usePersistedDateRange(defaultRange);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  const [tableName, setTableName] = useState<string>("");
+  const [debouncedTableName, setDebouncedTableName] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 30;
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedTableName(tableName.trim()), 1000);
+    return () => clearTimeout(timeout);
+  }, [tableName]);
 
   const isLastPage = filteredAuditLogs.length < pageSize;
   const totalPages = currentPage + (isLastPage ? 0 : 1);
   const pageList = getPageList(currentPage, totalPages);
 
   const fetchFilteredAuditLogs = useCallback(async () => {
-    const date_from = dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : "";
-    const date_to = dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : "";
+    const date_from = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
+    const date_to = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
     const action = selectedAction || "";
     const user = selectedUser ?? undefined;
     const offset = (currentPage - 1) * pageSize;
@@ -62,6 +70,7 @@ export default function AuditLogs() {
         date_from,
         date_to,
         action,
+        debouncedTableName,
         user,
         pageSize,
         offset
@@ -75,8 +84,8 @@ export default function AuditLogs() {
 
         const logDate = new Date(log.modified_at);
         const isWithinDateRange =
-          (!dateRange.from || logDate >= dateRange.from) &&
-          (!dateRange.to || logDate <= dateRange.to);
+          (!dateRange?.from || logDate >= dateRange.from) &&
+          (!dateRange?.to || logDate <= dateRange.to);
 
         return matchesSearchQuery && matchesUser && isWithinDateRange;
       });
@@ -88,12 +97,13 @@ export default function AuditLogs() {
     }
   }, [
     currentPage,
-    dateRange.from,
-    dateRange.to,
+    dateRange?.from,
+    dateRange?.to,
     pageSize,
     searchQuery,
     selectedAction,
     selectedUser,
+    debouncedTableName,
   ]);
 
   useEffect(() => {
@@ -122,15 +132,17 @@ export default function AuditLogs() {
     setDateRange(defaultRange);
     setSelectedUser(null);
     setSelectedAction(null);
+    setTableName("");
+    setDebouncedTableName("");
     setCurrentPage(1);
   };
 
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-2xl xl:max-w-7xl mx-auto space-y-6">
               <div className="flex justify-between items-start">
@@ -142,23 +154,13 @@ export default function AuditLogs() {
 
               <div className="flex flex-col lg:flex-row justify-between gap-y-4 lg:gap-y-0 gap-x-4">
                 <div className="inline-flex gap-4">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="rounded-full">
-                        {dateRange.from && dateRange.to
-                          ? `${format(dateRange.from, "PPP")} - ${format(dateRange.to, "PPP")}`
-                          : "Select a date range"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="range"
-                        selected={dateRange}
-                        onSelect={(range) => setDateRange({ from: range?.from, to: range?.to })}
-                        numberOfMonths={1}
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <DateRangePicker
+                    value={dateRange}
+                    onChange={setDateRange}
+                    align="start"
+                    placeholder="Select a date range"
+                    triggerClassName="rounded-full"
+                  />
 
                   <div className="w-40">
                     <Select value={selectedUser ?? ""} onValueChange={(value) => setSelectedUser(value === "" ? null : value)}>
@@ -186,6 +188,15 @@ export default function AuditLogs() {
                         <SelectItem value="Delete">Delete</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="w-40">
+                    <Input
+                      value={tableName}
+                      onChange={(e) => setTableName(e.target.value)}
+                      placeholder="Table name"
+                      className="text-sm bg-white"
+                    />
                   </div>
 
                   {/* add refresh button */}
@@ -218,7 +229,8 @@ export default function AuditLogs() {
                 users={users}
                 selectedUser={selectedUser}
                 onViewDetails={handleViewDetails}
-                isRefreshing={isRefreshing}
+                loading={isRefreshing && filteredAuditLogs.length === 0}
+                isRefreshing={isRefreshing && filteredAuditLogs.length > 0}
               />
 
               <Pagination>

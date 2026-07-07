@@ -14,8 +14,10 @@ from app.schemas.common import PaginatedResponse
 
 
 class AgentBase(BaseModel):
-    name: str
-    description: str
+    name: str = Field(..., max_length=100,
+                      description="Agent name. Limited to 100 characters.")
+    description: str = Field(..., max_length=200,
+                             description="Agent description. Limited to 200 characters.")
     is_active: bool = False
     welcome_message: str = Field(..., max_length=500,
                                  description="Welcome message returned when starting a conversation with an agent.")
@@ -25,6 +27,10 @@ class AgentBase(BaseModel):
                                          description="Welcome title displayed when starting a conversation with an agent.")
     input_disclaimer_html: Optional[str] = Field(None,
                                                   description="HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links.")
+    greet_on_start: bool = Field(False,
+                                 description="When true, the agent greets the visitor as the conversation opens (and triggers a Human In The Loop node wired right after Chat Input).")
+    greeting_prompt: Optional[str] = Field(None,
+                                           description="Optional extra instructions appended to the default greeting prompt used when greet_on_start is enabled.")
     possible_queries: list[str] = Field(...,
                                         description="Possible queries, suggested when starting a conversation with an agent.")
     thinking_phrases: Optional[list[str]] = Field(
@@ -46,13 +52,15 @@ class AgentCreate(AgentBase):
 
 
 class AgentUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = Field(None, max_length=200)
     is_active: Optional[bool] = None
     welcome_message: Optional[str] = None
     welcome_image: Optional[bytes] = None
     welcome_title: Optional[str] = None
     input_disclaimer_html: Optional[str] = None
+    greet_on_start: Optional[bool] = None
+    greeting_prompt: Optional[str] = None
     possible_queries: Optional[list[str]] = None
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None

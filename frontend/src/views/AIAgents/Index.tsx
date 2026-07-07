@@ -7,6 +7,7 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"; 
 import SecurityPage from "@/views/AIAgents/components/Customer/SecurityPage";
+import SchedulingPage from "@/views/AIAgents/Scheduling/SchedulingPage";
 import AgentStudioPage from './Workflows/Index';
 // import Tools from '../Tools/Index';
 
@@ -16,9 +17,9 @@ const AIAgentsView: React.FC = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1">
               <Routes>
                 <Route path="/" element={<Dashboard />} />
@@ -29,6 +30,7 @@ const AIAgentsView: React.FC = () => {
                 <Route path="workflow/:agentId" element={<AgentStudioPage />} />
                 <Route path="integration/:agentId" element={<ChatAsCustomer />} />
                 <Route path="security/:agentId" element={<SecurityPage />} />
+                <Route path="scheduling/:agentId" element={<SchedulingPage />} />
               </Routes>
           </div>
         </main>

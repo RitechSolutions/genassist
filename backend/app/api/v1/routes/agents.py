@@ -1,5 +1,6 @@
 import logging
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -68,11 +69,15 @@ async def run_query_agent_logic(
         agent_id: str,
         session_message: str,
         metadata: Optional[Dict[str, Any]] = None,
+        persist: bool = True,
         ):
     """
     Run a query against an agent.
 
     Fetches agent from database on demand - always gets latest configuration.
+
+    persist=False skips writing this turn to the conversation memory — used by the
+    start greeting trigger so its synthetic instruction never leaks into chat history.
     """
 
     # Fetch agent from database and execute
@@ -86,9 +91,10 @@ async def run_query_agent_logic(
 
     result = await agent.execute(
             session_message=session_message,
-            metadata=metadata
+            metadata=metadata,
+            persist=persist,
             )
-    logger.debug("Workflow Final Result: %s", redact_sensitive_substrings(str(result)))
+    logger.debug("Workflow Final Result: %s", truncate_for_log(redact_sensitive_substrings(str(result))))
 
     backward_compatibility_result = {
                 "status": result.get("status"),
@@ -101,8 +107,8 @@ async def run_query_agent_logic(
                 "cost_usd": result.get("cost_usd", 0.0),
     }
 
-    logger.debug("Result: %s", redact_sensitive_substrings(str(result)))
-    logger.debug("Backward compatibility result: %s", redact_sensitive_substrings(str(backward_compatibility_result)))
+    logger.debug("Result: %s", truncate_for_log(redact_sensitive_substrings(str(result))))
+    logger.debug("Backward compatibility result: %s", truncate_for_log(redact_sensitive_substrings(str(backward_compatibility_result))))
     if backward_compatibility_result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message"))
     return backward_compatibility_result

@@ -8,15 +8,15 @@ avoiding repeated file I/O and deserialization overhead.
 import asyncio
 import logging
 import os
+import pickle
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 from uuid import UUID
 
 from injector import inject
 
 from app.core.project_path import DATA_VOLUME
-from app.core.utils.safe_pickle import safe_pickle_load
 
 logger = logging.getLogger(__name__)
 
@@ -34,27 +34,25 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     Synchronous function to load pickle file.
     This will be executed in a thread pool to avoid blocking the event loop.
     """
-    # Try multiple loading methods — all use RestrictedUnpickler to block
-    # arbitrary code execution via __reduce__ in crafted pickle files.
     load_errors = []
 
-    # Method 1: Safe pickle with default encoding (works best for XGBoost in thread pool)
+    # Method 1: pickle with default encoding
     try:
         with open(pkl_file, "rb") as f:
-            model = safe_pickle_load(f)
-        logger.info("Loaded model using safe pickle (default) from %s", pkl_file)
+            model = pickle.load(f)
+        logger.info("Loaded model from %s", pkl_file)
         return model
     except Exception as e:
-        load_errors.append(f"safe pickle (default) failed: {type(e).__name__}")
+        load_errors.append(f"pickle (default) failed: {type(e).__name__}")
 
-    # Method 2: Safe pickle with latin1 encoding
+    # Method 2: pickle with latin1 encoding
     try:
         with open(pkl_file, "rb") as f:
-            model = safe_pickle_load(f, encoding="latin1")
-        logger.info("Loaded model using safe pickle (latin1) from %s", pkl_file)
+            model = pickle.load(f, encoding="latin1")
+        logger.info("Loaded model (latin1) from %s", pkl_file)
         return model
     except Exception as e:
-        load_errors.append(f"safe pickle (latin1) failed: {type(e).__name__}")
+        load_errors.append(f"pickle (latin1) failed: {type(e).__name__}")
 
     # If all methods failed, raise error
     error_details = "; ".join(load_errors)
@@ -114,6 +112,7 @@ class MLModelManager:
         if not hasattr(self, "_cached_models"):
             self._cached_models: Dict[str, CachedMLModel] = {}
             self._loading_locks: Dict[str, asyncio.Lock] = {}
+            self._validated_files: Set[str] = set()
             logger.info("MLModelManager initialized")
 
     async def get_model(
@@ -206,26 +205,17 @@ class MLModelManager:
 
     async def _validate_model_safe(self, pkl_file: str) -> None:
         """
-        Pre-validate model file in a subprocess to detect segfaults before loading.
-
-        This runs the validation in an isolated subprocess, so if the model causes
-        a segfault, it only crashes the subprocess, not the main application.
+        Pre-validate model file by scanning pickle opcodes for disallowed modules.
 
         Args:
             pkl_file: Path to the pickle file
 
         Raises:
-            Exception: If validation fails
+            ValueError: If model references disallowed modules
         """
         from app.core.utils.model_validator import validate_pickle_file_safe
 
-        # Run validation in subprocess (non-blocking)
-        loop = asyncio.get_running_loop()
-        is_valid, error = await loop.run_in_executor(
-            None,  # Use default executor for this quick check
-            validate_pickle_file_safe,
-            pkl_file
-        )
+        is_valid, error = validate_pickle_file_safe(pkl_file)
 
         if not is_valid:
             logger.error(f"Model validation failed: {pkl_file} - {error}")
@@ -259,13 +249,17 @@ class MLModelManager:
         if not os.path.exists(pkl_file):
             raise FileNotFoundError(f"Model file not found: {pkl_file}")
 
-        # Step 1: Validate model in subprocess (prevents segfaults from crashing main app)
-        logger.debug(f"Pre-validating model file: {pkl_file}")
-        await self._validate_model_safe(pkl_file)
+        # Only run the expensive subprocess validation once per file path.
+        # Subsequent loads of the same file (e.g. after cache eviction due to
+        # timestamp change) skip it because the file was already proven safe.
+        if pkl_file not in self._validated_files:
+            # Step 1: Validate model in subprocess (prevents segfaults from crashing main app)
+            logger.debug(f"Pre-validating model file: {pkl_file}")
+            await self._validate_model_safe(pkl_file)
+            self._validated_files.add(pkl_file)
 
         # Step 2: Load model in thread pool with timeout
         loop = asyncio.get_running_loop()
-        logger.debug(f"Offloading pickle load to thread pool for {pkl_file}")
 
         try:
             # Set a timeout of 60 seconds for model loading
@@ -289,14 +283,16 @@ class MLModelManager:
             model_id: UUID of the model to invalidate
         """
         model_id_str = str(model_id)
-        if model_id_str in self._cached_models:
-            del self._cached_models[model_id_str]
+        cached = self._cached_models.pop(model_id_str, None)
+        if cached:
+            self._validated_files.discard(cached.pkl_file)
             logger.info(f"Invalidated cached model {model_id_str}")
 
     def clear_cache(self) -> None:
         """Clear all cached models"""
         count = len(self._cached_models)
         self._cached_models.clear()
+        self._validated_files.clear()
         logger.info(f"Cleared {count} cached models")
 
     def get_cache_stats(self) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ export const GlobalChat = () => {
   const [websocketUrl, setWebsocketUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
-  const tenantId = localStorage.getItem('tenant_id') as string | undefined;
+  // const tenantId = localStorage.getItem('tenant_id') as string | undefined;
 
   useEffect(() => {
     (async () => {
@@ -36,8 +36,9 @@ export const GlobalChat = () => {
       baseUrl={baseUrl}
       websocketUrl={websocketUrl}
       apiKey={genassistApiKey}
-      tenant={tenantId}
+      // tenant={tenantId}
       headerTitle="Genassist Chat"
+      brandLogoUrl="https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg"
       theme={{
         primaryColor: "#173DED",
         backgroundColor: "#ffffff",
@@ -51,6 +52,7 @@ export const GlobalChat = () => {
         position: "bottom-right",
       }}
       useFile={true}
+      quickInput={true}
       usePoll={isPollEnabled}
     />
   );

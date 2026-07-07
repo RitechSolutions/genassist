@@ -1,13 +1,48 @@
+import asyncio
 from celery import Task, shared_task
 from datetime import datetime
 import logging
-from typing import Callable, List, Any, Awaitable
+from typing import Callable, List, Any, Awaitable, Coroutine, Optional
 
 from app.services.tenant import TenantService
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
 from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def run_async_in_celery(
+    coro: Coroutine[Any, Any, Any],
+    timeout: Optional[float] = None,
+    task_name: str = "celery task",
+) -> Any:
+    """
+    Drive an async coroutine to completion inside a sync Celery task body.
+
+    Always creates a fresh event loop via ``asyncio.run`` so connection-pool
+    state (httpx, AsyncOpenAI, asyncpg) cannot leak across invocations in the
+    solo worker.
+
+    If ``timeout`` is provided, the coroutine is wrapped in ``asyncio.wait_for``
+    so a hung downstream call raises ``asyncio.TimeoutError`` instead of
+    wedging the worker indefinitely. Celery's own ``task_time_limit`` is
+    unreliable with the solo pool — this is the actual enforcement point.
+    """
+    async def _runner() -> Any:
+        if timeout is None:
+            return await coro
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.error(
+                "%s exceeded %ss timeout; cancelling. Worker recovers; "
+                "next scheduled run will retry from current state.",
+                task_name,
+                timeout,
+            )
+            raise
+
+    return asyncio.run(_runner())
 
 
 class BaseTaskWithLogging(Task):
@@ -147,6 +182,51 @@ async def run_task_with_tenant_support(
         }
     finally:
         logger.info(f"{task_name} task finished.")
+
+
+async def run_task_for_tenant(
+    task_func: Callable[..., Awaitable[Any]],
+    task_name: str,
+    tenant_id: str,
+    **kwargs,
+) -> dict:
+    """Run a task for a SINGLE tenant (the caller's), not every tenant.
+
+    Mirrors ``run_task_with_tenant_support`` but scopes execution to one tenant:
+    the tenant context is set to ``tenant_id`` (slug) before the task runs inside a
+    fresh request scope, then cleared. Pass ``"master"`` (or empty) to run with no
+    tenant context against the master database.
+
+    Args:
+        task_func: The actual async task function to run.
+        task_name: Name of the task for logging purposes.
+        tenant_id: Tenant slug to scope execution to (from ``get_tenant_context()``).
+        **kwargs: Arguments forwarded to the task function.
+    """
+    settings.BACKGROUND_TASK = True
+    try:
+        logger.info(f"Starting {task_name} task for tenant '{tenant_id}'...")
+
+        if tenant_id and tenant_id != "master":
+            set_tenant_context(tenant_id)
+        else:
+            clear_tenant_context()
+
+        wrapper = create_task_wrapper(task_func)
+        result = await wrapper(**kwargs)
+
+        logger.info(f"{task_name} completed for tenant '{tenant_id}'")
+        return {"status": "success", "tenant_id": tenant_id, "result": result}
+    except Exception as e:
+        logger.error(
+            f"Error in {task_name} task for tenant '{tenant_id}': {str(e)}",
+            exc_info=True,
+        )
+        return {"status": "failed", "tenant_id": tenant_id, "error": str(e)}
+    finally:
+        clear_tenant_context()
+        settings.BACKGROUND_TASK = False
+        logger.info(f"{task_name} task finished for tenant '{tenant_id}'.")
 
 
 async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:

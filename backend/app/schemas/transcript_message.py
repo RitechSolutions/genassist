@@ -25,6 +25,7 @@ class TranscriptMessageCreate(TranscriptMessageBase):
 class TranscriptMessageRead(TranscriptMessageBase):
     id: UUID
     feedback: Optional[list[MessageFeedbackRead]] = None
+    audio_format: Optional[str] = None
 
     model_config = ConfigDict(
         from_attributes = True

@@ -4,16 +4,19 @@ import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
 import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
+import ExternalAgentNode from "./llm/externalAgentNode";
 import PythonCodeNode from "./tools/pythonCodeNode";
 import {
   CHAT_INPUT_NODE_DEFINITION,
   CHAT_OUTPUT_NODE_DEFINITION,
+  FINALIZE_CONVERSATION_NODE_DEFINITION,
   SET_STATE_NODE_DEFINITION,
 } from "./chat/definitions";
 import {
   API_TOOL_NODE_DEFINITION,
   OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
+  CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION,
   PYTHON_CODE_NODE_DEFINITION,
   SQL_NODE_DEFINITION,
   ML_MODEL_INFERENCE_NODE_DEFINITION,
@@ -21,6 +24,7 @@ import {
   WORKFLOW_EXECUTOR_NODE_DEFINITION,
 } from "./tools/definitions";
 import KnowledgeBaseNode from "./tools/knowledgeBaseNode";
+import CreateWorkflowScheduleNode from "./tools/createWorkflowScheduleNode";
 import SQLNode from "./tools/sqlNode";
 import MLModelInferenceNode from "./tools/mlModelInferenceNode";
 import ThreadRAGNode from "./tools/threadRAGNode";
@@ -29,12 +33,16 @@ import MCPNode from "./llm/mcpNode";
 import ReadMailsNode from "./integrations/readMailsNode";
 import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
+import FinalizeConversationNode from "./chat/finalizeConversationNode";
 import {
   AGENT_NODE_DEFINITION,
+  EXTERNAL_AGENT_NODE_DEFINITION,
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
+  VOICE_AGENT_NODE_DEFINITION,
 } from "./llm/definitions";
+import VoiceAgentNode from "./llm/voiceAgentNode";
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
@@ -50,10 +58,12 @@ import FileReaderNode from './utils/fileReaderNode';
 import SetStateNode from "./chat/setStateNode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
+import SalesforceCaseNode from "./integrations/salesforceCaseNode";
 import GmailNode from "./integrations/gmailNode";
 import {
   GMAIL_NODE_DEFINITION,
   ZENDESK_TICKET_NODE_DEFINITION,
+  SALESFORCE_CASE_NODE_DEFINITION,
   SLACK_OUTPUT_NODE_DEFINITION,
   CALENDAR_EVENT_NODE_DEFINITION,
   READ_MAILS_NODE_DEFINITION,
@@ -79,6 +89,12 @@ import TrainModelNode from "./training/trainModelNode";
 import JiraNode from "./integrations/jiraNode";
 import HumanInTheLoopNode from "./io/humanInTheLoopNode";
 import { HUMAN_IN_THE_LOOP_NODE_DEFINITION } from "./io/definitions";
+import TTSNode from "./audio/ttsNode";
+import STTNode from "./audio/sttNode";
+import {
+  TTS_NODE_DEFINITION,
+  STT_NODE_DEFINITION,
+} from "./audio/definitions";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -97,15 +113,21 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(CHAT_OUTPUT_NODE_DEFINITION);
 
+  nodeRegistry.registerNodeType(FINALIZE_CONVERSATION_NODE_DEFINITION);
+
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(SALESFORCE_CASE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GMAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(KNOWLEDGE_BASE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(SQL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(ML_MODEL_INFERENCE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(READ_MAILS_NODE_DEFINITION);
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(VOICE_AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(EXTERNAL_AGENT_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
 
@@ -134,6 +156,9 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(HUMAN_IN_THE_LOOP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(FILE_READER_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(TTS_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(STT_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -143,10 +168,14 @@ export const getNodeTypes = () => {
     llmModelNode: LLMModelNode,
     templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,
+    finalizeConversationNode: FinalizeConversationNode,
     apiToolNode: APIToolNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
+    voiceAgentNode: VoiceAgentNode,
+    externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
+    createWorkflowScheduleNode: CreateWorkflowScheduleNode,
     sqlNode: SQLNode,
     mlModelInferenceNode: MLModelInferenceNode,
     threadRAGNode: ThreadRAGNode,
@@ -154,6 +183,7 @@ export const getNodeTypes = () => {
     slackMessageNode: SlackOutputNode,
     whatsappToolNode: WhatsAppNode,
     zendeskTicketNode: ZendeskTicketNode,
+    salesforceCaseNode: SalesforceCaseNode,
     gmailNode: GmailNode,
     readMailsNode: ReadMailsNode,
     pythonCodeNode: PythonCodeNode,
@@ -173,5 +203,7 @@ export const getNodeTypes = () => {
     workflowExecutorNode: WorkflowExecutorNode,
     humanInTheLoopNode: HumanInTheLoopNode,
     fileReaderNode: FileReaderNode,
+    ttsNode: TTSNode,
+    sttNode: STTNode,
   };
 };

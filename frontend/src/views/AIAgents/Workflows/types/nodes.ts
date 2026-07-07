@@ -4,7 +4,7 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 // Define compatibility types
-export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "any";
+export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "audio" | "any";
 
 // Define handler types
 export interface NodeHandler {
@@ -64,6 +64,9 @@ export interface TemplateNodeData extends BaseNodeData {
 // Chat Output node data
 export type ChatOutputNodeData = BaseNodeData;
 
+// Finalize Conversation ("End Conversation") node data — pass-through, optional display name only
+export type FinalizeConversationNodeData = BaseNodeData;
+
 // Slack Output node data
 export interface SlackOutputNodeData extends BaseNodeData {
   channel: string; // target Slack channel or user ID/email
@@ -79,6 +82,13 @@ export interface WhatsappNodeData extends BaseNodeData {
 }
 
 export interface RouterNodeData extends BaseNodeData {
+  /** Stored as boolean; string "true"/"false" may appear from older persisted JSON. */
+  smartModeEnabled?: boolean | string;
+  providerId?: string;
+  smartPrompt?: string;
+  systemPrompt?: string;
+  /** Must be "true" or "false" when Smart Mode is on; invalid values normalize to "false" at runtime. */
+  fallbackRoute?: string;
   first_value?: string;
   compare_condition?:
     | "equal"
@@ -107,6 +117,15 @@ export interface ZendeskTicketNodeData extends BaseNodeData {
   requester_email?: string;
   tags?: string[];
   custom_fields?: Array<{ id: string; value: string | number }>;
+  app_settings_id?: string;
+}
+
+export interface SalesforceCaseNodeData extends BaseNodeData {
+  subject: string;
+  description: string;
+  /** Assigned to the created Case as SalesForce Topics. */
+  labels?: string[];
+  custom_fields?: Array<{ key: string; value: string }>;
   app_settings_id?: string;
 }
 
@@ -157,9 +176,27 @@ export interface APIToolNodeData extends BaseNodeData {
   requestBody: string;
 }
 
+// External Agent Node Data
+export interface ExternalAgentNodeData extends BaseNodeData {
+  endpoint: string;
+  method: string;
+  headers: Record<string, string>;
+  requestBody: string;
+  authType: "none" | "bearer" | "api_key" | "basic";
+  authToken?: string;
+  authHeader?: string;
+  authUsername?: string;
+  authPassword?: string;
+  timeout?: number;
+  messageField: string;
+  stepsField?: string;
+  mappingScript?: string;
+}
+
 // LLM Model node data
 export interface BaseLLMNodeData extends BaseNodeData {
   providerId: string;
+  fallbackChainId?: string;
   memory: boolean;
   piiMasking?: boolean;
   systemPrompt?: string;
@@ -192,6 +229,28 @@ export interface BaseLLMNodeData extends BaseNodeData {
 export interface AgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "Chain-of-Thought" | "ReActAgentLC";
 }
+// Voice Agent Node Data (native speech-to-speech via Gemini Live API)
+export interface VoiceAgentNodeData extends BaseNodeData {
+  voiceProviderId?: string;
+  model?: string;
+  voice?: string;
+  language?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+  maxToolCalls?: number;
+  memory: boolean;
+  piiMasking?: boolean;
+  memoryTrimmingMode?: "message_count" | "rag_retrieval";
+  maxMessages?: number;
+  // Live tuning (optional; unset = Gemini Live defaults)
+  temperature?: number;
+  maxOutputTokens?: number;
+  vadSilenceMs?: number;
+  vadStartSensitivity?: "START_SENSITIVITY_HIGH" | "START_SENSITIVITY_LOW";
+  vadEndSensitivity?: "END_SENSITIVITY_HIGH" | "END_SENSITIVITY_LOW";
+  proactiveAudio?: boolean;
+  contextCompression?: boolean;
+}
 export interface LLMModelNodeData extends BaseLLMNodeData {
   type: "Base" | "Chain-of-Thought";
 }
@@ -201,6 +260,18 @@ export interface KnowledgeBaseNodeData extends BaseNodeData {
   query: string;
   limit?: number;
   force?: boolean;
+}
+
+// Create Workflow Schedule node data
+export interface CreateWorkflowScheduleNodeData extends BaseNodeData {
+  agentId: string;
+  scheduleName?: string;
+  cronSchedule: string;
+  isActive?: boolean;
+  threadIdMode?: "per_run" | "fixed";
+  fixedThreadId?: string;
+  message?: string;
+  inputData?: string;
 }
 
 // SQL Node Data
@@ -425,12 +496,35 @@ export interface FileReaderNodeData extends BaseNodeData {
   fileId?: string;
 }
 
+// TTS Node Data
+export interface TTSNodeData extends BaseNodeData {
+  text: string;
+  provider: string;
+  audioProviderId?: string;
+  voice: string;
+  model: string;
+  output_format: string;
+  speed: number;
+}
+
+// STT Node Data
+export interface STTNodeData extends BaseNodeData {
+  audio_source: string;
+  provider: string;
+  audioProviderId?: string;
+  model: string;
+  language?: string;
+  response_format: string;
+  temperature: number;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData
+  | FinalizeConversationNodeData
   | APIToolNodeData
   | AgentNodeData
   | KnowledgeBaseNodeData
@@ -455,7 +549,11 @@ export type NodeData =
   | SetStateNodeData
   | GuardrailProvenanceNodeData
   | GuardrailNliNodeData
-  | FileReaderNodeData;
+  | FileReaderNodeData
+  | ExternalAgentNodeData
+  | TTSNodeData
+  | STTNodeData
+  | VoiceAgentNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
@@ -467,6 +565,7 @@ export interface NodeTypeDefinition<T extends NodeData> {
   category:
     | "io"
     | "ai"
+    | "audio"
     | "routing"
     | "integrations"
     | "formatting"

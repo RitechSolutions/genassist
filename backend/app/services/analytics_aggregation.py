@@ -1,12 +1,13 @@
 import json
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from uuid import UUID
 
 from injector import inject
 
 from app.core.utils.date_time_utils import utc_now
+from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
 
@@ -18,7 +19,12 @@ class AnalyticsAggregationService:
     def __init__(self, repo: AnalyticsAggregationRepository):
         self.repo = repo
 
-    async def aggregate_daily_stats(self) -> dict:
+    async def aggregate_daily_stats(
+        self,
+        force_full: bool = False,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> dict:
         """
         Main entry point for the Celery task.
 
@@ -26,8 +32,41 @@ class AnalyticsAggregationService:
         1. Find dates with new logs since last aggregation
         2. For each affected date, fetch ALL logs and recompute complete stats
         3. Upsert complete stats (safe to replace since we have full data)
+
+        Incremental (default): only dates with new logs since the last run are
+        recomputed.
+
+        Backfill (``force_full=True``): the "since last aggregation" short-circuit
+        is bypassed and every date with logs is recomputed from scratch, optionally
+        restricted to the inclusive ``[from_date, to_date]`` window. This repopulates
+        columns added after rows were first aggregated (e.g. ``unique_conversations``).
+        To stay safe at scale, the backfill flushes each date independently rather
+        than buffering the whole history in memory. Idempotent (upserts overwrite),
+        so re-running or running in slices is safe.
         """
         now = utc_now()
+
+        if force_full:
+            since = (
+                datetime.combine(from_date, time.min, tzinfo=timezone.utc)
+                if from_date is not None
+                else await self.repo.get_earliest_log_timestamp()
+            )
+            if since is None:
+                logger.info("No logs found for backfill")
+                return {"agent_stats_upserted": 0, "node_stats_upserted": 0}
+            until = (
+                datetime.combine(to_date, time.max, tzinfo=timezone.utc)
+                if to_date is not None
+                else now
+            )
+            affected_dates = await self.repo.get_affected_dates_since(since, until)
+            logger.info(
+                f"Backfill: recomputing {len(affected_dates)} dates "
+                f"({from_date or 'earliest'} -> {to_date or 'now'})"
+            )
+            return await self._aggregate_dates_streaming(affected_dates)
+
         last_ts = await self.repo.get_last_aggregation_timestamp()
 
         if last_ts is not None:
@@ -65,6 +104,27 @@ class AnalyticsAggregationService:
             "agent_stats_upserted": len(all_agent_stats),
             "node_stats_upserted": len(all_node_stats),
         }
+
+    async def _aggregate_dates_streaming(self, affected_dates: list[date]) -> dict:
+        """Aggregate and upsert one date at a time to keep memory bounded.
+
+        Each date is fetched, recomputed and upserted independently, so peak
+        memory is one day's logs (not the whole history) and an interrupted
+        backfill can simply be re-run (upserts are idempotent).
+        """
+        agent_rows = 0
+        node_rows = 0
+        for stat_date in affected_dates:
+            agent_stats, node_stats = await self._aggregate_single_date(stat_date)
+            await self.repo.upsert_agent_daily_stats(agent_stats)
+            await self.repo.upsert_node_daily_stats(node_stats)
+            agent_rows += len(agent_stats)
+            node_rows += len(node_stats)
+        logger.info(
+            f"Backfill complete: {agent_rows} agent rows, {node_rows} node rows "
+            f"across {len(affected_dates)} dates"
+        )
+        return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows}
 
     async def _aggregate_single_date(self, stat_date: date) -> tuple[list[dict], list[dict]]:
         """
@@ -171,9 +231,12 @@ class AnalyticsAggregationService:
             if conv_id_str and log.conversation is not None:
                 ab["conversation_ids"].add(conv_id_str)
                 conv_status = (log.conversation.status or "").lower()
-                if conv_status == "finalized":
+                if conv_status == ConversationStatus.FINALIZED.value:
                     ab["finalized_conversation_ids"].add(conv_id_str)
-                else:
+                elif conv_status in (
+                    ConversationStatus.IN_PROGRESS.value,
+                    ConversationStatus.TAKE_OVER.value,
+                ):
                     ab["in_progress_conversation_ids"].add(conv_id_str)
                 if conv_id_str not in ab["thumbs_data"]:
                     ab["thumbs_data"][conv_id_str] = (
@@ -219,9 +282,15 @@ class AnalyticsAggregationService:
                 nb = node_buckets[node_key]
                 nb["execution_count"] += 1
 
-                if conv_id_str:
+                # Count the conversation only when its row is present (joins
+                # exclude soft-deleted conversations), matching the agent-level
+                # rule above and the summary's total_unique_conversations. Without
+                # this guard, node unique_conversations counts soft-deleted
+                # conversations the denominator omits, so escalation/containment
+                # (node_uc / total_uc) can exceed 1 / go negative.
+                if conv_id_str and log.conversation is not None:
                     nb["conversation_ids"].add(conv_id_str)
-                    if conv_id_str not in nb["thumbs_data"] and log.conversation is not None:
+                    if conv_id_str not in nb["thumbs_data"]:
                         nb["thumbs_data"][conv_id_str] = (
                             log.conversation.thumbs_up_count or 0,
                             log.conversation.thumbs_down_count or 0,

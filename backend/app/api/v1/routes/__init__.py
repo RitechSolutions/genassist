@@ -7,13 +7,16 @@ from app.api.v1.routes import (
     analytics,
     api_keys,
     app_settings,
+    audio_providers,
     audit_logs,
     auth,
+    auth_sso_microsoft,
     azure_blob_router,
     conversations,
     customers,
     dashboard,
     datasources,
+    fallback_chains,
     feature_flags,
     file_manager,
     gmail,
@@ -21,8 +24,10 @@ from app.api.v1.routes import (
     llm_analysts,
     llm_cost_rates,
     llm_providers,
+    local_fine_tuning,
     mcp,
     mcp_servers,
+    notification,
     ml_model_pipeline,
     ml_models,
     office365,
@@ -30,6 +35,7 @@ from app.api.v1.routes import (
     operators,
     permissions,
     playground,
+    prompt_editor,
     public_registration,
     recordings,
     reports,
@@ -37,23 +43,26 @@ from app.api.v1.routes import (
     roles,
     smb_share_router,
     tenants,
-    translations,
-    twilio_agents,
-    prompt_editor,
     test_cases,
     test_evaluations,
     test_runs,
     test_suites,
+    translations,
+    twilio_agents,
     user_groups,
     user_types,
     users,
     voice,
+    voice_live,
     webhook,
     webhook_execute,
-    workflow_manager,
     workflow_builder,
+    workflow_manager,
+    workflow_schedule,
     workflows,
     zendesk,
+    support_tickets,
+    azure_devops_webhook,
 )
 
 # Disable redirect slashes for all routes
@@ -62,6 +71,7 @@ default_router_options = {"redirect_slashes": False}
 router = APIRouter(**default_router_options)
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
+router.include_router(auth_sso_microsoft.router, prefix="/auth", tags=["Auth"])
 router.include_router(users.router, prefix="/user", tags=["User"])
 router.include_router(user_groups.router, prefix="/user-groups", tags=["User Groups"])
 router.include_router(user_types.router, prefix="/user-type", tags=["UserTypes"])
@@ -88,10 +98,13 @@ router.include_router(
     conversations.router, prefix="/conversations", tags=["Conversations"]
 )
 router.include_router(voice.router, prefix="/voice", tags=["Voice"])
+router.include_router(voice_live.router, prefix="/voice", tags=["Voice"])
 
 # router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
 
 router.include_router(llm_providers.router, prefix="/llm-providers", tags=["LlmProviders"])
+router.include_router(fallback_chains.router, prefix="/fallback-chains", tags=["FallbackChains"])
+router.include_router(audio_providers.router, prefix="/audio-providers", tags=["AudioProviders"])
 router.include_router(llm_cost_rates.router, prefix="/llm-cost-rates", tags=["LlmCostRates"])
 router.include_router(llm_analysts.router, prefix="/llm-analyst", tags=["LlmAnalyst"])
 
@@ -101,10 +114,23 @@ router.include_router(
     agent_knowledge.router, prefix="/genagent/knowledge", tags=["Knowledge Base"]
 )
 router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Workflows"])
+router.include_router(
+    workflow_schedule.router,
+    prefix="/genagent/workflow-schedules",
+    tags=["Workflow Schedules"],
+)
 
 router.include_router(reports.router, tags=["Reports"])
 
 router.include_router(zendesk.router, prefix="/zendesk", tags=["Zendesk"])
+router.include_router(
+    support_tickets.router, prefix="/help-center/tickets", tags=["Help Center"]
+)
+router.include_router(
+    azure_devops_webhook.router,
+    prefix="/integrations/azure-devops",
+    tags=["Azure DevOps"],
+)
 router.include_router(gmail.router, prefix="/gmail", tags=["Gmail"])
 
 router.include_router(office365.router, prefix="/office365", tags=["Office365"])
@@ -140,6 +166,11 @@ router.include_router(
 router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
 
 router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenAI API"])
+router.include_router(
+    local_fine_tuning.router,
+    prefix="/local-fine-tuning",
+    tags=["Local Fine-Tuning"],
+)
 
 router.include_router(
     azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"]
@@ -158,5 +189,10 @@ router.include_router(
 )
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
+router.include_router(
+    notification.router,
+    prefix="/notifications",
+    tags=["Notifications"],
+)
 router.include_router(customers.router, prefix="/customers", tags=["Customers"])
 router.include_router(internal.router, prefix="/internal", tags=["Internal"])

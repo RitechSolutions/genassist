@@ -14,6 +14,7 @@ import {
   Waypoints,
   ListChecks,
   ChevronsUpDown,
+  LifeBuoy,
 } from "lucide-react";
 import {
   Sidebar,
@@ -22,6 +23,7 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/sidebar";
 import { useLocation } from "react-router";
 import { Link } from "react-router-dom";
@@ -45,6 +47,7 @@ import { FeatureFlags } from "@/config/featureFlags";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { cn } from "@/helpers/utils";
 import { GenAssistLogo } from "@/components/GenAssistLogo";
+import { NotificationBellPopover } from "@/components/NotificationBellPopover";
 
 // ---------------------------------------------------------------------------
 // Types & data
@@ -88,8 +91,20 @@ const menuItems: MenuItem[] = [
   {
     title: "Conversations",
     icon: MessageSquare,
-    url: "/transcripts",
+    url: "#",
     permissionsRequired: ["read:conversation"],
+    children: [
+      {
+        title: "Conversations",
+        url: "/transcripts",
+        permissionsRequired: ["read:conversation"],
+      },
+      {
+        title: "Reported Feedback",
+        url: "/reported-feedback",
+        permissionsRequired: ["read:conversation"],
+      },
+    ],
   },
   {
     title: "Operators",
@@ -175,6 +190,16 @@ const menuItems: MenuItem[] = [
         permissionsRequired: ["read:llm_provider"],
       },
       {
+        title: "Fallback Chains",
+        url: "/fallback-chains",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
+        title: "Audio Providers",
+        url: "/audio-providers",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
         title: "LLM Analyst",
         url: "/llm-analyst",
         permissionsRequired: ["read:llm_analyst"],
@@ -217,6 +242,11 @@ const menuItems: MenuItem[] = [
         url: "/user-groups",
         permissionsRequired: ["read:user_group"],
       },
+      {
+        title: "GDPR Requests",
+        url: "/admin/gdpr-conversations",
+        permissionsRequired: ["delete:conversation:gdpr"],
+      },
     ],
   },
   {
@@ -226,6 +256,11 @@ const menuItems: MenuItem[] = [
     permissionsRequired: ["read:audit_log"],
   },
   {
+    title: "Help Center",
+    icon: LifeBuoy,
+    url: "/help-center",
+  },
+  {
     title: "Settings",
     icon: Settings,
     url: "/settings",
@@ -233,6 +268,7 @@ const menuItems: MenuItem[] = [
 ];
 
 const STORAGE_KEYS = [
+  "isConversationsOpen",
   "isAnalyticsOpen",
   "isTestsOpen",
   "isIntegrationOpen",
@@ -397,50 +433,54 @@ function UserFooter({
 
   return (
     <div className="border-t border-zinc-100 px-3 py-3">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors",
-              "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
-            )}
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
-              {initials || "U"}
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium text-zinc-600">
-                {username}
-              </div>
-              {tenantId ? (
-                <div className="truncate text-[11px] text-zinc-400">
-                 Tenant: <span className="font-medium">{tenantId}</span>
+      <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors",
+                  "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
+                )}
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
+                  {initials || "U"}
                 </div>
-              ) : null}
-            </div>
-            <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-48">
-          <DropdownMenuItem asChild className="flex items-center gap-2">
-            <Link
-              to="/change-password"
-              className="flex items-center gap-2"
-            >
-              <Lock className="h-4 w-4" />
-              <span>Change Password</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={onLogout}
-            className="flex items-center gap-2 text-red-600"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium text-zinc-600">
+                    {username}
+                  </div>
+                  {tenantId ? (
+                    <div className="truncate text-[11px] text-zinc-400">
+                      Tenant: <span className="font-medium">{tenantId}</span>
+                    </div>
+                  ) : null}
+                </div>
+                <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-48">
+              {/* <DropdownMenuItem asChild className="flex items-center gap-2">
+                <Link
+                  to="/change-password"
+                  className="flex items-center gap-2"
+                >
+                  <Lock className="h-4 w-4" />
+                  <span>Change Password</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator /> */}
+              <DropdownMenuItem
+                onClick={onLogout}
+                className="flex items-center gap-2 text-red-600"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
     </div>
   );
 }
@@ -450,6 +490,7 @@ function UserFooter({
 // ---------------------------------------------------------------------------
 
 export function AppSidebar() {
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
   const [username, setUsername] = useState<string>("");
   const [tenantId, setTenantId] = useState<string>("");
   const { getFeatureItem } = useFeatureFlag();
@@ -458,6 +499,8 @@ export function AppSidebar() {
   const currentPath = location.pathname;
 
   // Persisted collapsible state
+  const [isConversationsOpen, toggleConversations, setConversationsOpen] =
+    usePersistedState("isConversationsOpen", false);
   const [isAnalyticsOpen, toggleAnalytics, setAnalyticsOpen] =
     usePersistedState("isAnalyticsOpen", false);
   const [isTestsOpen, toggleTests, setTestsOpen] =
@@ -471,24 +514,26 @@ export function AppSidebar() {
 
   const toggleMap: Record<string, () => void> = useMemo(
     () => ({
+      Conversations: toggleConversations,
       Analytics: toggleAnalytics,
       Tests: toggleTests,
       Integrations: toggleIntegrations,
       "LLM Settings": toggleLLMSettings,
       Admin: toggleAdmin,
     }),
-    [toggleAnalytics, toggleTests, toggleIntegrations, toggleLLMSettings, toggleAdmin]
+    [toggleConversations, toggleAnalytics, toggleTests, toggleIntegrations, toggleLLMSettings, toggleAdmin]
   );
 
   const openMap: Record<string, boolean> = useMemo(
     () => ({
+      Conversations: isConversationsOpen,
       Analytics: isAnalyticsOpen,
       Tests: isTestsOpen,
       Integrations: isIntegrationsOpen,
       "LLM Settings": isLLMSettingsOpen,
       Admin: isAdminOpen,
     }),
-    [isAnalyticsOpen, isTestsOpen, isIntegrationsOpen, isLLMSettingsOpen, isAdminOpen]
+    [isConversationsOpen, isAnalyticsOpen, isTestsOpen, isIntegrationsOpen, isLLMSettingsOpen, isAdminOpen]
   );
 
   useEffect(() => {
@@ -517,6 +562,7 @@ export function AppSidebar() {
   // Auto-expand section when navigating directly to a child route
   useEffect(() => {
     const setterMap: Record<string, (v: boolean) => void> = {
+      Conversations: setConversationsOpen,
       Analytics: setAnalyticsOpen,
       Tests: setTestsOpen,
       Integrations: setIntegrationsOpen,
@@ -530,6 +576,13 @@ export function AppSidebar() {
       }
     }
   }, [currentPath]);
+
+  // Close the mobile drawer after successful route navigation.
+  useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [currentPath, isMobile, setOpenMobile]);
 
   const filterItems = useCallback(
     (items: MenuItem[]): MenuItem[] => {
@@ -572,6 +625,10 @@ export function AppSidebar() {
         {/* Logo */}
         <div className="flex items-center px-5 pt-5 pb-4">
           <GenAssistLogo width={150} />
+          <NotificationBellPopover
+            compact
+            className="ml-auto mr-2 shrink-0 !border-0 !bg-transparent shadow-none hover:!bg-transparent"
+          />
         </div>
 
         {/* Scrollable nav */}

@@ -8,7 +8,8 @@ class KBBase(BaseModel):
     name: str
     description: Optional[str] = None
     type: Literal["file", "url", "text", "datasource",
-                  "s3", "database", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket", "zendesk"] = "file"
+                  "s3", "database", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket", "zendesk",
+                  "salesforce"] = "file"
     source: Optional[str] = None
     content: Optional[str] = None
     file_path: Optional[str] = None
@@ -31,9 +32,16 @@ class KBBase(BaseModel):
         # Import here to avoid circular dependency
         from app.constants.embedding_models import ALLOWED_MODEL_NAMES, MODELS_FOR_DOWNLOAD
 
-        # Validate vector config embedding model
+        # Validate vector config embedding model.
+        # ALLOWED_MODEL_NAMES is the HuggingFace sentence-transformers allowlist (the
+        # safetensors/RCE guard), so it only applies when the provider is HuggingFace.
+        # OpenAI/Bedrock use their own model namespaces (e.g. "text-embedding-3-small").
         if vector_config := self.rag_config.get('vector'):
-            if vector_config.get('enabled') and (model := vector_config.get('embedding_model_name')):
+            if (
+                vector_config.get('enabled')
+                and vector_config.get('embedding_type') == 'huggingface'
+                and (model := vector_config.get('embedding_model_name'))
+            ):
                 if model not in ALLOWED_MODEL_NAMES:
                     raise ValueError(
                         f'Invalid embedding_model_name: "{model}". '

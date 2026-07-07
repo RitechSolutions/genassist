@@ -5,12 +5,14 @@ export interface AppSetting {
   name: string;
   type:
     | "Zendesk"
+    | "Salesforce"
     | "WhatsApp"
     | "Gmail"
     | "Microsoft"
     | "Slack"
     | "Jira"
     | "FileManagerSettings"
+    | "Security"
     | "Other";
   values: Record<string, FieldValue>;
   description?: string;

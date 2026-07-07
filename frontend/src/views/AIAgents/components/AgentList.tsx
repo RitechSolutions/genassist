@@ -13,6 +13,7 @@ import {
   Shield,
   Loader2,
   Workflow,
+  CalendarClock,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -26,12 +27,15 @@ import { AgentFormDialog } from "./AgentForm";
 import { SearchInput } from "@/components/SearchInput";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { getAgentConfig } from "@/services/api";
+import { getWorkflowSchedules } from "@/services/workflowSchedules";
 import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
+import { PageListSkeleton } from "@/components/skeletons";
 
 interface AgentListProps {
   agents: AgentListItem[];
   total: number;
+  loading?: boolean;
   onDelete: (agentId: string) => void;
   onUpdate: (agentId: string) => void;
   onManageKeys: (agentId: string) => void;
@@ -47,6 +51,7 @@ interface AgentListProps {
 const AgentList: React.FC<AgentListProps> = ({
   agents,
   total,
+  loading = false,
   onDelete,
   onUpdate,
   onManageKeys,
@@ -62,6 +67,35 @@ const AgentList: React.FC<AgentListProps> = ({
   const navigate = useNavigate();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useMemo(() => currentUserIsAdmin(), []);
+
+  // Per-agent schedule status: "active" if the agent has at least one active
+  // schedule, "inactive" if it has schedules but none active, absent if none.
+  const [scheduleStatusByAgent, setScheduleStatusByAgent] = useState<
+    Record<string, "active" | "inactive">
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    getWorkflowSchedules()
+      .then((schedules) => {
+        if (cancelled) return;
+        const map: Record<string, "active" | "inactive"> = {};
+        schedules.forEach((s) => {
+          if (s.is_active) {
+            map[s.agent_id] = "active";
+          } else if (!map[s.agent_id]) {
+            map[s.agent_id] = "inactive";
+          }
+        });
+        setScheduleStatusByAgent(map);
+      })
+      .catch(() => {
+        /* non-critical: badge simply won't show */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Infinite scroll using IntersectionObserver
   useEffect(() => {
@@ -128,6 +162,8 @@ const AgentList: React.FC<AgentListProps> = ({
         thinking_phrase_delay: config.thinking_phrase_delay ?? 0,
         possible_queries: config.possible_queries ?? [],
         thinking_phrases: config.thinking_phrases ?? [],
+        greet_on_start: config.greet_on_start ?? false,
+        greeting_prompt: config.greeting_prompt ?? "",
         is_active: config.is_active,
         llm_analyst_id: config.llm_analyst_id ?? null,
         has_welcome_image: config?.has_welcome_image ?? false,
@@ -152,31 +188,8 @@ const AgentList: React.FC<AgentListProps> = ({
     setSettingsFormData(null);
   };
 
-  if (!agents || agents.length === 0) {
-    return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-md border border-dashed p-8 text-center animate-in fade-in-50">
-        <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-          <h3 className="mt-4 text-lg font-semibold">No workflows found</h3>
-          <p className="mb-4 mt-2 text-sm text-muted-foreground">
-            You haven't created any workflows yet. Get started by creating your
-            first agent.
-          </p>
-          <Button
-            className="flex items-center gap-2"
-            onClick={() => setOpenAgentForm(true)}
-          >
-            <Plus className="h-4 w-4" />
-            New Workflow
-          </Button>
-        </div>
-        <AgentFormDialog
-          isOpen={openAgentForm}
-          onClose={() => setOpenAgentForm(false)}
-          data={null}
-        />
-      </div>
-    );
-  }
+  const isSearchActive = searchTerm.trim() !== "";
+  const isListEmpty = filteredAgents.length === 0;
 
   const renderAgent = (agent: AgentListItem) => {
     const agentName = agent.name;
@@ -195,7 +208,7 @@ const AgentList: React.FC<AgentListProps> = ({
           handleOpenWorkflow(agent.id);
         }}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <h4 className="text-base font-semibold">{agentName}</h4>
@@ -210,8 +223,25 @@ const AgentList: React.FC<AgentListProps> = ({
                   Inactive
                 </span>
               )}
+              {scheduleStatusByAgent[agent.id] && (
+                <span
+                  className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
+                    scheduleStatusByAgent[agent.id] === "active"
+                      ? "text-green-700 bg-green-50"
+                      : "text-gray-600 bg-gray-100"
+                  }`}
+                  title={
+                    scheduleStatusByAgent[agent.id] === "active"
+                      ? "Has an active schedule"
+                      : "Has schedules, none active"
+                  }
+                >
+                  <CalendarClock className="h-3 w-3" />
+                  Scheduled
+                </span>
+              )}
             </div>
-            <div className="space-y-1 text-sm text-muted-foreground">
+            <div className="space-y-1 text-sm text-muted-foreground break-all">
               <div>
                 <span className="font-medium">ID:</span> {agent.id}
               </div>
@@ -225,7 +255,7 @@ const AgentList: React.FC<AgentListProps> = ({
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-end gap-2 sm:gap-4">
             <div onClick={(e) => e.stopPropagation()}>
               <Switch
                 checked={isActive}
@@ -267,6 +297,12 @@ const AgentList: React.FC<AgentListProps> = ({
                     <Link to={`/ai-agents/security/${agent.id}`}>
                       <Shield className="mr-2 h-4 w-4" />
                       <span>Security</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to={`/ai-agents/scheduling/${agent.id}`}>
+                      <CalendarClock className="mr-2 h-4 w-4" />
+                      <span>Scheduling</span>
                     </Link>
                   </DropdownMenuItem>
                   {(!agent.is_system || isAdmin) && (
@@ -312,23 +348,28 @@ const AgentList: React.FC<AgentListProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-3xl font-bold">
             Agent Studio{" "}
-            <span className="text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
+            <span className="hidden sm:inline text-xl sm:text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
           </h2>
           <p className="text-zinc-400 font-normal">View and manage workflows</p>
+          <div className="mt-2 sm:hidden">
+            <span className="text-zinc-400 font-normal text-base">
+              ({activeCount} Active, {inactiveCount} Inactive)
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <SearchInput
             value={searchTerm}
             onChange={setSearchTerm}
             placeholder="Search agents..."
-            className="w-[200px]"
+            className="w-full sm:w-[200px]"
           />
           <Button
-            className="flex items-center gap-2 rounded-full"
+            className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
             onClick={() => setOpenAgentForm(true)}
           >
             <Plus className="h-4 w-4" />
@@ -338,28 +379,63 @@ const AgentList: React.FC<AgentListProps> = ({
       </div>
 
       <Tabs value={activeTab} onValueChange={onTabChange}>
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="user">My Agents</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <div className="rounded-md border bg-card">
-        <div className="divide-y">
-          {filteredAgents.map((agent) => {
-            return renderAgent(agent);
-          })}
-        </div>
-
-        {/* Infinite scroll sentinel and loading indicator */}
-        {loadingMore && (
-          <div className="flex items-center justify-center py-4 border-t">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+      <div className="rounded-md border bg-card shadow-sm overflow-hidden">
+        {loading ? (
+          <PageListSkeleton variant="agent" rows={5} bordered={false} />
+        ) : isListEmpty ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+            <div className="rounded-full bg-gray-100 p-4">
+              <Workflow className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="font-medium text-lg">
+              {isSearchActive
+                ? "No matching agents"
+                : activeTab === "system"
+                  ? "No system agents"
+                  : "No agents yet"}
+            </h3>
+            <p className="text-sm text-gray-500 max-w-sm px-4">
+              {isSearchActive
+                ? "Try adjusting your search query."
+                : activeTab === "system"
+                  ? "There are no system agents in this workspace."
+                  : "Create your first workflow to deploy an agent and manage it from Agent Studio."}
+            </p>
+            {!isSearchActive && (
+              <Button
+                onClick={() => setOpenAgentForm(true)}
+                className="rounded-full flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New Workflow
+              </Button>
+            )}
           </div>
+        ) : (
+          <>
+            <div className="divide-y">
+              {filteredAgents.map((agent) => {
+                return renderAgent(agent);
+              })}
+            </div>
+
+            {/* Infinite scroll sentinel and loading indicator */}
+            {loadingMore && (
+              <div className="flex items-center justify-center py-4 border-t">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+              </div>
+            )}
+            <div ref={sentinelRef} className="h-1" />
+          </>
         )}
-        <div ref={sentinelRef} className="h-1" />
       </div>
       <AgentFormDialog
         isOpen={openAgentForm}

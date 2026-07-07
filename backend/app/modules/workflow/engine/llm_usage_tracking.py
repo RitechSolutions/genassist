@@ -37,11 +37,21 @@ async def merge_llm_usage_from_result(
     from app.dependencies.injector import injector
 
     llm_service = injector.get(LlmProviderService)
-    provider_info = await llm_service.get_by_id(provider_id)
-    provider = (provider_info.llm_model_provider or "").lower()
-    model = provider_info.llm_model or ""
+
+    # Resolve provider/model lazily and cache per id. A usage entry may carry its own
+    # provider_id (stamped by FallbackChatModel when a fallback served the request);
+    # otherwise fall back to the node's primary provider_id.
+    resolved: dict[str, tuple[str, str]] = {}
+
+    async def _provider_model(pid: str) -> tuple[str, str]:
+        if pid not in resolved:
+            info = await llm_service.get_by_id(pid)
+            resolved[pid] = ((info.llm_model_provider or "").lower(), info.llm_model or "")
+        return resolved[pid]
 
     for u in llm_usage_list:
+        pid = u.get("provider_id") or provider_id
+        provider, model = await _provider_model(pid)
         state.add_llm_usage(
             input_tokens=u.get("input_tokens", 0),
             output_tokens=u.get("output_tokens", 0),

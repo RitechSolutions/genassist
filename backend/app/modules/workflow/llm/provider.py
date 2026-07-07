@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
-
+from typing import TYPE_CHECKING, Any, Dict, Optional
+from urllib.parse import urlparse
+import copy
+import httpx
 from injector import inject
-from langchain.chat_models import init_chat_model
-from langchain_core.language_models import BaseChatModel
-
+if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
+    from langchain_core.language_models import BaseChatModel
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
@@ -28,6 +31,15 @@ async def build_chat_model(
     if provider == "vllm":
         provider = "openai"
         cd["api_key"] = "EMPTY"
+        # base_url comes from connection_data for the simple local deployment type
+    elif provider == "vllm_fine_tuned":
+        provider = "openai"
+        cd["api_key"] = "EMPTY"
+        # connection_data.model always holds the api_url:::model_path value
+        raw = cd.pop("model", model_name) or model_name
+        if ":::" in raw:
+            api_url, model_name = raw.split(":::", 1)
+            cd["base_url"] = f"{api_url}/v1"
     elif provider == "openrouter":
         provider = "openai"
         if "base_url" not in cd:
@@ -40,9 +52,13 @@ async def build_chat_model(
 
     model_kwargs = {
         "model_provider": provider,
-        "model": model_name,
         **cd,
+        "model": model_name,
     }
+
+    # Imported here, not at module top level: langchain.chat_models transitively pulls
+    # torch/transformers, which must not be loaded into a Celery prefork master process.
+    from langchain.chat_models import init_chat_model
 
     return init_chat_model(**model_kwargs)
 
@@ -53,10 +69,16 @@ class LLMProvider:
     def __init__(self):
         logger.info("LLMProvider initialized")
 
-    async def get_configuration_definitions(self):
+    async def get_configuration_definitions(
+        self,
+        auth_token: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ):
         """
         Get all LLM configurations
         """
+        from app.core.config.settings import settings
+
         # Get fresh service instance to ensure correct tenant database session
         from app.dependencies.injector import injector
         fine_tuning_service = injector.get(OpenAIFineTuningService)
@@ -68,18 +90,64 @@ class LLMProvider:
             for job in successful_jobs
         ]
 
-        # Convert TypeSchema to dict for modification
-        import copy
-
         schemas = copy.deepcopy(LLM_FORM_SCHEMAS_DICT)
 
-        # Find the model field and add the fine-tuned options
+        # Inject OpenAI fine-tuned models into the openai schema
         if "openai" in schemas and "fields" in schemas["openai"]:
             for field in schemas["openai"]["fields"]:
                 if field.get("name") == "model":
-                    # Add fine-tuned models to the existing options
                     if "options" in field:
                         field["options"].extend(fine_tuned_options)
+                    break
+
+        # Inject running vLLM deployments into the vllm schema
+        vllm_options = []
+        if not settings.LOCAL_FINE_TUNE_API_URL:
+            logger.warning("LOCAL_FINE_TUNE_API_URL not set — vLLM deployments will not appear as model options")
+        else:
+            _parsed_base = urlparse(settings.LOCAL_FINE_TUNE_API_URL)
+            _base_scheme = _parsed_base.scheme or "http"
+            _base_host = _parsed_base.hostname or "localhost"
+
+            url = f"{settings.LOCAL_FINE_TUNE_API_URL.rstrip('/')}/api/v1/deployments"
+            headers = {}
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
+            if tenant_id:
+                headers["x-tenant-id"] = tenant_id
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(url, headers=headers)
+                logger.info(f"vLLM deployment list: GET {url} → {resp.status_code}")
+                if resp.status_code == 200:
+                    all_deployments = resp.json()
+                    logger.info(f"vLLM deployments returned: {len(all_deployments)}, statuses: {[d.get('status') for d in all_deployments]}")
+                    for d in all_deployments:
+                        if str(d.get("status", "")).lower() == "running":
+                            model_path = d.get("model_path", "")
+                            raw_api_url = d.get("api_url", "")
+                            port = d.get("port", "")
+                            # Use the deployment's api_url only when it points to a different host
+                            # (model deployed on a different machine); otherwise build from settings host + port.
+                            _parsed_api = urlparse(raw_api_url)
+                            if raw_api_url and _parsed_api.hostname not in (None, "localhost", "127.0.0.1", _base_host):
+                                api_url = raw_api_url.rstrip("/")
+                            else:
+                                api_url = f"{_base_scheme}://{_base_host}:{port}" if port else f"{_base_scheme}://{_base_host}"
+                            label_name = model_path.split("/")[-1] if model_path else str(d.get("id", "unknown"))
+                            vllm_options.append({
+                                "value": f"{api_url}:::{model_path}",
+                                "label": f"deployed: {label_name} (:{port})",
+                            })
+                else:
+                    logger.warning(f"vLLM deployment list returned {resp.status_code} — check LOCAL_FINE_TUNE_SERVICE_TOKEN")
+            except Exception as exc:
+                logger.warning(f"Could not fetch vLLM deployments from {url}: {exc}")
+
+        if "vllm_fine_tuned" in schemas and "fields" in schemas["vllm_fine_tuned"]:
+            for field in schemas["vllm_fine_tuned"]["fields"]:
+                if field.get("name") == "model":
+                    field["options"] = vllm_options
                     break
 
         return schemas
@@ -96,6 +164,32 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
+        return await self._build_from_provider(llm_provider)
+
+    async def _build_one(self, model_id: str) -> BaseChatModel:
+        """Build a single chat model from a stored provider id.
+
+        Shared by get_model and get_model_with_fallback so residency checks,
+        decryption, and init_chat_model stay in one place.
+        """
+        from app.dependencies.injector import injector
+        llm_provider_service = injector.get(LlmProviderService)
+
+        llm_provider = await llm_provider_service.get_by_id(model_id)
+        return await self._build_from_provider(llm_provider)
+
+    async def _build_from_provider(self, llm_provider) -> BaseChatModel:
+        from app.dependencies.injector import injector
+        from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
+        from app.services.app_settings import AppSettingsService
+
+        app_settings_service = injector.get(AppSettingsService)
+        regions = bedrock_regions_from_connection_data(
+            llm_provider.llm_model_provider,
+            llm_provider.connection_data,
+        )
+        await assert_provider_residency(regions, app_settings_service)
+
         try:
             # Validate connection data
             validated_data = json.loads(
@@ -106,8 +200,9 @@ class LLMProvider:
 
             # Decrypt api_key for providers that need it
             original_provider = (llm_provider.llm_model_provider or "").lower()
-            if original_provider not in ["vllm", "ollama"] and "api_key" in validated_data:
+            if original_provider not in ["vllm", "vllm_fine_tuned", "ollama"] and "api_key" in validated_data:
                 validated_data["api_key"] = decrypt_key(validated_data["api_key"])
+
 
             llm = await build_chat_model(
                 provider_name=llm_provider.llm_model_provider,
@@ -120,3 +215,106 @@ class LLMProvider:
             raise
 
         return llm
+
+    async def get_model_for_node(
+        self,
+        provider_id: str | None,
+        fallback_chain_id: str | None = None,
+    ) -> BaseChatModel:
+        """Resolve the model a node should use, honoring an optional fallback chain.
+
+        Without a chain this behaves exactly like get_model(provider_id). With a
+        chain, the node's own provider stays the primary (highest priority) and the
+        chain's providers are appended as ordered fallbacks; the chain's retry policy
+        is applied per provider.
+        """
+        if not fallback_chain_id:
+            return await self.get_model(provider_id)
+
+        from app.dependencies.injector import injector
+        from app.services.fallback_chains import FallbackChainService
+
+        chain = await injector.get(FallbackChainService).get_by_id(fallback_chain_id)
+
+        chain_ids = [str(pid) for pid in (chain.provider_ids or []) if pid]
+        if provider_id:
+            effective_ids = [str(provider_id)] + [pid for pid in chain_ids if pid != str(provider_id)]
+        else:
+            effective_ids = chain_ids
+
+        retry_policy = chain.retry_policy.model_dump() if chain.retry_policy else None
+        return await self.get_model_with_fallback(effective_ids, retry_policy)
+
+    async def get_model_with_fallback(
+        self,
+        provider_ids: list[str],
+        retry_policy: Optional[Dict[str, Any]] = None,
+    ) -> BaseChatModel:
+        """Build a chat model that fails over across an ordered list of providers.
+
+        Each provider is built via _build_one and wrapped with per-model retry
+        (exponential backoff). The list is composed into a FallbackChatModel that
+        tries each provider in order on transient errors. When there is a single
+        provider and no retry policy, the bare model is returned unchanged so
+        existing single-provider nodes behave exactly as before.
+
+        Args:
+            provider_ids: Ordered provider ids; index 0 is the primary.
+            retry_policy: Optional dict with ``retry_count``, ``backoff_seconds``,
+                a default ``timeout_seconds``, and a per-provider
+                ``provider_timeouts`` map ``{provider_id: seconds}`` that overrides
+                the default for specific providers.
+        """
+        ids = [pid for pid in (provider_ids or []) if pid]
+        if not ids:
+            raise ValueError("get_model_with_fallback requires at least one provider id")
+
+        retry_count = int((retry_policy or {}).get("retry_count", 0) or 0)
+        backoff_seconds = float((retry_policy or {}).get("backoff_seconds", 0) or 0)
+        default_timeout = float((retry_policy or {}).get("timeout_seconds", 0) or 0)
+        provider_timeouts = (retry_policy or {}).get("provider_timeouts") or {}
+
+        def _timeout_for(pid: str) -> float:
+            # Per-provider override falls back to the chain default (0 = no limit).
+            raw = provider_timeouts.get(pid, default_timeout)
+            try:
+                return float(raw or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        has_retry = retry_count > 0
+        has_timeout = default_timeout > 0 or any(_timeout_for(pid) > 0 for pid in ids)
+
+        # Fast path: single provider, no retries, no timeout → no wrapper, zero
+        # behavior change for plain single-provider nodes.
+        if len(ids) == 1 and not has_retry and not has_timeout:
+            return await self._build_one(ids[0])
+
+        from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
+
+        children: list[Any] = []
+        kept_ids: list[str] = []
+        for pid in ids:
+            try:
+                # Children stay as raw chat models (NOT wrapped with .with_retry, which
+                # returns a RunnableRetry lacking bind_tools and would break the agent
+                # path). Per-provider retry is handled inside FallbackChatModel instead.
+                model = await self._build_one(pid)
+            except Exception as e:
+                # A provider that can't even be instantiated (e.g. deleted) is skipped
+                # so the rest of the chain can still serve the request.
+                logger.exception(f"Skipping fallback provider {pid}: failed to build ({e})")
+                continue
+            children.append(model)
+            kept_ids.append(pid)
+
+        if not children:
+            raise ValueError("get_model_with_fallback: no providers could be built")
+
+        return FallbackChatModel(
+            models=children,
+            provider_ids=kept_ids,
+            retry_count=retry_count,
+            retry_backoff_seconds=backoff_seconds,
+            request_timeouts=[_timeout_for(pid) for pid in kept_ids],
+        )

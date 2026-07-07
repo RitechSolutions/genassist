@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 from pydantic import ConfigDict, Field, computed_field
 from pydantic_settings import BaseSettings
@@ -46,20 +46,62 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_TRANSCRIBE_S3_FILES_TASK: bool = True
     CELERY_ENABLE_ZENDESK_ANALYSIS_TASK: bool = True
     CELERY_ENABLE_IMPORT_ZENDESK_ARTICLES_TASK: bool = True
+    CELERY_ENABLE_IMPORT_SALESFORCE_ARTICLES_TASK: bool = True
     CELERY_ENABLE_IMPORT_SHAREPOINT_FILES_TASK: bool = True
     CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK: bool = True
     CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
+    CELERY_ENABLE_CHECK_SCHEDULED_WORKFLOW_RUNS_TASK: bool = True
+    CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK: bool = True
+    # A scheduled run still PENDING after this many seconds is presumed orphaned
+    # (its worker never picked it up / crashed before starting) and marked FAILED.
+    WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS: int = 900  # 15 minutes
+    # A scheduled run still RUNNING after this many seconds is presumed orphaned
+    # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
+    # genuinely long run is never failed prematurely.
+    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
+    # Periodic cleanup of stale direct-S3 upload sessions (companion to
+    # FILES_DIRECT_S3_UPLOAD_ENABLED). Safe to leave on even when the feature
+    # flag is off: with no direct-S3 rows the task simply finds nothing to do.
+    CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
-    # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
-    # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
+    # Worker pool. "solo" is required for the ML worker: ML libs (torch/sklearn/
+    # transformers) spawn native OpenMP/MKL threads at import, and fork() copies
+    # only the calling thread, leaving the child with locked mutexes -> SIGSEGV.
+    # The "default" worker can run "prefork" for true concurrency *because* its boot
+    # import graph is ML-free (see CELERY_INCLUDE_ML_TASKS and the lean worker
+    # bootstrap in run_celery.py): prefork children may lazily import ML libs after
+    # fork safely; only the parent (master) must stay clean.
     CELERY_WORKER_POOL: str = "solo"
+
+    # Role selector for the two-worker split. When True (default — preserves the
+    # legacy single-worker behavior), the Celery app includes the ML/evaluation task
+    # modules (ml_model_pipeline_tasks, test_suite_tasks), which top-level import the
+    # workflow engine and therefore pull sklearn into the process at boot. The
+    # prefork "default" worker MUST set this False so its master process never imports
+    # those modules; ML/eval tasks are routed to the dedicated "ml" queue instead.
+    CELERY_INCLUDE_ML_TASKS: bool = True
+
+    # Explicit prefork concurrency (number of child worker processes). Leave None to
+    # use Celery's default (CPU count) — but for the prefork "default" worker set a
+    # modest value (e.g. 2-4): each child holds its own DB/Redis connections, and
+    # background tasks use NullPool (a fresh connection per query), so unbounded
+    # concurrency can exhaust Postgres max_connections / Redis maxclients.
+    CELERY_WORKER_CONCURRENCY: int | None = None
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+
+    # === GDPR Right-to-Erasure ===
+    # Default mode used by the admin GDPR delete endpoint when the caller does
+    # not pass an explicit `mode` query parameter. Allowed values: "soft",
+    # "anonymize", "hard". "soft" preserves backward compatibility because it
+    # only flips the existing `is_deleted` flag and scrubs PII, leaving the
+    # row in place for a manual hard purge later.
+    GDPR_DEFAULT_DELETE_MODE: str = "soft"
 
     # Number of latest messages used for in-progress hostility scoring.
     # If the conversation has fewer messages than this, all messages are used.
@@ -84,6 +126,9 @@ class ProjectSettings(BaseSettings):
         "webm",
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
+    LOCAL_FINE_TUNE_API_URL: Optional[str] = None
+    LOCAL_FINE_TUNE_JWT_SECRET: Optional[str] = None
+    LOCAL_FINE_TUNING_CALL_ORIGIN: str = "dev"
     WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
     WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 
@@ -94,13 +139,19 @@ class ProjectSettings(BaseSettings):
 
     # === Limits ===
     # Canonical max request body / upload size (aligned with frontend nginx client_max_body_size).
-    MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 100MB
+    MAX_CONTENT_LENGTH: int = 200 * 1024 * 1024  # 200MB
     # Knowledge-base uploads (legacy /upload and chunked /upload-session).
-    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 200 * 1024 * 1024  # 200MB
     KNOWLEDGE_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
     FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
+    # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
+    # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
+    # remain fully functional regardless of this flag.
+    FILES_DIRECT_S3_UPLOAD_ENABLED: bool = False
+    FILES_DIRECT_S3_PRESIGN_EXPIRES_SECONDS: int = 600  # 10 min
     DEFAULT_WINDOW_SECONDS: int = 60
 
     # === Language ===
@@ -154,6 +205,35 @@ class ProjectSettings(BaseSettings):
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
 
+    SALESFORCE_INSTANCE_URL: Optional[str] = None
+    SALESFORCE_CLIENT_ID: Optional[str] = None
+    SALESFORCE_CLIENT_SECRET: Optional[str] = None
+
+    # Help Center → company Azure DevOps Boards (platform ops; not user App Settings)
+    AZURE_DEVOPS_ORGANIZATION_URL: Optional[str] = None
+    AZURE_DEVOPS_PROJECT: Optional[str] = None
+    AZURE_DEVOPS_PAT: Optional[str] = None
+    AZURE_DEVOPS_WORK_ITEM_TYPE: Optional[str] = "Bug"
+    AZURE_DEVOPS_FEATURE_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_TASK_WORK_ITEM_TYPE: Optional[str] = None
+    AZURE_DEVOPS_DEFAULT_AREA_PATH: Optional[str] = None
+    AZURE_DEVOPS_WEBHOOK_SECRET: Optional[str] = None
+    HELP_CENTER_PUBLIC_BASE_URL: Optional[str] = None
+
+    # === SMTP / Email ===
+    # Global fallback SMTP account. Used when a tenant has no SMTP entry in its
+    # App Settings (mirrors the Zendesk env-var fallback pattern). Per-tenant
+    # config in AppSettings (type="SMTP") always takes precedence.
+    EMAIL_ENABLED: bool = True  # Master switch; when False, EmailService logs instead of sending.
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587  # 587 = STARTTLS, 465 = implicit TLS, 25 = plain
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_FROM_NAME: str = "GenAssist"
+    SMTP_USE_TLS: bool = True  # STARTTLS for port 587
+    SMTP_TIMEOUT: int = 15
+
     AWS_RECORDINGS_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
     AWS_S3_TEST_BUCKET: Optional[str] = "genassist-dev-temp-bucket"
 
@@ -206,6 +286,20 @@ class ProjectSettings(BaseSettings):
     RATE_LIMIT_CONVERSATION_UPDATE_PER_HOUR: int = 500
     # Rate limit storage backend (redis or memory)
     RATE_LIMIT_STORAGE_BACKEND: str = "redis"  # "redis" or "memory"
+
+    # === Microsoft Entra ID SSO (OIDC, confidential client) ===
+    SSO_MICROSOFT_ENABLED: bool = False
+    SSO_MICROSOFT_ENTRA_TENANT_ID: Optional[str] = None
+    SSO_MICROSOFT_CLIENT_ID: Optional[str] = None
+    SSO_MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    SSO_MICROSOFT_REDIRECT_URI: Optional[str] = None
+    # Frontend base URL (e.g. https://app.example.com). Success redirect: {base}/login/sso-callback?sso_code=...
+    SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL: Optional[str] = None
+    # Optional comma-separated extra allowed origins for that redirect (merged with CORS_ALLOWED_ORIGINS and POST_LOGIN URL)
+    SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST: Optional[str] = None
+    SSO_MICROSOFT_AUTO_PROVISION: bool = False
+    SSO_MICROSOFT_DEFAULT_USER_TYPE_ID: Optional[str] = None
+    SSO_MICROSOFT_DEFAULT_ROLE_IDS: Optional[str] = None
 
     # === Chroma Configuration ===
     CHROMA_HOST: str = Field(default="localhost", description="Database host")
@@ -281,6 +375,48 @@ class ProjectSettings(BaseSettings):
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
         return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}")
+
+    def microsoft_sso_allowed_origins(self) -> list[str]:
+        """Origins (scheme://host[:port]) allowed as targets for the post-SSO browser redirect."""
+        raw: list[str] = []
+        if self.SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST:
+            raw.extend(
+                p.strip()
+                for p in self.SSO_MICROSOFT_POST_LOGIN_ORIGINS_ALLOWLIST.split(",")
+                if p.strip()
+            )
+        if self.CORS_ALLOWED_ORIGINS:
+            raw.extend(p.strip() for p in self.CORS_ALLOWED_ORIGINS.split(",") if p.strip())
+        if self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL:
+            parsed = urlparse(self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL.strip())
+            if parsed.scheme and parsed.netloc:
+                raw.append(f"{parsed.scheme}://{parsed.netloc}")
+        seen: set[str] = set()
+        out: list[str] = []
+        for o in raw:
+            normalized = o.rstrip("/")
+            if normalized not in seen:
+                seen.add(normalized)
+                out.append(normalized)
+        return out
+
+    def is_microsoft_sso_redirect_url_allowed(self, url: str) -> bool:
+        parsed = urlparse(url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return False
+        origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        allowed = {o.rstrip("/") for o in self.microsoft_sso_allowed_origins()}
+        return origin in allowed
+
+    def microsoft_sso_is_configured(self) -> bool:
+        return bool(
+            self.SSO_MICROSOFT_ENABLED
+            and self.SSO_MICROSOFT_ENTRA_TENANT_ID
+            and self.SSO_MICROSOFT_CLIENT_ID
+            and self.SSO_MICROSOFT_CLIENT_SECRET
+            and self.SSO_MICROSOFT_REDIRECT_URI
+            and self.SSO_MICROSOFT_POST_LOGIN_FRONTEND_URL
+        )
 
     model_config = ConfigDict(
         env_file=".env",

@@ -76,6 +76,7 @@ export default function AppSettings() {
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         appSettings={appSettings}
+        loading={isLoading}
         onEditSetting={handleEditSetting}
         onDeleteSetting={handleDeleteSetting}
       />

@@ -9,6 +9,7 @@ import { getAllLLMProviders, deleteLLMProvider } from "@/services/llmProviders";
 import { toast } from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
+import { AxiosError } from "axios";
 
 interface LLMProviderCardProps {
   searchQuery: string;
@@ -78,7 +79,10 @@ export function LLMProviderCard({
       queryClient.invalidateQueries({ queryKey: ["llmProviders"] });
       setProviders((prev) => prev.filter((p) => p.id !== providerToDelete.id));
     } catch (error) {
-      toast.error("Failed to delete LLM provider.");
+      const axiosError = error as AxiosError<{ error?: string }>;
+      toast.error(
+        axiosError.response?.data?.error ?? "Failed to delete LLM provider."
+      );
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);

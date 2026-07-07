@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
+import { ListEmptyState } from "@/components/ListEmptyState";
 import { TableCell, TableRow } from "@/components/table";
 import { Button } from "@/components/button";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Languages, Plus } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { deleteTranslation, getTranslations } from "@/services/translations";
 import { Translation } from "@/interfaces/translation.interface";
@@ -23,6 +24,7 @@ interface TranslationsCardProps {
     mode: "create" | "edit"
   ) => void;
   onRefresh: () => void;
+  onAddTranslation: () => void;
 }
 
 export function TranslationsCard({
@@ -30,6 +32,7 @@ export function TranslationsCard({
   refreshKey = 0,
   onEditTranslation,
   onRefresh,
+  onAddTranslation,
 }: TranslationsCardProps) {
   const [translations, setTranslations] = useState<Translation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,6 +108,38 @@ export function TranslationsCard({
       return values.some((v) => v.includes(q));
     });
   }, [translations, searchQuery]);
+
+  const isSearchActive = searchQuery.trim().length > 0;
+
+  const emptyState = useMemo(
+    () => (
+      <ListEmptyState
+        icon={<Languages className="h-12 w-12 text-gray-400" />}
+        title={
+          isSearchActive
+            ? "No matching translations"
+            : "No translations yet"
+        }
+        description={
+          isSearchActive
+            ? "Try adjusting your search query."
+            : "Add translation keys and locale strings so the app can display copy for each language."
+        }
+        action={
+          !isSearchActive ? (
+            <Button
+              onClick={onAddTranslation}
+              className="rounded-full flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add Translation
+            </Button>
+          ) : undefined
+        }
+      />
+    ),
+    [isSearchActive, onAddTranslation]
+  );
 
   const renderRow = (row: Translation) => {
     const cellClass =
@@ -187,6 +222,7 @@ export function TranslationsCard({
         renderRow={renderRow}
         emptyMessage="No translations found"
         searchEmptyMessage="No translations found matching your search"
+        emptyState={emptyState}
       />
 
       <ConfirmDialog

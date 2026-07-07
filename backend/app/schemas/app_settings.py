@@ -4,7 +4,7 @@ from uuid import UUID
 from datetime import datetime
 
 AppSettingsType = Literal["Zendesk", "WhatsApp",
-                          "Gmail", "Microsoft", "Slack", "Jira", "FileManagerSettings", "Other"]
+                          "Gmail", "Microsoft", "Slack", "Jira", "Salesforce", "FileManagerSettings", "Security", "Other"]
 
 
 class AppSettingsBase(BaseModel):
@@ -31,6 +31,18 @@ class AppSettingsBase(BaseModel):
 
 class AppSettingsCreate(AppSettingsBase):
     pass
+
+
+class AppSettingsTestConnection(BaseModel):
+    """Request body for testing a Configuration Vars (App Setting) connection.
+
+    ``values`` carries the credential fields the user has entered (or the stored,
+    still-encrypted values when re-testing an existing setting); the service
+    decrypts the encrypted fields before dispatching to the connector.
+    """
+
+    type: AppSettingsType
+    values: Dict[str, Any]
 
 
 class AppSettingsUpdate(BaseModel):

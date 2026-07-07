@@ -95,6 +95,7 @@ const targetTypes = {
   azure_blob: 'azure_blob',
   google_bucket: 'gmail',
   zendesk: 'zendesk',
+  salesforce: 'salesforce',
 };
 
 const acceptedFileTypes = [
@@ -252,7 +253,7 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(formData.save_output),
       save_output_path: formData.save_output_path ?? null,
       allow_unpublished_articles: formData.type === 'zendesk' ? Boolean(formData.extra_metadata?.allow_unpublished_articles) : undefined,
-      allow_html_content: formData.type === 'zendesk' ? Boolean(formData.extra_metadata?.allow_html_content) : undefined,
+      allow_html_content: formData.type === 'zendesk' || formData.type === 'salesforce' ? Boolean(formData.extra_metadata?.allow_html_content) : undefined,
       rag_config: formData.rag_config ?? {},
       filePaths: formData.type === 'file'
         ? (formData.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path)
@@ -277,7 +278,7 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(em.save_output),
       save_output_path: (em.save_output_path as string) ?? null,
       allow_unpublished_articles: orig.type === 'zendesk' ? Boolean(em.allow_unpublished_articles) : undefined,
-      allow_html_content: orig.type === 'zendesk' ? Boolean(em.allow_html_content) : undefined,
+      allow_html_content: orig.type === 'zendesk' || orig.type === 'salesforce' ? Boolean(em.allow_html_content) : undefined,
       rag_config: orig.rag_config ?? {},
       filePaths: (orig.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path),
       hasNewFiles: false,
@@ -377,41 +378,45 @@ const KnowledgeBaseForm: React.FC = () => {
     let syncApiReturned = false;
     try {
       setIsSyncing(true);
+      type SyncResult = {
+        status?: string;
+        error?: string;
+        message?: string;
+        articles_added?: number;
+        articles_updated?: number;
+        articles_deleted?: number;
+        per_kb?: Array<{ status?: string; reason?: string; error?: string; note?: string }>;
+      };
       const data = (await executeKnowledgeBaseSyncronizationManually(editingItem.id)) as {
         status?: string;
         message?: string;
-        zendesk_sync_results?: Array<{
-          result?: {
-            status?: string;
-            error?: string;
-            message?: string;
-            articles_added?: number;
-            articles_updated?: number;
-            articles_deleted?: number;
-            per_kb?: Array<{ status?: string; reason?: string; error?: string; note?: string }>;
-          };
-        }>;
+        zendesk_sync_results?: Array<{ result?: SyncResult }>;
+        salesforce_sync_results?: Array<{ result?: SyncResult }>;
       };
       syncApiReturned = true;
       if (data.status === 'error') {
         toast.error(data.message ?? 'Synchronization failed.');
         return;
       }
-      const z = data.zendesk_sync_results?.[0]?.result;
+      const isSalesforce = formData.type === 'salesforce';
+      const providerLabel = isSalesforce ? 'SalesForce' : 'Zendesk';
+      const z = isSalesforce
+        ? data.salesforce_sync_results?.[0]?.result
+        : data.zendesk_sync_results?.[0]?.result;
       if (z?.status === 'failed') {
-        toast.error(z.error ?? z.message ?? 'Zendesk sync failed.');
+        toast.error(z.error ?? z.message ?? `${providerLabel} sync failed.`);
         return;
       }
       const firstKb = z?.per_kb?.[0];
       if (firstKb?.status === 'skipped') {
         toast.error(
-          `Sync skipped: ${firstKb.reason ?? 'unknown'}. Check schedule, datasource, or Zendesk connection.`
+          `Sync skipped: ${firstKb.reason ?? 'unknown'}. Check schedule, datasource, or ${providerLabel} connection.`
         );
         return;
       }
       if (firstKb?.status === 'error') {
         console.error(firstKb?.error ?? 'Unknown error');
-        toast.error('Zendesk sync error. See knowledge base sync status.');
+        toast.error(`${providerLabel} sync error. See knowledge base sync status.`);
         return;
       }
       if (z != null && (z.articles_added != null || z.articles_updated != null || z.articles_deleted != null)) {
@@ -460,7 +465,7 @@ const KnowledgeBaseForm: React.FC = () => {
       requiredFields.push({ label: 'files', isEmpty: selectedFiles.length === 0 && (!formData.files || formData.files.length === 0) });
     }
     if (formData.type === 's3') requiredFields.push({ label: 'source', isEmpty: !formData.sync_source_id });
-    if (formData.type === 'zendesk') {
+    if (formData.type === 'zendesk' || formData.type === 'salesforce') {
       requiredFields.push({ label: 'source', isEmpty: !formData.sync_source_id });
       if (formData.sync_active) requiredFields.push({ label: 'sync schedule', isEmpty: !formData.sync_schedule });
     }
@@ -504,7 +509,7 @@ const KnowledgeBaseForm: React.FC = () => {
       setError(null);
       setSuccess(null);
 
-      if (['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(formData.type) && formData.sync_active && !isValidCron(formData.sync_schedule)) {
+      if (['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk', 'salesforce'].includes(formData.type) && formData.sync_active && !isValidCron(formData.sync_schedule)) {
         throw new Error('Invalid cron expression. Expected format: * * * * *');
       }
 
@@ -522,6 +527,13 @@ const KnowledgeBaseForm: React.FC = () => {
         dataToSubmit.extra_metadata = {
           ...(dataToSubmit.extra_metadata || {}),
           allow_unpublished_articles: dataToSubmit.extra_metadata?.allow_unpublished_articles || false,
+          allow_html_content: dataToSubmit.extra_metadata?.allow_html_content || false,
+        };
+      }
+
+      if (formData.type === 'salesforce') {
+        dataToSubmit.extra_metadata = {
+          ...(dataToSubmit.extra_metadata || {}),
           allow_html_content: dataToSubmit.extra_metadata?.allow_html_content || false,
         };
       }
@@ -612,9 +624,9 @@ const KnowledgeBaseForm: React.FC = () => {
     return (
       <SidebarProvider>
         <div className="min-h-screen flex w-full overflow-x-hidden">
-          {!isMobile && <AppSidebar />}
+          <AppSidebar />
           <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative">
-            <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+            <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
             <div className="flex-1 flex items-center justify-center">
               <div className="text-sm text-gray-500">Loading...</div>
             </div>
@@ -627,9 +639,9 @@ const KnowledgeBaseForm: React.FC = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
-        {!isMobile && <AppSidebar />}
+        <AppSidebar />
         <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-8">
               <div className="flex items-center">
@@ -715,6 +727,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                 <SelectItem value="azure_blob">Azure Blob Storage</SelectItem>
                                 <SelectItem value="google_bucket">Google Bucket Storage</SelectItem>
                                 <SelectItem value="zendesk">Zendesk</SelectItem>
+                                <SelectItem value="salesforce">SalesForce</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1072,7 +1085,37 @@ const KnowledgeBaseForm: React.FC = () => {
                                 </div>
                               )}
 
-                              {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(
+                              {formData.type === 'salesforce' && (
+                                <div className="flex flex-col gap-6 mt-6">
+                                  <div className="rounded-lg border bg-white p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1 pr-4">
+                                        <div className="text-sm font-medium text-gray-900">Allow HTML Content</div>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          Allow HTML content to be indexed in the knowledge base.
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        checked={(formData.extra_metadata?.allow_html_content as boolean) || false}
+                                        onCheckedChange={(checked) =>
+                                          setFormData(
+                                            (prev) =>
+                                              ({
+                                                ...prev,
+                                                extra_metadata: {
+                                                  ...prev.extra_metadata,
+                                                  allow_html_content: checked,
+                                                },
+                                              }) as KnowledgeItem
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk', 'salesforce'].includes(
                                 formData.type
                               ) && (
                                 <div className="col-span-2 space-y-4">

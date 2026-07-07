@@ -124,3 +124,33 @@ def redact_if_sensitive(field_name: str, value: Any, *, redacted: str = "[REDACT
         return redacted
     return value
 
+
+def redact_structure(value: Any, *, redacted: str = "[REDACTED]") -> Any:
+    """
+    Recursively redact sensitive values in a nested structure (dict/list/scalars).
+
+    - Dict keys are checked for sensitivity (e.g. "authorization", "token").
+    - String values are scrubbed for embedded secrets (JWTs, key=value, etc.).
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, dict):
+        out: dict[Any, Any] = {}
+        for k, v in value.items():
+            key_str = str(k)
+            if is_sensitive_field_name(key_str):
+                out[k] = redacted
+                continue
+            out[k] = redact_structure(v, redacted=redacted)
+        return out
+
+    if isinstance(value, (list, tuple)):
+        redacted_items = [redact_structure(v, redacted=redacted) for v in value]
+        return type(value)(redacted_items) if isinstance(value, tuple) else redacted_items
+
+    if isinstance(value, str):
+        return redact_sensitive_substrings(value, redacted=redacted)
+
+    return value
+

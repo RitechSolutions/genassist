@@ -16,6 +16,7 @@ from app.core.observability.otel import (
     record_workflow_node_duration,
 )
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -105,13 +106,15 @@ class BaseNode(ABC):
         """Set the node output and save to state."""
         self.output_data = output
         self.state.set_node_output(self.node_id, output)
-        logger.debug("Node %s output set: %s", self.node_id, redact_sensitive_substrings(str(output)))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Node %s output set: %s", self.node_id, redact_sensitive_substrings(truncate_for_log(str(output))))
 
     def set_node_input(self, input_data: Any) -> None:
         """Set the node input and save to state."""
         self.input_data = input_data
         self.state.set_node_input(self.node_id, input_data)
-        logger.debug("Node %s input set: %s", self.node_id, redact_sensitive_substrings(str(input_data)))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Node %s input set: %s", self.node_id, redact_sensitive_substrings(truncate_for_log(str(input_data))))
 
     def get_input(self) -> Any:
         """Get the current input data."""
@@ -193,7 +196,7 @@ class BaseNode(ABC):
             config = {}
         logger.info(f"Dummy process called for node {self.node_id}")
         logger.debug(f"Node input: {node_input}")
-        logger.info(f"Node config: {config}")
+        logger.info("Node config: %s", truncate_for_log(str(config)))
         return f"Success on node_input: {node_input}"
 
     def get_connected_nodes(self, tag: Literal["tools", "starter", "true", "false", "default"]) -> list:
@@ -337,6 +340,7 @@ class BaseNode(ABC):
                 try:
                     # Start execution tracking
                     self.start_execution()
+                    # self.set_node_input(input_data)
 
                     # Resolve configuration template variables
                     source_output = self.get_input_from_source()
@@ -349,11 +353,11 @@ class BaseNode(ABC):
                     )
 
                     # Log replacements for debugging
-                    if replacements:
+                    if replacements and logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
                             "Node %s variable replacements: %s",
                             self.node_id,
-                        redact_sensitive_substrings(str(replacements)),
+                            redact_sensitive_substrings(truncate_for_log(str(replacements))),
                         )
 
                     # Extract params.get("varName") references from code fields
@@ -372,11 +376,14 @@ class BaseNode(ABC):
                         )
 
                     self.set_node_input(replacements)
+                    # Process the node (implemented by subclasses)
                     result = await self.process(resolved_config_data)
 
+                    # Set output data
                     if result is not None:
                         self.set_node_output(result)
 
+                    # Complete execution tracking
                     self.complete_execution()
                     success = True
                     return result
@@ -433,12 +440,13 @@ class BaseNode(ABC):
             # Get the output from the source node
             source_output = self.get_state().get_node_output(source_node_id)
 
-            logger.debug(
-                "Node %s retrieved output from source node %s: %s",
-                self.node_id,
-                source_node_id,
-                redact_sensitive_substrings(str(source_output)),
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "Node %s retrieved output from source node %s: %s",
+                    self.node_id,
+                    source_node_id,
+                    redact_sensitive_substrings(truncate_for_log(str(source_output))),
+                )
         else:
             source_output = {}
             for edge in input_edges:

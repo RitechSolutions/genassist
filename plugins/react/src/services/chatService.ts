@@ -4,6 +4,7 @@ import {
   AgentInfoResponse,
   AgentChatLocalesResponse,
   AgentChatLocaleContent,
+  FormNodeLocale,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
@@ -41,6 +42,9 @@ export class ChatService {
   private welcomeData: AgentWelcomeData = {};
   private thinkingConfig: AgentThinkingConfig = { phrases: [], delayMs: 1000 };
   private chatInputMetadata: Record<string, unknown> = {};
+  // Set from the start response: when true, a Human In The Loop node with "show_on_start"
+  // is wired directly after Start, so the widget auto-runs the workflow as the chat opens.
+  private triggerStartForm: boolean = false;
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
@@ -196,18 +200,19 @@ export class ChatService {
    */
   private getHeaders(contentType: string = "application/json"): Record<string, string> {
     const headers: Record<string, string> = {
-      "x-api-key": this.apiKey,
       "Content-Type": contentType,
     };
+
+    // Prefer guest JWT for session calls; omit shared API key once scoped token exists.
+    if (this.guestToken) {
+      headers["Authorization"] = `Bearer ${this.guestToken}`;
+    } else {
+      headers["x-api-key"] = this.apiKey;
+    }
 
     // Add tenant header if provided
     if (this.tenant) {
       headers["x-tenant-id"] = this.tenant;
-    }
-
-    // Add authorization header if guest token is available
-    if (this.guestToken) {
-      headers["Authorization"] = `Bearer ${this.guestToken}`;
     }
 
     // Add Accept-Language header if language is set
@@ -274,6 +279,14 @@ export class ChatService {
   }
 
   /**
+   * Whether the widget should auto-run the workflow as the conversation opens to surface
+   * a Human In The Loop form wired directly after Start (its "show_on_start" is enabled).
+   */
+  shouldTriggerStartForm(): boolean {
+    return this.triggerStartForm;
+  }
+
+  /**
    * Supported languages for the current agent (if provided by the server).
    */
   getAvailableLanguages(): string[] | null {
@@ -312,6 +325,8 @@ export class ChatService {
       return {
         agent_id: agentId,
         agent_available_languages: availableLanguages,
+        live_voice_enabled: data.live_voice_enabled === true,
+        live_voice_ready: data.live_voice_ready === true,
       };
     } catch (_error) {
       return null;
@@ -428,6 +443,17 @@ export class ChatService {
       thinkingPhrases: [...this.thinkingConfig.phrases],
       thinkingDelayMs: this.thinkingConfig.delayMs,
     };
+  }
+
+  /** HITL form strings from the locale bundle, as `{ lang: { nodeId: slice } }`. */
+  getFormNodeLocales(): Record<string, Record<string, FormNodeLocale>> {
+    const out: Record<string, Record<string, FormNodeLocale>> = {};
+    for (const [code, slice] of Object.entries(this.agentChatLocales || {})) {
+      if (slice && slice.nodes && Object.keys(slice.nodes).length > 0) {
+        out[code.toLowerCase()] = slice.nodes;
+      }
+    }
+    return out;
   }
 
   /**
@@ -568,6 +594,7 @@ export class ChatService {
     this.welcomeData = {};
     this.thinkingConfig = { phrases: [], delayMs: 1000 };
     this.chatInputMetadata = {};
+    this.triggerStartForm = false;
     if (this.welcomeObjectUrl) {
       try {
         URL.revokeObjectURL(this.welcomeObjectUrl);
@@ -670,6 +697,7 @@ export class ChatService {
       } else {
         this.chatInputMetadata = {};
       }
+      this.triggerStartForm = anyData.agent_trigger_start_form === true;
       this.persistAndEmitAgentMetadata(this.chatInputMetadata);
       const welcomeTitle: string | undefined = anyData.agent_welcome_title;
       const welcomeImageUrl: string | undefined =
@@ -734,7 +762,8 @@ export class ChatService {
     message: string,
     attachments?: Attachment[],
     extraMetadata?: Record<string, any>,
-    reCaptchaToken?: string
+    reCaptchaToken?: string,
+    opts?: { silent?: boolean }
   ): Promise<void> {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
@@ -750,7 +779,9 @@ export class ChatService {
       attachments: attachments,
     };
 
-    if (this.messageHandler) {
+    // `silent` suppresses the optimistic user bubble — used by the invisible start-form
+    // trigger, which must run the workflow without showing or storing a user message.
+    if (this.messageHandler && !opts?.silent) {
       this.messageHandler(chatMessage);
     }
 
@@ -868,6 +899,82 @@ export class ChatService {
     }
   }
 
+  /**
+   * Run the workflow as the conversation opens to surface a Human In The Loop form wired
+   * directly after Start (its "show_on_start" is enabled). Sends an empty, invisible
+   * trigger message flagged so the backend runs the workflow but neither shows nor stores
+   * it — only the resulting form comes back through the normal response/WS path.
+   */
+  async sendStartFormTrigger(reCaptchaToken?: string): Promise<void> {
+    await this.sendMessage(
+      "",
+      [],
+      { start_form_trigger: true },
+      reCaptchaToken,
+      { silent: true }
+    );
+  }
+
+  async sendAudioMessage(
+    audioBlob: Blob,
+    audioFormat: string,
+    extraMetadata?: Record<string, any>,
+  ): Promise<void> {
+    if (!this.conversationId) {
+      throw new Error("Conversation not started");
+    }
+
+    const now = Date.now() / 1000;
+    const chatMessage: ChatMessage = {
+      create_time: now,
+      start_time: this.conversationCreateTime ? now - this.conversationCreateTime : 0,
+      end_time: this.conversationCreateTime ? now - this.conversationCreateTime + 0.01 : 0.01,
+      speaker: "customer",
+      text: "[Voice message]",
+      type: "audio",
+      audioObjectUrl: URL.createObjectURL(audioBlob),
+    };
+
+    // Show user message in UI immediately
+    if (this.messageHandler) {
+      this.messageHandler(chatMessage);
+    }
+
+    const mergedMetadata = {
+      ...(this.metadata || {}),
+      ...(extraMetadata || {}),
+    };
+
+    const model = {
+      messages: [chatMessage],
+      metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : {},
+    };
+
+    const formData = new FormData();
+    formData.append("model", JSON.stringify(model));
+    formData.append(
+      "audio_file",
+      audioBlob,
+      `recording.${audioFormat}`,
+    );
+    formData.append("audio_format", audioFormat);
+
+    try {
+      await axios.patch(
+        `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
+        formData,
+        {
+          headers: this.getHeaders("multipart/form-data"),
+        },
+      );
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+      }
+      throw error;
+    }
+  }
+
   async uploadFile(chatId: string, file: File): Promise<FileUploadResponse | null> {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
@@ -922,6 +1029,9 @@ export class ChatService {
         );
         if (!adjustedMessage.message_id && (payload as any).id) {
           adjustedMessage.message_id = (payload as any).id;
+        }
+        if ((payload as any).audio_format) {
+          adjustedMessage.audio_format = (payload as any).audio_format;
         }
         if (adjustedMessage.speaker !== "customer") {
           this.messageHandler(adjustedMessage);

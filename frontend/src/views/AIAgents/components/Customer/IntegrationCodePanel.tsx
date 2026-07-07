@@ -210,6 +210,7 @@ yarn add genassist-chat-react`;
       '  placeholder="Ask us anything..."',
       '  tenant={process.env.REACT_APP_TENANT_ID || undefined}',
       '  mode="floating"',
+      '  quickInput={true}',
     ];
 
     // Add feature flags if enabled

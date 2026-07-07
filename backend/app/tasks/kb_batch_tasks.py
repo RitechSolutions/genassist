@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
@@ -16,6 +15,8 @@ from app.services.AzureStorageService import AzureStorageService
 from app.services.datasources import DataSourceService
 from app.services.llm_analysts import LlmAnalystService
 from app.services.transcription import transcribe_audio_whisper
+from app.tasks.base import run_async_in_celery
+from app.tasks.salesforce_article_sync_tasks import import_salesforce_articles_to_kb_async
 from app.tasks.zendesk_article_sync_tasks import import_zendesk_articles_to_kb_async
 
 logger = logging.getLogger(__name__)
@@ -28,8 +29,11 @@ def batch_process_files_kb(kb_id: Optional[str] = None):
     Runs async summary pipeline for Azure blob files.
     Accepts kb_id (single) - dispatches to appropriate Celery tasks by KB type.
     """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(batch_process_files_kb_async_with_scope(kb_id=kb_id))
+    return run_async_in_celery(
+        batch_process_files_kb_async_with_scope(kb_id=kb_id),
+        timeout=4 * 60,
+        task_name="batch_process_files_kb",
+    )
 
 
 async def batch_process_files_kb_async_with_scope(
@@ -77,6 +81,7 @@ async def batch_process_files_kb_async(
     # Queuing import_zendesk_articles_to_kb.delay() here duplicated work and ran
     # run_task_with_tenant_support in the worker (master + all tenants) for one KB.
     zendesk_sync_results: list = []
+    salesforce_sync_results: list = []
     kb_items = []
     for kid in ids_to_process:
         try:
@@ -90,6 +95,14 @@ async def batch_process_files_kb_async(
                 )
                 zendesk_sync_results.append(
                     {"kb_id": str(kb_item.id), "type": "zendesk", "result": zres}
+                )
+            elif kb_item.type.lower() == "salesforce":
+                logger.info(f"Running SalesForce article import inline for KB {kb_item.id}")
+                sres = await import_salesforce_articles_to_kb_async(
+                    kb_id=kb_item.id, sync_now=True
+                )
+                salesforce_sync_results.append(
+                    {"kb_id": str(kb_item.id), "type": "salesforce", "result": sres}
                 )
             else:
                 # Queue regular KB batch processing task
@@ -298,6 +311,8 @@ async def batch_process_files_kb_async(
         "files": files_processed,
         "zendesk_sync_results": zendesk_sync_results,
         "zendesk_kbs_synced": count_zendesk_syncs,
+        "salesforce_sync_results": salesforce_sync_results,
+        "salesforce_kbs_synced": len(salesforce_sync_results),
     }
 
     return result

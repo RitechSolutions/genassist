@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
@@ -19,6 +20,7 @@ from app.auth.utils import (
 from starlette_context import context
 from starlette_context.errors import ContextDoesNotExistError
 from app.cache.redis_cache import invalidate_conversation_cache, make_key_builder
+from app.cache.redis_cache import clear_conversation_memory_cache
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -28,8 +30,15 @@ from app.core.utils.bi_utils import (
 )
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
+from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.file_manager_url_utils import (
+    collect_gdpr_file_manager_ids_from_custom_attributes,
+    collect_gdpr_file_manager_ids_from_messages,
+    collect_gdpr_file_manager_ids_from_transcription_field,
+)
 from app.core.utils.transcript_utils import (
     schema_to_transcript_message,
     transcript_messages_to_json,
@@ -39,6 +48,8 @@ from app.db.models.message_model import TranscriptMessageModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
+from app.repositories.audit_logs import AuditLogRepository
+from app.repositories.recordings import RecordingsRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.schemas.conversation import (
     ConversationCreate,
@@ -57,7 +68,9 @@ from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.llm_analysts import LlmAnalystService
 from app.services.operator_statistics import OperatorStatisticsService
+from app.services.file_manager import FileManagerService
 from app.services.zendesk import ZendeskClient
+from app.modules.workflow.agents.rag import ThreadScopedRAG
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +82,10 @@ conversation_id_key_builder_full = make_key_builder("conversation_id")
 class ConversationService:
     def __init__(self, operator_statistics_service: OperatorStatisticsService,
             conversation_repo: ConversationRepository, transcript_message_repo: TranscriptMessageRepository,
+            audit_log_repo: AuditLogRepository,
+            recordings_repo: RecordingsRepository,
+            thread_rag: ThreadScopedRAG,
+            file_manager_service: FileManagerService = Injected(FileManagerService),
             gpt_kpi_analyzer_service: GptKpiAnalyzer = Depends(),
             conversation_analysis_service: ConversationAnalysisService = Depends(),
             llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService), ):
@@ -78,7 +95,102 @@ class ConversationService:
         self.operator_statistics_service = operator_statistics_service
         self.llm_analyst_service = llm_analyst_service
         self.transcript_message_repo = transcript_message_repo
+        self.audit_log_repo = audit_log_repo
+        self.recordings_repo = recordings_repo
+        self.thread_rag = thread_rag
+        self.file_manager_service = file_manager_service
 
+    async def _gdpr_purge_supporting_stores(
+        self,
+        *,
+        conversation_id: UUID,
+        message_ids: list[UUID],
+        recording_id: UUID | None,
+    ) -> None:
+        # Redis conversation memory (thread-scoped)
+        await clear_conversation_memory_cache(conversation_id)
+
+        # Vector store / embeddings (pgvector, qdrant, etc.) keyed by chat_id
+        await self.thread_rag.purge_chat(str(conversation_id))
+
+        # Local recordings (AudioService stores to RECORDINGS_DIR) + recording row
+        if recording_id:
+            rec = await self.recordings_repo.find_by_id(recording_id)
+            if rec and rec.file_path:
+                try:
+                    p = Path(rec.file_path)
+                    if p.exists():
+                        p.unlink()
+                except Exception as e:
+                    logger.warning(
+                        "gdpr.conversation_purge recording_delete_failed conversation_id=%s recording_id=%s err=%s",
+                        conversation_id,
+                        recording_id,
+                        e,
+                    )
+            if rec:
+                await self.recordings_repo.delete_recording(rec)
+
+        # Audit log snapshots (delete both pre- and post-delete trail for these ids)
+        record_ids: list[UUID] = [conversation_id, *message_ids]
+        if recording_id:
+            record_ids.append(recording_id)
+        deleted = await self.audit_log_repo.delete_by_record_ids(record_ids)
+        logger.info(
+            "gdpr.conversation_purge audit_log_deleted conversation_id=%s deleted_rows=%s",
+            conversation_id,
+            deleted,
+        )
+
+    def _collect_gdpr_file_manager_attachment_ids(self, conversation: ConversationModel) -> set[UUID]:
+        """UUIDs of File Manager objects referenced by transcript, legacy transcription, or attributes."""
+        ids = collect_gdpr_file_manager_ids_from_messages(conversation.messages)
+        ids |= collect_gdpr_file_manager_ids_from_transcription_field(
+            getattr(conversation, "transcription", None)
+        )
+        ids |= collect_gdpr_file_manager_ids_from_custom_attributes(conversation.custom_attributes)
+        return ids
+
+    async def _gdpr_purge_file_manager_attachments(self, file_ids: set[UUID], *, conversation_id: UUID) -> None:
+        """Best-effort delete of file rows and backing objects (idempotent)."""
+        for file_id in file_ids:
+            try:
+                await self.file_manager_service.delete_file(file_id, delete_from_storage=True)
+            except AppException as e:
+                logger.warning(
+                    "gdpr.file_purge_skipped conversation_id=%s file_id=%s err=%s",
+                    conversation_id,
+                    file_id,
+                    e,
+                )
+            except Exception as e:
+                logger.warning(
+                    "gdpr.file_purge_failed conversation_id=%s file_id=%s err=%s",
+                    conversation_id,
+                    file_id,
+                    e,
+                )
+
+    @staticmethod
+    def _redact_file_transcript_message_text(message: TranscriptMessageModel) -> None:
+        """Replace file-attachment JSON with a non-actionable placeholder after blob purge."""
+        try:
+            payload = json.loads(message.text or "{}")
+        except (json.JSONDecodeError, TypeError):
+            message.text = "[redacted]"
+            return
+        if not isinstance(payload, dict):
+            message.text = "[redacted]"
+            return
+        message.text = json.dumps(
+            {
+                "type": payload.get("type", "file"),
+                "name": "[redacted]",
+                "url": "",
+                "file_id": "",
+            },
+            ensure_ascii=False,
+        )
 
     async def save_conversation(self, conversation: ConversationCreate):
         return await self.conversation_repo.save_conversation(conversation)
@@ -240,6 +352,8 @@ class ConversationService:
         if conversation.status == ConversationStatus.FINALIZED.value:
             raise AppException(ErrorKey.CONVERSATION_FINALIZED)
 
+        hostility_at_finalize = int(conversation.in_progress_hostility_score or 0)
+
         resolved_analyst_id = llm_analyst_id or seed_test_data.llm_analyst_kpi_analyzer_id
 
         # Mark as finalized and record which analyst was used
@@ -264,6 +378,48 @@ class ConversationService:
             await self.store_zendesk_analysis(saved_conversation, conversation_analysis)
 
         await invalidate_conversation_cache(conversation_id)
+
+        if hostility_at_finalize >= 50:
+            try:
+                # Lazy imports avoid circular import: dependency_injection → … → ConversationService
+                from app.core.tenant_scope import get_tenant_context
+                from app.dependencies.injector import injector
+                from app.modules.websockets.socket_connection_manager import (
+                    SocketConnectionManager,
+                )
+                from app.services.realtime_notifications import (
+                    emit_notification,
+                    notification_payload,
+                    transcript_conversation_notification_url,
+                )
+
+                socket_manager = injector.get(SocketConnectionManager)
+                emit_notification(
+                    socket_connection_manager=socket_manager,
+                    tenant_id=get_tenant_context(),
+                    current_user_id=get_current_user_id(),
+                    payload=notification_payload(
+                        notification_id=f"conversation_finalized_hostility:{conversation_id}",
+                        title="Live conversation finalized",
+                        description=(
+                            f"Conversation {str(conversation_id)[:8]}... finalized with hostility score "
+                            f"{hostility_at_finalize}%."
+                        ),
+                        level="warning",
+                        action_url=transcript_conversation_notification_url(conversation_id),
+                        timestamp=saved_conversation.updated_at
+                        or datetime.now(timezone.utc),
+                        group_id=getattr(saved_conversation, "group_id", None),
+                        entity_kind="conversation",
+                        entity_id=conversation_id,
+                        event_key=f"conversation_finalized_hostility:{conversation_id}",
+                    ),
+                )
+            except Exception:
+                logger.warning(
+                    "Emit finalized high-hostility notification failed",
+                    exc_info=True,
+                )
 
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
@@ -439,6 +595,122 @@ class ConversationService:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
         await self.conversation_repo.delete_conversation(conversation)
         return conversation
+
+
+    async def gdpr_delete_conversation(
+        self,
+        conversation_id: UUID,
+        mode: GdprDeleteMode,
+    ) -> dict:
+        """Admin-driven GDPR Right-to-Erasure operation on a single conversation.
+
+        Behavior depends on ``mode``:
+
+        - ``SOFT`` (default): scrub ``custom_attributes.pii`` and flip the
+          existing ``is_deleted`` flag. File Manager blobs are left in place so
+          a mistaken soft-delete can still be reconciled without data loss.
+        - ``ANONYMIZE``: scrub ``custom_attributes.pii``, redact PII inside
+          each ``transcript_messages.text`` via ``redact_sensitive_substrings``,
+          purge File Manager objects referenced by the transcript (and related
+          fields), replace ``type=file`` payloads with placeholders, and stamp
+          ``conversations.pii_redacted_at`` for auditing. The row stays visible so
+          per-conversation analytics drilldowns keep working.
+        - ``HARD``: purge File Manager attachments, then delegate to the
+          existing internal ``delete_conversation`` path, which cascades to
+          ``transcript_messages`` and ``conversation_analysis``. Supporting
+          stores (Redis memory, RAG, recordings, audit snapshots) are purged as
+          before. Already-aggregated daily analytics counts are unaffected.
+
+        Always emits a structured log line ``gdpr.conversation_deleted`` so the
+        action is traceable without introducing a dedicated audit table.
+        """
+
+        include_messages = mode in (GdprDeleteMode.ANONYMIZE, GdprDeleteMode.HARD)
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id, include_messages=include_messages
+        )
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+
+        actor_user_id = get_current_user_id()
+
+        if mode == GdprDeleteMode.HARD:
+            message_ids = [m.id for m in (conversation.messages or []) if getattr(m, "id", None)]
+            recording_id = getattr(conversation, "recording_id", None)
+            fm_ids = self._collect_gdpr_file_manager_attachment_ids(conversation)
+            await self._gdpr_purge_file_manager_attachments(
+                fm_ids, conversation_id=conversation_id
+            )
+            await self.conversation_repo.delete_conversation(conversation)
+            await self._gdpr_purge_supporting_stores(
+                conversation_id=conversation_id,
+                message_ids=message_ids,
+                recording_id=recording_id,
+            )
+            await invalidate_conversation_cache(conversation_id)
+            logger.info(
+                "gdpr.conversation_deleted conversation_id=%s mode=hard actor_user_id=%s",
+                conversation_id,
+                actor_user_id,
+            )
+            return {"conversation_id": str(conversation_id), "mode": mode.value}
+
+        scrubbed_attrs = self._scrub_pii_from_custom_attributes(
+            conversation.custom_attributes
+        )
+
+        if mode == GdprDeleteMode.SOFT:
+            conversation.custom_attributes = scrubbed_attrs
+            conversation.is_deleted = 1
+            await self.conversation_repo.update_conversation(conversation)
+            await invalidate_conversation_cache(conversation_id)
+            logger.info(
+                "gdpr.conversation_deleted conversation_id=%s mode=soft actor_user_id=%s",
+                conversation_id,
+                actor_user_id,
+            )
+            return {"conversation_id": str(conversation_id), "mode": mode.value}
+
+        # ANONYMIZE: remove File Manager blobs first, then redact DB text.
+        fm_ids = self._collect_gdpr_file_manager_attachment_ids(conversation)
+        await self._gdpr_purge_file_manager_attachments(
+            fm_ids, conversation_id=conversation_id
+        )
+        for message in conversation.messages or []:
+            msg_type = (getattr(message, "type", None) or "").lower()
+            if msg_type == "file":
+                self._redact_file_transcript_message_text(message)
+            elif message.text:
+                message.text = redact_sensitive_substrings(message.text)
+
+        conversation.custom_attributes = scrubbed_attrs
+        conversation.pii_redacted_at = datetime.now(timezone.utc)
+        if conversation.feedback:
+            conversation.feedback = redact_sensitive_substrings(conversation.feedback)
+        if conversation.negative_reason:
+            conversation.negative_reason = redact_sensitive_substrings(
+                conversation.negative_reason
+            )
+
+        await self.conversation_repo.update_conversation(conversation)
+        await invalidate_conversation_cache(conversation_id)
+        logger.info(
+            "gdpr.conversation_deleted conversation_id=%s mode=anonymize actor_user_id=%s",
+            conversation_id,
+            actor_user_id,
+        )
+        return {"conversation_id": str(conversation_id), "mode": mode.value}
+
+    @staticmethod
+    def _scrub_pii_from_custom_attributes(custom_attributes: Optional[dict]) -> Optional[dict]:
+        """Return a new ``custom_attributes`` dict with the ``pii`` namespace
+        removed. Non-PII keys are preserved so existing workflow filters keep
+        functioning."""
+        if not custom_attributes:
+            return custom_attributes
+        scrubbed = dict(custom_attributes)
+        scrubbed.pop("pii", None)
+        return scrubbed or None
 
 
     async def cleanup_stale_conversations(self, cutoff_time: datetime):

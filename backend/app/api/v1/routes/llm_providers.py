@@ -1,14 +1,19 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.auth.utils import oauth2
 from app.cache.redis_cache import invalidate_llm_provider_cache
+from app.core.config.settings import settings
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.modules.workflow.llm.provider import LLMProvider
 from app.schemas.llm import LlmProviderBase, LlmProviderCreate, LlmProviderMinimal, LlmProviderRead, LlmProviderUpdate
+from app.services.fallback_chains import FallbackChainService
 from app.services.llm_providers import LlmProviderService
 
 router = APIRouter()
@@ -37,12 +42,14 @@ async def get_all_minimal(service: LlmProviderService = Injected(LlmProviderServ
 
 @router.get(
     "/form_schemas",
-    dependencies=[
-        Depends(auth),
-    ],
+    dependencies=[Depends(auth)],
 )
-async def get_form_schemas(llm_provider: LLMProvider = Injected(LLMProvider)):
-    return await llm_provider.get_configuration_definitions()
+async def get_form_schemas(
+    llm_provider: LLMProvider = Injected(LLMProvider),
+    token: Optional[str] = Depends(oauth2),
+    x_tenant_id: Optional[str] = Header(default=None, alias=settings.TENANT_HEADER_NAME),
+):
+    return await llm_provider.get_configuration_definitions(auth_token=token, tenant_id=x_tenant_id)
 
 
 @router.get(
@@ -92,7 +99,18 @@ async def update(
 async def delete(
     llm_provider_id: UUID,
     service: LlmProviderService = Injected(LlmProviderService),
+    chain_service: FallbackChainService = Injected(FallbackChainService),
 ):
+    # Block deletion if any fallback chain still references this provider, so we
+    # don't leave dangling references behind (mirrors the LLM-analyst FK guard).
+    referencing_chains = await chain_service.chains_referencing_provider(llm_provider_id)
+    if referencing_chains:
+        raise AppException(
+            error_key=ErrorKey.LLM_PROVIDER_IN_USE_BY_CHAIN,
+            status_code=409,
+            error_detail=", ".join(referencing_chains),
+        )
+
     res = await service.delete(llm_provider_id)
     await invalidate_llm_provider_cache(provider_id=llm_provider_id)
     return res

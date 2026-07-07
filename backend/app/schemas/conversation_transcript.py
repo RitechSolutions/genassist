@@ -31,13 +31,17 @@ class TranscriptSegmentInput(BaseModel):
     text: str
     type: Optional[str] = "message"
     attachments: Optional[List[TranscriptSegmentAttachment]] = None
+    audio_data: Optional[bytes] = None
+    audio_format: Optional[str] = None
     model_config = ConfigDict(
             from_attributes=True,
+            arbitrary_types_allowed=True,
             )
 
 
 class TranscriptSegmentFeedback(BaseModel):
-    feedback: Feedback = Field(...)
+    # Optional so a comment can be added without imposing/changing a thumbs rating.
+    feedback: Optional[Feedback] = Field(default=None)
     feedback_message: str = Field(None)
 
     model_config = ConfigDict(

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
@@ -15,6 +14,7 @@ from app.services.audio import AudioService
 from app.services.datasources import DataSourceService
 from app.services.GoogleTranscribeService import GoogleTranscribeService
 from app.services.smb_share_service import SMBShareFSService
+from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,11 @@ def transcribe_audio_files_from_smb():
     """
     Celery task to process audio files from SMB share.
     """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(transcribe_audio_files_async_with_scope())
+    return run_async_in_celery(
+        transcribe_audio_files_async_with_scope(),
+        timeout=45 * 60,
+        task_name="transcribe_audio_files_from_smb",
+    )
 
 
 async def transcribe_audio_files_async_with_scope(ds_id: Optional[str] = None):

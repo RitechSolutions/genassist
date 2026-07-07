@@ -234,6 +234,37 @@ class DataSourceService:
             elif source_type_lower == "zendesk":
                 from app.modules.integration.zendesk import ZendeskConnector
                 return await ZendeskConnector.test_connection(cd)
+            elif source_type_lower == "salesforce":
+                from app.core.utils.encryption_utils import decrypt_key
+                from app.dependencies.injector import injector
+                from app.modules.integration.salesforce import SalesforceConnector
+                from app.schemas.dynamic_form_schemas.app_settings_schemas import (
+                    get_encrypted_fields_for_type,
+                )
+                from app.services.app_settings import AppSettingsService
+
+                # Credentials live in App Settings (Config Vars), referenced by id — never
+                # stored on the Data Source. Resolve and decrypt them here exactly as the
+                # SalesForce Case node does before testing connectivity.
+                app_settings_id = cd.get("app_settings_id")
+                if not app_settings_id:
+                    return {
+                        "success": False,
+                        "message": "SalesForce data source is missing app_settings_id.",
+                    }
+                app_settings_service = injector.get(AppSettingsService)
+                app_settings = await app_settings_service.get_by_id(UUID(str(app_settings_id)))
+                values = app_settings.values if isinstance(app_settings.values, dict) else {}
+                encrypted_fields = set(get_encrypted_fields_for_type(app_settings.type))
+                values = {
+                    key: (
+                        decrypt_key(value)
+                        if key in encrypted_fields and isinstance(value, str) and value
+                        else value
+                    )
+                    for key, value in values.items()
+                }
+                return await SalesforceConnector.test_connection(values)
             elif source_type_lower == "smb_share_folder":
                 from app.services.smb_share_service import SMBShareFSService
                 return await SMBShareFSService.test_connection(cd)

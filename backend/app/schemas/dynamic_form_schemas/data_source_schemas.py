@@ -303,6 +303,43 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
         ],
     ),
+    "salesforce": TypeSchema(
+        name="SalesForce",
+        fields=[
+            FieldSchema(
+                name="content_field",
+                type="text",
+                label="Article Content Field",
+                required=True,
+                description=(
+                    "API name of the SalesForce Knowledge rich-text article-body field "
+                    "to ingest (e.g., 'Article_Body__c')."
+                ),
+                placeholder="ArticleBody__c",
+            ),
+            FieldSchema(
+                name="language",
+                type="text",
+                label="Language",
+                required=False,
+                description="Optional: only sync articles in this language (e.g., 'en_US'). Leave empty to sync all.",
+                placeholder="en_US",
+                advanced=True,
+            ),
+            FieldSchema(
+                name="data_category",
+                type="text",
+                label="Data Category",
+                required=False,
+                description=(
+                    "Optional: only sync articles in this data category, using SalesForce "
+                    "'WITH DATA CATEGORY' syntax (e.g., 'Geography__c ABOVE usa__c')."
+                ),
+                placeholder="Geography__c ABOVE usa__c",
+                advanced=True,
+            ),
+        ],
+    ),
     "gmail": TypeSchema(
         name="Gmail",
         fields=[],
