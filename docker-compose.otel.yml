@@ -39,6 +39,20 @@ services:
       - genassist-network-dev
     restart: unless-stopped
 
+  # Grafana Tempo: trace backend. Collector exports OTLP traces here (tempo:4317);
+  # Grafana queries it on :3200. Traces show in Grafana → Explore → Tempo.
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: genassist-tempo-dev
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+    ports:
+      - "3200:3200" # Tempo query API (Grafana datasource target)
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
   otel-grafana:
     image: grafana/grafana:11.3.1
     container_name: genassist-grafana-otel-dev
@@ -55,6 +69,7 @@ services:
       - "3010:3000"
     depends_on:
       - otel-prometheus
+      - tempo
     networks:
       - genassist-network-dev
     restart: unless-stopped
