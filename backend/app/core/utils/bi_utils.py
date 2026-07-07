@@ -12,10 +12,8 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
-from app.core.utils.web_scraping_utils import (
-    fetch_from_url,
-    html2markdown,
-)
+from app.core.utils.html_utils import html2markdown
+from app.core.utils.web_scraping_utils import fetch_from_url
 from app.db.models import ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
 from app.schemas.agent_knowledge import KBBase
