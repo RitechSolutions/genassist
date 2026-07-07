@@ -71,6 +71,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const nodeCategories = nodeRegistry.getAllCategories();
   const [draggingNodeType, setDraggingNodeType] = useState<string | null>(null);
   const dragPreviewContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<string>("available");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedHelp, setSelectedHelp] = useState<HelpDialogState | null>(null);
@@ -92,6 +93,16 @@ const NodePanel: React.FC<NodePanelProps> = ({
   }, [activeConversationalTab]);
 
   const showConversationalTab = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CONVERSATIONAL_TAB);
+
+  // Focus the node search whenever the panel opens on the Available Nodes tab
+  // (e.g. via the ⌘I / Ctrl+I shortcut or the toggle button).
+  React.useEffect(() => {
+    if (isOpen && (activeTab === "available" || !showConversationalTab)) {
+      // Delay so the slide-in transition doesn't swallow the focus.
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 60);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, activeTab, showConversationalTab]);
 
   const handleSend = () => {
     if (inputMessage.trim() && onSendMessage && !isThinking) {
@@ -431,6 +442,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                   <div className="relative flex items-center">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <RichInput
+                      ref={searchInputRef}
                       type="text"
                       placeholder="Search nodes..."
                       value={searchQuery}
