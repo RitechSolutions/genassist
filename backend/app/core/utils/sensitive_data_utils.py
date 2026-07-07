@@ -125,6 +125,95 @@ def redact_if_sensitive(field_name: str, value: Any, *, redacted: str = "[REDACT
     return value
 
 
+# Values shorter than this are not masked via substring replacement, to avoid
+# corrupting unrelated content (e.g. a value of "1" or "on" appearing everywhere).
+_MIN_HIDDEN_VALUE_LEN = 2
+
+
+def build_hidden_value_map(
+    hidden_keys: set,
+    node_statuses: dict | None = None,
+    fallback_values: dict | None = None,
+) -> dict:
+    """Build a ``{real_value_str: "[PARAM_NAME]"}`` map for hidden parameters.
+
+    For each hidden key, the real value is resolved from the chatInputNode
+    ``output`` inside ``nodeExecutionStatus`` (authoritative validated data),
+    falling back to ``fallback_values`` (e.g. request metadata) when absent.
+
+    Values that are None/empty, booleans, or whose string form is shorter than
+    ``_MIN_HIDDEN_VALUE_LEN`` are skipped to avoid over-matching. This means a
+    very short hidden value may not be masked — an accepted limitation.
+    """
+    if not hidden_keys:
+        return {}
+
+    resolved: dict = {}
+
+    # Prefer the chatInputNode output (the validated_data the node produced).
+    if isinstance(node_statuses, dict):
+        for node_info in node_statuses.values():
+            if not isinstance(node_info, dict):
+                continue
+            if node_info.get("type") == "chatInputNode":
+                output = node_info.get("output", {})
+                if isinstance(output, dict):
+                    for key in hidden_keys:
+                        if key in output:
+                            resolved[key] = output[key]
+
+    if fallback_values:
+        for key in hidden_keys:
+            if key not in resolved and key in fallback_values:
+                resolved[key] = fallback_values[key]
+
+    value_map: dict = {}
+    for key, value in resolved.items():
+        if value is None or isinstance(value, bool):
+            continue
+        value_str = str(value)
+        if len(value_str) < _MIN_HIDDEN_VALUE_LEN:
+            continue
+        value_map[value_str] = f"[{str(key).upper()}]"
+
+    return value_map
+
+
+def mask_hidden_values(data: Any, value_map: dict) -> Any:
+    """Recursively replace known hidden values with their ``[PARAM_NAME]`` placeholder.
+
+    - String values: each real value is substring-replaced (longest first so
+      overlapping values mask correctly).
+    - Scalar int/float: replaced with the placeholder string when its string
+      form matches a known value.
+    - Booleans and other types are left unchanged.
+    """
+    if not value_map:
+        return data
+
+    # Longest values first so a value that contains another masks correctly.
+    ordered = sorted(value_map.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+    def _mask(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: _mask(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            masked = [_mask(v) for v in value]
+            return type(value)(masked) if isinstance(value, tuple) else masked
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            for real, placeholder in ordered:
+                if real in value:
+                    value = value.replace(real, placeholder)
+            return value
+        if isinstance(value, (int, float)):
+            return value_map.get(str(value), value)
+        return value
+
+    return _mask(data)
+
+
 def redact_structure(value: Any, *, redacted: str = "[REDACTED]") -> Any:
     """
     Recursively redact sensitive values in a nested structure (dict/list/scalars).
