@@ -99,6 +99,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
           listSuggestedParams={DEFAULT_SUGGESTED_PARAMS}
           allowStateful={true}
           allowFilter={true}
+          allowHidden={true}
         />
       </div>
     </BaseNodeContainer>
