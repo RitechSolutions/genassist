@@ -85,4 +85,4 @@ const GmailNode: React.FC<NodeProps<GmailNodeData>> = ({
   );
 };
 
-export default GmailNode;
+export default React.memo(GmailNode);

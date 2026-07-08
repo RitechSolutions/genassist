@@ -82,4 +82,4 @@ const SetStateNode: React.FC<NodeProps<SetStateNodeData>> = ({
   );
 };
 
-export default SetStateNode;
+export default React.memo(SetStateNode);

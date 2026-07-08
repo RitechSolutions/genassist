@@ -76,4 +76,4 @@ const CreateWorkflowScheduleNode: React.FC<
   );
 };
 
-export default CreateWorkflowScheduleNode;
+export default React.memo(CreateWorkflowScheduleNode);

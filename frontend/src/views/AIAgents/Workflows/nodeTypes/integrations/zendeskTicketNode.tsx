@@ -81,4 +81,4 @@ const ZendeskTicketNode: React.FC<NodeProps<ZendeskTicketNodeData>> = ({
   );
 };
 
-export default ZendeskTicketNode;
+export default React.memo(ZendeskTicketNode);

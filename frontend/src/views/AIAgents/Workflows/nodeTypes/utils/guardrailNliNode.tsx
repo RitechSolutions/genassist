@@ -70,5 +70,5 @@ const GuardrailNliNode: React.FC<NodeProps<GuardrailNliNodeData>> = ({
   );
 };
 
-export default GuardrailNliNode;
+export default React.memo(GuardrailNliNode);
 

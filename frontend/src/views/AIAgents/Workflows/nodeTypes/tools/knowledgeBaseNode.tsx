@@ -94,4 +94,4 @@ const KnowledgeBaseNode: React.FC<NodeProps<KnowledgeBaseNodeData>> = ({
   );
 };
 
-export default KnowledgeBaseNode;
+export default React.memo(KnowledgeBaseNode);

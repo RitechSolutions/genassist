@@ -70,5 +70,5 @@ const GuardrailProvenanceNode: React.FC<
   );
 };
 
-export default GuardrailProvenanceNode;
+export default React.memo(GuardrailProvenanceNode);
 

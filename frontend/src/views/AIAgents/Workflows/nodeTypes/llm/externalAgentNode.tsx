@@ -65,4 +65,4 @@ const ExternalAgentNode: React.FC<NodeProps<ExternalAgentNodeData>> = ({
   );
 };
 
-export default ExternalAgentNode;
+export default React.memo(ExternalAgentNode);

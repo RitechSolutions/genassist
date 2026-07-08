@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useMemo } from "react";
 import { Workflow } from "@/interfaces/workflow.interface";
 
 // Define the context type
@@ -24,8 +24,11 @@ export const WorkflowProvider: React.FC<{
   workflow: Workflow | undefined;
   setWorkflow: React.Dispatch<React.SetStateAction<Workflow | undefined>>;
   children: React.ReactNode;
-}> = ({ workflow, setWorkflow, children }) => (
-  <WorkflowContext.Provider value={{ workflow, setWorkflow }}>
-    {children}
-  </WorkflowContext.Provider>
-); 
+}> = ({ workflow, setWorkflow, children }) => {
+  const value = useMemo(() => ({ workflow, setWorkflow }), [workflow, setWorkflow]);
+  return (
+    <WorkflowContext.Provider value={value}>
+      {children}
+    </WorkflowContext.Provider>
+  );
+}; 

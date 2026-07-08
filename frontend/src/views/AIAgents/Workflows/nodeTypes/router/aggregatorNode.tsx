@@ -77,4 +77,4 @@ const AggregatorNode: React.FC<NodeProps<AggregatorNodeData>> = ({
   );
 };
 
-export default AggregatorNode;
+export default React.memo(AggregatorNode);

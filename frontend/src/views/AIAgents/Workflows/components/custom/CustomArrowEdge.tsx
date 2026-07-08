@@ -92,4 +92,4 @@ const CustomArrowEdge: React.FC<CustomArrowEdgeProps> = ({
   );
 };
 
-export default CustomArrowEdge;
+export default React.memo(CustomArrowEdge);

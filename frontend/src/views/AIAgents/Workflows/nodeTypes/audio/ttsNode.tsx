@@ -62,4 +62,4 @@ const TTSNode: React.FC<NodeProps<TTSNodeData>> = ({ id, data, selected }) => {
   );
 };
 
-export default TTSNode;
+export default React.memo(TTSNode);

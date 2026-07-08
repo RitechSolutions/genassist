@@ -85,4 +85,4 @@ const SalesforceCaseNode: React.FC<NodeProps<SalesforceCaseNodeData>> = ({
   );
 };
 
-export default SalesforceCaseNode;
+export default React.memo(SalesforceCaseNode);

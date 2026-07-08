@@ -97,4 +97,4 @@ const CalendarEventNode: React.FC<NodeProps<CalendarEventToolNodeData>> = ({
   );
 };
 
-export default CalendarEventNode;
+export default React.memo(CalendarEventNode);

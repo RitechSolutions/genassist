@@ -97,4 +97,4 @@ const WhatsAppNode: React.FC<NodeProps<WhatsappNodeData>> = ({
   );
 };
 
-export default WhatsAppNode;
+export default React.memo(WhatsAppNode);

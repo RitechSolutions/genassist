@@ -1,22 +1,24 @@
-import re
 import json
+import logging
 import os
+import re
+from typing import Any, Dict, Tuple
+
 import aiohttp
+from fastapi import UploadFile
+
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from fastapi import UploadFile
-from typing import Dict, Tuple, Any
-from app.core.config.settings import settings
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
-from app.core.utils.web_scraping_utils import fetch_from_url, html2text
+from app.core.utils.html_utils import html2markdown
+from app.core.utils.web_scraping_utils import fetch_from_url
 from app.db.models import ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
 from app.schemas.agent_knowledge import KBBase
-import logging
 from app.schemas.conversation_transcript import TranscriptSegmentFeedback, TranscriptSegmentInput
 from app.schemas.filter import ConversationFilter
-
 
 logger = logging.getLogger(__name__)
 
@@ -342,50 +344,42 @@ def get_messages_string_by_type(
     return json.dumps(filtered_segments)
 
 
+def _format_html(html: str, is_json: bool, base_url: str | None = None) -> str:
+    if is_json:
+        return html
+    return html2markdown(html, base_url)
+
+
+async def _fetch_url_content(item: KBBase) -> str:
+    if not item.urls or len(item.urls) == 0:
+        raise AppException(error_key=ErrorKey.MISSING_URL)
+    headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
+        "headers", {}
+    )
+    headers_lower = {str(k).lower(): v for k, v in headers.items()}
+    use_http_request = bool(item.extra_metadata.get("use_http_request"))
+    is_json = headers_lower.get("content-type") == "application/json"
+
+    # Fetch content from all URLs and combine
+    all_content = []
+    for url in item.urls:
+        html = await fetch_from_url(url, headers, use_http_request)
+        all_content.append(_format_html(html, is_json, base_url=url))
+    return "\n\n---\n\n".join(all_content)
+
+
 async def set_url_content_if_no_rag(item: KBBase):
 
     vector_db: dict = item.rag_config.get("vector_db", {})
     if not vector_db.get("enabled", False):
-        if not item.urls or len(item.urls) == 0:
-            raise AppException(error_key=ErrorKey.MISSING_URL)
-        headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
-            "headers", {}
-        )
-        headers_lower = {str(k).lower(): v for k, v in headers.items()}
-        use_http_request = bool(item.extra_metadata.get("use_http_request"))
-
-        # Fetch content from all URLs and combine
-        all_content = []
-        for url in item.urls:
-            html = await fetch_from_url(url, headers, use_http_request)
-            if headers_lower.get("content-type") == "application/json":
-                all_content.append(html)
-            else:
-                all_content.append(html2text(html))
-        item.content = "\n\n---\n\n".join(all_content)
+        item.content = await _fetch_url_content(item)
 
 
 async def set_url_content_if_has_rag(item: KBBase):
 
     vector_db: dict = item.rag_config.get("vector_db", {})
     if vector_db.get("enabled", False):
-        if not item.urls or len(item.urls) == 0:
-            raise AppException(error_key=ErrorKey.MISSING_URL)
-        headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
-            "headers", {}
-        )
-        headers_lower = {str(k).lower(): v for k, v in headers.items()}
-        use_http_request = bool(item.extra_metadata.get("use_http_request"))
-
-        # Fetch content from all URLs and combine
-        all_content = []
-        for url in item.urls:
-            html = await fetch_from_url(url, headers, use_http_request)
-            if headers_lower.get("content-type") == "application/json":
-                all_content.append(html)
-            else:
-                all_content.append(html2text(html))
-        item.content = "\n\n---\n\n".join(all_content)
+        item.content = await _fetch_url_content(item)
 
 
 def extract_sub_messages(transcript: str, num_messages_to_extract: int = 2) -> str:
