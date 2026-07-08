@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useMemo,
   ReactNode,
 } from "react";
 import { Node, Edge } from "reactflow";
@@ -405,19 +406,38 @@ export const WorkflowExecutionProvider: React.FC<
     [state.session, state.nodeOutputs, edges, getNodeById, getNodeOutputData, nodes]
   );
 
-  const value: WorkflowExecutionContextType = {
-    state,
-    nodes,
-    edges,
-    updateNodeOutput,
-    clearNodeOutput,
-    clearAllOutputs,
-    setWorkflowStructure,
-    loadExecutionState,
-    getNodeOutput,
-    hasNodeBeenExecuted,
-    getAvailableDataForNode,
-  };
+  // Memoized so the provider hands out a stable reference. Without this, every
+  // re-render (e.g. dragging a node on the canvas) creates a new value object,
+  // which re-renders every context consumer — including all nodes — and defeats
+  // the React.memo on node components.
+  const value: WorkflowExecutionContextType = useMemo(
+    () => ({
+      state,
+      nodes,
+      edges,
+      updateNodeOutput,
+      clearNodeOutput,
+      clearAllOutputs,
+      setWorkflowStructure,
+      loadExecutionState,
+      getNodeOutput,
+      hasNodeBeenExecuted,
+      getAvailableDataForNode,
+    }),
+    [
+      state,
+      nodes,
+      edges,
+      updateNodeOutput,
+      clearNodeOutput,
+      clearAllOutputs,
+      setWorkflowStructure,
+      loadExecutionState,
+      getNodeOutput,
+      hasNodeBeenExecuted,
+      getAvailableDataForNode,
+    ]
+  );
 
   return (
     <WorkflowExecutionContext.Provider value={value}>

@@ -7,7 +7,7 @@ import { ServerStatusProvider } from "@/context/ServerStatusContext";
 export default function App() {
   return (
     <ServerStatusProvider>
-      <Toaster position="top-right" reverseOrder={false} />
+      <Toaster position="top-center" reverseOrder={false} />
       <PermissionProvider>
         <FeatureFlagProvider>
           <RoutesProvider />

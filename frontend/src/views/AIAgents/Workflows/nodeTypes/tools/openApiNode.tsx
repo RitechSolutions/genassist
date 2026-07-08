@@ -92,4 +92,4 @@ const OpenApiNode: React.FC<NodeProps<OpenApiNodeData>> = ({
   );
 };
 
-export default OpenApiNode;
+export default React.memo(OpenApiNode);

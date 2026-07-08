@@ -98,4 +98,4 @@ const SlackOutputNode: React.FC<NodeProps<SlackOutputNodeData>> = ({
   );
 };
 
-export default SlackOutputNode;
+export default React.memo(SlackOutputNode);

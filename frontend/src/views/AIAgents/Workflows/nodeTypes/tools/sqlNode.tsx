@@ -107,4 +107,4 @@ const SQLNode: React.FC<NodeProps<SQLNodeData>> = ({ id, data, selected }) => {
   );
 };
 
-export default SQLNode;
+export default React.memo(SQLNode);
