@@ -51,6 +51,35 @@ export const API_CONNECTOR_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Web Scraper node fetches a web page and returns its content as clean Markdown or HTML. It runs without any external scraping service and blocks private, loopback and metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Web Scraper node when you need to:",
+      bullets: [
+        "Pull the text of a public web page into a workflow",
+        "Feed page content to a downstream language model",
+        "Read documentation or articles as Markdown",
+        "Replace an external crawling API for simple fetches",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the URL to scrape.",
+        "Choose the Output Format (Markdown, HTML or Both).",
+        "Enable Render JavaScript for SPA / JS-heavy sites.",
+        "Add any required Headers.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
 export const OPENAPI_EXPLORER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The OpenAPI Explorer node helps explore and work with OpenAPI-based services inside a workflow. It can be used to inspect available operations, test requests, and integrate documented API capabilities in a guided way.",

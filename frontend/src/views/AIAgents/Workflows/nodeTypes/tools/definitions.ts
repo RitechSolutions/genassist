@@ -26,6 +26,7 @@ import ThreadRAGNode from "./threadRAGNode";
 import WorkflowExecutorNode from "./workflowExecutorNode";
 import {
   API_CONNECTOR_HELP_CONTENT,
+  WEB_SCRAPER_HELP_CONTENT,
   KNOWLEDGE_QUERY_HELP_CONTENT,
   CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
   ML_MODEL_INFERENCE_HELP_CONTENT,
@@ -86,6 +87,7 @@ export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData>
   description:
     "Fetches a web page and returns clean scraped content as Markdown or HTML.",
   shortDescription: "Scrape a web page",
+  helpContent: WEB_SCRAPER_HELP_CONTENT,
   configSubtitle:
     "Configure the URL, output format, JavaScript rendering, and optional headers.",
   category: "tools",
