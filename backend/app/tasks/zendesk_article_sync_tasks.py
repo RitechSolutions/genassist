@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
@@ -8,6 +7,7 @@ from uuid import UUID
 from celery import shared_task
 from croniter import croniter
 
+from app.core.utils.html_utils import html2markdown
 from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.zendesk import ZendeskConnector
@@ -326,13 +326,11 @@ async def import_zendesk_articles_to_kb_async(
 
             # Parse article body based on allow_html_content flag
             def _parse_article_body(article: dict) -> str:
-                body = ""
-                if not allow_html_content and article.get("body"):
-                    body = re.sub(r'<[^>]*>', '', article.get("body", ""))
-                else:
-                    body = article.get("body", "")
-
-                return body
+                body = article.get("body", "") or ""
+                if allow_html_content or not body:
+                    return body  # raw HTML passthrough (or empty)
+                # base_url resolves relative HC links (e.g. /hc/en-us/articles/123 -> full URL)
+                return html2markdown(body, base_url=article.get("html_url") or "")
 
             articles = []
             if not allow_unpublished_articles:

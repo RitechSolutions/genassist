@@ -1,11 +1,9 @@
 import asyncio
 import ipaddress
-import re
 import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup
 from playwright.async_api import Route, async_playwright
 
 _HTTPX_TIMEOUT = 10  # seconds
@@ -22,6 +20,7 @@ _FORWARDED_HEADER_ALLOWLIST = frozenset({
     "if-modified-since",
     "if-none-match",
 })
+
 
 def _is_blocked_ip(addr: str) -> bool:
     try:
@@ -122,12 +121,3 @@ async def fetch_from_url(
         html = await page.content()
         await browser.close()
         return html
-
-
-def html2text(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    for bad in soup(["script", "style", "noscript"]):
-        bad.extract()
-    text = soup.get_text(separator="\n")
-    text = re.sub(r"\n\s*\n", "\n\n", text)
-    return text.strip()
