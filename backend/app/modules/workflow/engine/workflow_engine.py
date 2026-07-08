@@ -170,7 +170,7 @@ class WorkflowEngine:
             "aggregatorNode",
             "humanInTheLoopNode",
             "setStateNode",
-            "webScraperNode"
+            "webScraperNode",
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
