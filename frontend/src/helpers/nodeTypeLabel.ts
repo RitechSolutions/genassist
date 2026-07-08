@@ -12,6 +12,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   userInputNode: "User Input",
   // Tools
   apiToolNode: "API Connector",
+  webScraperNode: "Web Scraper",
   openApiNode: "OpenAPI Explorer",
   knowledgeBaseNode: "Knowledge Query",
   pythonCodeNode: "Python Executor",

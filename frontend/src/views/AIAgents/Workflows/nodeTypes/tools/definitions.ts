@@ -11,9 +11,11 @@ import {
   MLModelInferenceNodeData,
   ThreadRAGNodeData,
   WorkflowExecutorNodeData,
+  WebScraperNodeData,
 } from "../../types/nodes";
 
 import APIToolNode from "./apiToolNode";
+import WebScraperNode from "./webScraperNode";
 import OpenApiNode from "./openApiNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
 import CreateWorkflowScheduleNode from "./createWorkflowScheduleNode";
@@ -71,6 +73,48 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "apiToolNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData> = {
+  type: "webScraperNode",
+  label: "Web Scraper",
+  description:
+    "Fetches a web page and returns clean scraped content as Markdown or HTML.",
+  shortDescription: "Scrape a web page",
+  configSubtitle:
+    "Configure the URL, output format, JavaScript rendering, and optional headers.",
+  category: "tools",
+  icon: "TextSearch",
+  defaultData: {
+    name: "Web Scraper",
+    url: "https://",
+    format: "markdown",
+    renderJs: false,
+    headers: {},
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  } as WebScraperNodeData,
+  component: WebScraperNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "webScraperNode",
     position,
     data: {
       ...data,

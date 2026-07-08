@@ -176,6 +176,14 @@ export interface APIToolNodeData extends BaseNodeData {
   requestBody: string;
 }
 
+// Web Scraper Node Data
+export interface WebScraperNodeData extends BaseNodeData {
+  url: string;
+  format: "markdown" | "html" | "both";
+  renderJs: boolean;
+  headers: Record<string, string>;
+}
+
 // External Agent Node Data
 export interface ExternalAgentNodeData extends BaseNodeData {
   endpoint: string;
@@ -553,7 +561,8 @@ export type NodeData =
   | ExternalAgentNodeData
   | TTSNodeData
   | STTNodeData
-  | VoiceAgentNodeData;
+  | VoiceAgentNodeData
+  | WebScraperNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
