@@ -34,4 +34,40 @@ WEB_SCRAPER_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         label="Render JavaScript",
         default=False,
     ),
+    FieldSchema(
+        name="onlyMainContent",
+        type="boolean",
+        label="Only Main Content",
+        default=True,
+    ),
+    FieldSchema(
+        name="includeLinks",
+        type="boolean",
+        label="Include Links",
+        default=True,
+    ),
+    FieldSchema(
+        name="includeMetadata",
+        type="boolean",
+        label="Include Metadata",
+        default=True,
+    ),
+    FieldSchema(
+        name="screenshot",
+        type="select",
+        label="Screenshot",
+        default="off",
+        options=[
+            {"label": "Off", "value": "off"},
+            {"label": "Viewport", "value": "viewport"},
+            {"label": "Full Page", "value": "fullPage"},
+        ],
+    ),
+    # FieldType has no key-value type; headers are modeled loosely as a JSON-object text field
+    FieldSchema(
+        name="headers",
+        type="text",
+        label="Headers (JSON object)",
+        required=False,
+    ),
 ]

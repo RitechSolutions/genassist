@@ -19,6 +19,9 @@ import { DraggableInput } from "../components/custom/DraggableInput";
 const OUTPUT_FORMATS = ["markdown", "html", "both"] as const;
 type OutputFormat = (typeof OUTPUT_FORMATS)[number];
 
+const SCREENSHOT_MODES = ["off", "viewport", "fullPage"] as const;
+type ScreenshotMode = (typeof SCREENSHOT_MODES)[number];
+
 export const WebScraperDialog: React.FC<
   BaseNodeDialogProps<WebScraperNodeData, WebScraperNodeData>
 > = (props) => {
@@ -30,6 +33,18 @@ export const WebScraperDialog: React.FC<
     (data.format as OutputFormat) || "markdown"
   );
   const [renderJs, setRenderJs] = useState<boolean>(data.renderJs ?? false);
+  const [onlyMainContent, setOnlyMainContent] = useState<boolean>(
+    data.onlyMainContent ?? true
+  );
+  const [includeLinks, setIncludeLinks] = useState<boolean>(
+    data.includeLinks ?? true
+  );
+  const [includeMetadata, setIncludeMetadata] = useState<boolean>(
+    data.includeMetadata ?? true
+  );
+  const [screenshot, setScreenshot] = useState<ScreenshotMode>(
+    (data.screenshot as ScreenshotMode) || "off"
+  );
   const [headers, setHeaders] = useState<Record<string, string>>(
     data.headers || {}
   );
@@ -38,6 +53,10 @@ export const WebScraperDialog: React.FC<
     setUrl(data.url || "");
     setFormat((data.format as OutputFormat) || "markdown");
     setRenderJs(data.renderJs ?? false);
+    setOnlyMainContent(data.onlyMainContent ?? true);
+    setIncludeLinks(data.includeLinks ?? true);
+    setIncludeMetadata(data.includeMetadata ?? true);
+    setScreenshot((data.screenshot as ScreenshotMode) || "off");
     setHeaders(data.headers || {});
   }, [isOpen]);
 
@@ -48,6 +67,10 @@ export const WebScraperDialog: React.FC<
       url,
       format,
       renderJs,
+      onlyMainContent,
+      includeLinks,
+      includeMetadata,
+      screenshot,
       headers,
     });
     onClose();
@@ -100,6 +123,10 @@ export const WebScraperDialog: React.FC<
         url,
         format,
         renderJs,
+        onlyMainContent,
+        includeLinks,
+        includeMetadata,
+        screenshot,
         headers,
       }}
     >
@@ -145,6 +172,26 @@ export const WebScraperDialog: React.FC<
         </Select>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="screenshot">Screenshot</Label>
+        <Select
+          value={screenshot}
+          onValueChange={(value) => setScreenshot(value as ScreenshotMode)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select screenshot mode" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="off">Off</SelectItem>
+            <SelectItem value="viewport">Viewport</SelectItem>
+            <SelectItem value="fullPage">Full Page</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="text-xs text-gray-500 break-words">
+          Capturing a screenshot forces the slower headless-browser path.
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <Label>Render JavaScript</Label>
@@ -154,6 +201,44 @@ export const WebScraperDialog: React.FC<
           </p>
         </div>
         <Switch checked={renderJs} onCheckedChange={setRenderJs} />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <Label>Only Main Content</Label>
+          <p className="text-xs text-muted-foreground">
+            Extracts the primary article and drops nav, ads and boilerplate.
+            Falls back to the full page when extraction is too thin.
+          </p>
+        </div>
+        <Switch
+          checked={onlyMainContent}
+          onCheckedChange={setOnlyMainContent}
+        />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <Label>Include Links</Label>
+          <p className="text-xs text-muted-foreground">
+            Returns a links[] array of the absolute URLs found on the page.
+          </p>
+        </div>
+        <Switch checked={includeLinks} onCheckedChange={setIncludeLinks} />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <Label>Include Metadata</Label>
+          <p className="text-xs text-muted-foreground">
+            Returns a metadata object with the page title, description, Open
+            Graph tags and canonical URL.
+          </p>
+        </div>
+        <Switch
+          checked={includeMetadata}
+          onCheckedChange={setIncludeMetadata}
+        />
       </div>
 
       <div className="space-y-2">

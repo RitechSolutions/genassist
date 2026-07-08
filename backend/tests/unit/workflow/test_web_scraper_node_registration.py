@@ -1,9 +1,9 @@
 """Registration tests for WebScraperNode ("Web Scraper").
 
 Asserts the node type is wired end-to-end: resolvable in the engine registry,
-present in the dialog / handler / label schema maps, and excluded from the
-no-DB deny-list. Plus focused process() tests (fetch_from_url mocked, the real
-html2markdown left to run) that lock in the output contract and error handling.
+present in the dialog / handler / label schema maps, and reported as needing DB
+access. Plus focused process() tests (fetch_from_url mocked, the real html2markdown left to run) that lock in the output contract,
+screenshot hosting and error handling.
 """
 
 from types import SimpleNamespace
@@ -42,6 +42,31 @@ def _fr(html, url="https://example.com", status=200, content_type="text/html", s
     )
 
 
+def _fake_file_manager(url="http://localhost:8000/api/file-manager/files/f1/source", file_id="f1"):
+    """Mock FileManagerService whose hosting calls resolve to a local-style source URL."""
+    provider = SimpleNamespace(name="local", get_base_path=lambda: "/data")
+    return SimpleNamespace(
+        initialize=AsyncMock(return_value=provider),
+        create_file_from_local_path=AsyncMock(return_value=SimpleNamespace(id=file_id)),
+        get_file_url=AsyncMock(return_value=url),
+    )
+
+
+def _fake_injector(file_manager, app_settings):
+    """Stand-in injector resolving the two services the hosting path pulls."""
+    from app.services.app_settings import AppSettingsService
+    from app.services.file_manager import FileManagerService
+
+    def _get(cls):
+        if cls is FileManagerService:
+            return file_manager
+        if cls is AppSettingsService:
+            return app_settings
+        raise KeyError(cls)
+
+    return SimpleNamespace(get=_get)
+
+
 # registration
 
 
@@ -57,10 +82,20 @@ def test_node_type_present_in_dialog_schema():
 
 
 def test_dialog_schema_contains_required_scraper_fields():
-    """Dialog exposes url, format and renderJs; only url is required."""
+    """Dialog exposes the scraper fields and keeps the config surfaces in sync; only url is required."""
     schema = {field.name: field for field in NODE_DIALOG_SCHEMAS[_NODE_TYPE]}
-    assert {"url", "format", "renderJs"} <= set(schema)
+    assert {
+        "url",
+        "format",
+        "renderJs",
+        "onlyMainContent",
+        "includeLinks",
+        "includeMetadata",
+        "screenshot",
+        "headers",
+    } <= set(schema)
     assert schema["url"].required is True
+    assert schema["screenshot"].default == "off"
 
 
 def test_node_type_present_in_handlers_with_input_and_output():
@@ -76,10 +111,9 @@ def test_node_type_label_registered():
     assert NODE_TYPE_LABELS.get(_NODE_TYPE) == "Web Scraper"
 
 
-def test_node_in_no_db_deny_list():
-    """The node needs no DB access, so it must be in the engine's no-DB deny-list."""
+def test_node_reported_as_needing_db_access():
     engine = WorkflowEngine.__new__(WorkflowEngine)
-    assert engine._node_needs_db_access(_NODE_TYPE) is False
+    assert engine._node_needs_db_access(_NODE_TYPE) is True
 
 
 # process()
@@ -189,3 +223,81 @@ async def test_http_status_error_reports_real_status_code():
         result = await node.process({"url": "https://example.com/missing"})
     assert result["success"] is False
     assert result["status_code"] == 404
+
+
+# screenshot hosting
+
+
+@pytest.mark.asyncio
+async def test_screenshot_forces_browser_path_even_with_render_js_off():
+    """A screenshot request must use Playwright even when renderJs is off (httpx can't render)."""
+    node = _make_node()
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>"))
+    with patch(_FETCH_PATH, new=fetch):
+        await node.process({"url": "https://example.com", "renderJs": False, "screenshot": "viewport"})
+    assert fetch.call_args.kwargs["use_http_request"] is False
+    assert fetch.call_args.kwargs["screenshot"] == "viewport"
+
+
+@pytest.mark.asyncio
+async def test_screenshot_hosted_via_file_manager_when_enabled():
+    node = _make_node()
+    fetched = _fr("<p>ok</p>", shot=b"pngbytes")
+    fm = _fake_file_manager()
+    app_settings = SimpleNamespace(get_by_type_and_name=AsyncMock(return_value=None))
+    with (
+        patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
+        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", True),
+        patch("app.dependencies.injector.injector", _fake_injector(fm, app_settings)),
+    ):
+        result = await node.process({"url": "https://example.com", "screenshot": "viewport"})
+    assert result["success"] is True
+    assert result["screenshot"] == "http://localhost:8000/api/file-manager/files/f1/source"
+    assert result["screenshot_file_id"] == "f1"
+    fm.create_file_from_local_path.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_screenshot_base64_fallback_when_file_manager_disabled():
+    node = _make_node()
+    fetched = _fr("<p>ok</p>", shot=b"tiny-png-bytes")
+    with (
+        patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
+        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", False),
+    ):
+        result = await node.process({"url": "https://example.com", "screenshot": "viewport"})
+    assert result["success"] is True
+    assert result["screenshot"].startswith("data:image/png;base64,")
+    assert result["screenshot_file_id"] == ""
+
+
+@pytest.mark.asyncio
+async def test_screenshot_over_cap_bytes_yield_empty_string():
+    node = _make_node()
+    oversized = b"x" * 1_200_001  # base64 expands past the ~1.5 MB inline cap
+    fetched = _fr("<p>ok</p>", shot=oversized)
+    with (
+        patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
+        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", False),
+    ):
+        result = await node.process({"url": "https://example.com", "screenshot": "fullPage"})
+    assert result["success"] is True
+    assert result["screenshot"] == ""
+    assert result["screenshot_file_id"] == ""
+
+
+@pytest.mark.asyncio
+async def test_screenshot_hosting_error_falls_back_to_base64_and_keeps_success():
+    node = _make_node()
+    fetched = _fr("<p>ok</p>", shot=b"tiny-png-bytes")
+    fm = SimpleNamespace(initialize=AsyncMock(side_effect=RuntimeError("hosting down")))
+    app_settings = SimpleNamespace(get_by_type_and_name=AsyncMock(return_value=None))
+    with (
+        patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
+        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", True),
+        patch("app.dependencies.injector.injector", _fake_injector(fm, app_settings)),
+    ):
+        result = await node.process({"url": "https://example.com", "screenshot": "viewport"})
+    assert result["success"] is True
+    assert result["screenshot"].startswith("data:image/png;base64,")
+    assert result["screenshot_file_id"] == ""

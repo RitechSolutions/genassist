@@ -85,11 +85,11 @@ export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData>
   type: "webScraperNode",
   label: "Web Scraper",
   description:
-    "Fetches a web page and returns clean scraped content as Markdown or HTML.",
+    "Fetches a web page and returns clean scraped content as Markdown or HTML, plus its links, metadata and an optional screenshot.",
   shortDescription: "Scrape a web page",
   helpContent: WEB_SCRAPER_HELP_CONTENT,
   configSubtitle:
-    "Configure the URL, output format, JavaScript rendering, and optional headers.",
+    "Configure the URL, output format, content extraction, links, metadata, screenshot, JavaScript rendering, and optional headers.",
   category: "tools",
   icon: "TextSearch",
   defaultData: {
@@ -97,6 +97,10 @@ export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData>
     url: "https://",
     format: "markdown",
     renderJs: false,
+    onlyMainContent: true,
+    includeLinks: true,
+    includeMetadata: true,
+    screenshot: "off",
     headers: {},
     handlers: [
       {

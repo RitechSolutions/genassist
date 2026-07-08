@@ -53,7 +53,7 @@ export const API_CONNECTOR_HELP_CONTENT: NodeHelpContent = {
 
 export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
   intro:
-    "The Web Scraper node fetches a web page and returns its content as clean Markdown or HTML. It runs without any external scraping service and blocks private, loopback and metadata hosts.",
+    "The Web Scraper node fetches a web page and returns its content as clean Markdown or HTML, along with the page's links, metadata and an optional screenshot. It runs without any external scraping service and blocks private, loopback and metadata hosts.",
   sections: [
     {
       title: "Overview & Use Cases",
@@ -61,7 +61,9 @@ export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
       bullets: [
         "Pull the text of a public web page into a workflow",
         "Feed page content to a downstream language model",
-        "Read documentation or articles as Markdown",
+        "Harvest a page's links to crawl a site",
+        "Read a page's title, description and Open Graph metadata",
+        "Capture a screenshot of the rendered page",
         "Replace an external crawling API for simple fetches",
       ],
     },
@@ -72,9 +74,25 @@ export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
         "Enter the Node Name.",
         "Enter the URL to scrape.",
         "Choose the Output Format (Markdown, HTML or Both).",
+        "Choose a Screenshot mode (Off, Viewport or Full Page); anything other than Off uses the slower browser path.",
         "Enable Render JavaScript for SPA / JS-heavy sites.",
+        "Toggle Only Main Content to strip nav and boilerplate (on by default).",
+        "Toggle Include Links and Include Metadata to control the side-channels (both on by default).",
         "Add any required Headers.",
         "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.content}} — the primary output in the chosen format",
+        "{{source.markdown}} — main-content Markdown (markdown / both formats)",
+        "{{source.html}} — raw page HTML (html / both formats)",
+        "{{source.links}} — array of absolute URLs found on the page",
+        "{{source.metadata.title}} / {{source.metadata.description}} / {{source.metadata.ogImage}} — page metadata",
+        "{{source.screenshot}} — hosted image URL or data URI when a screenshot mode is set",
+        "{{source.url}} and {{source.status_code}} — the final URL and HTTP status",
       ],
     },
   ],

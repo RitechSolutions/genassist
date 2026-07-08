@@ -136,12 +136,16 @@ NODE_DESCRIPTIONS = {
     },
     "webScraperNode": {
         "category": "Integration",
-        "description": "Fetches a web page and returns clean scraped content as Markdown or HTML. Blocks private/loopback/metadata hosts. Returns {success, url, content, format, status_code, error}.",
-        "when_to_use": "When the workflow needs the text content of a public web page without relying on an external scraping service.",
+        "description": "Fetches a web page and returns clean scraped content plus its side-channels, without relying on an external scraping service. "
+        "Blocks private/loopback/metadata hosts. Returns {success, url, status_code, format, error, content, markdown, html, links, metadata, screenshot, screenshot_file_id}, "
+        "where url/status_code are the final post-redirect URL and HTTP status, links is an array of absolute page URLs, metadata carries title/description/ogImage/canonical, and screenshot is a hosted image URL (or data URI) when a screenshot mode is set.",
+        "when_to_use": "When the workflow needs the text, links, metadata or a screenshot of a public web page without relying on an external scraping service.",
         "example_use_cases": [
-            "Scraping a company's homepage to summarise what they do",
+            "Profiling a company from its homepage using {{source.markdown}} and {{source.metadata.title}}",
+            "Harvesting {{source.links}} to crawl the rest of a site",
             "Pulling article content into a downstream LLM node",
             "Reading a documentation page as Markdown for RAG",
+            "Capturing a screenshot of a landing page for review",
         ],
     },
     "openApiNode": {
