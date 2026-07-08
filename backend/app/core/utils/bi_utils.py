@@ -363,8 +363,8 @@ async def _fetch_url_content(item: KBBase) -> str:
     # Fetch content from all URLs and combine
     all_content = []
     for url in item.urls:
-        html = await fetch_from_url(url, headers, use_http_request)
-        all_content.append(_format_html(html, is_json, base_url=url))
+        fetched = await fetch_from_url(url, headers, use_http_request)
+        all_content.append(_format_html(fetched.html, is_json, base_url=url))
     return "\n\n---\n\n".join(all_content)
 
 

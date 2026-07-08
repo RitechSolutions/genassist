@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from app.core.utils.web_scraping_utils import FetchResult
 from app.modules.workflow.engine.nodes.web_scraper_node import WebScraperNode
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.schemas.dynamic_form_schemas.nodes import (
@@ -28,6 +29,17 @@ _FETCH_PATH = "app.modules.workflow.engine.nodes.web_scraper_node.fetch_from_url
 def _make_node():
     node_config = {"type": _NODE_TYPE, "data": {"name": "Web Scraper"}}
     return WebScraperNode("node-1", node_config, SimpleNamespace())
+
+
+def _fr(html, url="https://example.com", status=200, content_type="text/html", shot=None):
+    """Build a FetchResult stand-in for the fetch_from_url mock."""
+    return FetchResult(
+        html=html,
+        url=url,
+        status_code=status,
+        content_type=content_type,
+        screenshot_bytes=shot,
+    )
 
 
 # registration
@@ -76,12 +88,12 @@ def test_node_in_no_db_deny_list():
 @pytest.mark.asyncio
 async def test_markdown_success_returns_clean_envelope():
     node = _make_node()
-    with patch(_FETCH_PATH, new=AsyncMock(return_value="<h1>Hi</h1>")):
+    with patch(_FETCH_PATH, new=AsyncMock(return_value=_fr("<h1>Hi</h1>"))):
         result = await node.process({"url": "https://example.com", "format": "markdown"})
     assert result["success"] is True
     assert result["status_code"] == 200
     assert result["format"] == "markdown"
-    assert "Hi" in result["content"]
+    assert "Hi" in result["content"]  # thin doc: readability falls back to full-DOM
     assert result["error"] == ""
 
 
@@ -89,9 +101,10 @@ async def test_markdown_success_returns_clean_envelope():
 async def test_both_format_includes_markdown_and_html_keys():
     node = _make_node()
     html = "<h1>Hi</h1>"
-    with patch(_FETCH_PATH, new=AsyncMock(return_value=html)):
-        result = await node.process({"url": "https://example.com", "format": "both"})
-    assert result["html"] == html
+    with patch(_FETCH_PATH, new=AsyncMock(return_value=_fr(html))):
+        # onlyMainContent off keeps the assertion on a deterministic full-DOM conversion
+        result = await node.process({"url": "https://example.com", "format": "both", "onlyMainContent": False})
+    assert result["html"] == html  # html stays raw
     assert "Hi" in result["markdown"]
     assert result["content"] == result["markdown"]  # content holds the primary format
 
@@ -99,7 +112,7 @@ async def test_both_format_includes_markdown_and_html_keys():
 @pytest.mark.asyncio
 async def test_render_js_off_uses_fast_httpx_path():
     node = _make_node()
-    fetch = AsyncMock(return_value="<p>ok</p>")
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>"))
     with patch(_FETCH_PATH, new=fetch):
         await node.process({"url": "https://example.com", "renderJs": False})
     assert fetch.call_args.kwargs["use_http_request"] is True
@@ -108,7 +121,7 @@ async def test_render_js_off_uses_fast_httpx_path():
 @pytest.mark.asyncio
 async def test_render_js_on_uses_playwright_path():
     node = _make_node()
-    fetch = AsyncMock(return_value="<p>ok</p>")
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>"))
     with patch(_FETCH_PATH, new=fetch):
         await node.process({"url": "https://example.com", "renderJs": True})
     assert fetch.call_args.kwargs["use_http_request"] is False
@@ -117,22 +130,42 @@ async def test_render_js_on_uses_playwright_path():
 @pytest.mark.asyncio
 async def test_scheme_is_prepended_for_bare_host():
     node = _make_node()
-    fetch = AsyncMock(return_value="<p>ok</p>")
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>", url="https://example.com"))
     with patch(_FETCH_PATH, new=fetch):
         result = await node.process({"url": "example.com"})
     assert fetch.call_args.args[0] == "https://example.com"
-    assert result["url"] == "https://example.com"
+    assert result["url"] == "https://example.com"  # from FetchResult.url
 
 
 @pytest.mark.asyncio
 async def test_empty_url_returns_error_without_fetching():
     node = _make_node()
-    fetch = AsyncMock(return_value="<p>ok</p>")
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>"))
     with patch(_FETCH_PATH, new=fetch):
         result = await node.process({"url": "  "})
     assert result["success"] is False
     assert result["error"] == "URL is required"
     fetch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_default_output_carries_links_metadata_and_empty_screenshot():
+    node = _make_node()
+    html = (
+        "<html lang='en'><head><title>Example</title>"
+        "<meta name='description' content='A demo page'></head>"
+        "<body><a href='/about'>About</a></body></html>"
+    )
+    fetched = _fr(html, url="https://example.com/", status=201)
+    with patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)):
+        result = await node.process({"url": "https://example.com"})
+    assert result["status_code"] == 201  
+    assert "https://example.com/about" in result["links"]
+    assert result["metadata"]["title"] == "Example"
+    assert result["metadata"]["sourceURL"] == "https://example.com/"
+    assert result["metadata"]["statusCode"] == 201
+    assert result["screenshot"] == ""
+    assert result["screenshot_file_id"] == ""
 
 
 @pytest.mark.asyncio

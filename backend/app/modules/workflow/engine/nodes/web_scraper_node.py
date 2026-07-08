@@ -6,6 +6,7 @@ from typing import Any, Dict
 import httpx
 
 from app.core.utils.html_utils import html2markdown
+from app.core.utils.web_content_utils import extract_links, extract_main_content, extract_metadata
 from app.core.utils.web_scraping_utils import fetch_from_url
 from app.modules.workflow.engine import BaseNode
 
@@ -25,6 +26,10 @@ class WebScraperNode(BaseNode):
         output_format = (config.get("format") or "markdown").lower()
         render_js = bool(config.get("renderJs", False))
         headers = config.get("headers") or {}
+        only_main_content = bool(config.get("onlyMainContent", True))
+        include_links = bool(config.get("includeLinks", True))
+        include_metadata = bool(config.get("includeMetadata", True))
+        screenshot_opt = config.get("screenshot") or "off"
 
         if not url:
             return self._error("", output_format, "URL is required")
@@ -33,26 +38,47 @@ class WebScraperNode(BaseNode):
         if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
 
+        render_browser = render_js or screenshot_opt != "off"
+
         try:
-            # renderJs off uses fast httpx; on uses Playwright for JS-heavy sites
-            html = await fetch_from_url(url, headers=headers, use_http_request=not render_js)
+            fetched = await fetch_from_url(
+                url,
+                headers=headers,
+                use_http_request=not render_browser,
+                screenshot=screenshot_opt,
+            )
+            raw_html = fetched.html
+            final_url = fetched.url or url  # post-redirect URL; input url as a safety net
 
             result: Dict[str, Any] = {
                 "success": True,
-                "url": url,
+                "url": final_url,
                 "format": output_format,
-                "status_code": 200,
+                "status_code": fetched.status_code,
                 "error": "",
+                "screenshot": "",
+                "screenshot_file_id": "",
             }
+
             if output_format == "html":
-                result["content"] = html
-            elif output_format == "both":
-                markdown = html2markdown(html, base_url=url)
-                result["markdown"] = markdown
-                result["html"] = html
-                result["content"] = markdown  # content always holds the primary format
+                result["html"] = raw_html  
+                result["content"] = raw_html
             else:
-                result["content"] = html2markdown(html, base_url=url)
+                markdown = (
+                    extract_main_content(raw_html, final_url)[0]
+                    if only_main_content
+                    else html2markdown(raw_html, base_url=final_url)
+                )
+                result["markdown"] = markdown
+                result["content"] = markdown  
+                if output_format == "both":
+                    result["html"] = raw_html
+
+            if include_links:
+                result["links"] = extract_links(raw_html, final_url)
+            if include_metadata:
+                result["metadata"] = extract_metadata(raw_html, final_url, fetched.status_code, fetched.content_type)
+
             return result
 
         except httpx.HTTPStatusError as exc:

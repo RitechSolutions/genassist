@@ -1,6 +1,7 @@
 import asyncio
 import ipaddress
 import socket
+from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -20,6 +21,17 @@ _FORWARDED_HEADER_ALLOWLIST = frozenset({
     "if-modified-since",
     "if-none-match",
 })
+
+
+@dataclass
+class FetchResult:
+    """Result of a URL fetch, exposing the side-channels both callers need."""
+
+    html: str
+    url: str  # final URL after redirects 
+    status_code: int | None
+    content_type: str | None
+    screenshot_bytes: bytes | None = None  # PNG bytes, only on the Playwright path
 
 
 def _is_blocked_ip(addr: str) -> bool:
@@ -65,8 +77,10 @@ async def fetch_from_url(
     url: str,
     headers: dict[str, str] | None = None,
     use_http_request: bool = False,
-) -> str:
-    """Fetch URL content using Playwright by default, or httpx when requested."""
+    *,
+    screenshot: str | None = None,
+) -> FetchResult:
+    
     await _validate_url(url)
     safe_headers = _safe_headers(headers)
 
@@ -100,24 +114,39 @@ async def fetch_from_url(
                 current_url = redirect_url
                 hops_remaining -= 1
             response.raise_for_status()
-            return response.text
+            return FetchResult(
+                response.text,
+                current_url,
+                response.status_code,
+                response.headers.get("content-type"),
+            )
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        # try/finally so a goto/content error can't leak the browser process
+        try:
+            page = await browser.new_page()
 
-        if safe_headers:
-            await page.set_extra_http_headers(safe_headers)
+            if safe_headers:
+                await page.set_extra_http_headers(safe_headers)
 
-        async def _block_private_routes(route: Route) -> None:
-            try:
-                await _validate_url(route.request.url)
-                await route.continue_()
-            except ValueError:
-                await route.abort("blockedbyclient")
+            async def _block_private_routes(route: Route) -> None:
+                try:
+                    await _validate_url(route.request.url)
+                    await route.continue_()
+                except ValueError:
+                    await route.abort("blockedbyclient")
 
-        await page.route("**/*", _block_private_routes)
-        await page.goto(url, wait_until="domcontentloaded", timeout=_PLAYWRIGHT_TIMEOUT)
-        html = await page.content()
-        await browser.close()
-        return html
+            await page.route("**/*", _block_private_routes)
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=_PLAYWRIGHT_TIMEOUT)
+            html = await page.content()
+            final_url = page.url
+            # goto returns None for about:blank / same-hash navigations
+            status_code = response.status if response is not None else None
+            content_type = response.headers.get("content-type") if response is not None else None
+            shot = None
+            if screenshot and screenshot != "off":
+                shot = await page.screenshot(full_page=(screenshot == "fullPage"))
+            return FetchResult(html, final_url, status_code, content_type, shot)
+        finally:
+            await browser.close()
