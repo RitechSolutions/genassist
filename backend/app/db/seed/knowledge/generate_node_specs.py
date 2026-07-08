@@ -134,6 +134,16 @@ NODE_DESCRIPTIONS = {
             "Calling a third-party service for data enrichment",
         ],
     },
+    "webScraperNode": {
+        "category": "Integration",
+        "description": "Fetches a web page and returns clean scraped content as Markdown or HTML. Blocks private/loopback/metadata hosts. Returns {success, url, content, format, status_code, error}.",
+        "when_to_use": "When the workflow needs the text content of a public web page without relying on an external scraping service.",
+        "example_use_cases": [
+            "Scraping a company's homepage to summarise what they do",
+            "Pulling article content into a downstream LLM node",
+            "Reading a documentation page as Markdown for RAG",
+        ],
+    },
     "openApiNode": {
         "category": "Integration",
         "description": "Executes API calls based on an OpenAPI specification file. Uses an LLM to interpret the query and select the correct API endpoint/parameters from the spec.",
