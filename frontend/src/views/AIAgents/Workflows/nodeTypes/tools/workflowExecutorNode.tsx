@@ -66,4 +66,4 @@ const WorkflowExecutorNode: React.FC<NodeProps<WorkflowExecutorNodeData>> = ({
   );
 };
 
-export default WorkflowExecutorNode;
+export default React.memo(WorkflowExecutorNode);

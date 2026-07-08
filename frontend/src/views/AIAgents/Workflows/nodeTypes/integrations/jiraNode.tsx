@@ -1,7 +1,7 @@
 import { NodeProps } from "reactflow";
 import { JiraNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import BaseNodeContainer from "../BaseNodeContainer";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { JiraDialog } from "../../nodeDialogs/JiraDialog";
@@ -87,4 +87,4 @@ const JiraNode: React.FC<NodeProps<JiraNodeData>> = ({
   );
 };
 
-export default JiraNode;
+export default memo(JiraNode);

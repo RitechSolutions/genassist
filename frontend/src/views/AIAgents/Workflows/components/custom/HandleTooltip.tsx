@@ -1,5 +1,5 @@
 import { Badge } from "@/components/badge";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import { Handle, HandleProps, Position } from "reactflow";
 import { NodeData } from "../../types/nodes";
 import { getHandlerPosition } from "../../utils/helpers";
@@ -42,22 +42,19 @@ const getCompatibilityDescription = (
   }
 };
 
-export const HandlersRenderer: React.FC<{
+const HandlersRendererComponent: React.FC<{
   id: string;
   data: NodeData;
 }> = ({ id, data }) => {
-  const rightHandler = data.handlers?.filter(
-    (handler) => handler.position === "right"
-  );
-  const leftHandler = data.handlers?.filter(
-    (handler) => handler.position === "left"
-  );
-  const topHandler = data.handlers?.filter(
-    (handler) => handler.position === "top"
-  );
-  const bottomHandler = data.handlers?.filter(
-    (handler) => handler.position === "bottom"
-  );
+  const { rightHandler, leftHandler, topHandler, bottomHandler } = useMemo(() => {
+    const handlers = data.handlers ?? [];
+    return {
+      rightHandler: handlers.filter((handler) => handler.position === "right"),
+      leftHandler: handlers.filter((handler) => handler.position === "left"),
+      topHandler: handlers.filter((handler) => handler.position === "top"),
+      bottomHandler: handlers.filter((handler) => handler.position === "bottom"),
+    };
+  }, [data.handlers]);
 
   return (
     <>
@@ -109,7 +106,9 @@ export const HandlersRenderer: React.FC<{
   );
 };
 
-export const HandleTooltip: React.FC<HandleTooltipProps> = ({
+export const HandlersRenderer = React.memo(HandlersRendererComponent);
+
+const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
   compatibility,
   nodeId,
   style,
@@ -161,3 +160,5 @@ export const HandleTooltip: React.FC<HandleTooltipProps> = ({
     </>
   );
 };
+
+export const HandleTooltip = React.memo(HandleTooltipComponent);
