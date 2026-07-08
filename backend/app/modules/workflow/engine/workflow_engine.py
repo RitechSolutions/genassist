@@ -52,6 +52,7 @@ from app.modules.workflow.engine.nodes import (
     TrainModelNode,
     TrainPreprocessNode,
     VoiceAgentNode,
+    WebScraperNode,
     WhatsAppToolNode,
     WorkflowExecutorNode,
     ZendeskToolNode,
@@ -136,6 +137,7 @@ class WorkflowEngine:
         cls._node_registry["ttsNode"] = TTSNode
         cls._node_registry["sttNode"] = STTNode
         cls._node_registry["voiceAgentNode"] = VoiceAgentNode
+        cls._node_registry["webScraperNode"] = WebScraperNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
 
         cls._registry_initialized = True
@@ -167,7 +169,8 @@ class WorkflowEngine:
             "toolBuilderNode",
             "aggregatorNode",
             "humanInTheLoopNode",
-            "setStateNode"
+            "setStateNode",
+            "webScraperNode"
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
