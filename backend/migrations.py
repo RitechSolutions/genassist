@@ -182,3 +182,77 @@ def run_migrations_for_all_tenants() -> bool:
         logger.error(f"Error running migrations for all tenants: {e}")
         return False
 
+
+def stamp_head_for_all_tenants() -> bool:
+    """
+    Programmatically executes `alembic stamp head` for the main database and all
+    active tenant databases.
+
+    Unlike run_migrations_for_all_tenants, this does NOT run any migration code –
+    it only records the head revision in each `alembic_version` table. Use it when
+    the schema is already in the head state and only the recorded revision needs
+    correcting (e.g. after resolving a migration-history/head conflict). Running an
+    upgrade in that situation would re-execute already-applied DDL and fail.
+    """
+    from app.core.config.settings import settings
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+    from alembic import command
+    from alembic.config import Config
+
+    def _stamp(url: str, database_name: str) -> None:
+        alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+        alembic_cfg.set_main_option("sqlalchemy.url", url)
+        logger.info(f"Stamping head for: {database_name}")
+        command.stamp(alembic_cfg, "head")
+        logger.info(f"Stamp head complete for: {database_name}")
+
+    try:
+        # Main database
+        _stamp(settings.DATABASE_URL_SYNC, "main")
+
+        # Check if multi-tenancy is enabled
+        if not settings.MULTI_TENANT_ENABLED:
+            logger.info("Multi-tenancy is disabled, skipping tenant stamps")
+            return True
+
+        DATABASE_URL = settings.get_tenant_database_url_sync()
+
+        engine = create_engine(DATABASE_URL)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        result = session.execute(text("SELECT slug FROM tenants WHERE is_active is True")).fetchall()
+        tenants = [r[0] for r in result]
+
+        if not tenants:
+            logger.info("No active tenants found")
+            return True
+
+        logger.info(f"Found {len(tenants)} active tenant(s)")
+
+        success_count = 0
+        failed_count = 0
+
+        # Stamp head for each tenant
+        for tenant in tenants:
+            try:
+                tenant_url = settings.get_tenant_database_url_sync(tenant)
+                _stamp(tenant_url, f"tenant:({tenant})")
+                success_count += 1
+            except Exception as e:
+                logger.error(
+                    f"Failed to stamp head for tenant ({tenant}): {e}"
+                )
+                failed_count += 1
+
+        logger.info(
+            f"Tenant stamps complete: {success_count} successful, {failed_count} failed"
+        )
+
+        return failed_count == 0
+
+    except Exception as e:
+        logger.error(f"Error stamping head for all tenants: {e}")
+        return False
+
