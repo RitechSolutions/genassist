@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Edge, Node } from "reactflow";
 import { isEqual } from "lodash";
+import { stripTransientGraphFields } from "../utils/graphNormalization";
 
 interface HistoryState {
   nodes: Node[];
@@ -33,21 +34,8 @@ interface UseUndoRedoReturn {
   clear: () => void;
 }
 
-// Strip React Flow's transient UI fields (selection, drag, measured size) so
-// history tracks real edits
-const normalizeState = (state: HistoryState): HistoryState => ({
-  nodes: state.nodes.map(
-    ({
-      selected,
-      dragging,
-      width,
-      height,
-      positionAbsolute,
-      ...node
-    }: Node) => node
-  ),
-  edges: state.edges.map(({ selected, className, ...edge }: Edge) => edge),
-});
+const normalizeState = (state: HistoryState): HistoryState =>
+  stripTransientGraphFields(state.nodes, state.edges);
 
 const cloneState = (state: HistoryState): HistoryState =>
   JSON.parse(JSON.stringify(normalizeState(state))) as HistoryState;

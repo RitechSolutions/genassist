@@ -14,6 +14,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { isEqual } from "lodash";
+import { stripTransientGraphFields } from "./utils/graphNormalization";
 import { getNodeTypes } from "./nodeTypes";
 import { getEdgeTypes } from "./edgeTypes";
 import nodeRegistry from "./registry/nodeRegistry";
@@ -61,6 +62,11 @@ const nodeTypes = getNodeTypes();
 const edgeTypes = getEdgeTypes();
 
 const PRO_OPTIONS = { hideAttribution: true }; // remove React Flow watermark
+
+// Skip canvas undo/redo when focus is in a field the user is typing in
+const isEditableEventTarget = (target: HTMLElement): boolean =>
+  target.isContentEditable ||
+  !!target.closest("input, textarea, select, [contenteditable='true'], .ace_editor");
 
 const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
@@ -259,15 +265,11 @@ const GraphFlowContent: React.FC = () => {
       const cleanWorkflow = (workflow: Workflow) => {
         const workflowCopy = JSON.parse(JSON.stringify(workflow));
         const { created_at, updated_at, ...remainingProps } = workflowCopy;
-        return {
-          ...remainingProps,
-          nodes: (remainingProps.nodes || []).map(
-            ({ selected, dragging, width, height, ...rest }: Node) => rest
-          ),
-          edges: (remainingProps.edges || []).map(
-            ({ selected, className, ...rest }) => rest
-          ),
-        };
+        const { nodes, edges } = stripTransientGraphFields(
+          remainingProps.nodes || [],
+          remainingProps.edges || []
+        );
+        return { ...remainingProps, nodes, edges };
       };
 
       const cleanWorkflow1 = cleanWorkflow(workflow1);
@@ -688,12 +690,6 @@ const GraphFlowContent: React.FC = () => {
 
   // Keyboard shortcuts for canvas interactions
   useEffect(() => {
-    const isTypingTarget = (target: HTMLElement) =>
-      target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "SELECT" ||
-      target.isContentEditable;
-
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
 
@@ -705,7 +701,7 @@ const GraphFlowContent: React.FC = () => {
 
       // Skip undo/redo if typing or inside an open dialog
       if (isUndo || isRedo) {
-        if (isTypingTarget(target) || target.closest('[role="dialog"]')) return;
+        if (isEditableEventTarget(target) || target.closest('[role="dialog"]')) return;
         e.preventDefault();
         if (isUndo) undo();
         else redo();
@@ -954,9 +950,7 @@ const GraphFlowContent: React.FC = () => {
   useEffect(() => {
     const handleSearchKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      const isTyping = !!target.closest(
-        "input, textarea, select, [contenteditable='true'], .ace_editor"
-      );
+      const isTyping = isEditableEventTarget(target);
 
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
