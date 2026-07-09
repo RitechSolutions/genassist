@@ -283,49 +283,39 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
 
     def _build_attachments_message_content(self, attachments: list) -> list:
         """
-        Build message content with attachments.
+        Build message content for image attachments.
+
+        Only images are sent to the vision model here; documents are read by the
+        File Reader node.
 
         Args:
             attachments: List of attachment dictionaries
 
         Returns:
-            List of message content items (text, images, files)
+            List of image message content items
         """
         # create message content with attachments
         message_content = []
 
         if attachments:
             for attachment in attachments:
-                attachment_type = "image" if attachment.get("type").startswith("image") else "file"
+                mime_type = attachment.get("type") or attachment.get("file_mime_type") or ""
+                is_image = mime_type.startswith("image")
+
+                # Documents are read by the File Reader node, not the vision model.
+                if not is_image:
+                    continue
+
                 attachment_file_local_path = attachment.get("file_local_path")
                 attachment_mime_type = attachment.get("file_mime_type")
                 attachment_url = attachment.get("url")
-                attachment_file_id = attachment.get("openai_file_id")  # OpenAI file_id for file inputs
 
-                if attachment_type == "image":
-                    # if attachment_file_local_path is provided, convert to base64
-                    if attachment_file_local_path:
-                        # get file base64
-                        base64_content = self._convert_attachment_to_base64(attachment_file_local_path)
-                        attachment_url = f"data:{attachment_mime_type};base64,{base64_content}"
+                # if attachment_file_local_path is provided, convert to base64
+                if attachment_file_local_path:
+                    # get file base64
+                    base64_content = self._convert_attachment_to_base64(attachment_file_local_path)
+                    attachment_url = f"data:{attachment_mime_type};base64,{base64_content}"
 
-                    message_content.append({"type": "image_url", "image_url": {"url": attachment_url}})
-                else:
-                    # Priority: OpenAI file_id > URL > base64
-                    if attachment_file_id:
-                        # Use OpenAI file_id (preferred for PDFs and supported file types)
-                        message_content.append({"type": "file", "file": {"file_id": attachment_file_id}})
-                        logger.info(f"Using OpenAI file_id: {attachment_file_id} for file attachment")
-                    elif attachment_url:
-                        # Fallback to URL if file_id not available
-                        message_content.append(
-                            {
-                                "type": "file",
-                                "url": attachment_url,
-                            }
-                        )
-                        logger.warning("Using URL fallback for file attachment (file_id not available)")
-                    else:
-                        logger.warning("No file_id or URL available for attachment, skipping")
+                message_content.append({"type": "image_url", "image_url": {"url": attachment_url}})
 
         return message_content
