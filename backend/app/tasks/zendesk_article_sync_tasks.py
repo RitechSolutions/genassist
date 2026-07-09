@@ -7,7 +7,7 @@ from uuid import UUID
 from celery import shared_task
 from croniter import croniter
 
-from app.core.utils.html_utils import html2markdown
+from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.zendesk import ZendeskConnector
@@ -322,15 +322,19 @@ async def import_zendesk_articles_to_kb_async(
 
             # Check if allow_unpublished_articles is false KB extra_metadata from UI panel
             allow_unpublished_articles = kb.extra_metadata.get("allow_unpublished_articles") or False
-            allow_html_content = kb.extra_metadata.get("allow_html_content") or False
+            content_format = kb.extra_metadata.get("content_format") or "text"
 
-            # Parse article body based on allow_html_content flag
+            # Parse article body in the configured content format
             def _parse_article_body(article: dict) -> str:
                 body = article.get("body", "") or ""
-                if allow_html_content or not body:
-                    return body  # raw HTML passthrough (or empty)
-                # base_url resolves relative HC links (e.g. /hc/en-us/articles/123 -> full URL)
-                return html2markdown(body, base_url=article.get("html_url") or "")
+                if not body:
+                    return body
+                if content_format == "html":
+                    return body
+                if content_format == "markdown":
+                    base_url = article.get("html_url") or ""
+                    return html2markdown(body, base_url)
+                return html2plaintext(body)
 
             articles = []
             if not allow_unpublished_articles:

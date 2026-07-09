@@ -17,6 +17,7 @@ def _strip_link_titles(md: str) -> str:
 
 def html2markdown(html: str, base_url: str | None = None) -> str:
     """Convert HTML to Markdown.
+
     ``base_url`` resolves relative hrefs to absolute URLs.
     """
     import html2text as _html2text
@@ -27,3 +28,18 @@ def html2markdown(html: str, base_url: str | None = None) -> str:
     h.body_width = 0         # no hard wraps
     h.unicode_snob = True    # keep é, ü, —, © etc. instead of ASCII-mangling them
     return _normalize_whitespace(_strip_link_titles(h.handle(html or "")))
+
+
+def html2plaintext(html: str) -> str:
+    """Convert HTML to plain text.
+
+    Removes script/style/noscript content entirely and decodes HTML entities.
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html or "", "lxml")
+    for bad in soup(["script", "style", "noscript"]):
+        bad.extract()
+    text = soup.get_text(separator="\n")
+    text = re.sub(r"\n\s*\n", "\n\n", text)
+    return text.strip()
