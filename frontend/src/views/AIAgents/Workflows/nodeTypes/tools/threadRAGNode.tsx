@@ -87,4 +87,4 @@ const ThreadRAGNode: React.FC<NodeProps<ThreadRAGNodeData>> = ({
   );
 };
 
-export default ThreadRAGNode;
+export default React.memo(ThreadRAGNode);
