@@ -133,6 +133,12 @@ class ErrorKey(Enum):
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
     ERROR_GENERATE_TRAINING_FILE = "ERROR_GENERATE_TRAINING_FILE"
     ERROR_TRAINING_FILE_TOO_LARGE = "ERROR_TRAINING_FILE_TOO_LARGE"
+    ERROR_UPLOAD_FILE_BEDROCK = "ERROR_UPLOAD_FILE_BEDROCK"
+    ERROR_CREATE_JOB_BEDROCK = "ERROR_CREATE_JOB_BEDROCK"
+    ERROR_MONITOR_JOB_BEDROCK = "ERROR_MONITOR_JOB_BEDROCK"
+    ERROR_CANCEL_JOB_BEDROCK = "ERROR_CANCEL_JOB_BEDROCK"
+    ERROR_DEPLOY_MODEL_BEDROCK = "ERROR_DEPLOY_MODEL_BEDROCK"
+    ERROR_BEDROCK_NOT_CONFIGURED = "ERROR_BEDROCK_NOT_CONFIGURED"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
@@ -286,6 +292,12 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_GENERATE_TRAINING_FILE: "Failed to generate training file from conversations.",
         ErrorKey.ERROR_TRAINING_FILE_TOO_LARGE: "Generated training file exceeds the 512 MB limit. Select fewer conversations.",
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
+        ErrorKey.ERROR_UPLOAD_FILE_BEDROCK: "Failed to upload training data to S3 for Bedrock.",
+        ErrorKey.ERROR_CREATE_JOB_BEDROCK: "Failed to create Bedrock fine-tuning job.",
+        ErrorKey.ERROR_MONITOR_JOB_BEDROCK: "There was an error fetching the Bedrock job.",
+        ErrorKey.ERROR_CANCEL_JOB_BEDROCK: "There was an error stopping the Bedrock job.",
+        ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK: "Failed to deploy the customized Bedrock model.",
+        ErrorKey.ERROR_BEDROCK_NOT_CONFIGURED: "Bedrock fine-tuning is not configured. Set the IAM role ARN and S3 bucket.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
         ErrorKey.RECAPTCHA_VERIFICATION_FAILED: "reCAPTCHA verification failed. Please try again.",

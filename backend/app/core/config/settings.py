@@ -440,6 +440,13 @@ class FileStorageSettings(BaseSettings):
     AWS_S3_ENDPOINT_URL: Optional[str] = None
     AWS_BUCKET_NAME: Optional[str] = None
 
+    # Bedrock fine-tuning (Amazon Nova). Nova model customization is only
+    # available in us-east-1. BEDROCK_FINE_TUNING_ROLE_ARN is the IAM service
+    # role Bedrock assumes to read the training data and write the output.
+    BEDROCK_FINE_TUNING_REGION: str = "us-east-1"
+    BEDROCK_FINE_TUNING_ROLE_ARN: Optional[str] = None
+    BEDROCK_FINE_TUNING_S3_BUCKET: Optional[str] = None
+
     GCP_PROJECT_ID: Optional[str] = None
     GCP_REGION: Optional[str] = None
 
