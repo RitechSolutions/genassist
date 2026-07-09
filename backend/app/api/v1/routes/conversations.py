@@ -111,6 +111,79 @@ async def _voice_provider_has_key(provider_id) -> bool:
         return False
 
 
+async def _localize_node_forms(
+    agent_prefix: str,
+    nodes: list,
+    lang_codes: list[str],
+    translations_service: TranslationsService,
+) -> dict[str, dict]:
+    """Resolve HITL node form strings per language into { lang: { node_id: {...} } }."""
+    items: dict[str, str | None] = {}
+    specs: list[dict] = []
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("type") != "humanInTheLoopNode":
+            continue
+        node_id = node.get("id")
+        if not node_id:
+            continue
+        data = node.get("data") or {}
+        prefix = f"{agent_prefix}.node.{node_id}"
+        spec: dict = {"node_id": node_id, "has_message": bool(data.get("message")), "fields": []}
+        if data.get("message"):
+            items[f"{prefix}.message"] = data.get("message")
+        for field in data.get("form_fields") or []:
+            if not isinstance(field, dict) or not field.get("name"):
+                continue
+            fkey = f"{prefix}.fields.{field['name']}"
+            attrs = [a for a in ("label", "placeholder", "description") if field.get(a)]
+            for attr in attrs:
+                items[f"{fkey}.{attr}"] = field.get(attr)
+            options = []
+            for opt in field.get("options") or []:
+                if isinstance(opt, dict) and opt.get("value") and opt.get("label"):
+                    value = str(opt["value"])
+                    items[f"{fkey}.options.{value}.label"] = opt.get("label")
+                    options.append(value)
+            spec["fields"].append({"name": field["name"], "attrs": attrs, "options": options})
+        specs.append(spec)
+
+    if not specs:
+        return {}
+
+    out: dict[str, dict] = {}
+    for code in lang_codes:
+        resolved = await translations_service.resolve_many_for_lang(items, code)
+        node_locales: dict[str, dict] = {}
+        for spec in specs:
+            prefix = f"{agent_prefix}.node.{spec['node_id']}"
+            node_slice: dict = {}
+            if spec["has_message"] and resolved.get(f"{prefix}.message"):
+                node_slice["message"] = resolved.get(f"{prefix}.message")
+            fields_slice: dict = {}
+            for field in spec["fields"]:
+                fkey = f"{prefix}.fields.{field['name']}"
+                field_slice = {
+                    attr: resolved.get(f"{fkey}.{attr}")
+                    for attr in field["attrs"]
+                    if resolved.get(f"{fkey}.{attr}")
+                }
+                option_slice = {
+                    value: resolved.get(f"{fkey}.options.{value}.label")
+                    for value in field["options"]
+                    if resolved.get(f"{fkey}.options.{value}.label")
+                }
+                if option_slice:
+                    field_slice["options"] = option_slice
+                if field_slice:
+                    fields_slice[field["name"]] = field_slice
+            if fields_slice:
+                node_slice["fields"] = fields_slice
+            if node_slice:
+                node_locales[spec["node_id"]] = node_slice
+        out[code] = node_locales
+    return out
+
+
 @router.get(
     "/in-progress/agent-info",
     dependencies=[
@@ -199,6 +272,14 @@ async def get_agent_chat_locales(
     default_lang = (settings.DEFAULT_LANGUAGE or "en").split("-")[0].lower()
     lang_codes = sorted(set(available_languages) | {default_lang})
 
+    # Nodes come from request.state (get_agent_for_start swaps agent.workflow for testInput).
+    node_forms = await _localize_node_forms(
+        agent_prefix,
+        getattr(request.state, "agent_workflow_nodes", None) or [],
+        lang_codes,
+        translations_service,
+    )
+
     locales: dict[str, dict[str, object]] = {}
     for code in lang_codes:
         resolved = await translations_service.resolve_many_for_lang(translation_items, code)
@@ -217,6 +298,7 @@ async def get_agent_chat_locales(
             "input_disclaimer_html": input_disclaimer_html,
             "possible_queries": resolved_queries,
             "thinking_phrases": resolved_phrases,
+            "nodes": node_forms.get(code, {}),
         }
 
     response = {
@@ -354,6 +436,17 @@ async def start(
     ]
     available_languages = await translations_service.get_languages_for_prefix(f"agent.{agent.id}.")
 
+    # When the agent greets on start, the dynamic greeting replaces the static welcome
+    # screen — suppress the welcome message/title/FAQs/image so they don't show alongside
+    # it (and so the greeting, the first agent message, isn't overridden by the welcome
+    # message on the client).
+    greet_on_start = bool(getattr(request.state, "agent_trigger_start_form", False))
+    if greet_on_start:
+        welcome_message = None
+        welcome_title = None
+        resolved_queries = []
+    has_welcome_image = agent_data.get("welcome_image") is not None and not greet_on_start
+
     response = {
         "message": "Conversation started",
         "conversation_id": str(conversation.id),
@@ -363,8 +456,9 @@ async def start(
         "agent_possible_queries": resolved_queries,
         "agent_thinking_phrases": resolved_phrases,
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
-        "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
+        "agent_has_welcome_image": has_welcome_image,
         "agent_chat_input_metadata": agent_data.get("workflow"),
+        "agent_trigger_start_form": greet_on_start,
         "agent_input_disclaimer_html": input_disclaimer_html,
         "agent_available_languages": available_languages,
     }

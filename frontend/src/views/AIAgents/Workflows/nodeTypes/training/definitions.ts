@@ -66,7 +66,7 @@ export const PREPROCESSING_NODE_DEFINITION: NodeTypeDefinition<PreprocessingNode
     description: "Transform and clean training data using Python",
     helpContent: DATA_PREPROCESSING_HELP_CONTENT,
     category: "training",
-    icon: "Settings",
+    icon: "TextSearch",
     defaultData: {
       name: "Data Preprocessing",
       fileUrl: "{{source.data_path}}",

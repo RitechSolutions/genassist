@@ -45,7 +45,7 @@ const PreprocessingNode: React.FC<NodeProps<PreprocessingNodeData>> = ({
         id={id}
         data={data}
         selected={selected}
-        iconName="settings"
+        iconName="TextSearch"
         title={data.name || "Data Preprocessing"}
         subtitle="Transform and clean training data"
         color={color}
@@ -67,4 +67,4 @@ const PreprocessingNode: React.FC<NodeProps<PreprocessingNodeData>> = ({
   );
 };
 
-export default PreprocessingNode;
+export default React.memo(PreprocessingNode);

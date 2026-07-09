@@ -8,7 +8,8 @@ class KBBase(BaseModel):
     name: str
     description: Optional[str] = None
     type: Literal["file", "url", "text", "datasource",
-                  "s3", "database", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket", "zendesk"] = "file"
+                  "s3", "database", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket", "zendesk",
+                  "salesforce"] = "file"
     source: Optional[str] = None
     content: Optional[str] = None
     file_path: Optional[str] = None

@@ -133,4 +133,4 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
   );
 };
 
-export default AgentNode;
+export default React.memo(AgentNode);

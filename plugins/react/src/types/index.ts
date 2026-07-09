@@ -52,6 +52,7 @@ export interface StartConversationResponse {
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
   agent_chat_input_metadata?: Record<string, unknown>; // Metadata keys/defaults from the workflow's Chat Input node
+  agent_trigger_start_form?: boolean; // Auto-run the workflow on open (HITL show_on_start after Start)
   agent_input_disclaimer_html?: string;
   create_time?: number;
   guest_token?: string;
@@ -66,6 +67,20 @@ export interface AgentInfoResponse {
   live_voice_ready?: boolean;
 }
 
+/** HITL form field strings for one locale; `options` maps option value -> label. */
+export interface FormFieldLocale {
+  label?: string;
+  placeholder?: string;
+  description?: string;
+  options?: Record<string, string>;
+}
+
+/** One HITL node's form strings for a locale, keyed by field name. */
+export interface FormNodeLocale {
+  message?: string;
+  fields?: Record<string, FormFieldLocale>;
+}
+
 /** Per-locale agent strings (welcome, quick queries, thinking) from GET .../agent-chat-locales */
 export interface AgentChatLocaleContent {
   welcome_message?: string | null;
@@ -73,6 +88,8 @@ export interface AgentChatLocaleContent {
   input_disclaimer_html?: string | null;
   possible_queries?: string[];
   thinking_phrases?: string[];
+  /** HITL form strings, keyed by node id. */
+  nodes?: Record<string, FormNodeLocale>;
 }
 
 export interface AgentChatLocalesResponse {
@@ -157,6 +174,7 @@ export interface GenAgentChatProps {
   placeholder?: string;
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
+  brandLogoUrl?: string; // Full brand logo/wordmark. When set, the header shows only this image instead of the small logo + title + description.
   mode?: "embedded" | "floating" | "fullscreen";
   /** Called when the user presses Escape in `mode="fullscreen"`. Use this to switch the parent back to floating/embedded. */
   onExitFullscreen?: () => void;
@@ -170,6 +188,7 @@ export interface GenAgentChatProps {
   translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
   reCaptchaKey?: string; // ReCaptcha key for the chat
   widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
+  quickInput?: boolean; // If true, shows a quick-message input beside the launcher bubble in floating mode. Opt-in — defaults to false.
   useAudio?: boolean; // If false, hides the mic component and voice input. Defaults to false.
   useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
   noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.

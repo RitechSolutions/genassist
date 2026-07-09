@@ -39,6 +39,7 @@ from app.modules.workflow.engine.nodes import (
     PythonToolNode,
     ReadMailsToolNode,
     RouterNode,
+    SalesforceToolNode,
     SetStateNode,
     SlackToolNode,
     SQLNode,
@@ -116,6 +117,7 @@ class WorkflowEngine:
         cls._node_registry["gmailNode"] = GmailToolNode
         cls._node_registry["whatsappToolNode"] = WhatsAppToolNode
         cls._node_registry["zendeskTicketNode"] = ZendeskToolNode
+        cls._node_registry["salesforceCaseNode"] = SalesforceToolNode
         cls._node_registry["sqlNode"] = SQLNode
         cls._node_registry["aggregatorNode"] = AggregatorNode
         cls._node_registry["jiraNode"] = JiraNode

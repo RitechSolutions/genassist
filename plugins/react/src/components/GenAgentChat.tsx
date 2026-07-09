@@ -11,8 +11,8 @@ import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
-import { ChatBubble } from './ChatBubble';
+import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle, Fullscreen } from 'lucide-react';
+import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
@@ -30,11 +30,14 @@ import {
   hexToRgba,
   getContainerStyle,
   getHeaderStyle,
-  logoContainerStyle,
+  headerLeftContainerStyle,
+  headerRightContainerStyle,
+  headerPillStyle,
   logoStyle,
-  headerTitleContainerStyle,
-  getHeaderTitleStyle,
-  getHeaderSubtitleStyle,
+  brandLogoStyle,
+  getHeaderPillTitleStyle,
+  headerPillTextColumnStyle,
+  getHeaderDescriptionTextStyle,
   menuButtonStyle,
   getMenuPopupStyle,
   getMenuItemStyle,
@@ -55,7 +58,6 @@ import {
   getConfirmButtonStyle,
   getContentCardStyle,
   getDisclaimerStyle,
-  getPositionStyles,
   getFloatingContainerStyle,
   CSS_KEYFRAMES,
 } from '../styles/genAgentChatStyles';
@@ -85,6 +87,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   placeholder,
   agentName,
   logoUrl,
+  brandLogoUrl,
   mode = 'embedded',
   onExitFullscreen,
   floatingConfig = {},
@@ -92,6 +95,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   translations: customTranslations,
   reCaptchaKey,
   widget = false,
+  quickInput = false,
   useAudio = false,
   useFile = false,
   noColorAnimation = false,
@@ -153,6 +157,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+  // Keeps the floating panel in the DOM through its close animation before unmounting.
+  const [isPanelMounted, setIsPanelMounted] = useState(false);
+  // Quick-message input beside the launcher bubble (dismissal persists across loads).
+  const [quickInputDismissed, setQuickInputDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem('genassist_quick_input_dismissed') === '1'; } catch { return false; }
+  });
   const [submittedForms, setSubmittedForms] = useState<Set<number>>(new Set());
   const [submittingFormIndex, setSubmittingFormIndex] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -169,6 +180,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     uploadFile,
     resetConversation,
     startConversation,
+    triggerStartForm,
+    shouldTriggerStartForm,
     conversationId,
     guestToken,
     possibleQueries,
@@ -185,6 +198,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     inputDisclaimerHtml,
     thinkingPhrases,
     thinkingDelayMs,
+    formNodeLocales,
   } = useChat({
     baseUrl,
     websocketUrl,
@@ -225,6 +239,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     windowHeight,
     isFullscreen,
     handleFullscreenToggle,
+    isExpanded,
+    handleExpandToggle,
   } = useViewportManager({
     mode,
     widget,
@@ -265,6 +281,44 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
+  // When a Human In The Loop node with "show_on_start" is wired directly after Start, run
+  // the workflow once as the conversation opens so its form appears immediately, before
+  // any visitor message. Fires only on a fresh conversation: no visitor messages yet and
+  // no form already present (a welcome message may exist; a persisted form must not
+  // re-trigger on reload).
+  const hasFormRequest = messages.some((m) => m.type === 'form_request');
+  const startFormTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (
+      shouldTriggerStartForm &&
+      conversationId &&
+      !isFinalized &&
+      !hasUserMessages &&
+      !hasFormRequest &&
+      !startFormTriggeredRef.current
+    ) {
+      startFormTriggeredRef.current = true;
+      triggerStartForm(reCaptchaTokenRef.current);
+    }
+  }, [shouldTriggerStartForm, conversationId, isFinalized, hasUserMessages, hasFormRequest, triggerStartForm]);
+
+  // Allow a fresh trigger after a reset (new conversation id / cleared messages).
+  useEffect(() => {
+    if (!conversationId) {
+      startFormTriggeredRef.current = false;
+    }
+  }, [conversationId]);
+
+  // Form-submission state is keyed by message index, which is only meaningful within a
+  // single conversation. Clear it whenever the conversation changes so a form submitted in
+  // a previous conversation doesn't mark a new conversation's form (at the same index) as
+  // already answered — which would wrongly hide it on Start (Reset cleared it, plain Start
+  // did not). The reload case stays correct: it relies on isFormAnswered's transcript check.
+  useEffect(() => {
+    setSubmittedForms(new Set());
+    setSubmittingFormIndex(null);
+  }, [conversationId]);
+
   useEffect(() => {
     audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });
   }, [baseUrl, websocketUrl, apiKey]);
@@ -276,6 +330,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   useEffect(() => {
     if (mode === 'fullscreen' && !isFloatingOpen) {
       setIsFloatingOpen(true);
+    }
+  }, [mode, isFloatingOpen]);
+
+  // Mount the floating panel as soon as it opens; unmount happens on close-animation end.
+  useEffect(() => {
+    if (mode === 'floating' && isFloatingOpen) {
+      setIsPanelMounted(true);
     }
   }, [mode, isFloatingOpen]);
 
@@ -340,21 +401,90 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     await submitMessage();
   };
 
-  const getFormNodeId = (messageIndex: number): string | undefined => {
+  type FormSchemaField = {
+    name?: string;
+    label?: string;
+    options?: Array<{ value?: string; label?: string }>;
+  };
+
+  // Overlay a form schema with the selected language's strings from the locale bundle
+  // (keyed by node id), so a displayed form re-localizes on language switch. Falls back
+  // to the schema's own strings when a translation is missing.
+  const localizeForm = useCallback(
+    (schema: any): any => {
+      if (!schema || typeof schema !== 'object') return schema;
+      const code = resolvedLanguage.toLowerCase().split('-')[0];
+      const slice = formNodeLocales?.[code]?.[schema.node_id];
+      if (!slice) return schema;
+      return {
+        ...schema,
+        message: slice.message ?? schema.message,
+        fields: Array.isArray(schema.fields)
+          ? schema.fields.map((f: any) => {
+              const t = f?.name ? slice.fields?.[f.name] : undefined;
+              if (!t) return f;
+              return {
+                ...f,
+                label: t.label ?? f.label,
+                placeholder: t.placeholder ?? f.placeholder,
+                description: t.description ?? f.description,
+                options: Array.isArray(f.options)
+                  ? f.options.map((o: any) => ({
+                      ...o,
+                      label: t.options?.[String(o?.value)] ?? o?.label,
+                    }))
+                  : f.options,
+              };
+            })
+          : schema.fields,
+      };
+    },
+    [resolvedLanguage, formNodeLocales],
+  );
+
+  const getFormSchema = (
+    messageIndex: number,
+  ): { node_id?: string; message?: string; fields?: FormSchemaField[] } | null => {
     const msg = messages[messageIndex];
     if (msg?.type === 'form_request' && msg.text) {
-      try { return JSON.parse(msg.text).node_id; } catch { /* skip */ }
+      try { return localizeForm(JSON.parse(msg.text)); } catch { /* skip */ }
     }
-    return undefined;
+    return null;
+  };
+
+  const getFormNodeId = (messageIndex: number): string | undefined =>
+    getFormSchema(messageIndex)?.node_id;
+
+  // Build the human-readable customer message from the submitted form. We show each field's
+  // label, and for option-based fields (e.g. select) the chosen option's label instead of
+  // its raw value — both already in the conversation language, since the form schema is
+  // translated. The payload (`human_in_the_loop_from_form`) keeps the raw keys/values.
+  const buildFormSummary = (
+    formData: Record<string, unknown>,
+    messageIndex: number,
+  ): string => {
+    const fieldByName: Record<string, FormSchemaField> = {};
+    for (const f of getFormSchema(messageIndex)?.fields ?? []) {
+      if (f && typeof f.name === 'string') fieldByName[f.name] = f;
+    }
+    return Object.entries(formData)
+      .map(([key, value]) => {
+        const field = fieldByName[key];
+        const label = field?.label || key;
+        const option = field?.options?.find(
+          (o) => o && String(o.value) === String(value),
+        );
+        const display = option?.label || value;
+        return `${label}: ${display}`;
+      })
+      .join('\n');
   };
 
   const handleFormSubmit = async (formData: Record<string, unknown>, messageIndex: number) => {
     if (submittingFormIndex !== null || isAgentTyping) return;
     setSubmittingFormIndex(messageIndex);
     try {
-      const summaryText = Object.entries(formData)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(', ');
+      const summaryText = buildFormSummary(formData, messageIndex);
       const nodeId = getFormNodeId(messageIndex);
       await sendMessage(summaryText, [], {
         human_in_the_loop_from_form: formData,
@@ -581,6 +711,26 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   };
 
+  const handleDismissQuickInput = () => {
+    setQuickInputDismissed(true);
+    try { localStorage.setItem('genassist_quick_input_dismissed', '1'); } catch { /* ignore */ }
+  };
+
+  // Quick input next to the bubble: open the panel, start a conversation if needed, then send.
+  const handleQuickInputSend = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setIsFloatingOpen(true);
+    try {
+      if (!conversationId) {
+        await startConversation(reCaptchaTokenRef.current);
+      }
+      await sendMessage(trimmed, [], undefined, reCaptchaTokenRef.current);
+    } catch (error) {
+      // ignore
+    }
+  };
+
   const handleMenuClick = () => {
     setShowMenu(prev => !prev);
   };
@@ -644,10 +794,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // Computed styles
   const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams });
   const headerStyle = getHeaderStyle(themeParams);
-  const headerTitleStyle = getHeaderTitleStyle(fontFamily);
-  const headerSubtitleStyle = getHeaderSubtitleStyle(fontFamily);
+  const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily);
+  const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily);
+  const headerDescription = (description ?? t('header.subtitle') ?? '').trim();
+  const brandLogo = brandLogoUrl?.trim() ?? '';
+  const hasBrandLogo = brandLogo.length > 0;
+  // Description reveal only applies to the small-logo layout; the full brand logo replaces the text.
+  const hasHeaderDescription = !hasBrandLogo && headerDescription.length > 0;
   const menuPopupStyle = getMenuPopupStyle(backgroundColor);
   const menuItemStyle = getMenuItemStyle(themeParams);
+  // Hover fill for menu items / outline buttons — theme-aware, matches the web app's bg-accent.
+  const menuHoverBg = theme?.secondaryColor || '#f4f4f5';
   const contentCardStyle = getContentCardStyle(backgroundColor);
   const sendButtonStyle = getSendButtonStyle(primaryColor);
   const possibleQueriesContainerStyle = getPossibleQueriesContainerStyle(fontFamily);
@@ -680,21 +837,34 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     textColor,
   });
 
-  const hasPendingForm = messages.some((msg, idx) => {
-    if (msg.type !== 'form_request' || msg.speaker !== 'agent') return false;
-    return !submittedForms.has(idx);
-  });
+  // A form_request is "answered" once the visitor has responded to it. Besides the
+  // optimistic in-session flag (`submittedForms`), we also treat it as answered when a
+  // later customer message exists — that survives a page reload (where `submittedForms`
+  // is gone), so a completed form never reappears after refresh.
+  const isFormAnswered = (index: number): boolean => {
+    if (submittedForms.has(index)) return true;
+    for (let j = index + 1; j < messages.length; j++) {
+      if (messages[j].speaker === 'customer') return true;
+    }
+    return false;
+  };
+
+  const hasPendingForm = messages.some(
+    (msg, idx) =>
+      msg.type === 'form_request' && msg.speaker === 'agent' && !isFormAnswered(idx),
+  );
 
   const pendingForm = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      if (msg.type === 'form_request' && msg.speaker === 'agent' && !submittedForms.has(i)) {
-        try { return { schema: JSON.parse(msg.text), index: i }; }
+      if (msg.type === 'form_request' && msg.speaker === 'agent' && !isFormAnswered(i)) {
+        try { return { schema: localizeForm(JSON.parse(msg.text)), index: i }; }
         catch { /* skip */ }
       }
     }
     return null;
-  }, [messages, submittedForms]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, submittedForms, localizeForm]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
 
@@ -724,6 +894,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     position,
     offsetX,
     offsetY,
+    isExpanded,
   });
 
   const renderLanguageSelector = () => {
@@ -763,33 +934,75 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [reCaptchaKey, handleReCaptchaVerify]);
 
   const renderChatComponent = () => (
-    <div style={containerStyle} data-genassist-root="true">
+    <div style={{ ...containerStyle, ['--ga-hover' as string]: menuHoverBg }} data-genassist-root="true">
       <style>{CSS_KEYFRAMES}</style>
-      <div style={headerStyle} ref={headerRef}>
-        <div style={logoContainerStyle}>
-          <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
-          <div style={headerTitleContainerStyle}>
-            <div style={headerTitleStyle}>{headerTitle}</div>
-            <div style={headerSubtitleStyle}>
-              {description ?? t('header.subtitle')}
-            </div>
+      <div className="ga-header" style={headerStyle} ref={headerRef}>
+        {/* Left: hidden expand button (revealed on hover) + logo/name group.
+            Hovering this section expands the button from 0 width, sliding the group right. */}
+        <div className="ga-header-left" style={headerLeftContainerStyle}>
+          {mode === 'floating' && !isFullscreen && windowWidth > 768 && (
+            <button
+              className="ga-header-btn ga-header-expand-btn"
+              style={{ ...menuButtonStyle, width: undefined, flexShrink: 0 }}
+              onClick={handleExpandToggle}
+              title={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
+              aria-label={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
+            >
+              {isExpanded ? (
+                <Minimize2 size={20} color="#111111" />
+              ) : (
+                <Maximize2 size={20} color="#111111" />
+              )}
+            </button>
+          )}
+
+          <div
+            style={headerPillStyle}
+            tabIndex={hasHeaderDescription ? 0 : undefined}
+          >
+            {hasBrandLogo ? (
+              <img src={brandLogo} alt={headerTitle} style={brandLogoStyle} />
+            ) : (
+              <>
+                <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
+                <div style={headerPillTextColumnStyle}>
+                  <span style={headerPillTitleStyle} title={headerTitle}>{headerTitle}</span>
+                  {hasHeaderDescription && (
+                    <div className="ga-header-desc">
+                      <div className="ga-header-desc-inner">
+                        <span
+                          className="ga-header-desc-text"
+                          style={{ ...headerDescriptionTextStyle, display: 'block' }}
+                        >
+                          {headerDescription}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+        {/* Right: menu + close */}
+        <div style={headerRightContainerStyle}>
           <button
+            className="ga-header-btn"
             style={menuButtonStyle}
             onClick={handleMenuClick}
             title={t('menu.title')}
           >
-            <MoreVertical size={24} color="#111111" />
+            <MoreHorizontal size={22} color="#111111" />
           </button>
           {mode === 'floating' && (
             <button
+              className="ga-header-btn"
               style={menuButtonStyle}
               onClick={() => setIsFloatingOpen(false)}
               title="Close chat"
             >
-              <X size={24} color="#111111" />
+              <X size={22} color="#111111" />
             </button>
           )}
         </div>
@@ -828,19 +1041,20 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
       {showMenu && (
         <div ref={menuRef} style={menuPopupStyle}>
-          <div style={menuItemStyle} onClick={handleResetClick}>
+          <div className="ga-menu-item" style={menuItemStyle} onClick={handleResetClick}>
             <RefreshCw size={16} />
             {t('menu.resetConversation')}
           </div>
           {mode !== 'fullscreen' && (
-            <div style={menuItemStyle} onClick={handleFullscreenToggle}>
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            <div className="ga-menu-item" style={menuItemStyle} onClick={handleFullscreenToggle}>
+              <Fullscreen size={16} />
               {t('menu.fullscreen')}
             </div>
           )}
           {hasLanguageOptions && (
             <div
-              style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
+              className="ga-menu-item"
+              style={{ ...menuItemStyle, position: 'relative' }}
               onClick={(e) => {
                 e.stopPropagation();
                 setShowLanguageDropdown(!showLanguageDropdown);
@@ -856,8 +1070,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     top: '100%',
                     marginTop: '4px',
                     backgroundColor: backgroundColor,
-                    borderRadius: '8px',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+                    borderRadius: '10px',
+                    border: '1px solid #e4e4e7',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+                    padding: '4px',
                     minWidth: '180px',
                     maxWidth: '200px',
                     overflow: 'hidden',
@@ -865,27 +1081,27 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {availableLanguages.map((lang, index) => (
+                  {availableLanguages.map((lang) => (
                     <div
                       key={lang.code}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        padding: '10px 15px',
+                        padding: '6px 8px',
+                        borderRadius: '8px',
                         color: textColor,
                         backgroundColor: resolvedLanguage === lang.code
-                          ? (theme?.secondaryColor || '#f5f5f5')
+                          ? menuHoverBg
                           : 'transparent',
-                        borderBottom: index < availableLanguages.length - 1 ? '1px solid #f0f0f0' : 'none',
                         cursor: 'pointer',
                         fontSize,
                         fontFamily,
-                        transition: 'background-color 0.2s ease',
+                        transition: 'background-color 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
                         if (resolvedLanguage !== lang.code) {
-                          e.currentTarget.style.backgroundColor = theme?.secondaryColor || '#f5f5f5';
+                          e.currentTarget.style.backgroundColor = menuHoverBg;
                         }
                       }}
                       onMouseLeave={(e) => {
@@ -975,8 +1191,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             return messages.filter(applyMessageFilter).map((message, index) => {
               if (message.type === 'form_request' && message.speaker === 'agent') {
                 try {
-                  const formSchema = JSON.parse(message.text);
-                  const isPending = !submittedForms.has(index);
+                  const formSchema = localizeForm(JSON.parse(message.text));
+                  // Use the real message position (filtering can shift the map index) so the
+                  // answered check matches the overlay/footer path and survives reload.
+                  const originalIndex = messages.indexOf(message);
+                  const isPending = !isFormAnswered(originalIndex);
                   return (
                     <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
                       <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
@@ -985,9 +1204,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                       {formDisplay === 'inline' && isPending ? (
                         <DynamicFormMessage
                           schema={formSchema}
-                          onSubmit={(data) => handleFormSubmit(data, index)}
-                          onCancel={() => handleFormCancel(index)}
-                          isSubmitting={submittingFormIndex === index}
+                          onSubmit={(data) => handleFormSubmit(data, originalIndex)}
+                          onCancel={() => handleFormCancel(originalIndex)}
+                          isSubmitting={submittingFormIndex === originalIndex}
                           isSubmitted={false}
                           primaryColor={primaryColor}
                           fontFamily={fontFamily}
@@ -1003,11 +1222,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                           fontFamily,
                         }}>
                           {formSchema.message || 'Please fill the form below.'}
-                          {isPending && (
-                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                              Fill the form below to continue.
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1019,7 +1233,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
-              const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+              // When the agent greets on start, that greeting is a normal reply — not the
+              // "welcome" message — so don't give it the first-message welcome treatment
+              // (which would split its text into a big title + body).
+              const isFirstAgentMessage =
+                index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages && !shouldTriggerStartForm;
               const displayMessage =
                 isFirstAgentMessage && welcomeMessage
                   ? { ...message, text: welcomeMessage }
@@ -1190,28 +1408,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               {t('buttons.startConversation')}
             </button>
           </div>
-        ) : pendingForm && formDisplay === 'footer' ? (
-          <div style={{
-            ...inputContainerStyle,
-            flexDirection: 'column',
-            borderTop: '1px solid #e5e7eb',
-          }}>
-            <DynamicFormMessage
-              schema={pendingForm.schema}
-              onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
-              onCancel={() => handleFormCancel(pendingForm.index)}
-              isSubmitting={submittingFormIndex === pendingForm.index}
-              isSubmitted={false}
-              primaryColor={primaryColor}
-              fontFamily={fontFamily}
-              variant="footer"
-            />
-            {agentDisclaimerContent && (
-              <div className="ga-input-disclaimer" style={disclaimerStyle}>
-                {agentDisclaimerContent}
-              </div>
-            )}
-          </div>
         ) : liveVoiceEnabled ? (
           // Live voice mode is voice-only: no text box, attach, or send button —
           // the only way to talk to the agent is to start a live call.
@@ -1318,15 +1514,43 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             </div>
           </form>
         )}
+
+        {/* Full-screen form: when a Human In The Loop form is pending, it takes over the
+            whole chat panel (the node's message shown as a heading on top) instead of a
+            cramped footer. Inline mode keeps rendering the form within the message list. */}
+        {pendingForm && formDisplay !== 'inline' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 30,
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: backgroundColor || '#ffffff',
+            }}
+          >
+            <DynamicFormMessage
+              schema={pendingForm.schema}
+              onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
+              onCancel={() => handleFormCancel(pendingForm.index)}
+              isSubmitting={submittingFormIndex === pendingForm.index}
+              isSubmitted={false}
+              primaryColor={primaryColor}
+              fontFamily={fontFamily}
+              variant="fullscreen"
+              title={agentName || undefined}
+            />
+          </div>
+        )}
       </div>
 
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
-          <h3 style={{fontFamily, marginTop: 0}}>{t('dialog.resetConversation.title')}</h3>
-          <p style={{fontFamily, fontSize}}>{t('dialog.resetConversation.message')}</p>
+          <h3 style={{ fontFamily, margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('dialog.resetConversation.title')}</h3>
+          <p style={{ fontFamily, fontSize: '14px', color: '#71717a', margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
           <div style={confirmButtonsStyle}>
-            <button style={{...getConfirmButtonStyle(false, themeParams), color: textColor}} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
-            <button style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
+            <button className="ga-confirm-btn--cancel" style={{ ...getConfirmButtonStyle(false, themeParams), color: textColor }} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
+            <button className="ga-confirm-btn--danger" style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
           </div>
         </div>
       </div>
@@ -1334,20 +1558,40 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   );
 
   if (mode === 'floating') {
+    const isPanelClosing = isPanelMounted && !isFloatingOpen;
     return (
       <>
-        {!isFloatingOpen && (
-          <ChatBubble
-            showChat={isFloatingOpen}
-            onClick={() => setIsFloatingOpen(prev => !prev)}
+        {/* Keyframes/animation classes must exist even while the panel is unmounted. */}
+        <style>{CSS_KEYFRAMES}</style>
+        {!isPanelMounted && (
+          <BubbleDock
             primaryColor={primaryColor}
-            style={getPositionStyles({ position, offsetX, offsetY })}
+            position={position}
+            offsetX={offsetX}
+            offsetY={offsetY}
+            windowWidth={windowWidth}
+            placeholder={inputPlaceholder}
+            fontFamily={fontFamily}
+            fontSize={fontSize}
             chatBubbleIcon={theme?.chatBubbleIcon}
+            showQuickInput={quickInput && !quickInputDismissed && Boolean(conversationId) && !isFinalized}
+            onOpen={() => setIsFloatingOpen(true)}
+            onSend={handleQuickInputSend}
+            onDismissQuickInput={handleDismissQuickInput}
           />
         )}
 
-        {isFloatingOpen && (
-          <div style={floatingContainerStyle} data-genassist-container="floating">
+        {isPanelMounted && (
+          <div
+            style={floatingContainerStyle}
+            className={isPanelClosing ? 'ga-widget-out' : 'ga-widget-in'}
+            onAnimationEnd={(e) => {
+              // Ignore bubbled child animations; only react to the panel's own close.
+              if (e.target !== e.currentTarget) return;
+              if (isPanelClosing) setIsPanelMounted(false);
+            }}
+            data-genassist-container="floating"
+          >
             {renderWithReCaptcha(renderChatComponent())}
           </div>
         )}

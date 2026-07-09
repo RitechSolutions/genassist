@@ -30,4 +30,4 @@ const ChatOutputNode: React.FC<NodeProps<ChatOutputNodeData>> = ({
   );
 };
 
-export default ChatOutputNode;
+export default React.memo(ChatOutputNode);
