@@ -1,6 +1,7 @@
 """Pure python extraction helpers for scraped HTML: links, metadata, main content."""
 
 import re
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Comment
@@ -19,11 +20,7 @@ _EMPTY_LINK_RE = re.compile(r"!?\[[ \t]*\]\([^)\s]*\)")
 
 
 def _soup(html: str) -> BeautifulSoup:
-    # fall back to the stdlib parser when it is unavailable
-    try:
-        return BeautifulSoup(html or "", "lxml")
-    except Exception:
-        return BeautifulSoup(html or "", "html.parser")
+    return BeautifulSoup(html or "", "lxml")
 
 
 def _meta(soup: BeautifulSoup, *, name: str | None = None, prop: str | None = None) -> str | None:
@@ -54,20 +51,13 @@ def clean_html(html: str, base_url: str, *, drop_chrome: bool = False) -> str:
     return str(body).strip()
 
 
-def extract_links(
-    html: str,
-    base_url: str,
-    *,
-    same_origin_only: bool = False,
-    limit: int = 200,
-) -> list[str]:
+def extract_links(html: str, base_url: str) -> list[str]:
     """Absolute http(s) links from ``<a href>``, deduped in document order.
 
-    Skips fragments and non-navigational schemes (javascript/mailto/tel); resolves
-    relative hrefs against ``base_url`` and optionally keeps only same-origin links.
+    Skips fragments and non-navigational schemes (javascript/mailto/tel) and
+    resolves relative hrefs against ``base_url``.
     """
     soup = _soup(html)
-    base_netloc = urlparse(base_url).netloc
     seen: set[str] = set()
     links: list[str] = []
     for anchor in soup.find_all("a", href=True):
@@ -75,17 +65,12 @@ def extract_links(
         if not href or href.startswith(_SKIP_LINK_PREFIXES):
             continue
         absolute = urljoin(base_url, href)
-        parsed = urlparse(absolute)
-        if parsed.scheme not in _HTTP_SCHEMES:
-            continue
-        if same_origin_only and parsed.netloc != base_netloc:
+        if urlparse(absolute).scheme not in _HTTP_SCHEMES:
             continue
         if absolute in seen:
             continue
         seen.add(absolute)
         links.append(absolute)
-        if len(links) >= limit:
-            break
     return links
 
 
@@ -93,7 +78,7 @@ def extract_metadata(
     html: str,
     final_url: str,
     content_type: str | None,
-) -> dict:
+) -> dict[str, Any]:
     """Curated metadata keys plus every raw ``<meta>``/``<link rel>`` tag on the page."""
     soup = _soup(html)
 
@@ -104,20 +89,24 @@ def extract_metadata(
     lang = html_tag.get("lang") if html_tag else None
     language = lang.strip() if lang else None
 
+    # single pass over <link> tags: pick the first canonical/icon and collect every rel for the raw sweep
     canonical = None
     favicon = None
+    link_rels: list[tuple[str, str]] = []
     for link in soup.find_all("link"):
-        rel = link.get("rel") or []
-        if isinstance(rel, str):
-            rel = rel.split()
-        rel = [value.lower() for value in rel]
+        rels = link.get("rel") or []
+        if isinstance(rels, str):
+            rels = rels.split()
+        rels = [value.lower() for value in rels]
         href = (link.get("href") or "").strip()
         if not href:
             continue
-        if canonical is None and "canonical" in rel:
-            canonical = urljoin(final_url, href)
-        if favicon is None and "icon" in rel:
-            favicon = urljoin(final_url, href)
+        absolute = urljoin(final_url, href)
+        if canonical is None and "canonical" in rels:
+            canonical = absolute
+        if favicon is None and "icon" in rels:
+            favicon = absolute
+        link_rels.extend((rel, absolute) for rel in rels)
     if favicon is None:
         favicon = urljoin(final_url, "/favicon.ico")
 
@@ -136,22 +125,15 @@ def extract_metadata(
         "canonical": canonical,
     }
 
-    merged: dict = dict(curated)
+    merged: dict[str, Any] = dict(curated)
     # charset/http-equiv metas carry no name/property/content and are skipped
     for tag in soup.find_all("meta"):
         key = tag.get("name") or tag.get("property") or tag.get("itemprop")
         content = tag.get("content")
         if key and content and content.strip():
             merged.setdefault(key.strip(), content.strip())
-    for link in soup.find_all("link"):
-        rels = link.get("rel") or []
-        if isinstance(rels, str):
-            rels = rels.split()
-        href = (link.get("href") or "").strip()
-        if not href:
-            continue
-        for rel in rels:
-            merged.setdefault(rel.lower(), urljoin(final_url, href))
+    for rel, absolute in link_rels:
+        merged.setdefault(rel, absolute)
     return merged
 
 
@@ -169,11 +151,12 @@ def _readability_main_content(html: str, base_url: str) -> tuple[str, str] | Non
     """Readability-scored main content, or ``None`` when it can't help."""
     if not html or not html.strip():
         return None
-    try:
-        from readability import Document
+    from readability import Document
 
+    try:
         summary_html = Document(html).summary(html_partial=True)
-    except Exception:
+    except ValueError:
+        # readability raises Unparseable (a ValueError) on pages it can't score
         return None
     alt_html = clean_html(summary_html, base_url)  # readability already dropped nav/footer
     alt_md = _tidy_markdown(html2markdown(alt_html, base_url=base_url))

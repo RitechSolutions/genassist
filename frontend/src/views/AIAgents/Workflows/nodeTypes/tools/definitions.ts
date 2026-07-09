@@ -89,7 +89,7 @@ export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData>
   shortDescription: "Scrape a web page",
   helpContent: WEB_SCRAPER_HELP_CONTENT,
   configSubtitle:
-    "Configure the URL, output format, content extraction, links, metadata, screenshot, and optional headers.",
+    "Configure the URL, output format, content extraction, screenshot, headers, and render and caching options.",
   category: "tools",
   icon: "TextSearch",
   defaultData: {
@@ -99,6 +99,9 @@ export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData>
     onlyMainContent: true,
     screenshot: "off",
     headers: {},
+    waitFor: 0,
+    scrollToBottom: false,
+    maxAge: 0,
     handlers: [
       {
         id: "input",

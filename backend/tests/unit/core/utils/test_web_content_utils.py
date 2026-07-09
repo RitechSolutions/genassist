@@ -40,19 +40,6 @@ def test_links_skip_fragments_and_non_navigational_schemes():
     assert extract_links(html, _BASE) == ["https://example.com/real"]
 
 
-def test_links_same_origin_only_drops_foreign_hosts():
-    html = '<a href="/local">L</a><a href="https://other.com/x">X</a>'
-    assert extract_links(html, _BASE, same_origin_only=True) == ["https://example.com/local"]
-
-
-def test_links_respect_limit():
-    html = '<a href="/a">A</a><a href="/b">B</a><a href="/c">C</a>'
-    assert extract_links(html, _BASE, limit=2) == [
-        "https://example.com/a",
-        "https://example.com/b",
-    ]
-
-
 # extract_metadata
 
 

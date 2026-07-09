@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from playwright.async_api import Route, async_playwright
+from playwright.async_api import Page, Route, async_playwright
 
 _HTTPX_TIMEOUT = 10  # seconds
 _PLAYWRIGHT_TIMEOUT = 10_000  # milliseconds
@@ -75,7 +75,7 @@ def _safe_headers(headers: dict[str, str] | None) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() in _FORWARDED_HEADER_ALLOWLIST}
 
 
-async def _auto_scroll(page) -> None:
+async def _auto_scroll(page: Page) -> None:
     try:
         await page.evaluate(
             """async (maxSteps) => {

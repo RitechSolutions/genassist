@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { WebScraperNodeData } from "../types/nodes";
+import {
+  WebScraperNodeData,
+  WebScraperFormat,
+  WebScraperScreenshot,
+} from "../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -11,16 +15,14 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Switch } from "@/components/switch";
-import { Plus, X, Save } from "lucide-react";
+import { Plus, X, Save, ChevronDown, ChevronUp } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
 
-const OUTPUT_FORMATS = ["markdown", "html", "both"] as const;
-type OutputFormat = (typeof OUTPUT_FORMATS)[number];
-
-const SCREENSHOT_MODES = ["off", "viewport", "fullPage"] as const;
-type ScreenshotMode = (typeof SCREENSHOT_MODES)[number];
+// open the advanced section when any advanced option is set away from its default
+const hasAdvancedOptions = (data: WebScraperNodeData): boolean =>
+  Boolean(data.waitFor || data.scrollToBottom || data.maxAge);
 
 export const WebScraperDialog: React.FC<
   BaseNodeDialogProps<WebScraperNodeData, WebScraperNodeData>
@@ -29,25 +31,35 @@ export const WebScraperDialog: React.FC<
 
   const [name, setName] = useState(data.name || "");
   const [url, setUrl] = useState(data.url || "");
-  const [format, setFormat] = useState<OutputFormat>(
-    (data.format as OutputFormat) || "markdown"
+  const [format, setFormat] = useState<WebScraperFormat>(
+    data.format || "markdown"
   );
   const [onlyMainContent, setOnlyMainContent] = useState<boolean>(
     data.onlyMainContent ?? true
   );
-  const [screenshot, setScreenshot] = useState<ScreenshotMode>(
-    (data.screenshot as ScreenshotMode) || "off"
+  const [screenshot, setScreenshot] = useState<WebScraperScreenshot>(
+    data.screenshot || "off"
   );
   const [headers, setHeaders] = useState<Record<string, string>>(
     data.headers || {}
   );
+  const [waitFor, setWaitFor] = useState<number>(data.waitFor ?? 0);
+  const [scrollToBottom, setScrollToBottom] = useState<boolean>(
+    data.scrollToBottom ?? false
+  );
+  const [maxAge, setMaxAge] = useState<number>(data.maxAge ?? 0);
+  const [showAdvanced, setShowAdvanced] = useState(hasAdvancedOptions(data));
   useEffect(() => {
     setName(data.name || "");
     setUrl(data.url || "");
-    setFormat((data.format as OutputFormat) || "markdown");
+    setFormat(data.format || "markdown");
     setOnlyMainContent(data.onlyMainContent ?? true);
-    setScreenshot((data.screenshot as ScreenshotMode) || "off");
+    setScreenshot(data.screenshot || "off");
     setHeaders(data.headers || {});
+    setWaitFor(data.waitFor ?? 0);
+    setScrollToBottom(data.scrollToBottom ?? false);
+    setMaxAge(data.maxAge ?? 0);
+    setShowAdvanced(hasAdvancedOptions(data));
   }, [isOpen]);
 
   const handleSave = () => {
@@ -59,6 +71,9 @@ export const WebScraperDialog: React.FC<
       onlyMainContent,
       screenshot,
       headers,
+      waitFor,
+      scrollToBottom,
+      maxAge,
     });
     onClose();
   };
@@ -69,18 +84,13 @@ export const WebScraperDialog: React.FC<
 
   const updateHeader = (oldKey: string, newKey: string, value: string) => {
     const newHeaders: Record<string, string> = {};
-
-    // Iterate through existing headers to maintain order
     for (const [key, val] of Object.entries(headers)) {
       if (key === oldKey) {
-        // Update the header with new key and value
         newHeaders[newKey] = value;
       } else {
-        // Keep other headers as they were
         newHeaders[key] = val;
       }
     }
-
     setHeaders(newHeaders);
   };
 
@@ -112,6 +122,9 @@ export const WebScraperDialog: React.FC<
         onlyMainContent,
         screenshot,
         headers,
+        waitFor,
+        scrollToBottom,
+        maxAge,
       }}
     >
       <div className="space-y-2">
@@ -143,7 +156,7 @@ export const WebScraperDialog: React.FC<
         <Label htmlFor="format">Output Format</Label>
         <Select
           value={format}
-          onValueChange={(value) => setFormat(value as OutputFormat)}
+          onValueChange={(value) => setFormat(value as WebScraperFormat)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select output format" />
@@ -160,7 +173,7 @@ export const WebScraperDialog: React.FC<
         <Label htmlFor="screenshot">Screenshot</Label>
         <Select
           value={screenshot}
-          onValueChange={(value) => setScreenshot(value as ScreenshotMode)}
+          onValueChange={(value) => setScreenshot(value as WebScraperScreenshot)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select screenshot mode" />
@@ -232,6 +245,74 @@ export const WebScraperDialog: React.FC<
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <button
+          type="button"
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )}
+          Advanced
+        </button>
+
+        {showAdvanced && (
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="waitFor">Wait For (ms)</Label>
+              <RichInput
+                id="waitFor"
+                type="number"
+                value={String(waitFor)}
+                onChange={(e) =>
+                  setWaitFor(Math.max(0, parseInt(e.target.value) || 0))
+                }
+                placeholder="0"
+                className="w-full"
+              />
+              <div className="text-xs text-gray-500 break-words">
+                Extra wait after load before capturing, for slow
+                client-rendered pages.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label>Scroll To Bottom</Label>
+                <p className="text-xs text-muted-foreground">
+                  Scrolls the page to trigger lazy-loaded content before
+                  scraping.
+                </p>
+              </div>
+              <Switch
+                checked={scrollToBottom}
+                onCheckedChange={setScrollToBottom}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxAge">Cache Max Age (seconds)</Label>
+              <RichInput
+                id="maxAge"
+                type="number"
+                value={String(maxAge)}
+                onChange={(e) =>
+                  setMaxAge(Math.max(0, parseInt(e.target.value) || 0))
+                }
+                placeholder="0"
+                className="w-full"
+              />
+              <div className="text-xs text-gray-500 break-words">
+                Serve a cached result newer than this. 0 disables caching.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </NodeConfigPanel>
   );

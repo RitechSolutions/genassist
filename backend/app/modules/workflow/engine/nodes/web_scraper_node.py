@@ -1,5 +1,6 @@
 """Web scraper node: fetches a URL and returns clean scraped content."""
 
+import json
 import logging
 import os
 import tempfile
@@ -48,6 +49,15 @@ class WebScraperNode(BaseNode):
         # fetch_from_url validates the scheme; default bare hosts to https
         if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
+
+        # headers arrive as an object from the builder UI, or a JSON string from the dynamic schema
+        if isinstance(headers, str):
+            try:
+                headers = json.loads(headers) if headers.strip() else {}
+            except json.JSONDecodeError as exc:
+                return self._error(url, output_format, f"Invalid headers JSON: {exc}")
+        if not isinstance(headers, dict):
+            return self._error(url, output_format, "Headers must be a JSON object")
 
         # every scrape-affecting option keys the cache; headers isolate auth
         cache_options = {

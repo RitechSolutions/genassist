@@ -177,12 +177,18 @@ export interface APIToolNodeData extends BaseNodeData {
 }
 
 // Web Scraper Node Data
+export type WebScraperFormat = "markdown" | "html" | "both";
+export type WebScraperScreenshot = "off" | "viewport" | "fullPage";
+
 export interface WebScraperNodeData extends BaseNodeData {
   url: string;
-  format: "markdown" | "html" | "both";
+  format: WebScraperFormat;
   headers: Record<string, string>;
   onlyMainContent: boolean;
-  screenshot: "off" | "viewport" | "fullPage";
+  screenshot: WebScraperScreenshot;
+  waitFor: number;
+  scrollToBottom: boolean;
+  maxAge: number;
 }
 
 // External Agent Node Data

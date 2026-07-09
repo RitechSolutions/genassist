@@ -52,7 +52,7 @@ WEB_SCRAPER_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         label="Headers (JSON object)",
         required=False,
     ),
-    # render-timing controls 
+    # render-timing controls
     FieldSchema(
         name="waitFor",
         type="number",

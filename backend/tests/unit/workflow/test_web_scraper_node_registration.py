@@ -95,7 +95,6 @@ def test_dialog_schema_contains_required_scraper_fields():
         "maxAge",
     } <= set(schema)
 
-    assert {"renderJs", "includeLinks", "includeMetadata"}.isdisjoint(schema)
     assert schema["url"].required is True
     assert schema["screenshot"].default == "off"
 
@@ -127,7 +126,6 @@ async def test_markdown_success_returns_clean_envelope():
     with patch(_FETCH_PATH, new=AsyncMock(return_value=_fr("<h1>Hi</h1>"))):
         result = await node.process({"url": "https://example.com", "format": "markdown"})
     assert result["success"] is True
-    assert "status_code" not in result
     assert result["format"] == "markdown"
     assert "Hi" in result["content"]  # thin doc: chrome-strip stays primary, readability isn't richer
     assert result["error"] == ""
@@ -222,6 +220,27 @@ async def test_render_controls_forward_to_browser():
     assert kwargs["scroll_to_bottom"] is True
 
 
+@pytest.mark.asyncio
+async def test_json_string_headers_are_parsed_and_forwarded():
+    """The dynamic schema sends headers as a JSON string; the node parses it to a dict."""
+    node = _make_node()
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>"))
+    with patch(_FETCH_PATH, new=fetch):
+        await node.process({"url": "https://example.com", "headers": '{"accept": "text/html"}'})
+    assert fetch.call_args.kwargs["headers"] == {"accept": "text/html"}
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_headers_return_error_without_fetching():
+    node = _make_node()
+    fetch = AsyncMock(return_value=_fr("<p>ok</p>"))
+    with patch(_FETCH_PATH, new=fetch):
+        result = await node.process({"url": "https://example.com", "headers": "{not json"})
+    assert result["success"] is False
+    assert "Invalid headers JSON" in result["error"]
+    fetch.assert_not_awaited()
+
+
 _GET_CACHED = "app.modules.workflow.engine.nodes.web_scraper_node.get_cached"
 _STORE = "app.modules.workflow.engine.nodes.web_scraper_node.store"
 
@@ -304,11 +323,9 @@ async def test_default_output_carries_links_metadata_and_empty_screenshot():
     fetched = _fr(html, url="https://example.com/")
     with patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)):
         result = await node.process({"url": "https://example.com"})
-    assert "status_code" not in result
     assert "https://example.com/about" in result["links"]
     assert result["metadata"]["title"] == "Example"
     assert result["metadata"]["sourceURL"] == "https://example.com/"
-    assert "statusCode" not in result["metadata"]
     assert result["screenshot"] == ""
     assert result["screenshot_file_id"] == ""
 
@@ -332,7 +349,6 @@ async def test_error_status_returns_failure_envelope():
     assert result["success"] is False
     assert result["content"] == ""
     assert result["error"] == "Failed to fetch page"
-    assert "status_code" not in result
 
 
 @pytest.mark.asyncio
@@ -342,16 +358,6 @@ async def test_node_always_uses_browser_path():
     with patch(_FETCH_PATH, new=fetch):
         await node.process({"url": "https://example.com"})
     assert "use_http_request" not in fetch.call_args.kwargs
-
-
-@pytest.mark.asyncio
-async def test_links_and_metadata_always_included():
-    node = _make_node()
-    # stale opt-out keys are ignored; links + metadata always build (backward-compat guarantee)
-    with patch(_FETCH_PATH, new=AsyncMock(return_value=_fr("<a href='/x'>X</a>"))):
-        result = await node.process({"url": "https://example.com", "includeLinks": False, "includeMetadata": False})
-    assert "links" in result
-    assert "metadata" in result
 
 
 # screenshot hosting

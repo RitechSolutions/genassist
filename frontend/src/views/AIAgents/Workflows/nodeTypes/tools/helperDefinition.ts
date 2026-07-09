@@ -89,7 +89,7 @@ export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
         "{{source.html}} — raw page HTML (html / both formats)",
         "{{source.links}} — array of absolute URLs found on the page",
         "{{source.metadata.title}} / {{source.metadata.description}} / {{source.metadata.ogImage}} — page metadata",
-        "{{source.screenshot}} — hosted image URL or data URI when a screenshot mode is set",
+        "{{source.screenshot}} — hosted image URL when a screenshot mode is set",
         "{{source.url}} — the final URL",
       ],
     },

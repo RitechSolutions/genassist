@@ -1,6 +1,6 @@
 """Tenant-scoped, opt-in Redis cache for web-scraper results.
 
-The client is resolved lazily from the injector so there is no import cycle and no request scope is required. 
+The client is resolved lazily from the injector so there is no import cycle and no request scope is required.
 Every path is wrapped so a cache miss, stale entry, or Redis outage silently degrades to a live fetch.
 """
 
@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def _redis():
     return injector.get(RedisString)
 
 
-def build_cache_key(url: str, options: dict) -> str:
+def build_cache_key(url: str, options: dict[str, Any]) -> str:
     """Tenant-scoped key: same url + options collapse to one entry per tenant.
 
     ``options`` carries request headers, so differing auth hashes to a distinct
@@ -36,7 +37,7 @@ def build_cache_key(url: str, options: dict) -> str:
     return f"tenant:{get_tenant_context()}:{_KEY_PREFIX}:{digest}"
 
 
-async def get_cached(url: str, options: dict, max_age: int) -> dict | None:
+async def get_cached(url: str, options: dict[str, Any], max_age: int) -> dict[str, Any] | None:
     """Return a fresh cached result (with ``cacheState``/``cachedAt``) or ``None``."""
     max_age = min(max_age, _MAX_AGE_CAP)
     if max_age <= 0:
@@ -55,7 +56,7 @@ async def get_cached(url: str, options: dict, max_age: int) -> dict | None:
         return None
 
 
-async def store(url: str, options: dict, max_age: int, result: dict) -> None:
+async def store(url: str, options: dict[str, Any], max_age: int, result: dict[str, Any]) -> None:
     """Cache a successful result under a self-expiring TTL; no-op otherwise."""
     max_age = min(max_age, _MAX_AGE_CAP)
     if max_age <= 0 or not result.get("success"):
