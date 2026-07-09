@@ -1,8 +1,19 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/button";
-import { Save, Plus, Trash2, Pencil, Power, MoreVertical } from "lucide-react";
+import {
+  Save,
+  Plus,
+  Trash2,
+  Pencil,
+  Power,
+  MoreVertical,
+  GitCompare,
+  X,
+} from "lucide-react";
+import { Checkbox } from "@/components/checkbox";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { getAllWorkflows, deleteWorkflow } from "@/services/workflows";
+import VersionDiffDialog from "../diff/VersionDiffDialog";
 import {
   Dialog,
   DialogContent,
@@ -96,6 +107,53 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
     null
   );
   const [isSwitching, setIsSwitching] = useState(false);
+
+  // Compare mode: pick exactly two versions of this agent and open a read-only diff (FR-1).
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [compareSelection, setCompareSelection] = useState<string[]>([]);
+  const [isDiffDialogOpen, setIsDiffDialogOpen] = useState(false);
+
+  const exitCompareMode = () => {
+    setIsCompareMode(false);
+    setCompareSelection([]);
+    setIsDiffDialogOpen(false);
+  };
+
+  // Toggle a version's selection; never selects a third (FR-1).
+  const toggleCompareSelection = (workflow: Workflow) => {
+    const id = workflow.id;
+    if (!id) return;
+    setCompareSelection((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return prev;
+      return [...prev, id];
+    });
+  };
+
+  // Resolve the two selected versions into base (older) / target (newer): base = earlier
+  // created_at, tie-broken by the lower version string, so the newer version is the target (FR-2).
+  const comparePair = useMemo(() => {
+    if (compareSelection.length !== 2) return null;
+    const first = workflows.find((w) => w.id === compareSelection[0]);
+    const second = workflows.find((w) => w.id === compareSelection[1]);
+    if (!first || !second) return null;
+
+    const timeFirst = new Date(first.created_at ?? 0).getTime();
+    const timeSecond = new Date(second.created_at ?? 0).getTime();
+
+    let firstIsBase: boolean;
+    if (timeFirst !== timeSecond) {
+      firstIsBase = timeFirst < timeSecond;
+    } else {
+      const versionFirst = parseFloat(first.version ?? "0");
+      const versionSecond = parseFloat(second.version ?? "0");
+      firstIsBase = versionFirst <= versionSecond;
+    }
+
+    return firstIsBase
+      ? { base: first, target: second }
+      : { base: second, target: first };
+  }, [compareSelection, workflows]);
 
   // Load workflows
   const loadWorkflows = async () => {
@@ -319,27 +377,68 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Saved Versions</h2>
+            {workflows.length >= 2 &&
+              (isCompareMode ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={exitCompareMode}
+                  className="flex items-center gap-1"
+                >
+                  <X className="h-4 w-4" />
+                  Cancel
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCompareMode(true)}
+                  className="flex items-center gap-1"
+                >
+                  <GitCompare className="h-4 w-4" />
+                  Compare
+                </Button>
+              ))}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="flex items-center space-x-2 mb-4">
-            <Button
-              onClick={() => {
-                setWorkflowName(currentWorkflow.name || "");
-                setWorkflowVersion(calculateNextVersion(workflows));
-                setWorkflowDescription(currentWorkflow.description || "");
-                setVersionError(null);
-                setCreateDialogOpen(true);
-              }}
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-1"
-            >
-              <Plus className="h-4 w-4" />
-              New
-            </Button>
-          </div>
+          {isCompareMode ? (
+            <div className="mb-4 space-y-2">
+              <p className="text-xs text-gray-500">
+                {compareSelection.length < 2
+                  ? `Select two versions to compare (${compareSelection.length}/2).`
+                  : "Two versions selected. Deselect one to choose a different pair."}
+              </p>
+              <Button
+                onClick={() => setIsDiffDialogOpen(true)}
+                size="sm"
+                disabled={compareSelection.length !== 2}
+                className="flex items-center gap-1"
+              >
+                <GitCompare className="h-4 w-4" />
+                Compare ({compareSelection.length})
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2 mb-4">
+              <Button
+                onClick={() => {
+                  setWorkflowName(currentWorkflow.name || "");
+                  setWorkflowVersion(calculateNextVersion(workflows));
+                  setWorkflowDescription(currentWorkflow.description || "");
+                  setVersionError(null);
+                  setCreateDialogOpen(true);
+                }}
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-1"
+              >
+                <Plus className="h-4 w-4" />
+                New
+              </Button>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-2 rounded-md text-sm">
@@ -352,12 +451,32 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
               <div
                 key={workflow.id}
                 className={`flex items-center space-x-2 p-2 rounded-md border cursor-pointer ${
-                  selectedWorkflowId === workflow.id
+                  (
+                    isCompareMode
+                      ? !!workflow.id && compareSelection.includes(workflow.id)
+                      : selectedWorkflowId === workflow.id
+                  )
                     ? "bg-blue-50 border-blue-200"
                     : "hover:bg-gray-50"
                 }`}
-                onClick={() => handleWorkflowSelect(workflow)}
+                onClick={() =>
+                  isCompareMode
+                    ? toggleCompareSelection(workflow)
+                    : handleWorkflowSelect(workflow)
+                }
               >
+                {isCompareMode && (
+                  <Checkbox
+                    checked={!!workflow.id && compareSelection.includes(workflow.id)}
+                    disabled={
+                      !(!!workflow.id && compareSelection.includes(workflow.id)) &&
+                      compareSelection.length >= 2
+                    }
+                    onCheckedChange={() => toggleCompareSelection(workflow)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${workflow.name} v${workflow.version} to compare`}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <div className="font-medium truncate">{workflow.name}</div>
@@ -394,6 +513,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                   )}
                 </div>
                 <div className="flex items-center space-x-1">
+                  {!isCompareMode && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon">
@@ -434,6 +554,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  )}
                 </div>
               </div>
             ))}
@@ -553,6 +674,16 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         title="You have unsaved changes!"
         description="Would you like to save or discard them?"
       />
+
+      {/* Version Diff Checker (read-only) */}
+      {comparePair && (
+        <VersionDiffDialog
+          open={isDiffDialogOpen}
+          onClose={() => setIsDiffDialogOpen(false)}
+          base={comparePair.base}
+          target={comparePair.target}
+        />
+      )}
     </div>
   );
 };
