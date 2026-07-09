@@ -1,6 +1,7 @@
 """Unit tests for the scraped-content extraction helpers."""
 
 from app.core.utils.web_content_utils import (
+    clean_html,
     extract_links,
     extract_main_content,
     extract_metadata,
@@ -63,6 +64,8 @@ def test_metadata_parses_all_tags_and_absolutizes():
             <meta property="og:title" content="OG Title">
             <meta property="og:description" content="OG Desc">
             <meta property="og:image" content="/img/hero.png">
+            <meta property="og:site_name" content="Example Site">
+            <meta name="twitter:card" content="summary_large_image">
             <link rel="canonical" href="/canonical-path">
             <link rel="shortcut icon" href="/custom.ico">
         </head>
@@ -70,19 +73,24 @@ def test_metadata_parses_all_tags_and_absolutizes():
         </html>
     """
     meta = extract_metadata(html, "https://example.com/some/page", 200, "text/html")
-    assert meta == {
-        "title": "My Page",
-        "description": "A description",
-        "language": "en-US",
-        "sourceURL": "https://example.com/some/page",
-        "statusCode": 200,
-        "contentType": "text/html",
-        "ogTitle": "OG Title",
-        "ogDescription": "OG Desc",
-        "ogImage": "https://example.com/img/hero.png",
-        "favicon": "https://example.com/custom.ico",
-        "canonical": "https://example.com/canonical-path",
-    }
+
+    # curated keys stay authoritative with their derived/absolutized values
+    assert meta["title"] == "My Page"
+    assert meta["description"] == "A description"
+    assert meta["language"] == "en-US"
+    assert meta["sourceURL"] == "https://example.com/some/page"
+    assert meta["statusCode"] == 200
+    assert meta["contentType"] == "text/html"
+    assert meta["ogTitle"] == "OG Title"
+    assert meta["ogDescription"] == "OG Desc"
+    assert meta["ogImage"] == "https://example.com/img/hero.png"
+    assert meta["favicon"] == "https://example.com/custom.ico"
+    assert meta["canonical"] == "https://example.com/canonical-path"
+
+    # raw tag names are swept in alongside the curated keys
+    assert meta["twitter:card"] == "summary_large_image"
+    assert meta["og:site_name"] == "Example Site"
+    assert meta["og:title"] == "OG Title"
 
 
 def test_metadata_missing_values_are_none_and_favicon_falls_back():
@@ -118,16 +126,58 @@ def test_main_content_extracts_article_and_returns_cleaned_html():
     """
     markdown, cleaned_html = extract_main_content(html, _BASE)
     assert "First paragraph" in markdown
+    assert "Home About Contact" not in markdown
+    assert "Copyright" not in markdown
     assert cleaned_html != ""
 
 
-def test_main_content_thin_page_falls_back_to_full_dom():
+def test_main_content_thin_page_returns_cleaned_body():
     markdown, cleaned_html = extract_main_content("<html><body><p>Hi</p></body></html>", _BASE)
     assert "Hi" in markdown
-    assert cleaned_html == ""  # below min_chars -> full-DOM fallback, no cleaned html
+    assert "Hi" in cleaned_html
+
+
+def test_main_content_keeps_header_and_drops_chrome():
+    html = (
+        "<html><body><nav><a href='/x'>Menu</a></nav>"
+        "<header><h1>Hero Title</h1><p>Tagline sentence.</p></header>"
+        "<main><p>Body paragraph with content.</p></main>"
+        "<footer>Footer links</footer></body></html>"
+    )
+    markdown, _ = extract_main_content(html, _BASE)
+    assert "Hero Title" in markdown
+    assert "Tagline sentence" in markdown
+    assert "Menu" not in markdown
+    assert "Footer links" not in markdown
 
 
 def test_main_content_empty_html_falls_back_without_raising():
     markdown, cleaned_html = extract_main_content("", _BASE)
     assert markdown == ""
     assert cleaned_html == ""
+
+
+# clean_html
+
+
+def test_clean_html_strips_noise_and_keeps_body_content():
+    raw = (
+        "<html><head><title>T</title><style>.x{color:red}</style></head>"
+        "<body><script>var a=1</script><svg><path d='M0'/></svg>"
+        "<h1>Title</h1><p>Keep me</p><img src='/a.png'></body></html>"
+    )
+    out = clean_html(raw, "https://example.com/")
+    assert "<h1>Title</h1>" in out
+    assert "Keep me" in out
+    for gone in ("<script", "<style", "<svg", "<img", "<head"):
+        assert gone not in out
+
+
+def test_clean_html_absolutizes_links_and_drops_chrome_on_request():
+    raw = "<body><nav><a href='/menu'>Menu</a></nav><a href='/post'>Post</a><footer>Foot</footer></body>"
+    kept = clean_html(raw, "https://example.com/")
+    assert 'href="https://example.com/post"' in kept
+    assert "Menu" in kept
+    dropped = clean_html(raw, "https://example.com/", drop_chrome=True)
+    assert "Menu" not in dropped
+    assert "Foot" not in dropped

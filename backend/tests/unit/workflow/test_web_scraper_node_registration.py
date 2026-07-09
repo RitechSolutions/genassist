@@ -138,9 +138,26 @@ async def test_both_format_includes_markdown_and_html_keys():
     with patch(_FETCH_PATH, new=AsyncMock(return_value=_fr(html))):
         # onlyMainContent off keeps the assertion on a deterministic full-DOM conversion
         result = await node.process({"url": "https://example.com", "format": "both", "onlyMainContent": False})
-    assert result["html"] == html  # html stays raw
+    assert "<h1>Hi</h1>" in result["html"]
     assert "Hi" in result["markdown"]
-    assert result["content"] == result["markdown"]  # content holds the primary format
+    assert result["content"] == result["markdown"]
+
+
+@pytest.mark.asyncio
+async def test_html_field_is_cleaned_of_scripts_and_head():
+    node = _make_node()
+    raw = (
+        "<html><head><title>T</title><style>.x{}</style></head>"
+        "<body><script>window.__DATA__=1</script>"
+        "<h1>Real</h1><p>Body text</p></body></html>"
+    )
+    with patch(_FETCH_PATH, new=AsyncMock(return_value=_fr(raw))):
+        result = await node.process({"url": "https://example.com", "format": "html"})
+    assert "<h1>Real</h1>" in result["html"]
+    assert "__DATA__" not in result["html"]
+    assert "<script" not in result["html"]
+    assert "<style" not in result["html"]
+    assert result["content"] == result["html"]
 
 
 @pytest.mark.asyncio
@@ -193,7 +210,7 @@ async def test_default_output_carries_links_metadata_and_empty_screenshot():
     fetched = _fr(html, url="https://example.com/", status=201)
     with patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)):
         result = await node.process({"url": "https://example.com"})
-    assert result["status_code"] == 201  
+    assert result["status_code"] == 201
     assert "https://example.com/about" in result["links"]
     assert result["metadata"]["title"] == "Example"
     assert result["metadata"]["sourceURL"] == "https://example.com/"
@@ -240,14 +257,14 @@ async def test_screenshot_forces_browser_path_even_with_render_js_off():
 
 
 @pytest.mark.asyncio
-async def test_screenshot_hosted_via_file_manager_when_enabled():
+async def test_screenshot_hosted_via_file_manager_returns_source_url():
     node = _make_node()
     fetched = _fr("<p>ok</p>", shot=b"pngbytes")
     fm = _fake_file_manager()
     app_settings = SimpleNamespace(get_by_type_and_name=AsyncMock(return_value=None))
     with (
         patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
-        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", True),
+        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", False),
         patch("app.dependencies.injector.injector", _fake_injector(fm, app_settings)),
     ):
         result = await node.process({"url": "https://example.com", "screenshot": "viewport"})
@@ -258,46 +275,17 @@ async def test_screenshot_hosted_via_file_manager_when_enabled():
 
 
 @pytest.mark.asyncio
-async def test_screenshot_base64_fallback_when_file_manager_disabled():
-    node = _make_node()
-    fetched = _fr("<p>ok</p>", shot=b"tiny-png-bytes")
-    with (
-        patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
-        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", False),
-    ):
-        result = await node.process({"url": "https://example.com", "screenshot": "viewport"})
-    assert result["success"] is True
-    assert result["screenshot"].startswith("data:image/png;base64,")
-    assert result["screenshot_file_id"] == ""
-
-
-@pytest.mark.asyncio
-async def test_screenshot_over_cap_bytes_yield_empty_string():
-    node = _make_node()
-    oversized = b"x" * 1_200_001  # base64 expands past the ~1.5 MB inline cap
-    fetched = _fr("<p>ok</p>", shot=oversized)
-    with (
-        patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
-        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", False),
-    ):
-        result = await node.process({"url": "https://example.com", "screenshot": "fullPage"})
-    assert result["success"] is True
-    assert result["screenshot"] == ""
-    assert result["screenshot_file_id"] == ""
-
-
-@pytest.mark.asyncio
-async def test_screenshot_hosting_error_falls_back_to_base64_and_keeps_success():
+async def test_screenshot_hosting_error_leaves_fields_empty_and_keeps_success():
+    """A hosting failure degrades to empty screenshot fields while the scrape still succeeds."""
     node = _make_node()
     fetched = _fr("<p>ok</p>", shot=b"tiny-png-bytes")
     fm = SimpleNamespace(initialize=AsyncMock(side_effect=RuntimeError("hosting down")))
     app_settings = SimpleNamespace(get_by_type_and_name=AsyncMock(return_value=None))
     with (
         patch(_FETCH_PATH, new=AsyncMock(return_value=fetched)),
-        patch("app.core.config.settings.file_storage_settings.FILE_MANAGER_ENABLED", True),
         patch("app.dependencies.injector.injector", _fake_injector(fm, app_settings)),
     ):
         result = await node.process({"url": "https://example.com", "screenshot": "viewport"})
     assert result["success"] is True
-    assert result["screenshot"].startswith("data:image/png;base64,")
+    assert result["screenshot"] == ""
     assert result["screenshot_file_id"] == ""

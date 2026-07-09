@@ -1,6 +1,5 @@
 """Web scraper node: fetches a URL and returns clean scraped content."""
 
-import base64
 import logging
 import os
 import tempfile
@@ -10,13 +9,11 @@ from typing import Any, Dict
 import httpx
 
 from app.core.utils.html_utils import html2markdown
-from app.core.utils.web_content_utils import extract_links, extract_main_content, extract_metadata
+from app.core.utils.web_content_utils import clean_html, extract_links, extract_main_content, extract_metadata
 from app.core.utils.web_scraping_utils import fetch_from_url
 from app.modules.workflow.engine import BaseNode
 
 logger = logging.getLogger(__name__)
-
-_MAX_INLINE_SCREENSHOT_B64 = 1_500_000  # ~1.5 MB cap on the base64 data-URI fallback
 
 
 class WebScraperNode(BaseNode):
@@ -67,18 +64,18 @@ class WebScraperNode(BaseNode):
             }
 
             if output_format == "html":
-                result["html"] = raw_html  
-                result["content"] = raw_html
+                cleaned = clean_html(raw_html, final_url)
+                result["html"] = cleaned
+                result["content"] = cleaned
             else:
-                markdown = (
-                    extract_main_content(raw_html, final_url)[0]
-                    if only_main_content
-                    else html2markdown(raw_html, base_url=final_url)
-                )
+                if only_main_content:
+                    markdown = extract_main_content(raw_html, final_url)[0]
+                else:
+                    markdown = html2markdown(raw_html, base_url=final_url)
                 result["markdown"] = markdown
-                result["content"] = markdown  
+                result["content"] = markdown
                 if output_format == "both":
-                    result["html"] = raw_html
+                    result["html"] = clean_html(raw_html, final_url)
 
             if include_links:
                 result["links"] = extract_links(raw_html, final_url)
@@ -104,24 +101,17 @@ class WebScraperNode(BaseNode):
             return self._error(url, output_format, str(exc))
 
     async def _host_screenshot(self, image_bytes: bytes, source_url: str) -> tuple[str, str]:
-        """Return ``(screenshot, screenshot_file_id)`` for the captured PNG; never raises.
+        """Return ``(screenshot_url, screenshot_file_id)`` for the captured PNG; never raises.
 
-        A hosted FileManager URL when hosting is enabled and reachable,
-        otherwise a size-guarded base64 data-URI, otherwise empty strings so an
-        oversized image can't bloat node_outputs / downstream LLM prompts.
+        Hosts the PNG via FileManagerService so the output carries a short source URL. 
+        The public ``/source`` route works regardless of the file-manager flag; 
+        on any failure the fields stay empty.
         """
-        from app.core.config.settings import file_storage_settings
-
-        if file_storage_settings.FILE_MANAGER_ENABLED:
-            try:
-                return await self._host_via_file_manager(image_bytes)
-            except Exception as exc:
-                logger.warning("Screenshot hosting failed for %s: %s", source_url, exc)
-
-        b64 = base64.b64encode(image_bytes).decode("ascii")
-        if len(b64) <= _MAX_INLINE_SCREENSHOT_B64:
-            return f"data:image/png;base64,{b64}", ""
-        return "", ""
+        try:
+            return await self._host_via_file_manager(image_bytes)
+        except Exception as exc:
+            logger.warning("Screenshot hosting failed for %s: %s", source_url, exc)
+            return "", ""
 
     async def _host_via_file_manager(self, image_bytes: bytes) -> tuple[str, str]:
         """Upload the PNG through FileManagerService, returning ``(url, file_id)``.

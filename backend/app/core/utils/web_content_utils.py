@@ -1,13 +1,21 @@
 """Pure python extraction helpers for scraped HTML: links, metadata, main content."""
 
+import re
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 
 from app.core.utils.html_utils import html2markdown
 
 _HTTP_SCHEMES = frozenset({"http", "https"})
 _SKIP_LINK_PREFIXES = ("#", "javascript:", "mailto:", "tel:")
+
+# Tags that never carry readable content
+_NOISE_TAGS = ("script", "style", "noscript", "template", "svg", "head", "link", "meta", "iframe", "img")
+# Page chrome dropped for main-content extraction. <header> is kept: article titles live there
+_CHROME_TAGS = ("nav", "footer", "aside")
+# Empty links html2text leaves where an image used to be, e.g. [](https://site/x).
+_EMPTY_LINK_RE = re.compile(r"!?\[[ \t]*\]\([^)\s]*\)")
 
 
 def _soup(html: str) -> BeautifulSoup:
@@ -23,6 +31,27 @@ def _meta(soup: BeautifulSoup, *, name: str | None = None, prop: str | None = No
     content = tag.get("content") if tag else None
     content = content.strip() if content else ""
     return content or None
+
+
+def _clean_soup(html: str, *, drop_chrome: bool) -> BeautifulSoup:
+    soup = _soup(html)
+    tags = list(_NOISE_TAGS)
+    if drop_chrome:
+        tags += list(_CHROME_TAGS)
+    for tag in soup.find_all(tags):
+        tag.decompose()
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+    return soup
+
+
+def clean_html(html: str, base_url: str, *, drop_chrome: bool = False) -> str:
+    """Return sanitized body HTML for the node's ``html`` output."""
+    soup = _clean_soup(html, drop_chrome=drop_chrome)
+    for anchor in soup.find_all("a", href=True):
+        anchor["href"] = urljoin(base_url, anchor["href"])
+    body = soup.body or soup
+    return str(body).strip()
 
 
 def extract_links(
@@ -66,10 +95,13 @@ def extract_metadata(
     status_code: int | None,
     content_type: str | None,
 ) -> dict:
-    """Fixed metadata key set for the node output (missing values are ``None``).
+    """Curated metadata keys plus every raw ``<meta>``/``<link rel>`` tag on the page.
 
-    ``sourceURL``/``statusCode``/``contentType`` are threaded from the fetch result;
-    ``ogImage``/``canonical``/``favicon`` are absolutized against ``final_url``.
+    The 11 curated keys are authoritative and always present (missing values are
+    ``None``): ``sourceURL``/``statusCode``/``contentType`` are threaded from the fetch
+    result; ``ogImage``/``canonical``/``favicon`` are absolutized against ``final_url``.
+    Remaining tags are swept in afterwards (``og:title``, ``twitter:card``, …) without
+    overriding a curated key
     """
     soup = _soup(html)
 
@@ -99,7 +131,7 @@ def extract_metadata(
 
     og_image = _meta(soup, prop="og:image")
 
-    return {
+    curated = {
         "title": title or None,
         "description": _meta(soup, name="description"),
         "language": language,
@@ -113,20 +145,36 @@ def extract_metadata(
         "canonical": canonical,
     }
 
+    merged: dict = dict(curated)
+    # charset/http-equiv metas carry no name/property/content and are skipped
+    for tag in soup.find_all("meta"):
+        key = tag.get("name") or tag.get("property") or tag.get("itemprop")
+        content = tag.get("content")
+        if key and content and content.strip():
+            merged.setdefault(key.strip(), content.strip())
+    for link in soup.find_all("link"):
+        rels = link.get("rel") or []
+        if isinstance(rels, str):
+            rels = rels.split()
+        href = (link.get("href") or "").strip()
+        if not href:
+            continue
+        for rel in rels:
+            merged.setdefault(rel.lower(), urljoin(final_url, href))
+    return merged
 
-def extract_main_content(html: str, base_url: str, *, min_chars: int = 200) -> tuple[str, str]:
+
+def _tidy_markdown(markdown: str) -> str:
+    # drop the empty image-links html2text leaves behind, then re-collapse blank lines
+    markdown = _EMPTY_LINK_RE.sub("", markdown)
+    return re.sub(r"\n{3,}", "\n\n", markdown).strip()
+
+
+def extract_main_content(html: str, base_url: str) -> tuple[str, str]:
     """Return ``(markdown, cleaned_html)`` for the page's main content.
 
-    Uses readability to strip boilerplate; falls back to the full DOM (with an empty
-    cleaned_html) when readability raises or over-strips a thin page below ``min_chars``.
+    Strips scripts/styles/svg/images and page chrome (nav/footer/aside)
+    while keeping the article ``<header>`` and body sections, then converts to markdown.
     """
-    from readability import Document
-
-    try:
-        cleaned_html = Document(html or "", url=base_url).summary(html_partial=True)
-        markdown = html2markdown(cleaned_html, base_url=base_url)
-        if len(markdown.strip()) >= min_chars:
-            return markdown, cleaned_html
-    except Exception:
-        pass
-    return html2markdown(html or "", base_url=base_url), ""
+    cleaned = clean_html(html, base_url, drop_chrome=True)
+    return _tidy_markdown(html2markdown(cleaned, base_url=base_url)), cleaned
