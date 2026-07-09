@@ -1,5 +1,10 @@
 import { WorkflowTestResponse } from "@/services/workflows";
 
+/**
+ * @deprecated Legacy shape that does not match the live test-response wire format. Not used to
+ * parse the Execution view; see `ExecutionViewModel` and `buildExecutionViewModel`. (Note there
+ * is a separate, actively-used `WorkflowExecutionState` in the Workflows context — unrelated.)
+ */
 // Extended execution state that includes real-time tracking
 export interface WorkflowExecutionState extends Omit<WorkflowTestResponse, 'execution_summary'> {
   execution_summary: {
@@ -32,6 +37,12 @@ export interface WorkflowExecutionState extends Omit<WorkflowTestResponse, 'exec
   performanceMetrics: PerformanceMetrics;
 }
 
+/**
+ * @deprecated Does NOT match the backend wire format. The actual per-node payload in
+ * `state.nodeExecutionStatus` uses `type/name/status("running"|"success"|"failed")/startTime/
+ * endTime/time_taken/input/output/error` (node id is the map key) — see `RawNodeExecutionEntry`
+ * and the `buildExecutionViewModel` adapter. Do not parse the test response through this type.
+ */
 // Status of individual node execution
 export interface NodeExecutionStatus {
   nodeId: string;
@@ -70,6 +81,12 @@ export interface ExecutionError {
   context?: Record<string, any>;
 }
 
+/**
+ * @deprecated Backend `performanceMetrics` is NOT recomputed on failed runs (only on
+ * `complete_execution`), so it is stale/zeroed when a workflow fails. The Execution view
+ * derives counts/slowest-node/duration from raw per-node timings instead. Prefer
+ * `ExecutionViewModel`.
+ */
 // Performance metrics for the workflow execution
 export interface PerformanceMetrics {
   totalExecutionTime: number;
@@ -122,3 +139,71 @@ export interface WorkflowExecutionContextType {
   isLoading: boolean;
   error: string | null;
 }
+
+// ── Node Execution Visualization ("Execution" tab) ──────────────────────────
+// Types below reflect the ACTUAL workflow-test wire format and the normalized,
+// display-ready model the Execution view renders. See `utils/executionView.ts`.
+
+/** Raw per-node status values emitted by the backend. */
+export type RawNodeExecutionStatus = "running" | "success" | "failed";
+
+/**
+ * The real per-node payload found in `response.state.nodeExecutionStatus` (keyed by node id).
+ * Every field is optional because entries are built incrementally and older runs may be
+ * archived/partial. This is the shape the adapter narrows from `unknown`.
+ */
+export interface RawNodeExecutionEntry {
+  type?: string;
+  name?: string;
+  status?: RawNodeExecutionStatus;
+  startTime?: number;
+  endTime?: number;
+  time_taken?: number;
+  input?: unknown;
+  output?: unknown;
+  error?: string | null;
+}
+
+/** Normalized, display-ready status used by the Execution view. */
+export type ExecutionNodeStatus =
+  | "completed"
+  | "failed"
+  | "running"
+  | "skipped"
+  | "pending";
+
+/** A single node as shown in the Execution view (graph, summary, detail panel). */
+export interface NodeExecutionView {
+  nodeId: string;
+  name: string;
+  type?: string;
+  status: ExecutionNodeStatus;
+  startTime?: number;
+  endTime?: number;
+  durationMs?: number;
+  input?: unknown;
+  output?: unknown;
+  error?: string | null;
+  /** 0-based execution order, when derivable from startTime. */
+  order?: number;
+}
+
+/** Everything the Execution view needs, derived once from the test response. */
+export interface ExecutionViewModel {
+  nodes: NodeExecutionView[];
+  /** O(1) status lookup by node id (for overlaying the DAG). */
+  byId: Record<string, NodeExecutionView>;
+  counts: Record<ExecutionNodeStatus, number>;
+  totalNodes: number;
+  totalSteps?: number;
+  currentStep?: number;
+  executionStartTime?: number;
+  executionEndTime?: number;
+  /** Overall wall-clock duration in ms, when derivable. */
+  overallDurationMs?: number;
+  /** Node id with the largest duration, when any node has a duration. */
+  slowestNodeId?: string;
+}
+
+/** Which of the four interactive states the Execution view should render. */
+export type ExecutionViewState = "loading" | "error" | "empty" | "data";
