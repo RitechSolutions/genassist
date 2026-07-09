@@ -172,6 +172,9 @@ class ProjectSettings(BaseSettings):
     DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30  # seconds
     DB_POOL_RECYCLE: int = 1800  # seconds
+    # Hard ceiling on how long a single interactive (FastAPI) query may run.
+    # Prevents runaway searches from pinning DB CPU indefinitely. 0 disables.
+    DB_STATEMENT_TIMEOUT: int = 1800  # seconds (30 minutes)
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
