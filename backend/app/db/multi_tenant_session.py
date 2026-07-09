@@ -72,6 +72,14 @@ class MultiTenantSessionManager:
             else:
                 # Normal pooling for FastAPI
                 logger.info(f"🔧 Creating pooled engine for FastAPI, tenant: {tenant}")
+                connect_args = {}
+                if settings.DB_STATEMENT_TIMEOUT > 0:
+                    # asyncpg applies server_settings on every connection; value is
+                    # a Postgres GUC string. Caps runaway interactive queries so they
+                    # can't pin DB CPU (see incident: 10h+ conversation search).
+                    connect_args["server_settings"] = {
+                        "statement_timeout": str(settings.DB_STATEMENT_TIMEOUT * 1000)
+                    }
                 self._engines[ktenant] = create_async_engine(
                         tenant_url,
                         echo=False,
@@ -81,6 +89,7 @@ class MultiTenantSessionManager:
                         pool_timeout=settings.DB_POOL_TIMEOUT,
                         pool_recycle=settings.DB_POOL_RECYCLE,
                         pool_pre_ping=True,
+                        connect_args=connect_args,
                         )
 
                 # Print all engines
