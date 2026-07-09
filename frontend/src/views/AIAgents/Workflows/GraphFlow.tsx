@@ -240,14 +240,6 @@ const GraphFlowContent: React.FC = () => {
 
   const { validateConnection } = useSchemaValidation();
 
-  // Undo/Redo functionality
-  const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo(
-    nodes,
-    edges,
-    setNodes,
-    setEdges
-  );
-
   const { agentId } = useParams<{ agentId: string }>();
   const edgeReconnectSuccessful = useRef(true);
 
@@ -317,39 +309,6 @@ const GraphFlowContent: React.FC = () => {
   const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
 
-  const loadWorkflow = useCallback(async (workflowId: string) => {
-    const workflow = await getWorkflowById(workflowId);
-    setWorkflow(workflow);
-    handleWorkflowLoaded(workflow);
-  }, []);
-
-  const loadAgent = useCallback(
-    async (agentId: string) => {
-      const agent = await getAgentConfig(agentId);
-      setAgent(agent);
-      loadWorkflow(agent.workflow_id);
-    },
-    [loadWorkflow]
-  );
-  const handleAgentUpdated = useCallback(async () => {
-    const agent = await getAgentConfig(agentId);
-    setAgent(agent);
-  }, [agentId]);
-
-  const handleActiveWorkflowChange = useCallback(
-    async (workflow: Workflow) => {
-      if (agentId) {
-        try {
-          await updateAgentConfig(agentId, { workflow_id: workflow.id });
-          await handleAgentUpdated();
-        } catch (error) {
-          // ignore
-        }
-      }
-    },
-    [agentId, handleAgentUpdated]
-  );
-
   // Update node data (used for saving input values)
   const updateNodeData = useCallback(
     (nodeId: string, newData: Partial<NodeData>) => {
@@ -384,27 +343,34 @@ const GraphFlowContent: React.FC = () => {
   });
 
   // Restore functions to nodes after loading
-  const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
-    return loadedNodes.map((node) => {
-      // Create a deep copy to avoid modifying the original
-      const nodeCopy = { ...node, data: { ...node.data } };
+  const restoreNodeFunctions = useCallback(
+    (loadedNodes: Node[]): Node[] => {
+      return loadedNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          updateNodeData,
+        },
+      }));
+    },
+    [updateNodeData]
+  );
 
-      nodeCopy.data = {
-        ...nodeCopy.data,
-        updateNodeData,
-      };
-
-      return nodeCopy;
+  // Undo/Redo functionality
+  const { undo, redo, canUndo, canRedo, takeSnapshot, resetHistory } =
+    useUndoRedo(nodes, edges, setNodes, setEdges, {
+      hydrateNodes: restoreNodeFunctions,
     });
-  };
 
   // Handle graph data loaded from file
   const handleWorkflowLoaded = useCallback(
     (loadedWorkflow: Workflow, isUploaded = false) => {
-      const nodesWithFunctions = restoreNodeFunctions(loadedWorkflow.nodes);
+      const loadedNodes = loadedWorkflow.nodes || [];
+      const loadedEdges = loadedWorkflow.edges || [];
+      const nodesWithFunctions = restoreNodeFunctions(loadedNodes);
 
       // Add arrow markers to existing edges
-      const edgesWithMarkers = loadedWorkflow.edges.map((edge) => ({
+      const edgesWithMarkers = loadedEdges.map((edge) => ({
         ...edge,
         type: "default",
         markerEnd: {
@@ -420,6 +386,8 @@ const GraphFlowContent: React.FC = () => {
         },
       }));
 
+      // Reset undo baseline to the loaded graph and discard any existing history
+      resetHistory({ nodes: nodesWithFunctions, edges: edgesWithMarkers });
       setNodes(nodesWithFunctions);
       setEdges(edgesWithMarkers);
       setWorkflow(loadedWorkflow);
@@ -429,7 +397,44 @@ const GraphFlowContent: React.FC = () => {
         setHasUnsavedChanges(false);
       }
     },
-    [restoreNodeFunctions, setNodes, setEdges, setWorkflow]
+    [resetHistory, restoreNodeFunctions, setNodes, setEdges, setWorkflow]
+  );
+
+  const loadWorkflow = useCallback(
+    async (workflowId: string) => {
+      const workflow = await getWorkflowById(workflowId);
+      setWorkflow(workflow);
+      handleWorkflowLoaded(workflow);
+    },
+    [handleWorkflowLoaded, setWorkflow]
+  );
+
+  const loadAgent = useCallback(
+    async (agentId: string) => {
+      const agent = await getAgentConfig(agentId);
+      setAgent(agent);
+      loadWorkflow(agent.workflow_id);
+    },
+    [loadWorkflow]
+  );
+
+  const handleAgentUpdated = useCallback(async () => {
+    const agent = await getAgentConfig(agentId);
+    setAgent(agent);
+  }, [agentId]);
+
+  const handleActiveWorkflowChange = useCallback(
+    async (workflow: Workflow) => {
+      if (agentId) {
+        try {
+          await updateAgentConfig(agentId, { workflow_id: workflow.id });
+          await handleAgentUpdated();
+        } catch (error) {
+          // ignore
+        }
+      }
+    },
+    [agentId, handleAgentUpdated]
   );
 
   // Drag and drop handlers using helper functions
@@ -511,7 +516,7 @@ const GraphFlowContent: React.FC = () => {
   // Add updateNodeData callback to all nodes that need it
   useEffect(() => {
     setNodes((nds) => restoreNodeFunctions(nds));
-  }, [setNodes]);
+  }, [restoreNodeFunctions, setNodes]);
 
   // Add a new node
   const addNewNode = (
@@ -683,8 +688,31 @@ const GraphFlowContent: React.FC = () => {
 
   // Keyboard shortcuts for canvas interactions
   useEffect(() => {
+    const isTypingTarget = (target: HTMLElement) =>
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT" ||
+      target.isContentEditable;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
+
+      // Compare lowercase keys 
+      const isUndo =
+        (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey;
+      const isRedo =
+        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z";
+
+      // Skip undo/redo if typing or inside an open dialog
+      if (isUndo || isRedo) {
+        if (isTypingTarget(target) || target.closest('[role="dialog"]')) return;
+        e.preventDefault();
+        if (isUndo) undo();
+        else redo();
+        return;
+      }
+
+      // Copy/paste only on the canvas
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
         target.closest(".react-flow__pane") ||
@@ -692,13 +720,7 @@ const GraphFlowContent: React.FC = () => {
 
       if (!isReactFlowCanvas) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
-        e.preventDefault();
-        redo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         e.preventDefault();
         copySelectedNodes();
       } else if ((e.ctrlKey || e.metaKey) && e.key === "v") {

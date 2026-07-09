@@ -1,5 +1,13 @@
-import { useCallback, useRef, useState } from "react";
-import { Node, Edge, NodeChange, EdgeChange } from "reactflow";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import { Edge, Node } from "reactflow";
+import { isEqual } from "lodash";
 
 interface HistoryState {
   nodes: Node[];
@@ -9,6 +17,8 @@ interface HistoryState {
 interface UseUndoRedoOptions {
   maxHistorySize?: number;
   debounceTime?: number;
+  // Puts back node data that JSON cloning strips out on undo/redo 
+  hydrateNodes?: (nodes: Node[]) => Node[];
 }
 
 interface UseUndoRedoReturn {
@@ -17,139 +27,264 @@ interface UseUndoRedoReturn {
   canUndo: boolean;
   canRedo: boolean;
   takeSnapshot: () => void;
+  // Seeds a fresh baseline and drops both stacks; used when a new workflow loads 
+  resetHistory: (state: HistoryState) => void;
+  // Drops both stacks but rebaselines to the live canvas without suppressing the next edit
   clear: () => void;
 }
 
+// Strip React Flow's transient UI fields (selection, drag, measured size) so
+// history tracks real edits
+const normalizeState = (state: HistoryState): HistoryState => ({
+  nodes: state.nodes.map(
+    ({
+      selected,
+      dragging,
+      width,
+      height,
+      positionAbsolute,
+      ...node
+    }: Node) => node
+  ),
+  edges: state.edges.map(({ selected, className, ...edge }: Edge) => edge),
+});
+
+const cloneState = (state: HistoryState): HistoryState =>
+  JSON.parse(JSON.stringify(normalizeState(state))) as HistoryState;
+
+const trimHistory = (
+  history: HistoryState[],
+  maxHistorySize: number
+): HistoryState[] => {
+  if (history.length <= maxHistorySize) return history;
+  return history.slice(history.length - maxHistorySize);
+};
+
 /**
- * Hook to manage undo/redo functionality for React Flow nodes and edges
- * Tracks history of node/edge states and provides undo/redo operations
+ * Undo/redo timeline for React Flow nodes and edges. Records the pre-change
+ * baseline on a debounce so rapid edits collapse into one history step
  */
 export const useUndoRedo = (
   nodes: Node[],
   edges: Edge[],
-  setNodes: (nodes: Node[]) => void,
-  setEdges: (edges: Edge[]) => void,
+  setNodes: Dispatch<SetStateAction<Node[]>>,
+  setEdges: Dispatch<SetStateAction<Edge[]>>,
   options: UseUndoRedoOptions = {}
 ): UseUndoRedoReturn => {
-  const { maxHistorySize = 50, debounceTime = 500 } = options;
+  const { maxHistorySize = 50, debounceTime = 500, hydrateNodes } = options;
 
-  // History stacks
   const [past, setPast] = useState<HistoryState[]>([]);
   const [future, setFuture] = useState<HistoryState[]>([]);
+  const [hasPendingSnapshot, setHasPendingSnapshot] = useState(false);
 
-  // Debounce timer
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isUndoRedoRef = useRef(false);
+  const latestStateRef = useRef<HistoryState>({ nodes, edges });
+  const pastRef = useRef<HistoryState[]>([]);
+  const futureRef = useRef<HistoryState[]>([]);
+  const lastSnapshotRef = useRef<HistoryState | null>(null);
+  const pendingUndoTargetRef = useRef<HistoryState | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextSnapshotRef = useRef(false);
 
-  /**
-   * Take a snapshot of the current state and add it to history
-   */
-  const takeSnapshot = useCallback(() => {
-    // Don't record if we're in the middle of undo/redo
-    if (isUndoRedoRef.current) return;
+  // Keep latest state available to timers/callbacks without stale closures
+  latestStateRef.current = { nodes, edges };
 
-    // Clear any pending debounce
+  const setPastHistory = useCallback((nextPast: HistoryState[]) => {
+    pastRef.current = nextPast;
+    setPast(nextPast);
+  }, []);
+
+  const setFutureHistory = useCallback((nextFuture: HistoryState[]) => {
+    futureRef.current = nextFuture;
+    setFuture(nextFuture);
+  }, []);
+
+  const clearDebounceTimer = useCallback(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, []);
+
+  const clearPendingSnapshot = useCallback(() => {
+    clearDebounceTimer();
+    pendingUndoTargetRef.current = null;
+    setHasPendingSnapshot(false);
+  }, [clearDebounceTimer]);
+
+  const restoreState = useCallback(
+    (state: HistoryState) => {
+      const clonedState = cloneState(state);
+      lastSnapshotRef.current = clonedState;
+      // Skip the snapshot effect tick this restore is about to trigger
+      suppressNextSnapshotRef.current = true;
+
+      setNodes(
+        hydrateNodes ? hydrateNodes(clonedState.nodes) : clonedState.nodes
+      );
+      setEdges(clonedState.edges);
+    },
+    [hydrateNodes, setEdges, setNodes]
+  );
+
+  const takeSnapshot = useCallback(() => {
+    if (suppressNextSnapshotRef.current) {
+      suppressNextSnapshotRef.current = false;
+      clearPendingSnapshot();
+      return;
     }
 
-    // Debounce the snapshot to batch rapid changes (like dragging)
+    const lastSnapshot = lastSnapshotRef.current;
+
+    // First change seeds the baseline rather than recording a step
+    if (!lastSnapshot) {
+      lastSnapshotRef.current = cloneState(latestStateRef.current);
+      return;
+    }
+
+    if (!pendingUndoTargetRef.current) {
+      // Selection clicks, edge-class rewrites, and re-measure echoes change
+      // state identity without content, no undo window for those
+      if (isEqual(cloneState(latestStateRef.current), lastSnapshot)) {
+        return;
+      }
+      pendingUndoTargetRef.current = cloneState(lastSnapshot);
+
+      // A new edit starts a fresh branch, drop redo now
+      if (futureRef.current.length > 0) {
+        setFutureHistory([]);
+      }
+    }
+
+    clearDebounceTimer();
+    setHasPendingSnapshot(true);
+
     debounceTimerRef.current = setTimeout(() => {
-      const snapshot: HistoryState = {
-        nodes: [...nodes],
-        edges: [...edges],
-      };
+      const undoTarget = pendingUndoTargetRef.current;
 
-      setPast((prev) => {
-        const newPast = [...prev, snapshot];
-        // Limit history size
-        if (newPast.length > maxHistorySize) {
-          return newPast.slice(1);
-        }
-        return newPast;
-      });
+      if (!undoTarget) {
+        setHasPendingSnapshot(false);
+        debounceTimerRef.current = null;
+        return;
+      }
 
-      // Clear future when a new change is made
-      setFuture([]);
+      const latestState = cloneState(latestStateRef.current);
+
+      // Edits that net out to the baseline shouldn't record a step
+      if (
+        lastSnapshotRef.current &&
+        isEqual(latestState, lastSnapshotRef.current)
+      ) {
+        pendingUndoTargetRef.current = null;
+        setHasPendingSnapshot(false);
+        debounceTimerRef.current = null;
+        return;
+      }
+
+      setPastHistory(
+        trimHistory([...pastRef.current, cloneState(undoTarget)], maxHistorySize)
+      );
+      lastSnapshotRef.current = latestState;
+      pendingUndoTargetRef.current = null;
+      setHasPendingSnapshot(false);
+      debounceTimerRef.current = null;
     }, debounceTime);
-  }, [nodes, edges, maxHistorySize, debounceTime]);
+  }, [
+    clearDebounceTimer,
+    clearPendingSnapshot,
+    debounceTime,
+    maxHistorySize,
+    setFutureHistory,
+    setPastHistory,
+  ]);
 
-  /**
-   * Undo the last change
-   */
   const undo = useCallback(() => {
-    if (past.length === 0) return;
+    let pendingUndoTarget = pendingUndoTargetRef.current;
 
-    isUndoRedoRef.current = true;
+    if (!pendingUndoTarget && pastRef.current.length === 0) return;
 
-    // Get the last state from history
-    const newPast = [...past];
-    const previousState = newPast.pop()!;
+    const currentState =
+      suppressNextSnapshotRef.current && lastSnapshotRef.current
+        ? cloneState(lastSnapshotRef.current)
+        : cloneState(latestStateRef.current);
 
-    // Save current state to future
-    const currentState: HistoryState = {
-      nodes: [...nodes],
-      edges: [...edges],
-    };
 
-    setPast(newPast);
-    setFuture((prev) => [...prev, currentState]);
+    if (pendingUndoTarget && isEqual(pendingUndoTarget, currentState)) {
+      clearPendingSnapshot();
+      pendingUndoTarget = null;
+    }
 
-    // Restore previous state
-    setNodes(previousState.nodes);
-    setEdges(previousState.edges);
+    const previousState =
+      pendingUndoTarget ?? pastRef.current[pastRef.current.length - 1];
 
-    // Reset flag after a brief delay to allow state to settle
-    setTimeout(() => {
-      isUndoRedoRef.current = false;
-    }, 100);
-  }, [past, nodes, edges, setNodes, setEdges]);
+    if (!previousState) return;
 
-  /**
-   * Redo the last undone change
-   */
+    clearPendingSnapshot();
+
+    if (!pendingUndoTarget) {
+      setPastHistory(pastRef.current.slice(0, -1));
+    }
+
+    setFutureHistory([...futureRef.current, currentState]);
+    restoreState(previousState);
+  }, [clearPendingSnapshot, restoreState, setFutureHistory, setPastHistory]);
+
   const redo = useCallback(() => {
-    if (future.length === 0) return;
+    const nextState = futureRef.current[futureRef.current.length - 1];
 
-    isUndoRedoRef.current = true;
+    if (!nextState) return;
 
-    // Get the next state from future
-    const newFuture = [...future];
-    const nextState = newFuture.pop()!;
+    clearPendingSnapshot();
 
-    // Save current state to history
-    const currentState: HistoryState = {
-      nodes: [...nodes],
-      edges: [...edges],
-    };
+    const currentState =
+      suppressNextSnapshotRef.current && lastSnapshotRef.current
+        ? cloneState(lastSnapshotRef.current)
+        : cloneState(latestStateRef.current);
 
-    setFuture(newFuture);
-    setPast((prev) => [...prev, currentState]);
+    setFutureHistory(futureRef.current.slice(0, -1));
+    setPastHistory(
+      trimHistory([...pastRef.current, currentState], maxHistorySize)
+    );
+    restoreState(nextState);
+  }, [
+    clearPendingSnapshot,
+    maxHistorySize,
+    restoreState,
+    setFutureHistory,
+    setPastHistory,
+  ]);
 
-    // Restore next state
-    setNodes(nextState.nodes);
-    setEdges(nextState.edges);
+  const resetHistory = useCallback(
+    (state: HistoryState) => {
+      clearPendingSnapshot();
+      lastSnapshotRef.current = cloneState(state);
+      suppressNextSnapshotRef.current = true;
+      setPastHistory([]);
+      setFutureHistory([]);
+    },
+    [clearPendingSnapshot, setFutureHistory, setPastHistory]
+  );
 
-    // Reset flag after a brief delay to allow state to settle
-    setTimeout(() => {
-      isUndoRedoRef.current = false;
-    }, 100);
-  }, [future, nodes, edges, setNodes, setEdges]);
-
-  /**
-   * Clear all history
-   */
   const clear = useCallback(() => {
-    setPast([]);
-    setFuture([]);
-  }, []);
+    clearPendingSnapshot();
+    lastSnapshotRef.current = cloneState(latestStateRef.current);
+    suppressNextSnapshotRef.current = false;
+    setPastHistory([]);
+    setFutureHistory([]);
+  }, [clearPendingSnapshot, setFutureHistory, setPastHistory]);
+
+  useEffect(() => {
+    return () => {
+      clearDebounceTimer();
+    };
+  }, [clearDebounceTimer]);
 
   return {
     undo,
     redo,
-    canUndo: past.length > 0,
+    canUndo: past.length > 0 || hasPendingSnapshot,
     canRedo: future.length > 0,
     takeSnapshot,
+    resetHistory,
     clear,
   };
 };
