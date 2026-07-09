@@ -6,14 +6,21 @@ import tempfile
 import uuid
 from typing import Any, Dict
 
-import httpx
-
 from app.core.utils.html_utils import html2markdown
 from app.core.utils.web_content_utils import clean_html, extract_links, extract_main_content, extract_metadata
+from app.core.utils.web_scrape_cache import get_cached, store
 from app.core.utils.web_scraping_utils import fetch_from_url
 from app.modules.workflow.engine import BaseNode
 
 logger = logging.getLogger(__name__)
+
+
+def _as_int(value: Any, default: int) -> int:
+    # config values may arrive as None/""/str/float after template resolution
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 
 class WebScraperNode(BaseNode):
@@ -27,12 +34,13 @@ class WebScraperNode(BaseNode):
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         url = (config.get("url") or "").strip()
         output_format = (config.get("format") or "markdown").lower()
-        render_js = bool(config.get("renderJs", False))
         headers = config.get("headers") or {}
         only_main_content = bool(config.get("onlyMainContent", True))
-        include_links = bool(config.get("includeLinks", True))
-        include_metadata = bool(config.get("includeMetadata", True))
         screenshot_opt = config.get("screenshot") or "off"
+        wait_until = config.get("waitUntil") or "domcontentloaded"
+        wait_for_ms = _as_int(config.get("waitFor"), 0)
+        scroll_to_bottom = bool(config.get("scrollToBottom", False))
+        max_age = _as_int(config.get("maxAge"), 0)
 
         if not url:
             return self._error("", output_format, "URL is required")
@@ -41,15 +49,33 @@ class WebScraperNode(BaseNode):
         if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
 
-        render_browser = render_js or screenshot_opt != "off"
+        # every scrape-affecting option keys the cache; headers isolate auth
+        cache_options = {
+            "format": output_format,
+            "onlyMainContent": only_main_content,
+            "screenshot": screenshot_opt,
+            "headers": headers,
+            "waitFor": wait_for_ms,
+            "waitUntil": wait_until,
+            "scrollToBottom": scroll_to_bottom,
+        }
+        if max_age > 0:
+            # key on the normalized input url so the same request hits the same entry
+            cached = await get_cached(url, cache_options, max_age)
+            if cached is not None:
+                return cached
 
         try:
             fetched = await fetch_from_url(
                 url,
                 headers=headers,
-                use_http_request=not render_browser,
                 screenshot=screenshot_opt,
+                wait_until=wait_until,
+                wait_for_ms=wait_for_ms,
+                scroll_to_bottom=scroll_to_bottom,
             )
+            if not fetched.ok:
+                return self._error(url, output_format, "Failed to fetch page")
             raw_html = fetched.html
             final_url = fetched.url or url  # post-redirect URL; input url as a safety net
 
@@ -57,30 +83,30 @@ class WebScraperNode(BaseNode):
                 "success": True,
                 "url": final_url,
                 "format": output_format,
-                "status_code": fetched.status_code,
                 "error": "",
                 "screenshot": "",
                 "screenshot_file_id": "",
             }
 
-            if output_format == "html":
-                cleaned = clean_html(raw_html, final_url)
-                result["html"] = cleaned
-                result["content"] = cleaned
+            # resolve the content scope once so markdown, html and links all agree
+            if only_main_content:
+                main_md, main_html = extract_main_content(raw_html, final_url)
             else:
-                if only_main_content:
-                    markdown = extract_main_content(raw_html, final_url)[0]
-                else:
-                    markdown = html2markdown(raw_html, base_url=final_url)
-                result["markdown"] = markdown
-                result["content"] = markdown
-                if output_format == "both":
-                    result["html"] = clean_html(raw_html, final_url)
+                main_md = html2markdown(raw_html, base_url=final_url)
+                main_html = clean_html(raw_html, final_url)
 
-            if include_links:
-                result["links"] = extract_links(raw_html, final_url)
-            if include_metadata:
-                result["metadata"] = extract_metadata(raw_html, final_url, fetched.status_code, fetched.content_type)
+            if output_format == "html":
+                result["html"] = main_html
+                result["content"] = main_html
+            else:
+                result["markdown"] = main_md
+                result["content"] = main_md
+                if output_format == "both":
+                    result["html"] = main_html
+
+            # links follow the same scope; metadata always reads raw html
+            result["links"] = extract_links(main_html if only_main_content else raw_html, final_url)
+            result["metadata"] = extract_metadata(raw_html, final_url, fetched.content_type)
 
             # host the screenshot after the browser has closed; never blocks a successful scrape
             if fetched.screenshot_bytes:
@@ -88,11 +114,13 @@ class WebScraperNode(BaseNode):
                     fetched.screenshot_bytes, final_url
                 )
 
+            # cacheState only appears when caching is on, so the default output shape is unchanged
+            if max_age > 0:
+                await store(url, cache_options, max_age, result)
+                result = {**result, "cacheState": "miss"}
+
             return result
 
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code if exc.response is not None else None
-            return self._error(url, output_format, f"HTTP error {status}", status_code=status)
         except ValueError as exc:
             # SSRF, disallowed scheme and DNS failures surface as ValueError
             return self._error(url, output_format, str(exc))
@@ -103,8 +131,8 @@ class WebScraperNode(BaseNode):
     async def _host_screenshot(self, image_bytes: bytes, source_url: str) -> tuple[str, str]:
         """Return ``(screenshot_url, screenshot_file_id)`` for the captured PNG; never raises.
 
-        Hosts the PNG via FileManagerService so the output carries a short source URL. 
-        The public ``/source`` route works regardless of the file-manager flag; 
+        Hosts the PNG via FileManagerService so the output carries a short source URL.
+        The public ``/source`` route works regardless of the file-manager flag;
         on any failure the fields stay empty.
         """
         try:
@@ -161,12 +189,11 @@ class WebScraperNode(BaseNode):
         return await fm.get_file_url(created), str(created.id)
 
     @staticmethod
-    def _error(url: str, output_format: str, message: str, status_code: int | None = None) -> Dict[str, Any]:
+    def _error(url: str, output_format: str, message: str) -> Dict[str, Any]:
         return {
             "success": False,
             "url": url,
             "content": "",
             "format": output_format,
-            "status_code": status_code,
             "error": message,
         }

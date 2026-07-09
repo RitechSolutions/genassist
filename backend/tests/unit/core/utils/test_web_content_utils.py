@@ -1,6 +1,7 @@
 """Unit tests for the scraped-content extraction helpers."""
 
 from app.core.utils.web_content_utils import (
+    _THIN_CONTENT_WORDS,
     clean_html,
     extract_links,
     extract_main_content,
@@ -72,14 +73,13 @@ def test_metadata_parses_all_tags_and_absolutizes():
         <body></body>
         </html>
     """
-    meta = extract_metadata(html, "https://example.com/some/page", 200, "text/html")
+    meta = extract_metadata(html, "https://example.com/some/page", "text/html")
 
     # curated keys stay authoritative with their derived/absolutized values
     assert meta["title"] == "My Page"
     assert meta["description"] == "A description"
     assert meta["language"] == "en-US"
     assert meta["sourceURL"] == "https://example.com/some/page"
-    assert meta["statusCode"] == 200
     assert meta["contentType"] == "text/html"
     assert meta["ogTitle"] == "OG Title"
     assert meta["ogDescription"] == "OG Desc"
@@ -94,7 +94,7 @@ def test_metadata_parses_all_tags_and_absolutizes():
 
 
 def test_metadata_missing_values_are_none_and_favicon_falls_back():
-    meta = extract_metadata("<html><head></head><body>hi</body></html>", "https://example.com/x", None, None)
+    meta = extract_metadata("<html><head></head><body>hi</body></html>", "https://example.com/x", None)
     assert meta["title"] is None
     assert meta["description"] is None
     assert meta["language"] is None
@@ -103,7 +103,6 @@ def test_metadata_missing_values_are_none_and_favicon_falls_back():
     assert meta["canonical"] is None
     assert meta["favicon"] == "https://example.com/favicon.ico"
     assert meta["sourceURL"] == "https://example.com/x"
-    assert meta["statusCode"] is None
     assert meta["contentType"] is None
 
 
@@ -119,7 +118,7 @@ def test_main_content_extracts_article_and_returns_cleaned_html():
             <p>First paragraph with enough words to be recognized as the main content of
             the page, containing several sentences, commas, and genuinely meaningful text.</p>
             <p>Second paragraph continues the article body with more substantial prose so
-            that readability confidently scores this block as the primary content region.</p>
+            that chrome-strip clearly keeps this block as the primary content region.</p>
         </article>
         <footer>Copyright 2026 Example Inc</footer>
         </body></html>
@@ -149,6 +148,25 @@ def test_main_content_keeps_header_and_drops_chrome():
     assert "Tagline sentence" in markdown
     assert "Menu" not in markdown
     assert "Footer links" not in markdown
+
+
+def test_main_content_readability_rescues_content():
+    # body lives inside an <aside> that chrome-strip drops, leaving thin output;
+    # readability rescues it because it recovers strictly more words
+    body = " ".join(f"Paragraph sentence number {i} carries genuine article prose." for i in range(40))
+    html = f"""
+        <html><body>
+        <nav>Home About Contact</nav>
+        <p>Tiny intro.</p>
+        <aside><article><h1>Rescued Headline</h1><p>{body}</p></article></aside>
+        <footer>Copyright 2026</footer>
+        </body></html>
+    """
+    markdown, cleaned_html = extract_main_content(html, _BASE)
+    assert "Rescued Headline" in markdown
+    assert "genuine article prose" in markdown
+    assert len(markdown.split()) >= _THIN_CONTENT_WORDS
+    assert "Rescued Headline" in cleaned_html
 
 
 def test_main_content_empty_html_falls_back_without_raising():

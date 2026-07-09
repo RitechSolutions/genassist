@@ -136,10 +136,10 @@ NODE_DESCRIPTIONS = {
     },
     "webScraperNode": {
         "category": "Integration",
-        "description": "Fetches a web page and returns clean scraped content plus its side-channels, without relying on an external scraping service. "
-        "Blocks private/loopback/metadata hosts. Returns {success, url, status_code, format, error, content, markdown, html, links, metadata, screenshot, screenshot_file_id}, "
-        "where url/status_code are the final post-redirect URL and HTTP status, links is an array of absolute page URLs, metadata carries title/description/ogImage/canonical, and screenshot is a hosted image URL (or data URI) when a screenshot mode is set.",
-        "when_to_use": "When the workflow needs the text, links, metadata or a screenshot of a public web page without relying on an external scraping service.",
+        "description": "Fetches a web page and returns clean scraped content plus its side-channels. "
+        "Blocks private/loopback/metadata hosts. Returns {success, url, format, error, content, markdown, html, links, metadata, screenshot, screenshot_file_id}, "
+        "where url is the final post-redirect URL, links is an array of absolute page URLs, metadata carries title/description/ogImage/canonical, and screenshot is a hosted image URL (or data URI) when a screenshot mode is set.",
+        "when_to_use": "When the workflow needs the text, links, metadata or a screenshot of a public web page.",
         "example_use_cases": [
             "Profiling a company from its homepage using {{source.markdown}} and {{source.metadata.title}}",
             "Harvesting {{source.links}} to crawl the rest of a site",

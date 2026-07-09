@@ -92,17 +92,9 @@ def extract_links(
 def extract_metadata(
     html: str,
     final_url: str,
-    status_code: int | None,
     content_type: str | None,
 ) -> dict:
-    """Curated metadata keys plus every raw ``<meta>``/``<link rel>`` tag on the page.
-
-    The 11 curated keys are authoritative and always present (missing values are
-    ``None``): ``sourceURL``/``statusCode``/``contentType`` are threaded from the fetch
-    result; ``ogImage``/``canonical``/``favicon`` are absolutized against ``final_url``.
-    Remaining tags are swept in afterwards (``og:title``, ``twitter:card``, …) without
-    overriding a curated key
-    """
+    """Curated metadata keys plus every raw ``<meta>``/``<link rel>`` tag on the page."""
     soup = _soup(html)
 
     title_tag = soup.find("title")
@@ -136,7 +128,6 @@ def extract_metadata(
         "description": _meta(soup, name="description"),
         "language": language,
         "sourceURL": final_url,
-        "statusCode": status_code,
         "contentType": content_type,
         "ogTitle": _meta(soup, prop="og:title"),
         "ogDescription": _meta(soup, prop="og:description"),
@@ -170,11 +161,33 @@ def _tidy_markdown(markdown: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 
-def extract_main_content(html: str, base_url: str) -> tuple[str, str]:
-    """Return ``(markdown, cleaned_html)`` for the page's main content.
+# Below this word count chrome-strip may have under-extracted, so readability is tried
+_THIN_CONTENT_WORDS = 200
 
-    Strips scripts/styles/svg/images and page chrome (nav/footer/aside)
-    while keeping the article ``<header>`` and body sections, then converts to markdown.
-    """
+
+def _readability_main_content(html: str, base_url: str) -> tuple[str, str] | None:
+    """Readability-scored main content, or ``None`` when it can't help."""
+    if not html or not html.strip():
+        return None
+    try:
+        from readability import Document
+
+        summary_html = Document(html).summary(html_partial=True)
+    except Exception:
+        return None
+    alt_html = clean_html(summary_html, base_url)  # readability already dropped nav/footer
+    alt_md = _tidy_markdown(html2markdown(alt_html, base_url=base_url))
+    return (alt_md, alt_html) if alt_md.strip() else None
+
+
+def extract_main_content(html: str, base_url: str) -> tuple[str, str]:
+    """Return ``(markdown, cleaned_html)`` for the page's main content."""
     cleaned = clean_html(html, base_url, drop_chrome=True)
-    return _tidy_markdown(html2markdown(cleaned, base_url=base_url)), cleaned
+    markdown = _tidy_markdown(html2markdown(cleaned, base_url=base_url))
+    if len(markdown.split()) >= _THIN_CONTENT_WORDS:
+        return markdown, cleaned
+    # Only swap when readability itself clears the substance bar chrome-strip missed;
+    rescued = _readability_main_content(html, base_url)
+    if rescued and len(rescued[0].split()) >= _THIN_CONTENT_WORDS:
+        return rescued
+    return markdown, cleaned

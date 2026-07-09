@@ -33,7 +33,6 @@ const WebScraperNode: React.FC<NodeProps<WebScraperNodeData>> = ({
   const nodeContent: NodeContentRow[] = [
     { label: "URL", value: data.url },
     { label: "Format", value: data.format },
-    { label: "Render JS", value: data.renderJs ? "On" : "Off" },
     {
       label: "Variables",
       value: extractDynamicVariablesAsRecord(JSON.stringify(data)),

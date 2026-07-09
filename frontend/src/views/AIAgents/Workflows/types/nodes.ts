@@ -180,11 +180,8 @@ export interface APIToolNodeData extends BaseNodeData {
 export interface WebScraperNodeData extends BaseNodeData {
   url: string;
   format: "markdown" | "html" | "both";
-  renderJs: boolean;
   headers: Record<string, string>;
   onlyMainContent: boolean;
-  includeLinks: boolean;
-  includeMetadata: boolean;
   screenshot: "off" | "viewport" | "fullPage";
 }
 

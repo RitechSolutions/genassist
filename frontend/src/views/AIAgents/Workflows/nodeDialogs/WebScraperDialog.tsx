@@ -32,15 +32,8 @@ export const WebScraperDialog: React.FC<
   const [format, setFormat] = useState<OutputFormat>(
     (data.format as OutputFormat) || "markdown"
   );
-  const [renderJs, setRenderJs] = useState<boolean>(data.renderJs ?? false);
   const [onlyMainContent, setOnlyMainContent] = useState<boolean>(
     data.onlyMainContent ?? true
-  );
-  const [includeLinks, setIncludeLinks] = useState<boolean>(
-    data.includeLinks ?? true
-  );
-  const [includeMetadata, setIncludeMetadata] = useState<boolean>(
-    data.includeMetadata ?? true
   );
   const [screenshot, setScreenshot] = useState<ScreenshotMode>(
     (data.screenshot as ScreenshotMode) || "off"
@@ -52,10 +45,7 @@ export const WebScraperDialog: React.FC<
     setName(data.name || "");
     setUrl(data.url || "");
     setFormat((data.format as OutputFormat) || "markdown");
-    setRenderJs(data.renderJs ?? false);
     setOnlyMainContent(data.onlyMainContent ?? true);
-    setIncludeLinks(data.includeLinks ?? true);
-    setIncludeMetadata(data.includeMetadata ?? true);
     setScreenshot((data.screenshot as ScreenshotMode) || "off");
     setHeaders(data.headers || {});
   }, [isOpen]);
@@ -66,10 +56,7 @@ export const WebScraperDialog: React.FC<
       name,
       url,
       format,
-      renderJs,
       onlyMainContent,
-      includeLinks,
-      includeMetadata,
       screenshot,
       headers,
     });
@@ -122,10 +109,7 @@ export const WebScraperDialog: React.FC<
         name,
         url,
         format,
-        renderJs,
         onlyMainContent,
-        includeLinks,
-        includeMetadata,
         screenshot,
         headers,
       }}
@@ -188,19 +172,8 @@ export const WebScraperDialog: React.FC<
           </SelectContent>
         </Select>
         <div className="text-xs text-gray-500 break-words">
-          Capturing a screenshot forces the slower headless-browser path.
+          Capture a viewport or full-page screenshot of the rendered page.
         </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <Label>Render JavaScript</Label>
-          <p className="text-xs text-muted-foreground">
-            Loads the page in a headless browser for JS-heavy sites. Slower than
-            the default fast fetch.
-          </p>
-        </div>
-        <Switch checked={renderJs} onCheckedChange={setRenderJs} />
       </div>
 
       <div className="flex items-center justify-between">
@@ -214,30 +187,6 @@ export const WebScraperDialog: React.FC<
         <Switch
           checked={onlyMainContent}
           onCheckedChange={setOnlyMainContent}
-        />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <Label>Include Links</Label>
-          <p className="text-xs text-muted-foreground">
-            Returns a links[] array of the absolute URLs found on the page.
-          </p>
-        </div>
-        <Switch checked={includeLinks} onCheckedChange={setIncludeLinks} />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <Label>Include Metadata</Label>
-          <p className="text-xs text-muted-foreground">
-            Returns a metadata object with the page title, description, Open
-            Graph tags and canonical URL.
-          </p>
-        </div>
-        <Switch
-          checked={includeMetadata}
-          onCheckedChange={setIncludeMetadata}
         />
       </div>
 

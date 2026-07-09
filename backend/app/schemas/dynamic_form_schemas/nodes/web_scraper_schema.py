@@ -29,27 +29,9 @@ WEB_SCRAPER_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         ],
     ),
     FieldSchema(
-        name="renderJs",
-        type="boolean",
-        label="Render JavaScript",
-        default=False,
-    ),
-    FieldSchema(
         name="onlyMainContent",
         type="boolean",
         label="Only Main Content",
-        default=True,
-    ),
-    FieldSchema(
-        name="includeLinks",
-        type="boolean",
-        label="Include Links",
-        default=True,
-    ),
-    FieldSchema(
-        name="includeMetadata",
-        type="boolean",
-        label="Include Metadata",
         default=True,
     ),
     FieldSchema(
@@ -69,5 +51,43 @@ WEB_SCRAPER_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         type="text",
         label="Headers (JSON object)",
         required=False,
+    ),
+    # render-timing controls 
+    FieldSchema(
+        name="waitFor",
+        type="number",
+        label="Wait For (ms)",
+        default=0,
+        min=0,
+        advanced=True,
+    ),
+    FieldSchema(
+        name="waitUntil",
+        type="select",
+        label="Wait Until",
+        default="domcontentloaded",
+        options=[
+            {"label": "DOM Content Loaded", "value": "domcontentloaded"},
+            {"label": "Load", "value": "load"},
+            {"label": "Network Idle", "value": "networkidle"},
+            {"label": "Commit", "value": "commit"},
+        ],
+        advanced=True,
+    ),
+    FieldSchema(
+        name="scrollToBottom",
+        type="boolean",
+        label="Scroll To Bottom",
+        default=False,
+        advanced=True,
+    ),
+    # opt-in result cache; 0 disables. Tenant-scoped, capped at 7d server-side
+    FieldSchema(
+        name="maxAge",
+        type="number",
+        label="Cache Max Age (seconds)",
+        default=0,
+        min=0,
+        advanced=True,
     ),
 ]
