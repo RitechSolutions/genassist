@@ -206,6 +206,35 @@ input[type="checkbox"]:hover {
   stroke-width: 3 !important;
 }
 
+/* Node search spotlight — dim everything except the matched node(s) */
+.react-flow__node.node-search-dim {
+  opacity: 0.18;
+  filter: grayscale(1);
+  pointer-events: none;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.react-flow__edge.edge-search-dim {
+  opacity: 0.12;
+  filter: grayscale(1);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.react-flow__node.node-search-match {
+  z-index: 12 !important;
+  animation: node-search-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes node-search-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 5px hsl(var(--brand-600) / 0.55));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px hsl(var(--brand-600) / 0.95));
+  }
+}
+
 /* Animated gradient border for AI Agent node */
 @property --agent-border-angle {
   syntax: '<angle>';
@@ -237,6 +266,15 @@ input[type="checkbox"]:hover {
 .react-flow__panel.react-flow__controls {
   border-radius: 32px;
   overflow: hidden;
+}
+
+/* Zoom controls pill — rounded/clipped group, used inside the bottom-left controls stack */
+.wf-zoom-controls {
+  display: flex;
+  flex-direction: column;
+  border-radius: 32px;
+  overflow: hidden;
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.08);
 }
 
 /* Custom React Flow controls buttons with Lucide icons */

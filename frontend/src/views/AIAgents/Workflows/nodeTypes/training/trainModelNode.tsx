@@ -89,4 +89,4 @@ const TrainModelNode: React.FC<NodeProps<TrainModelNodeData>> = ({
   );
 };
 
-export default TrainModelNode;
+export default React.memo(TrainModelNode);

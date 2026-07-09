@@ -27,6 +27,7 @@ import AuditLogs from "@/views/AuditLogs";
 import Unauthorized from "@/views/Unauthorized";
 import LlmAnalyst from "@/views/LlmAnalyst/Index";
 import LLMProviders from "@/views/LlmProviders/Index";
+import FallbackChains from "@/views/FallbackChains/Index";
 import AudioProviders from "@/views/AudioProviders/Index";
 import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
@@ -285,6 +286,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
                   <LLMProviders />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "fallback-chains",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
+                  <FallbackChains />
                 </ProtectedRoute>
               ),
             },

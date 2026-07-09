@@ -13,6 +13,10 @@ export interface Workflow {
   agent_id?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: string;
+  updated_by?: string;
+  // Username of the user who last modified the workflow (resolved by the API)
+  updated_by_username?: string;
   // Execution state that gets persisted
   executionState?: WorkflowExecutionState;
 }

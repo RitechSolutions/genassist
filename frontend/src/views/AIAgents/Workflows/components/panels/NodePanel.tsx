@@ -71,6 +71,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const nodeCategories = nodeRegistry.getAllCategories();
   const [draggingNodeType, setDraggingNodeType] = useState<string | null>(null);
   const dragPreviewContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<string>("available");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedHelp, setSelectedHelp] = useState<HelpDialogState | null>(null);
@@ -92,6 +93,16 @@ const NodePanel: React.FC<NodePanelProps> = ({
   }, [activeConversationalTab]);
 
   const showConversationalTab = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CONVERSATIONAL_TAB);
+
+  // Focus the node search whenever the panel opens on the Available Nodes tab
+  // (e.g. via the ⌘I / Ctrl+I shortcut or the toggle button).
+  React.useEffect(() => {
+    if (isOpen && (activeTab === "available" || !showConversationalTab)) {
+      // Delay so the slide-in transition doesn't swallow the focus.
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 60);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, activeTab, showConversationalTab]);
 
   const handleSend = () => {
     if (inputMessage.trim() && onSendMessage && !isThinking) {
@@ -431,6 +442,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                   <div className="relative flex items-center">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <RichInput
+                      ref={searchInputRef}
                       type="text"
                       placeholder="Search nodes..."
                       value={searchQuery}
@@ -447,11 +459,34 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 {/* Messages area */}
                 <div ref={conversationScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
                   {messages.length === 0 && !isThinking ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-2 text-center py-12">
-                      <Sparkles className="h-8 w-8 text-[hsl(var(--brand-300))]" />
-                      <p className="text-sm text-muted-foreground">
-                        Ask the AI to help build your workflow.
-                      </p>
+                    <div className="flex flex-col justify-center h-full gap-8 py-12">
+                      <div className="flex justify-center">
+                        <svg
+                          width="64"
+                          height="64"
+                          viewBox="0 0 64 64"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M59.9971 32.8848L59.999 32.8867L35.1133 57.7705L22.3008 44.96L22.915 43.3008C23.6078 41.431 24.8249 39.8283 26.3906 38.6611L35.1133 47.3838V32.8848H59.9971ZM20.3867 23.3965C21.2165 25.6369 22.6409 27.5756 24.4727 29.0283L20.6152 32.8867L24.4668 36.7383C22.6377 38.1905 21.2157 40.128 20.3867 42.3662L20.2031 42.8613L10.2266 32.8867L20.2051 22.9072L20.3867 23.3965ZM57.4336 30.3203H47.0449L35.1133 18.3877L26.3965 27.1045C24.8278 25.9367 23.6084 24.3323 22.915 22.46L22.3037 20.8086L35.1133 8L57.4336 30.3203Z"
+                            fill="#D8D8D8"
+                          />
+                          <path
+                            d="M18.5165 18.3594L20.3777 23.3911C21.6857 26.9231 24.4693 29.7066 28.0013 31.0147L33.033 32.8759L28.0013 34.737C24.4693 36.045 21.6858 38.8287 20.3777 42.3607L18.5165 47.3924L16.6554 42.3607C15.3474 38.8287 12.5637 36.0451 9.03169 34.737L4 32.8759L9.03169 31.0147C12.5637 29.7067 15.3473 26.9231 16.6554 23.3911L18.5165 18.3594Z"
+                            fill="#D8D8D8"
+                          />
+                        </svg>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-lg text-muted-foreground">
+                          Let&apos;s create your agent together.
+                        </p>
+                        <p className="text-lg font-semibold text-foreground">
+                          What would you like your agent to do?
+                        </p>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -522,7 +557,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                   )}
                 </div>
                 {/* Input bar */}
-                <div className="p-3 border-t border-border">
+                <div className="p-3">
                   <div className="relative flex items-center">
                     <Sparkles className="absolute left-3 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
                     <input

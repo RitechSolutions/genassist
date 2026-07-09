@@ -38,6 +38,7 @@ export const GlobalChat = () => {
       apiKey={genassistApiKey}
       // tenant={tenantId}
       headerTitle="Genassist Chat"
+      brandLogoUrl="https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg"
       theme={{
         primaryColor: "#173DED",
         backgroundColor: "#ffffff",
@@ -51,6 +52,7 @@ export const GlobalChat = () => {
         position: "bottom-right",
       }}
       useFile={true}
+      quickInput={true}
       usePoll={isPollEnabled}
     />
   );
