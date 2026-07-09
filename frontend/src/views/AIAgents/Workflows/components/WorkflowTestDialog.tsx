@@ -39,6 +39,9 @@ import { useAudioCapture } from "../hooks/useAudioCapture";
 import { getAudioUrl, stripAudioDataForDisplay } from "../hooks/useAudioTest";
 import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
+import NodeExecutionView from "./execution/NodeExecutionView";
+
+type TestViewMode = "response" | "debug" | "execution";
 
 // Node types that consume audio input from the workflow's session state.
 const AUDIO_INPUT_NODE_TYPES = ["voiceAgentNode", "sttNode"];
@@ -69,7 +72,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const [response, setResponse] = useState<WorkflowTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioData, setAudioData] = useState<{ data: string; format: string } | null>(null);
-  const [isDebugMode, setIsDebugMode] = useState(false);
+  const [viewMode, setViewMode] = useState<TestViewMode>("response");
   const [inputSchema, setInputSchema] = useState<NodeSchema | null>(null);
   const [showMetadata, setShowMetadata] = useState(false);
   const [prefilledFields, setPrefilledFields] = useState<Set<string>>(
@@ -648,14 +651,26 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                   Test
                 </Button>
                 <Button
-                  onClick={() => setIsDebugMode(!isDebugMode)}
+                  onClick={() => setViewMode(viewMode === "debug" ? "response" : "debug")}
                   className="flex items-center gap-2"
                   style={{
-                    backgroundColor: isDebugMode ? "#000" : "#fff",
-                    color: isDebugMode ? "#fff" : "#000",
+                    backgroundColor: viewMode === "debug" ? "#000" : "#fff",
+                    color: viewMode === "debug" ? "#fff" : "#000",
                   }}
                 >
                   {"Debug"}
+                </Button>
+                <Button
+                  onClick={() =>
+                    setViewMode(viewMode === "execution" ? "response" : "execution")
+                  }
+                  className="flex items-center gap-2"
+                  style={{
+                    backgroundColor: viewMode === "execution" ? "#000" : "#fff",
+                    color: viewMode === "execution" ? "#fff" : "#000",
+                  }}
+                >
+                  {"Execution"}
                 </Button>
               </div>
             )}
@@ -790,26 +805,48 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     Resume
                   </Button>
                   <Button
-                    onClick={() => setIsDebugMode(!isDebugMode)}
+                    onClick={() => setViewMode(viewMode === "debug" ? "response" : "debug")}
                     className="flex items-center gap-2"
                     style={{
-                      backgroundColor: isDebugMode ? "#000" : "#fff",
-                      color: isDebugMode ? "#fff" : "#000",
+                      backgroundColor: viewMode === "debug" ? "#000" : "#fff",
+                      color: viewMode === "debug" ? "#fff" : "#000",
                     }}
                   >
                     {"Debug"}
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      setViewMode(viewMode === "execution" ? "response" : "execution")
+                    }
+                    className="flex items-center gap-2"
+                    style={{
+                      backgroundColor: viewMode === "execution" ? "#000" : "#fff",
+                      color: viewMode === "execution" ? "#fff" : "#000",
+                    }}
+                  >
+                    {"Execution"}
                   </Button>
                 </div>
               </div>
             )}
 
-            {error && (
+            {/* Execution view — its own empty/loading/error/data states */}
+            {viewMode === "execution" && (
+              <NodeExecutionView
+                response={response}
+                testing={testing}
+                error={error}
+                workflow={workflow}
+              />
+            )}
+
+            {viewMode !== "execution" && error && (
               <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-md">
                 {error}
               </div>
             )}
 
-            {response && (
+            {viewMode !== "execution" && response && (
               <div className="space-y-2">
                 <Label>
                   Response {response?.status === "success" ? "✅" : "❌"}
@@ -836,7 +873,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                       </div>
 
                       {/* Show each message in the result */}
-                      {!isDebugMode ? (
+                      {viewMode === "response" ? (
                         <div
                           className={`p-3 rounded-md border bg-gray-50 border-gray-100`}
                         >

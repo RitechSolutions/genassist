@@ -12,7 +12,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
-from app.core.utils.html_utils import html2markdown
+from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.core.utils.web_scraping_utils import fetch_from_url
 from app.db.models import ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
@@ -344,10 +344,16 @@ def get_messages_string_by_type(
     return json.dumps(filtered_segments)
 
 
-def _format_html(html: str, is_json: bool, base_url: str | None = None) -> str:
+def _format_html(
+    html: str, is_json: bool, content_format: str, base_url: str | None = None
+) -> str:
     if is_json:
         return html
-    return html2markdown(html, base_url)
+    if content_format == "html":
+        return html or ""
+    if content_format == "markdown":
+        return html2markdown(html, base_url)
+    return html2plaintext(html)
 
 
 async def _fetch_url_content(item: KBBase) -> str:
@@ -359,12 +365,13 @@ async def _fetch_url_content(item: KBBase) -> str:
     headers_lower = {str(k).lower(): v for k, v in headers.items()}
     use_http_request = bool(item.extra_metadata.get("use_http_request"))
     is_json = headers_lower.get("content-type") == "application/json"
+    content_format = item.extra_metadata.get("content_format") or "text"
 
     # Fetch content from all URLs and combine
     all_content = []
     for url in item.urls:
         html = await fetch_from_url(url, headers, use_http_request)
-        all_content.append(_format_html(html, is_json, base_url=url))
+        all_content.append(_format_html(html, is_json, content_format, base_url=url))
     return "\n\n---\n\n".join(all_content)
 
 

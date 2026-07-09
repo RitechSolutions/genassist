@@ -253,7 +253,10 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(formData.save_output),
       save_output_path: formData.save_output_path ?? null,
       allow_unpublished_articles: formData.type === 'zendesk' ? Boolean(formData.extra_metadata?.allow_unpublished_articles) : undefined,
-      allow_html_content: formData.type === 'zendesk' || formData.type === 'salesforce' ? Boolean(formData.extra_metadata?.allow_html_content) : undefined,
+      allow_html_content: formData.type === 'salesforce' ? Boolean(formData.extra_metadata?.allow_html_content) : undefined,
+      content_format: formData.type === 'zendesk' || formData.type === 'url'
+        ? ((formData.extra_metadata?.content_format as string) || 'text')
+        : undefined,
       rag_config: formData.rag_config ?? {},
       filePaths: formData.type === 'file'
         ? (formData.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path)
@@ -278,7 +281,10 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(em.save_output),
       save_output_path: (em.save_output_path as string) ?? null,
       allow_unpublished_articles: orig.type === 'zendesk' ? Boolean(em.allow_unpublished_articles) : undefined,
-      allow_html_content: orig.type === 'zendesk' || orig.type === 'salesforce' ? Boolean(em.allow_html_content) : undefined,
+      allow_html_content: orig.type === 'salesforce' ? Boolean(em.allow_html_content) : undefined,
+      content_format: orig.type === 'zendesk' || orig.type === 'url'
+        ? ((em.content_format as string) || 'text')
+        : undefined,
       rag_config: orig.rag_config ?? {},
       filePaths: (orig.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path),
       hasNewFiles: false,
@@ -527,7 +533,14 @@ const KnowledgeBaseForm: React.FC = () => {
         dataToSubmit.extra_metadata = {
           ...(dataToSubmit.extra_metadata || {}),
           allow_unpublished_articles: dataToSubmit.extra_metadata?.allow_unpublished_articles || false,
-          allow_html_content: dataToSubmit.extra_metadata?.allow_html_content || false,
+          content_format: dataToSubmit.extra_metadata?.content_format || 'text',
+        };
+      }
+
+      if (formData.type === 'url') {
+        dataToSubmit.extra_metadata = {
+          ...(dataToSubmit.extra_metadata || {}),
+          content_format: dataToSubmit.extra_metadata?.content_format || 'text',
         };
       }
 
@@ -771,6 +784,33 @@ const KnowledgeBaseForm: React.FC = () => {
                                   )}
                                 </div>
                               ))}
+                              <div className="mt-4">
+                                <div className="mb-1">Content Format</div>
+                                <Select
+                                  value={(formData.extra_metadata?.content_format as string) || 'text'}
+                                  onValueChange={(value) =>
+                                    setFormData(
+                                      (prev) =>
+                                        ({
+                                          ...prev,
+                                          extra_metadata: {
+                                            ...prev.extra_metadata,
+                                            content_format: value,
+                                          },
+                                        }) as KnowledgeItem
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="text">Plain text</SelectItem>
+                                    <SelectItem value="markdown">Markdown</SelectItem>
+                                    <SelectItem value="html">HTML</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
                               <div className="mt-4 rounded-lg border bg-white p-4">
                                 <div className="flex items-center justify-between">
                                   <div className="flex-1 pr-4">
@@ -1028,6 +1068,33 @@ const KnowledgeBaseForm: React.FC = () => {
 
                               {formData.type === 'zendesk' && (
                                 <div className="flex flex-col gap-6 mt-6">
+                                  <div>
+                                    <div className="mb-1">Content Format</div>
+                                    <Select
+                                      value={(formData.extra_metadata?.content_format as string) || 'text'}
+                                      onValueChange={(value) =>
+                                        setFormData(
+                                          (prev) =>
+                                            ({
+                                              ...prev,
+                                              extra_metadata: {
+                                                ...prev.extra_metadata,
+                                                content_format: value,
+                                              },
+                                            }) as KnowledgeItem
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="text">Plain text</SelectItem>
+                                        <SelectItem value="markdown">Markdown</SelectItem>
+                                        <SelectItem value="html">HTML</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
                                   <div className="rounded-lg border bg-white p-4">
                                     <div className="flex items-center justify-between">
                                       <div className="flex-1 pr-4">
@@ -1050,31 +1117,6 @@ const KnowledgeBaseForm: React.FC = () => {
                                                 extra_metadata: {
                                                   ...prev.extra_metadata,
                                                   allow_unpublished_articles: checked,
-                                                },
-                                              }) as KnowledgeItem
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="rounded-lg border bg-white p-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex-1 pr-4">
-                                        <div className="text-sm font-medium text-gray-900">Allow HTML Content</div>
-                                        <p className="text-sm text-gray-500 mt-1">
-                                          Allow HTML content to be indexed in the knowledge base.
-                                        </p>
-                                      </div>
-                                      <Switch
-                                        checked={(formData.extra_metadata?.allow_html_content as boolean) || false}
-                                        onCheckedChange={(checked) =>
-                                          setFormData(
-                                            (prev) =>
-                                              ({
-                                                ...prev,
-                                                extra_metadata: {
-                                                  ...prev.extra_metadata,
-                                                  allow_html_content: checked,
                                                 },
                                               }) as KnowledgeItem
                                           )

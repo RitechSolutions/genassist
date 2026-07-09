@@ -2,6 +2,10 @@ backend:
   - changed-files:
       - any-glob-to-any-file: "backend/**"
 
+database-migration:
+  - changed-files:
+      - any-glob-to-any-file: "backend/alembic/versions/**"
+
 documentation:
   - changed-files:
       - any-glob-to-any-file: "docs/**"
