@@ -48,7 +48,7 @@ async def analyze_zendesk_tickets_async():
 ############################
 async def process_zendesk_tickets():
 
-    logger.info("Processing Zendesk tickets...")
+    logger.debug("Processing Zendesk tickets...")
     conversation_service = injector.get(ConversationService)
     zendesk_connector = ZendeskConnector()
     zen_tickets = await zendesk_connector.get_unrated_closed_tickets()
