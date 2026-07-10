@@ -457,7 +457,7 @@ def create_celery():
     if settings.CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK:
         beat_schedule["sync-active-fine-tuning-jobs"] = {
             "task": "app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs",
-            "schedule": 120.0,  # Every 2 minutes (120 seconds)
+            "schedule": 600.0,  # Every 10 minutes (600 seconds)
         }
 
     # Check for scheduled ML model pipeline runs every minute
