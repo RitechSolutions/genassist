@@ -8,7 +8,7 @@ import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import { Loader2, Trash2, Sparkles, Plus, RefreshCw } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { listBedrockFineTuneJobs } from "@/services/bedrockFineTune";
+import { listBedrockFineTuneJobs, syncBedrockFineTuneJobs } from "@/services/bedrockFineTune";
 import type { BedrockFineTuneJob } from "@/interfaces/bedrockFineTune.interface";
 import {
   bedrockInProgressStatuses,
@@ -37,7 +37,8 @@ export function BedrockFineTuneJobsCard({
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      const data = await listBedrockFineTuneJobs(true);
+      // Fast cached load — no sync. Press "Sync" to refresh status from Bedrock.
+      const data = await listBedrockFineTuneJobs();
       setJobs(data);
       setError(null);
     } catch (err) {
@@ -51,7 +52,7 @@ export function BedrockFineTuneJobsCard({
   const handleSync = async () => {
     try {
       setSyncing(true);
-      const data = await listBedrockFineTuneJobs(true);
+      const data = await syncBedrockFineTuneJobs();
       setJobs(data);
       setError(null);
       toast.success("Jobs synced");

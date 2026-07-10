@@ -70,12 +70,30 @@ async def get_fine_tuning_job(
 ])
 async def get_jobs(
     status: Optional[BedrockJobStatus] = Query(None, description="Filter by job status"),
-    sync: bool = Query(False, description="Sync active jobs with Bedrock"),
     service: BedrockFineTuningService = Injected(BedrockFineTuningService),
 ):
-    """List all Bedrock fine-tuning jobs. Set sync=true to refresh active jobs."""
-    logger.info(f"User {get_current_user_id()} listing Bedrock fine-tuning jobs (sync={sync})")
-    return await service.get_jobs(status=status, sync=sync)
+    """List all Bedrock fine-tuning jobs (cached).
+
+    Use POST /fine-tuning/jobs/sync to refresh active jobs from Bedrock.
+    """
+    logger.info(f"User {get_current_user_id()} listing Bedrock fine-tuning jobs")
+    return await service.get_jobs(status=status)
+
+
+@router.post("/fine-tuning/jobs/sync", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.Bedrock.READ_JOB)),
+])
+async def sync_jobs(
+    status: Optional[BedrockJobStatus] = Query(None, description="Filter by job status"),
+    service: BedrockFineTuningService = Injected(BedrockFineTuningService),
+):
+    """Refresh active jobs from Bedrock, then return the list.
+
+    This is the only endpoint that triggers a sync.
+    """
+    logger.info(f"User {get_current_user_id()} syncing Bedrock fine-tuning jobs")
+    return await service.get_jobs(status=status, sync=True)
 
 
 @router.post("/fine-tuning/jobs/{job_id}/cancel", dependencies=[

@@ -20306,7 +20306,7 @@
           "OpenAI API"
         ],
         "summary": "Get Jobs",
-        "description": "List all fine-tuning jobs for the current user.\nSet sync=true to fetch fresh status from OpenAI for all jobs (slower).",
+        "description": "List all fine-tuning jobs for the current user (cached).\nUse POST /fine-tuning/jobs/sync to refresh statuses from OpenAI.",
         "operationId": "get_jobs_api_openai_fine_tuning_jobs_get",
         "security": [
           {
@@ -20334,18 +20334,6 @@
               "title": "Status"
             },
             "description": "Filter by job status"
-          },
-          {
-            "name": "sync",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Sync with OpenAI API for latest statuses",
-              "default": false,
-              "title": "Sync"
-            },
-            "description": "Sync with OpenAI API for latest statuses"
           }
         ],
         "responses": {
@@ -20409,6 +20397,65 @@
               "title": "Sync"
             },
             "description": "Sync with OpenAI API for latest status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openai/fine-tuning/jobs/sync": {
+      "post": {
+        "tags": [
+          "v1",
+          "OpenAI API"
+        ],
+        "summary": "Sync Jobs",
+        "description": "Fetch fresh status (and events) from OpenAI for all active jobs, then return\nthe refreshed list. This is the only endpoint that triggers a sync.",
+        "operationId": "sync_jobs_api_openai_fine_tuning_jobs_sync_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job status",
+              "title": "Status"
+            },
+            "description": "Filter by job status"
           }
         ],
         "responses": {
@@ -20867,7 +20914,7 @@
           "Bedrock Fine-Tuning"
         ],
         "summary": "Get Jobs",
-        "description": "List all Bedrock fine-tuning jobs. Set sync=true to refresh active jobs.",
+        "description": "List all Bedrock fine-tuning jobs (cached).\n\nUse POST /fine-tuning/jobs/sync to refresh active jobs from Bedrock.",
         "operationId": "get_jobs_api_bedrock_fine_tuning_jobs_get",
         "security": [
           {
@@ -20895,18 +20942,6 @@
               "title": "Status"
             },
             "description": "Filter by job status"
-          },
-          {
-            "name": "sync",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Sync active jobs with Bedrock",
-              "default": false,
-              "title": "Sync"
-            },
-            "description": "Sync active jobs with Bedrock"
           }
         ],
         "responses": {
@@ -20970,6 +21005,65 @@
               "title": "Sync"
             },
             "description": "Sync with Bedrock for latest status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bedrock/fine-tuning/jobs/sync": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Sync Jobs",
+        "description": "Refresh active jobs from Bedrock, then return the list.\n\nThis is the only endpoint that triggers a sync.",
+        "operationId": "sync_jobs_api_bedrock_fine_tuning_jobs_sync_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/BedrockJobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job status",
+              "title": "Status"
+            },
+            "description": "Filter by job status"
           }
         ],
         "responses": {

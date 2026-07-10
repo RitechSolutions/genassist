@@ -104,7 +104,7 @@ class BedrockFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error uploading Bedrock training data: {str(e)}")
+            logger.exception(f"Error uploading Bedrock training data: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_UPLOAD_FILE_BEDROCK)
 
     # ------------------------------------------------------------------
@@ -163,7 +163,7 @@ class BedrockFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error creating Bedrock fine-tuning job: {str(e)}")
+            logger.exception(f"Error creating Bedrock fine-tuning job: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_CREATE_JOB_BEDROCK)
 
     def _map_status(self, bedrock_status: str) -> BedrockJobStatus:
@@ -213,7 +213,7 @@ class BedrockFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error retrieving Bedrock job {job_id}: {str(e)}")
+            logger.exception(f"Error retrieving Bedrock job {job_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_MONITOR_JOB_BEDROCK)
 
     async def get_jobs(
@@ -233,13 +233,13 @@ class BedrockFineTuningService:
                         ):
                             job = await self._sync_job(job)
                     except Exception as e:
-                        logger.error(f"Error syncing Bedrock job {job.job_arn}: {str(e)}")
+                        logger.exception(f"Error syncing Bedrock job {job.job_arn}: {str(e)}")
                     synced.append(job)
                     await asyncio.sleep(0.2)
                 jobs = synced
             return [job.to_dict() for job in jobs]
         except Exception as e:
-            logger.error(f"Error listing Bedrock jobs: {str(e)}")
+            logger.exception(f"Error listing Bedrock jobs: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_MONITOR_JOB_BEDROCK)
 
     async def get_all_by_statuses(
@@ -263,7 +263,7 @@ class BedrockFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error stopping Bedrock job {job_id}: {str(e)}")
+            logger.exception(f"Error stopping Bedrock job {job_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_CANCEL_JOB_BEDROCK)
 
     # ------------------------------------------------------------------
@@ -293,7 +293,7 @@ class BedrockFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error deploying Bedrock model for job {job_id}: {str(e)}")
+            logger.exception(f"Error deploying Bedrock model for job {job_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK)
 
     async def get_fine_tunable_models(self) -> list[str]:
@@ -434,5 +434,5 @@ class BedrockFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error generating Bedrock training file: {str(e)}")
+            logger.exception(f"Error generating Bedrock training file: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_GENERATE_TRAINING_FILE)

@@ -24,12 +24,20 @@ export async function getBedrockFineTunableModels(): Promise<string[]> {
   return normalizeList<string>(res);
 }
 
-export async function listBedrockFineTuneJobs(
-  sync: boolean = true
-): Promise<BedrockFineTuneJob[]> {
+export async function listBedrockFineTuneJobs(): Promise<BedrockFineTuneJob[]> {
   const res = await apiRequest<BedrockFineTuneJob[] | PaginatedResponse<BedrockFineTuneJob>>(
     "GET",
-    `bedrock/fine-tuning/jobs${sync ? "?sync=True" : ""}`
+    "bedrock/fine-tuning/jobs"
+  );
+  return normalizeList<BedrockFineTuneJob>(res);
+}
+
+// Syncs each active job with Bedrock, then returns the refreshed list.
+// This is the only entry point that triggers a sync — the Sync button calls it.
+export async function syncBedrockFineTuneJobs(): Promise<BedrockFineTuneJob[]> {
+  const res = await apiRequest<BedrockFineTuneJob[] | PaginatedResponse<BedrockFineTuneJob>>(
+    "POST",
+    "bedrock/fine-tuning/jobs/sync"
   );
   return normalizeList<BedrockFineTuneJob>(res);
 }

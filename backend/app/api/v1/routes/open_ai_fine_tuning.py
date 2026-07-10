@@ -82,18 +82,30 @@ async def get_fine_tuning_job(
 ])
 async def get_jobs(
     status: Optional[JobStatus] = Query(None, description="Filter by job status"),
-    sync: bool = Query(False, description="Sync with OpenAI API for latest statuses"),
     service: OpenAIFineTuningService = Injected(OpenAIFineTuningService)
 ):
     """
-    List all fine-tuning jobs for the current user.
-    Set sync=true to fetch fresh status from OpenAI for all jobs (slower).
+    List all fine-tuning jobs for the current user (cached).
+    Use POST /fine-tuning/jobs/sync to refresh statuses from OpenAI.
     """
-    logger.info(f"User {get_current_user_id()} listing their fine-tuning jobs (sync={sync})")
-    return await service.get_jobs(
-        status=status,
-        sync=sync
-    )
+    logger.info(f"User {get_current_user_id()} listing their fine-tuning jobs")
+    return await service.get_jobs(status=status)
+
+
+@router.post("/fine-tuning/jobs/sync", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.OpenAI.READ_JOB))
+])
+async def sync_jobs(
+    status: Optional[JobStatus] = Query(None, description="Filter by job status"),
+    service: OpenAIFineTuningService = Injected(OpenAIFineTuningService)
+):
+    """
+    Fetch fresh status (and events) from OpenAI for all active jobs, then return
+    the refreshed list. This is the only endpoint that triggers a sync.
+    """
+    logger.info(f"User {get_current_user_id()} syncing their fine-tuning jobs")
+    return await service.get_jobs(status=status, sync=True)
 
 
 @router.get("/files", dependencies=[

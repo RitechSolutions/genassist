@@ -12,9 +12,10 @@ import {
   Trash2,
   Sparkles,
   Plus,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { listFineTuneJobs } from "@/services/openaiFineTune";
+import { listFineTuneJobs, syncFineTuneJobs } from "@/services/openaiFineTune";
 import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import {
   formatStatusLabel,
@@ -33,6 +34,7 @@ export function FineTuneJobsCard({
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<FineTuneJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobToDelete, setJobToDelete] = useState<FineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -45,6 +47,7 @@ export function FineTuneJobsCard({
   const fetchJobs = async () => {
     try {
       setLoading(true);
+      // Fast cached load — no sync. Press "Sync" to refresh status from OpenAI.
       const data = await listFineTuneJobs();
       setJobs(data);
       setError(null);
@@ -53,6 +56,20 @@ export function FineTuneJobsCard({
       toast.error("Failed to fetch jobs");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      setSyncing(true);
+      const data = await syncFineTuneJobs();
+      setJobs(data);
+      setError(null);
+      toast.success("Jobs synced");
+    } catch (err) {
+      toast.error("Failed to sync jobs");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -296,6 +313,22 @@ export function FineTuneJobsCard({
 
   return (
     <>
+      <div className="flex justify-end mb-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSync}
+          disabled={syncing || loading}
+        >
+          {syncing ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Sync
+        </Button>
+      </div>
+
       <DataTable
         data={filtered}
         loading={loading}
