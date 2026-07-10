@@ -154,7 +154,7 @@ class AgentRAGService:
                     f"{provider.name} add_document failed: {e}")
                 results[provider.name] = False
 
-        logger.info(f"Added document {doc_id}: {results}")
+        logger.debug(f"Added document {doc_id}: {results}")
         return results
 
     async def delete_document(self, doc_id: str) -> Dict[str, bool]:
@@ -174,7 +174,7 @@ class AgentRAGService:
                     f"{provider.name} delete_document failed: {e}")
                 results[provider.name] = False
 
-        logger.info(f"Deleted document {doc_id}: {results}")
+        logger.debug(f"Deleted document {doc_id}: {results}")
         return results
 
     async def delete_by_metadata(self, filter_dict: Dict[str, Any]) -> Dict[str, bool]:
@@ -199,7 +199,7 @@ class AgentRAGService:
                 logger.error(f"{provider.name} delete_by_metadata failed: {e}")
                 results[provider.name] = False
 
-        logger.info(f"Deleted by metadata {filter_dict}: {results}")
+        logger.debug(f"Deleted by metadata {filter_dict}: {results}")
         return results
 
     async def get_document_ids(self) -> List[str]:

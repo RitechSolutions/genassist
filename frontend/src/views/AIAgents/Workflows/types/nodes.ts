@@ -176,6 +176,21 @@ export interface APIToolNodeData extends BaseNodeData {
   requestBody: string;
 }
 
+// Web Scraper Node Data
+export type WebScraperFormat = "markdown" | "html" | "both";
+export type WebScraperScreenshot = "off" | "viewport" | "fullPage";
+
+export interface WebScraperNodeData extends BaseNodeData {
+  url: string;
+  format: WebScraperFormat;
+  headers: Record<string, string>;
+  onlyMainContent: boolean;
+  screenshot: WebScraperScreenshot;
+  waitFor: number;
+  scrollToBottom: boolean;
+  maxAge: number;
+}
+
 // External Agent Node Data
 export interface ExternalAgentNodeData extends BaseNodeData {
   endpoint: string;
@@ -554,7 +569,8 @@ export type NodeData =
   | ExternalAgentNodeData
   | TTSNodeData
   | STTNodeData
-  | VoiceAgentNodeData;
+  | VoiceAgentNodeData
+  | WebScraperNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

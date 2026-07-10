@@ -105,7 +105,7 @@ class SocketConnectionManager:
             raw_websocket = websocket.__wrapped__
             logger.debug("[CONNECT] Extracted unwrapped WebSocket")
 
-        logger.info(f"[CONNECT] WebSocket type: {type(websocket)}, Raw type: {type(raw_websocket)}")
+        logger.debug(f"[CONNECT] WebSocket type: {type(websocket)}, Raw type: {type(raw_websocket)}")
 
         # Capture the current context (includes starlette_context, tenant context, etc.)
         # This allows sends from background tasks to run within the original request context
@@ -116,11 +116,11 @@ class SocketConnectionManager:
             self._rooms.setdefault(tenant_aware_room_id, []).append(
                 Connection(raw_websocket, user_id, permissions, tenant_id, set(topics), captured_context)
             )
-            logger.info(
+            logger.debug(
                 f"[CONNECT] Added to room {tenant_aware_room_id} "
                 f"(raw_room_id={room_id}, user_id={user_id}, tenant_id={tenant_id}, topics={topics})"
             )
-            logger.info(
+            logger.debug(
                 f"[CONNECT] Total rooms: {len(self._rooms)}, Connections in this room: {len(self._rooms[tenant_aware_room_id])}"
             )
 
@@ -231,7 +231,7 @@ class SocketConnectionManager:
                     "tenant_id": tenant_id,
                 }
                 await self._redis_client.publish(redis_channel, json.dumps(message_data, default=str))
-                logger.info(
+                logger.debug(
                     f"[BROADCAST] Published to Redis channel: {redis_channel} | "
                     f"Room: {tenant_aware_room_id} | Type: {msg_type} | Topic: {required_topic}"
                 )
@@ -266,12 +266,11 @@ class SocketConnectionManager:
         message = json.dumps({"type": msg_type, "payload": payload}, default=str)
         targets = list(self._rooms.get(tenant_aware_room_id, []))
 
-        logger.info(
+        logger.debug(
             f"[BROADCAST_LOCAL] Room: {tenant_aware_room_id} | "
             f"Targets: {len(targets)} | Type: {msg_type} | Topic: {required_topic}"
         )
-        logger.info(f"[BROADCAST_LOCAL] Current _rooms keys: {list(self._rooms.keys())}")
-        logger.info(f"[BROADCAST_LOCAL] Total rooms: {len(self._rooms)}")
+        logger.debug(f"[BROADCAST_LOCAL] Total rooms: {len(self._rooms)}")
 
         for conn in targets:
             if required_topic and required_topic not in conn.topics:
