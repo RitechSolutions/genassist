@@ -197,6 +197,40 @@ class BedrockFineTuningService:
             error_message=response.get("failureMessage"),
         )
 
+    def _map_deployment_status(self, bedrock_status: str) -> BedrockDeploymentStatus:
+        try:
+            return BedrockDeploymentStatus(bedrock_status)
+        except ValueError:
+            logger.warning(f"Unknown Bedrock deployment status: {bedrock_status}")
+            return BedrockDeploymentStatus.CREATING
+
+    async def _sync_deployment(
+        self, job: BedrockFineTuningJobModel
+    ) -> BedrockFineTuningJobModel:
+        """Refresh a job's on-demand deployment status from Bedrock.
+
+        No-op unless the job has a deployment ARN. Deployment status is independent
+        of the customization job status (a Completed job may still be Creating).
+        """
+        if not job.deployment_arn:
+            return job
+        response = await self._run(
+            self.bedrock.get_custom_model_deployment,
+            customModelDeploymentIdentifier=job.deployment_arn,
+        )
+        status = self._map_deployment_status(response.get("status", "Creating"))
+        failure_message = (
+            response.get("failureMessage")
+            if status == BedrockDeploymentStatus.FAILED
+            else None
+        )
+        return await self.repository.update_deployment(
+            id=job.id,
+            deployment_status=status,
+            deployment_arn=job.deployment_arn,
+            failure_message=failure_message,
+        )
+
     async def get_fine_tuning_job(self, job_id: UUID, sync: bool = False) -> dict:
         try:
             job = await self.repository.get_job_by_id(job_id)
@@ -209,6 +243,11 @@ class BedrockFineTuningService:
             )
             if should_sync:
                 job = await self._sync_job(job)
+                if (
+                    job.deployment_arn
+                    and job.deployment_status == BedrockDeploymentStatus.CREATING
+                ):
+                    job = await self._sync_deployment(job)
             return job.to_dict()
         except AppException:
             raise
@@ -232,6 +271,13 @@ class BedrockFineTuningService:
                             BedrockJobStatus.STOPPING,
                         ):
                             job = await self._sync_job(job)
+                        # Deployment status is independent of job status — refresh it
+                        # while a deployment is still being created.
+                        if (
+                            job.deployment_arn
+                            and job.deployment_status == BedrockDeploymentStatus.CREATING
+                        ):
+                            job = await self._sync_deployment(job)
                     except Exception as e:
                         logger.exception(f"Error syncing Bedrock job {job.job_arn}: {str(e)}")
                     synced.append(job)

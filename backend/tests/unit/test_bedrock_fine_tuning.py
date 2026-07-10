@@ -15,7 +15,10 @@ from app.repositories.bedrock_fine_tuning import BedrockFineTuningRepository
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
 from app.services.app_settings import AppSettingsService
 from app.schemas.bedrock_fine_tuning import CreateBedrockFineTuningJobRequest
-from app.core.utils.enums.bedrock_fine_tuning_enum import BedrockJobStatus
+from app.core.utils.enums.bedrock_fine_tuning_enum import (
+    BedrockDeploymentStatus,
+    BedrockJobStatus,
+)
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.config.settings import file_storage_settings
@@ -177,6 +180,51 @@ def test_build_nova_jsonl_entry_format(bedrock_service):
     assert entry["system"] == [{"text": "You are a support agent."}]
     assert entry["messages"][0] == {"role": "user", "content": [{"text": "How do I reset my password?"}]}
     assert entry["messages"][1] == {"role": "assistant", "content": [{"text": "Click 'Forgot password'."}]}
+
+
+@pytest.mark.asyncio
+async def test_sync_deployment_active(bedrock_service, mock_repository):
+    job = MagicMock()
+    job.id = "job-1"
+    job.deployment_arn = "arn:aws:bedrock:us-east-1:123:custom-model-deployment/x"
+    bedrock_service._bedrock_client.get_custom_model_deployment = MagicMock(
+        return_value={"status": "Active"}
+    )
+
+    await bedrock_service._sync_deployment(job)
+
+    kwargs = mock_repository.update_deployment.call_args.kwargs
+    assert kwargs["deployment_status"] == BedrockDeploymentStatus.ACTIVE
+    assert kwargs["failure_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_sync_deployment_failed_captures_message(bedrock_service, mock_repository):
+    job = MagicMock()
+    job.id = "job-1"
+    job.deployment_arn = "arn:aws:bedrock:us-east-1:123:custom-model-deployment/x"
+    bedrock_service._bedrock_client.get_custom_model_deployment = MagicMock(
+        return_value={"status": "Failed", "failureMessage": "insufficient capacity"}
+    )
+
+    await bedrock_service._sync_deployment(job)
+
+    kwargs = mock_repository.update_deployment.call_args.kwargs
+    assert kwargs["deployment_status"] == BedrockDeploymentStatus.FAILED
+    assert kwargs["failure_message"] == "insufficient capacity"
+
+
+@pytest.mark.asyncio
+async def test_sync_deployment_noop_without_arn(bedrock_service, mock_repository):
+    job = MagicMock()
+    job.deployment_arn = None
+    bedrock_service._bedrock_client.get_custom_model_deployment = MagicMock()
+
+    result = await bedrock_service._sync_deployment(job)
+
+    assert result is job
+    bedrock_service._bedrock_client.get_custom_model_deployment.assert_not_called()
+    mock_repository.update_deployment.assert_not_awaited()
 
 
 def test_build_nova_jsonl_entry_skips_when_no_output(bedrock_service):

@@ -115,6 +115,7 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
         id: UUID,
         deployment_status: BedrockDeploymentStatus,
         deployment_arn: Optional[str] = None,
+        failure_message: Optional[str] = None,
     ) -> BedrockFineTuningJobModel:
         job = await self.get_job_by_id(id)
         if not job:
@@ -123,6 +124,8 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
         job.deployment_status = deployment_status
         if deployment_arn:
             job.deployment_arn = deployment_arn
+        if failure_message:
+            job.error_message = failure_message
 
         await self.db.commit()
         await self.db.refresh(job)
