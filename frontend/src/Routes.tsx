@@ -310,7 +310,7 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:openai_job"]}>
                   <FineTune />
                 </ProtectedRoute>
               ),
@@ -318,7 +318,7 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:openai_job"]}>
                   <FineTuneJobDetail />
                 </ProtectedRoute>
               ),
@@ -326,7 +326,7 @@ export const RoutesProvider = () => {
             {
               path: "bedrock-fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
                   <BedrockFineTune />
                 </ProtectedRoute>
               ),
@@ -334,7 +334,7 @@ export const RoutesProvider = () => {
             {
               path: "bedrock-fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
                   <BedrockFineTuneJobDetail />
                 </ProtectedRoute>
               ),
@@ -343,7 +343,7 @@ export const RoutesProvider = () => {
               path: "local-fine-tune",
               element: (
                 showLocalFineTune ? (
-                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTune />
                   </ProtectedRoute>
                 ) : (
@@ -355,7 +355,7 @@ export const RoutesProvider = () => {
               path: "local-fine-tune/:id",
               element: (
                 showLocalFineTune ? (
-                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTuneJobDetail />
                   </ProtectedRoute>
                 ) : (
