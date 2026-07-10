@@ -114,7 +114,7 @@ async def get_fine_tunable_models(
 ):
     """Get the list of Nova base models that support fine-tuning."""
     logger.info(f"User {get_current_user_id()} fetching Bedrock fine-tunable models")
-    return service.get_fine_tunable_models()
+    return await service.get_fine_tunable_models()
 
 
 @router.post("/fine-tuning/generate-from-conversations", dependencies=[

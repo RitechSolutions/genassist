@@ -219,7 +219,6 @@ const menuItems: MenuItem[] = [
         title: "Bedrock Fine-Tune",
         url: "/bedrock-fine-tune",
         permissionsRequired: ["*", "update:llm_provider"],
-        feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE,
       },
     ],
   },

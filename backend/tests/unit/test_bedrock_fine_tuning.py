@@ -13,6 +13,7 @@ from app.services.bedrock_fine_tuning import (
 )
 from app.repositories.bedrock_fine_tuning import BedrockFineTuningRepository
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+from app.services.app_settings import AppSettingsService
 from app.schemas.bedrock_fine_tuning import CreateBedrockFineTuningJobRequest
 from app.core.utils.enums.bedrock_fine_tuning_enum import BedrockJobStatus
 from app.core.exceptions.error_messages import ErrorKey
@@ -31,7 +32,15 @@ def mock_openai_service():
 
 
 @pytest.fixture
-def bedrock_service(mock_repository, mock_openai_service):
+def mock_app_settings_service():
+    svc = AsyncMock(spec=AppSettingsService)
+    # Default: no override row present -> service falls back to the code default.
+    svc.get_by_type_and_name.return_value = None
+    return svc
+
+
+@pytest.fixture
+def bedrock_service(mock_repository, mock_openai_service, mock_app_settings_service):
     """BedrockFineTuningService with mocked boto3 clients + config."""
     original_role = file_storage_settings.BEDROCK_FINE_TUNING_ROLE_ARN
     file_storage_settings.BEDROCK_FINE_TUNING_ROLE_ARN = "arn:aws:iam::123:role/ft"
@@ -39,6 +48,7 @@ def bedrock_service(mock_repository, mock_openai_service):
     service = BedrockFineTuningService(
         repository=mock_repository,
         openai_service=mock_openai_service,
+        app_settings_service=mock_app_settings_service,
     )
     service.bucket = "test-bucket"
     service._bedrock_client = MagicMock()
@@ -49,9 +59,38 @@ def bedrock_service(mock_repository, mock_openai_service):
         file_storage_settings.BEDROCK_FINE_TUNING_ROLE_ARN = original_role
 
 
-def test_get_fine_tunable_models(bedrock_service):
-    assert bedrock_service.get_fine_tunable_models() == NOVA_FINE_TUNABLE_MODELS
+@pytest.mark.asyncio
+async def test_get_fine_tunable_models_fallback(bedrock_service):
+    """No App Settings override row -> returns the code default."""
+    result = await bedrock_service.get_fine_tunable_models()
+    assert result == NOVA_FINE_TUNABLE_MODELS
     assert all("nova" in m for m in NOVA_FINE_TUNABLE_MODELS)
+
+
+@pytest.mark.asyncio
+async def test_get_fine_tunable_models_db_override(bedrock_service, mock_app_settings_service):
+    """App Settings row overrides the default list without a deploy."""
+    override = MagicMock()
+    override.values = {"models": ["amazon.nova-pro-v1:0:300k", "amazon.nova-new-v1:0"]}
+    mock_app_settings_service.get_by_type_and_name.return_value = override
+
+    result = await bedrock_service.get_fine_tunable_models()
+
+    assert result == ["amazon.nova-pro-v1:0:300k", "amazon.nova-new-v1:0"]
+    mock_app_settings_service.get_by_type_and_name.assert_awaited_once_with(
+        "Other", "BedrockFineTunableModels"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_fine_tunable_models_malformed_falls_back(bedrock_service, mock_app_settings_service):
+    """A row with no/empty models list falls back to the default."""
+    override = MagicMock()
+    override.values = {"models": []}
+    mock_app_settings_service.get_by_type_and_name.return_value = override
+
+    result = await bedrock_service.get_fine_tunable_models()
+    assert result == NOVA_FINE_TUNABLE_MODELS
 
 
 @pytest.mark.asyncio

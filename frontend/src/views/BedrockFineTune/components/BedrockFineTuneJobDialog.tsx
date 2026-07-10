@@ -55,6 +55,7 @@ export function BedrockFineTuneJobDialog({
   const [suffix, setSuffix] = useState<string>("");
   const [epochCount, setEpochCount] = useState<number | "">("");
   const [learningRate, setLearningRate] = useState<string>("");
+  const [warmupSteps, setWarmupSteps] = useState<number | "">("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [uploadingTraining, setUploadingTraining] = useState(false);
@@ -111,6 +112,7 @@ export function BedrockFineTuneJobDialog({
     setSuffix("");
     setEpochCount("");
     setLearningRate("");
+    setWarmupSteps("");
     setShowAdvanced(false);
     onSetData("training", null);
     onSetData("validation", null);
@@ -131,6 +133,7 @@ export function BedrockFineTuneJobDialog({
     if (showAdvanced) {
       if (epochCount !== "") hyperparameters.epochCount = Number(epochCount);
       if (learningRate.trim()) hyperparameters.learningRate = learningRate.trim();
+      if (warmupSteps !== "") hyperparameters.learningRateWarmupSteps = Number(warmupSteps);
     }
 
     const payload: CreateBedrockFineTuneJobRequest = {
@@ -326,10 +329,12 @@ export function BedrockFineTuneJobDialog({
                     <Input
                       type="number"
                       min={1}
+                      max={5}
                       placeholder="e.g. 2"
                       value={epochCount}
                       onChange={(e) => setEpochCount(e.target.value === "" ? "" : Number(e.target.value))}
                     />
+                    <p className="text-xs text-muted-foreground">1–5 (default 2)</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Learning rate</Label>
@@ -339,6 +344,19 @@ export function BedrockFineTuneJobDialog({
                       value={learningRate}
                       onChange={(e) => setLearningRate(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground">1e-6 – 1e-4 (default 1e-5)</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Learning rate warmup steps</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="e.g. 10"
+                      value={warmupSteps}
+                      onChange={(e) => setWarmupSteps(e.target.value === "" ? "" : Number(e.target.value))}
+                    />
+                    <p className="text-xs text-muted-foreground">0–100 (default 10)</p>
                   </div>
                 </div>
               )}

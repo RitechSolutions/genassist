@@ -8,6 +8,11 @@ from injector import inject
 from openai import AsyncOpenAI
 from uuid import UUID
 
+from app.constants.openai_fine_tuning import (
+    FINE_TUNABLE_MODELS_SETTING_NAME,
+    FINE_TUNABLE_MODELS_SETTING_TYPE,
+    OPENAI_FINE_TUNABLE_MODELS,
+)
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.utils.bi_utils import validate_bytes_size
@@ -20,6 +25,7 @@ from app.repositories.conversations import ConversationRepository
 from app.repositories.openai_fine_tuning import FineTuningRepository
 from app.schemas.open_ai_fine_tuning import CreateFineTuningJobRequest, GenerateTrainingFileRequest
 from app.services.agent_config import AgentConfigService
+from app.services.app_settings import AppSettingsService
 from app.services.fine_tuning_event import FineTuningEventService
 
 
@@ -55,6 +61,7 @@ class OpenAIFineTuningService:
         agent_config_service: AgentConfigService,
         agent_log_repo: AgentResponseLogRepository,
         conversation_repo: ConversationRepository,
+        app_settings_service: AppSettingsService,
     ):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.repository = repository
@@ -62,6 +69,7 @@ class OpenAIFineTuningService:
         self.agent_config_service = agent_config_service
         self.agent_log_repo = agent_log_repo
         self.conversation_repo = conversation_repo
+        self.app_settings_service = app_settings_service
 
 
     async def upload_file(

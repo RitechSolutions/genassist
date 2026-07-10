@@ -27,7 +27,6 @@ export const FeatureFlags = {
 
     LLM_SETTINGS: {
       SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
-      SHOW_BEDROCK_FINE_TUNE: 'llmSettings.showBedrockFineTune',
     },
 
     // Workflow specific flags

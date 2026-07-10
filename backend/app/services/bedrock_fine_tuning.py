@@ -18,23 +18,20 @@ from app.core.utils.enums.bedrock_fine_tuning_enum import (
 )
 from app.db.models.fine_tuning import BedrockFineTuningJobModel
 from app.repositories.bedrock_fine_tuning import BedrockFineTuningRepository
+from app.constants.bedrock_fine_tuning import (
+    FINE_TUNABLE_MODELS_SETTING_NAME,
+    FINE_TUNABLE_MODELS_SETTING_TYPE,
+    NOVA_FINE_TUNABLE_MODELS,
+    NOVA_SCHEMA_VERSION,
+)
 from app.schemas.bedrock_fine_tuning import (
     CreateBedrockFineTuningJobRequest,
     GenerateBedrockTrainingFileRequest,
 )
+from app.services.app_settings import AppSettingsService
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
 
 logger = logging.getLogger(__name__)
-
-# Amazon Nova models that can be fine-tuned and served on-demand.
-# See AWS "Supported models and Regions for fine-tuning" (us-east-1).
-NOVA_FINE_TUNABLE_MODELS = [
-    "amazon.nova-micro-v1:0:128k",
-    "amazon.nova-lite-v1:0:300k",
-    "amazon.nova-pro-v1:0:300k",
-]
-
-NOVA_SCHEMA_VERSION = "bedrock-conversation-2024"
 
 
 @inject
@@ -51,10 +48,12 @@ class BedrockFineTuningService:
         self,
         repository: BedrockFineTuningRepository,
         openai_service: OpenAIFineTuningService,
+        app_settings_service: AppSettingsService,
     ):
         self.repository = repository
         # Reused for conversation fetching + workflow/tool extraction helpers.
         self.openai_service = openai_service
+        self.app_settings_service = app_settings_service
         self.region = file_storage_settings.BEDROCK_FINE_TUNING_REGION
         self.bucket = (
             file_storage_settings.BEDROCK_FINE_TUNING_S3_BUCKET
@@ -297,7 +296,24 @@ class BedrockFineTuningService:
             logger.error(f"Error deploying Bedrock model for job {job_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK)
 
-    def get_fine_tunable_models(self) -> list[str]:
+    async def get_fine_tunable_models(self) -> list[str]:
+        """Return the fine-tunable Nova model IDs.
+
+        Reads an App Settings override row (type="Other",
+        name="BedrockFineTunableModels", values={"models": [...]}) so the list can
+        be changed without a deploy. Falls back to NOVA_FINE_TUNABLE_MODELS when the
+        row is absent, empty, or malformed.
+        """
+        try:
+            setting = await self.app_settings_service.get_by_type_and_name(
+                FINE_TUNABLE_MODELS_SETTING_TYPE, FINE_TUNABLE_MODELS_SETTING_NAME
+            )
+            if setting and isinstance(setting.values, dict):
+                models = setting.values.get("models")
+                if isinstance(models, list) and models:
+                    return [str(m) for m in models]
+        except Exception as e:
+            logger.warning(f"Falling back to default Nova model list: {str(e)}")
         return NOVA_FINE_TUNABLE_MODELS
 
     # ------------------------------------------------------------------
