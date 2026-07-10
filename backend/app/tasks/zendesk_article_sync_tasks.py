@@ -82,7 +82,7 @@ async def import_zendesk_articles_to_kb_async_with_scope(
         sync_now=sync_now,
     )
     if result.get("status") == "success":
-        logger.info(f"Results: {result.get('results')}")
+        logger.debug(f"Results: {result.get('results')}")
     return result
 
 
@@ -169,10 +169,10 @@ async def import_zendesk_articles_to_kb_async(
     last_file_date = None
 
     for kb in kbList:
-        logger.info(f"Processing knowledge base {kb.name}")
+        logger.debug(f"Processing knowledge base {kb.name}")
 
         if not sync_now and (kb.sync_active == 0 or not kb.sync_source_id):
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} is not active or does not have a sync source"
             )
             per_kb.append(
@@ -187,7 +187,7 @@ async def import_zendesk_articles_to_kb_async(
 
         ds = await injector.get(DataSourceService).get_by_id(kb.sync_source_id, True)
         if not ds:
-            logger.info(f"Knowledge base {kb.id} has no sync source")
+            logger.debug(f"Knowledge base {kb.id} has no sync source")
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -199,7 +199,7 @@ async def import_zendesk_articles_to_kb_async(
             continue
 
         if ds.source_type.lower() != "zendesk":
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} has a sync source that is not Zendesk ({ds.source_type})"
             )
             if sync_now or kb_id is not None:
@@ -225,7 +225,7 @@ async def import_zendesk_articles_to_kb_async(
         force_sync = sync_now or (kb_id is not None)
         cron_string = kb.sync_schedule
         if not cron_string and not force_sync:
-            logger.info(f"Knowledge base {kb.id} has no sync schedule")
+            logger.debug(f"Knowledge base {kb.id} has no sync schedule")
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -239,15 +239,15 @@ async def import_zendesk_articles_to_kb_async(
             cron_iter = croniter(cron_string)
             next_run_time = datetime.now()
             if kb.last_synced:
-                logger.info("Getting next run time from last synced")
+                logger.debug("Getting next run time from last synced")
                 next_run_time = cron_iter.get_next(start_time=kb.last_synced)
                 next_run_time = datetime.fromtimestamp(next_run_time)
-                logger.info(
+                logger.debug(
                     f"Knowledge base {kb.id} last synced at {kb.last_synced}, next run time: {next_run_time}"
                 )
 
             if datetime.now() < next_run_time:
-                logger.info(
+                logger.debug(
                     f"Knowledge base {kb.id} is not due for sync, next sync at {next_run_time}"
                 )
                 per_kb.append(
@@ -262,7 +262,7 @@ async def import_zendesk_articles_to_kb_async(
                 continue
 
         if not ds.connection_data:
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} has no connection data for sync source {ds.name}"
             )
             if sync_now or kb_id is not None:
@@ -343,7 +343,7 @@ async def import_zendesk_articles_to_kb_async(
                 articles.extend(fetched_articles)
 
             if not articles:
-                logger.info(
+                logger.debug(
                     f"No articles found in Zendesk for datasource {ds.name}"
                 )
                 processed_ds += 1
@@ -370,9 +370,9 @@ async def import_zendesk_articles_to_kb_async(
             articles_updated = 0
             kb_errors = []
 
-            logger.info("Getting existing articles from RAG...")
+            logger.debug("Getting existing articles from RAG...")
             existing_articles = await rag_manager.get_document_ids(kb)
-            logger.info(
+            logger.debug(
                 f"Found {len(existing_articles)} existing articles in RAG for knowledge base {kb.id}"
             )
 
@@ -387,7 +387,7 @@ async def import_zendesk_articles_to_kb_async(
                 for article in articles
                 if f"KB:{str(kb.id)}#article_{article['id']}" not in existing_articles
             ]
-            logger.info(
+            logger.debug(
                 f"Found {len(new_articles)} new articles to process for knowledge base {kb.id}"
             )
 
@@ -398,7 +398,7 @@ async def import_zendesk_articles_to_kb_async(
                 if article_id.startswith(f"KB:{str(kb.id)}#article_")
                 and article_id not in zendesk_article_ids
             ]
-            logger.info(
+            logger.debug(
                 f"Found {len(deleted_article_ids)} deleted articles to remove for knowledge base {kb.id}"
             )
 
@@ -435,7 +435,7 @@ async def import_zendesk_articles_to_kb_async(
                 and not _is_article_edited(a)
             )
             if skipped_unchanged:
-                logger.info(
+                logger.debug(
                     f"Skipping {skipped_unchanged} existing articles (unchanged) for knowledge base {kb.id}"
                 )
 
@@ -444,7 +444,7 @@ async def import_zendesk_articles_to_kb_async(
             if deleted_article_ids:
                 for doc_id in deleted_article_ids:
                     try:
-                        logger.info(f"Deleting article {doc_id} from RAG...")
+                        logger.debug(f"Deleting article {doc_id} from RAG...")
                         await rag_manager.delete_document(kb, doc_id)
                         articles_deleted += 1
                         if doc_id.startswith(article_id_prefix):
@@ -479,7 +479,7 @@ async def import_zendesk_articles_to_kb_async(
                     res = await rag_manager.add_document(
                         kb, article_id, content, metadata
                     )
-                    logger.info(f"Article {article_title} processed with result: {res}")
+                    logger.debug(f"Article {article_title} processed with result: {res}")
                     articles_added += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article[
@@ -530,7 +530,7 @@ async def import_zendesk_articles_to_kb_async(
                     res = await rag_manager.add_document(
                         kb, article_id, content, metadata
                     )
-                    logger.info(f"Article {article_title} updated with result: {res}")
+                    logger.debug(f"Article {article_title} updated with result: {res}")
                     articles_updated += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article[
@@ -556,7 +556,7 @@ async def import_zendesk_articles_to_kb_async(
                     continue
 
             # Update last synced time and persist article updated_at map (skip unchanged next run)
-            logger.info(f"Updating knowledge base {kb.id} last synced time...")
+            logger.debug(f"Updating knowledge base {kb.id} last synced time...")
             kb_update = _kb_update_dict(kb)
             kb_update["last_synced"] = datetime.now()
             kb_update["last_sync_status"] = (
@@ -616,5 +616,9 @@ async def import_zendesk_articles_to_kb_async(
         "per_kb": per_kb,
     }
 
-    logger.info(f"Zendesk article import completed with result: {res}")
+    logger.info(
+        "Zendesk article import completed: "
+        f"{articles_added_tot} added, {articles_updated_tot} updated, "
+        f"{articles_deleted_tot} deleted across {processed_ds} datasource(s)"
+    )
     return res

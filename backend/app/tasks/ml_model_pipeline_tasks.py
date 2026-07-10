@@ -108,7 +108,7 @@ async def execute_pipeline_run_async(run_id: UUID):
                     run = await run_repository.get_by_id(run_id)
                 except AppException as e:
                     if e.error_key == ErrorKey.NOT_FOUND:
-                        logger.info(
+                        logger.debug(
                             f"Pipeline run {run_id} not found in tenant {tenant_id}, skipping execution"
                         )
                         return None  # Skip this tenant - run doesn't belong to it
@@ -206,7 +206,7 @@ async def execute_pipeline_run_async(run_id: UUID):
                     )
                 except AppException as update_error:
                     if update_error.error_key == ErrorKey.NOT_FOUND:
-                        logger.info(
+                        logger.debug(
                             f"Pipeline run {run_id} not found in tenant {tenant_id} when updating status, skipping"
                         )
                     else:
@@ -246,7 +246,7 @@ async def execute_pipeline_run_async_with_scope(run_id: UUID):
             "error": str(e),
         }
     finally:
-        logger.info("Pipeline run execution task completed.")
+        logger.debug("Pipeline run execution task completed.")
 
 
 @shared_task(name="execute_pipeline_run")

@@ -42,7 +42,7 @@ async def backfill_missing_conversation_analyses_async():
         try:
             await conversation_srv.re_analyze_conversation(conv.id)
             success_count += 1
-            logger.info(f"Backfilled analysis for conversation {conv.id}")
+            logger.debug(f"Backfilled analysis for conversation {conv.id}")
         except Exception as e:
             failed_count += 1
             logger.error(f"Failed to backfill analysis for conversation {conv.id}: {e}")

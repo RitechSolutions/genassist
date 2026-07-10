@@ -40,7 +40,7 @@ class SimpleToolAgent(BaseToolAgent):
             usage = extract_usage_from_aimessage(response)
             if usage:
                 llm_usage_entries.append(usage)
-            logger.info(f"SimpleToolAgent LLM response: {response_content}")
+            logger.debug(f"SimpleToolAgent LLM response: {response_content}")
             parsed = parse_json_response(response_content)
             if not parsed:
                 result = create_error_response("LLM did not return a valid response", self._get_agent_name(), llm_response=response_content)
