@@ -54,7 +54,7 @@ async def sync_active_fine_tuning_jobs_async():
 
     for job in active_jobs:
         try:
-            logger.info(f"Syncing job {job.openai_job_id} (current status: {job.status})")
+            logger.debug(f"Syncing job {job.openai_job_id} (current status: {job.status})")
 
             # Fetch fresh data from OpenAI
             response = await service.client.fine_tuning.jobs.retrieve(job.openai_job_id)

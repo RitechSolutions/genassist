@@ -113,7 +113,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
 
     google_cloud_json, google_cloud_bucket = gc
 
-    logger.info("google_cloud_json key and google_cloud_bucket is loaded")
+    logger.debug("google_cloud_json key and google_cloud_bucket is loaded")
 
     gts = GoogleTranscribeService(
         sst_region="us-central1",
@@ -139,7 +139,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
 
         count_datasource += 1
         conn = ds_item.connection_data
-        logger.info(f"Processing SMB Share/Folder Datasource: {conn}")
+        logger.debug(f"Processing SMB Share/Folder Datasource: {ds_item.name}")
 
         # Required SMB config fields stored in datasource connection_data
         smb_host = conn.get("smb_host")
@@ -179,7 +179,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
             )
 
             if not files:
-                logger.info(f"No audio files found in SMB Datasource: {ds_item.name}")
+                logger.debug(f"No audio files found in SMB Datasource: {ds_item.name}")
                 continue
 
             for filename in files:
@@ -197,7 +197,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
 
                     upload_file = UploadFile(file=BytesIO(content), filename=filename)
 
-                    logger.info(f"Transcribing SMB file: {file_path}")
+                    logger.debug(f"Transcribing SMB file: {file_path}")
 
                     # await audioService.process_recording(upload_file, metadata) # old version with whisper
 

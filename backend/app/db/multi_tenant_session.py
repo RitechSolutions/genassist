@@ -56,7 +56,7 @@ class MultiTenantSessionManager:
 
             if settings.BACKGROUND_TASK:
                 # Use NullPool for Celery - no connection pooling
-                logger.info(f"🔧 Creating NullPool engine for Celery, tenant: {tenant}")
+                logger.debug(f"🔧 Creating NullPool engine for Celery, tenant: {tenant}")
                 self._engines[ktenant] = create_async_engine(
                         tenant_url,
                         echo=False,
@@ -64,14 +64,9 @@ class MultiTenantSessionManager:
                         pool_pre_ping=True,
                         )
 
-                # Print all engines
-                logger.info("=== Current Engines (BACKGROUND_TASK) ===")
-                for tenant_name, engine in self._engines.items():
-                    logger.info(f"Tenant: {tenant_name}, Engine: {engine}")
-
             else:
                 # Normal pooling for FastAPI
-                logger.info(f"🔧 Creating pooled engine for FastAPI, tenant: {tenant}")
+                logger.debug(f"🔧 Creating pooled engine for FastAPI, tenant: {tenant}")
                 connect_args = {}
                 if settings.DB_STATEMENT_TIMEOUT > 0:
                     # asyncpg applies server_settings on every connection; value is
@@ -92,12 +87,7 @@ class MultiTenantSessionManager:
                         connect_args=connect_args,
                         )
 
-                # Print all engines
-                logger.info("=== Current Engines (FastAPI) ===")
-                for tenant_name, engine in self._engines.items():
-                    print(f"Tenant: {tenant_name}, Engine: {engine}")
-
-            logger.info(f"Created engine for tenant: {tenant}")
+            logger.debug(f"Created engine for tenant: {tenant}")
 
         return self._engines[ktenant]
 

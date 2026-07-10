@@ -71,43 +71,43 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     kb_errors = []
 
     for kb in kbList:
-        logger.info(f"Processing knowledge base {kb.name}")
+        logger.debug(f"Processing knowledge base {kb.name}")
 
 
         ds = await injector.get(DataSourceService).get_by_id(kb.sync_source_id, True)
         if not ds:
-            logger.info(f"Knowledge base {kb.id} has no sync source")
+            logger.debug(f"Knowledge base {kb.id} has no sync source")
             continue
 
         if ds.source_type.lower() != "s3":
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} has a sync source that is not an S3 bucket ({ds.source_type})"
             )
             continue
 
         cron_string = kb.sync_schedule
         if not cron_string:
-            logger.info(f"Knowledge base {kb.id} has no sync schedule")
+            logger.debug(f"Knowledge base {kb.id} has no sync schedule")
             continue
 
         cron_iter = croniter(cron_string)
         next_run_time = datetime.now()
         if kb.last_synced:
-            logger.info("Getting next run time from last synced")
+            logger.debug("Getting next run time from last synced")
             next_run_time = cron_iter.get_next(start_time=kb.last_synced)
             next_run_time = datetime.fromtimestamp(next_run_time)
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} last synced at {kb.last_synced}, next run time: {next_run_time}"
             )
 
         if datetime.now() < next_run_time:
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} is not due for sync, next sync at {next_run_time}"
             )
             continue
 
         if not ds.connection_data:
-            logger.info(
+            logger.debug(
                 f"Knowledge base {kb.id} has no connection data for sync source {ds.name}"
             )
             continue
@@ -134,7 +134,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         )
 
         if not result["files"]:
-            logger.info(
+            logger.debug(
                 f"No files found in S3 with prefix: {prefix} in datasource {ds.name}"
             )
             processed_ds += 1
@@ -146,10 +146,10 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         files_deleted = 0
         kb_errors = []
 
-        logger.info("Getting existing files from RAG...")
+        logger.debug("Getting existing files from RAG...")
         # Get existing documents using simplified manager
         existing_files = await rag_manager.get_document_ids(kb)
-        logger.info(
+        logger.debug(
             f"Found {len(existing_files)} existing files in RAG for knowledge base {kb.id}"
         )
         logger.debug(f"Existing files: {existing_files}")
@@ -163,7 +163,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 for existing_file in existing_files
             )
         ]
-        logger.info(
+        logger.debug(
             f"Found {len(s3_new_files)} new files in S3 to process for knowledge base {kb.id}"
         )
         logger.debug(f"New files: {s3_new_files}")
@@ -177,7 +177,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 for f in result["files"]
             )
         ]
-        logger.info(
+        logger.debug(
             f"Found {len(s3_deleted_files)} deleted files in S3 to process for knowledge base {kb.id}"
         )
 
@@ -185,7 +185,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         if s3_deleted_files:
             for filename in s3_deleted_files:
                 try:
-                    logger.info(f"Deleting file {filename} from RAG...")
+                    logger.debug(f"Deleting file {filename} from RAG...")
                     await rag_manager.delete_document(kb, filename)
                     files_deleted += 1
                 except Exception as e:
@@ -199,7 +199,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         for file_info in s3_new_files:
             try:
                 current_file += 1
-                logger.info(f"Processing file {current_file} of {len(s3_new_files)}")
+                logger.debug(f"Processing file {current_file} of {len(s3_new_files)}")
 
                 # Download to disk and extract from path to avoid reading large objects into memory.
                 tmp_path: str | None = None
@@ -211,7 +211,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                     if not ok:
                         raise Exception(f"Failed to download S3 object: {file_info['key']}")
 
-                    logger.info(f"Extracting text from {file_info}...")
+                    logger.debug(f"Extracting text from {file_info}...")
                     extracted_text = FileTextExtractor().extract(path=tmp_path)
                 finally:
                     if tmp_path and os.path.exists(tmp_path):
@@ -241,7 +241,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 res = await rag_manager.add_document(
                     kb, doc_id, extracted_text, metadata
                 )
-                logger.info(f"Document {file_name} processed with result: {res}")
+                logger.debug(f"Document {file_name} processed with result: {res}")
                 files_added += 1
 
             except Exception as e:
@@ -251,7 +251,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 continue
 
         # Update last synced time
-        logger.info(f"Updating knowledge base {kb.id} last synced time...")
+        logger.debug(f"Updating knowledge base {kb.id} last synced time...")
         kb_update = json.loads(kb.model_dump_json())
         kb_update["last_synced"] = datetime.now()
         kb_update["last_file_date"] = last_file_date
@@ -269,5 +269,5 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         "errors": kb_errors if kb_errors else None,
     }
 
-    logger.info(f"S3 file import completed with result: {res}")
+    logger.info("S3 file import completed")
     return res

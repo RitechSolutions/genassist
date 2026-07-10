@@ -316,7 +316,7 @@ class ToolAgent(BaseToolAgent):
             validated_args = validate_tool_parameters(tool, tool_args)
             tool_result = await tool.invoke(**validated_args)
 
-            logger.info(f"Tool result: {tool_result}")
+            logger.debug(f"Tool result: {tool_result}")
 
             # Record execution
             tool_execution_info = {

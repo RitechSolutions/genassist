@@ -164,11 +164,11 @@ async def run_task_with_tenant_support(
             )
     """
     try:
-        logger.info(f"Starting {task_name} task for all tenants...")
-        
+        logger.debug(f"Starting {task_name} task for all tenants...")
+
         wrapper = create_task_wrapper(task_func)
         results = await run_task_for_all_tenants(wrapper, **kwargs)
-        
+
         logger.info(f"{task_name} completed for {len(results)} tenant(s)")
         return {
             "status": "success",
@@ -181,7 +181,7 @@ async def run_task_with_tenant_support(
             "error": str(e),
         }
     finally:
-        logger.info(f"{task_name} task finished.")
+        logger.debug(f"{task_name} task finished.")
 
 
 async def run_task_for_tenant(
@@ -205,7 +205,7 @@ async def run_task_for_tenant(
     """
     settings.BACKGROUND_TASK = True
     try:
-        logger.info(f"Starting {task_name} task for tenant '{tenant_id}'...")
+        logger.debug(f"Starting {task_name} task for tenant '{tenant_id}'...")
 
         if tenant_id and tenant_id != "master":
             set_tenant_context(tenant_id)
@@ -226,7 +226,7 @@ async def run_task_for_tenant(
     finally:
         clear_tenant_context()
         settings.BACKGROUND_TASK = False
-        logger.info(f"{task_name} task finished for tenant '{tenant_id}'.")
+        logger.debug(f"{task_name} task finished for tenant '{tenant_id}'.")
 
 
 async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
@@ -256,7 +256,7 @@ async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
 
                 # First, run for master database (no tenant context)
                 try:
-                    logger.info("Running task for master database")
+                    logger.debug("Running task for master database")
                     clear_tenant_context()  # Ensure no tenant context
 
                     result = await task_func(**kwargs)
@@ -295,7 +295,7 @@ async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
                     try:
                         # Set tenant context for this tenant
                         set_tenant_context(str(tenant.slug))
-                        logger.info(
+                        logger.debug(
                             f"Running task for tenant: {tenant.name} ({tenant.slug})"
                         )
 

@@ -89,7 +89,7 @@ async def batch_process_files_kb_async(
 
             # used for sync now on Zendesk KBs
             if kb_item.type.lower() == "zendesk":
-                logger.info(f"Running Zendesk article import inline for KB {kb_item.id}")
+                logger.debug(f"Running Zendesk article import inline for KB {kb_item.id}")
                 zres = await import_zendesk_articles_to_kb_async(
                     kb_id=kb_item.id, sync_now=True
                 )
@@ -97,7 +97,7 @@ async def batch_process_files_kb_async(
                     {"kb_id": str(kb_item.id), "type": "zendesk", "result": zres}
                 )
             elif kb_item.type.lower() == "salesforce":
-                logger.info(f"Running SalesForce article import inline for KB {kb_item.id}")
+                logger.debug(f"Running SalesForce article import inline for KB {kb_item.id}")
                 sres = await import_salesforce_articles_to_kb_async(
                     kb_id=kb_item.id, sync_now=True
                 )
@@ -167,7 +167,7 @@ async def batch_process_files_kb_async(
 
 
         conn = ds_item.connection_data
-        logger.info(f"Processing {ds_item.source_type} Datasource: {ds_item.name} for KB: {kb_item.name}")
+        logger.debug(f"Processing {ds_item.source_type} Datasource: {ds_item.name} for KB: {kb_item.name}")
 
         keyid_username=""
         secret_password=""
@@ -199,7 +199,7 @@ async def batch_process_files_kb_async(
 
             for s3_file in s3_files.get("files", []):
                 if s3_file.get("size", 0) == 0:
-                    logger.info(f"Skipping empty file: {s3_file['key']}")
+                    logger.debug(f"Skipping empty file: {s3_file['key']}")
                     count_skipped += 1
                     continue
                 file_content = await s3_download_file(
@@ -211,7 +211,7 @@ async def batch_process_files_kb_async(
                 )
                 count_success += 1
 
-                logger.info(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
+                logger.debug(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
 
                 extracted_content = await get_content_from_file(mode=processing_mode, file=file_content)
 
@@ -222,7 +222,7 @@ async def batch_process_files_kb_async(
                     rag_service = await agentRAGServiceManager.get_service(kb_item)
                     rag_doc_id = "KB:" + str(kb_item.id) + "#" + extracted_content.get("file_name", "unknown_file")
                     rag_doc_metadata = extracted_content.get("metadata", {})
-                    logger.info(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
+                    logger.debug(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
 
                     rag_doc_metadata["name"]= extracted_content.get("file_name", "unknown_file")
                     rag_doc_metadata["description"]= f"File in {kb_item.name} from S3 source {ds_item.name}"
@@ -235,7 +235,7 @@ async def batch_process_files_kb_async(
                         extracted_content["content"],
                         rag_doc_metadata,
                     )
-                    logger.info(f"Document {extracted_content.get('file_name', 'unknown_file')} processed with result: {res}")
+                    logger.debug(f"Document {extracted_content.get('file_name', 'unknown_file')} processed with result: {res}")
                 # Move file to processed folder or delete file after processing based on KB configuration
                 if save_output_path:
 
@@ -269,14 +269,14 @@ async def batch_process_files_kb_async(
             # List files to summarize
             files = azure.file_list(prefix=prefix)
             if not files:
-                logger.info(f"No files found in container: {container}/{prefix}")
+                logger.debug(f"No files found in container: {container}/{prefix}")
                 continue
 
             for blob_path in files:
                 filename = blob_path.replace(prefix + "/", "")  # Clean file name
 
                 try:
-                    logger.info(f"Reading blob: {blob_path}")
+                    logger.debug(f"Reading blob: {blob_path}")
                     container_client = azure._get_container()
                     blob_client = container_client.get_blob_client(blob_path)
 
@@ -284,7 +284,7 @@ async def batch_process_files_kb_async(
                     content = content_bytes.decode("utf-8", errors="ignore")
 
                     # Generate Summary via LLM
-                    logger.info(f"Summarizing {filename}...")
+                    logger.debug(f"Summarizing {filename}...")
                     summary_text = await llmService.generate_summary(content)
 
                     # Save summary file in summary folder
@@ -452,11 +452,11 @@ async def s3_move_file(
             CopySource={'Bucket': bucket_name, 'Key': item},
             Key=destination
         )
-        logger.info(f"Copied processed file {item} to {destination}")
+        logger.debug(f"Copied processed file {item} to {destination}")
 
         # Delete original file after copying (MOVE Logic)
         s3_client.delete_object(Bucket=bucket_name, Key=item)
-        logger.info(f"Deleted original file {item} after processing")
+        logger.debug(f"Deleted original file {item} after processing")
     except ClientError as e:
         raise Exception(f"S3 move failed: {str(e)}")
 

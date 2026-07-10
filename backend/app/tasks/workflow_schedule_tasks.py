@@ -88,7 +88,7 @@ async def execute_workflow_run_async(run_id: UUID):
                     run = await run_repository.get_by_id(run_id)
                 except AppException as e:
                     if e.error_key == ErrorKey.NOT_FOUND:
-                        logger.info(
+                        logger.debug(
                             f"Workflow schedule run {run_id} not found in tenant "
                             f"{tenant_id}, skipping execution"
                         )
@@ -183,7 +183,7 @@ async def execute_workflow_run_async(run_id: UUID):
                     )
                 except AppException as update_error:
                     if update_error.error_key == ErrorKey.NOT_FOUND:
-                        logger.info(
+                        logger.debug(
                             f"Workflow schedule run {run_id} not found in tenant "
                             f"{tenant_id} when updating status, skipping"
                         )
@@ -214,7 +214,7 @@ async def execute_workflow_run_async_with_scope(run_id: UUID):
         logger.error(f"Error in workflow schedule run execution task: {str(e)}")
         return {"status": "failed", "error": str(e)}
     finally:
-        logger.info("Workflow schedule run execution task completed.")
+        logger.debug("Workflow schedule run execution task completed.")
 
 
 @shared_task(name="execute_workflow_run")

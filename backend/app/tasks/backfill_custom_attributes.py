@@ -162,7 +162,7 @@ async def backfill_custom_attributes_async(force: bool = False):
         await db.commit()
         total_updated += batch_updated
         offset += BATCH_SIZE
-        logger.info(
+        logger.debug(
             f"Backfill progress: processed {offset} conversations, "
             f"updated {total_updated} so far"
         )

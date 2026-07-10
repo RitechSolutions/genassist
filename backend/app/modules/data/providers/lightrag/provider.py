@@ -224,7 +224,7 @@ class LightRAGProvider(FinalizableProvider):
             # Perform search asynchronously
             raw_results = await self.rag.aquery(query, param=param)
 
-            logger.info(f"Raw results from LightRAG: {raw_results}")
+            logger.debug(f"Raw results from LightRAG: {raw_results}")
 
             # Convert LightRAG results to SearchResult format
             search_results: List[SearchResult] = []

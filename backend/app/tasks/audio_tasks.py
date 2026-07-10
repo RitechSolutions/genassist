@@ -68,7 +68,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
 
         count_datasource += 1
         conn_data = ds_item.connection_data
-        logger.info(f"Processing S3 Datasource: {conn_data}")
+        logger.debug(f"Processing S3 Datasource: {ds_item.name}")
 
         prefix = conn_data.get("prefix", "").lstrip("/").strip() or ""
         bucket = conn_data["bucket_name"]
@@ -98,7 +98,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         ]
 
         if not audio_files:
-            logger.info(f"No audio files found for S3 Datasource: {ds_item.name}")
+            logger.debug(f"No audio files found for S3 Datasource: {ds_item.name}")
             continue
 
         transcribed = []
@@ -108,7 +108,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
                 # TODO: if file is already processed skip it (if there is record in recordings)
                 # read list of files from S3
                 if await audioService.recording_exists(file_info["key"], ds_item.id):
-                    logger.info(
+                    logger.debug(
                         f"Recording: {file_info['key']} of Datasource {ds_item.name} already processed!!!"
                     )
                     count_files_skipped += 1
@@ -131,7 +131,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
                         filename=file_info["key"],
                     )
 
-                    logger.info(
+                    logger.debug(
                         f"Transcribing file: {file_info['key']} of Datasource {ds_item.name}"
                     )
                     # transcript = await transcribe_audio_whisper_no_save(upload_file)
@@ -140,7 +140,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
                         upload_file, metadata
                     )
 
-                    logger.info(f"Transcription for {file_info['key']}: completed")
+                    logger.debug(f"Transcription for {file_info['key']}: completed")
 
                     # TODO: save it in Recording
 
