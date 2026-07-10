@@ -175,7 +175,7 @@ async def get_fine_tunable_models(
     Get list of model names that support fine-tuning.
     """
     logger.info(f"User {get_current_user_id()} fetching fine-tunable models")
-    return service.get_fine_tunable_models()
+    return await service.get_fine_tunable_models()
 
 @router.delete("/models/{model_id}", dependencies=[
     Depends(auth),

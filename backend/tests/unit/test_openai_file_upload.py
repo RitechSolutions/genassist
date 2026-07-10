@@ -42,7 +42,11 @@ def openai_service(mock_repository, mock_event_service, mock_openai_client):
     """Create OpenAIFineTuningService with mocked dependencies."""
     service = OpenAIFineTuningService(
         repository=mock_repository,
-        event_service=mock_event_service
+        event_service=mock_event_service,
+        agent_config_service=MagicMock(),
+        agent_log_repo=MagicMock(),
+        conversation_repo=MagicMock(),
+        app_settings_service=AsyncMock(),
     )
     service.client = mock_openai_client
     return service
@@ -62,7 +66,7 @@ def temp_pdf_file():
 async def test_upload_file_for_chat_success(openai_service, mock_repository, mock_openai_client, temp_pdf_file):
     """Test successful file upload to OpenAI for chat."""
     file_id = await openai_service.upload_file_for_chat(
-        file_path=temp_pdf_file,
+        file_url=temp_pdf_file,
         filename="test.pdf",
         purpose="user_data"
     )
@@ -81,7 +85,7 @@ async def test_upload_file_for_chat_db_error_continues(openai_service, mock_repo
     mock_repository.create_file_record.side_effect = Exception("DB error")
 
     file_id = await openai_service.upload_file_for_chat(
-        file_path=temp_pdf_file,
+        file_url=temp_pdf_file,
         filename="test.pdf",
         purpose="user_data"
     )
@@ -97,7 +101,7 @@ async def test_upload_file_for_chat_openai_error_raises(openai_service, mock_ope
 
     with pytest.raises(AppException) as exc_info:
         await openai_service.upload_file_for_chat(
-            file_path=temp_pdf_file,
+            file_url=temp_pdf_file,
             filename="test.pdf",
             purpose="user_data"
         )
@@ -110,7 +114,7 @@ async def test_upload_file_for_chat_file_not_found(openai_service):
     """Test that file not found raises error."""
     with pytest.raises(AppException) as exc_info:
         await openai_service.upload_file_for_chat(
-            file_path="/nonexistent/file.pdf",
+            file_url="/nonexistent/file.pdf",
             filename="test.pdf",
             purpose="user_data"
         )

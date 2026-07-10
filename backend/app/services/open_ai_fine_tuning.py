@@ -588,27 +588,29 @@ class OpenAIFineTuningService:
             raise AppException(error_key=ErrorKey.ERROR_DELETE_FILE_OPEN_AI)
 
 
-    def get_fine_tunable_models(self):
+    async def get_fine_tunable_models(self):
         """
-        Get list of models that support fine-tuning.
-        This is hardcoded based on OpenAI documentation.
+        Get the list of models that support fine-tuning.
+
+        Reads an App Settings override row (type="Other",
+        name="OpenAIFineTunableModels", values={"models": [...]}) so the list can be
+        changed without a deploy. Falls back to OPENAI_FINE_TUNABLE_MODELS when the
+        row is absent, empty, or malformed.
         Check https://platform.openai.com/docs/guides/fine-tuning for latest updates.
-
-        Returns:
-            List of fine-tunable model names
         """
-        # Updated as of October 2024
-        fine_tunable_models = [
-            "gpt-4o-2024-08-06",
-            "gpt-4o-mini-2024-07-18",
-            "gpt-4-0613",
-            "gpt-3.5-turbo-0125",
-            "gpt-3.5-turbo-1106",
-            "gpt-3.5-turbo-0613",
-            ]
+        try:
+            setting = await self.app_settings_service.get_by_type_and_name(
+                FINE_TUNABLE_MODELS_SETTING_TYPE, FINE_TUNABLE_MODELS_SETTING_NAME
+            )
+            if setting and isinstance(setting.values, dict):
+                models = setting.values.get("models")
+                if isinstance(models, list) and models:
+                    return [str(m) for m in models]
+        except Exception as e:
+            logger.warning(f"Falling back to default OpenAI model list: {str(e)}")
 
-        logger.info(f"Returning {len(fine_tunable_models)} fine-tunable models")
-        return fine_tunable_models
+        logger.info(f"Returning {len(OPENAI_FINE_TUNABLE_MODELS)} fine-tunable models")
+        return OPENAI_FINE_TUNABLE_MODELS
 
 
     async def delete_fine_tuned_model(self, model_id: str):
