@@ -505,6 +505,7 @@ export interface GuardrailNliNodeData extends BaseNodeData {
 
 // File Reader Node Data
 export interface FileReaderNodeData extends BaseNodeData {
+  fileSource?: "chatAttachment" | "upload";
   fileName?: string;
   filePath?: string;
   fileUrl?: string;
