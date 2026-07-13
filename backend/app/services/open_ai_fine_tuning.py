@@ -132,6 +132,7 @@ class OpenAIFineTuningService:
         Returns:
             OpenAI fine-tuning job response
         """
+        params: dict = {}
         try:
             # Verify training file exists in our DB by internal UUID
             training_file = await self.repository.get_file_by_id(UUID(job_request.training_file))
@@ -163,7 +164,14 @@ class OpenAIFineTuningService:
             if validation_file:
                 params["validation_file"] = validation_file.openai_file_id
             if job_request.hyperparameters:
-                params["hyperparameters"] = job_request.hyperparameters
+                # The top-level `hyperparameters` param is deprecated; the current API
+                # (and the only one gpt-4.1 fine-tuning accepts) expects them nested
+                # under `method.supervised.hyperparameters`. Passing them at the top
+                # level makes OpenAI 500 on job creation.
+                params["method"] = {
+                    "type": "supervised",
+                    "supervised": {"hyperparameters": job_request.hyperparameters},
+                }
             if job_request.suffix:
                 params["suffix"] = job_request.suffix
 
@@ -188,7 +196,16 @@ class OpenAIFineTuningService:
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error creating fine-tuning job: {str(e)}")
+            # Surface the real OpenAI failure: request_id + status + body tell us the
+            # server-side reason, and params shows exactly what we sent.
+            logger.error(
+                "Error creating fine-tuning job: %s | status=%s request_id=%s body=%s | params=%s",
+                str(e),
+                getattr(e, "status_code", None),
+                getattr(e, "request_id", None),
+                getattr(e, "body", None),
+                params,
+            )
             raise AppException(error_key=ErrorKey.ERROR_CREATE_JOB_OPEN_AI)
 
 

@@ -88,7 +88,7 @@ export function FineTuneJobsCard({
     "Model",
     "Status",
     "Accuracy",
-    { label: "Action", className: "text-center pr-4" },
+    { label: "Action", className: "text-center pr-4 whitespace-nowrap" },
   ];
 
   const handleDelete = (job: FineTuneJob) => {
