@@ -15,9 +15,15 @@ from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 
 
+# Only redact PII when the configured log level is stricter than DEBUG (i.e. not
+# in development), so real values stay visible while debugging locally.
+_REDACT_PII = logging.getLevelName(settings.LOG_LEVEL) > logging.DEBUG
+
+
 def _pii_filter(record: dict) -> bool:
     """Redact PII/secrets from the message before it reaches any persistent sink."""
-    record["message"] = redact_sensitive_substrings(record["message"])
+    if _REDACT_PII:
+        record["message"] = redact_sensitive_substrings(record["message"])
     return True
 
 
