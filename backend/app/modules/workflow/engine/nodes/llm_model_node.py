@@ -315,7 +315,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                     if attachment_file_id:
                         # Use OpenAI file_id (preferred for PDFs and supported file types)
                         message_content.append({"type": "file", "file": {"file_id": attachment_file_id}})
-                        logger.info(f"Using OpenAI file_id: {attachment_file_id} for file attachment")
+                        logger.debug(f"Using OpenAI file_id: {attachment_file_id} for file attachment")
                     elif attachment_url:
                         # Fallback to URL if file_id not available
                         message_content.append(
