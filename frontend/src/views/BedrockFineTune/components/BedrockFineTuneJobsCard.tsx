@@ -78,7 +78,7 @@ export function BedrockFineTuneJobsCard({
     "Base Model",
     "Status",
     "Deployment",
-    { label: "Action", className: "text-center pr-4" },
+    { label: "Action", className: "text-center pr-4 whitespace-nowrap" },
   ];
 
   const handleDelete = (job: BedrockFineTuneJob) => {
