@@ -8,6 +8,7 @@ import {
   ToolBuilderNodeData,
   MCPNodeData,
   VoiceAgentNodeData,
+  NlpNodeData,
 } from "../../types/nodes";
 import AgentNode from "./agentNode";
 import VoiceAgentNode from "./voiceAgentNode";
@@ -15,6 +16,7 @@ import ExternalAgentNode from "./externalAgentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
 import MCPNode from "./mcpNode";
+import NlpNode from "./nlpNode";
 import {
   AI_AGENT_HELP_CONTENT,
   LANGUAGE_MODEL_HELP_CONTENT,
@@ -257,6 +259,53 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "mcpNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const NLP_NODE_DEFINITION: NodeTypeDefinition<NlpNodeData> = {
+  type: "nlpNode",
+  label: "Text Analysis",
+  description:
+    "Uses an LLM to analyze text: classify into categories, score sentiment and urgency, extract entities, or summarize.",
+  shortDescription: "Classify, score, extract, or summarize text",
+  configSubtitle:
+    "Pick a task, then configure the provider, input field, and task-specific options.",
+  category: "ai",
+  icon: "ScanText",
+  defaultData: {
+    name: "Text Analysis",
+    providerId: "",
+    inputField: "{{source.message}}",
+    task: "classify",
+    categories: [],
+    multiLabel: false,
+    scale: "1-5",
+    schema: "",
+    maxLength: 200,
+    style: "concise",
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  },
+  component: NlpNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "nlpNode",
     position,
     data: {
       ...data,
