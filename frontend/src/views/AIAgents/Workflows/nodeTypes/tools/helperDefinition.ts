@@ -96,6 +96,43 @@ export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const HTML_TO_IMAGE_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The HTML to Image node renders an HTML string in a headless browser and returns a hosted PNG image. It is useful for turning generated markup, templates or reports into shareable images. It runs without any external service and blocks private, loopback and metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the HTML to Image node when you need to:",
+      bullets: [
+        "Render an HTML snippet or template as an image",
+        "Turn a generated report or receipt into a PNG",
+        "Create shareable image previews from markup",
+        "Feed a rendered screenshot to a downstream node",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the HTML to render, or connect an upstream node that provides it.",
+        "Choose the Capture Mode (Full Page or Viewport).",
+        "Set the Viewport Width and Height.",
+        "Optionally set an extra Wait For delay before capturing.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.image}} — hosted URL of the rendered PNG",
+        "{{source.image_file_id}} — file id of the stored image",
+      ],
+    },
+  ],
+};
+
 export const OPENAPI_EXPLORER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The OpenAPI Explorer node helps explore and work with OpenAPI-based services inside a workflow. It can be used to inspect available operations, test requests, and integrate documented API capabilities in a guided way.",

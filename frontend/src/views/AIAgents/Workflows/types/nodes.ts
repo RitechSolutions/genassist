@@ -208,6 +208,17 @@ export interface WebScraperNodeData extends BaseNodeData {
   maxAge: number;
 }
 
+// HTML to Image Node Data
+export type HtmlToImageCaptureMode = "fullPage" | "viewport";
+
+export interface HtmlToImageNodeData extends BaseNodeData {
+  html: string;
+  captureMode: HtmlToImageCaptureMode;
+  viewportWidth: number;
+  viewportHeight: number;
+  waitFor: number;
+}
+
 // External Agent Node Data
 export interface ExternalAgentNodeData extends BaseNodeData {
   endpoint: string;
@@ -588,7 +599,8 @@ export type NodeData =
   | TTSNodeData
   | STTNodeData
   | VoiceAgentNodeData
-  | WebScraperNodeData;
+  | WebScraperNodeData
+  | HtmlToImageNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

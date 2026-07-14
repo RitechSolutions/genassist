@@ -12,6 +12,7 @@ from .data_mapper_node import DataMapperNode
 from .file_reader_node import FileReaderNode
 from .finalize_conversation_node import FinalizeConversationNode
 from .gmail_tool_node import GmailToolNode
+from .html_to_image_node import HtmlToImageNode
 from .guardrail_nli_node import GuardrailNliNode
 from .guardrail_provenance_node import GuardrailProvenanceNode
 from .create_workflow_schedule_node import CreateWorkflowScheduleNode
@@ -87,6 +88,7 @@ __all__ = [
     "STTNode",
     "VoiceAgentNode",
     "WebScraperNode",
+    "HtmlToImageNode",
     "FinalizeConversationNode",
     "NLPNode",
 ]

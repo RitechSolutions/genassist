@@ -13,6 +13,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   // Tools
   apiToolNode: "API Connector",
   webScraperNode: "Web Scraper",
+  htmlToImageNode: "HTML to Image",
   openApiNode: "OpenAPI Explorer",
   knowledgeBaseNode: "Knowledge Query",
   pythonCodeNode: "Python Executor",
