@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
+  Panel,
   Edge,
   MarkerType,
   Node,
@@ -9,8 +10,10 @@ import ReactFlow, {
   NodeTypes,
   ReactFlowInstance,
   ReactFlowProvider,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/helpers/utils';
 import { ExecutionViewModel } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
@@ -81,6 +84,67 @@ const OrderedFallbackList: React.FC<{
   </div>
 );
 
+/**
+ * Bottom-left path stepper: walks the executed nodes in run order (1 → 2 → 3 …), centering and
+ * zooming the viewport onto each one. Rendered inside <ReactFlow> so it can drive the viewport via
+ * useReactFlow; sits just to the right of the zoom controls.
+ */
+const PathStepper: React.FC<{ orderedNodeIds: string[] }> = ({ orderedNodeIds }) => {
+  const reactFlow = useReactFlow();
+  const [index, setIndex] = useState(-1);
+  const total = orderedNodeIds.length;
+
+  // A fresh run swaps the node list — restart the walk.
+  useEffect(() => setIndex(-1), [orderedNodeIds]);
+
+  const focusNode = useCallback(
+    (nextIndex: number) => {
+      const id = orderedNodeIds[nextIndex];
+      const node = id ? reactFlow.getNode(id) : undefined;
+      if (!node) return;
+      // Frame just this node so it lands centered and zoomed in.
+      reactFlow.fitView({ nodes: [node], padding: 0.3, minZoom: 0.4, maxZoom: 1.5, duration: 400 });
+      setIndex(nextIndex);
+    },
+    [orderedNodeIds, reactFlow]
+  );
+
+  if (total < 2) return null;
+
+  const atStart = index <= 0;
+  const atEnd = index >= total - 1;
+
+  return (
+    <Panel position="bottom-right">
+      <div className="flex items-center gap-0.5 rounded-full border border-gray-200 bg-white px-1 shadow-[0_0_2px_1px_rgba(0,0,0,0.08)]">
+        <button
+          type="button"
+          onClick={() => focusNode(index < 0 ? 0 : index - 1)}
+          disabled={atStart}
+          title="Previous node"
+          aria-label="Previous node"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <span className="min-w-[2.75rem] select-none text-center text-xs font-medium tabular-nums text-gray-600">
+          {index < 0 ? '–' : index + 1}/{total}
+        </span>
+        <button
+          type="button"
+          onClick={() => focusNode(index < 0 ? 0 : index + 1)}
+          disabled={atEnd}
+          title="Next node"
+          aria-label="Next node"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </Panel>
+  );
+};
+
 const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   workflow,
   model,
@@ -142,6 +206,15 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
   const displayEdges = useMemo<Edge[]>(() => sourceEdges.map((edge) => ({ ...edge, animated: false })), [sourceEdges]);
 
+  // Executed nodes in run order (1 → 2 → 3 …) for the bottom-right path stepper.
+  const orderedNodeIds = useMemo(
+    () =>
+      [...model.nodes]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((n) => n.nodeId),
+    [model.nodes]
+  );
+
   const handleNodeClick = useMemo<NodeMouseHandler>(() => (_event, node) => onSelectNode(node.id), [onSelectNode]);
 
   // In the full view, frame the executed nodes (not the whole sparse canvas) so the run is
@@ -193,6 +266,7 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         >
           <Background />
           <Controls showInteractive={false} />
+          <PathStepper orderedNodeIds={orderedNodeIds} />
         </ReactFlow>
       </ReactFlowProvider>
     </div>
