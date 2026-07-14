@@ -38,6 +38,10 @@ class GenerateBedrockTrainingFileRequest(BaseModel):
     conversation_ids: List[UUID] = Field(
         ..., description="Conversation UUIDs to generate Nova training data from"
     )
+    memory_conversation_ids: List[UUID] = Field(
+        default_factory=list,
+        description="Subset of conversation_ids to emit as a single multi-turn example (with memory)",
+    )
     upload_to_s3: bool = Field(
         False, description="Upload generated JSONL to S3 and return the S3 URI"
     )

@@ -32,6 +32,15 @@ export interface BedrockGenerateUploadResult {
   bytes: number;
 }
 
+/** One item from `GET /bedrock/training-files` (an object under the S3 training prefix). */
+export interface BedrockTrainingFile {
+  key: string;
+  s3_uri: string;
+  filename: string;
+  size: number;
+  last_modified: string | null;
+}
+
 export interface BedrockFineTuneJob {
   id: string;
   job_arn?: string;

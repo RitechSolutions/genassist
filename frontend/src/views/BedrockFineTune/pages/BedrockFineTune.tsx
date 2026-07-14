@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { BedrockFineTuneJobsCard } from "@/views/BedrockFineTune/components/BedrockFineTuneJobsCard";
 import { BedrockFineTuneJobDialog } from "@/views/BedrockFineTune/components/BedrockFineTuneJobDialog";
 import { GenerateFromConversationsDialog } from "@/views/BedrockFineTune/components/GenerateFromConversationsDialog";
+import { SelectExistingBedrockFileDialog } from "@/views/BedrockFineTune/components/SelectExistingBedrockFileDialog";
 import type { S3FileRef } from "@/views/BedrockFineTune/types";
 
 export default function BedrockFineTune() {
@@ -14,6 +15,7 @@ export default function BedrockFineTune() {
   const [trainingData, setTrainingData] = useState<S3FileRef | null>(null);
   const [validationData, setValidationData] = useState<S3FileRef | null>(null);
   const [generateTarget, setGenerateTarget] = useState<"training" | "validation" | null>(null);
+  const [selectFileTarget, setSelectFileTarget] = useState<"training" | "validation" | null>(null);
 
   const handleSetData = (target: "training" | "validation", data: S3FileRef | null) => {
     if (target === "training") setTrainingData(data);
@@ -50,6 +52,7 @@ export default function BedrockFineTune() {
         validationData={validationData}
         onSetData={handleSetData}
         onOpenGenerate={setGenerateTarget}
+        onOpenSelectFile={setSelectFileTarget}
       />
 
       {generateTarget && (
@@ -60,6 +63,18 @@ export default function BedrockFineTune() {
           onFileGenerated={(data) => {
             handleSetData(generateTarget, data);
             setGenerateTarget(null);
+          }}
+        />
+      )}
+
+      {selectFileTarget && (
+        <SelectExistingBedrockFileDialog
+          isOpen={!!selectFileTarget}
+          onOpenChange={(open) => { if (!open) setSelectFileTarget(null); }}
+          fileType={selectFileTarget}
+          onFileSelected={(data) => {
+            handleSetData(selectFileTarget, data);
+            setSelectFileTarget(null);
           }}
         />
       )}

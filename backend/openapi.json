@@ -20860,6 +20860,35 @@
         ]
       }
     },
+    "/api/bedrock/training-files": {
+      "get": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "List Training Files",
+        "description": "List JSONL training files already uploaded/generated in S3.",
+        "operationId": "list_training_files_api_bedrock_training_files_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/bedrock/fine-tuning/jobs": {
       "post": {
         "tags": [
@@ -30318,6 +30347,15 @@
             "type": "array",
             "title": "Conversation Ids",
             "description": "Conversation UUIDs to generate Nova training data from"
+          },
+          "memory_conversation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Memory Conversation Ids",
+            "description": "Subset of conversation_ids to emit as a single multi-turn example (with memory)"
           },
           "upload_to_s3": {
             "type": "boolean",

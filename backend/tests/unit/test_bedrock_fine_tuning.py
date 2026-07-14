@@ -238,3 +238,101 @@ def test_build_nova_jsonl_entry_skips_when_no_output(bedrock_service):
     log.raw_response = json.dumps({"row_agent_response": {"output": ""}})
 
     assert bedrock_service._build_nova_jsonl_entry(log, [agent_msg], "sys") is None
+
+
+@pytest.mark.asyncio
+async def test_list_training_files(bedrock_service):
+    from datetime import datetime, timezone
+
+    bedrock_service._s3_client.list_objects_v2 = MagicMock(
+        return_value={
+            "Contents": [
+                {
+                    "Key": "bedrock-fine-tuning/training/",  # prefix "folder" -> skipped
+                    "Size": 0,
+                    "LastModified": datetime(2026, 7, 1, tzinfo=timezone.utc),
+                },
+                {
+                    "Key": "bedrock-fine-tuning/training/aaa-older.jsonl",
+                    "Size": 2048,
+                    "LastModified": datetime(2026, 7, 10, tzinfo=timezone.utc),
+                },
+                {
+                    "Key": "bedrock-fine-tuning/training/bbb-newer.jsonl",
+                    "Size": 4096,
+                    "LastModified": datetime(2026, 7, 12, tzinfo=timezone.utc),
+                },
+            ]
+        }
+    )
+
+    files = await bedrock_service.list_training_files()
+
+    # Prefix "folder" entry is dropped; newest first.
+    assert [f["filename"] for f in files] == ["bbb-newer.jsonl", "aaa-older.jsonl"]
+    assert files[0]["s3_uri"] == "s3://test-bucket/bedrock-fine-tuning/training/bbb-newer.jsonl"
+    assert files[0]["size"] == 4096
+    bedrock_service._s3_client.list_objects_v2.assert_called_once_with(
+        Bucket="test-bucket", Prefix="bedrock-fine-tuning/training/"
+    )
+
+
+def _nova_msg(msg_id, seq, speaker, text):
+    m = MagicMock()
+    m.id = msg_id
+    m.sequence_number = seq
+    m.speaker = speaker
+    m.text = text
+    return m
+
+
+def _nova_log(transcript_message_id, output):
+    log = MagicMock()
+    log.transcript_message_id = transcript_message_id
+    log._output = output
+    return log
+
+
+def test_build_nova_memory_jsonl_entry_multi_turn(bedrock_service):
+    # The memory builder reads the assistant text via the OpenAI service helper.
+    bedrock_service.openai_service._extract_steps_and_output = (
+        lambda log: ([], log._output)
+    )
+    messages = [
+        _nova_msg("m1", 1, "customer", "What's the return policy?"),
+        _nova_msg("m2", 2, "agent", "30 days."),
+        _nova_msg("m3", 3, "customer", "And last week's order?"),
+        _nova_msg("m4", 4, "agent", "Still within 30 days."),
+    ]
+    logs = [_nova_log("m2", "30 days."), _nova_log("m4", "Still within 30 days.")]
+
+    entry = bedrock_service._build_nova_memory_jsonl_entry(messages, logs, "You are helpful.")
+
+    assert entry["schemaVersion"] == NOVA_SCHEMA_VERSION
+    assert entry["system"] == [{"text": "You are helpful."}]
+    roles = [m["role"] for m in entry["messages"]]
+    assert roles == ["user", "assistant", "user", "assistant"]
+    assert entry["messages"][2]["content"] == [{"text": "And last week's order?"}]
+    assert entry["messages"][3]["content"] == [{"text": "Still within 30 days."}]
+
+
+def test_build_nova_memory_jsonl_entry_merges_consecutive_and_trims(bedrock_service):
+    # Nova needs strict alternation starting with user; consecutive same-role turns
+    # are merged, and a trailing user turn (no answer after it) is dropped.
+    bedrock_service.openai_service._extract_steps_and_output = (
+        lambda log: ([], log._output)
+    )
+    messages = [
+        _nova_msg("m1", 1, "customer", "Hi"),
+        _nova_msg("m2", 2, "customer", "are you there?"),
+        _nova_msg("m3", 3, "agent", "Yes!"),
+        _nova_msg("m4", 4, "customer", "great, one more thing"),  # trailing user, trimmed
+    ]
+    logs = [_nova_log("m3", "Yes!")]
+
+    entry = bedrock_service._build_nova_memory_jsonl_entry(messages, logs, "")
+
+    assert "system" not in entry
+    roles = [m["role"] for m in entry["messages"]]
+    assert roles == ["user", "assistant"]
+    assert entry["messages"][0]["content"] == [{"text": "Hi\nare you there?"}]

@@ -107,6 +107,44 @@ class BedrockFineTuningService:
             logger.exception(f"Error uploading Bedrock training data: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_UPLOAD_FILE_BEDROCK)
 
+    async def list_training_files(self) -> list[dict]:
+        """List JSONL training files already uploaded/generated in S3.
+
+        Enumerates objects under the ``bedrock-fine-tuning/training/`` prefix so
+        the UI can offer them for selection instead of re-uploading. Returns the
+        newest first.
+        """
+        self._require_config()
+        try:
+            prefix = "bedrock-fine-tuning/training/"
+            response = await self._run(
+                self.s3.list_objects_v2, Bucket=self.bucket, Prefix=prefix
+            )
+            files: list[dict] = []
+            for obj in response.get("Contents", []):
+                key = obj.get("Key", "")
+                if not key or key.endswith("/"):
+                    continue
+                last_modified = obj.get("LastModified")
+                files.append(
+                    {
+                        "key": key,
+                        "s3_uri": f"s3://{self.bucket}/{key}",
+                        "filename": key.rsplit("/", 1)[-1],
+                        "size": obj.get("Size", 0),
+                        "last_modified": last_modified.isoformat()
+                        if last_modified
+                        else None,
+                    }
+                )
+            files.sort(key=lambda f: f["last_modified"] or "", reverse=True)
+            return files
+        except AppException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error listing Bedrock training files: {str(e)}")
+            raise AppException(error_key=ErrorKey.ERROR_MONITOR_JOB_BEDROCK)
+
     # ------------------------------------------------------------------
     # Job lifecycle
     # ------------------------------------------------------------------
@@ -436,6 +474,65 @@ class BedrockFineTuningService:
             entry["system"] = [{"text": system_prompt}]
         return entry
 
+    def _build_nova_memory_jsonl_entry(
+        self, messages: list, logs: list, system_prompt: str
+    ) -> dict | None:
+        """Build one multi-turn Nova example spanning the whole conversation.
+
+        Later assistant answers are trained with all prior turns as context. Nova
+        requires ``messages`` to alternate user/assistant starting with user, so
+        consecutive same-role turns are merged and any leading assistant / trailing
+        user turns are dropped.
+        """
+        svc = self.openai_service
+        logs_by_msg_id = {str(log.transcript_message_id): log for log in logs}
+
+        # Ordered (role, text) turns from the transcript.
+        turns: list[tuple[str, str]] = []
+        for m in messages:
+            speaker = (m.speaker or "").lower()
+            if speaker in ("customer", "user"):
+                role, text = "user", (m.text or "")
+            elif speaker == "agent":
+                log = logs_by_msg_id.get(str(m.id))
+                if log is not None:
+                    _, final_output = svc._extract_steps_and_output(log)
+                    text = final_output or (m.text or "")
+                else:
+                    text = m.text or ""
+                role = "assistant"
+            else:
+                continue
+            if text:
+                turns.append((role, str(text)))
+
+        # Merge consecutive same-role turns (Nova needs strict alternation).
+        merged: list[list] = []
+        for role, text in turns:
+            if merged and merged[-1][0] == role:
+                merged[-1][1] += "\n" + text
+            else:
+                merged.append([role, text])
+
+        # Must start with a user turn and end with an assistant turn.
+        while merged and merged[0][0] != "user":
+            merged.pop(0)
+        while merged and merged[-1][0] != "assistant":
+            merged.pop()
+
+        if len(merged) < 2:
+            return None
+
+        entry: dict = {
+            "schemaVersion": NOVA_SCHEMA_VERSION,
+            "messages": [
+                {"role": role, "content": [{"text": text}]} for role, text in merged
+            ],
+        }
+        if system_prompt:
+            entry["system"] = [{"text": system_prompt}]
+        return entry
+
     async def generate_training_file_from_conversations(
         self, request: GenerateBedrockTrainingFileRequest
     ) -> bytes:
@@ -457,6 +554,7 @@ class BedrockFineTuningService:
             for log in logs_all:
                 logs_by_conv.setdefault(log.conversation_id, []).append(log)
 
+            memory_ids = set(request.memory_conversation_ids or [])
             workflow_cache: dict[UUID, dict] = {}
             jsonl_lines: List[str] = []
             for conversation in conversations:
@@ -476,10 +574,18 @@ class BedrockFineTuningService:
 
                 messages = messages_by_conv.get(conversation.id, [])
                 logs = logs_by_conv.get(conversation.id, [])
-                for log in logs:
-                    entry = self._build_nova_jsonl_entry(log, messages, system_prompt)
+                if conversation.id in memory_ids:
+                    # One multi-turn example spanning the whole conversation.
+                    entry = self._build_nova_memory_jsonl_entry(
+                        messages, logs, system_prompt
+                    )
                     if entry is not None:
                         jsonl_lines.append(json.dumps(entry))
+                else:
+                    for log in logs:
+                        entry = self._build_nova_jsonl_entry(log, messages, system_prompt)
+                        if entry is not None:
+                            jsonl_lines.append(json.dumps(entry))
 
             if not jsonl_lines:
                 logger.warning(

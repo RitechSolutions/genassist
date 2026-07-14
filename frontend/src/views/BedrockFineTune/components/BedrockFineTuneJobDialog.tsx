@@ -34,6 +34,7 @@ interface BedrockFineTuneJobDialogProps {
   onOpenChange: (open: boolean) => void;
   onJobCreated: () => void;
   onOpenGenerate: (target: "training" | "validation") => void;
+  onOpenSelectFile: (target: "training" | "validation") => void;
   onSetData: (target: "training" | "validation", data: S3FileRef | null) => void;
   trainingData: S3FileRef | null;
   validationData: S3FileRef | null;
@@ -44,6 +45,7 @@ export function BedrockFineTuneJobDialog({
   onOpenChange,
   onJobCreated,
   onOpenGenerate,
+  onOpenSelectFile,
   onSetData,
   trainingData,
   validationData,
@@ -266,13 +268,22 @@ export function BedrockFineTuneJobDialog({
                   value={trainingData?.s3_uri ?? ""}
                   onChange={(e) => handleUriChange("training", e.target.value)}
                 />
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-                  onClick={() => onOpenGenerate("training")}
-                >
-                  Generate from conversations
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenSelectFile("training")}
+                  >
+                    Select from uploaded files
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenGenerate("training")}
+                  >
+                    Generate from conversations
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -305,13 +316,22 @@ export function BedrockFineTuneJobDialog({
                   value={validationData?.s3_uri ?? ""}
                   onChange={(e) => handleUriChange("validation", e.target.value)}
                 />
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-                  onClick={() => onOpenGenerate("validation")}
-                >
-                  Generate from conversations
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenSelectFile("validation")}
+                  >
+                    Select from uploaded files
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenGenerate("validation")}
+                  >
+                    Generate from conversations
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 border-t pt-4">

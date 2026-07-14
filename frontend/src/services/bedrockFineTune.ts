@@ -3,6 +3,7 @@ import type { PaginatedResponse } from "@/interfaces/fineTune.interface";
 import type {
   BedrockFineTuneJob,
   BedrockGenerateUploadResult,
+  BedrockTrainingFile,
   BedrockUploadResult,
   CreateBedrockFineTuneJobRequest,
 } from "@/interfaces/bedrockFineTune.interface";
@@ -84,6 +85,14 @@ export async function deployBedrockCustomModel(
   );
 }
 
+export async function listBedrockTrainingFiles(): Promise<BedrockTrainingFile[]> {
+  const res = await apiRequest<BedrockTrainingFile[] | PaginatedResponse<BedrockTrainingFile>>(
+    "GET",
+    "bedrock/training-files"
+  );
+  return normalizeList<BedrockTrainingFile>(res);
+}
+
 export async function uploadBedrockTrainingData(
   file: File
 ): Promise<BedrockUploadResult> {
@@ -105,6 +114,7 @@ export async function uploadBedrockTrainingData(
 
 export async function generateBedrockTrainingFileFromConversations(payload: {
   conversation_ids: string[];
+  memory_conversation_ids?: string[];
 }): Promise<BedrockGenerateUploadResult> {
   const res = await apiRequest<BedrockGenerateUploadResult>(
     "POST",
@@ -116,6 +126,7 @@ export async function generateBedrockTrainingFileFromConversations(payload: {
 
 export async function downloadBedrockGeneratedTrainingFile(payload: {
   conversation_ids: string[];
+  memory_conversation_ids?: string[];
 }): Promise<Blob> {
   const baseURL = await getApiUrl();
   const url = `${baseURL}bedrock/fine-tuning/generate-from-conversations`;

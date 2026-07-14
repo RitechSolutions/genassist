@@ -36,6 +36,17 @@ async def upload_training_data(
     return {"s3_uri": s3_uri, "filename": file.filename, "bytes": len(content)}
 
 
+@router.get("/training-files", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.Bedrock.READ_JOB)),
+])
+async def list_training_files(
+    service: BedrockFineTuningService = Injected(BedrockFineTuningService),
+):
+    """List JSONL training files already uploaded/generated in S3."""
+    return await service.list_training_files()
+
+
 @router.post("/fine-tuning/jobs", dependencies=[
     Depends(auth),
     Depends(permissions(P.Bedrock.WRITE_JOB)),
