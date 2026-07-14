@@ -1,38 +1,42 @@
 import React, { useState } from "react";
 import { NodeProps } from "reactflow";
-import { FileReaderNodeData } from "../../types/nodes";
+import { WebScraperNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
-import { FileReaderDialog } from "../../nodeDialogs/FileReaderDialog";
+import { WebScraperDialog } from "../../nodeDialogs/WebScraperDialog";
 import BaseNodeContainer from "../BaseNodeContainer";
+import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
 
-export const FILE_READER_NODE_TYPE = "fileReaderNode";
+export const WEB_SCRAPER_NODE_TYPE = "webScraperNode";
 
-const FileReaderNode: React.FC<NodeProps<FileReaderNodeData>> = ({
+const WebScraperNode: React.FC<NodeProps<WebScraperNodeData>> = ({
   id,
   data,
   selected,
 }) => {
-  const nodeDefinition = nodeRegistry.getNodeType(FILE_READER_NODE_TYPE);
+  const nodeDefinition = nodeRegistry.getNodeType(WEB_SCRAPER_NODE_TYPE);
   const color = getNodeColor(nodeDefinition.category);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  const onUpdate = (updatedData: Partial<FileReaderNodeData>) => {
+  const onUpdate = (updatedData: WebScraperNodeData) => {
     if (data.updateNodeData) {
-      data.updateNodeData(id, { ...data, ...updatedData });
+      const dataToUpdate: Partial<WebScraperNodeData> = {
+        ...data,
+        ...updatedData,
+      };
+
+      data.updateNodeData(id, dataToUpdate);
     }
   };
 
-  const isChatAttachment = data.fileSource === "chatAttachment";
-  const fileValue = isChatAttachment
-    ? "Chat document(s)"
-    : data.fileName || "No file uploaded";
-
   const nodeContent: NodeContentRow[] = [
+    { label: "URL", value: data.url },
+    { label: "Format", value: data.format },
     {
-      label: "File",
-      value: fileValue,
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
     },
   ];
 
@@ -46,21 +50,21 @@ const FileReaderNode: React.FC<NodeProps<FileReaderNodeData>> = ({
         title={data.name || nodeDefinition.label}
         subtitle={nodeDefinition.shortDescription}
         color={color}
-        nodeType={FILE_READER_NODE_TYPE}
+        nodeType={WEB_SCRAPER_NODE_TYPE}
         nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
       />
 
-      <FileReaderDialog
+      <WebScraperDialog
         isOpen={isEditDialogOpen}
         onClose={() => setIsEditDialogOpen(false)}
         data={data}
         onUpdate={onUpdate}
         nodeId={id}
-        nodeType={FILE_READER_NODE_TYPE}
+        nodeType={WEB_SCRAPER_NODE_TYPE}
       />
     </>
   );
 };
 
-export default React.memo(FileReaderNode);
+export default WebScraperNode;

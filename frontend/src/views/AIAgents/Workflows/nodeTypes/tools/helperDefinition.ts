@@ -51,6 +51,51 @@ export const API_CONNECTOR_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Web Scraper node fetches a web page and returns its content as clean Markdown or HTML, along with the page's links, metadata and an optional screenshot. It runs without any external scraping service and blocks private, loopback and metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Web Scraper node when you need to:",
+      bullets: [
+        "Pull the text of a public web page into a workflow",
+        "Feed page content to a downstream language model",
+        "Harvest a page's links to crawl a site",
+        "Read a page's title, description and Open Graph metadata",
+        "Capture a screenshot of the rendered page",
+        "Replace an external crawling API for simple fetches",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the URL to scrape.",
+        "Choose the Output Format (Markdown, HTML or Both).",
+        "Choose a Screenshot mode (Off, Viewport or Full Page).",
+        "Toggle Only Main Content to strip nav and boilerplate (on by default).",
+        "Add any required Headers.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.content}} — the primary output in the chosen format",
+        "{{source.markdown}} — main-content Markdown (markdown / both formats)",
+        "{{source.html}} — raw page HTML (html / both formats)",
+        "{{source.links}} — array of absolute URLs found on the page",
+        "{{source.metadata.title}} / {{source.metadata.description}} / {{source.metadata.ogImage}} — page metadata",
+        "{{source.screenshot}} — hosted image URL when a screenshot mode is set",
+        "{{source.url}} — the final URL",
+      ],
+    },
+  ],
+};
+
 export const OPENAPI_EXPLORER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The OpenAPI Explorer node helps explore and work with OpenAPI-based services inside a workflow. It can be used to inspect available operations, test requests, and integrate documented API capabilities in a guided way.",

@@ -2,6 +2,7 @@ import nodeRegistry from "../registry/nodeRegistry";
 import ChatInputNode from "./chat/chatInputNode";
 import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
+import WebScraperNode from "./tools/webScraperNode";
 import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
 import ExternalAgentNode from "./llm/externalAgentNode";
@@ -14,6 +15,7 @@ import {
 } from "./chat/definitions";
 import {
   API_TOOL_NODE_DEFINITION,
+  WEB_SCRAPER_NODE_DEFINITION,
   OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
   CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION,
@@ -103,6 +105,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TEMPLATE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WEB_SCRAPER_NODE_DEFINITION);
   nodeRegistry.registerNodeType(OPEN_API_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(WHATSAPP_NODE_DEFINITION);
@@ -170,6 +173,7 @@ export const getNodeTypes = () => {
     chatOutputNode: ChatOutputNode,
     finalizeConversationNode: FinalizeConversationNode,
     apiToolNode: APIToolNode,
+    webScraperNode: WebScraperNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
     voiceAgentNode: VoiceAgentNode,

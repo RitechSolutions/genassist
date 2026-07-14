@@ -66,7 +66,8 @@ SUPPORTED_NODE_TYPES = [
     "ttsNode",
     "sttNode",
     "voiceAgentNode",
-    "createWorkflowScheduleNode"
+    "createWorkflowScheduleNode",
+    "webScraperNode",
 ]
 
 

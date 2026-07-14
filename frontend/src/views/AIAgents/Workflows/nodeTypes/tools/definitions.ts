@@ -11,9 +11,11 @@ import {
   MLModelInferenceNodeData,
   ThreadRAGNodeData,
   WorkflowExecutorNodeData,
+  WebScraperNodeData,
 } from "../../types/nodes";
 
 import APIToolNode from "./apiToolNode";
+import WebScraperNode from "./webScraperNode";
 import OpenApiNode from "./openApiNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
 import CreateWorkflowScheduleNode from "./createWorkflowScheduleNode";
@@ -24,6 +26,7 @@ import ThreadRAGNode from "./threadRAGNode";
 import WorkflowExecutorNode from "./workflowExecutorNode";
 import {
   API_CONNECTOR_HELP_CONTENT,
+  WEB_SCRAPER_HELP_CONTENT,
   KNOWLEDGE_QUERY_HELP_CONTENT,
   CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
   ML_MODEL_INFERENCE_HELP_CONTENT,
@@ -71,6 +74,53 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "apiToolNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData> = {
+  type: "webScraperNode",
+  label: "Web Scraper",
+  description:
+    "Fetches a web page and returns clean scraped content as Markdown or HTML, plus its links, metadata and an optional screenshot.",
+  shortDescription: "Scrape a web page",
+  helpContent: WEB_SCRAPER_HELP_CONTENT,
+  configSubtitle:
+    "Configure the URL, output format, content extraction, screenshot, headers, and render and caching options.",
+  category: "tools",
+  icon: "TextSearch",
+  defaultData: {
+    name: "Web Scraper",
+    url: "https://",
+    format: "markdown",
+    onlyMainContent: true,
+    screenshot: "off",
+    headers: {},
+    waitFor: 0,
+    scrollToBottom: false,
+    maxAge: 0,
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  } as WebScraperNodeData,
+  component: WebScraperNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "webScraperNode",
     position,
     data: {
       ...data,
