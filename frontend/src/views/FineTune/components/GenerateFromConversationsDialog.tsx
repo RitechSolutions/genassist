@@ -48,6 +48,7 @@ export function GenerateFromConversationsDialog({
 
   const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
   const [memoryConvIds, setMemoryConvIds] = useState<Set<string>>(new Set());
+  const [includeTools, setIncludeTools] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -146,6 +147,7 @@ export function GenerateFromConversationsDialog({
       const blob = await downloadGeneratedTrainingFile({
         conversation_ids: Array.from(selectedConvIds),
         memory_conversation_ids: Array.from(memoryConvIds),
+        include_tools: includeTools,
       });
       // Trigger browser download
       const url = URL.createObjectURL(blob);
@@ -169,6 +171,7 @@ export function GenerateFromConversationsDialog({
       const result: OpenAIFileItem = await generateTrainingFileFromConversations({
         conversation_ids: Array.from(selectedConvIds),
         memory_conversation_ids: Array.from(memoryConvIds),
+        include_tools: includeTools,
         upload_to_openai: true,
       });
       const fileLabel = fileType === "training" ? "Training" : "Validation";
@@ -190,6 +193,7 @@ export function GenerateFromConversationsDialog({
     setConvTotal(0);
     setSelectedConvIds(new Set());
     setMemoryConvIds(new Set());
+    setIncludeTools(true);
     setExpandedConvId(null);
     setExpandedMessages([]);
   };
@@ -219,6 +223,14 @@ export function GenerateFromConversationsDialog({
               maxLength={36}
             />
           </div>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2 shrink-0">
+            <Switch
+              checked={includeTools}
+              onCheckedChange={setIncludeTools}
+              disabled={isBusy}
+            />
+            Include tool calls
+          </label>
           {selectedConvIds.size > 0 && (
             <span className="text-xs text-muted-foreground pb-2">
               {selectedConvIds.size} selected

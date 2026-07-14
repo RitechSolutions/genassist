@@ -234,6 +234,29 @@ def test_build_jsonl_entry_plain_no_steps(openai_service):
     assert entry["messages"][2]["content"] == "Hello!"
 
 
+def test_build_jsonl_entry_include_tools_false_strips_tools(openai_service):
+    """include_tools=False -> plain final answer even when a tool result exists."""
+    messages = [
+        _msg("u1", 1, "customer", "Where is my order?"),
+        _msg("a1", 2, "agent", "It ships tomorrow."),
+    ]
+    log = _log(
+        "a1",
+        output="It ships tomorrow.",
+        steps=[
+            {"tool": "get_order_status", "args": {"order_id": "123"}, "result": "ships 2026-07-15"}
+        ],
+    )
+
+    entry = openai_service._build_jsonl_entry(
+        log, messages, "sys", TOOL_SCHEMAS, include_tools=False
+    )
+
+    assert [m["role"] for m in entry["messages"]] == ["system", "user", "assistant"]
+    assert entry["messages"][2]["content"] == "It ships tomorrow."
+    assert "tools" not in entry
+
+
 def test_build_memory_jsonl_entry_multi_turn(openai_service):
     """Memory mode -> one example with a single system msg and ordered turns."""
     messages = [

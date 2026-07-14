@@ -824,6 +824,7 @@ class OpenAIFineTuningService:
         messages: list,
         system_prompt: str,
         tool_schemas: List[dict],
+        include_tools: bool = True,
     ) -> dict | None:
         agent_msg = next(
             (m for m in messages if str(m.id) == str(log.transcript_message_id)), None
@@ -843,7 +844,7 @@ class OpenAIFineTuningService:
         user_text = user_msg.text if user_msg else ""
 
         all_steps, final_output = self._extract_steps_and_output(log)
-        tool_calls = self._extract_tool_calls(all_steps)
+        tool_calls = self._extract_tool_calls(all_steps) if include_tools else []
 
         training_messages = [
             {"role": "system", "content": system_prompt},
@@ -868,6 +869,7 @@ class OpenAIFineTuningService:
         logs: list,
         system_prompt: str,
         tool_schemas: List[dict],
+        include_tools: bool = True,
     ) -> dict | None:
         """Build a single multi-turn training example for one conversation.
 
@@ -893,7 +895,7 @@ class OpenAIFineTuningService:
             log = logs_by_msg_id.get(str(m.id))
             if log is not None:
                 steps, final_output = self._extract_steps_and_output(log)
-                tool_calls = self._extract_tool_calls(steps)
+                tool_calls = self._extract_tool_calls(steps) if include_tools else []
                 if tool_calls:
                     self._append_assistant_with_tools(
                         training_messages, tool_calls, final_output
@@ -948,6 +950,7 @@ class OpenAIFineTuningService:
             )
             logs_all = await self.agent_log_repo.get_by_conversation_ids(request.conversation_ids)
             memory_ids = set(request.memory_conversation_ids or [])
+            include_tools = request.include_tools
 
             # Group messages and logs by conversation_id for O(1) lookup
             messages_by_conv: dict[UUID, list] = {c.id: sorted(c.messages, key=lambda m: m.sequence_number) for c in conversations}
@@ -980,13 +983,15 @@ class OpenAIFineTuningService:
                 if conversation.id in memory_ids:
                     # One multi-turn example spanning the whole conversation.
                     entry = self._build_memory_jsonl_entry(
-                        messages, logs, system_prompt, tool_schemas
+                        messages, logs, system_prompt, tool_schemas, include_tools
                     )
                     if entry is not None:
                         jsonl_lines.append(json.dumps(entry))
                 else:
                     for log in logs:
-                        entry = self._build_jsonl_entry(log, messages, system_prompt, tool_schemas)
+                        entry = self._build_jsonl_entry(
+                            log, messages, system_prompt, tool_schemas, include_tools
+                        )
                         if entry is not None:
                             jsonl_lines.append(json.dumps(entry))
 

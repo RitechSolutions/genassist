@@ -55,4 +55,8 @@ class GenerateTrainingFileRequest(BaseModel):
         default_factory=list,
         description="Subset of conversation_ids to emit as a single multi-turn example (with memory)",
     )
+    include_tools: bool = Field(
+        True,
+        description="Include tool calls/results (and the tools schema) in generated examples; when false, only final answers are used",
+    )
     upload_to_openai: bool = Field(False, description="Upload generated file to OpenAI and return the file record")

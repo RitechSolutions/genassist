@@ -30352,6 +30352,12 @@
             "title": "Memory Conversation Ids",
             "description": "Subset of conversation_ids to emit as a single multi-turn example (with memory)"
           },
+          "include_tools": {
+            "type": "boolean",
+            "title": "Include Tools",
+            "description": "Include tool calls/results (and the tools schema) in generated examples; when false, only final answers are used",
+            "default": true
+          },
           "upload_to_openai": {
             "type": "boolean",
             "title": "Upload To Openai",
