@@ -43,8 +43,10 @@ import {
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
   VOICE_AGENT_NODE_DEFINITION,
+  NLP_NODE_DEFINITION,
 } from "./llm/definitions";
 import VoiceAgentNode from "./llm/voiceAgentNode";
+import NlpNode from "./llm/nlpNode";
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
@@ -142,7 +144,10 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(ROUTER_NODE_DEFINITION);
 
+
   nodeRegistry.registerNodeType(AGGREGATOR_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(NLP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(CALENDAR_EVENT_NODE_DEFINITION);
 
@@ -194,6 +199,7 @@ export const getNodeTypes = () => {
     toolBuilderNode: ToolBuilderNode,
     routerNode: RouterNode,
     aggregatorNode: AggregatorNode,
+    nlpNode: NlpNode,
     dataMapperNode: DataMapperNode,
     guardrailProvenanceNode: GuardrailProvenanceNode,
     guardrailNliNode: GuardrailNliNode,

@@ -109,6 +109,52 @@ def _resolve_selector_value(
     return selector
 
 
+def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
+    """Stable, workflow-agnostic view of a run for evaluators to grade against."""
+    trace = execution_trace if isinstance(execution_trace, dict) else {}
+    state = trace.get("state") if isinstance(trace.get("state"), dict) else {}
+    node_status = state.get("nodeExecutionStatus")
+    node_status = node_status if isinstance(node_status, dict) else {}
+
+    nodes: Dict[str, Any] = {}
+    nodes_by_type: Dict[str, List[Any]] = {}
+    nodes_by_label: Dict[str, List[Any]] = {}
+    for node_id, info in node_status.items():
+        if not isinstance(info, dict):
+            continue
+        entry = {
+            "id": node_id,
+            "type": info.get("type"),
+            "label": info.get("name"),
+            "output": info.get("output"),
+            "status": info.get("status"),
+            "error": info.get("error"),
+        }
+        nodes[node_id] = entry
+        if entry["type"]:
+            nodes_by_type.setdefault(entry["type"], []).append(entry)
+        if entry["label"]:
+            nodes_by_label.setdefault(entry["label"], []).append(entry)
+
+    session = state.get("input") if isinstance(state.get("input"), dict) else {}
+
+    errors: List[Any] = list(state.get("errors") or [])
+    for entry in nodes.values():
+        if entry.get("error"):
+            errors.append({"node": entry["id"], "error": entry["error"]})
+
+    return {
+        "output": trace.get("output"),
+        "nodes": nodes,
+        "nodes_by_type": nodes_by_type,
+        "nodes_by_label": nodes_by_label,
+        "session": session,
+        "errors": errors,
+        "tokens": trace.get("token_usage") or {},
+        "cost": trace.get("cost_usd"),
+    }
+
+
 class SimpleEvaluatorRegistry:
     """
     Lightweight evaluator registry inspired by OpenEvals.
@@ -126,6 +172,8 @@ class SimpleEvaluatorRegistry:
             "exact_match": self._exact_match,
             "contains": self._contains,
             "json_match": self._json_match,
+            "field_equals": self._field_equals,
+            "no_errors": self._no_errors,
             "nli_eval": self._guardrail_nli,
             "provenance_eval": self._guardrail_provenance,
         }
@@ -140,6 +188,7 @@ class SimpleEvaluatorRegistry:
         inputs: Dict[str, Any],
         outputs: Any,
         reference_outputs: Any,
+        execution_trace: Any = None,
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
@@ -147,6 +196,7 @@ class SimpleEvaluatorRegistry:
             "inputs": inputs,
             "outputs": outputs,
             "reference_outputs": reference_outputs,
+            "trace": _build_grading_context(execution_trace),
         }
         for key in techniques:
             fn = self._evaluators.get(key)
@@ -227,6 +277,54 @@ class SimpleEvaluatorRegistry:
             "score": passed,
             "passed": passed,
             "comment": None if passed else "JSON outputs do not match.",
+        }
+
+    async def _field_equals(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+        outputs: Any,
+        reference_outputs: Any,
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Exact-match a value read from the run (dot-path ``field``) vs expected."""
+        field = config.get("field")
+        actual_value = _read_path(payload, field) if field else outputs
+        expected_value = config.get("expected", reference_outputs)
+
+        actual = _normalize_text(actual_value)
+        expected = _normalize_text(expected_value)
+        passed = bool(actual and expected and actual == expected)
+
+        return {
+            "key": "field_equals",
+            "score": passed,
+            "passed": passed,
+            "comment": (
+                None if passed else f"{field or 'outputs'}={actual!r} (expected {expected!r})"
+            ),
+        }
+
+    async def _no_errors(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - not used by this evaluator
+        outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        reference_outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        payload: Dict[str, Any],
+        config: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+    ) -> Dict[str, Any]:
+        """Pass only when the run produced no node/run-level errors."""
+        trace = payload.get("trace") or {}
+        errors = trace.get("errors") or []
+        passed = len(errors) == 0
+
+        return {
+            "key": "no_errors",
+            "score": passed,
+            "passed": passed,
+            "comment": None if passed else f"{len(errors)} error(s) during run.",
         }
 
     async def _guardrail_nli(
@@ -634,6 +732,7 @@ class TestSuiteService:
                     inputs=merged_input,
                     outputs=output,
                     reference_outputs=case.expected_output,
+                    execution_trace=execution_trace,
                     technique_configs=technique_configs,
                 )
                 result = TestResultModel(

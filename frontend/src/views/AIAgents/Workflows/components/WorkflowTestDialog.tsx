@@ -19,6 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/resizable";
 import {
   Loader2,
   Send,
@@ -27,6 +33,9 @@ import {
   RefreshCw,
   ClipboardList,
   Volume2,
+  MessageSquareText,
+  Bug,
+  Network,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
@@ -99,6 +108,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const hasAudioNode = !!workflow?.nodes.some((n) =>
     AUDIO_INPUT_NODE_TYPES.includes(n.type)
   );
+
   const {
     isRecording,
     audioFileName,
@@ -169,6 +179,14 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       }
     }
   }, [workflow, executionState?.session, isOpen]);
+
+  // Start on the Response view each time the dialog opens, so the input pane
+  // (which is hidden on Debug/Execution) is always available on open.
+  useEffect(() => {
+    if (isOpen) {
+      setViewMode("response");
+    }
+  }, [isOpen]);
 
   // Check if a response indicates a paused workflow
   const isPausedResponse = (res: WorkflowTestResponse): boolean => {
@@ -423,7 +441,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl max-h-[95vh] w-full overflow-hidden">
+      <DialogContent className="flex h-[88vh] max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Test Workflow: {workflowName}</DialogTitle>
           <DialogDescription>
@@ -431,557 +449,575 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
-          <div className="flex flex-col space-y-4 min-w-0 w-full">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="test-input-message">
-                  Message
-                  {inputSchema?.message?.required && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </Label>
-                {prefilledFields.has("message") && (
-                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                    📝 Session
-                  </span>
-                )}
-              </div>
-              <RichInput
-                id="test-input-message"
-                placeholder="Enter your message"
-                value={testInput.message || ""}
-                onChange={(e) =>
-                  setTestInputs((prev) => ({
-                    ...prev,
-                    message: e.target.value,
-                  }))
-                }
-                disabled={testing || !!pausedFormSchema}
-                className={`flex-1 ${
-                  prefilledFields.has("message")
-                    ? "border-blue-300 bg-blue-50"
-                    : ""
-                }`}
-              />
-            </div>
-
-            {hasAudioNode && !pausedFormSchema && (
-              <STTAudioInput
-                isLoading={testing}
-                isRecording={isRecording}
-                audioFileName={audioFileName}
-                fileInputRef={fileInputRef}
-                onFileUpload={handleAudioFileUpload}
-                onStartRecording={startRecording}
-                onStopRecording={stopRecording}
-              />
-            )}
-
-            {inputSchema && (
-              <div className="space-y-2">
-                <Button
-                  variant="ghost"
-                  className="w-full flex items-center justify-between p-2"
-                  onClick={() => setShowMetadata(!showMetadata)}
-                >
-                  <span className="font-medium">Metadata</span>
-                  {showMetadata ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-
-                {showMetadata && (
-                  <div className="pl-4 space-y-4 border-l-2 border-gray-200">
-                    {/* Thread ID field - always show so saved testInput.thread_id is visible and usable */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="test-input-thread_id">
-                          Thread ID
-                          {inputSchema?.thread_id?.required && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
-                        </Label>
-                      </div>
-                      <div className="flex gap-2">
-                        <RichInput
-                          id="test-input-thread_id"
-                          type="text"
-                          placeholder="Thread ID will be auto-generated"
-                          value={testInput.thread_id || ""}
-                          readOnly
-                          disabled={testing}
-                          className="flex-1 bg-gray-50 cursor-not-allowed"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={generateThreadId}
-                          disabled={testing}
-                          title="Generate new Thread ID"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    {Object.entries(inputSchema)
-                      .filter(([key, field]: [string, SchemaField]) => {
-                        // Exclude message, stateful parameters, and thread_id
-                        return (
-                          key !== "message" &&
-                          !field.stateful &&
-                          key !== "thread_id"
-                        );
-                      })
-                      .map(([key, field]: [string, SchemaField]) => {
-                        const isBoolean = field.type === "boolean";
-                        const isObjectOrArray = field.type === "object" || field.type === "array";
-                        const isNumber = field.type === "number";
-
-                        return (
-                          <div key={key} className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label htmlFor={`test-input-${key}`}>
-                                {field.description || key}
-                                {field.required && (
-                                  <span className="text-red-500 ml-1">*</span>
-                                )}
-                                {field.type !== "string" && (
-                                  <span className="text-xs text-gray-500 ml-2">
-                                    ({field.type})
-                                  </span>
-                                )}
-                              </Label>
-                              {prefilledFields.has(key) && (
-                                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                                  📝 Session
-                                </span>
-                              )}
-                            </div>
-                            {isBoolean ? (
-                              <div className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`test-input-${key}`}
-                                  checked={testInput[key] === "true" || testInput[key] === "1"}
-                                  onCheckedChange={(checked) =>
-                                    setTestInputs((prev) => ({
-                                      ...prev,
-                                      [key]: String(checked),
-                                    }))
-                                  }
-                                  disabled={testing || !!pausedFormSchema}
-                                  className={
-                                    prefilledFields.has(key)
-                                      ? "border-blue-300"
-                                      : ""
-                                  }
-                                />
-                                <Label
-                                  htmlFor={`test-input-${key}`}
-                                  className="text-sm font-normal cursor-pointer"
-                                >
-                                  {testInput[key] === "true" || testInput[key] === "1"
-                                    ? "True"
-                                    : "False"}
-                                </Label>
-                              </div>
-                            ) : isObjectOrArray ? (
-                              <RichTextarea
-                                id={`test-input-${key}`}
-                                placeholder={`Enter ${field.description || key} as JSON`}
-                                value={testInput[key] || ""}
-                                onChange={(e) =>
-                                  setTestInputs((prev) => ({
-                                    ...prev,
-                                    [key]: e.target.value,
-                                  }))
-                                }
-                                disabled={testing || !!pausedFormSchema}
-                                className={`flex-1 font-mono text-sm ${
-                                  prefilledFields.has(key)
-                                    ? "border-blue-300 bg-blue-50"
-                                    : ""
-                                }`}
-                                rows={4}
-                              />
-                            ) : (
-                              <RichInput
-                                id={`test-input-${key}`}
-                                type={isNumber ? "number" : "text"}
-                                placeholder={`Enter ${field.description || key}`}
-                                value={testInput[key] || ""}
-                                onChange={(e) =>
-                                  setTestInputs((prev) => ({
-                                    ...prev,
-                                    [key]: e.target.value,
-                                  }))
-                                }
-                                disabled={testing || !!pausedFormSchema}
-                                className={`flex-1 ${
-                                  prefilledFields.has(key)
-                                    ? "border-blue-300 bg-blue-50"
-                                    : ""
-                                }`}
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
+        {/* Two-column layout: inputs on the left (resizable), results on the right. */}
+        <div className="min-h-0 flex-1">
+          <ResizablePanelGroup
+            direction="horizontal"
+            autoSaveId="workflow-test-dialog"
+            className="rounded-md border border-gray-200"
+          >
+            {/* LEFT — inputs: message, metadata, run action / paused form. */}
+            <ResizablePanel
+              id="inputs"
+              order={1}
+              defaultSize={33}
+              minSize={24}
+              maxSize={55}
+            >
+              <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="test-input-message">
+                      Message
+                      {inputSchema?.message?.required && (
+                        <span className="text-red-500 ml-1">*</span>
+                      )}
+                    </Label>
+                    {prefilledFields.has("message") && (
+                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                        📝 Session
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Test / Debug buttons — shown when not paused */}
-            {!pausedFormSchema && (
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleTestWorkflow}
-                  disabled={testing || !workflow}
-                  className="flex items-center gap-2"
-                >
-                  {testing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  Test
-                </Button>
-                <Button
-                  onClick={() => setViewMode(viewMode === "debug" ? "response" : "debug")}
-                  className="flex items-center gap-2"
-                  style={{
-                    backgroundColor: viewMode === "debug" ? "#000" : "#fff",
-                    color: viewMode === "debug" ? "#fff" : "#000",
-                  }}
-                >
-                  {"Debug"}
-                </Button>
-                <Button
-                  onClick={() =>
-                    setViewMode(viewMode === "execution" ? "response" : "execution")
-                  }
-                  className="flex items-center gap-2"
-                  style={{
-                    backgroundColor: viewMode === "execution" ? "#000" : "#fff",
-                    color: viewMode === "execution" ? "#fff" : "#000",
-                  }}
-                >
-                  {"Execution"}
-                </Button>
-              </div>
-            )}
-
-            {/* Paused Workflow — Dynamic User Input Form */}
-            {pausedFormSchema && (
-              <div className="space-y-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className="h-5 w-5 text-blue-600" />
-                    <span className="font-medium text-blue-700">
-                      Workflow Paused — User Input Required
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-gray-500"
-                    onClick={handleStartOver}
-                  >
-                    <RefreshCw className="h-3 w-3 mr-1" />
-                    Start Over
-                  </Button>
+                  <RichInput
+                    id="test-input-message"
+                    placeholder="Enter your message"
+                    value={testInput.message || ""}
+                    onChange={(e) =>
+                      setTestInputs((prev) => ({
+                        ...prev,
+                        message: e.target.value,
+                      }))
+                    }
+                    disabled={testing || !!pausedFormSchema}
+                    className={`flex-1 ${
+                      prefilledFields.has("message")
+                        ? "border-blue-300 bg-blue-50"
+                        : ""
+                    }`}
+                  />
                 </div>
 
-                {pausedFormSchema.message && (
-                  <p className="text-sm text-gray-600">{pausedFormSchema.message}</p>
+                {hasAudioNode && !pausedFormSchema && (
+                  <STTAudioInput
+                    isLoading={testing}
+                    isRecording={isRecording}
+                    audioFileName={audioFileName}
+                    fileInputRef={fileInputRef}
+                    onFileUpload={handleAudioFileUpload}
+                    onStartRecording={startRecording}
+                    onStopRecording={stopRecording}
+                  />
                 )}
 
-                <div className="space-y-3">
-                  {pausedFormSchema.fields.map((field) => {
-                    const fieldKey = `paused-${field.name}`;
-                    const val = humanInTheLoopFormData[field.name] || "";
-                    const onChange = (v: string) =>
-                      setHumanInTheLoopFormData((prev) => ({ ...prev, [field.name]: v }));
+                {inputSchema && (
+                  <div className="space-y-2">
+                    <Button
+                      variant="ghost"
+                      className="w-full flex items-center justify-between p-2"
+                      onClick={() => setShowMetadata(!showMetadata)}
+                    >
+                      <span className="font-medium">Metadata</span>
+                      {showMetadata ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
 
-                    return (
-                      <div key={field.name} className="space-y-1">
-                        <Label htmlFor={fieldKey} className="text-sm">
-                          {field.label}
-                          {field.required && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
-                          <span className="text-xs text-gray-500 ml-2">
-                            ({field.type})
-                          </span>
-                        </Label>
-                        {field.type === "boolean" ? (
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id={fieldKey}
-                              checked={val === "true"}
-                              onCheckedChange={(checked) =>
-                                onChange(String(checked))
-                              }
-                              disabled={testing}
-                            />
-                            <Label
-                              htmlFor={fieldKey}
-                              className="text-sm font-normal cursor-pointer"
-                            >
-                              {val === "true" ? "True" : "False"}
+                    {showMetadata && (
+                      <div className="pl-4 space-y-4 border-l-2 border-gray-200">
+                        {/* Thread ID field - always show so saved testInput.thread_id is visible and usable */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="test-input-thread_id">
+                              Thread ID
+                              {inputSchema?.thread_id?.required && (
+                                <span className="text-red-500 ml-1">*</span>
+                              )}
                             </Label>
                           </div>
-                        ) : field.type === "select" &&
-                          field.options &&
-                          field.options.length > 0 ? (
-                          <Select
-                            value={val}
-                            onValueChange={onChange}
-                            disabled={testing}
-                          >
-                            <SelectTrigger className="text-sm">
-                              <SelectValue
-                                placeholder={
-                                  field.placeholder ||
-                                  `Select ${field.label}`
-                                }
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {field.options.map((opt) => (
-                                <SelectItem
-                                  key={opt.value}
-                                  value={opt.value}
-                                >
-                                  {opt.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <RichInput
-                            id={fieldKey}
-                            type={
-                              field.type === "number"
-                                ? "number"
-                                : field.type === "date"
-                                ? "date"
-                                : "text"
-                            }
-                            placeholder={
-                              field.placeholder ||
-                              `Enter ${field.label}`
-                            }
-                            value={val}
-                            onChange={(e) => onChange(e.target.value)}
-                            disabled={testing}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          <div className="flex gap-2">
+                            <RichInput
+                              id="test-input-thread_id"
+                              type="text"
+                              placeholder="Thread ID will be auto-generated"
+                              value={testInput.thread_id || ""}
+                              readOnly
+                              disabled={testing}
+                              className="flex-1 bg-gray-50 cursor-not-allowed"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={generateThreadId}
+                              disabled={testing}
+                              title="Generate new Thread ID"
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        {Object.entries(inputSchema)
+                          .filter(([key, field]: [string, SchemaField]) => {
+                            // Exclude message, stateful parameters, and thread_id
+                            return (
+                              key !== "message" &&
+                              !field.stateful &&
+                              key !== "thread_id"
+                            );
+                          })
+                          .map(([key, field]: [string, SchemaField]) => {
+                            const isBoolean = field.type === "boolean";
+                            const isObjectOrArray = field.type === "object" || field.type === "array";
+                            const isNumber = field.type === "number";
 
-                <div className="flex gap-2">
+                            return (
+                              <div key={key} className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <Label htmlFor={`test-input-${key}`}>
+                                    {field.description || key}
+                                    {field.required && (
+                                      <span className="text-red-500 ml-1">*</span>
+                                    )}
+                                    {field.type !== "string" && (
+                                      <span className="text-xs text-gray-500 ml-2">
+                                        ({field.type})
+                                      </span>
+                                    )}
+                                  </Label>
+                                  {prefilledFields.has(key) && (
+                                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                                      📝 Session
+                                    </span>
+                                  )}
+                                </div>
+                                {isBoolean ? (
+                                  <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={`test-input-${key}`}
+                                      checked={testInput[key] === "true" || testInput[key] === "1"}
+                                      onCheckedChange={(checked) =>
+                                        setTestInputs((prev) => ({
+                                          ...prev,
+                                          [key]: String(checked),
+                                        }))
+                                      }
+                                      disabled={testing || !!pausedFormSchema}
+                                      className={
+                                        prefilledFields.has(key)
+                                          ? "border-blue-300"
+                                          : ""
+                                      }
+                                    />
+                                    <Label
+                                      htmlFor={`test-input-${key}`}
+                                      className="text-sm font-normal cursor-pointer"
+                                    >
+                                      {testInput[key] === "true" || testInput[key] === "1"
+                                        ? "True"
+                                        : "False"}
+                                    </Label>
+                                  </div>
+                                ) : isObjectOrArray ? (
+                                  <RichTextarea
+                                    id={`test-input-${key}`}
+                                    placeholder={`Enter ${field.description || key} as JSON`}
+                                    value={testInput[key] || ""}
+                                    onChange={(e) =>
+                                      setTestInputs((prev) => ({
+                                        ...prev,
+                                        [key]: e.target.value,
+                                      }))
+                                    }
+                                    disabled={testing || !!pausedFormSchema}
+                                    className={`flex-1 font-mono text-sm ${
+                                      prefilledFields.has(key)
+                                        ? "border-blue-300 bg-blue-50"
+                                        : ""
+                                    }`}
+                                    rows={4}
+                                  />
+                                ) : (
+                                  <RichInput
+                                    id={`test-input-${key}`}
+                                    type={isNumber ? "number" : "text"}
+                                    placeholder={`Enter ${field.description || key}`}
+                                    value={testInput[key] || ""}
+                                    onChange={(e) =>
+                                      setTestInputs((prev) => ({
+                                        ...prev,
+                                        [key]: e.target.value,
+                                      }))
+                                    }
+                                    disabled={testing || !!pausedFormSchema}
+                                    className={`flex-1 ${
+                                      prefilledFields.has(key)
+                                        ? "border-blue-300 bg-blue-50"
+                                        : ""
+                                    }`}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Primary action — run the workflow. */}
+                {!pausedFormSchema && (
                   <Button
-                    onClick={handleResumeWorkflow}
-                    disabled={
-                      testing ||
-                      pausedFormSchema.fields.some(
-                        (f) => f.required && !humanInTheLoopFormData[f.name]
-                      )
-                    }
-                    className="flex items-center gap-2"
+                    onClick={handleTestWorkflow}
+                    disabled={testing || !workflow}
+                    className="flex w-full items-center justify-center gap-2"
                   >
                     {testing ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Resume
+                    {testing ? "Running…" : "Test"}
                   </Button>
-                  <Button
-                    onClick={() => setViewMode(viewMode === "debug" ? "response" : "debug")}
-                    className="flex items-center gap-2"
-                    style={{
-                      backgroundColor: viewMode === "debug" ? "#000" : "#fff",
-                      color: viewMode === "debug" ? "#fff" : "#000",
-                    }}
-                  >
-                    {"Debug"}
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      setViewMode(viewMode === "execution" ? "response" : "execution")
-                    }
-                    className="flex items-center gap-2"
-                    style={{
-                      backgroundColor: viewMode === "execution" ? "#000" : "#fff",
-                      color: viewMode === "execution" ? "#fff" : "#000",
-                    }}
-                  >
-                    {"Execution"}
-                  </Button>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Execution view — its own empty/loading/error/data states */}
-            {viewMode === "execution" && (
-              <NodeExecutionView
-                response={response}
-                testing={testing}
-                error={error}
-                workflow={workflow}
-              />
-            )}
-
-            {viewMode !== "execution" && error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-md">
-                {error}
-              </div>
-            )}
-
-            {viewMode !== "execution" && response && (
-              <div className="space-y-2">
-                <Label>
-                  Response {response?.status === "success" ? "✅" : "❌"}
-                </Label>
-
-                {response?.status === "success" && (
-                  <div className="border rounded-md overflow-hidden">
-                    <div className="max-h-80 overflow-y-auto p-2 space-y-3">
-                      {/* Add the user's test message first */}
-                      <div
-                        className={`p-3 rounded-md border ${
-                          getMessageStyle("user").bgColor
-                        } ${getMessageStyle("user").borderColor}`}
-                      >
-                        <div className="font-semibold mb-1 text-xs uppercase text-blue-600">
-                          You
-                        </div>
-                        <div className="whitespace-pre-wrap">
-                          {typeof response.input === "object" &&
-                          response.input !== null
-                            ? JSON.stringify(response.input, null, 2)
-                            : response.input}
-                        </div>
+                {/* Paused Workflow — Dynamic User Input Form */}
+                {pausedFormSchema && (
+                  <div className="space-y-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ClipboardList className="h-5 w-5 text-blue-600" />
+                        <span className="font-medium text-blue-700">
+                          Workflow Paused — User Input Required
+                        </span>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-gray-500"
+                        onClick={handleStartOver}
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Start Over
+                      </Button>
+                    </div>
 
-                      {/* Show each message in the result */}
-                      {viewMode === "response" ? (
-                        <div
-                          className={`p-3 rounded-md border bg-gray-50 border-gray-100`}
-                        >
-                          <div
-                            className={`font-semibold mb-1 text-xs uppercase text-green-600`}
-                          >
-                            Response
-                          </div>
-                          {/* Play synthesized voice when the response carries audio */}
-                          {(() => {
-                            const audioUrl = getAudioUrl(response.output);
-                            return audioUrl ? (
-                              <div className="mb-3 space-y-2">
-                                <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2">
-                                  <Volume2 className="h-4 w-4" />
-                                  Voice response
-                                </div>
-                                <audio controls className="w-full" src={audioUrl} />
+                    {pausedFormSchema.message && (
+                      <p className="text-sm text-gray-600">{pausedFormSchema.message}</p>
+                    )}
+
+                    <div className="space-y-3">
+                      {pausedFormSchema.fields.map((field) => {
+                        const fieldKey = `paused-${field.name}`;
+                        const val = humanInTheLoopFormData[field.name] || "";
+                        const onChange = (v: string) =>
+                          setHumanInTheLoopFormData((prev) => ({ ...prev, [field.name]: v }));
+
+                        return (
+                          <div key={field.name} className="space-y-1">
+                            <Label htmlFor={fieldKey} className="text-sm">
+                              {field.label}
+                              {field.required && (
+                                <span className="text-red-500 ml-1">*</span>
+                              )}
+                              <span className="text-xs text-gray-500 ml-2">
+                                ({field.type})
+                              </span>
+                            </Label>
+                            {field.type === "boolean" ? (
+                              <div className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={fieldKey}
+                                  checked={val === "true"}
+                                  onCheckedChange={(checked) =>
+                                    onChange(String(checked))
+                                  }
+                                  disabled={testing}
+                                />
+                                <Label
+                                  htmlFor={fieldKey}
+                                  className="text-sm font-normal cursor-pointer"
+                                >
+                                  {val === "true" ? "True" : "False"}
+                                </Label>
                               </div>
-                            ) : null;
-                          })()}
-                          {/* Explicitly surface SQL node parameters if present */}
-                          {typeof response.output === "object" &&
-                            response.output &&
-                            (response.output as Record<string, unknown>)
-                              .parameters && (
-                              <div className="mb-3 p-2 bg-white border rounded">
-                                <div className="text-xs font-semibold mb-1">
-                                  Parameters
-                                </div>
-                                <div className="text-xs text-gray-700">
-                                  datasource_id:{" "}
-                                  {((
-                                    (response.output as Record<string, unknown>)
-                                      .parameters as Record<string, unknown>
-                                  )?.datasource_id as string) || ""}
-                                </div>
-                                <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto mt-1">
-                                  {JSON.stringify(
-                                    ((
-                                      (
-                                        response.output as Record<
-                                          string,
-                                          unknown
-                                        >
-                                      ).parameters as Record<string, unknown>
-                                    )?.node_parameters as Record<
-                                      string,
-                                      unknown
-                                    >) || {},
-                                    null,
-                                    2
-                                  )}
-                                </pre>
-                              </div>
+                            ) : field.type === "select" &&
+                              field.options &&
+                              field.options.length > 0 ? (
+                              <Select
+                                value={val}
+                                onValueChange={onChange}
+                                disabled={testing}
+                              >
+                                <SelectTrigger className="text-sm">
+                                  <SelectValue
+                                    placeholder={
+                                      field.placeholder ||
+                                      `Select ${field.label}`
+                                    }
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {field.options.map((opt) => (
+                                    <SelectItem
+                                      key={opt.value}
+                                      value={opt.value}
+                                    >
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <RichInput
+                                id={fieldKey}
+                                type={
+                                  field.type === "number"
+                                    ? "number"
+                                    : field.type === "date"
+                                    ? "date"
+                                    : "text"
+                                }
+                                placeholder={
+                                  field.placeholder ||
+                                  `Enter ${field.label}`
+                                }
+                                value={val}
+                                onChange={(e) => onChange(e.target.value)}
+                                disabled={testing}
+                              />
                             )}
-                          {typeof response.output === "string" ? (
-                            <div className="whitespace-pre-wrap">
-                              {response.output}
-                            </div>
-                          ) : (
-                            <JsonViewer
-                              data={stripAudioDataForDisplay(response.output) as unknown as never}
-                              onCopy={(data) => {
-                                navigator.clipboard.writeText(
-                                  JSON.stringify(data, null, 2)
-                                );
-                              }}
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          className={`p-3 rounded-md border bg-gray-50 border-gray-100`}
-                        >
-                          <div
-                            className={`font-semibold mb-1 text-xs uppercase text-green-600`}
-                          >
-                            Debug View
                           </div>
-                          <JsonViewer
-                            data={stripAudioDataForDisplay(response) as unknown as never}
-                            onCopy={(data) => {
-                              navigator.clipboard.writeText(
-                                JSON.stringify(data, null, 2)
-                              );
-                            }}
-                          />
-                        </div>
-                      )}
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleResumeWorkflow}
+                        disabled={
+                          testing ||
+                          pausedFormSchema.fields.some(
+                            (f) => f.required && !humanInTheLoopFormData[f.name]
+                          )
+                        }
+                        className="flex items-center gap-2"
+                      >
+                        {testing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                        Resume
+                      </Button>
                     </div>
                   </div>
                 )}
-
-                {response.status !== "success" && (
-                  <div className="border border-red-200 rounded-md p-3 bg-red-50 text-sm text-red-600">
-                    Error processing workflow
-                  </div>
-                )}
-
-                {response.workflow_id && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    Workflow ID: {response.workflow_id}
-                  </div>
-                )}
               </div>
-            )}
-          </div>
+            </ResizablePanel>
+
+            <ResizableHandle withHandle />
+
+            {/* RIGHT — results: view switcher + response / debug / execution. */}
+            <ResizablePanel id="results" order={2} defaultSize={67} minSize={45}>
+              <div className="flex h-full flex-col overflow-hidden">
+                {/* Header: result label + status badge + view switcher */}
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm font-semibold text-gray-700">
+                      Result
+                    </Label>
+                    {response && (
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          response.status === "success"
+                            ? "border-green-200 bg-green-50 text-green-700"
+                            : "border-red-200 bg-red-50 text-red-600"
+                        }`}
+                      >
+                        {response.status === "success" ? "Success" : "Failed"}
+                      </span>
+                    )}
+                  </div>
+                  <Tabs
+                    value={viewMode}
+                    onValueChange={(v) => setViewMode(v as TestViewMode)}
+                  >
+                    <TabsList className="h-9">
+                      <TabsTrigger
+                        value="response"
+                        className="gap-1.5 px-3 text-xs"
+                      >
+                        <MessageSquareText className="h-3.5 w-3.5" />
+                        Response
+                      </TabsTrigger>
+                      <TabsTrigger value="debug" className="gap-1.5 px-3 text-xs">
+                        <Bug className="h-3.5 w-3.5" />
+                        Debug
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="execution"
+                        className="gap-1.5 px-3 text-xs"
+                      >
+                        <Network className="h-3.5 w-3.5" />
+                        Execution
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+
+                {/* Content — fills the panel and scrolls internally. */}
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  {viewMode === "execution" ? (
+                    <NodeExecutionView
+                      response={response}
+                      testing={testing}
+                      error={error}
+                      workflow={workflow}
+                    />
+                  ) : testing && !response ? (
+                    <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Running the workflow…
+                    </div>
+                  ) : error ? (
+                    <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-md">
+                      {error}
+                    </div>
+                  ) : response ? (
+                    <div className="space-y-3">
+                      {response?.status === "success" ? (
+                        <>
+                          {/* The user's test message */}
+                          <div
+                            className={`p-3 rounded-md border ${
+                              getMessageStyle("user").bgColor
+                            } ${getMessageStyle("user").borderColor}`}
+                          >
+                            <div className="font-semibold mb-1 text-xs uppercase text-blue-600">
+                              You
+                            </div>
+                            <div className="whitespace-pre-wrap">
+                              {typeof response.input === "object" &&
+                              response.input !== null
+                                ? JSON.stringify(response.input, null, 2)
+                                : response.input}
+                            </div>
+                          </div>
+
+                          {/* Response or raw Debug view */}
+                          {viewMode === "response" ? (
+                            <div className="p-3 rounded-md border bg-gray-50 border-gray-100">
+                              <div className="font-semibold mb-1 text-xs uppercase text-green-600">
+                                Response
+                              </div>
+                              {/* Play synthesized voice when the response carries audio */}
+                              {(() => {
+                                const audioUrl = getAudioUrl(response.output);
+                                return audioUrl ? (
+                                  <div className="mb-3 space-y-2">
+                                    <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2">
+                                      <Volume2 className="h-4 w-4" />
+                                      Voice response
+                                    </div>
+                                    <audio controls className="w-full" src={audioUrl} />
+                                  </div>
+                                ) : null;
+                              })()}
+                              {/* Explicitly surface SQL node parameters if present */}
+                              {typeof response.output === "object" &&
+                                response.output &&
+                                (response.output as Record<string, unknown>)
+                                  .parameters && (
+                                  <div className="mb-3 p-2 bg-white border rounded">
+                                    <div className="text-xs font-semibold mb-1">
+                                      Parameters
+                                    </div>
+                                    <div className="text-xs text-gray-700">
+                                      datasource_id:{" "}
+                                      {((
+                                        (response.output as Record<string, unknown>)
+                                          .parameters as Record<string, unknown>
+                                      )?.datasource_id as string) || ""}
+                                    </div>
+                                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto mt-1">
+                                      {JSON.stringify(
+                                        ((
+                                          (
+                                            response.output as Record<
+                                              string,
+                                              unknown
+                                            >
+                                          ).parameters as Record<string, unknown>
+                                        )?.node_parameters as Record<
+                                          string,
+                                          unknown
+                                        >) || {},
+                                        null,
+                                        2
+                                      )}
+                                    </pre>
+                                  </div>
+                                )}
+                              {typeof response.output === "string" ? (
+                                <div className="whitespace-pre-wrap">
+                                  {response.output}
+                                </div>
+                              ) : (
+                                <JsonViewer
+                                  data={stripAudioDataForDisplay(response.output) as unknown as never}
+                                  onCopy={(data) => {
+                                    navigator.clipboard.writeText(
+                                      JSON.stringify(data, null, 2)
+                                    );
+                                  }}
+                                />
+                              )}
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-md border bg-gray-50 border-gray-100">
+                              <div className="font-semibold mb-1 text-xs uppercase text-green-600">
+                                Debug View
+                              </div>
+                              <JsonViewer
+                                data={stripAudioDataForDisplay(response) as unknown as never}
+                                onCopy={(data) => {
+                                  navigator.clipboard.writeText(
+                                    JSON.stringify(data, null, 2)
+                                  );
+                                }}
+                              />
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="border border-red-200 rounded-md p-3 bg-red-50 text-sm text-red-600">
+                          Error processing workflow
+                        </div>
+                      )}
+
+                      {response.workflow_id && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          Workflow ID: {response.workflow_id}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Empty state — nothing run yet */
+                    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-500">
+                      <MessageSquareText className="h-6 w-6" aria-hidden="true" />
+                      <div className="text-sm font-medium">No results yet</div>
+                      <div className="text-xs">
+                        Enter a message and run a test to see the response here.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
 
         <DialogFooter>

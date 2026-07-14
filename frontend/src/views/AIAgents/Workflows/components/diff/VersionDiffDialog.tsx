@@ -104,7 +104,7 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
         <DialogHeader>
           <DialogTitle>Compare versions</DialogTitle>
           <DialogDescription>
-            Read-only comparison of two saved versions — added, removed, and modified nodes and connections.
+            Read-only comparison of two saved versions added, removed, and modified nodes and connections.
           </DialogDescription>
         </DialogHeader>
 

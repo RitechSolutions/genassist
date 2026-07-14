@@ -123,6 +123,28 @@ docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.yml --
 | `make clean` | Remove all containers |
 | `make help` | Show all commands |
 
+### Optional: OpenTelemetry metrics stack (Grafana + Prometheus + Collector)
+
+GenAssist can export workflow node duration metrics via OpenTelemetry and display them in Grafana.
+The OTEL stack is **optional** and lives in [`docker-compose.otel.yml`](./docker-compose.otel.yml).
+
+```bash
+# Start the main dev stack (see options above)
+make dev
+
+# Layer the OTEL stack (collector + prometheus + grafana) on top
+docker compose -f docker-compose.otel.yml -p genassist_dev up -d
+```
+
+Once started:
+
+- **Grafana**: http://localhost:3010 (Dashboards → folder `OTEL`)
+- **Prometheus**: http://localhost:9090
+- **Collector zpages**: http://localhost:55679/debug/tracez
+- **Collector exported metrics**: http://localhost:8889/metrics
+
+For details and PromQL examples, see [`observability/README.md`](./observability/README.md).
+
 ## Local Development
 
 ### Frontend
