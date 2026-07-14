@@ -320,3 +320,27 @@ input[type="checkbox"]:hover {
   min-height: 14px !important;
   flex-shrink: 0;
 }
+
+/* ============================================================================
+   LOW-DETAIL MODE (level-of-detail rendering).
+   Toggled by the `.rf-low-detail` class on the flow root when the canvas is
+   zoomed out over a large graph (see LowDetailWatcher in GraphFlow.tsx). Drops
+   the paint-heavy effects that make pan/drag janky at scale — on ALL browsers.
+   Full detail returns automatically when the user zooms back in.
+   ============================================================================ */
+/* Remove node drop-shadows / glows (set as inline styles, hence !important). */
+.rf-low-detail .react-flow__node,
+.rf-low-detail .react-flow__node * {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+/* Keep the AI-agent gradient border, but freeze the per-frame conic-gradient spin. */
+.rf-low-detail .agent-gradient-border {
+  animation: none !important;
+}
+/* Stop edge marching-ants and use solid strokes (cheaper to rasterize at scale). */
+.rf-low-detail .react-flow__edge path {
+  animation: none !important;
+  stroke-dasharray: none !important;
+}
+/* ========================= END LOW-DETAIL MODE ============================= */

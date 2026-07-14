@@ -11,6 +11,7 @@ import ReactFlow, {
   NodeMouseHandler,
   MarkerType,
   reconnectEdge,
+  useStore,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { isEqual } from "lodash";
@@ -68,6 +69,32 @@ const isEditableEventTarget = (target: HTMLElement): boolean =>
   target.isContentEditable ||
   !!target.closest("input, textarea, select, [contenteditable='true'], .ace_editor");
 
+// --- Level-of-detail (LOD) ---------------------------------------------------
+// When the canvas is zoomed out over a large graph, paint-heavy node/edge effects
+// (drop shadows, the spinning AI-agent gradient border, edge dash animations) make
+// panning/dragging janky — worst on Safari, but this helps every browser. We drop
+// those effects via a `.rf-low-detail` class on the flow root (see index.css) and
+// restore full detail automatically once the user zooms back in.
+const LOW_DETAIL_ZOOM = 0.7; // simplify below this zoom level
+const LOW_DETAIL_MIN_NODES = 15; // ...but only once the graph is big enough to matter
+
+// Reads zoom + node count straight from the React Flow store and reports whether we
+// should render in low-detail mode. Because the selector returns a boolean, this only
+// triggers a re-render when the mode actually flips — not on every zoom/pan frame.
+const LowDetailWatcher: React.FC<{ onChange: (lowDetail: boolean) => void }> = ({
+  onChange,
+}) => {
+  const lowDetail = useStore(
+    (s) =>
+      s.nodeInternals.size >= LOW_DETAIL_MIN_NODES &&
+      s.transform[2] < LOW_DETAIL_ZOOM
+  );
+  useEffect(() => {
+    onChange(lowDetail);
+  }, [lowDetail, onChange]);
+  return null;
+};
+
 const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
@@ -96,6 +123,9 @@ const GraphFlowContent: React.FC = () => {
   const [nodesDraggable, setNodesDraggable] = useState(true);
   const [nodesConnectable, setNodesConnectable] = useState(true);
   const [elementsSelectable, setElementsSelectable] = useState(true);
+
+  // Level-of-detail: true when zoomed out over a large graph (see LowDetailWatcher)
+  const [lowDetail, setLowDetail] = useState(false);
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -1011,6 +1041,7 @@ const GraphFlowContent: React.FC = () => {
                 className="h-full w-full"
               >
                 <ReactFlow
+                  className={lowDetail ? "rf-low-detail" : undefined}
                   nodes={displayNodes}
                   edges={displayEdges}
                   onNodesChange={onNodesChange}
@@ -1036,6 +1067,7 @@ const GraphFlowContent: React.FC = () => {
                   proOptions={PRO_OPTIONS}
                   onlyRenderVisibleElements
                 >
+                  <LowDetailWatcher onChange={setLowDetail} />
                   <Background />
                   <CustomControls
                     nodesDraggable={nodesDraggable}
