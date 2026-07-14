@@ -103,6 +103,23 @@ export interface RouterNodeData extends BaseNodeData {
   second_value?: string;
 }
 
+// NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
+export interface NlpNodeData extends BaseNodeData {
+  providerId?: string;
+  inputField?: string;
+  task?: "classify" | "sentiment" | "extract" | "summarize";
+  // task === "classify"
+  categories?: string[];
+  multiLabel?: boolean;
+  // task === "sentiment"
+  scale?: "1-5" | "1-10";
+  // task === "extract"
+  schema?: string;
+  // task === "summarize"
+  maxLength?: number;
+  style?: "concise" | "bullets" | "detailed";
+}
+
 export interface AggregatorNodeData extends BaseNodeData {
   aggregationStrategy?: "list" | "merge" | "first" | "last";
   timeoutSeconds?: number;
@@ -550,6 +567,7 @@ export type NodeData =
   | SlackOutputNodeData
   | WhatsappNodeData
   | RouterNodeData
+  | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
   | CalendarEventToolNodeData
