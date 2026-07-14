@@ -26,6 +26,7 @@ from .ml import (
     TrainModelNode,
     TrainPreprocessNode,
 )
+from .nlp_node import NLPNode
 from .open_api_node import OpenAPINode
 from .prompt_node import TemplateNode
 from .python_tool_node import PythonToolNode
@@ -87,4 +88,5 @@ __all__ = [
     "VoiceAgentNode",
     "WebScraperNode",
     "FinalizeConversationNode",
+    "NLPNode",
 ]
