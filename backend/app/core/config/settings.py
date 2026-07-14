@@ -262,6 +262,22 @@ class ProjectSettings(BaseSettings):
     USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)
     WS_INTERNAL_SECRET: Optional[str] = None  # Shared secret for internal WS service auth
 
+    # === OpenTelemetry (USE_OTEL + optional Opik OTLP HTTP) ===
+    USE_OTEL: bool = False
+    OTEL_SERVICE_NAME: str = "genassist-api"
+    OPIK_OTEL_EXPORT: bool = False
+    OPIK_OTEL_TRACES_ENDPOINT: Optional[str] = None
+    OPIK_URL_OVERRIDE: Optional[str] = None
+    OPIK_WORKSPACE: Optional[str] = None
+    OPIK_API_KEY: Optional[str] = None
+    OPIK_PROJECT_NAME: Optional[str] = None
+    OTEL_EXPORTER_OTLP_GRPC_ENDPOINT: Optional[str] = None
+    OTEL_METRICS_VIA_GRPC: bool = True
+
+    # Native Opik LLM tracing for workflow nodes (OpikTracer LangChain callback).
+    # Connection config is read from OPIK_* above / .opik.config by the opik SDK.
+    USE_OPIK: bool = False
+
     # === Rate Limiting Configuration ===
     RATE_LIMIT_ENABLED: bool = False
     # Global rate limit: requests per time window
