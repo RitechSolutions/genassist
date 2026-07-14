@@ -206,7 +206,13 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapse
     <div className="font-mono text-sm">
       {(name || onCopy) && (
         <div className="flex items-center justify-between mb-2">
-          {name ? <span className="text-gray-700 font-medium">{name}</span> : <span />}
+          {name ? (
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 font-sans">
+              {name}
+            </span>
+          ) : (
+            <span />
+          )}
           <div className="flex items-center gap-1">
             {isComplex && (
               <Button
