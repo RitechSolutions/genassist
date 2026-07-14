@@ -17,7 +17,7 @@ from app.core.utils.string_utils import truncate_for_log
 
 def _pii_filter(record: dict) -> bool:
     """Redact PII/secrets from the message before it reaches any persistent sink."""
-    # record["message"] = redact_sensitive_substrings(record["message"])
+    record["message"] = redact_sensitive_substrings(record["message"])
     return True
 
 
