@@ -724,6 +724,100 @@ class OpenAIFineTuningService:
             },
         }
 
+    def _extract_steps_and_output(self, log: Any) -> tuple[list, str]:
+        """Parse an agent log's raw_response into (steps, final_output).
+
+        Walks ``row_agent_response.state.nodeExecutionStatus`` for agentNode
+        entries, collecting their ``output.steps`` and resolving the final text
+        (top-level ``output`` first, then the agentNode's ``output.message``).
+        Returns ``([], "")`` when raw_response is missing or unparseable.
+        """
+        try:
+            payload = json.loads(log.raw_response)
+        except (json.JSONDecodeError, TypeError):
+            return [], ""
+
+        row = payload.get("row_agent_response", {})
+        node_execution_status = row.get("state", {}).get("nodeExecutionStatus", {})
+        node_statuses = (
+            list(node_execution_status.values())
+            if isinstance(node_execution_status, dict)
+            else node_execution_status
+        )
+
+        all_steps: list = []
+        final_output = row.get("output", "")
+        for ns in node_statuses:
+            if ns.get("type") == "agentNode":
+                output = ns.get("output") or {}
+                if not final_output:
+                    final_output = output.get("message", "")
+                all_steps.extend(output.get("steps", []))
+        return all_steps, final_output
+
+    def _extract_tool_calls(self, steps: list) -> List[dict]:
+        """Extract usable tool calls from agent steps.
+
+        Step shapes are not uniform across agent implementations (ToolAgent uses
+        ``tool``/``args``/``result``; ReActAgentLC uses ``tool_name``/``tool_args``
+        with no result). OpenAI rejects an assistant ``tool_calls`` message that
+        isn't followed by matching ``role:"tool"`` results, so we keep only steps
+        that actually carry a ``result``. Returns ``[{id, name, args, result}]``.
+        """
+        tool_calls: List[dict] = []
+        for i, s in enumerate(steps):
+            if not isinstance(s, dict):
+                continue
+            name = s.get("tool_name") or s.get("tool")
+            result = s.get("result")
+            if not name or result is None:
+                continue
+            tool_calls.append(
+                {
+                    "id": s.get("tool_call_id") or f"call_{i:03d}",
+                    "name": name,
+                    "args": s.get("tool_args") or s.get("args") or {},
+                    "result": result,
+                }
+            )
+        return tool_calls
+
+    def _append_assistant_with_tools(
+        self, msgs: list, tool_calls: List[dict], final_output: str
+    ) -> None:
+        """Append an OpenAI-correct tool-call sequence to ``msgs``.
+
+        One assistant message carrying every ``tool_calls`` entry, then one
+        ``role:"tool"`` message per call with its result, then a final assistant
+        answer (only when ``final_output`` is present).
+        """
+        msgs.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["args"]),
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            }
+        )
+        for tc in tool_calls:
+            msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": str(tc["result"]),
+                }
+            )
+        if final_output:
+            msgs.append({"role": "assistant", "content": str(final_output)})
+
     def _build_jsonl_entry(
         self,
         log: Any,
@@ -748,48 +842,16 @@ class OpenAIFineTuningService:
         )
         user_text = user_msg.text if user_msg else ""
 
-        try:
-            payload = json.loads(log.raw_response)
-        except (json.JSONDecodeError, TypeError):
-            return None
-
-        row = payload.get("row_agent_response", {})
-        node_execution_status = row.get("state", {}).get("nodeExecutionStatus", {})
-        node_statuses = (
-            list(node_execution_status.values())
-            if isinstance(node_execution_status, dict)
-            else node_execution_status
-        )
-
-        all_steps: list = []
-        final_output = row.get("output", "")
-        for ns in node_statuses:
-            if ns.get("type") == "agentNode":
-                output = ns.get("output") or {}
-                if not final_output:
-                    final_output = output.get("message", "")
-                all_steps.extend(output.get("steps", []))
-
-        tool_call_steps = [s for s in all_steps if s.get("type") == "tool_call"]
+        all_steps, final_output = self._extract_steps_and_output(log)
+        tool_calls = self._extract_tool_calls(all_steps)
 
         training_messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
         ]
 
-        if tool_call_steps:
-            tool_calls_payload = [
-                {
-                    "id": s.get("tool_call_id", f"call_{s.get('step', 0):03d}"),
-                    "type": "function",
-                    "function": {
-                        "name": s["tool_name"],
-                        "arguments": json.dumps(s.get("tool_input") or {}),
-                    },
-                }
-                for s in tool_call_steps
-            ]
-            training_messages.append({"role": "assistant", "tool_calls": tool_calls_payload})
+        if tool_calls:
+            self._append_assistant_with_tools(training_messages, tool_calls, final_output)
             entry: dict = {"messages": training_messages}
             if tool_schemas:
                 entry["tools"] = tool_schemas
@@ -799,6 +861,62 @@ class OpenAIFineTuningService:
                 return None
             training_messages.append({"role": "assistant", "content": str(final_output)})
             return {"messages": training_messages}
+
+    def _build_memory_jsonl_entry(
+        self,
+        messages: list,
+        logs: list,
+        system_prompt: str,
+        tool_schemas: List[dict],
+    ) -> dict | None:
+        """Build a single multi-turn training example for one conversation.
+
+        Walks the conversation in order so later assistant answers are trained
+        with all prior turns as context. Agent turns are expanded from their
+        agent log (tool calls + results when available, otherwise the final
+        answer); user turns come from the transcript.
+        """
+        logs_by_msg_id = {str(log.transcript_message_id): log for log in logs}
+
+        training_messages: list = [{"role": "system", "content": system_prompt}]
+        used_tools = False
+        has_assistant_content = False
+
+        for m in messages:
+            speaker = (m.speaker or "").lower()
+            if speaker in ("customer", "user"):
+                training_messages.append({"role": "user", "content": m.text or ""})
+                continue
+            if speaker != "agent":
+                continue
+
+            log = logs_by_msg_id.get(str(m.id))
+            if log is not None:
+                steps, final_output = self._extract_steps_and_output(log)
+                tool_calls = self._extract_tool_calls(steps)
+                if tool_calls:
+                    self._append_assistant_with_tools(
+                        training_messages, tool_calls, final_output
+                    )
+                    used_tools = True
+                    has_assistant_content = has_assistant_content or bool(final_output)
+                    continue
+                content = final_output or (m.text or "")
+            else:
+                content = m.text or ""
+
+            if content:
+                training_messages.append({"role": "assistant", "content": str(content)})
+                has_assistant_content = True
+
+        # Need at least one user turn and one assistant turn to be useful.
+        if len(training_messages) < 3 or not has_assistant_content:
+            return None
+
+        entry: dict = {"messages": training_messages}
+        if used_tools and tool_schemas:
+            entry["tools"] = tool_schemas
+        return entry
 
     async def _get_workflow_for_operator(self, operator_id: UUID) -> dict:
         """Resolve the workflow for the agent that belongs to the given operator."""
@@ -829,6 +947,7 @@ class OpenAIFineTuningService:
                 request.conversation_ids, include_messages=True
             )
             logs_all = await self.agent_log_repo.get_by_conversation_ids(request.conversation_ids)
+            memory_ids = set(request.memory_conversation_ids or [])
 
             # Group messages and logs by conversation_id for O(1) lookup
             messages_by_conv: dict[UUID, list] = {c.id: sorted(c.messages, key=lambda m: m.sequence_number) for c in conversations}
@@ -858,10 +977,18 @@ class OpenAIFineTuningService:
                 messages = messages_by_conv.get(conversation.id, [])
                 logs = logs_by_conv.get(conversation.id, [])
 
-                for log in logs:
-                    entry = self._build_jsonl_entry(log, messages, system_prompt, tool_schemas)
+                if conversation.id in memory_ids:
+                    # One multi-turn example spanning the whole conversation.
+                    entry = self._build_memory_jsonl_entry(
+                        messages, logs, system_prompt, tool_schemas
+                    )
                     if entry is not None:
                         jsonl_lines.append(json.dumps(entry))
+                else:
+                    for log in logs:
+                        entry = self._build_jsonl_entry(log, messages, system_prompt, tool_schemas)
+                        if entry is not None:
+                            jsonl_lines.append(json.dumps(entry))
 
             if not jsonl_lines:
                 logger.warning("No valid training examples were generated from the provided conversations")

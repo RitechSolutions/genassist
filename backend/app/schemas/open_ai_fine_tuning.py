@@ -51,4 +51,8 @@ class FineTuningJobResponse(BaseModel):
 
 class GenerateTrainingFileRequest(BaseModel):
     conversation_ids: List[UUID] = Field(..., description="Conversation UUIDs to generate training data from")
+    memory_conversation_ids: List[UUID] = Field(
+        default_factory=list,
+        description="Subset of conversation_ids to emit as a single multi-turn example (with memory)",
+    )
     upload_to_openai: bool = Field(False, description="Upload generated file to OpenAI and return the file record")

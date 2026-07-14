@@ -115,6 +115,7 @@ export async function downloadOpenAIFile(fileId: string, filename: string): Prom
 
 export async function generateTrainingFileFromConversations(payload: {
   conversation_ids: string[];
+  memory_conversation_ids?: string[];
   upload_to_openai: boolean;
 }): Promise<OpenAIFileItem> {
   return apiRequest<OpenAIFileItem>(
@@ -126,6 +127,7 @@ export async function generateTrainingFileFromConversations(payload: {
 
 export async function downloadGeneratedTrainingFile(payload: {
   conversation_ids: string[];
+  memory_conversation_ids?: string[];
 }): Promise<Blob> {
   const baseURL = await getApiUrl();
   const url = `${baseURL}openai/fine-tuning/generate-from-conversations`;
