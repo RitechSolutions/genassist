@@ -38,6 +38,7 @@ from app.modules.workflow.engine.nodes import (
     LLMModelNode,
     MCPNode,
     MLModelInferenceNode,
+    NLPNode,
     OpenAPINode,
     PythonToolNode,
     ReadMailsToolNode,
@@ -142,6 +143,7 @@ class WorkflowEngine:
         cls._node_registry["voiceAgentNode"] = VoiceAgentNode
         cls._node_registry["webScraperNode"] = WebScraperNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
+        cls._node_registry["nlpNode"] = NLPNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -173,6 +175,7 @@ class WorkflowEngine:
             "aggregatorNode",
             "humanInTheLoopNode",
             "setStateNode",
+            "nlpNode",
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
