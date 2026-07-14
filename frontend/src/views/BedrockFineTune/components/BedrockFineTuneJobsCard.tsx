@@ -6,12 +6,18 @@ import { TableCell, TableRow } from "@/components/table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Loader2, Trash2, Sparkles, Plus, RefreshCw } from "lucide-react";
+import { Loader2, Trash2, Sparkles, Plus, RefreshCw, Ban } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { listBedrockFineTuneJobs, syncBedrockFineTuneJobs } from "@/services/bedrockFineTune";
+import {
+  listBedrockFineTuneJobs,
+  syncBedrockFineTuneJobs,
+  deleteBedrockFineTuneJob,
+  cancelBedrockFineTuneJob,
+} from "@/services/bedrockFineTune";
 import type { BedrockFineTuneJob } from "@/interfaces/bedrockFineTune.interface";
 import {
   bedrockInProgressStatuses,
+  bedrockTerminalStatuses,
   formatBedrockStatusLabel,
 } from "@/views/BedrockFineTune/utils/utils";
 import type { BedrockFineTuneJobsCardProps } from "@/views/BedrockFineTune/types";
@@ -29,6 +35,9 @@ export function BedrockFineTuneJobsCard({
   const [jobToDelete, setJobToDelete] = useState<BedrockFineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [jobToCancel, setJobToCancel] = useState<BedrockFineTuneJob | null>(null);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     fetchJobs();
@@ -90,6 +99,7 @@ export function BedrockFineTuneJobsCard({
     if (!jobToDelete) return;
     try {
       setIsDeleting(true);
+      await deleteBedrockFineTuneJob(jobToDelete.id);
       setJobs((prev) => prev.filter((j) => j.id !== jobToDelete.id));
       toast.success("Job removed from the list");
     } catch (err) {
@@ -98,6 +108,29 @@ export function BedrockFineTuneJobsCard({
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
       setJobToDelete(null);
+    }
+  };
+
+  const handleCancel = (job: BedrockFineTuneJob) => {
+    setJobToCancel(job);
+    setIsCancelDialogOpen(true);
+  };
+
+  const handleCancelConfirm = async () => {
+    if (!jobToCancel) return;
+    try {
+      setIsCancelling(true);
+      const updated = await cancelBedrockFineTuneJob(jobToCancel.id);
+      if (updated) {
+        setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+      }
+      toast.success("Job cancellation requested");
+    } catch (err) {
+      toast.error("Failed to cancel job");
+    } finally {
+      setIsCancelling(false);
+      setIsCancelDialogOpen(false);
+      setJobToCancel(null);
     }
   };
 
@@ -179,19 +212,44 @@ export function BedrockFineTuneJobsCard({
   };
 
   const renderActions = (job: BedrockFineTuneJob) => {
+    const normalizedStatus = String(job.status || "").toLowerCase();
+    const canCancel = normalizedStatus === "inprogress";
+    const canDelete = bedrockTerminalStatuses.has(normalizedStatus);
+
     return (
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        onClick={(e) => {
-          e.stopPropagation();
-          handleDelete(job);
-        }}
-        title="Delete job"
-      >
-        <Trash2 className="h-4 w-4 text-destructive" />
-      </Button>
+      <div className="flex items-center justify-center gap-1">
+        {canCancel && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCancel(job);
+            }}
+            title="Cancel job"
+          >
+            <Ban className="h-4 w-4 text-amber-600" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={!canDelete}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDelete(job);
+          }}
+          title={
+            canDelete
+              ? "Delete job"
+              : "Cancel or wait for the job to finish before deleting"
+          }
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      </div>
     );
   };
 
@@ -307,6 +365,19 @@ export function BedrockFineTuneJobsCard({
         primaryButtonText="Delete"
         secondaryButtonText="Cancel"
         onCancel={() => setJobToDelete(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={isCancelDialogOpen}
+        onOpenChange={setIsCancelDialogOpen}
+        onConfirm={handleCancelConfirm}
+        isInProgress={isCancelling}
+        itemName={jobToCancel?.suffix || jobToCancel?.id}
+        title="Cancel fine-tune job?"
+        description={`This stops the running job on AWS Bedrock. Job "${jobToCancel?.suffix || jobToCancel?.id}" cannot be resumed once cancelled.`}
+        primaryButtonText="Cancel Job"
+        secondaryButtonText="Keep Running"
+        onCancel={() => setJobToCancel(null)}
       />
     </>
   );

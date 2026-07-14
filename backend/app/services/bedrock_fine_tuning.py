@@ -342,6 +342,18 @@ class BedrockFineTuningService:
             logger.exception(f"Error deploying Bedrock model for job {job_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK)
 
+    async def delete_job(self, job_id: UUID) -> None:
+        """Soft-delete the job so it no longer appears in GenAssist.
+
+        Does not touch AWS resources: a running training job should be stopped via
+        cancel, and an on-demand deployment (which bills continuously) must be torn
+        down separately in AWS.
+        """
+        job = await self.repository.get_job_by_id(job_id)
+        if not job:
+            raise AppException(ErrorKey.ERROR_JOB_NOT_FOUND)
+        await self.repository.soft_delete(job)
+
     async def get_fine_tunable_models(self) -> list[str]:
         """Return the fine-tunable Nova model IDs.
 

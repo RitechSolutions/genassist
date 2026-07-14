@@ -110,6 +110,23 @@ async def cancel_fine_tuning_job(
     return job.to_dict()
 
 
+@router.delete("/fine-tuning/jobs/{job_id}", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.Bedrock.WRITE_JOB)),
+])
+async def delete_fine_tuning_job(
+    job_id: UUID,
+    service: BedrockFineTuningService = Injected(BedrockFineTuningService),
+):
+    """Remove a Bedrock fine-tuning job from the list (soft delete).
+
+    Does not stop a running AWS job (use cancel) or delete a deployment.
+    """
+    logger.info(f"User {get_current_user_id()} deleting Bedrock fine-tuning job: {job_id}")
+    await service.delete_job(job_id)
+    return {"id": str(job_id), "deleted": True}
+
+
 @router.post("/fine-tuning/jobs/{job_id}/deploy", dependencies=[
     Depends(auth),
     Depends(permissions(P.Bedrock.DEPLOY_MODEL)),

@@ -71,6 +71,10 @@ export async function cancelBedrockFineTuneJob(
   );
 }
 
+export async function deleteBedrockFineTuneJob(id: string): Promise<void> {
+  await apiRequest("DELETE", `bedrock/fine-tuning/jobs/${id}`);
+}
+
 export async function deployBedrockCustomModel(
   id: string
 ): Promise<BedrockFineTuneJob | null> {
