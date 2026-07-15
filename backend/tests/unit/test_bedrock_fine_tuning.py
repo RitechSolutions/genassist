@@ -123,8 +123,11 @@ async def test_create_fine_tuning_job_success(bedrock_service, mock_repository):
     )
     mock_repository.create_job_record.return_value = MagicMock()
 
+    # Tenant context defaults to "master" in tests; training data must live under
+    # the tenant's prefix or job creation is rejected.
+    training_uri = "s3://test-bucket/bedrock-fine-tuning/training/master/train.jsonl"
     request = CreateBedrockFineTuningJobRequest(
-        training_data_s3_uri="s3://test-bucket/train.jsonl",
+        training_data_s3_uri=training_uri,
         base_model_id="amazon.nova-micro-v1:0:128k",
         hyperparameters={"epochCount": 2},
         suffix="support",
@@ -135,13 +138,26 @@ async def test_create_fine_tuning_job_success(bedrock_service, mock_repository):
     assert call["baseModelIdentifier"] == "amazon.nova-micro-v1:0:128k"
     assert call["customizationType"] == "FINE_TUNING"
     assert call["roleArn"] == "arn:aws:iam::123:role/ft"
-    assert call["trainingDataConfig"] == {"s3Uri": "s3://test-bucket/train.jsonl"}
+    assert call["trainingDataConfig"] == {"s3Uri": training_uri}
     # Hyperparameters must be stringified for Bedrock
     assert call["hyperParameters"] == {"epochCount": "2"}
 
     saved = mock_repository.create_job_record.call_args.kwargs
     assert saved["status"] == BedrockJobStatus.IN_PROGRESS
     assert saved["base_model_id"] == "amazon.nova-micro-v1:0:128k"
+
+
+@pytest.mark.asyncio
+async def test_create_fine_tuning_job_rejects_foreign_s3_uri(bedrock_service):
+    """A training URI outside the tenant's prefix must be rejected (cross-tenant guard)."""
+    request = CreateBedrockFineTuningJobRequest(
+        training_data_s3_uri="s3://test-bucket/bedrock-fine-tuning/training/other-tenant/x.jsonl",
+        base_model_id="amazon.nova-micro-v1:0:128k",
+    )
+    with pytest.raises(AppException) as exc:
+        await bedrock_service.create_fine_tuning_job(request)
+    assert exc.value.error_key == ErrorKey.ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN
+    bedrock_service._bedrock_client.create_model_customization_job.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -244,21 +260,23 @@ def test_build_nova_jsonl_entry_skips_when_no_output(bedrock_service):
 async def test_list_training_files(bedrock_service):
     from datetime import datetime, timezone
 
+    # Listing is scoped to the current tenant's prefix ("master" in tests).
+    tenant_prefix = "bedrock-fine-tuning/training/master/"
     bedrock_service._s3_client.list_objects_v2 = MagicMock(
         return_value={
             "Contents": [
                 {
-                    "Key": "bedrock-fine-tuning/training/",  # prefix "folder" -> skipped
+                    "Key": tenant_prefix,  # prefix "folder" -> skipped
                     "Size": 0,
                     "LastModified": datetime(2026, 7, 1, tzinfo=timezone.utc),
                 },
                 {
-                    "Key": "bedrock-fine-tuning/training/aaa-older.jsonl",
+                    "Key": f"{tenant_prefix}aaa-older.jsonl",
                     "Size": 2048,
                     "LastModified": datetime(2026, 7, 10, tzinfo=timezone.utc),
                 },
                 {
-                    "Key": "bedrock-fine-tuning/training/bbb-newer.jsonl",
+                    "Key": f"{tenant_prefix}bbb-newer.jsonl",
                     "Size": 4096,
                     "LastModified": datetime(2026, 7, 12, tzinfo=timezone.utc),
                 },
@@ -270,10 +288,10 @@ async def test_list_training_files(bedrock_service):
 
     # Prefix "folder" entry is dropped; newest first.
     assert [f["filename"] for f in files] == ["bbb-newer.jsonl", "aaa-older.jsonl"]
-    assert files[0]["s3_uri"] == "s3://test-bucket/bedrock-fine-tuning/training/bbb-newer.jsonl"
+    assert files[0]["s3_uri"] == f"s3://test-bucket/{tenant_prefix}bbb-newer.jsonl"
     assert files[0]["size"] == 4096
     bedrock_service._s3_client.list_objects_v2.assert_called_once_with(
-        Bucket="test-bucket", Prefix="bedrock-fine-tuning/training/"
+        Bucket="test-bucket", Prefix=tenant_prefix
     )
 
 

@@ -10,6 +10,7 @@ from injector import inject
 
 from app.core.config.settings import file_storage_settings
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.tenant_scope import get_tenant_context
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import validate_bytes_size
 from app.core.utils.enums.bedrock_fine_tuning_enum import (
@@ -87,6 +88,25 @@ class BedrockFineTuningService:
             raise AppException(error_key=ErrorKey.ERROR_BEDROCK_NOT_CONFIGURED)
 
     # ------------------------------------------------------------------
+    # Tenant-scoped S3 layout (the bucket is shared across tenants, so every
+    # object is namespaced by tenant to prevent cross-tenant data access).
+    # ------------------------------------------------------------------
+    def _tenant_training_prefix(self) -> str:
+        return f"bedrock-fine-tuning/training/{get_tenant_context()}/"
+
+    def _tenant_output_prefix(self) -> str:
+        return f"bedrock-fine-tuning/output/{get_tenant_context()}/"
+
+    def _assert_owned_s3_uri(self, s3_uri: str) -> None:
+        """Reject an S3 URI that isn't in the managed bucket under the current
+        tenant's training prefix — stops a tenant launching a job on another
+        tenant's (or arbitrary) data by passing a crafted training_data_s3_uri.
+        """
+        allowed_prefix = f"s3://{self.bucket}/{self._tenant_training_prefix()}"
+        if not s3_uri or not s3_uri.startswith(allowed_prefix):
+            raise AppException(error_key=ErrorKey.ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN)
+
+    # ------------------------------------------------------------------
     # Training data (S3)
     # ------------------------------------------------------------------
     async def upload_training_data(self, content: bytes, filename: str) -> str:
@@ -94,7 +114,7 @@ class BedrockFineTuningService:
         self._require_config()
         try:
             validate_bytes_size(content)
-            key = f"bedrock-fine-tuning/training/{uuid4()}-{filename}"
+            key = f"{self._tenant_training_prefix()}{uuid4()}-{filename}"
             await self._run(
                 self.s3.put_object, Bucket=self.bucket, Key=key, Body=content
             )
@@ -110,13 +130,13 @@ class BedrockFineTuningService:
     async def list_training_files(self) -> list[dict]:
         """List JSONL training files already uploaded/generated in S3.
 
-        Enumerates objects under the ``bedrock-fine-tuning/training/`` prefix so
-        the UI can offer them for selection instead of re-uploading. Returns the
-        newest first.
+        Enumerates objects under the current tenant's training prefix so the UI
+        can offer them for selection instead of re-uploading. Returns the newest
+        first. Scoped per tenant so one tenant never sees another's data.
         """
         self._require_config()
         try:
-            prefix = "bedrock-fine-tuning/training/"
+            prefix = self._tenant_training_prefix()
             response = await self._run(
                 self.s3.list_objects_v2, Bucket=self.bucket, Prefix=prefix
             )
@@ -152,13 +172,17 @@ class BedrockFineTuningService:
         self, job_request: CreateBedrockFineTuningJobRequest
     ) -> BedrockFineTuningJobModel:
         self._require_config()
+        # Reject data that isn't this tenant's — see _assert_owned_s3_uri.
+        self._assert_owned_s3_uri(job_request.training_data_s3_uri)
+        if job_request.validation_data_s3_uri:
+            self._assert_owned_s3_uri(job_request.validation_data_s3_uri)
         try:
             unique = uuid4().hex[:12]
             job_name = f"genassist-ft-{unique}"
             suffix = (job_request.suffix or "nova").replace(" ", "-")[:40]
             # Custom model names must be unique; keep them readable + collision-free.
             custom_model_name = f"{suffix}-{unique}"
-            output_s3_uri = f"s3://{self.bucket}/bedrock-fine-tuning/output/{unique}/"
+            output_s3_uri = f"s3://{self.bucket}/{self._tenant_output_prefix()}{unique}/"
 
             params: dict[str, Any] = {
                 "jobName": job_name,

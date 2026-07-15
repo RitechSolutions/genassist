@@ -139,6 +139,7 @@ class ErrorKey(Enum):
     ERROR_CANCEL_JOB_BEDROCK = "ERROR_CANCEL_JOB_BEDROCK"
     ERROR_DEPLOY_MODEL_BEDROCK = "ERROR_DEPLOY_MODEL_BEDROCK"
     ERROR_BEDROCK_NOT_CONFIGURED = "ERROR_BEDROCK_NOT_CONFIGURED"
+    ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN = "ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
@@ -298,6 +299,7 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_CANCEL_JOB_BEDROCK: "There was an error stopping the Bedrock job.",
         ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK: "Failed to deploy the customized Bedrock model.",
         ErrorKey.ERROR_BEDROCK_NOT_CONFIGURED: "Bedrock fine-tuning is not configured. Set the IAM role ARN and S3 bucket.",
+        ErrorKey.ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN: "Training data must be uploaded through this app and belong to your account.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
         ErrorKey.RECAPTCHA_VERIFICATION_FAILED: "reCAPTCHA verification failed. Please try again.",
