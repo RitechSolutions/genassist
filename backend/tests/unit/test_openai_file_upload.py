@@ -302,3 +302,34 @@ def test_build_memory_jsonl_entry_with_tool_call(openai_service):
     roles = [m["role"] for m in entry["messages"]]
     assert roles == ["system", "user", "assistant", "tool", "assistant"]
     assert entry["tools"] == TOOL_SCHEMAS
+
+
+def test_build_memory_jsonl_entry_tool_call_ids_unique_across_turns(openai_service):
+    """Multiple tool-using agent turns in one example must have unique tool_call_ids."""
+    messages = [
+        _msg("u1", 1, "customer", "Where is my order?"),
+        _msg("a1", 2, "agent", "It ships tomorrow."),
+        _msg("u2", 3, "customer", "And my other one?"),
+        _msg("a2", 4, "agent", "That one shipped."),
+    ]
+    logs = [
+        _log("a1", output="It ships tomorrow.",
+             steps=[{"tool": "get_order_status", "args": {"id": "1"}, "result": "ships 2026-07-15"}]),
+        _log("a2", output="That one shipped.",
+             steps=[{"tool": "get_order_status", "args": {"id": "2"}, "result": "shipped"}]),
+    ]
+
+    entry = openai_service._build_memory_jsonl_entry(messages, logs, "sys", TOOL_SCHEMAS)
+
+    call_ids = [
+        tc["id"]
+        for m in entry["messages"]
+        if m["role"] == "assistant" and m.get("tool_calls")
+        for tc in m["tool_calls"]
+    ]
+    tool_result_ids = [m["tool_call_id"] for m in entry["messages"] if m["role"] == "tool"]
+
+    assert len(call_ids) == 2
+    assert len(set(call_ids)) == 2, f"tool_call_ids collided: {call_ids}"
+    # every tool-result message maps to exactly one preceding call id
+    assert set(tool_result_ids) == set(call_ids)

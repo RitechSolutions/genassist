@@ -22,6 +22,7 @@ from app.repositories.bedrock_fine_tuning import BedrockFineTuningRepository
 from app.constants.bedrock_fine_tuning import (
     FINE_TUNABLE_MODELS_SETTING_NAME,
     FINE_TUNABLE_MODELS_SETTING_TYPE,
+    NOVA_DEFAULT_HYPERPARAMETERS,
     NOVA_FINE_TUNABLE_MODELS,
     NOVA_SCHEMA_VERSION,
 )
@@ -184,6 +185,14 @@ class BedrockFineTuningService:
             custom_model_name = f"{suffix}-{unique}"
             output_s3_uri = f"s3://{self.bucket}/{self._tenant_output_prefix()}{unique}/"
 
+            # Bedrock requires a non-empty hyperParameters map for Nova FINE_TUNING.
+            # Start from the Nova defaults and let any user-supplied values override,
+            # so leaving fields blank in the UI uses the documented defaults.
+            effective_hyperparameters = {
+                **NOVA_DEFAULT_HYPERPARAMETERS,
+                **{k: str(v) for k, v in (job_request.hyperparameters or {}).items()},
+            }
+
             params: dict[str, Any] = {
                 "jobName": job_name,
                 "customModelName": custom_model_name,
@@ -192,15 +201,11 @@ class BedrockFineTuningService:
                 "customizationType": "FINE_TUNING",
                 "trainingDataConfig": {"s3Uri": job_request.training_data_s3_uri},
                 "outputDataConfig": {"s3Uri": output_s3_uri},
+                "hyperParameters": effective_hyperparameters,
             }
             if job_request.validation_data_s3_uri:
                 params["validationDataConfig"] = {
                     "validators": [{"s3Uri": job_request.validation_data_s3_uri}]
-                }
-            if job_request.hyperparameters:
-                # Bedrock expects string-valued hyperparameters.
-                params["hyperParameters"] = {
-                    k: str(v) for k, v in job_request.hyperparameters.items()
                 }
 
             response = await self._run(
@@ -218,7 +223,7 @@ class BedrockFineTuningService:
                 training_data_s3_uri=job_request.training_data_s3_uri,
                 validation_data_s3_uri=job_request.validation_data_s3_uri,
                 output_s3_uri=output_s3_uri,
-                hyperparameters=job_request.hyperparameters,
+                hyperparameters=effective_hyperparameters,
                 suffix=job_request.suffix,
                 status=BedrockJobStatus.IN_PROGRESS,
             )

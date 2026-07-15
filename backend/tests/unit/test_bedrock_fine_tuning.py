@@ -139,12 +139,39 @@ async def test_create_fine_tuning_job_success(bedrock_service, mock_repository):
     assert call["customizationType"] == "FINE_TUNING"
     assert call["roleArn"] == "arn:aws:iam::123:role/ft"
     assert call["trainingDataConfig"] == {"s3Uri": training_uri}
-    # Hyperparameters must be stringified for Bedrock
-    assert call["hyperParameters"] == {"epochCount": "2"}
+    # Nova defaults are always sent (Bedrock requires hyperParameters), with the
+    # user's value overriding the corresponding default; all values stringified.
+    assert call["hyperParameters"] == {
+        "epochCount": "1",
+        "learningRate": "0.00001",
+        "learningRateWarmupSteps": "10",
+    }
 
     saved = mock_repository.create_job_record.call_args.kwargs
     assert saved["status"] == BedrockJobStatus.IN_PROGRESS
     assert saved["base_model_id"] == "amazon.nova-micro-v1:0:128k"
+
+
+@pytest.mark.asyncio
+async def test_create_fine_tuning_job_sends_default_hyperparameters(bedrock_service, mock_repository):
+    """No hyperparameters supplied -> Nova defaults are still sent (Bedrock requires them)."""
+    bedrock_service._bedrock_client.create_model_customization_job = MagicMock(
+        return_value={"jobArn": "arn:aws:bedrock:us-east-1:123:model-customization-job/abc"}
+    )
+    mock_repository.create_job_record.return_value = MagicMock()
+
+    request = CreateBedrockFineTuningJobRequest(
+        training_data_s3_uri="s3://test-bucket/bedrock-fine-tuning/training/master/t.jsonl",
+        base_model_id="amazon.nova-micro-v1:0:128k",
+    )
+    await bedrock_service.create_fine_tuning_job(request)
+
+    call = bedrock_service._bedrock_client.create_model_customization_job.call_args.kwargs
+    assert call["hyperParameters"] == {
+        "epochCount": "2",
+        "learningRate": "0.00001",
+        "learningRateWarmupSteps": "10",
+    }
 
 
 @pytest.mark.asyncio

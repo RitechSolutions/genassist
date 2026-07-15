@@ -755,7 +755,7 @@ class OpenAIFineTuningService:
                 all_steps.extend(output.get("steps", []))
         return all_steps, final_output
 
-    def _extract_tool_calls(self, steps: list) -> List[dict]:
+    def _extract_tool_calls(self, steps: list, id_prefix: str = "") -> List[dict]:
         """Extract usable tool calls from agent steps.
 
         Step shapes are not uniform across agent implementations (ToolAgent uses
@@ -774,7 +774,7 @@ class OpenAIFineTuningService:
                 continue
             tool_calls.append(
                 {
-                    "id": s.get("tool_call_id") or f"call_{i:03d}",
+                    "id": s.get("tool_call_id") or f"call_{id_prefix}{i:03d}",
                     "name": name,
                     "args": s.get("tool_args") or s.get("args") or {},
                     "result": result,
@@ -883,6 +883,7 @@ class OpenAIFineTuningService:
         training_messages: list = [{"role": "system", "content": system_prompt}]
         used_tools = False
         has_assistant_content = False
+        turn_idx = 0
 
         for m in messages:
             speaker = (m.speaker or "").lower()
@@ -892,10 +893,18 @@ class OpenAIFineTuningService:
             if speaker != "agent":
                 continue
 
+            # Prefix tool_call ids per agent turn so they stay unique across the
+            # whole conversation (OpenAI requires unique tool_call_ids within an
+            # example; the per-log step index alone resets each turn).
+            turn_idx += 1
             log = logs_by_msg_id.get(str(m.id))
             if log is not None:
                 steps, final_output = self._extract_steps_and_output(log)
-                tool_calls = self._extract_tool_calls(steps) if include_tools else []
+                tool_calls = (
+                    self._extract_tool_calls(steps, id_prefix=f"t{turn_idx}_")
+                    if include_tools
+                    else []
+                )
                 if tool_calls:
                     self._append_assistant_with_tools(
                         training_messages, tool_calls, final_output
