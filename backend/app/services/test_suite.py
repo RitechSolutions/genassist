@@ -412,13 +412,22 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pass when the agent called the expected tool, optionally with matching args."""
+        """Pass when the agent called the expected tool, optionally with matching args.
+        Set should_call=False to assert the tool (or any tool, if unset) was NOT called."""
         tools = (payload.get("trace") or {}).get("tools") or []
         called_names = [tool.get("name") for tool in tools if tool.get("name")]
         expected = config.get("tool")
         expected_args = config.get("expected_args") or {}
+        should_call = bool(config.get("should_call", True))
 
         matches = [t for t in tools if not expected or _names_equal(t.get("name"), expected)]
+
+        if not should_call:
+            passed = not matches
+            target = expected or "any tool"
+            comment = None if passed else f"Expected {target!r} not to be called, but it was (called: {called_names})."
+            return {"key": "tool_used", "score": passed, "passed": passed, "comment": comment}
+
         if not matches:
             comment = (
                 f"Tool {expected!r} not called (called: {called_names or 'none'})."

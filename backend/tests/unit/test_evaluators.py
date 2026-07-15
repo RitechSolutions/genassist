@@ -234,6 +234,30 @@ class TestProcessCheckEvaluators:
         assert metrics["tool_used"]["passed"] is False
 
     @pytest.mark.asyncio
+    async def test_tool_used_should_call_false_fails_when_tool_was_called(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "should_call": False}},
+        )
+        assert metrics["tool_used"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_tool_used_should_call_false_passes_when_tool_was_not_called(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={"tool_used": {"tool": "other_tool", "should_call": False}},
+        )
+        assert metrics["tool_used"]["passed"] is True
+
+    @pytest.mark.asyncio
     async def test_tool_used_with_expected_args(self):
         metrics = await self.registry.evaluate(
             ["tool_used"],
