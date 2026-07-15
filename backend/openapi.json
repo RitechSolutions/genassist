@@ -20306,7 +20306,7 @@
           "OpenAI API"
         ],
         "summary": "Get Jobs",
-        "description": "List all fine-tuning jobs for the current user.\nSet sync=true to fetch fresh status from OpenAI for all jobs (slower).",
+        "description": "List all fine-tuning jobs for the current user (cached).\nUse POST /fine-tuning/jobs/sync to refresh statuses from OpenAI.",
         "operationId": "get_jobs_api_openai_fine_tuning_jobs_get",
         "security": [
           {
@@ -20334,18 +20334,6 @@
               "title": "Status"
             },
             "description": "Filter by job status"
-          },
-          {
-            "name": "sync",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Sync with OpenAI API for latest statuses",
-              "default": false,
-              "title": "Sync"
-            },
-            "description": "Sync with OpenAI API for latest statuses"
           }
         ],
         "responses": {
@@ -20409,6 +20397,65 @@
               "title": "Sync"
             },
             "description": "Sync with OpenAI API for latest status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openai/fine-tuning/jobs/sync": {
+      "post": {
+        "tags": [
+          "v1",
+          "OpenAI API"
+        ],
+        "summary": "Sync Jobs",
+        "description": "Fetch fresh status (and events) from OpenAI for all active jobs, then return\nthe refreshed list. This is the only endpoint that triggers a sync.",
+        "operationId": "sync_jobs_api_openai_fine_tuning_jobs_sync_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job status",
+              "title": "Status"
+            },
+            "description": "Filter by job status"
           }
         ],
         "responses": {
@@ -20729,6 +20776,541 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/GenerateTrainingFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/bedrock/upload": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Upload Training Data",
+        "description": "Upload a JSONL training file to S3 and return its s3:// URI.",
+        "operationId": "upload_training_data_api_bedrock_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_training_data_api_bedrock_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/bedrock/training-files": {
+      "get": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "List Training Files",
+        "description": "List JSONL training files already uploaded/generated in S3.",
+        "operationId": "list_training_files_api_bedrock_training_files_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/bedrock/fine-tuning/jobs": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Create Fine Tuning Job",
+        "description": "Create a Bedrock (Nova) fine-tuning job.",
+        "operationId": "create_fine_tuning_job_api_bedrock_fine_tuning_jobs_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBedrockFineTuningJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Get Jobs",
+        "description": "List all Bedrock fine-tuning jobs (cached).\n\nUse POST /fine-tuning/jobs/sync to refresh active jobs from Bedrock.",
+        "operationId": "get_jobs_api_bedrock_fine_tuning_jobs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/BedrockJobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job status",
+              "title": "Status"
+            },
+            "description": "Filter by job status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bedrock/fine-tuning/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Get Fine Tuning Job",
+        "description": "Retrieve a Bedrock fine-tuning job. Set sync=false to use cached data.",
+        "operationId": "get_fine_tuning_job_api_bedrock_fine_tuning_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "sync",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Sync with Bedrock for latest status",
+              "default": true,
+              "title": "Sync"
+            },
+            "description": "Sync with Bedrock for latest status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Delete Fine Tuning Job",
+        "description": "Remove a Bedrock fine-tuning job from the list (soft delete).\n\nDoes not stop a running AWS job (use cancel) or delete a deployment.",
+        "operationId": "delete_fine_tuning_job_api_bedrock_fine_tuning_jobs__job_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bedrock/fine-tuning/jobs/sync": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Sync Jobs",
+        "description": "Refresh active jobs from Bedrock, then return the list.\n\nThis is the only endpoint that triggers a sync.",
+        "operationId": "sync_jobs_api_bedrock_fine_tuning_jobs_sync_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/BedrockJobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job status",
+              "title": "Status"
+            },
+            "description": "Filter by job status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bedrock/fine-tuning/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Cancel Fine Tuning Job",
+        "description": "Stop a running Bedrock fine-tuning job.",
+        "operationId": "cancel_fine_tuning_job_api_bedrock_fine_tuning_jobs__job_id__cancel_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bedrock/fine-tuning/jobs/{job_id}/deploy": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Deploy Custom Model",
+        "description": "Create an on-demand custom model deployment for a completed Nova job.",
+        "operationId": "deploy_custom_model_api_bedrock_fine_tuning_jobs__job_id__deploy_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bedrock/models/fine-tunable": {
+      "get": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Get Fine Tunable Models",
+        "description": "Get the list of Nova base models that support fine-tuning.",
+        "operationId": "get_fine_tunable_models_api_bedrock_models_fine_tunable_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/bedrock/fine-tuning/generate-from-conversations": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Generate Training File From Conversations",
+        "description": "Generate a Nova JSONL training file from past conversation logs.\n\nWhen upload_to_s3=false (default), returns the JSONL as a file download.\nWhen upload_to_s3=true, uploads to S3 and returns the s3:// URI.",
+        "operationId": "generate_training_file_from_conversations_api_bedrock_fine_tuning_generate_from_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateBedrockTrainingFileRequest"
               }
             }
           },
@@ -26209,6 +26791,18 @@
         ],
         "title": "BatchRunsRequest"
       },
+      "BedrockJobStatus": {
+        "type": "string",
+        "enum": [
+          "InProgress",
+          "Completed",
+          "Failed",
+          "Stopping",
+          "Stopped"
+        ],
+        "title": "BedrockJobStatus",
+        "description": "Status of a Bedrock model customization (fine-tuning) job.\n\nValues mirror the states returned by Bedrock's\nGetModelCustomizationJob API (``status`` field)."
+      },
       "Body_add_conversation_feedback_api_conversations_feedback__conversation_id__patch": {
         "properties": {
           "feedback": {
@@ -26911,6 +27505,20 @@
           "file"
         ],
         "title": "Body_upload_pkl_file_api_ml_models_upload_post"
+      },
+      "Body_upload_training_data_api_bedrock_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_training_data_api_bedrock_upload_post"
       },
       "Body_upload_welcome_image_api_genagent_agents_configs__agent_id__welcome_image_post": {
         "properties": {
@@ -27664,6 +28272,72 @@
           "messages"
         ],
         "title": "ConversationTranscriptCreate"
+      },
+      "CreateBedrockFineTuningJobRequest": {
+        "properties": {
+          "training_data_s3_uri": {
+            "type": "string",
+            "title": "Training Data S3 Uri",
+            "description": "s3:// URI of the uploaded JSONL training data"
+          },
+          "base_model_id": {
+            "type": "string",
+            "title": "Base Model Id",
+            "description": "Nova base model id (e.g. amazon.nova-micro-v1:0:128k)"
+          },
+          "validation_data_s3_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Data S3 Uri",
+            "description": "s3:// URI of the validation JSONL (optional)"
+          },
+          "hyperparameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hyperparameters",
+            "description": "Hyperparameters (e.g. epochCount, learningRate)"
+          },
+          "suffix": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suffix",
+            "description": "Up to 40 chars used to name the custom model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "training_data_s3_uri",
+          "base_model_id"
+        ],
+        "title": "CreateBedrockFineTuningJobRequest",
+        "example": {
+          "base_model_id": "amazon.nova-micro-v1:0:128k",
+          "hyperparameters": {
+            "epochCount": "2"
+          },
+          "suffix": "support-bot",
+          "training_data_s3_uri": "s3://my-bucket/bedrock-fine-tuning/training/abc.jsonl"
+        }
       },
       "CreateDeploymentRequest": {
         "properties": {
@@ -29663,6 +30337,39 @@
         "title": "GdprDeleteMode",
         "description": "Modes supported by the admin GDPR conversation deletion endpoint.\n\n- ``SOFT``: flip the existing ``is_deleted`` flag and scrub\n  ``custom_attributes.pii``. File Manager blobs are not removed so the\n  row can be reconciled without losing uploads. The row is hidden from\n  standard reads by the global soft-delete ORM filter. Default mode.\n- ``ANONYMIZE``: keep the row visible (analytics drilldowns continue to\n  work), but scrub ``custom_attributes.pii``, purge File Manager objects\n  referenced by the transcript (and related fields), replace ``type=file``\n  payloads with placeholders, and run ``redact_sensitive_substrings`` on\n  other message text. Stamps ``conversations.pii_redacted_at`` for auditing.\n- ``HARD``: purge File Manager attachments, then remove the conversation row\n  (cascades to ``transcript_messages`` and ``conversation_analysis``) and\n  supporting stores (Redis memory, RAG, recordings, audit snapshots).\n  Already-aggregated daily analytics counts are unaffected."
       },
+      "GenerateBedrockTrainingFileRequest": {
+        "properties": {
+          "conversation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Conversation Ids",
+            "description": "Conversation UUIDs to generate Nova training data from"
+          },
+          "memory_conversation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Memory Conversation Ids",
+            "description": "Subset of conversation_ids to emit as a single multi-turn example (with memory)"
+          },
+          "upload_to_s3": {
+            "type": "boolean",
+            "title": "Upload To S3",
+            "description": "Upload generated JSONL to S3 and return the S3 URI",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_ids"
+        ],
+        "title": "GenerateBedrockTrainingFileRequest"
+      },
       "GenerateTrainingFileRequest": {
         "properties": {
           "conversation_ids": {
@@ -29673,6 +30380,21 @@
             "type": "array",
             "title": "Conversation Ids",
             "description": "Conversation UUIDs to generate training data from"
+          },
+          "memory_conversation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Memory Conversation Ids",
+            "description": "Subset of conversation_ids to emit as a single multi-turn example (with memory)"
+          },
+          "include_tools": {
+            "type": "boolean",
+            "title": "Include Tools",
+            "description": "Include tool calls/results (and the tools schema) in generated examples; when false, only final answers are used",
+            "default": true
           },
           "upload_to_openai": {
             "type": "boolean",

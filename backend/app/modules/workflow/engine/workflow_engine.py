@@ -32,6 +32,7 @@ from app.modules.workflow.engine.nodes import (
     CreateWorkflowScheduleNode,
     GuardrailNliNode,
     GuardrailProvenanceNode,
+    HtmlToImageNode,
     HumanInTheLoopNode,
     JiraNode,
     KnowledgeToolNode,
@@ -142,6 +143,7 @@ class WorkflowEngine:
         cls._node_registry["sttNode"] = STTNode
         cls._node_registry["voiceAgentNode"] = VoiceAgentNode
         cls._node_registry["webScraperNode"] = WebScraperNode
+        cls._node_registry["htmlToImageNode"] = HtmlToImageNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
 

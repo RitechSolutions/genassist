@@ -15,6 +15,7 @@ from .llm_analysts import LlmAnalystRepository
 from .llm_providers import LlmProviderRepository
 from .ml_models import MLModelsRepository
 from .openai_fine_tuning import FineTuningRepository
+from .bedrock_fine_tuning import BedrockFineTuningRepository
 from .operator_statistics import OperatorStatisticsRepository
 from .operators import OperatorRepository
 from .permissions import PermissionsRepository
