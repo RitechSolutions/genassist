@@ -47,7 +47,7 @@ _WARNING_LEN = 200
 
 _KEY_PREFIX = "websearch"
 # Bumps the advanced fingerprint when the enrichment selection algorithm changes
-_CONTENT_SELECTION_VERSION = "relevance-v2"
+_CONTENT_SELECTION_VERSION = "relevance-v3"
 
 # Category-specific messages surfaced when a recent provider failure is remembered.
 _NEG_MESSAGES = {

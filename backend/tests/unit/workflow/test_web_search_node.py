@@ -247,7 +247,7 @@ async def test_advanced_content_falls_back_without_query_signal(guards):
 @pytest.mark.asyncio
 async def test_advanced_options_include_content_selection_marker(guards):
     await _make_node().process({"query": "q", "searchDepth": "advanced"})
-    assert guards.get_cached.call_args.args[1]["contentSelection"] == "relevance-v2"
+    assert guards.get_cached.call_args.args[1]["contentSelection"] == "relevance-v3"
 
     guards.get_cached.reset_mock()
     await _make_node().process({"query": "q"})

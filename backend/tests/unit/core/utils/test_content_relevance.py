@@ -245,6 +245,109 @@ def test_structural_budget_keeps_markers_and_headings_intact():
                 assert line in ("## First", "## Second")
 
 
+# hierarchy and navigation
+
+
+def test_child_sections_outrank_author_bio():
+    bio = ("Written by a longtime staff correspondentprofile covering global markets. " * 10).strip()
+    md = "\n\n".join(
+        [
+            "# Payment Industry Report",
+            bio,
+            "## Payment Competitors\n\nThe payment competitor landscape spans several established firms.",
+            "### PayPal\n\nPayPal offers global online checkout across many markets today.",
+            "### Adyen\n\nAdyen provides a unified commerce platform for large enterprises today.",
+            "### Square\n\nSquare sells point of sale hardware for small merchants today.",
+        ]
+    )
+    out = select_relevant_content(md, "payment competitors", 900)
+    assert sum(name in out for name in ("PayPal", "Adyen", "Square")) >= 2
+    assert "correspondentprofile" not in out
+
+
+def test_substantive_section_outranks_link_dense_toc():
+    toc = "[Home](/home) [Company](/company) [Pricing overview](/pricing) [Careersblog](/careers) [Contact](/contact)"
+    md = "\n\n".join(
+        [
+            "## Table of contents\n\n" + toc,
+            "## Pricing overview\n\nThe pricing overview explains each subscription tier and its monthly cost.",
+            _filler("alpha"),
+            _filler("beta"),
+        ]
+    )
+    out = select_relevant_content(md, "pricing overview", 200)
+    assert "subscription tier" in out
+    assert "Careersblog" not in out
+
+
+def test_entity_only_heading_does_not_outrank_intent_section():
+    md = "\n\n".join(
+        [
+            "# Stripe Overview\n\nStripe is a payments company serving many businesses worldwide.",
+            "## Stripe and its strengths\n\nStripe excels at developer experience and Stripe documentation is strong.",
+            "## Stripe Competitors\n\nSeveral firms compete with Stripe across the payments market.",
+            "### Adyen\n\nAdyen is a global payment platform rivaling Stripe.",
+            "### Braintree\n\nBraintree offers merchant services competing with Stripe.",
+            _filler("gamma"),
+        ]
+    )
+    out = select_relevant_content(md, "stripe competitors", 500)
+    assert sum(name in out for name in ("Adyen", "Braintree")) >= 2
+    assert "strengths" not in out
+
+
+def test_ancestor_context_qualifies_only_section_leads():
+    lead_body = ("Acme Corp FOUNDINGYEAR background covers general operations and staffing. " * 6).strip()
+    cont_body = ("Additional QUARTERLYNOTE remarks about routine logistics and vendor scheduling. " * 6).strip()
+    md = "\n\n".join(
+        [
+            "## Competitor Analysis\n\nOverview of the competitor analysis across the sector.",
+            "### Acme Corp",
+            lead_body,
+            cont_body,
+            _filler("alpha"),
+        ]
+    )
+    out = select_relevant_content(md, "competitor analysis", 1200)
+    assert "FOUNDINGYEAR" in out  # child section lead qualifies via its matched parent
+    assert "QUARTERLYNOTE" not in out  # continuation piece does not inherit relevance
+
+
+def test_pricing_hierarchy_expands_plans():
+    md = "\n\n".join(
+        [
+            "## Pricing\n\nOur pricing is structured across three subscription plans.",
+            "### Starter\n\nThe starter plan costs ten dollars monthly for individuals.",
+            "### Pro\n\nThe pro plan costs thirty dollars monthly for small teams.",
+            "### Enterprise\n\nThe enterprise plan offers custom quotes for large organizations.",
+            _filler("alpha"),
+        ]
+    )
+    out = select_relevant_content(md, "pricing plans", 500)
+    assert sum(name in out for name in ("Starter", "Pro", "Enterprise")) >= 2
+
+
+def test_policy_hierarchy_expands_clauses():
+    md = "\n\n".join(
+        [
+            "## Refund Policy\n\nOur refund policy is divided into several clauses.",
+            "### Eligibility\n\nRefunds are available for unused services within the billing period.",
+            "### Window\n\nRequests must be submitted within thirty days of purchase.",
+            "### Exclusions\n\nSetup fees and consumed credits are non-refundable.",
+            _filler("alpha"),
+        ]
+    )
+    out = select_relevant_content(md, "refund policy", 500)
+    assert sum(name in out for name in ("Eligibility", "Window", "Exclusions")) >= 2
+
+
+def test_nav_heavy_chunk_still_fallback_selected():
+    nav = "[Home](/home) [About](/about) [Pricing details](/pricing) [Contact](/contact) [Blog](/blog)"
+    md = "\n\n".join([nav, _filler("alpha"), _filler("beta")])
+    out = select_relevant_content(md, "pricing details", 200)
+    assert "[Pricing details](/pricing)" in out  # demoted, never excluded when it is the only signal
+
+
 # invisible characters
 
 
