@@ -1,4 +1,5 @@
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
+import { METRIC_COLORS } from "@/constants/chartColors";
 import { Card } from "@/components/card";
 import { AnalyticsMetricsCardsSkeleton } from "./skeletons";
 import {
@@ -104,7 +105,7 @@ export const AnalyticsMetricsSection = ({
       icon: SmileIcon,
       description:
         "AI-evaluated score of how satisfied the customer appeared during the conversation.",
-      color: "#10b981",
+      color: METRIC_COLORS.satisfaction,
       deltaKey: "Customer Satisfaction",
     },
     {
@@ -114,7 +115,7 @@ export const AnalyticsMetricsSection = ({
       icon: Award,
       description:
         "AI-evaluated score of overall service quality, including accuracy, tone, and completeness.",
-      color: "#8b5cf6",
+      color: METRIC_COLORS.serviceQuality,
       deltaKey: "Quality of Service",
     },
     {
@@ -124,7 +125,7 @@ export const AnalyticsMetricsSection = ({
       icon: CheckCircle,
       description:
         "AI-evaluated score of how well customer issues were resolved.",
-      color: "#f59e0b",
+      color: METRIC_COLORS.resolutionRate,
       deltaKey: "Resolution Rate",
     },
     {
@@ -134,7 +135,7 @@ export const AnalyticsMetricsSection = ({
       icon: Zap,
       description:
         "AI-evaluated score of how efficiently the agent handled the conversation.",
-      color: "#06b6d4",
+      color: METRIC_COLORS.efficiency,
       deltaKey: "Efficiency",
     },
     {

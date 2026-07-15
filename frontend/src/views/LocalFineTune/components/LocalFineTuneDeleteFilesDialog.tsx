@@ -136,7 +136,7 @@ export function LocalFineTuneDeleteFilesDialog({
             <AlertDialogAction
               onClick={handleConfirm}
               disabled={isDeleting || nothingSelected}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:ring-destructive"
             >
               {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete files

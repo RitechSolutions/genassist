@@ -338,7 +338,7 @@ const EvaluationDetailPage: React.FC = () => {
                               value={avgAccuracy * 100}
                               className={cn(
                                 "h-1.5 w-16",
-                                avgAccuracy >= 0.9 ? "[&>div]:bg-green-500" : avgAccuracy >= 0.7 ? "[&>div]:bg-amber-500" : "[&>div]:bg-red-500"
+                                avgAccuracy >= 0.9 ? "[&>div]:bg-success" : avgAccuracy >= 0.7 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive"
                               )}
                             />
                             <span className={cn(
@@ -444,7 +444,7 @@ const EvaluationDetailPage: React.FC = () => {
                                     value={acc * 100}
                                     className={cn(
                                       "h-2",
-                                      acc >= 0.9 ? "[&>div]:bg-green-500" : acc >= 0.7 ? "[&>div]:bg-amber-500" : "[&>div]:bg-red-500"
+                                      acc >= 0.9 ? "[&>div]:bg-success" : acc >= 0.7 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive"
                                     )}
                                   />
                                 </div>
@@ -644,7 +644,7 @@ const EvaluationDetailPage: React.FC = () => {
                                     <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
                                       <span className={cn(
                                         "w-1.5 h-1.5 rounded-full",
-                                        passed ? "bg-green-500" : "bg-red-500"
+                                        passed ? "bg-success" : "bg-destructive"
                                       )}></span>
                                       Actual Output
                                     </div>

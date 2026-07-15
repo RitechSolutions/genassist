@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { Skeleton } from "@/components/skeleton";
+import { CHART_NEUTRALS, chartTooltipStyle, chartTooltipCursor } from "@/constants/chartColors";
 
 export interface JobEventWithDate {
   created_at?: string;
@@ -92,29 +93,23 @@ export function DailyConversationsChart({
                   <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRALS.grid} vertical={false} />
               <XAxis
                 dataKey="date"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 dy={6}
               />
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 allowDecimals={false}
               />
               <Tooltip
-                contentStyle={{
-                  background: "white",
-                  border: "1px solid #e4e4e7",
-                  borderRadius: "10px",
-                  fontSize: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                }}
-                cursor={{ stroke: "#e4e4e7", strokeWidth: 1 }}
+                contentStyle={chartTooltipStyle}
+                cursor={chartTooltipCursor}
                 formatter={(value: number) => [value.toLocaleString(), seriesName]}
               />
               <Area
