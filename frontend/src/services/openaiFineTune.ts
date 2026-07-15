@@ -26,7 +26,17 @@ export async function getFineTunableModels(): Promise<string[]> {
 export async function listFineTuneJobs(): Promise<FineTuneJob[]> {
   const res = await apiRequest<FineTuneJob[] | PaginatedResponse<FineTuneJob>>(
     "GET",
-    "openai/fine-tuning/jobs?sync=True"
+    "openai/fine-tuning/jobs"
+  );
+  return normalizeList<FineTuneJob>(res);
+}
+
+// Syncs each active job with OpenAI, then returns the refreshed list.
+// This is the only entry point that triggers a sync — the Sync button calls it.
+export async function syncFineTuneJobs(): Promise<FineTuneJob[]> {
+  const res = await apiRequest<FineTuneJob[] | PaginatedResponse<FineTuneJob>>(
+    "POST",
+    "openai/fine-tuning/jobs/sync"
   );
   return normalizeList<FineTuneJob>(res);
 }
@@ -105,6 +115,8 @@ export async function downloadOpenAIFile(fileId: string, filename: string): Prom
 
 export async function generateTrainingFileFromConversations(payload: {
   conversation_ids: string[];
+  memory_conversation_ids?: string[];
+  include_tools?: boolean;
   upload_to_openai: boolean;
 }): Promise<OpenAIFileItem> {
   return apiRequest<OpenAIFileItem>(
@@ -116,6 +128,8 @@ export async function generateTrainingFileFromConversations(payload: {
 
 export async function downloadGeneratedTrainingFile(payload: {
   conversation_ids: string[];
+  memory_conversation_ids?: string[];
+  include_tools?: boolean;
 }): Promise<Blob> {
   const baseURL = await getApiUrl();
   const url = `${baseURL}openai/fine-tuning/generate-from-conversations`;
