@@ -134,6 +134,20 @@ NODE_DESCRIPTIONS = {
             "Calling a third-party service for data enrichment",
         ],
     },
+    "webScraperNode": {
+        "category": "Integration",
+        "description": "Fetches a web page and returns clean scraped content plus its side-channels. "
+        "Blocks private/loopback/metadata hosts. Returns {success, url, format, error, content, markdown, html, links, metadata, screenshot, screenshot_file_id}, "
+        "where url is the final post-redirect URL, links is an array of absolute page URLs, metadata carries title/description/ogImage/canonical, and screenshot is a hosted image URL when a screenshot mode is set.",
+        "when_to_use": "When the workflow needs the text, links, metadata or a screenshot of a public web page.",
+        "example_use_cases": [
+            "Profiling a company from its homepage using {{source.markdown}} and {{source.metadata.title}}",
+            "Harvesting {{source.links}} to crawl the rest of a site",
+            "Pulling article content into a downstream LLM node",
+            "Reading a documentation page as Markdown for RAG",
+            "Capturing a screenshot of a landing page for review",
+        ],
+    },
     "openApiNode": {
         "category": "Integration",
         "description": "Executes API calls based on an OpenAPI specification file. Uses an LLM to interpret the query and select the correct API endpoint/parameters from the spec.",

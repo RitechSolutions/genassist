@@ -61,6 +61,15 @@ async def build_chat_model(
         "model": model_name,
     }
 
+    # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
+    # invocation of this model (including nested agent loops) is traced. No-op unless
+    # USE_OPIK is enabled.
+    from app.modules.workflow.llm.opik_tracing import get_opik_callbacks
+
+    callbacks = get_opik_callbacks()
+    if callbacks:
+        model_kwargs["callbacks"] = callbacks
+
     # Imported here, not at module top level: langchain.chat_models transitively pulls
     # torch/transformers, which must not be loaded into a Celery prefork master process.
     from langchain.chat_models import init_chat_model

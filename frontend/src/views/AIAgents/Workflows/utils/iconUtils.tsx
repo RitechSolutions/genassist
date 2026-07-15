@@ -34,6 +34,8 @@ import {
   ShieldQuestion as ShieldQuestionMark,
   ShieldAlert,
   TextSearch,
+  ScanText,
+  Image,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -99,6 +101,8 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   ShieldQuestionMark: { type: "lucide", source: ShieldQuestionMark },
   ShieldAlert: { type: "lucide", source: ShieldAlert },
   TextSearch: { type: "lucide", source: TextSearch },
+  ScanText: { type: "lucide", source: ScanText },
+  Image: { type: "lucide", source: Image },
 
   // Custom asset icons
   Slack: { type: "asset", source: SlackLogo },

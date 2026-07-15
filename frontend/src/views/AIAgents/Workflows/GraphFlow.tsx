@@ -11,9 +11,11 @@ import ReactFlow, {
   NodeMouseHandler,
   MarkerType,
   reconnectEdge,
+  useStore,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { isEqual } from "lodash";
+import { stripTransientGraphFields } from "./utils/graphNormalization";
 import { getNodeTypes } from "./nodeTypes";
 import { getEdgeTypes } from "./edgeTypes";
 import nodeRegistry from "./registry/nodeRegistry";
@@ -62,6 +64,37 @@ const edgeTypes = getEdgeTypes();
 
 const PRO_OPTIONS = { hideAttribution: true }; // remove React Flow watermark
 
+// Skip canvas undo/redo when focus is in a field the user is typing in
+const isEditableEventTarget = (target: HTMLElement): boolean =>
+  target.isContentEditable ||
+  !!target.closest("input, textarea, select, [contenteditable='true'], .ace_editor");
+
+// --- Level-of-detail (LOD) ---------------------------------------------------
+// When the canvas is zoomed out over a large graph, paint-heavy node/edge effects
+// (drop shadows, the spinning AI-agent gradient border, edge dash animations) make
+// panning/dragging janky — worst on Safari, but this helps every browser. We drop
+// those effects via a `.rf-low-detail` class on the flow root (see index.css) and
+// restore full detail automatically once the user zooms back in.
+const LOW_DETAIL_ZOOM = 0.7; // simplify below this zoom level
+const LOW_DETAIL_MIN_NODES = 15; // ...but only once the graph is big enough to matter
+
+// Reads zoom + node count straight from the React Flow store and reports whether we
+// should render in low-detail mode. Because the selector returns a boolean, this only
+// triggers a re-render when the mode actually flips — not on every zoom/pan frame.
+const LowDetailWatcher: React.FC<{ onChange: (lowDetail: boolean) => void }> = ({
+  onChange,
+}) => {
+  const lowDetail = useStore(
+    (s) =>
+      s.nodeInternals.size >= LOW_DETAIL_MIN_NODES &&
+      s.transform[2] < LOW_DETAIL_ZOOM
+  );
+  useEffect(() => {
+    onChange(lowDetail);
+  }, [lowDetail, onChange]);
+  return null;
+};
+
 const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
@@ -90,6 +123,9 @@ const GraphFlowContent: React.FC = () => {
   const [nodesDraggable, setNodesDraggable] = useState(true);
   const [nodesConnectable, setNodesConnectable] = useState(true);
   const [elementsSelectable, setElementsSelectable] = useState(true);
+
+  // Level-of-detail: true when zoomed out over a large graph (see LowDetailWatcher)
+  const [lowDetail, setLowDetail] = useState(false);
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -240,14 +276,6 @@ const GraphFlowContent: React.FC = () => {
 
   const { validateConnection } = useSchemaValidation();
 
-  // Undo/Redo functionality
-  const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo(
-    nodes,
-    edges,
-    setNodes,
-    setEdges
-  );
-
   const { agentId } = useParams<{ agentId: string }>();
   const edgeReconnectSuccessful = useRef(true);
 
@@ -267,15 +295,11 @@ const GraphFlowContent: React.FC = () => {
       const cleanWorkflow = (workflow: Workflow) => {
         const workflowCopy = JSON.parse(JSON.stringify(workflow));
         const { created_at, updated_at, ...remainingProps } = workflowCopy;
-        return {
-          ...remainingProps,
-          nodes: (remainingProps.nodes || []).map(
-            ({ selected, dragging, width, height, ...rest }: Node) => rest
-          ),
-          edges: (remainingProps.edges || []).map(
-            ({ selected, className, ...rest }) => rest
-          ),
-        };
+        const { nodes, edges } = stripTransientGraphFields(
+          remainingProps.nodes || [],
+          remainingProps.edges || []
+        );
+        return { ...remainingProps, nodes, edges };
       };
 
       const cleanWorkflow1 = cleanWorkflow(workflow1);
@@ -317,39 +341,6 @@ const GraphFlowContent: React.FC = () => {
   const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
 
-  const loadWorkflow = useCallback(async (workflowId: string) => {
-    const workflow = await getWorkflowById(workflowId);
-    setWorkflow(workflow);
-    handleWorkflowLoaded(workflow);
-  }, []);
-
-  const loadAgent = useCallback(
-    async (agentId: string) => {
-      const agent = await getAgentConfig(agentId);
-      setAgent(agent);
-      loadWorkflow(agent.workflow_id);
-    },
-    [loadWorkflow]
-  );
-  const handleAgentUpdated = useCallback(async () => {
-    const agent = await getAgentConfig(agentId);
-    setAgent(agent);
-  }, [agentId]);
-
-  const handleActiveWorkflowChange = useCallback(
-    async (workflow: Workflow) => {
-      if (agentId) {
-        try {
-          await updateAgentConfig(agentId, { workflow_id: workflow.id });
-          await handleAgentUpdated();
-        } catch (error) {
-          // ignore
-        }
-      }
-    },
-    [agentId, handleAgentUpdated]
-  );
-
   // Update node data (used for saving input values)
   const updateNodeData = useCallback(
     (nodeId: string, newData: Partial<NodeData>) => {
@@ -384,27 +375,34 @@ const GraphFlowContent: React.FC = () => {
   });
 
   // Restore functions to nodes after loading
-  const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
-    return loadedNodes.map((node) => {
-      // Create a deep copy to avoid modifying the original
-      const nodeCopy = { ...node, data: { ...node.data } };
+  const restoreNodeFunctions = useCallback(
+    (loadedNodes: Node[]): Node[] => {
+      return loadedNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          updateNodeData,
+        },
+      }));
+    },
+    [updateNodeData]
+  );
 
-      nodeCopy.data = {
-        ...nodeCopy.data,
-        updateNodeData,
-      };
-
-      return nodeCopy;
+  // Undo/Redo functionality
+  const { undo, redo, canUndo, canRedo, takeSnapshot, resetHistory } =
+    useUndoRedo(nodes, edges, setNodes, setEdges, {
+      hydrateNodes: restoreNodeFunctions,
     });
-  };
 
   // Handle graph data loaded from file
   const handleWorkflowLoaded = useCallback(
     (loadedWorkflow: Workflow, isUploaded = false) => {
-      const nodesWithFunctions = restoreNodeFunctions(loadedWorkflow.nodes);
+      const loadedNodes = loadedWorkflow.nodes || [];
+      const loadedEdges = loadedWorkflow.edges || [];
+      const nodesWithFunctions = restoreNodeFunctions(loadedNodes);
 
       // Add arrow markers to existing edges
-      const edgesWithMarkers = loadedWorkflow.edges.map((edge) => ({
+      const edgesWithMarkers = loadedEdges.map((edge) => ({
         ...edge,
         type: "default",
         markerEnd: {
@@ -420,6 +418,8 @@ const GraphFlowContent: React.FC = () => {
         },
       }));
 
+      // Reset undo baseline to the loaded graph and discard any existing history
+      resetHistory({ nodes: nodesWithFunctions, edges: edgesWithMarkers });
       setNodes(nodesWithFunctions);
       setEdges(edgesWithMarkers);
       setWorkflow(loadedWorkflow);
@@ -429,7 +429,44 @@ const GraphFlowContent: React.FC = () => {
         setHasUnsavedChanges(false);
       }
     },
-    [restoreNodeFunctions, setNodes, setEdges, setWorkflow]
+    [resetHistory, restoreNodeFunctions, setNodes, setEdges, setWorkflow]
+  );
+
+  const loadWorkflow = useCallback(
+    async (workflowId: string) => {
+      const workflow = await getWorkflowById(workflowId);
+      setWorkflow(workflow);
+      handleWorkflowLoaded(workflow);
+    },
+    [handleWorkflowLoaded, setWorkflow]
+  );
+
+  const loadAgent = useCallback(
+    async (agentId: string) => {
+      const agent = await getAgentConfig(agentId);
+      setAgent(agent);
+      loadWorkflow(agent.workflow_id);
+    },
+    [loadWorkflow]
+  );
+
+  const handleAgentUpdated = useCallback(async () => {
+    const agent = await getAgentConfig(agentId);
+    setAgent(agent);
+  }, [agentId]);
+
+  const handleActiveWorkflowChange = useCallback(
+    async (workflow: Workflow) => {
+      if (agentId) {
+        try {
+          await updateAgentConfig(agentId, { workflow_id: workflow.id });
+          await handleAgentUpdated();
+        } catch (error) {
+          // ignore
+        }
+      }
+    },
+    [agentId, handleAgentUpdated]
   );
 
   // Drag and drop handlers using helper functions
@@ -511,7 +548,7 @@ const GraphFlowContent: React.FC = () => {
   // Add updateNodeData callback to all nodes that need it
   useEffect(() => {
     setNodes((nds) => restoreNodeFunctions(nds));
-  }, [setNodes]);
+  }, [restoreNodeFunctions, setNodes]);
 
   // Add a new node
   const addNewNode = (
@@ -685,6 +722,23 @@ const GraphFlowContent: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
+
+      // Compare lowercase keys 
+      const isUndo =
+        (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey;
+      const isRedo =
+        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z";
+
+      // Skip undo/redo if typing or inside an open dialog
+      if (isUndo || isRedo) {
+        if (isEditableEventTarget(target) || target.closest('[role="dialog"]')) return;
+        e.preventDefault();
+        if (isUndo) undo();
+        else redo();
+        return;
+      }
+
+      // Copy/paste only on the canvas
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
         target.closest(".react-flow__pane") ||
@@ -692,13 +746,7 @@ const GraphFlowContent: React.FC = () => {
 
       if (!isReactFlowCanvas) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
-        e.preventDefault();
-        redo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         e.preventDefault();
         copySelectedNodes();
       } else if ((e.ctrlKey || e.metaKey) && e.key === "v") {
@@ -932,9 +980,7 @@ const GraphFlowContent: React.FC = () => {
   useEffect(() => {
     const handleSearchKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      const isTyping = !!target.closest(
-        "input, textarea, select, [contenteditable='true'], .ace_editor"
-      );
+      const isTyping = isEditableEventTarget(target);
 
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
@@ -995,6 +1041,7 @@ const GraphFlowContent: React.FC = () => {
                 className="h-full w-full"
               >
                 <ReactFlow
+                  className={lowDetail ? "rf-low-detail" : undefined}
                   nodes={displayNodes}
                   edges={displayEdges}
                   onNodesChange={onNodesChange}
@@ -1020,6 +1067,7 @@ const GraphFlowContent: React.FC = () => {
                   proOptions={PRO_OPTIONS}
                   onlyRenderVisibleElements
                 >
+                  <LowDetailWatcher onChange={setLowDetail} />
                   <Background />
                   <CustomControls
                     nodesDraggable={nodesDraggable}

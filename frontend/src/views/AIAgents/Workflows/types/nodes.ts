@@ -103,6 +103,23 @@ export interface RouterNodeData extends BaseNodeData {
   second_value?: string;
 }
 
+// NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
+export interface NlpNodeData extends BaseNodeData {
+  providerId?: string;
+  inputField?: string;
+  task?: "classify" | "sentiment" | "extract" | "summarize";
+  // task === "classify"
+  categories?: string[];
+  multiLabel?: boolean;
+  // task === "sentiment"
+  scale?: "1-5" | "1-10";
+  // task === "extract"
+  schema?: string;
+  // task === "summarize"
+  maxLength?: number;
+  style?: "concise" | "bullets" | "detailed";
+}
+
 export interface AggregatorNodeData extends BaseNodeData {
   aggregationStrategy?: "list" | "merge" | "first" | "last";
   timeoutSeconds?: number;
@@ -174,6 +191,32 @@ export interface APIToolNodeData extends BaseNodeData {
   headers: Record<string, string>;
   parameters: Record<string, string>;
   requestBody: string;
+}
+
+// Web Scraper Node Data
+export type WebScraperFormat = "markdown" | "html" | "both";
+export type WebScraperScreenshot = "off" | "viewport" | "fullPage";
+
+export interface WebScraperNodeData extends BaseNodeData {
+  url: string;
+  format: WebScraperFormat;
+  headers: Record<string, string>;
+  onlyMainContent: boolean;
+  screenshot: WebScraperScreenshot;
+  waitFor: number;
+  scrollToBottom: boolean;
+  maxAge: number;
+}
+
+// HTML to Image Node Data
+export type HtmlToImageCaptureMode = "fullPage" | "viewport";
+
+export interface HtmlToImageNodeData extends BaseNodeData {
+  html: string;
+  captureMode: HtmlToImageCaptureMode;
+  viewportWidth: number;
+  viewportHeight: number;
+  waitFor: number;
 }
 
 // External Agent Node Data
@@ -490,6 +533,7 @@ export interface GuardrailNliNodeData extends BaseNodeData {
 
 // File Reader Node Data
 export interface FileReaderNodeData extends BaseNodeData {
+  fileSource?: "chatAttachment" | "upload";
   fileName?: string;
   filePath?: string;
   fileUrl?: string;
@@ -534,6 +578,7 @@ export type NodeData =
   | SlackOutputNodeData
   | WhatsappNodeData
   | RouterNodeData
+  | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
   | CalendarEventToolNodeData
@@ -553,7 +598,9 @@ export type NodeData =
   | ExternalAgentNodeData
   | TTSNodeData
   | STTNodeData
-  | VoiceAgentNodeData;
+  | VoiceAgentNodeData
+  | WebScraperNodeData
+  | HtmlToImageNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

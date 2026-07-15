@@ -51,6 +51,88 @@ export const API_CONNECTOR_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Web Scraper node fetches a web page and returns its content as clean Markdown or HTML, along with the page's links, metadata and an optional screenshot. It runs without any external scraping service and blocks private, loopback and metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Web Scraper node when you need to:",
+      bullets: [
+        "Pull the text of a public web page into a workflow",
+        "Feed page content to a downstream language model",
+        "Harvest a page's links to crawl a site",
+        "Read a page's title, description and Open Graph metadata",
+        "Capture a screenshot of the rendered page",
+        "Replace an external crawling API for simple fetches",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the URL to scrape.",
+        "Choose the Output Format (Markdown, HTML or Both).",
+        "Choose a Screenshot mode (Off, Viewport or Full Page).",
+        "Toggle Only Main Content to strip nav and boilerplate (on by default).",
+        "Add any required Headers.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.content}} — the primary output in the chosen format",
+        "{{source.markdown}} — main-content Markdown (markdown / both formats)",
+        "{{source.html}} — raw page HTML (html / both formats)",
+        "{{source.links}} — array of absolute URLs found on the page",
+        "{{source.metadata.title}} / {{source.metadata.description}} / {{source.metadata.ogImage}} — page metadata",
+        "{{source.screenshot}} — hosted image URL when a screenshot mode is set",
+        "{{source.url}} — the final URL",
+      ],
+    },
+  ],
+};
+
+export const HTML_TO_IMAGE_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The HTML to Image node renders an HTML string in a headless browser and returns a hosted PNG image. It is useful for turning generated markup, templates or reports into shareable images. It runs without any external service and blocks private, loopback and metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the HTML to Image node when you need to:",
+      bullets: [
+        "Render an HTML snippet or template as an image",
+        "Turn a generated report or receipt into a PNG",
+        "Create shareable image previews from markup",
+        "Feed a rendered screenshot to a downstream node",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the HTML to render, or connect an upstream node that provides it.",
+        "Choose the Capture Mode (Full Page or Viewport).",
+        "Set the Viewport Width and Height.",
+        "Optionally set an extra Wait For delay before capturing.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.image}} — hosted URL of the rendered PNG",
+        "{{source.image_file_id}} — file id of the stored image",
+      ],
+    },
+  ],
+};
+
 export const OPENAPI_EXPLORER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The OpenAPI Explorer node helps explore and work with OpenAPI-based services inside a workflow. It can be used to inspect available operations, test requests, and integrate documented API capabilities in a guided way.",
