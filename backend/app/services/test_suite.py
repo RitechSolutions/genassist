@@ -109,6 +109,62 @@ def _resolve_selector_value(
     return selector
 
 
+def _normalize_tool_call(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Map an agent tool step/record to a stable {name, args, result}."""
+    return {
+        "name": entry.get("tool_name") or entry.get("tool") or entry.get("name"),
+        "args": entry.get("args") or entry.get("tool_input") or entry.get("validated_args") or {},
+        "result": entry.get("result"),
+    }
+
+
+def _extract_tool_calls(output: Any) -> List[Dict[str, Any]]:
+    """Pull tool calls from an agent node output (tools_used, else tool-like steps)."""
+    if not isinstance(output, dict):
+        return []
+    raw = output.get("tools_used")
+    if not isinstance(raw, list) or not raw:
+        raw = [
+            step
+            for step in (output.get("steps") or [])
+            if isinstance(step, dict) and (step.get("tool") or step.get("tool_name"))
+        ]
+    calls = [_normalize_tool_call(e) for e in raw if isinstance(e, dict)]
+    return [c for c in calls if c["name"]]
+
+
+def _extract_retrieval(node_type: Any, output: Any) -> Dict[str, Any] | None:
+    """Pull a {query, results} view from knowledge-base / thread-RAG node output."""
+    if node_type == "threadRAGNode" and isinstance(output, dict) and "results" in output:
+        return {"query": output.get("query"), "results": output.get("results")}
+    if node_type == "knowledgeBaseNode":
+        if not output or (isinstance(output, dict) and "error" in output):
+            return None
+        return {"query": None, "results": output}
+    if isinstance(output, dict) and "results" in output and "query" in output:
+        return {"query": output.get("query"), "results": output.get("results")}
+    return None
+
+
+def _names_equal(first: Any, second: Any) -> bool:
+    return _normalize_text(first).lower() == _normalize_text(second).lower()
+
+
+def _serialize_judge_source(value: Any, max_length: int = 16000) -> str:
+    """Render a judge SOURCE (e.g. trace retrievals) as bounded text; empty when there is none."""
+    if not value:
+        return ""
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return text[:max_length].strip()
+
+
+def _args_superset_match(args: Any, expected: Dict[str, Any]) -> bool:
+    """True when every expected key/value is present in the actual tool args."""
+    if not isinstance(args, dict):
+        return False
+    return all(_normalize_text(args.get(key)) == _normalize_text(value) for key, value in expected.items())
+
+
 def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
     """Stable, workflow-agnostic view of a run for evaluators to grade against."""
     trace = execution_trace if isinstance(execution_trace, dict) else {}
@@ -126,6 +182,7 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
             "id": node_id,
             "type": info.get("type"),
             "label": info.get("name"),
+            "input": info.get("input"),
             "output": info.get("output"),
             "status": info.get("status"),
             "error": info.get("error"),
@@ -139,9 +196,16 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
     session = state.get("input") if isinstance(state.get("input"), dict) else {}
 
     errors: List[Any] = list(state.get("errors") or [])
+    tools: List[Any] = []
+    retrievals: List[Any] = []
     for entry in nodes.values():
         if entry.get("error"):
             errors.append({"node": entry["id"], "error": entry["error"]})
+        for call in _extract_tool_calls(entry["output"]):
+            tools.append({"node": entry["id"], **call})
+        retrieval = _extract_retrieval(entry["type"], entry["output"])
+        if retrieval is not None:
+            retrievals.append({"node": entry["id"], "label": entry["label"], **retrieval})
 
     return {
         "output": trace.get("output"),
@@ -149,6 +213,8 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
         "nodes_by_type": nodes_by_type,
         "nodes_by_label": nodes_by_label,
         "session": session,
+        "tools": tools,
+        "retrievals": retrievals,
         "errors": errors,
         "tokens": trace.get("token_usage") or {},
         "cost": trace.get("cost_usd"),
@@ -174,12 +240,20 @@ class SimpleEvaluatorRegistry:
             "json_match": self._json_match,
             "field_equals": self._field_equals,
             "no_errors": self._no_errors,
+            "tool_used": self._tool_used,
+            "route_taken": self._route_taken,
+            "action_taken": self._action_taken,
             "nli_eval": self._guardrail_nli,
             "provenance_eval": self._guardrail_provenance,
+            "llm_judge": self._llm_judge,
         }
 
     def available(self) -> List[str]:
         return sorted(self._evaluators.keys())
+
+    def default_techniques(self) -> List[str]:
+        """Techniques run when a run specifies none. Excludes checks that need per-run config."""
+        return ["exact_match", "contains", "json_match", "field_equals", "no_errors", "nli_eval", "provenance_eval"]
 
     async def evaluate(
         self,
@@ -327,6 +401,121 @@ class SimpleEvaluatorRegistry:
             "comment": None if passed else f"{len(errors)} error(s) during run.",
         }
 
+    # ---- agent process techniques ----------------------------------------
+
+    async def _tool_used(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+        outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        reference_outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Pass when the agent called the expected tool, optionally with matching args."""
+        tools = (payload.get("trace") or {}).get("tools") or []
+        called_names = [tool.get("name") for tool in tools if tool.get("name")]
+        expected = config.get("tool")
+        expected_args = config.get("expected_args") or {}
+
+        matches = [t for t in tools if not expected or _names_equal(t.get("name"), expected)]
+        if not matches:
+            comment = (
+                f"Tool {expected!r} not called (called: {called_names or 'none'})."
+                if expected else "No tool was called."
+            )
+            return {"key": "tool_used", "score": False, "passed": False, "comment": comment}
+
+        if expected_args:
+            passed = any(_args_superset_match(call.get("args"), expected_args) for call in matches)
+            comment = None if passed else f"No matching call had expected args {expected_args!r}."
+        else:
+            passed = True
+            comment = None
+
+        return {"key": "tool_used", "score": passed, "passed": passed, "comment": comment}
+
+    async def _route_taken(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+        outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        reference_outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Pass when a router node chose the expected branch."""
+        expected = _normalize_text(config.get("expected"))
+        if not expected:
+            return {
+                "key": "route_taken",
+                "score": False,
+                "passed": False,
+                "comment": "No expected route configured.",
+            }
+
+        routers = (payload.get("trace") or {}).get("nodes_by_type", {}).get("routerNode", [])
+        selector = config.get("router") or config.get("node")
+        if selector:
+            routers = [r for r in routers if r.get("id") == selector or r.get("label") == selector]
+
+        routes = [
+            _normalize_text((r.get("output") or {}).get("route"))
+            for r in routers
+            if isinstance(r.get("output"), dict)
+        ]
+        passed = any(_names_equal(route, expected) for route in routes)
+
+        return {
+            "key": "route_taken",
+            "score": passed,
+            "passed": passed,
+            "comment": None if passed else f"Expected route {expected!r}, took {routes or 'none'}.",
+        }
+
+    async def _action_taken(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+        outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        reference_outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Pass when a configured side-effect node (by id/label/type) ran successfully."""
+        selector = config.get("node")
+        node_type = config.get("node_type")
+        if not selector and not node_type:
+            return {
+                "key": "action_taken",
+                "score": False,
+                "passed": False,
+                "comment": "No action node or node_type configured.",
+            }
+
+        nodes = (payload.get("trace") or {}).get("nodes") or {}
+        should_fire = bool(config.get("should_fire", True))
+        target = selector or node_type
+
+        def is_target(node: Dict[str, Any]) -> bool:
+            if selector and node.get("id") != selector and node.get("label") != selector:
+                return False
+            if node_type and node.get("type") != node_type:
+                return False
+            return True
+
+        candidates = [node for node in nodes.values() if is_target(node)]
+        fired = any(node.get("status") == "success" and not node.get("error") for node in candidates)
+        passed = fired if should_fire else not fired
+
+        if passed:
+            comment = f"{target!r} did not run in this evaluation." if not candidates else None
+        elif should_fire:
+            comment = f"Expected {target!r} to fire but it did not."
+        else:
+            comment = f"Expected {target!r} not to fire but it did."
+        return {"key": "action_taken", "score": passed, "passed": passed, "comment": comment}
+
     async def _guardrail_nli(
         self,
         *,
@@ -450,9 +639,6 @@ class SimpleEvaluatorRegistry:
         provider_id: str | None = None,
         system_prompt_suffix: str = "",
     ) -> tuple[float | None, str | None]:
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(provider_id)
-
         base_instructions = (
             "You are a strict provenance judge. Given a CONTEXT and an ANSWER, "
             "decide whether the answer is fully supported by the context, "
@@ -473,10 +659,25 @@ class SimpleEvaluatorRegistry:
         )
 
         system_prompt = base_instructions + extra_instructions + json_format_requirement
+        user_content = f"CONTEXT:\n{context}\n\nANSWER:\n{answer}\n"
+        return await self._invoke_json_judge(
+            system_prompt=system_prompt, user_content=user_content, provider_id=provider_id
+        )
+
+    async def _invoke_json_judge(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        provider_id: str | None = None,
+    ) -> tuple[float | None, str | None]:
+        """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
+        llm_provider = injector.get(LLMProvider)
+        llm = await llm_provider.get_model(provider_id)
         response = await llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=f"CONTEXT:\n{context}\n\nANSWER:\n{answer}\n"),
+                HumanMessage(content=user_content),
             ]
         )
         raw_content = getattr(response, "content", "")
@@ -485,12 +686,80 @@ class SimpleEvaluatorRegistry:
 
         try:
             parsed = json.loads(raw_content)
+            if not isinstance(parsed, dict):
+                return None, "LLM judge response was not a JSON object"
             score = float(parsed.get("score", 0.0))
             score = max(0.0, min(1.0, score))
             reason = str(parsed.get("reason", "")).strip() or None
             return score, reason
         except (ValueError, TypeError, json.JSONDecodeError):
             return None, "LLM judge response could not be parsed"
+
+    async def _llm_judge(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - question sourced via question_field
+        outputs: Any,
+        reference_outputs: Any,  # noqa: ARG002 - reserved for unified signature
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Grade the answer against a user-supplied rubric (any criteria)."""
+        rubric = (config.get("rubric") or config.get("instructions") or "").strip()
+        if not rubric:
+            return {
+                "key": "llm_judge",
+                "score": False,
+                "passed": False,
+                "comment": "No rubric configured for llm_judge.",
+            }
+
+        try:
+            min_score = float(config.get("min_score", 0.5))
+        except (TypeError, ValueError):
+            min_score = 0.5
+
+        answer = _resolve_selector_value(config.get("answer_field"), payload=payload, default=outputs)
+        question = _resolve_selector_value(config.get("question_field"), payload=payload, default="")
+        source_field = config.get("source_field")
+        source = _read_path(payload, source_field) if source_field else None
+        answer_text = _normalize_text(answer)
+        question_text = _normalize_text(question)
+        source_text = _serialize_judge_source(source)
+
+        system_prompt = (
+            f"{rubric}\n\n"
+            "Return ONLY a compact JSON object in this exact format:\n"
+            '{"score": 0.0-1.0, "reason": "short explanation"}\n'
+            "Do not include any extra text or explanation."
+        )
+        user_parts = []
+        if question_text:
+            user_parts.append(f"QUESTION:\n{question_text}")
+        if source_text:
+            user_parts.append(f"SOURCE:\n{source_text}")
+        user_parts.append(f"ANSWER:\n{answer_text}")
+
+        score, reason = await self._invoke_json_judge(
+            system_prompt=system_prompt,
+            user_content="\n\n".join(user_parts),
+            provider_id=config.get("llm_provider_id"),
+        )
+        if score is None:
+            return {
+                "key": "llm_judge",
+                "score": 0.0,
+                "passed": False,
+                "comment": reason or "LLM judge failed.",
+            }
+
+        passed = score >= min_score
+        return {
+            "key": "llm_judge",
+            "score": score,
+            "passed": passed,
+            "comment": f"{reason or 'no reason'}; threshold={min_score:.2f}",
+        }
 
 
 @inject
@@ -706,7 +975,7 @@ class TestSuiteService:
         }
         engine = WorkflowEngine(workflow_config)
 
-        evaluator_keys = run.techniques or self.evaluators.available()
+        evaluator_keys = run.techniques or self.evaluators.default_techniques()
 
         per_case_metrics: List[Dict[str, Any]] = []
 
