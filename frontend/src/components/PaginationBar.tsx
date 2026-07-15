@@ -7,7 +7,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination";
+} from "@/components/pagination";
 import { cn } from "@/lib/utils";
 
 type PaginationBarProps = {

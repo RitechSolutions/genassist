@@ -19,7 +19,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import type {
   NodeData,
   NodeHelpContent,

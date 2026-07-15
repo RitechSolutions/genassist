@@ -22,7 +22,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 
 const DatasetDetailPage: React.FC = () => {
   const navigate = useNavigate();

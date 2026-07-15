@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import { Button } from "@/components/button";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { getAllWorkflows } from "@/services/workflows";
