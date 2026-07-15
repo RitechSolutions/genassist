@@ -1,20 +1,24 @@
 import {
   Home,
   Settings,
-  Lock,
   LogOut,
-  Users,
-  ScrollText,
   ChevronRight,
-  Settings2,
+  ChevronsUpDown,
   LineChart,
   MessageSquare,
   UserRoundCog,
   Network,
   Waypoints,
   ListChecks,
-  ChevronsUpDown,
   LifeBuoy,
+  ScrollText,
+  Users,
+  UserRound,
+  UsersRound,
+  KeyRound,
+  Contact,
+  ShieldCheck,
+  Search,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,7 +35,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import {
@@ -41,7 +44,7 @@ import {
   getTenantId,
 } from "@/services/auth";
 import toast from "react-hot-toast";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
 import { FeatureFlags } from "@/config/featureFlags";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -53,6 +56,8 @@ import { NotificationBellPopover } from "@/components/NotificationBellPopover";
 // Types & data
 // ---------------------------------------------------------------------------
 
+type BadgeTone = "new" | "beta" | "count";
+
 type MenuItem = {
   title: string;
   icon?: React.ElementType;
@@ -61,210 +66,233 @@ type MenuItem = {
   children?: MenuItem[];
   feature_flag?: string;
   badge?: string;
+  badgeTone?: BadgeTone;
 };
 
-const menuItems: MenuItem[] = [
-  { title: "Dashboard", icon: Home, url: "/dashboard" },
+type NavGroup = {
+  label: string;
+  items: MenuItem[];
+};
+
+const navGroups: NavGroup[] = [
   {
-    title: "Analytics",
-    icon: LineChart,
-    url: "#",
-    permissionsRequired: ["read:dashboard"],
-    children: [
+    label: "Workspace",
+    items: [
+      { title: "Dashboard", icon: Home, url: "/dashboard" },
       {
-        title: "AI Insights",
-        url: "/analytics/ai-insights",
-        permissionsRequired: ["read:dashboard"],
-      },
-      {
-        title: "Agent Performance",
-        url: "/analytics/agent-performance",
-        permissionsRequired: ["read:dashboard"],
-      },
-      {
-        title: "Node Analytics",
-        url: "/analytics/node-analytics",
-        permissionsRequired: ["read:dashboard"],
-      },
-    ],
-  },
-  {
-    title: "Conversations",
-    icon: MessageSquare,
-    url: "#",
-    permissionsRequired: ["read:conversation"],
-    children: [
-      {
-        title: "Conversations",
-        url: "/transcripts",
-        permissionsRequired: ["read:conversation"],
-      },
-      {
-        title: "Reported Feedback",
-        url: "/reported-feedback",
-        permissionsRequired: ["read:conversation"],
-      },
-    ],
-  },
-  {
-    title: "Operators",
-    icon: Users,
-    url: "/operators",
-    permissionsRequired: ["read:operator"],
-  },
-  {
-    title: "Agent Studio",
-    icon: UserRoundCog,
-    url: "/ai-agents",
-    permissionsRequired: ["read:llm_analyst"],
-  },
-  {
-    title: "Tests",
-    icon: ListChecks,
-    url: "#",
-    permissionsRequired: ["test:workflow"],
-    badge: "BETA",
-    children: [
-      {
-        title: "Datasets",
-        url: "/tests/datasets",
-        permissionsRequired: ["test:workflow"],
-      },
-      {
-        title: "Evaluations",
-        url: "/tests/evaluations",
-        permissionsRequired: ["test:workflow"],
-      },
-    ],
-  },
-  {
-    title: "Integrations",
-    icon: Network,
-    url: "#",
-    children: [
-      {
-        title: "Knowledge Base",
-        url: "/knowledge-base",
-        permissionsRequired: ["*", "update:knowledge_base"],
-      },
-      {
-        title: "ML Models",
-        url: "/ml-models",
-        permissionsRequired: ["*", "update:ml_model"],
-      },
-      {
-        title: "Data Sources",
-        url: "/data-sources",
-        permissionsRequired: ["read:data_source"],
-      },
-      {
-        title: "API Keys",
-        url: "/api-keys",
-        permissionsRequired: ["read:api_key"],
-      },
-      {
-        title: "Webhooks",
-        url: "/webhooks",
-        permissionsRequired: ["read:webhook"],
-      },
-      {
-        title: "MCP Servers",
-        url: "/mcp-servers",
-        permissionsRequired: ["read:mcp_server"],
-      },
-      {
-        title: "Configuration Vars",
-        url: "/app-settings",
-        permissionsRequired: ["read:app_setting"],
-      },
-    ],
-  },
-  {
-    title: "LLM Settings",
-    icon: Waypoints,
-    url: "#",
-    children: [
-      {
-        title: "LLM Providers",
-        url: "/llm-providers",
-        permissionsRequired: ["read:llm_provider"],
-      },
-      {
-        title: "Fallback Chains",
-        url: "/fallback-chains",
-        permissionsRequired: ["read:llm_provider"],
-      },
-      {
-        title: "Audio Providers",
-        url: "/audio-providers",
-        permissionsRequired: ["read:llm_provider"],
-      },
-      {
-        title: "LLM Analyst",
-        url: "/llm-analyst",
+        title: "Agent Studio",
+        icon: UserRoundCog,
+        url: "/ai-agents",
         permissionsRequired: ["read:llm_analyst"],
       },
       {
-        title: "Fine-Tune",
-        url: "/fine-tune",
-        permissionsRequired: ["*", "update:llm_provider"],
+        title: "Conversations",
+        icon: MessageSquare,
+        url: "#",
+        permissionsRequired: ["read:conversation"],
+        children: [
+          {
+            title: "Conversations",
+            url: "/transcripts",
+            permissionsRequired: ["read:conversation"],
+          },
+          {
+            title: "Reported Feedback",
+            url: "/reported-feedback",
+            permissionsRequired: ["read:conversation"],
+          },
+        ],
       },
       {
-        title: "Local Fine-Tune",
-        url: "/local-fine-tune",
-        permissionsRequired: ["*", "update:llm_provider"],
-        feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE,
+        title: "Analytics",
+        icon: LineChart,
+        url: "#",
+        permissionsRequired: ["read:dashboard"],
+        children: [
+          {
+            title: "AI Insights",
+            url: "/analytics/ai-insights",
+            permissionsRequired: ["read:dashboard"],
+            badge: "NEW",
+            badgeTone: "new",
+          },
+          {
+            title: "Agent Performance",
+            url: "/analytics/agent-performance",
+            permissionsRequired: ["read:dashboard"],
+          },
+          {
+            title: "Node Analytics",
+            url: "/analytics/node-analytics",
+            permissionsRequired: ["read:dashboard"],
+          },
+        ],
+      },
+      {
+        title: "Operators",
+        icon: Users,
+        url: "/operators",
+        permissionsRequired: ["read:operator"],
       },
     ],
   },
   {
-    title: "Admin",
-    icon: Settings2,
-    url: "#",
-    children: [
+    label: "Quality",
+    items: [
+      {
+        title: "Tests",
+        icon: ListChecks,
+        url: "#",
+        permissionsRequired: ["test:workflow"],
+        badge: "BETA",
+        badgeTone: "beta",
+        children: [
+          {
+            title: "Datasets",
+            url: "/tests/datasets",
+            permissionsRequired: ["test:workflow"],
+          },
+          {
+            title: "Evaluations",
+            url: "/tests/evaluations",
+            permissionsRequired: ["test:workflow"],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Connect",
+    items: [
+      {
+        title: "Integrations",
+        icon: Network,
+        url: "#",
+        children: [
+          {
+            title: "Knowledge Base",
+            url: "/knowledge-base",
+            permissionsRequired: ["*", "update:knowledge_base"],
+          },
+          {
+            title: "ML Models",
+            url: "/ml-models",
+            permissionsRequired: ["*", "update:ml_model"],
+          },
+          {
+            title: "Data Sources",
+            url: "/data-sources",
+            permissionsRequired: ["read:data_source"],
+          },
+          {
+            title: "API Keys",
+            url: "/api-keys",
+            permissionsRequired: ["read:api_key"],
+          },
+          {
+            title: "Webhooks",
+            url: "/webhooks",
+            permissionsRequired: ["read:webhook"],
+          },
+          {
+            title: "MCP Servers",
+            url: "/mcp-servers",
+            permissionsRequired: ["read:mcp_server"],
+          },
+          {
+            title: "Configuration Vars",
+            url: "/app-settings",
+            permissionsRequired: ["read:app_setting"],
+          },
+        ],
+      },
+      {
+        title: "LLM Settings",
+        icon: Waypoints,
+        url: "#",
+        children: [
+          {
+            title: "LLM Providers",
+            url: "/llm-providers",
+            permissionsRequired: ["read:llm_provider"],
+          },
+          {
+            title: "Fallback Chains",
+            url: "/fallback-chains",
+            permissionsRequired: ["read:llm_provider"],
+          },
+          {
+            title: "Audio Providers",
+            url: "/audio-providers",
+            permissionsRequired: ["read:llm_provider"],
+          },
+          {
+            title: "LLM Analyst",
+            url: "/llm-analyst",
+            permissionsRequired: ["read:llm_analyst"],
+          },
+          {
+            title: "Fine-Tune",
+            url: "/fine-tune",
+            permissionsRequired: ["*", "update:llm_provider"],
+          },
+          {
+            title: "Local Fine-Tune",
+            url: "/local-fine-tune",
+            permissionsRequired: ["*", "update:llm_provider"],
+            feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
       {
         title: "Users",
+        icon: UserRound,
         url: "/users",
         permissionsRequired: ["read:user"],
       },
       {
         title: "Roles",
+        icon: KeyRound,
         url: "/roles",
         permissionsRequired: ["read:role"],
       },
       {
         title: "User Types",
+        icon: Contact,
         url: "/user-types",
         permissionsRequired: ["read:user_type"],
       },
       {
         title: "User Groups",
+        icon: UsersRound,
         url: "/user-groups",
         permissionsRequired: ["read:user_group"],
       },
       {
         title: "GDPR Requests",
+        icon: ShieldCheck,
         url: "/admin/gdpr-conversations",
         permissionsRequired: ["delete:conversation:gdpr"],
       },
+      {
+        title: "Audit Log",
+        icon: ScrollText,
+        url: "/audit-logs",
+        permissionsRequired: ["read:audit_log"],
+      },
     ],
   },
-  {
-    title: "Audit Log",
-    icon: ScrollText,
-    url: "/audit-logs",
-    permissionsRequired: ["read:audit_log"],
-  },
-  {
-    title: "Help Center",
-    icon: LifeBuoy,
-    url: "/help-center",
-  },
-  {
-    title: "Settings",
-    icon: Settings,
-    url: "/settings",
-  },
+];
+
+// Pinned to the bottom of the sidebar, above the user profile.
+const footerItems: MenuItem[] = [
+  { title: "Help Center", icon: LifeBuoy, url: "/help-center" },
+  { title: "Settings", icon: Settings, url: "/settings" },
 ];
 
 const STORAGE_KEYS = [
@@ -292,9 +320,54 @@ function hasActiveChild(item: MenuItem, currentPath: string): boolean {
   );
 }
 
+// Filter a list of items to those matching a free-text query. A parent stays
+// visible (with all children) when its own title matches, otherwise only its
+// matching children are kept.
+function filterBySearch(items: MenuItem[], query: string): MenuItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return items;
+  return items.reduce<MenuItem[]>((acc, item) => {
+    const selfMatch = item.title.toLowerCase().includes(q);
+    if (item.children) {
+      const children = selfMatch
+        ? item.children
+        : item.children.filter((c) => c.title.toLowerCase().includes(q));
+      if (selfMatch || children.length > 0) acc.push({ ...item, children });
+    } else if (selfMatch) {
+      acc.push(item);
+    }
+    return acc;
+  }, []);
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function NavBadge({
+  label,
+  tone = "beta",
+  className,
+}: {
+  label: string;
+  tone?: BadgeTone;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+        tone === "new" && "bg-emerald-50 text-emerald-600",
+        tone === "beta" && "bg-blue-50 text-blue-600",
+        tone === "count" &&
+          "min-w-[18px] rounded-full bg-blue-600 px-1 text-center text-white",
+        className
+      )}
+    >
+      {label}
+    </span>
+  );
+}
 
 function NavLink({
   item,
@@ -319,12 +392,17 @@ function NavLink({
         <item.icon
           className={cn(
             "h-4 w-4 shrink-0",
-            active ? "text-zinc-700" : "text-zinc-500 group-hover/link:text-zinc-600"
+            active
+              ? "text-zinc-700"
+              : "text-zinc-500 group-hover/link:text-zinc-600"
           )}
           strokeWidth={2.25}
         />
       )}
-      <span>{item.title}</span>
+      <span className="truncate">{item.title}</span>
+      {item.badge && (
+        <NavBadge label={item.badge} tone={item.badgeTone} className="ml-auto" />
+      )}
     </Link>
   );
 }
@@ -366,12 +444,8 @@ function CollapsibleMenuItem({
             strokeWidth={2.25}
           />
         )}
-        <span>{item.title}</span>
-        {item.badge && (
-          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-blue-600">
-            {item.badge}
-          </span>
-        )}
+        <span className="truncate">{item.title}</span>
+        {item.badge && <NavBadge label={item.badge} tone={item.badgeTone} />}
         <ChevronRight
           strokeWidth={2.25}
           className={cn(
@@ -389,7 +463,7 @@ function CollapsibleMenuItem({
       >
         <div className="overflow-hidden">
           <div className="relative py-0.5 pl-[30px]">
-            <div className="absolute left-[18px] top-0 bottom-0 w-px bg-zinc-200" />
+            <div className="absolute bottom-0 left-[18px] top-0 w-px bg-zinc-200" />
             {item.children?.map((child, i) => {
               const active = isPathActive(currentPath, child.url);
               return (
@@ -404,7 +478,14 @@ function CollapsibleMenuItem({
                       : "font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
                   )}
                 >
-                  <span>{child.title}</span>
+                  <span className="truncate">{child.title}</span>
+                  {child.badge && (
+                    <NavBadge
+                      label={child.badge}
+                      tone={child.badgeTone}
+                      className="ml-auto"
+                    />
+                  )}
                 </Link>
               );
             })}
@@ -446,7 +527,7 @@ function UserFooter({
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
                   {initials || "U"}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 text-left">
                   <div className="truncate text-[13px] font-medium text-zinc-600">
                     {username}
                   </div>
@@ -460,16 +541,6 @@ function UserFooter({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-48">
-              {/* <DropdownMenuItem asChild className="flex items-center gap-2">
-                <Link
-                  to="/change-password"
-                  className="flex items-center gap-2"
-                >
-                  <Lock className="h-4 w-4" />
-                  <span>Change Password</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator /> */}
               <DropdownMenuItem
                 onClick={onLogout}
                 className="flex items-center gap-2 text-red-600"
@@ -490,9 +561,11 @@ function UserFooter({
 // ---------------------------------------------------------------------------
 
 export function AppSidebar() {
-  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
   const [username, setUsername] = useState<string>("");
   const [tenantId, setTenantId] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const { getFeatureItem } = useFeatureFlag();
 
   const location = useLocation();
@@ -503,14 +576,14 @@ export function AppSidebar() {
     usePersistedState("isConversationsOpen", false);
   const [isAnalyticsOpen, toggleAnalytics, setAnalyticsOpen] =
     usePersistedState("isAnalyticsOpen", false);
-  const [isTestsOpen, toggleTests, setTestsOpen] =
-    usePersistedState("isTestsOpen", false);
+  const [isTestsOpen, toggleTests, setTestsOpen] = usePersistedState(
+    "isTestsOpen",
+    false
+  );
   const [isIntegrationsOpen, toggleIntegrations, setIntegrationsOpen] =
     usePersistedState("isIntegrationOpen", false);
   const [isLLMSettingsOpen, toggleLLMSettings, setLLMSettingsOpen] =
     usePersistedState("isLLMSettingsOpen", false);
-  const [isAdminOpen, toggleAdmin, setAdminOpen] =
-    usePersistedState("isAdminOpen", false);
 
   const toggleMap: Record<string, () => void> = useMemo(
     () => ({
@@ -519,9 +592,14 @@ export function AppSidebar() {
       Tests: toggleTests,
       Integrations: toggleIntegrations,
       "LLM Settings": toggleLLMSettings,
-      Admin: toggleAdmin,
     }),
-    [toggleConversations, toggleAnalytics, toggleTests, toggleIntegrations, toggleLLMSettings, toggleAdmin]
+    [
+      toggleConversations,
+      toggleAnalytics,
+      toggleTests,
+      toggleIntegrations,
+      toggleLLMSettings,
+    ]
   );
 
   const openMap: Record<string, boolean> = useMemo(
@@ -531,9 +609,14 @@ export function AppSidebar() {
       Tests: isTestsOpen,
       Integrations: isIntegrationsOpen,
       "LLM Settings": isLLMSettingsOpen,
-      Admin: isAdminOpen,
     }),
-    [isConversationsOpen, isAnalyticsOpen, isTestsOpen, isIntegrationsOpen, isLLMSettingsOpen, isAdminOpen]
+    [
+      isConversationsOpen,
+      isAnalyticsOpen,
+      isTestsOpen,
+      isIntegrationsOpen,
+      isLLMSettingsOpen,
+    ]
   );
 
   useEffect(() => {
@@ -567,12 +650,13 @@ export function AppSidebar() {
       Tests: setTestsOpen,
       Integrations: setIntegrationsOpen,
       "LLM Settings": setLLMSettingsOpen,
-      Admin: setAdminOpen,
     };
 
-    for (const item of menuItems) {
-      if (item.children && hasActiveChild(item, currentPath)) {
-        setterMap[item.title]?.(true);
+    for (const group of navGroups) {
+      for (const item of group.items) {
+        if (item.children && hasActiveChild(item, currentPath)) {
+          setterMap[item.title]?.(true);
+        }
       }
     }
   }, [currentPath]);
@@ -584,10 +668,25 @@ export function AppSidebar() {
     }
   }, [currentPath, isMobile, setOpenMobile]);
 
+  // ⌘K / Ctrl+K focuses the menu search.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const filterItems = useCallback(
     (items: MenuItem[]): MenuItem[] => {
       return items.reduce<MenuItem[]>((acc, item) => {
-        if (item.permissionsRequired && !hasAnyPermission(item.permissionsRequired))
+        if (
+          item.permissionsRequired &&
+          !hasAnyPermission(item.permissionsRequired)
+        )
           return acc;
         if (item.feature_flag) {
           // Feature-flagged navigation items should only render when the exact flag exists and is visible.
@@ -607,7 +706,24 @@ export function AppSidebar() {
     [getFeatureItem]
   );
 
-  const filteredMenuItems = filterItems(menuItems);
+  const filteredGroups = useMemo(
+    () =>
+      navGroups
+        .map((group) => ({
+          ...group,
+          items: filterBySearch(filterItems(group.items), query),
+        }))
+        .filter((group) => group.items.length > 0),
+    [filterItems, query]
+  );
+
+  const filteredFooter = useMemo(
+    () => filterBySearch(filterItems(footerItems), query),
+    [filterItems, query]
+  );
+
+  const hasResults = filteredGroups.length > 0 || filteredFooter.length > 0;
+  const searching = query.trim().length > 0;
 
   const handleLogout = () => {
     STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
@@ -619,11 +735,11 @@ export function AppSidebar() {
   return (
     <Sidebar variant="floating" side="left">
       <SidebarContent
-        className="bg-white flex flex-col"
+        className="flex flex-col bg-white"
         style={{ height: "100%" }}
       >
         {/* Logo */}
-        <div className="flex items-center px-5 pt-5 pb-4">
+        <div className="flex items-center px-5 pb-3 pt-5">
           <GenAssistLogo width={150} />
           <NotificationBellPopover
             compact
@@ -631,31 +747,85 @@ export function AppSidebar() {
           />
         </div>
 
+        {/* Search */}
+        <div className="px-3 pb-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search menu…"
+              aria-label="Search menu"
+              className={cn(
+                "w-full rounded-md border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-10 text-sm text-zinc-700",
+                "placeholder:text-zinc-400 transition-colors",
+                "focus:border-zinc-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-100"
+              )}
+            />
+            <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-zinc-200 bg-white px-1 py-0.5 text-[10px] font-medium text-zinc-400">
+              ⌘K
+            </kbd>
+          </div>
+        </div>
+
         {/* Scrollable nav */}
         <nav className="flex-1 overflow-y-auto px-3 pb-2">
-          <SidebarGroup className="p-0">
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {filteredMenuItems.map((item, iIdx) => (
-                  <SidebarMenuItem key={iIdx}>
-                    {item.children ? (
-                      <CollapsibleMenuItem
-                        item={item}
-                        currentPath={currentPath}
-                        isOpen={openMap[item.title] ?? false}
-                        onToggle={toggleMap[item.title]}
-                      />
-                    ) : (
-                      <NavLink item={item} currentPath={currentPath} />
-                    )}
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {filteredGroups.map((group, gIdx) => (
+            <SidebarGroup key={group.label} className="p-0">
+              <div
+                className={cn(
+                  "px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400",
+                  gIdx === 0 ? "pt-1" : "pt-4"
+                )}
+              >
+                {group.label}
+              </div>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-0.5">
+                  {group.items.map((item, iIdx) => (
+                    <SidebarMenuItem key={iIdx}>
+                      {item.children ? (
+                        <CollapsibleMenuItem
+                          item={item}
+                          currentPath={currentPath}
+                          isOpen={
+                            searching || (openMap[item.title] ?? false)
+                          }
+                          onToggle={toggleMap[item.title]}
+                        />
+                      ) : (
+                        <NavLink item={item} currentPath={currentPath} />
+                      )}
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+
+          {searching && !hasResults && (
+            <p className="px-2.5 py-6 text-center text-sm text-zinc-400">
+              No menu items match “{query.trim()}”.
+            </p>
+          )}
         </nav>
 
-        {/* Pinned footer */}
+        {/* Pinned footer nav */}
+        {filteredFooter.length > 0 && (
+          <div className="border-t border-zinc-100 px-3 py-2">
+            <SidebarMenu className="gap-0.5">
+              {filteredFooter.map((item, iIdx) => (
+                <SidebarMenuItem key={iIdx}>
+                  <NavLink item={item} currentPath={currentPath} />
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </div>
+        )}
+
+        {/* User profile */}
         {username && (
           <UserFooter
             username={username}
