@@ -13,10 +13,12 @@ import {
   WorkflowExecutorNodeData,
   WebScraperNodeData,
   HtmlToImageNodeData,
+  WebSearchNodeData,
 } from "../../types/nodes";
 
 import APIToolNode from "./apiToolNode";
 import WebScraperNode from "./webScraperNode";
+import WebSearchNode from "./webSearchNode";
 import HtmlToImageNode from "./htmlToImageNode";
 import OpenApiNode from "./openApiNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
@@ -29,6 +31,7 @@ import WorkflowExecutorNode from "./workflowExecutorNode";
 import {
   API_CONNECTOR_HELP_CONTENT,
   WEB_SCRAPER_HELP_CONTENT,
+  WEB_SEARCH_HELP_CONTENT,
   HTML_TO_IMAGE_HELP_CONTENT,
   KNOWLEDGE_QUERY_HELP_CONTENT,
   CREATE_WORKFLOW_SCHEDULE_HELP_CONTENT,
@@ -124,6 +127,53 @@ export const WEB_SCRAPER_NODE_DEFINITION: NodeTypeDefinition<WebScraperNodeData>
   createNode: (id, position, data) => ({
     id,
     type: "webScraperNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const WEB_SEARCH_NODE_DEFINITION: NodeTypeDefinition<WebSearchNodeData> = {
+  type: "webSearchNode",
+  label: "Web Search",
+  description:
+    "Searches the web (no API key) and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Optionally fetches full page text for the top results.",
+  shortDescription: "Search the web",
+  helpContent: WEB_SEARCH_HELP_CONTENT,
+  configSubtitle:
+    "Configure the query, result count, search depth, domain filters, content budgets and caching.",
+  category: "tools",
+  icon: "Search",
+  defaultData: {
+    name: "Web Search",
+    query: "",
+    maxResults: 5,
+    searchDepth: "basic",
+    includeDomains: "",
+    excludeDomains: "",
+    maxContentChars: 2000,
+    maxTotalContentChars: 8000,
+    maxAge: 600,
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  } as WebSearchNodeData,
+  component: WebSearchNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "webSearchNode",
     position,
     data: {
       ...data,
