@@ -34,6 +34,30 @@ def test_build_cache_key_is_tenant_scoped_and_stable():
     assert key == again  # sorted options ⇒ deterministic digest
 
 
+def test_build_cache_key_prefix_defaults_and_overrides():
+    with patch("app.core.tenant_scope.get_tenant_context", return_value="acme"):
+        default_key = build_cache_key(_URL, _OPTIONS)
+        explicit = build_cache_key(_URL, _OPTIONS, key_prefix="webscraper")
+        search = build_cache_key("search:fp123", {"depth": "basic"}, key_prefix="websearch")
+    assert default_key.startswith("tenant:acme:webscraper:")  # scraper keys byte-identical when omitted
+    assert default_key == explicit
+    assert search.startswith("tenant:acme:websearch:")
+
+
+@pytest.mark.asyncio
+async def test_get_and_store_thread_key_prefix():
+    redis = _fake_redis()
+    p_redis, p_tenant = _patch(redis)
+    with p_redis, p_tenant:
+        await store("search:fp123", {"depth": "basic"}, 120, {"success": True, "count": 2}, key_prefix="websearch")
+        stored_key = redis.set.call_args.args[0]
+        redis.get.return_value = redis.set.call_args.args[1]
+        hit = await get_cached("search:fp123", {"depth": "basic"}, 120, key_prefix="websearch")
+    assert stored_key.startswith("tenant:acme:websearch:")
+    assert hit["count"] == 2
+    assert hit["cacheState"] == "hit"
+
+
 def test_build_cache_key_differs_on_headers():
     with patch("app.core.tenant_scope.get_tenant_context", return_value="acme"):
         anon = build_cache_key(_URL, {"headers": {}})

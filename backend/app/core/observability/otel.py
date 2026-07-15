@@ -32,6 +32,29 @@ logger = logging.getLogger(__name__)
 
 _initialized: bool = False
 _node_duration_histogram: Any = None
+_web_search_counter: Any = None
+_web_search_duration_histogram: Any = None
+_web_search_results_histogram: Any = None
+
+# Only these fixed labels are allowed on web-search metrics. That keeps metric
+# series countable, and blocks queries/URLs/domains from ever being recorded.
+_WEB_SEARCH_OUTCOMES = frozenset(
+    {
+        "ok",
+        "zero",
+        "blocked",
+        "timeout",
+        "selector_drift",
+        "rate_limited",
+        "circuit_open",
+        "negative_cached",
+        "invalid_config",
+        "disabled",
+        "error",
+    }
+)
+_WEB_SEARCH_RUNGS = frozenset({"html", "lite", "none"})
+_WEB_SEARCH_CACHE_STATES = frozenset({"hit", "miss", "neg", "off"})
 
 
 def _otel_sdk_disabled() -> bool:
@@ -177,6 +200,7 @@ def init_opentelemetry(app: Optional["FastAPI"] = None) -> None:
     trace.set_tracer_provider(provider)
 
     global _node_duration_histogram  # pylint: disable=global-statement
+    global _web_search_counter, _web_search_duration_histogram, _web_search_results_histogram  # pylint: disable=global-statement
     if grpc_endpoint and settings.OTEL_METRICS_VIA_GRPC:
         try:
             from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
@@ -200,6 +224,21 @@ def init_opentelemetry(app: Optional["FastAPI"] = None) -> None:
                 unit="s",
                 description="Wall time for workflow node execute()",
             )
+            _web_search_counter = meter.create_counter(
+                "genassist.web_search.events",
+                unit="1",
+                description="Web search events by outcome/rung/cache state",
+            )
+            _web_search_duration_histogram = meter.create_histogram(
+                "genassist.web_search.duration_seconds",
+                unit="s",
+                description="Wall time for a web search execution",
+            )
+            _web_search_results_histogram = meter.create_histogram(
+                "genassist.web_search.result_count",
+                unit="1",
+                description="Result count per web search",
+            )
             logger.info(
                 "OpenTelemetry: OTLP gRPC metrics export enabled (histogram for node duration)"
             )
@@ -217,6 +256,7 @@ def init_opentelemetry(app: Optional["FastAPI"] = None) -> None:
 
 def shutdown_opentelemetry() -> None:
     global _initialized, _node_duration_histogram  # pylint: disable=global-statement
+    global _web_search_counter, _web_search_duration_histogram, _web_search_results_histogram  # pylint: disable=global-statement
     if not _initialized:
         return
     from opentelemetry import metrics, trace
@@ -232,6 +272,9 @@ def shutdown_opentelemetry() -> None:
         shutdown_m()
 
     _node_duration_histogram = None
+    _web_search_counter = None
+    _web_search_duration_histogram = None
+    _web_search_results_histogram = None
     _initialized = False
     logger.debug("OpenTelemetry shut down")
 
@@ -249,3 +292,25 @@ def record_workflow_node_duration(
             "genassist.success": "true" if success else "false",
         },
     )
+
+
+def record_web_search_event(
+    outcome: str, rung: str, cache_state: str, duration_seconds: float, result_count: int
+) -> None:
+    """Record one web search: a count event, plus latency and result-count histograms.
+    Does nothing until metrics are set up. Labels are forced to the fixed sets
+    above, so a bad caller value can't create endless new metric series.
+    """
+    counter = _web_search_counter
+    if counter is None:
+        return
+    attributes = {
+        "genassist.web_search.outcome": outcome if outcome in _WEB_SEARCH_OUTCOMES else "error",
+        "genassist.web_search.rung": rung if rung in _WEB_SEARCH_RUNGS else "none",
+        "genassist.web_search.cache": cache_state if cache_state in _WEB_SEARCH_CACHE_STATES else "off",
+    }
+    counter.add(1, attributes)
+    if _web_search_duration_histogram is not None:
+        _web_search_duration_histogram.record(max(0.0, duration_seconds), attributes)
+    if _web_search_results_histogram is not None:
+        _web_search_results_histogram.record(max(0, int(result_count)), attributes)
