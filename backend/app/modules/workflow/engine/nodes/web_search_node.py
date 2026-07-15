@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from app.core.observability import record_web_search_event
 from app.core.tenant_scope import get_tenant_context
+from app.core.utils.content_relevance import select_relevant_content
 from app.core.utils.web_content_utils import extract_main_content
 from app.core.utils.web_scrape_cache import get_cached, store
 from app.core.utils.web_scraping_utils import fetch_from_url
@@ -33,7 +34,7 @@ from app.modules.workflow.engine import BaseNode
 
 logger = logging.getLogger(__name__)
 
-_MAX_INCLUDE_DOMAINS = 1  
+_MAX_INCLUDE_DOMAINS = 1
 _MAX_EXCLUDE_DOMAINS = 10
 _MAX_ENRICH = 5  # top results enriched in advanced depth; not user-scalable
 _ENRICH_CONCURRENCY = 3
@@ -43,6 +44,8 @@ _MAX_WARNINGS = 5
 _WARNING_LEN = 200
 
 _KEY_PREFIX = "websearch"
+# Bumps the advanced fingerprint when the enrichment selection algorithm changes
+_CONTENT_SELECTION_VERSION = "relevance-v1"
 
 # Category-specific messages surfaced when a recent provider failure is remembered.
 _NEG_MESSAGES = {
@@ -75,7 +78,7 @@ class WebSearchNode(BaseNode):
         metric = {"outcome": "error", "rung": "none", "cache": "off", "count": 0}
         try:
             return await self._execute(config, query, started, metric)
-        except Exception as exc:  
+        except Exception as exc:
             logger.error("web search node failed unexpectedly: %s", _sanitize_error(exc))
             metric["outcome"] = "error"
             return self._error(query, _sanitize_error(exc))
@@ -134,6 +137,10 @@ class WebSearchNode(BaseNode):
             "maxContentChars": max_content_chars,
             "maxTotalContentChars": max_total,
         }
+        if depth == "advanced":
+            # cached envelopes from the old top-of-page truncation must not be
+            # served as query-selected content; basic-depth keys are unchanged
+            options["contentSelection"] = _CONTENT_SELECTION_VERSION
         fingerprint = build_request_fingerprint(query, options)
         cache_key = f"search:{fingerprint}"
         cache_options = dict(options)
@@ -187,9 +194,9 @@ class WebSearchNode(BaseNode):
                 metric=metric,
             )
 
-        metric["outcome"] = None  
+        metric["outcome"] = None
         result = await single_flight(tenant, fingerprint, producer)
-        if metric["outcome"] is None:  
+        if metric["outcome"] is None:
             metric["outcome"] = self._hit_outcome(result) if result.get("success") else "error"
         metric["count"] = result.get("count", 0)
         if metric["cache"] == "off" and isinstance(result.get("cacheState"), str):
@@ -237,7 +244,7 @@ class WebSearchNode(BaseNode):
         serialized = self._serialize(results)
         enriched_count, partial, warnings = 0, False, []
         if depth == "advanced" and serialized:
-            enriched_count, partial, warnings = await self._enrich(serialized, max_content_chars, max_total)
+            enriched_count, partial, warnings = await self._enrich(serialized, query, max_content_chars, max_total)
 
         envelope: Dict[str, Any] = {
             "success": True,
@@ -258,13 +265,15 @@ class WebSearchNode(BaseNode):
             metric["cache"] = "miss"
         return envelope
 
-    async def _enrich(self, results: List[dict], max_content_chars: int, max_total: int) -> tuple[int, bool, list]:
+    async def _enrich(
+        self, results: List[dict], query: str, max_content_chars: int, max_total: int
+    ) -> tuple[int, bool, list]:
         """Fetch full page text into ``content`` for the top results, up to a total size budget.
 
         Results are filled in rank order. Each page gets at most ``max_content_chars``,
-        and only while the shared total budget remains. Fetches run a few at a time with
-        an overall timeout. If a page fails, isn't HTML, times out, or has no budget left,
-        it keeps only its snippet and ``partial`` is set to True.
+        holding its most query-relevant sections, and only while the shared total budget remains. 
+        Fetches run a few at a time with an overall timeout. If a page fails, isn't HTML, times out,
+        or has no budget left, it keeps only its snippet and ``partial`` is set to True.
         """
         candidates = results[: min(_MAX_ENRICH, len(results))]
         budgets: dict[int, int] = {}
@@ -285,7 +294,7 @@ class WebSearchNode(BaseNode):
                 if not fetched.ok or "html" not in (fetched.content_type or "").lower():
                     return idx, None
                 markdown, _ = extract_main_content(fetched.html, candidates[idx]["url"])
-                return idx, markdown.strip()[:budget]
+                return idx, select_relevant_content(markdown, query, budget)
 
         tasks = [asyncio.create_task(_fetch_one(idx, budget)) for idx, budget in budgets.items()]
         enriched = fetch_failures = 0

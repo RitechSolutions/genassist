@@ -107,7 +107,7 @@ export const WEB_SEARCH_HELP_CONTENT: NodeHelpContent = {
         "Find current web results for a query inside a workflow",
         "Feed ranked results and snippets to a downstream language model",
         "Research within specific domains",
-        "Pull main-page content from top results in advanced depth",
+        "Pull the most query-relevant page content from top results in advanced depth",
         "Replace a paid search API for simple lookups",
       ],
     },

@@ -145,7 +145,7 @@ async def test_advanced_enriches_top_results_within_total_budget(guards):
         {"query": "q", "searchDepth": "advanced", "maxContentChars": 2000, "maxTotalContentChars": 8000}
     )
 
-    assert result["enrichedCount"] == 4  
+    assert result["enrichedCount"] == 4
     assert result["partial"] is True
     assert any("budget" in w for w in result["warnings"])
     assert sum(len(r["content"]) for r in result["results"]) <= 8000
@@ -169,7 +169,7 @@ async def test_advanced_per_page_failure_and_non_html_degrade_to_snippet(guards)
 
     result = await _make_node().process({"query": "q", "searchDepth": "advanced"})
 
-    assert result["success"] is True  
+    assert result["success"] is True
     assert result["enrichedCount"] == 1
     assert result["partial"] is True
     assert any("could not be fetched" in w for w in result["warnings"])
@@ -178,12 +178,52 @@ async def test_advanced_per_page_failure_and_non_html_degrade_to_snippet(guards)
     assert result["results"][2]["content"] != ""
 
 
+_RELEVANT_PAGE = (
+    "# Acme Store\n\n"
+    + "The committee archives general notes and routine updates quietly. " * 12
+    + "\n\n## Shipping Rates\n\nOvernight shipping costs $42 for domestic orders.\n\n"
+    + "The committee reviews general notes and routine updates quietly. " * 12
+)
+
+
+@pytest.mark.asyncio
+async def test_advanced_content_prefers_query_relevant_sections(guards, monkeypatch):
+    monkeypatch.setattr(web_search_node, "extract_main_content", lambda html, url: (_RELEVANT_PAGE, "<html/>"))
+
+    result = await _make_node().process(
+        {"query": "overnight shipping costs", "searchDepth": "advanced", "maxContentChars": 400}
+    )
+
+    content = result["results"][0]["content"]
+    assert "$42" in content
+    assert "committee" not in content
+    assert len(content) <= 400
+    assert result["enrichedCount"] == 3
+
+
+@pytest.mark.asyncio
+async def test_advanced_content_falls_back_without_query_signal(guards):
+    result = await _make_node().process({"query": "q", "searchDepth": "advanced"})
+
+    assert result["results"][0]["content"] == "A" * 2000
+
+
+@pytest.mark.asyncio
+async def test_advanced_options_include_content_selection_marker(guards):
+    await _make_node().process({"query": "q", "searchDepth": "advanced"})
+    assert guards.get_cached.call_args.args[1]["contentSelection"] == "relevance-v1"
+
+    guards.get_cached.reset_mock()
+    await _make_node().process({"query": "q"})
+    assert "contentSelection" not in guards.get_cached.call_args.args[1]
+
+
 @pytest.mark.asyncio
 async def test_numeric_clamps_and_maxage_default(guards):
     await _make_node().process({"query": "q", "maxResults": 999})
 
-    assert guards.search_web.call_args.kwargs["max_results"] == 20  
-    assert guards.get_cached.call_args.args[2] == 600  
+    assert guards.search_web.call_args.kwargs["max_results"] == 20
+    assert guards.get_cached.call_args.args[2] == 600
 
 
 @pytest.mark.asyncio

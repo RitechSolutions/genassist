@@ -161,8 +161,8 @@ export const WebSearchDialog: React.FC<
           </SelectContent>
         </Select>
         <div className="text-xs text-gray-500 break-words">
-          Advanced fetches page content from the top results within a total
-          budget.
+          Advanced fetches the most query-relevant page content from the top
+          results within a total budget.
         </div>
       </div>
 
@@ -192,7 +192,7 @@ export const WebSearchDialog: React.FC<
                 className="break-all w-full"
               />
               <div className="text-xs text-gray-500 break-words">
-                Restrict results to one domain (v1).
+                Restrict results to one domain.
               </div>
             </div>
 
