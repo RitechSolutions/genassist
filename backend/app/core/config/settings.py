@@ -50,6 +50,7 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_IMPORT_SHAREPOINT_FILES_TASK: bool = True
     CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK: bool = True
     CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
+    CELERY_ENABLE_SYNC_ACTIVE_BEDROCK_FINE_TUNING_JOBS_TASK: bool = True
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
     CELERY_ENABLE_CHECK_SCHEDULED_WORKFLOW_RUNS_TASK: bool = True
     CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK: bool = True
@@ -455,6 +456,13 @@ class FileStorageSettings(BaseSettings):
     AWS_REGION: Optional[str] = None
     AWS_S3_ENDPOINT_URL: Optional[str] = None
     AWS_BUCKET_NAME: Optional[str] = None
+
+    # Bedrock fine-tuning (Amazon Nova). Nova model customization is only
+    # available in us-east-1. BEDROCK_FINE_TUNING_ROLE_ARN is the IAM service
+    # role Bedrock assumes to read the training data and write the output.
+    BEDROCK_FINE_TUNING_REGION: str = "us-east-1"
+    BEDROCK_FINE_TUNING_ROLE_ARN: Optional[str] = None
+    BEDROCK_FINE_TUNING_S3_BUCKET: Optional[str] = None
 
     GCP_PROJECT_ID: Optional[str] = None
     GCP_REGION: Optional[str] = None

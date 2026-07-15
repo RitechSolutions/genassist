@@ -167,6 +167,32 @@ export function FormFieldRenderer({
         );
 
       default:
+        // A text field carrying options renders as a free-text combobox: the
+        // native datalist offers the options as suggestions while still allowing
+        // any typed value (used e.g. for the Bedrock model field, where deployed
+        // fine-tuned model ARNs are suggested alongside free-text base model ids).
+        if (field.options && field.options.length > 0) {
+          const listId = `${field.name}-options`;
+          return (
+            <>
+              <Input
+                type="text"
+                list={listId}
+                value={value as string}
+                onChange={(e) => onChange(field.name, e.target.value)}
+                placeholder={field.placeholder || field.label}
+                disabled={disabled}
+              />
+              <datalist id={listId}>
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </datalist>
+            </>
+          );
+        }
         return (
           <Input
             type="text"

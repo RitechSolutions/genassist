@@ -38,7 +38,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import { type CSSProperties, useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { BackendTranscript, Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
@@ -101,12 +101,6 @@ type StatusFilter = "all" | "live" | "finalized";
 
 const formatScorePercentage = (value: number) =>
   value > 0 ? `${Math.round((value / 10) * 100)}%` : "—";
-
-const getScoreBadgeStyle = (color: string): CSSProperties => ({
-  backgroundColor: `${color}15`,
-  borderColor: `${color}30`,
-  color,
-});
 
 const SENTIMENT_CONFIG: Record<string, { icon: ReactNode; bg: string; text: string; border: string }> = {
   positive: { icon: <CheckCircle className="w-3 h-3" />, bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
@@ -1060,10 +1054,7 @@ const Transcripts = () => {
                               {qualityScores.map((s) => (
                                 <Tooltip key={s.key}>
                                   <TooltipTrigger asChild>
-                                    <span
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium transition-opacity"
-                                      style={getScoreBadgeStyle(s.color)}
-                                    >
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-zinc-200 bg-zinc-50 text-[11px] font-medium text-zinc-700">
                                       {s.icon}
                                       {formatScorePercentage(s.value)}
                                     </span>
@@ -1129,11 +1120,11 @@ const Transcripts = () => {
                               );
                             })()}
                             <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                              <ThumbsUp className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <ThumbsUp className={`w-3.5 h-3.5 shrink-0 ${(transcript?.thumbs_up_count ?? 0) > 0 ? "text-emerald-500" : "text-zinc-300"}`} />
                               <span className="tabular-nums min-w-[12px] text-center">{transcript?.thumbs_up_count ?? 0}</span>
                             </div>
                             <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                              <ThumbsDown className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                              <ThumbsDown className={`w-3.5 h-3.5 shrink-0 ${(transcript?.thumbs_down_count ?? 0) > 0 ? "text-rose-400" : "text-zinc-300"}`} />
                               <span className="tabular-nums min-w-[12px] text-center">{transcript?.thumbs_down_count ?? 0}</span>
                             </div>
                           </div>

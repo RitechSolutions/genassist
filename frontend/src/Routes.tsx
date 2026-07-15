@@ -33,6 +33,8 @@ import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
 import LocalFineTune from "@/views/LocalFineTune/Index";
 import LocalFineTuneJobDetail from "@/views/LocalFineTune/pages/LocalFineTuneJobDetail";
+import BedrockFineTune from "@/views/BedrockFineTune/Index";
+import BedrockFineTuneJobDetail from "@/views/BedrockFineTune/pages/BedrockFineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
@@ -97,6 +99,9 @@ export type RegistrationStatus = "loading" | "new" | "existing";
 export const RoutesProvider = () => {
   const showLocalFineTune = useFeatureFlagVisible(
     FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
+  );
+  const showBedrockFineTune = useFeatureFlagVisible(
+    FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE
   );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
@@ -308,7 +313,7 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:openai_job"]}>
                   <FineTune />
                 </ProtectedRoute>
               ),
@@ -316,16 +321,40 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:openai_job"]}>
                   <FineTuneJobDetail />
                 </ProtectedRoute>
+              ),
+            },
+            {
+              path: "bedrock-fine-tune",
+              element: (
+                showBedrockFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
+                    <BedrockFineTune />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              ),
+            },
+            {
+              path: "bedrock-fine-tune/:id",
+              element: (
+                showBedrockFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
+                    <BedrockFineTuneJobDetail />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
               path: "local-fine-tune",
               element: (
                 showLocalFineTune ? (
-                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTune />
                   </ProtectedRoute>
                 ) : (
@@ -337,7 +366,7 @@ export const RoutesProvider = () => {
               path: "local-fine-tune/:id",
               element: (
                 showLocalFineTune ? (
-                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTuneJobDetail />
                   </ProtectedRoute>
                 ) : (
@@ -553,7 +582,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [showLocalFineTune],
+    [showLocalFineTune, showBedrockFineTune],
   );
 
   const organizationRouter = useMemo(

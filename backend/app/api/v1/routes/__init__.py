@@ -12,6 +12,7 @@ from app.api.v1.routes import (
     auth,
     auth_sso_microsoft,
     azure_blob_router,
+    bedrock_fine_tuning,
     conversations,
     customers,
     dashboard,
@@ -166,6 +167,9 @@ router.include_router(
 router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
 
 router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenAI API"])
+router.include_router(
+    bedrock_fine_tuning.router, prefix="/bedrock", tags=["Bedrock Fine-Tuning"]
+)
 router.include_router(
     local_fine_tuning.router,
     prefix="/local-fine-tuning",

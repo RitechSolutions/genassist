@@ -6,39 +6,38 @@ import { TableCell, TableRow } from "@/components/table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { formatCallDuration } from "@/helpers/formatters";
-import {
-  Loader2,
-  Trash2,
-  Sparkles,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import { Loader2, Trash2, Sparkles, Plus, RefreshCw, Ban } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { listFineTuneJobs, syncFineTuneJobs } from "@/services/openaiFineTune";
-import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import {
-  formatStatusLabel,
-  normalizePercent,
-  normalizeSeconds,
-  getAccuracyFromMetrics,
-  inProgressStatuses,
-} from "@/views/FineTune/utils/utils";
-import type { FineTuneJobsCardProps, JobProgress } from "@/views/FineTune/types";
+  listBedrockFineTuneJobs,
+  syncBedrockFineTuneJobs,
+  deleteBedrockFineTuneJob,
+  cancelBedrockFineTuneJob,
+} from "@/services/bedrockFineTune";
+import type { BedrockFineTuneJob } from "@/interfaces/bedrockFineTune.interface";
+import {
+  bedrockInProgressStatuses,
+  bedrockTerminalStatuses,
+  formatBedrockStatusLabel,
+} from "@/views/BedrockFineTune/utils/utils";
+import type { BedrockFineTuneJobsCardProps } from "@/views/BedrockFineTune/types";
 
-export function FineTuneJobsCard({
+export function BedrockFineTuneJobsCard({
   searchQuery,
   refreshKey = 0,
   onNewFineTuneJob,
-}: FineTuneJobsCardProps) {
+}: BedrockFineTuneJobsCardProps) {
   const navigate = useNavigate();
-  const [jobs, setJobs] = useState<FineTuneJob[]>([]);
+  const [jobs, setJobs] = useState<BedrockFineTuneJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [jobToDelete, setJobToDelete] = useState<FineTuneJob | null>(null);
+  const [jobToDelete, setJobToDelete] = useState<BedrockFineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [jobToCancel, setJobToCancel] = useState<BedrockFineTuneJob | null>(null);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     fetchJobs();
@@ -47,8 +46,8 @@ export function FineTuneJobsCard({
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      // Fast cached load — no sync. Press "Sync" to refresh status from OpenAI.
-      const data = await listFineTuneJobs();
+      // Fast cached load — no sync. Press "Sync" to refresh status from Bedrock.
+      const data = await listBedrockFineTuneJobs();
       setJobs(data);
       setError(null);
     } catch (err) {
@@ -62,7 +61,7 @@ export function FineTuneJobsCard({
   const handleSync = async () => {
     try {
       setSyncing(true);
-      const data = await syncFineTuneJobs();
+      const data = await syncBedrockFineTuneJobs();
       setJobs(data);
       setError(null);
       toast.success("Jobs synced");
@@ -76,7 +75,7 @@ export function FineTuneJobsCard({
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return jobs.filter((j) =>
-      [j.id, j.suffix, j.model, j.fine_tuned_model, j.status]
+      [j.id, j.suffix, j.custom_model_name, j.base_model_id, j.status, j.deployment_status]
         .filter(Boolean)
         .map((v) => String(v).toLowerCase())
         .some((s) => s.includes(q))
@@ -85,13 +84,13 @@ export function FineTuneJobsCard({
 
   const headers = [
     "Name",
-    "Model",
+    "Base Model",
     "Status",
-    "Accuracy",
+    "Deployment",
     { label: "Action", className: "text-center pr-4 whitespace-nowrap" },
   ];
 
-  const handleDelete = (job: FineTuneJob) => {
+  const handleDelete = (job: BedrockFineTuneJob) => {
     setJobToDelete(job);
     setIsDeleteDialogOpen(true);
   };
@@ -100,6 +99,7 @@ export function FineTuneJobsCard({
     if (!jobToDelete) return;
     try {
       setIsDeleting(true);
+      await deleteBedrockFineTuneJob(jobToDelete.id);
       setJobs((prev) => prev.filter((j) => j.id !== jobToDelete.id));
       toast.success("Job removed from the list");
     } catch (err) {
@@ -111,51 +111,45 @@ export function FineTuneJobsCard({
     }
   };
 
-  const renderStatus = (job: FineTuneJob) => {
-    const progress = (job as Record<string, unknown>).progress as JobProgress | undefined;
-    const normalizedStatus = String(job.status || progress?.status || "").toLowerCase();
-    const isTerminalStatus = ["succeeded", "failed", "cancelled"].includes(normalizedStatus);
-    const isInProgress =
-      !isTerminalStatus && (inProgressStatuses.has(normalizedStatus) || progress?.is_running);
-    const percent =
-      normalizePercent((job as Record<string, unknown>).progress_percentage) ??
-      normalizePercent(progress?.progress_percentage);
-    const estimatedSeconds =
-      normalizeSeconds((job as Record<string, unknown>).estimated_seconds_remaining) ??
-      normalizeSeconds(progress?.estimated_seconds_remaining);
-    const subLabel =
-      progress?.message ||
-      (job as Record<string, unknown>).message ||
-      (job as Record<string, unknown>).error_message;
-    const progressLabel =
-      typeof percent === "number" ? `${percent} %` : formatStatusLabel(normalizedStatus);
-    const etaLabel =
-      typeof estimatedSeconds === "number"
-        ? `${formatCallDuration(estimatedSeconds)} left`
-        : null;
+  const handleCancel = (job: BedrockFineTuneJob) => {
+    setJobToCancel(job);
+    setIsCancelDialogOpen(true);
+  };
+
+  const handleCancelConfirm = async () => {
+    if (!jobToCancel) return;
+    try {
+      setIsCancelling(true);
+      const updated = await cancelBedrockFineTuneJob(jobToCancel.id);
+      if (updated) {
+        setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+      }
+      toast.success("Job cancellation requested");
+    } catch (err) {
+      toast.error("Failed to cancel job");
+    } finally {
+      setIsCancelling(false);
+      setIsCancelDialogOpen(false);
+      setJobToCancel(null);
+    }
+  };
+
+  const renderStatus = (job: BedrockFineTuneJob) => {
+    const normalizedStatus = String(job.status || "").toLowerCase();
+    const isInProgress = bedrockInProgressStatuses.has(normalizedStatus);
 
     if (isInProgress) {
       return (
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 text-primary animate-spin" />
-          <div className="flex flex-col leading-tight">
-            <span className="font-medium text-foreground flex items-center gap-1">
-              {progressLabel}
-              {etaLabel && (
-                <span className="text-xs font-normal text-muted-foreground whitespace-nowrap">
-                  ({etaLabel})
-                </span>
-              )}
-            </span>
-            {subLabel && (
-              <span className="text-xs text-muted-foreground">{String(subLabel)}</span>
-            )}
-          </div>
+          <span className="font-medium text-foreground">
+            {formatBedrockStatusLabel(String(job.status || ""))}
+          </span>
         </div>
       );
     }
 
-    if (normalizedStatus === "succeeded") {
+    if (normalizedStatus === "completed") {
       return (
         <Badge variant="outline" className="px-3 py-1 text-xs font-medium">
           Completed
@@ -163,13 +157,13 @@ export function FineTuneJobsCard({
       );
     }
 
-    if (normalizedStatus === "cancelled") {
+    if (normalizedStatus === "stopped") {
       return (
         <Badge
           variant="secondary"
           className="px-3 py-1 text-xs font-medium bg-muted text-muted-foreground"
         >
-          Cancelled
+          Stopped
         </Badge>
       );
     }
@@ -184,73 +178,92 @@ export function FineTuneJobsCard({
 
     return (
       <Badge variant="outline" className="px-3 py-1 text-xs font-medium capitalize">
-        {formatStatusLabel(normalizedStatus)}
+        {formatBedrockStatusLabel(normalizedStatus)}
       </Badge>
     );
   };
 
-  const renderAccuracy = (job: FineTuneJob) => {
-    const progress = (job as Record<string, unknown>).progress as JobProgress | undefined;
-    const normalizedStatus = String(job.status || progress?.status || "").toLowerCase();
-    const isTerminalStatus = ["succeeded", "failed", "cancelled"].includes(normalizedStatus);
-    const isInProgress =
-      !isTerminalStatus && (inProgressStatuses.has(normalizedStatus) || progress?.is_running);
-    const latestMetricsAccuracy = getAccuracyFromMetrics(progress?.latest_metrics, isInProgress);
-    const accuracy =
-      normalizePercent((job as Record<string, unknown>).accuracy) ??
-      normalizePercent((job as Record<string, unknown>).validation_accuracy) ??
-      normalizePercent((job as Record<string, unknown>).full_valid_mean_token_accuracy) ??
-      normalizePercent(progress?.accuracy) ??
-      latestMetricsAccuracy;
+  const renderDeployment = (job: BedrockFineTuneJob) => {
+    const status = String(job.deployment_status || "NotDeployed").toLowerCase();
 
-    if (accuracy === null) {
-      if (isInProgress) {
-        return (
-          <div className="flex items-center">
-            <Loader2 className="h-4 w-4 text-primary animate-spin" />
-          </div>
-        );
-      }
-      return <span className="text-sm text-muted-foreground">—</span>;
+    if (status === "active") {
+      return (
+        <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-emerald-500 text-emerald-600">
+          Active
+        </Badge>
+      );
     }
+    if (status === "creating") {
+      return (
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 text-primary animate-spin" />
+          <span className="text-sm text-muted-foreground">Creating</span>
+        </div>
+      );
+    }
+    if (status === "failed") {
+      return (
+        <Badge variant="destructive" className="px-3 py-1 text-xs font-medium">
+          Failed
+        </Badge>
+      );
+    }
+    return <span className="text-sm text-muted-foreground">Not deployed</span>;
+  };
+
+  const renderActions = (job: BedrockFineTuneJob) => {
+    const normalizedStatus = String(job.status || "").toLowerCase();
+    const canCancel = normalizedStatus === "inprogress";
+    const canDelete = bedrockTerminalStatuses.has(normalizedStatus);
 
     return (
-      <div className="flex items-center gap-2">
-        {isInProgress && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
-        <span className="text-sm font-medium text-foreground">{accuracy} %</span>
+      <div className="flex items-center justify-center gap-1">
+        {canCancel && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCancel(job);
+            }}
+            title="Cancel job"
+          >
+            <Ban className="h-4 w-4 text-amber-600" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={!canDelete}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDelete(job);
+          }}
+          title={
+            canDelete
+              ? "Delete job"
+              : "Cancel or wait for the job to finish before deleting"
+          }
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
       </div>
     );
   };
 
-  const renderActions = (job: FineTuneJob) => {
-    return (
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        onClick={(e) => {
-          e.stopPropagation();
-          handleDelete(job);
-        }}
-        title="Delete job"
-      >
-        <Trash2 className="h-4 w-4 text-destructive" />
-      </Button>
-    );
-  };
-
-  const renderRow = (job: FineTuneJob) => {
-    const jobIdentifier = job.id || job.openai_job_id;
+  const renderRow = (job: BedrockFineTuneJob) => {
     const handleRowClick = () => {
-      if (!jobIdentifier) return;
-      navigate(`/fine-tune/${jobIdentifier}`);
+      if (!job.id) return;
+      navigate(`/bedrock-fine-tune/${job.id}`);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
-      if (!jobIdentifier) return;
+      if (!job.id) return;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        navigate(`/fine-tune/${jobIdentifier}`);
+        navigate(`/bedrock-fine-tune/${job.id}`);
       }
     };
 
@@ -263,11 +276,11 @@ export function FineTuneJobsCard({
         tabIndex={0}
       >
         <TableCell className="font-medium text-foreground">
-          {job.suffix || job.fine_tuned_model || job.id || "—"}
+          {job.suffix || job.custom_model_name || job.id || "—"}
         </TableCell>
-        <TableCell className="text-muted-foreground">{job.model || "—"}</TableCell>
-        <TableCell className="min-w-[180px]">{renderStatus(job)}</TableCell>
-        <TableCell className="min-w-[140px]">{renderAccuracy(job)}</TableCell>
+        <TableCell className="text-muted-foreground">{job.base_model_id || "—"}</TableCell>
+        <TableCell className="min-w-[160px]">{renderStatus(job)}</TableCell>
+        <TableCell className="min-w-[140px]">{renderDeployment(job)}</TableCell>
         <TableCell
           className="w-[72px] text-center"
           onClick={(e) => e.stopPropagation()}
@@ -293,7 +306,7 @@ export function FineTuneJobsCard({
         description={
           isSearchActive
             ? "Try adjusting your search query."
-            : "Start a job to train a model on your data. Jobs you create will show up here."
+            : "Start a job to fine-tune an Amazon Nova model on your data. Jobs you create will show up here."
         }
         action={
           !isSearchActive && onNewFineTuneJob ? (
@@ -336,7 +349,7 @@ export function FineTuneJobsCard({
         searchQuery={searchQuery}
         headers={headers}
         renderRow={renderRow}
-        emptyMessage="No Fine-Tune jobs found"
+        emptyMessage="No Bedrock fine-tune jobs found"
         searchEmptyMessage="No jobs matching your search"
         emptyState={emptyState}
       />
@@ -352,6 +365,19 @@ export function FineTuneJobsCard({
         primaryButtonText="Delete"
         secondaryButtonText="Cancel"
         onCancel={() => setJobToDelete(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={isCancelDialogOpen}
+        onOpenChange={setIsCancelDialogOpen}
+        onConfirm={handleCancelConfirm}
+        isInProgress={isCancelling}
+        itemName={jobToCancel?.suffix || jobToCancel?.id}
+        title="Cancel fine-tune job?"
+        description={`This stops the running job on AWS Bedrock. Job "${jobToCancel?.suffix || jobToCancel?.id}" cannot be resumed once cancelled.`}
+        primaryButtonText="Cancel Job"
+        secondaryButtonText="Keep Running"
+        onCancel={() => setJobToCancel(null)}
       />
     </>
   );

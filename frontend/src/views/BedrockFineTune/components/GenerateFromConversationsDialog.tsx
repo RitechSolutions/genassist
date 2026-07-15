@@ -14,11 +14,11 @@ import { ChevronDown, ChevronRight, Download, Loader2, Upload } from "lucide-rea
 import { toast } from "react-hot-toast";
 import { fetchConversationById, fetchTranscripts } from "@/services/transcripts";
 import {
-  downloadGeneratedTrainingFile,
-  generateTrainingFileFromConversations,
-} from "@/services/openaiFineTune";
+  downloadBedrockGeneratedTrainingFile,
+  generateBedrockTrainingFileFromConversations,
+} from "@/services/bedrockFineTune";
 import type { BackendTranscript, TranscriptEntry } from "@/interfaces/transcript.interface";
-import type { OpenAIFileItem } from "@/interfaces/fineTune.interface";
+import type { S3FileRef } from "@/views/BedrockFineTune/types";
 
 const PAGE_SIZE = 20;
 
@@ -26,7 +26,7 @@ interface Props {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   fileType: "training" | "validation";
-  onFileGenerated: (file: { id: string; name: string }) => void;
+  onFileGenerated: (file: S3FileRef) => void;
 }
 
 export function GenerateFromConversationsDialog({
@@ -48,7 +48,6 @@ export function GenerateFromConversationsDialog({
 
   const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
   const [memoryConvIds, setMemoryConvIds] = useState<Set<string>>(new Set());
-  const [includeTools, setIncludeTools] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -144,16 +143,14 @@ export function GenerateFromConversationsDialog({
     }
     setIsDownloading(true);
     try {
-      const blob = await downloadGeneratedTrainingFile({
+      const blob = await downloadBedrockGeneratedTrainingFile({
         conversation_ids: Array.from(selectedConvIds),
         memory_conversation_ids: Array.from(memoryConvIds),
-        include_tools: includeTools,
       });
-      // Trigger browser download
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `training_${fileType}.jsonl`;
+      a.download = `nova_${fileType}.jsonl`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success("File downloaded — review it, then upload when ready");
@@ -164,19 +161,17 @@ export function GenerateFromConversationsDialog({
     }
   };
 
-  const handleUploadToOpenAI = async () => {
+  const handleUploadToS3 = async () => {
     if (selectedConvIds.size === 0) return;
     setIsUploading(true);
     try {
-      const result: OpenAIFileItem = await generateTrainingFileFromConversations({
+      const result = await generateBedrockTrainingFileFromConversations({
         conversation_ids: Array.from(selectedConvIds),
         memory_conversation_ids: Array.from(memoryConvIds),
-        include_tools: includeTools,
-        upload_to_openai: true,
       });
       const fileLabel = fileType === "training" ? "Training" : "Validation";
-      toast.success(`${fileLabel} file uploaded to OpenAI`);
-      onFileGenerated({ id: result.id, name: result.filename ?? `generated_${fileType}.jsonl` });
+      toast.success(`${fileLabel} data uploaded to S3`);
+      onFileGenerated({ s3_uri: result.s3_uri, name: result.s3_uri });
       onOpenChange(false);
       resetState();
     } catch {
@@ -193,7 +188,6 @@ export function GenerateFromConversationsDialog({
     setConvTotal(0);
     setSelectedConvIds(new Set());
     setMemoryConvIds(new Set());
-    setIncludeTools(true);
     setExpandedConvId(null);
     setExpandedMessages([]);
   };
@@ -210,7 +204,7 @@ export function GenerateFromConversationsDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="w-[95vw] max-w-2xl h-[85vh] max-h-[85vh] overflow-hidden p-0 flex flex-col">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-          <DialogTitle>Generate {fileTypeLabel} File from Conversations</DialogTitle>
+          <DialogTitle>Generate {fileTypeLabel} Data from Conversations</DialogTitle>
         </DialogHeader>
 
         <div className="px-6 pb-3 shrink-0 flex gap-3 items-end">
@@ -223,14 +217,6 @@ export function GenerateFromConversationsDialog({
               maxLength={36}
             />
           </div>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2 shrink-0">
-            <Switch
-              checked={includeTools}
-              onCheckedChange={setIncludeTools}
-              disabled={isBusy}
-            />
-            Include tool calls
-          </label>
           {selectedConvIds.size > 0 && (
             <span className="text-xs text-muted-foreground pb-2">
               {selectedConvIds.size} selected
@@ -382,13 +368,13 @@ export function GenerateFromConversationsDialog({
             </Button>
             <Button
               size="sm"
-              onClick={handleUploadToOpenAI}
+              onClick={handleUploadToS3}
               disabled={isBusy || selectedConvIds.size === 0}
             >
               {isUploading
                 ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 : <Upload className="w-4 h-4 mr-2" />}
-              Upload to OpenAI
+              Upload to S3
             </Button>
           </div>
         </DialogFooter>
