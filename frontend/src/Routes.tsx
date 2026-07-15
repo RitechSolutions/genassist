@@ -100,6 +100,9 @@ export const RoutesProvider = () => {
   const showLocalFineTune = useFeatureFlagVisible(
     FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
   );
+  const showBedrockFineTune = useFeatureFlagVisible(
+    FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE
+  );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
   const [skipOnboarding, setSkipOnboarding] = useState(false);
@@ -326,17 +329,25 @@ export const RoutesProvider = () => {
             {
               path: "bedrock-fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
-                  <BedrockFineTune />
-                </ProtectedRoute>
+                showBedrockFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
+                    <BedrockFineTune />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
               path: "bedrock-fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
-                  <BedrockFineTuneJobDetail />
-                </ProtectedRoute>
+                showBedrockFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
+                    <BedrockFineTuneJobDetail />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
@@ -571,7 +582,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [showLocalFineTune],
+    [showLocalFineTune, showBedrockFineTune],
   );
 
   const organizationRouter = useMemo(
