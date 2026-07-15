@@ -12,9 +12,14 @@ if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls to
     from langchain_core.language_models import BaseChatModel
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
+from app.core.utils.enums.bedrock_fine_tuning_enum import (
+    BedrockDeploymentStatus,
+    BedrockJobStatus,
+)
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
 from app.services.llm_providers import LlmProviderService
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+from app.services.bedrock_fine_tuning import BedrockFineTuningService
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +104,17 @@ class LLMProvider:
             for job in successful_jobs
         ]
 
+        # Deployed Bedrock (Nova) custom models — only those with a deployment ARN are
+        # invokable, so surface those as suggestions on the bedrock model field.
+        bedrock_service = injector.get(BedrockFineTuningService)
+        bedrock_completed = await bedrock_service.get_all_by_statuses([BedrockJobStatus.COMPLETED])
+        bedrock_options = [
+            {"value": job.deployment_arn, "label": "fine-tuned:" + (job.suffix or job.custom_model_name)}
+            for job in bedrock_completed
+            if job.deployment_arn
+            and job.deployment_status == BedrockDeploymentStatus.ACTIVE
+        ]
+
         schemas = copy.deepcopy(LLM_FORM_SCHEMAS_DICT)
 
         # Inject OpenAI fine-tuned models into the openai schema
@@ -107,6 +123,15 @@ class LLMProvider:
                 if field.get("name") == "model":
                     if "options" in field:
                         field["options"].extend(fine_tuned_options)
+                    break
+
+        # Inject deployed Bedrock fine-tuned models as suggestions on the bedrock model
+        # field. The field stays free-text (type="text"); the frontend renders a datalist
+        # so a user can pick a deployed model ARN or type any base model id.
+        if bedrock_options and "bedrock" in schemas and "fields" in schemas["bedrock"]:
+            for field in schemas["bedrock"]["fields"]:
+                if field.get("name") == "model":
+                    field["options"] = [*(field.get("options") or []), *bedrock_options]
                     break
 
         # Inject running vLLM deployments into the vllm schema
