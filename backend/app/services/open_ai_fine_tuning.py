@@ -339,11 +339,18 @@ class OpenAIFineTuningService:
             logger.info(f"Found {len(jobs)} jobs")
 
             if sync and jobs:
-                logger.info(f"Syncing {len(jobs)} jobs with OpenAI API")
+                # Only non-terminal jobs can still change on OpenAI's side, so skip
+                # succeeded/failed/cancelled ones instead of re-fetching every job.
+                active_states = (JobStatus.VALIDATING_FILES, JobStatus.QUEUED, JobStatus.RUNNING)
+                to_sync = [j for j in jobs if j.status in active_states]
+                logger.info(f"Syncing {len(to_sync)}/{len(jobs)} active jobs with OpenAI API")
 
                 synced_jobs = []
 
                 for job in jobs:
+                    if job.status not in active_states:
+                        synced_jobs.append(job)
+                        continue
                     try:
                         # Sync job status
                         response = await self.client.fine_tuning.jobs.retrieve(job.openai_job_id)
