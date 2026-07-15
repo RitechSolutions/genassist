@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AxiosError } from "axios";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Button } from "@/components/button";
 import { getAllUserGroups, deleteUserGroup } from "@/services/userGroups";
 import { formatDate } from "@/helpers/utils";
 import { UserGroup } from "@/interfaces/userGroup.interface";
 import { toast } from "react-hot-toast";
-import { getPaginationMeta } from "@/helpers/pagination";
-import { PaginationBar } from "@/components/PaginationBar";
 import { UsersRound, Plus } from "lucide-react";
 
 interface UserGroupsCardProps {
@@ -29,14 +27,12 @@ export function UserGroupsCard({
   updatedGroup = null,
   onCreateGroup,
 }: UserGroupsCardProps) {
-  const PAGE_SIZE = 10;
   const [groups, setGroups] = useState<UserGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groupToDelete, setGroupToDelete] = useState<UserGroup | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     fetchGroups();
@@ -49,10 +45,6 @@ export function UserGroupsCard({
       );
     }
   }, [updatedGroup]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
 
   const fetchGroups = async () => {
     try {
@@ -94,19 +86,36 @@ export function UserGroupsCard({
     g.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const pagination = getPaginationMeta(filteredGroups.length, PAGE_SIZE, currentPage);
-  const paginatedGroups = filteredGroups.slice(pagination.startIndex, pagination.endIndex);
-
-  const headers = ["#", "Name", "Description", "Created At", "Updated At", "Actions"];
-
-  const renderRow = (group: UserGroup, index: number) => (
-    <TableRow key={group.id}>
-      <TableCell>{pagination.startIndex + index + 1}</TableCell>
-      <TableCell className="font-medium">{group.name}</TableCell>
-      <TableCell className="text-zinc-500">{group.description ?? "—"}</TableCell>
-      <TableCell className="truncate">{formatDate(group.created_at)}</TableCell>
-      <TableCell className="truncate">{formatDate(group.updated_at)}</TableCell>
-      <TableCell>
+  const columns: Column<UserGroup>[] = [
+    { header: "#", key: "index", cell: (_group, index) => index + 1 },
+    {
+      header: "Name",
+      key: "name",
+      cell: (group) => group.name,
+      className: "font-medium",
+    },
+    {
+      header: "Description",
+      key: "description",
+      cell: (group) => group.description ?? "—",
+      className: "text-zinc-500",
+    },
+    {
+      header: "Created At",
+      key: "created_at",
+      cell: (group) => formatDate(group.created_at),
+      className: "truncate",
+    },
+    {
+      header: "Updated At",
+      key: "updated_at",
+      cell: (group) => formatDate(group.updated_at),
+      className: "truncate",
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (group) => (
         <ActionButtons
           canEdit
           canDelete
@@ -115,9 +124,9 @@ export function UserGroupsCard({
           editTitle="Edit Group"
           deleteTitle="Delete Group"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   const isSearchActive = searchQuery.trim().length > 0;
 
@@ -154,23 +163,15 @@ export function UserGroupsCard({
   return (
     <>
       <DataTable
-        data={paginatedGroups}
+        data={filteredGroups}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No user groups found"
-        searchEmptyMessage="No user groups found matching your search"
+        notFoundMessage="No user groups found matching your search"
         emptyState={emptyState}
-      />
-
-      <PaginationBar
-        total={pagination.total}
-        pageSize={PAGE_SIZE}
-        currentPage={pagination.safePage}
-        pageItemCount={paginatedGroups.length}
-        onPageChange={setCurrentPage}
       />
 
       <ConfirmDialog

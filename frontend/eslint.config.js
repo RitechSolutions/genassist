@@ -38,6 +38,7 @@ export default tseslint.config(
             { name: "@/components/ui/alert-dialog", message: "Use @/components/alert-dialog." },
             { name: "@/components/toast", message: "Toasts are consolidated on react-hot-toast; use useToast from @/hooks/useToast." },
             { name: "@/components/toaster", message: "Removed. A single react-hot-toast <Toaster> is mounted in App.tsx." },
+            { name: "@/components/DataTable", message: "Removed. Use the column-based DataTable from @/components/ui/data-table (supports sorting, pagination, grouping, empty/error states)." },
             { name: "sonner", message: "Toasts are consolidated on react-hot-toast." },
             { name: "antd", message: "Ant Design is not used in this app; use the shadcn/Radix primitives in @/components." },
             { name: "react-flow-renderer", message: "Use reactflow (v11) instead of the deprecated react-flow-renderer." },

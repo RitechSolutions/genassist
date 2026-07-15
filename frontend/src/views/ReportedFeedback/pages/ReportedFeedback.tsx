@@ -7,9 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import { PageLayout } from "@/components/PageLayout";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
 import { ListEmptyState } from "@/components/ListEmptyState";
-import { TableCell, TableRow } from "@/components/table";
 import { PaginationBar } from "@/components/PaginationBar";
 import {
   Select,
@@ -33,14 +32,6 @@ import { StatusSelect } from "../components/StatusSelect";
 import { STATUS_META, STATUS_ORDER, formatDate } from "../constants";
 
 const PAGE_SIZE = 20;
-
-const headers = [
-  { label: "Comment", className: "w-[300px]" },
-  { label: "Message", className: "w-[260px]" },
-  { label: "Workflow", className: "w-[150px]" },
-  { label: "Reported", className: "w-[160px]" },
-  { label: "Status", className: "w-[160px]" },
-];
 
 export default function ReportedFeedback() {
   const navigate = useNavigate();
@@ -144,44 +135,64 @@ export default function ReportedFeedback() {
     setCurrentPage(1);
   };
 
-  const renderRow = (item: ReportedFeedbackItem) => (
-    <TableRow
-      key={item.feedback_id}
-      className="cursor-pointer hover:bg-muted/60"
-      onClick={() => openDialog(item)}
-    >
-      <TableCell>
+  const columns: Column<ReportedFeedbackItem>[] = [
+    {
+      header: "Comment",
+      key: "comment",
+      headerClassName: "w-[300px]",
+      cell: (item) => (
         <span className="block max-w-[280px] truncate text-sm">
           {item.comment}
         </span>
-      </TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Message",
+      key: "message",
+      headerClassName: "w-[260px]",
+      cell: (item) => (
         <span className="block max-w-[240px] truncate text-sm text-muted-foreground">
           <span className="mr-1 text-xs font-medium uppercase">
             {item.speaker}:
           </span>
           {item.text}
         </span>
-      </TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Workflow",
+      key: "workflow",
+      headerClassName: "w-[150px]",
+      cell: (item) => (
         <span className="block max-w-[140px] truncate text-sm">
           {item.workflow_name || (
             <span className="italic text-muted-foreground">—</span>
           )}
         </span>
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-        {formatDate(item.reported_at)}
-      </TableCell>
-      {/* Status: editable inline; stop row-click so the dropdown doesn't open the dialog. */}
-      <TableCell onClick={(e) => e.stopPropagation()}>
-        <StatusSelect
-          value={item.status}
-          onChange={(next) => handleStatusChange(item, next)}
-        />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+    {
+      header: "Reported",
+      key: "reported_at",
+      headerClassName: "w-[160px]",
+      className: "whitespace-nowrap text-xs text-muted-foreground",
+      cell: (item) => formatDate(item.reported_at),
+    },
+    {
+      header: "Status",
+      key: "status",
+      headerClassName: "w-[160px]",
+      // Editable inline; stop row-click so the dropdown doesn't open the dialog.
+      cell: (item) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <StatusSelect
+            value={item.status}
+            onChange={(next) => handleStatusChange(item, next)}
+          />
+        </div>
+      ),
+    },
+  ];
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -239,11 +250,12 @@ export default function ReportedFeedback() {
 
       <DataTable
         data={rows}
+        columns={columns}
+        keyExtractor={(item) => item.feedback_id}
+        onRowClick={openDialog}
         loading={loading}
         error={error ? error.message : null}
         searchQuery={statusFilter === "all" ? "" : statusFilter}
-        headers={headers}
-        renderRow={renderRow}
         emptyState={
           <ListEmptyState
             icon={<MessageSquare className="h-12 w-12 text-gray-400" />}

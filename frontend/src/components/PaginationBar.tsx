@@ -62,7 +62,7 @@ export function PaginationBar({
       <div className="text-sm text-muted-foreground">
         {`Showing ${displayStart} to ${displayEnd} of ${safeTotal} results`}
       </div>
-      <Pagination>
+      <Pagination className="mx-0 w-auto justify-end">
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
