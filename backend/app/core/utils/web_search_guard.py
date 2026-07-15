@@ -3,7 +3,7 @@
 Kill switch, per-tenant rate limit, per-process single-flight coalescing and global
 concurrency, tenant-scoped negative caching, and a deployment-global circuit breaker.
 
-Every Redis-backed guard degrades open — an unreachable Redis never blocks a search. 
+Every Redis-backed guard degrades open — an unreachable Redis never blocks a search.
 No key or log line carries a raw query, URL, or snippet: callers pass an opaque request fingerprint built over
 every result-affecting option.
 """
@@ -17,16 +17,16 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.core.utils.web_search_utils import _sanitize_error
+from app.core.utils.web_search_utils import WebSearchEnvelope, _sanitize_error
 
 logger = logging.getLogger(__name__)
 
 _GLOBAL_CONCURRENCY = 4
 _RATE_WINDOW_SECONDS = 60
 _NEGATIVE_TTL_SECONDS = 60
-_NEGATIVE_BLOCKED_TTL_SECONDS = 120  
+_NEGATIVE_BLOCKED_TTL_SECONDS = 120
 _CIRCUIT_THRESHOLD = 5  # block events per minute that open the circuit
-_CIRCUIT_OPEN_TTL_SECONDS = 120  
+_CIRCUIT_OPEN_TTL_SECONDS = 120
 
 _global_semaphore = asyncio.Semaphore(_GLOBAL_CONCURRENCY)
 _inflight: dict[str, asyncio.Future] = {}
@@ -91,7 +91,7 @@ async def check_tenant_rate(tenant: str) -> bool:
         return True
 
 
-def _producer_failure_envelope(exc: Exception) -> dict[str, Any]:
+def _producer_failure_envelope(exc: Exception) -> WebSearchEnvelope:
     """Standard failure response when the search run crashes."""
     message = _sanitize_error(exc)
     return {
@@ -108,8 +108,8 @@ def _producer_failure_envelope(exc: Exception) -> dict[str, Any]:
 
 
 async def single_flight(
-    tenant: str, fingerprint: str, producer: Callable[[], Awaitable[dict[str, Any]]]
-) -> dict[str, Any]:
+    tenant: str, fingerprint: str, producer: Callable[[], Awaitable[WebSearchEnvelope]]
+) -> WebSearchEnvelope:
     """If several identical searches start at once, run ``producer()`` only once.
 
     The first caller does the real work (search, enrich, cache). The others wait
@@ -136,7 +136,7 @@ async def single_flight(
     finally:
         _inflight.pop(key, None)
         if not future.done():
-            future.cancel()  
+            future.cancel()
 
 
 def _negative_key(fingerprint: str) -> str:

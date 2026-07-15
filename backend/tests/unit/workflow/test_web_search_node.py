@@ -137,7 +137,7 @@ async def test_zero_hit_envelope(guards):
 
 
 @pytest.mark.asyncio
-async def test_advanced_enriches_top_results_within_total_budget(guards):
+async def test_advanced_enriches_all_successes_under_even_split(guards):
     guards.search_web.return_value = _results(6)
     node = _make_node()
 
@@ -145,12 +145,48 @@ async def test_advanced_enriches_top_results_within_total_budget(guards):
         {"query": "q", "searchDepth": "advanced", "maxContentChars": 2000, "maxTotalContentChars": 8000}
     )
 
+    assert result["enrichedCount"] == 5
+    assert result["partial"] is False
+    assert not any("budget" in w for w in result["warnings"])
+    assert all(len(r["content"]) <= 1600 for r in result["results"][:5])
+    assert sum(len(r["content"]) for r in result["results"]) <= 8000
+    assert result["results"][5]["content"] == ""
+
+
+@pytest.mark.asyncio
+async def test_advanced_failed_page_does_not_waste_budget(guards):
+    results = _results(5)
+    guards.search_web.return_value = results
+
+    async def _fetch(url, use_http_request=False):
+        if url == results[0].url:
+            raise RuntimeError("connection reset")
+        return _html_page()
+
+    guards.fetch_from_url.side_effect = _fetch
+
+    result = await _make_node().process(
+        {"query": "q", "searchDepth": "advanced", "maxContentChars": 2000, "maxTotalContentChars": 8000}
+    )
+
     assert result["enrichedCount"] == 4
     assert result["partial"] is True
-    assert any("budget" in w for w in result["warnings"])
-    assert sum(len(r["content"]) for r in result["results"]) <= 8000
-    assert result["results"][4]["content"] == ""
-    assert result["results"][5]["content"] == ""
+    assert result["results"][0]["content"] == ""
+    assert all(r["content"] != "" for r in result["results"][1:5])
+    assert not any("budget" in w for w in result["warnings"])
+    assert any("could not be fetched" in w for w in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_advanced_empty_extraction_counted_unavailable(guards, monkeypatch):
+    monkeypatch.setattr(web_search_node, "extract_main_content", lambda html, url: ("   ‍  ", "<html/>"))
+
+    result = await _make_node().process({"query": "q", "searchDepth": "advanced"})
+
+    assert result["enrichedCount"] == 0
+    assert result["partial"] is True
+    assert all(r["content"] == "" for r in result["results"])
+    assert any("could not be fetched" in w for w in result["warnings"])
 
 
 @pytest.mark.asyncio
@@ -211,7 +247,7 @@ async def test_advanced_content_falls_back_without_query_signal(guards):
 @pytest.mark.asyncio
 async def test_advanced_options_include_content_selection_marker(guards):
     await _make_node().process({"query": "q", "searchDepth": "advanced"})
-    assert guards.get_cached.call_args.args[1]["contentSelection"] == "relevance-v1"
+    assert guards.get_cached.call_args.args[1]["contentSelection"] == "relevance-v2"
 
     guards.get_cached.reset_mock()
     await _make_node().process({"query": "q"})

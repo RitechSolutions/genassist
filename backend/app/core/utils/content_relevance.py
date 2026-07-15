@@ -1,18 +1,17 @@
-"""Pick the parts of a page most relevant to the search query (advanced enrichment).
+"""Pick the page sections most relevant to the search query (advanced enrichment).
 
-Splits page markdown into chunks (each section kept with its heading) and ranks
-them against the query with a small BM25 scorer built. Only visible
-text is scored: link URLs and bare URLs are ignored, so a query that includes a
-company URL can't be gamed by pages that repeat that URL in hrefs. If the query
-gives nothing useful to rank on (no tokens, no matches, or every chunk looks the
-same — and no exact phrase or heading match), the caller gets the first ``budget`` characters of the page.
+Splits markdown into heading-aware chunks and ranks them with BM25. Only visible
+text is scored (not URLs). Chunks never cross headings; gaps use an omission
+marker and missing headings are restored on render. If ranking has nothing useful
+to go on, returns the first ``budget`` characters of the page.
 """
 
 import math
 import re
 from collections import Counter
+from dataclasses import dataclass
 
-_TOKEN_RE = re.compile(r"[^\W_]{2,}")  
+_TOKEN_RE = re.compile(r"[^\W_]{2,}")
 _STOPWORDS = frozenset(
     {
         "about",
@@ -89,8 +88,10 @@ _STOPWORDS = frozenset(
 _URL_STOPWORDS = frozenset({"http", "https", "www", "com", "org", "net", "io"})
 _LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _BARE_URL_RE = re.compile(r"<?https?://\S+>?")
-_HEADING_RE = re.compile(r"#{1,6} ")
+_HEADING_RE = re.compile(r"^(#{1,6}) ")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+_INVISIBLE = "​‌‍⁠﻿"
+_INVISIBLE_NOISE_RE = re.compile(rf"(?:^|(?<=\s))[{_INVISIBLE}]+|[{_INVISIBLE}]+(?=\s|$)")
 _TARGET_CHUNK_CHARS = 700
 _MAX_CHUNK_CHARS = 1400
 _MIN_TAIL_CHARS = 40  # stop filling once the leftover budget can't hold useful text
@@ -100,6 +101,26 @@ _BM25_K1 = 1.5
 _BM25_B = 0.75
 _PHRASE_BONUS = 1.5
 _HEADING_BONUS = 0.5
+_ELISION = "[...]"
+_JOIN = "\n\n"  
+_ELISION_JOIN = f"\n\n{_ELISION}\n\n"  
+_HEADING_SEP = "\n\n" 
+
+
+@dataclass
+class _Chunk:
+    """One rankable unit of a page. ``context`` (heading + ancestors) is scored but not part of ``text``."""
+
+    text: str
+    heading: str  # nearest heading line, "" for pre-heading content
+    context: str  # heading + open ancestor headings, for scoring only
+    needs_prefix: bool  # text lost its heading and should get it re-prepended on render
+
+
+def strip_invisible(text: str) -> str:
+    """Remove stray invisible characters, then remove the extra blank lines they leave."""
+    cleaned = _INVISIBLE_NOISE_RE.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -111,26 +132,25 @@ def _visible_text(chunk: str) -> str:
     return _BARE_URL_RE.sub(" ", _LINK_RE.sub(r"\1", chunk))
 
 
-def _heading_tokens(chunk: str) -> set[str]:
-    lines = [line for line in chunk.split("\n") if _HEADING_RE.match(line)]
-    return set(_tokenize(" ".join(lines))) if lines else set()
+def _heading_level(block: str) -> int:
+    match = _HEADING_RE.match(block)
+    return len(match.group(1)) if match else 0
 
 
-def _glue_headings(blocks: list[str]) -> list[str]:
-    """Attach heading-only blocks to the following body block so headings never stand alone."""
-    units: list[str] = []
-    pending: list[str] = []
-    for block in blocks:
-        if _HEADING_RE.match(block) and "\n" not in block:
-            pending.append(block)
+def _iter_blocks(text: str):
+    """Blank-line-delimited blocks, splitting a heading off any body that shares its block."""
+    for block in text.split("\n\n"):
+        block = block.strip()
+        if not block:
             continue
-        if pending:
-            block = "\n\n".join((*pending, block))
-            pending = []
-        units.append(block)
-    if pending:
-        units.append("\n\n".join(pending))
-    return units
+        if _heading_level(block) and "\n" in block:
+            line, _, rest = block.partition("\n")
+            yield line.strip()
+            rest = rest.strip()
+            if rest:
+                yield rest
+        else:
+            yield block
 
 
 def _split_oversized(unit: str) -> list[str]:
@@ -159,6 +179,7 @@ def _split_oversized(unit: str) -> list[str]:
 
 
 def _merge_small(units: list[str]) -> list[str]:
+    """Merge small body units up to the target size; callers pass one section's body only."""
     chunks: list[str] = []
     current = ""
     for unit in units:
@@ -172,12 +193,49 @@ def _merge_small(units: list[str]) -> list[str]:
     return chunks
 
 
-def _chunk_markdown(text: str) -> list[str]:
-    """Document-order chunks: glue headings, split oversized units, merge small ones."""
-    blocks = [block for block in text.split("\n\n") if block.strip()]
-    units = _glue_headings(blocks)
-    pieces = [piece for unit in units for piece in _split_oversized(unit)]
+def _section_pieces(body: list[str]) -> list[str]:
+    pieces = [piece for block in body for piece in _split_oversized(block)]
     return _merge_small(pieces)
+
+
+def _chunk_markdown(text: str) -> list[_Chunk]:
+    """Split the page into chunks in reading order.
+
+    Each chunk remembers its heading and parent headings. Body text never
+    crosses a heading, so different sections stay separate.
+    """
+    chunks: list[_Chunk] = []
+    stack: list[tuple[int, str]] = []
+    heading = ""
+    ancestors: list[str] = []
+    body: list[str] = []
+
+    def flush() -> None:
+        nonlocal body
+        if any(block.strip() for block in body):
+            context = "\n".join([heading, *ancestors]).strip()
+            for i, piece in enumerate(_section_pieces(body)):
+                if heading and i == 0:
+                    chunks.append(_Chunk(f"{heading}{_HEADING_SEP}{piece}", heading, context, needs_prefix=False))
+                elif heading:
+                    chunks.append(_Chunk(piece, heading, context, needs_prefix=True))
+                else:
+                    chunks.append(_Chunk(piece, "", "", needs_prefix=False))
+        body = []
+
+    for block in _iter_blocks(text):
+        level = _heading_level(block)
+        if level:
+            flush()
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            ancestors = [line for _, line in stack]
+            stack.append((level, block))
+            heading = block
+        else:
+            body.append(block)
+    flush()
+    return chunks
 
 
 def _bm25_scores(chunk_tokens: list[list[str]], query_tokens: set[str]) -> tuple[list[float], dict[str, int]]:
@@ -204,11 +262,27 @@ def _bm25_scores(chunk_tokens: list[list[str]], query_tokens: set[str]) -> tuple
     return scores, df
 
 
+def _render(chunks: list[_Chunk], order: list[int], budget: int) -> str:
+    parts: list[str] = []
+    last_heading: str | None = None
+    prev_idx: int | None = None
+    for idx in order:
+        chunk = chunks[idx]
+        if parts:
+            parts.append(_JOIN if idx == prev_idx + 1 else _ELISION_JOIN)
+        if chunk.needs_prefix and chunk.heading != last_heading:
+            parts.append(f"{chunk.heading}{_HEADING_SEP}")
+        parts.append(chunk.text)
+        last_heading = chunk.heading
+        prev_idx = idx
+    return "".join(parts)[:budget]
+
+
 def select_relevant_content(markdown: str, query: str, budget: int) -> str:
     """Return the most query-relevant markdown within ``budget`` characters."""
     if budget <= 0:
         return ""
-    text = markdown.strip()
+    text = strip_invisible(markdown).strip()
     if len(text) <= budget:
         return text
     ordered_terms = _tokenize(query)
@@ -217,21 +291,25 @@ def select_relevant_content(markdown: str, query: str, budget: int) -> str:
         return text[:budget]
 
     chunks = _chunk_markdown(text[:_MAX_SCAN_CHARS])
-    chunk_tokens = [_tokenize(_visible_text(chunk)) for chunk in chunks]
+    if not chunks:
+        return text[:budget]
+    body_tokens = [_tokenize(_visible_text(chunk.text)) for chunk in chunks]
+    context_sets = [set(_tokenize(_visible_text(chunk.context))) for chunk in chunks]
+    chunk_tokens = [tokens + list(context) for tokens, context in zip(body_tokens, context_sets)]
     scores, df = _bm25_scores(chunk_tokens, query_tokens)
 
     n = len(chunks)
     discriminative = {term for term, count in df.items() if count and count / n <= _MAX_DF_RATIO}
     phrase = " ".join(ordered_terms) if len(ordered_terms) >= 2 else ""
     has_signal = [False] * n
-    for i, tokens in enumerate(chunk_tokens):
-        phrase_hit = bool(phrase) and f" {phrase} " in f" {' '.join(tokens)} "
-        heading_hit = bool(query_tokens & _heading_tokens(chunks[i]))
+    for i in range(n):
+        phrase_hit = bool(phrase) and f" {phrase} " in f" {' '.join(body_tokens[i])} "
+        heading_hit = bool(query_tokens & context_sets[i])
         if phrase_hit:
             scores[i] += _PHRASE_BONUS
         if heading_hit:
             scores[i] += _HEADING_BONUS
-        has_signal[i] = phrase_hit or heading_hit or bool(discriminative & set(tokens))
+        has_signal[i] = phrase_hit or heading_hit or bool(discriminative & set(chunk_tokens[i]))
     if not any(has_signal):
         return text[:budget]
 
@@ -240,19 +318,19 @@ def select_relevant_content(markdown: str, query: str, budget: int) -> str:
     seen: set[str] = set()
     remaining = budget
     for i in ranked:
-        normalized = " ".join(chunks[i].split()).lower()  # dedupes exact repetition only
+        normalized = " ".join(chunks[i].text.split()).lower()  # dedupes exact repetition only
         if normalized in seen:
             continue
-        cost = len(chunks[i]) + (2 if selected else 0)
+        prefix_cost = len(chunks[i].heading) + len(_HEADING_SEP) if chunks[i].needs_prefix else 0
+        cost = len(chunks[i].text) + prefix_cost + (len(_ELISION_JOIN) if selected else 0)
         if cost <= remaining:
             selected.append(i)
             seen.add(normalized)
             remaining -= cost
         elif not selected:
-            # the single best chunk overflows: its head beats a weaker whole chunk
-            return chunks[i][:budget]
+            return chunks[i].text[:budget]
         if remaining < _MIN_TAIL_CHARS:
             break
     if not selected:
         return text[:budget]
-    return "\n\n".join(chunks[i] for i in sorted(selected))
+    return _render(chunks, sorted(selected), budget)

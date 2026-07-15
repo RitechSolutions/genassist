@@ -2,7 +2,7 @@
 
 Tries ``html.duckduckgo.com/html/`` first, then falls back to
 ``lite.duckduckgo.com/lite/``. Search-page fetches use a dedicated httpx client.
-Redirects are followed manually and only to an allowlisted set of DuckDuckGo hosts. 
+Redirects are followed manually and only to an allowlisted set of DuckDuckGo hosts.
 Result links are unwrapped from DDG's ``uddg`` redirect, safety-checked, and skipped if unsafe.
 """
 
@@ -10,6 +10,7 @@ import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import NotRequired, TypedDict
 from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
@@ -109,6 +110,33 @@ class SearchResult:
     snippet: str
     domain: str
     position: int
+
+
+class WebSearchResultItem(TypedDict):
+    """One serialized hit in a node envelope; ``content`` is filled only by advanced enrichment."""
+
+    title: str
+    url: str
+    snippet: str
+    content: str
+    position: int
+    domain: str
+
+
+class WebSearchEnvelope(TypedDict):
+    """Public web-search node output. Cache keys are added by the cache layer, not the node."""
+
+    success: bool
+    query: str
+    error: str
+    count: int
+    results: list[WebSearchResultItem]
+    text: str
+    enrichedCount: int
+    partial: bool
+    warnings: list[str]
+    cacheState: NotRequired[str]
+    cachedAt: NotRequired[float]
 
 
 def _sanitize_error(exc: Exception) -> str:

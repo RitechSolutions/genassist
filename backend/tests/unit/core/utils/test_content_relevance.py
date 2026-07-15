@@ -1,6 +1,6 @@
 """Unit tests for query-aware markdown chunk selection."""
 
-from app.core.utils.content_relevance import select_relevant_content
+from app.core.utils.content_relevance import select_relevant_content, strip_invisible
 
 
 def _filler(word: str, size: int = 680) -> str:
@@ -191,3 +191,84 @@ def test_unicode_query_and_text():
     md = "\n\n".join([_filler("alpha"), target, _filler("beta")])
     out = select_relevant_content(md, "coûts expédition", 200)
     assert "42 €" in out
+
+
+# section integrity
+
+
+def test_sections_do_not_merge_across_headings():
+    md = "\n\n".join(
+        [
+            "### PayPal\n\n" + "PayPal is a global online payments platform used across many markets today. " * 2,
+            "### Payline Data\n\n" + "Payline delivers flexible friendly payment solutions for growing teams. " * 2,
+        ]
+    )
+    out = select_relevant_content(md, "payline flexible payment solutions", 250)
+    assert "Payline delivers flexible" in out
+    assert "### Payline Data" in out
+    assert "PayPal is a global" not in out
+
+
+def test_continuation_chunk_regains_its_heading():
+    body = "General background about the company history and mission today. " * 12
+    md = "## Returns\n\n" + body + "\n\nRefund policy grants a full refund within thirty days."
+    out = select_relevant_content(md, "refund policy thirty days", 300)
+    assert "Refund policy grants" in out
+    assert "## Returns" in out
+    assert len(out) <= 300
+
+
+def test_elision_marker_separates_nonadjacent_chunks():
+    early = "Alpha pricing tier costs ten dollars monthly per seat."
+    mid = "General filler about unrelated onboarding steps and tutorials here. " * 12
+    late = "Beta pricing tier costs twenty dollars monthly per seat."
+    md = "\n\n".join([early, mid, late])
+    out = select_relevant_content(md, "pricing tier costs", 300)
+    assert "Alpha pricing" in out
+    assert "Beta pricing" in out
+    assert "[...]" in out
+    assert out.index("Alpha") < out.index("[...]") < out.index("Beta")
+
+
+def test_structural_budget_keeps_markers_and_headings_intact():
+    s1 = "## First\n\nAlpha ratio measures one hundred units precisely today."
+    mid = "Filler about unrelated onboarding tutorials and setup steps here. " * 12
+    s2 = "## Second\n\nAlpha ratio measures two hundred units precisely today."
+    md = "\n\n".join([s1, mid, s2])
+    for budget in range(40, 260, 10):
+        out = select_relevant_content(md, "alpha ratio hundred", budget)
+        assert len(out) <= budget
+        stripped = out.replace("[...]", "")
+        assert "[" not in stripped and "]" not in stripped
+        for line in out.splitlines():
+            if line.startswith("#"):
+                assert line in ("## First", "## Second")
+
+
+# invisible characters
+
+
+def test_strip_invisible_removes_standalone_runs():
+    assert strip_invisible("a\n\n‍​\n\nb") == "a\n\nb"
+
+
+def test_strip_invisible_removes_line_leading_run():
+    assert strip_invisible("intro\n\n‍**Headquarters:** Chicago") == "intro\n\n**Headquarters:** Chicago"
+
+
+def test_strip_invisible_preserves_emoji_zwj():
+    family = "\U0001f468‍\U0001f469‍\U0001f467"
+    assert strip_invisible(f"Team {family} rocks") == f"Team {family} rocks"
+
+
+def test_standalone_zero_width_absent_from_selection():
+    md = "\n\n".join(
+        [
+            "## Overview\n\nThe pricing plans cover every tier with clear billing details.",
+            "‍",
+            "Extra pricing notes describe discounts and billing cycles thoroughly enough.",
+        ]
+    )
+    out = select_relevant_content(md, "pricing billing details", 120)
+    assert "‍" not in out
+    assert len(out) <= 120

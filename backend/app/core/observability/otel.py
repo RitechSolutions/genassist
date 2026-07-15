@@ -53,7 +53,6 @@ _WEB_SEARCH_OUTCOMES = frozenset(
         "error",
     }
 )
-_WEB_SEARCH_RUNGS = frozenset({"html", "lite", "none"})
 _WEB_SEARCH_CACHE_STATES = frozenset({"hit", "miss", "neg", "off"})
 
 
@@ -227,7 +226,7 @@ def init_opentelemetry(app: Optional["FastAPI"] = None) -> None:
             _web_search_counter = meter.create_counter(
                 "genassist.web_search.events",
                 unit="1",
-                description="Web search events by outcome/rung/cache state",
+                description="Web search events by outcome/cache state",
             )
             _web_search_duration_histogram = meter.create_histogram(
                 "genassist.web_search.duration_seconds",
@@ -295,7 +294,7 @@ def record_workflow_node_duration(
 
 
 def record_web_search_event(
-    outcome: str, rung: str, cache_state: str, duration_seconds: float, result_count: int
+    outcome: str, cache_state: str, duration_seconds: float, result_count: int
 ) -> None:
     """Record one web search: a count event, plus latency and result-count histograms.
     Does nothing until metrics are set up. Labels are forced to the fixed sets
@@ -306,7 +305,6 @@ def record_web_search_event(
         return
     attributes = {
         "genassist.web_search.outcome": outcome if outcome in _WEB_SEARCH_OUTCOMES else "error",
-        "genassist.web_search.rung": rung if rung in _WEB_SEARCH_RUNGS else "none",
         "genassist.web_search.cache": cache_state if cache_state in _WEB_SEARCH_CACHE_STATES else "off",
     }
     counter.add(1, attributes)
