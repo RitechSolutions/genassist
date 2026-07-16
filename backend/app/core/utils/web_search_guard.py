@@ -1,7 +1,8 @@
 """Operational guards for the web-search engine.
 
 Kill switch, per-tenant rate limit, per-process single-flight coalescing and global
-concurrency, tenant-scoped negative caching, and a deployment-global circuit breaker.
+concurrency, tenant-scoped negative caching, a deployment-global DuckDuckGo circuit
+breaker, and a short deployment-global Mwmbl fallback cooldown.
 
 Every Redis-backed guard degrades open — an unreachable Redis never blocks a search.
 No key or log line carries a raw query, URL, or snippet: callers pass an opaque request fingerprint built over
@@ -25,8 +26,8 @@ _GLOBAL_CONCURRENCY = 4
 _RATE_WINDOW_SECONDS = 60
 _NEGATIVE_TTL_SECONDS = 60
 _NEGATIVE_BLOCKED_TTL_SECONDS = 120
-_CIRCUIT_THRESHOLD = 5  # block events per minute that open the circuit
-_CIRCUIT_OPEN_TTL_SECONDS = 120
+_CIRCUIT_OPEN_TTL_SECONDS = 900  # fixed 15-minute cooldown
+_MWMBL_COOLDOWN_TTL_SECONDS = 300  # short pause after a Mwmbl failure, deployment-wide
 
 _global_semaphore = asyncio.Semaphore(_GLOBAL_CONCURRENCY)
 _inflight: dict[str, asyncio.Future] = {}
@@ -176,18 +177,24 @@ async def circuit_is_open() -> bool:
 
 
 async def record_block_event() -> None:
-    """Count a provider block. Too many in a short window trips the circuit breaker.
-
-    Blocks apply to the whole IP, so this breaker is shared across the deployment —
-    not per tenant. Redis keys store only counters, never tenant or query data.
-    """
-    minute = int(time.time() // 60)
+    """Trip the shared DuckDuckGo circuit breaker on the first block."""
     try:
-        redis = _redis()
-        count = await redis.incr(f"websearch:cb:events:{minute}")
-        if count == 1:
-            await redis.expire(f"websearch:cb:events:{minute}", _CIRCUIT_OPEN_TTL_SECONDS)
-        if count >= _CIRCUIT_THRESHOLD:
-            await redis.set("websearch:cb:open", "1", ex=_CIRCUIT_OPEN_TTL_SECONDS)
+        await _redis().set("websearch:cb:open", "1", ex=_CIRCUIT_OPEN_TTL_SECONDS)
     except Exception as exc:
         logger.warning("web search circuit record degraded open: %s", exc)
+
+
+async def mwmbl_circuit_is_open() -> bool:
+    try:
+        return bool(await _redis().get("websearch:mwmbl:cooldown"))
+    except Exception as exc:
+        logger.warning("web search mwmbl cooldown check degraded open: %s", exc)
+        return False
+
+
+async def record_mwmbl_failure() -> None:
+    """Pause Mwmbl fallback for a short cooldown after it fails."""
+    try:
+        await _redis().set("websearch:mwmbl:cooldown", "1", ex=_MWMBL_COOLDOWN_TTL_SECONDS)
+    except Exception as exc:
+        logger.warning("web search mwmbl cooldown record degraded open: %s", exc)

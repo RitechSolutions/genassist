@@ -1,16 +1,21 @@
-"""Web search via DuckDuckGo HTML pages.
+"""Web search via DuckDuckGo HTML pages, with a keyless Mwmbl fallback.
 
 Tries ``html.duckduckgo.com/html/`` first, then falls back to
 ``lite.duckduckgo.com/lite/``. Search-page fetches use a dedicated httpx client.
 Redirects are followed manually and only to an allowlisted set of DuckDuckGo hosts.
 Result links are unwrapped from DDG's ``uddg`` redirect, safety-checked, and skipped if unsafe.
+
+``search_mwmbl`` is a separate, entry point used by the node only when DDG
+explicitly restricts us; it hits a single fixed JSON endpoint and reuses the same
+result normalization. It has no provider abstraction and no region/date/safe-search support.
 """
 
+import json
 import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
@@ -43,6 +48,14 @@ _MAX_SNIPPET_LEN = 500
 _MAX_RESULTS_CAP = 20
 _MAX_EXCLUDE_DOMAINS = 10
 _MAX_ERROR_LEN = 500
+
+_MWMBL_ENDPOINT = "https://api.mwmbl.org/api/v2/search/"
+_MWMBL_HOST = "api.mwmbl.org"
+_MWMBL_HEADERS = {"Accept": "application/json", "User-Agent": "GenAssist-WebSearch/1.0"}
+_MWMBL_TIMEOUT = 10  # seconds
+_MWMBL_MAX_BYTES = 1024 * 1024
+_MWMBL_MAX_RESULTS = 2  # hard ceiling on fallback results, regardless of the caller's maxResults
+_FALLBACK_CATEGORY = "fallback"  # internal WebSearchError category for any Mwmbl failure
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _TIME_RANGE_MAP = {"any": "", "day": "d", "week": "w", "month": "m", "year": "y"}
@@ -413,6 +426,8 @@ async def search_web(
         except WebSearchError as exc:
             failures.append((rung, exc))
             logger.warning("web search rung %s failed (%s): %s", rung, exc.category, exc)
+            if exc.category == "blocked":
+                raise
         except Exception as exc:  # any rung surprise (parse crash, odd payload) falls to the next rung
             wrapped = WebSearchError(_sanitize_error(exc))
             failures.append((rung, wrapped))
@@ -423,3 +438,119 @@ async def search_web(
         f"Web search failed on all providers ({detail})"[:_MAX_ERROR_LEN],
         category=_combined_category([exc.category for _, exc in failures]),
     )
+
+
+async def _fetch_mwmbl(query: str, *, transport: httpx.AsyncBaseTransport | None = None) -> Any:
+    """Request one Mwmbl v2 JSON response. On failure, raise a sanitized ``WebSearchError``. """
+    url = str(httpx.URL(_MWMBL_ENDPOINT, params={"q": query}))
+    if urlparse(url).hostname != _MWMBL_HOST:
+        raise WebSearchError("Fallback provider host is not allowed", category=_FALLBACK_CATEGORY)
+    try:
+        await _validate_url(url)  # shared SSRF / IP / DNS guard on the fixed endpoint
+    except ValueError as exc:
+        raise WebSearchError("Fallback provider address failed safety validation", category=_FALLBACK_CATEGORY) from exc
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False, headers=_MWMBL_HEADERS, timeout=_MWMBL_TIMEOUT, transport=transport
+        ) as client:
+            async with client.stream("GET", url) as response:
+                if response.status_code in _REDIRECT_STATUSES:
+                    raise WebSearchError("Fallback provider redirected", category=_FALLBACK_CATEGORY)
+                if not (200 <= response.status_code < 300):
+                    raise WebSearchError(
+                        f"Fallback provider returned HTTP {response.status_code}", category=_FALLBACK_CATEGORY
+                    )
+                if "application/json" not in response.headers.get("content-type", ""):
+                    raise WebSearchError("Fallback provider returned a non-JSON response", category=_FALLBACK_CATEGORY)
+                chunks: list[bytes] = []
+                received = 0
+                async for chunk in response.aiter_bytes():
+                    received += len(chunk)
+                    if received > _MWMBL_MAX_BYTES:
+                        raise WebSearchError(
+                            "Fallback provider response exceeded the size limit", category=_FALLBACK_CATEGORY
+                        )
+                    chunks.append(chunk)
+        try:
+            return json.loads(b"".join(chunks))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise WebSearchError("Fallback provider returned malformed JSON", category=_FALLBACK_CATEGORY) from exc
+    except httpx.TimeoutException as exc:
+        raise WebSearchError("Timeout contacting fallback provider", category=_FALLBACK_CATEGORY) from exc
+    except httpx.HTTPError as exc:
+        raise WebSearchError(_sanitize_error(exc), category=_FALLBACK_CATEGORY) from exc
+
+
+def _normalize_mwmbl_results(
+    payload: Any, *, max_results: int, include: str, exclude_domains: Sequence[str]
+) -> list[SearchResult]:
+    """Turn Mwmbl JSON entries into ``SearchResult`` objects; skip bad ones.
+
+    Domain include/exclude filters run here on normalized hosts (Mwmbl has no
+    ``site:`` query). At most two results are kept. A valid
+    response with nothing usable is an empty success; a wrong top-level JSON
+    shape is a fallback failure.
+    """
+    if not isinstance(payload, dict):
+        raise WebSearchError("Fallback provider returned an unexpected response shape", category=_FALLBACK_CATEGORY)
+    raw = payload.get("results")
+    if not isinstance(raw, list):
+        raise WebSearchError("Fallback provider response was missing results", category=_FALLBACK_CATEGORY)
+    limit = min(max_results, _MWMBL_MAX_RESULTS)
+    results: list[SearchResult] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if len(results) >= limit:
+            break
+        if not isinstance(entry, dict):
+            continue
+        title, url_raw, content = entry.get("title"), entry.get("url"), entry.get("content")
+        if not isinstance(title, str) or not isinstance(url_raw, str):
+            continue
+        candidate = _resolve_result_url(url_raw)  # rejects credentials, non-http(s), empties
+        if candidate is None:
+            continue
+        url = _normalize_result_url(candidate)
+        host = urlparse(url).hostname or ""
+        if include and not _matches_domains(host, [include]):
+            continue
+        if exclude_domains and _matches_domains(host, exclude_domains):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        results.append(
+            SearchResult(
+                title=title.strip()[:_MAX_TITLE_LEN],
+                url=url,
+                snippet=(content.strip()[:_MAX_SNIPPET_LEN] if isinstance(content, str) else ""),
+                domain=host,
+                position=0,
+            )
+        )
+    for position, result in enumerate(results, start=1):
+        result.position = position
+    return results
+
+
+async def search_mwmbl(
+    query: str,
+    *,
+    max_results: int = 5,
+    include_domain: str = "",
+    exclude_domains: Sequence[str] = (),
+) -> list[SearchResult]:
+    """Fallback search via the Mwmbl community index. Returns at most two hits."""
+    query = (query or "").strip()
+    if not query:
+        raise WebSearchError("Search query is required", category="invalid_config")
+    if len(query) > _MAX_QUERY_LEN:
+        raise WebSearchError(f"Search query exceeds {_MAX_QUERY_LEN} characters", category="invalid_config")
+    try:
+        max_results = max(1, min(int(max_results), _MAX_RESULTS_CAP))
+    except (TypeError, ValueError):
+        raise WebSearchError("maxResults must be a number", category="invalid_config") from None
+    include = _normalize_domain(include_domain) if (include_domain or "").strip() else ""
+    excludes = [_normalize_domain(domain) for domain in exclude_domains if str(domain).strip()]
+    payload = await _fetch_mwmbl(query)
+    return _normalize_mwmbl_results(payload, max_results=max_results, include=include, exclude_domains=excludes)

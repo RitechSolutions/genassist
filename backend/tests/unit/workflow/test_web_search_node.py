@@ -5,9 +5,10 @@ caches, circuit breaker, rate limit); advanced mode page fetches within a size
 budget; and that the raw query never appears in logs or cache keys.
 """
 
+import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -39,6 +40,7 @@ def guards(monkeypatch):
     """Patch every Redis/cache/provider boundary in the node module with safe defaults."""
     mocks = SimpleNamespace(
         search_web=AsyncMock(return_value=_results()),
+        search_mwmbl=AsyncMock(return_value=_results(2)),
         get_cached=AsyncMock(return_value=None),
         store=AsyncMock(),
         get_negative=AsyncMock(return_value=None),
@@ -46,6 +48,8 @@ def guards(monkeypatch):
         check_tenant_rate=AsyncMock(return_value=True),
         store_negative=AsyncMock(),
         record_block_event=AsyncMock(),
+        mwmbl_circuit_is_open=AsyncMock(return_value=False),
+        record_mwmbl_failure=AsyncMock(),
         check_enabled=lambda: True,
         fetch_from_url=AsyncMock(return_value=_html_page()),
         extract_main_content=lambda html, url: ("A" * 5000, "<html/>"),
@@ -283,23 +287,38 @@ async def test_rate_limited_returns_failure_without_search(guards):
 
 
 @pytest.mark.asyncio
-async def test_circuit_open_returns_failure_without_search(guards):
+async def test_circuit_open_routes_to_mwmbl(guards):
     guards.circuit_is_open.return_value = True
     result = await _make_node().process({"query": "q"})
 
-    assert result["success"] is False
-    assert "throttling" in result["error"]
+    assert result["success"] is True
+    assert result["count"] == 2
+    assert result["warnings"][0] == web_search_node._FALLBACK_WARNING
     guards.search_web.assert_not_awaited()
+    guards.search_mwmbl.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_negative_cache_hit_returns_failure_without_search(guards):
+async def test_blocked_negative_cache_routes_to_mwmbl(guards):
     guards.get_negative.return_value = "blocked"
     result = await _make_node().process({"query": "q"})
 
-    assert result["success"] is False
-    assert "throttling" in result["error"]
+    assert result["success"] is True
+    assert result["count"] == 2
+    assert result["warnings"][0] == web_search_node._FALLBACK_WARNING
     guards.search_web.assert_not_awaited()
+    guards.search_mwmbl.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_timeout_negative_cache_returns_error_without_mwmbl(guards):
+    guards.get_negative.return_value = "timeout"
+    result = await _make_node().process({"query": "q"})
+
+    assert result["success"] is False
+    assert set(result) == _ENVELOPE_KEYS
+    guards.search_web.assert_not_awaited()
+    guards.search_mwmbl.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -313,16 +332,110 @@ async def test_positive_cache_hit_short_circuits(guards):
 
 
 @pytest.mark.asyncio
-async def test_websearcherror_maps_to_failure_and_records_block(guards):
+async def test_live_block_records_and_falls_back_to_mwmbl(guards):
     guards.search_web.side_effect = WebSearchError("blocked on all providers", category="blocked")
     result = await _make_node().process({"query": "q"})
 
-    assert result["success"] is False
-    assert result["error"] == "blocked on all providers"
-    assert set(result) == _ENVELOPE_KEYS
+    assert result["success"] is True
+    assert result["count"] == 2
+    assert result["warnings"][0] == web_search_node._FALLBACK_WARNING
+    assert _ENVELOPE_KEYS <= set(result)
     guards.store_negative.assert_awaited_once()
     assert guards.store_negative.call_args.args[1] == "blocked"
     guards.record_block_event.assert_awaited_once()
+    guards.search_mwmbl.assert_awaited_once()
+    guards.store.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_non_blocked_search_error_does_not_fall_back(guards):
+    guards.search_web.side_effect = WebSearchError("timed out", category="timeout")
+    result = await _make_node().process({"query": "q"})
+
+    assert result["success"] is False
+    assert result["error"] == "timed out"
+    guards.search_mwmbl.assert_not_awaited()
+    guards.record_block_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_zero_results_is_success_with_warning(guards):
+    guards.circuit_is_open.return_value = True
+    guards.search_mwmbl.return_value = []
+    result = await _make_node().process({"query": "asdfqwerty"})
+
+    assert result["success"] is True
+    assert result["count"] == 0
+    assert result["results"] == []
+    assert result["text"] == 'No results found for: "asdfqwerty"'
+    assert result["warnings"] == [web_search_node._FALLBACK_WARNING]
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_failure_returns_generic_error_envelope(guards):
+    guards.circuit_is_open.return_value = True
+    guards.search_mwmbl.side_effect = WebSearchError("mwmbl down", category="fallback")
+    result = await _make_node().process({"query": "q"})
+
+    assert result["success"] is False
+    assert result["error"] == "Web search is temporarily unavailable"
+    assert set(result) == _ENVELOPE_KEYS
+    guards.search_web.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_live_block_then_mwmbl_failure_still_records(guards):
+    guards.search_web.side_effect = WebSearchError("blocked", category="blocked")
+    guards.search_mwmbl.side_effect = WebSearchError("mwmbl down", category="fallback")
+    result = await _make_node().process({"query": "q"})
+
+    assert result["success"] is False
+    assert result["error"] == "Web search is temporarily unavailable"
+    guards.store_negative.assert_awaited_once()
+    guards.record_block_event.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_advanced_fallback_enriches_and_orders_warnings(guards):
+    guards.circuit_is_open.return_value = True
+    result = await _make_node().process({"query": "q", "searchDepth": "advanced"})
+
+    assert result["success"] is True
+    assert result["count"] == 2
+    assert result["enrichedCount"] <= 2
+    assert result["warnings"][0] == web_search_node._FALLBACK_WARNING
+
+
+@pytest.mark.asyncio
+async def test_fallback_passes_domains_and_max_results_to_mwmbl(guards):
+    guards.circuit_is_open.return_value = True
+    await _make_node().process(
+        {"query": "q", "maxResults": 1, "includeDomains": "example.com", "excludeDomains": "spam.com"}
+    )
+
+    kwargs = guards.search_mwmbl.call_args.kwargs
+    assert kwargs["max_results"] == 1
+    assert kwargs["include_domain"] == "example.com"
+    assert kwargs["exclude_domains"] == ["spam.com"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_metric_outcomes(guards, monkeypatch):
+    recorder = Mock()  # record_web_search_event is synchronous
+    monkeypatch.setattr(web_search_node, "record_web_search_event", recorder)
+    guards.circuit_is_open.return_value = True
+
+    guards.search_mwmbl.return_value = _results(2)
+    await _make_node().process({"query": "q"})
+    assert recorder.call_args.args[0] == "fallback_ok"
+
+    guards.search_mwmbl.return_value = []
+    await _make_node().process({"query": "q"})
+    assert recorder.call_args.args[0] == "fallback_zero"
+
+    guards.search_mwmbl.side_effect = WebSearchError("x", category="fallback")
+    await _make_node().process({"query": "q"})
+    assert recorder.call_args.args[0] == "fallback_error"
 
 
 @pytest.mark.asyncio
@@ -349,16 +462,75 @@ async def test_log_hygiene_query_never_logged_or_used_as_key(guards, caplog):
     canary = "XYZZY-CANARY-QUERY"
 
     with caplog.at_level(logging.DEBUG):
-        # provider failure path
         guards.search_web.side_effect = WebSearchError("provider blocked", category="blocked")
         await _make_node().process({"query": canary})
-        # cache-backend failure path (node's own except)
         guards.get_cached.side_effect = RuntimeError("redis down")
         await _make_node().process({"query": canary})
 
     assert canary not in caplog.text
-    # cache-key material is the hashed fingerprint, never the raw query
     key = guards.get_cached.call_args_list[0].args[0]
     assert key.startswith("search:")
     assert canary not in key
     assert canary not in str(guards.get_cached.call_args_list[0])
+
+
+@pytest.mark.asyncio
+async def test_circuit_opening_midflight_stops_further_ddg_calls(guards, monkeypatch):
+    slot = asyncio.Semaphore(1)
+    monkeypatch.setattr(web_search_node, "acquire_global_slot", lambda: slot)
+    circuit = {"open": False}
+    guards.circuit_is_open.side_effect = lambda: circuit["open"]
+
+    def _open_circuit():
+        circuit["open"] = True
+
+    guards.record_block_event.side_effect = _open_circuit
+    guards.search_web.side_effect = WebSearchError("blocked", category="blocked")
+
+    results = await asyncio.gather(*[_make_node().process({"query": f"q{i}"}) for i in range(5)])
+
+    assert guards.search_web.call_count == 1
+    assert all(r["success"] and r["warnings"][0] == web_search_node._FALLBACK_WARNING for r in results)
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_cooldown_skips_fallback(guards):
+    guards.circuit_is_open.return_value = True
+    guards.mwmbl_circuit_is_open.return_value = True
+    result = await _make_node().process({"query": "q"})
+
+    assert result["success"] is False
+    assert result["error"] == "Web search is temporarily unavailable"
+    guards.search_web.assert_not_awaited()
+    guards.search_mwmbl.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_failure_records_cooldown(guards):
+    guards.circuit_is_open.return_value = True
+    guards.search_mwmbl.side_effect = WebSearchError("mwmbl down", category="fallback")
+    result = await _make_node().process({"query": "q"})
+
+    assert result["success"] is False
+    assert result["error"] == "Web search is temporarily unavailable"
+    guards.record_mwmbl_failure.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_cooldown_opening_midflight_stops_further_calls(guards, monkeypatch):
+    slot = asyncio.Semaphore(1)
+    monkeypatch.setattr(web_search_node, "acquire_global_slot", lambda: slot)
+    guards.circuit_is_open.return_value = True
+    cooldown = {"open": False}
+    guards.mwmbl_circuit_is_open.side_effect = lambda: cooldown["open"]
+
+    def _open_cooldown():
+        cooldown["open"] = True
+
+    guards.record_mwmbl_failure.side_effect = _open_cooldown
+    guards.search_mwmbl.side_effect = WebSearchError("mwmbl down", category="fallback")
+
+    results = await asyncio.gather(*[_make_node().process({"query": f"q{i}"}) for i in range(5)])
+
+    assert guards.search_mwmbl.call_count == 1
+    assert all(not r["success"] and r["error"] == "Web search is temporarily unavailable" for r in results)

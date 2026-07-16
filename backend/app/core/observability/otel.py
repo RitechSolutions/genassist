@@ -51,6 +51,9 @@ _WEB_SEARCH_OUTCOMES = frozenset(
         "invalid_config",
         "disabled",
         "error",
+        "fallback_ok",
+        "fallback_zero",
+        "fallback_error",
     }
 )
 _WEB_SEARCH_CACHE_STATES = frozenset({"hit", "miss", "neg", "off"})

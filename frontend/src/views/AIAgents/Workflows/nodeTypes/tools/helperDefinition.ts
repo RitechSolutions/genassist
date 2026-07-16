@@ -98,7 +98,7 @@ export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
 
 export const WEB_SEARCH_HELP_CONTENT: NodeHelpContent = {
   intro:
-    "The Web Search node searches the web without an API key and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Result page fetches block private networks, localhost, and cloud metadata hosts.",
+    "The Web Search node searches the web and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Result page fetches block private networks, localhost, and cloud metadata hosts.",
   sections: [
     {
       title: "Overview & Use Cases",
@@ -141,6 +141,7 @@ export const WEB_SEARCH_HELP_CONTENT: NodeHelpContent = {
         "Max Results is an upper bound — filtering may return fewer.",
         "Include Domain supports a single domain in this version.",
         "Advanced depth enriches only the top results within a total content budget and may fall back to snippets, setting partial.",
+        "If DuckDuckGo is temporarily unavailable, up to two results are served from the Mwmbl community index and flagged in the result warnings.",
       ],
     },
   ],

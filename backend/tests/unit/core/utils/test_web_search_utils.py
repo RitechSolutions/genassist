@@ -105,12 +105,24 @@ async def test_no_results_marker_returns_empty_without_lite_fallback(monkeypatch
     monkeypatch.setattr(web_search_utils, "_fetch_serp", fetch)
 
     assert await search_web("gibberish qwertyzxcv") == []
-    fetch.assert_awaited_once()  
+    fetch.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_challenge_page_falls_back_to_lite(monkeypatch):
+async def test_challenge_page_stops_ddg_without_lite(monkeypatch):
     fetch = AsyncMock(side_effect=[_CHALLENGE_PAGE, _LITE_SERP])
+    monkeypatch.setattr(web_search_utils, "_fetch_serp", fetch)
+
+    with pytest.raises(WebSearchError) as err:
+        await search_web("python")
+
+    assert err.value.category == "blocked"
+    fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ddg_timeout_still_falls_back_to_lite(monkeypatch):
+    fetch = AsyncMock(side_effect=[WebSearchError("t", category="timeout"), _LITE_SERP])
     monkeypatch.setattr(web_search_utils, "_fetch_serp", fetch)
 
     results = await search_web("python")
@@ -121,17 +133,6 @@ async def test_challenge_page_falls_back_to_lite(monkeypatch):
     ]
     assert results[0].url == "https://example.com/lite"
     assert results[0].snippet == "Lite snippet here"
-
-
-@pytest.mark.asyncio
-async def test_both_rungs_blocked_raises_naming_both(monkeypatch):
-    monkeypatch.setattr(web_search_utils, "_fetch_serp", AsyncMock(side_effect=[_CHALLENGE_PAGE, _CHALLENGE_PAGE]))
-
-    with pytest.raises(WebSearchError) as err:
-        await search_web("python")
-
-    assert "html:" in str(err.value) and "lite:" in str(err.value)
-    assert err.value.category == "blocked"
 
 
 @pytest.mark.asyncio
@@ -186,7 +187,7 @@ async def test_max_results_truncates_and_large_values_are_clamped(monkeypatch):
     monkeypatch.setattr(web_search_utils, "_fetch_serp", AsyncMock(return_value=page))
 
     assert len(await search_web("q", max_results=1)) == 1
-    assert len(await search_web("q", max_results=999)) == 3  
+    assert len(await search_web("q", max_results=999)) == 3
 
 
 @pytest.mark.asyncio
@@ -241,7 +242,6 @@ async def test_invalid_config_is_rejected_before_any_fetch(monkeypatch):
     fetch.assert_not_awaited()
 
 
-
 def _no_dns(monkeypatch):
     monkeypatch.setattr(web_search_utils, "_validate_url", AsyncMock(return_value=None))
 
@@ -284,7 +284,7 @@ async def test_fetch_serp_rejects_redirect_off_the_allowlist(monkeypatch):
         )
 
     assert err.value.category == "blocked"
-    assert len(seen) == 1  
+    assert len(seen) == 1
 
 
 @pytest.mark.asyncio
@@ -380,3 +380,207 @@ def test_sanitize_error_strips_urls_and_query_strings():
     assert "leaky" not in text
     assert "RuntimeError" in text
     assert web_search_utils._sanitize_error(httpx.ConnectTimeout("t")) == "Timeout contacting search provider"
+
+
+def _mwmbl_entry(url: str, title: str = "Title", content: str = "Snippet") -> dict:
+    return {"url": url, "title": title, "content": content}
+
+
+def _mwmbl_payload(*entries: dict) -> dict:
+    return {"results": list(entries)}
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_maps_content_to_snippet_and_caps_two(monkeypatch):
+    payload = _mwmbl_payload(
+        _mwmbl_entry("https://a.example.com/1", title="A", content="First"),
+        _mwmbl_entry("https://b.example.com/2", title="B", content="Second"),
+        _mwmbl_entry("https://c.example.com/3", title="C", content="Third"),
+    )
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value=payload))
+
+    results = await web_search_utils.search_mwmbl("q")
+
+    assert [(r.title, r.url, r.snippet, r.position) for r in results] == [
+        ("A", "https://a.example.com/1", "First", 1),
+        ("B", "https://b.example.com/2", "Second", 2),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_respects_max_results_one(monkeypatch):
+    payload = _mwmbl_payload(_mwmbl_entry("https://a.example.com/1"), _mwmbl_entry("https://b.example.com/2"))
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value=payload))
+
+    assert len(await web_search_utils.search_mwmbl("q", max_results=1)) == 1
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_skips_malformed_credentialed_and_bad_scheme(monkeypatch):
+    payload = _mwmbl_payload(
+        _mwmbl_entry("https://good.example.com/ok", title="Good", content="ok"),
+        {"title": "Missing url", "content": "x"},
+        {"url": "https://x.example.com", "content": "no title"},
+        _mwmbl_entry("javascript:alert(1)", title="Bad scheme"),
+        _mwmbl_entry("https://user:pass@evil.example/", title="Credentials"),
+        _mwmbl_entry("https://good.example.com/ok#dup", title="Dup"),
+        _mwmbl_entry("https://second.example.com/ok", title="Second"),
+    )
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value=payload))
+
+    results = await web_search_utils.search_mwmbl("q")
+
+    assert [r.url for r in results] == ["https://good.example.com/ok", "https://second.example.com/ok"]
+    assert [r.position for r in results] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_domain_filters_suffix_safe_and_renumber(monkeypatch):
+    payload = _mwmbl_payload(
+        _mwmbl_entry("https://example.com/a", title="A"),
+        _mwmbl_entry("https://sub.example.com/b", title="B"),
+        _mwmbl_entry("https://notexample.com/c", title="C"),
+    )
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value=payload))
+
+    excluded = await web_search_utils.search_mwmbl("q", exclude_domains=["example.com"])
+    assert [r.domain for r in excluded] == ["notexample.com"]
+    assert excluded[0].position == 1
+
+    included = await web_search_utils.search_mwmbl("q", include_domain="example.com")
+    assert [r.url for r in included] == ["https://example.com/a", "https://sub.example.com/b"]
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_filtering_can_yield_zero(monkeypatch):
+    payload = _mwmbl_payload(_mwmbl_entry("https://example.com/a"))
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value=payload))
+
+    assert await web_search_utils.search_mwmbl("q", exclude_domains=["example.com"]) == []
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_valid_empty_results(monkeypatch):
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value={"results": []}))
+
+    assert await web_search_utils.search_mwmbl("q") == []
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_missing_results_key_is_fallback_error(monkeypatch):
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value={"noresults": []}))
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils.search_mwmbl("q")
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_search_mwmbl_wrong_top_level_shape_is_fallback_error(monkeypatch):
+    monkeypatch.setattr(web_search_utils, "_fetch_mwmbl", AsyncMock(return_value=[1, 2, 3]))
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils.search_mwmbl("q")
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_decodes_json_object(monkeypatch):
+    _no_dns(monkeypatch)
+    payload = {"results": [{"url": "https://a.example.com/1", "title": "A", "content": "x"}]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    body = await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+
+    assert body == payload
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_rejects_non_json_content_type(monkeypatch):
+    _no_dns(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html/>", headers={"content-type": "text/html"})
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_rejects_malformed_json(monkeypatch):
+    _no_dns(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"{not json", headers={"content-type": "application/json"})
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [403, 429, 500])
+async def test_fetch_mwmbl_rejects_non_2xx(monkeypatch, status):
+    _no_dns(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"results": []})
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_rejects_redirect(monkeypatch):
+    _no_dns(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "https://api.mwmbl.org/other"})
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_maps_timeout(monkeypatch):
+    _no_dns(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_rejects_oversized_body(monkeypatch):
+    _no_dns(monkeypatch)
+    oversized = b'{"results": []}' + b" " * (web_search_utils._MWMBL_MAX_BYTES + 1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=oversized, headers={"content-type": "application/json"})
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl("q", transport=httpx.MockTransport(handler))
+    assert err.value.category == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_mwmbl_sanitizes_transport_error_and_query(monkeypatch):
+    _no_dns(monkeypatch)
+    canary = "XYZZY-CANARY-QUERY"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"cannot reach https://api.mwmbl.org/?q={canary}", request=request)
+
+    with pytest.raises(WebSearchError) as err:
+        await web_search_utils._fetch_mwmbl(canary, transport=httpx.MockTransport(handler))
+
+    assert err.value.category == "fallback"
+    assert canary not in str(err.value)

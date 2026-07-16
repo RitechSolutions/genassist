@@ -14,7 +14,9 @@ from app.core.utils.web_search_guard import (
     check_tenant_rate,
     circuit_is_open,
     get_negative,
+    mwmbl_circuit_is_open,
     record_block_event,
+    record_mwmbl_failure,
     single_flight,
     store_negative,
 )
@@ -125,7 +127,7 @@ async def test_single_flight_coalesces_and_charges_the_leader_once():
 
     async def producer():
         producer_calls.append(1)
-        await rate_charges("acme")  
+        await rate_charges("acme")
         await release.wait()
         return {"success": True, "results": [{"title": "x"}]}
 
@@ -199,7 +201,7 @@ async def test_single_flight_leader_failure_resolves_followers_without_raising()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     release.set()
-    results = await asyncio.gather(*tasks)  
+    results = await asyncio.gather(*tasks)
 
     assert all(result["success"] is False for result in results)
     assert all(set(result) == _ENVELOPE_KEYS for result in results)
@@ -229,10 +231,10 @@ async def test_negative_cache_roundtrip_ttls_and_expiry():
         assert await get_negative(_FP) == "blocked"
         key = redis.set.call_args.args[0]
         assert key.startswith("tenant:acme:websearch-neg:")
-        assert redis.ttls[key] == 120  
+        assert redis.ttls[key] == 120
         await store_negative(_FP, "timeout")
         assert redis.ttls[key] == 60
-        redis.store.pop(key)  
+        redis.store.pop(key)
         assert await get_negative(_FP) is None
 
 
@@ -243,29 +245,49 @@ async def test_negative_cache_degrades_open_on_redis_error():
     )
     p_redis, p_tenant = _patch(redis)
     with p_redis, p_tenant:
-        await store_negative(_FP, "blocked")  
+        await store_negative(_FP, "blocked")
         assert await get_negative(_FP) is None
 
 
 @pytest.mark.asyncio
-async def test_circuit_opens_at_threshold_and_closes_on_expiry():
+async def test_circuit_opens_on_first_block_and_closes_on_expiry():
     redis = _stateful_redis()
     with patch.object(web_search_guard, "_redis", return_value=redis), _freeze_time():
-        for _ in range(4):
-            await record_block_event()
         assert await circuit_is_open() is False
-        await record_block_event()  
+        await record_block_event()
         assert await circuit_is_open() is True
-        assert redis.ttls["websearch:cb:open"] == 120
-        redis.store.pop("websearch:cb:open")  
+        assert redis.ttls["websearch:cb:open"] == 900
+        redis.store.pop("websearch:cb:open")
         assert await circuit_is_open() is False
 
 
 @pytest.mark.asyncio
 async def test_circuit_degrades_open_on_redis_error():
     redis = SimpleNamespace(
-        get=AsyncMock(side_effect=RuntimeError("down")), incr=AsyncMock(side_effect=RuntimeError("down"))
+        get=AsyncMock(side_effect=RuntimeError("down")), set=AsyncMock(side_effect=RuntimeError("down"))
     )
     with patch.object(web_search_guard, "_redis", return_value=redis):
         await record_block_event()  # must not raise
         assert await circuit_is_open() is False
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_cooldown_opens_on_failure_and_closes_on_expiry():
+    redis = _stateful_redis()
+    with patch.object(web_search_guard, "_redis", return_value=redis), _freeze_time():
+        assert await mwmbl_circuit_is_open() is False
+        await record_mwmbl_failure()
+        assert await mwmbl_circuit_is_open() is True
+        assert redis.ttls["websearch:mwmbl:cooldown"] == 300
+        redis.store.pop("websearch:mwmbl:cooldown")
+        assert await mwmbl_circuit_is_open() is False
+
+
+@pytest.mark.asyncio
+async def test_mwmbl_cooldown_degrades_open_on_redis_error():
+    redis = SimpleNamespace(
+        get=AsyncMock(side_effect=RuntimeError("down")), set=AsyncMock(side_effect=RuntimeError("down"))
+    )
+    with patch.object(web_search_guard, "_redis", return_value=redis):
+        await record_mwmbl_failure()  # must not raise
+        assert await mwmbl_circuit_is_open() is False

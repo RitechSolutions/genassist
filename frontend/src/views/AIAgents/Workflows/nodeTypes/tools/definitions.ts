@@ -138,7 +138,7 @@ export const WEB_SEARCH_NODE_DEFINITION: NodeTypeDefinition<WebSearchNodeData> =
   type: "webSearchNode",
   label: "Web Search",
   description:
-    "Searches the web (no API key) and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Optionally fetches full page text for the top results.",
+    "Searches the web and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Optionally fetches full page text for the top results.",
   shortDescription: "Search the web",
   helpContent: WEB_SEARCH_HELP_CONTENT,
   configSubtitle:

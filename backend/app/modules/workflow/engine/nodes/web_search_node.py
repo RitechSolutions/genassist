@@ -19,18 +19,22 @@ from app.core.utils.web_search_guard import (
     check_tenant_rate,
     circuit_is_open,
     get_negative,
+    mwmbl_circuit_is_open,
     record_block_event,
+    record_mwmbl_failure,
     single_flight,
     store_negative,
 )
 from app.core.utils.web_search_utils import (
     _MAX_EXCLUDE_DOMAINS,
     _MAX_QUERY_LEN,
+    SearchResult,
     WebSearchEnvelope,
     WebSearchError,
     WebSearchResultItem,
     _normalize_domain,
     _sanitize_error,
+    search_mwmbl,
     search_web,
 )
 from app.modules.workflow.engine import BaseNode
@@ -48,6 +52,8 @@ _WARNING_LEN = 200
 _KEY_PREFIX = "websearch"
 # Bumps the advanced fingerprint when the enrichment selection algorithm changes
 _CONTENT_SELECTION_VERSION = "relevance-v3"
+# Prepended to warnings whenever results came from the Mwmbl fallback rather than DDG.
+_FALLBACK_WARNING = "DuckDuckGo was unavailable; up to two results were provided by the Mwmbl community index."
 
 # Category-specific messages surfaced when a recent provider failure is remembered.
 _NEG_MESSAGES = {
@@ -159,14 +165,20 @@ class WebSearchNode(BaseNode):
                 metric.update(outcome=self._hit_outcome(cached), cache="hit", count=cached.get("count", 0))
                 return cached
 
+        # If DuckDuckGo is blocked (remembered for this tenant, or the shared circuit is
+        # open), go straight to Mwmbl — still via the producer so rate limit, in-flight
+        # dedupe, and caching still apply.
+        force_fallback = False
         neg = await get_negative(fingerprint)
         if neg is not None:
-            metric.update(outcome="negative_cached", cache="neg")
-            return self._error(query, _NEG_MESSAGES.get(neg, "Web search is temporarily unavailable; retry later"))
+            if neg == "blocked":
+                force_fallback = True
+            else:
+                metric.update(outcome="negative_cached", cache="neg")
+                return self._error(query, _NEG_MESSAGES.get(neg, "Web search is temporarily unavailable; retry later"))
 
-        if await circuit_is_open():
-            metric["outcome"] = "circuit_open"
-            return self._error(query, "Web search temporarily unavailable (provider throttling); retry later")
+        if not force_fallback and await circuit_is_open():
+            force_fallback = True
 
         tenant = get_tenant_context()
 
@@ -195,6 +207,7 @@ class WebSearchNode(BaseNode):
                 safesearch=safesearch,
                 include_domain=include_domain,
                 exclude_domains=exclude_domains,
+                force_fallback=force_fallback,
                 metric=metric,
             )
 
@@ -224,31 +237,49 @@ class WebSearchNode(BaseNode):
         safesearch: str,
         include_domain: str,
         exclude_domains: List[str],
+        force_fallback: bool,
         metric: Dict[str, Any],
     ) -> WebSearchEnvelope:
-        try:
+        used_fallback = False
+        if not force_fallback:
             async with acquire_global_slot():
-                results = await search_web(
-                    query,
-                    max_results=max_results,
-                    region=region,
-                    time_range=time_range,
-                    safesearch=safesearch,
-                    include_domain=include_domain,
-                    exclude_domains=exclude_domains,
-                )
-        except WebSearchError as exc:
-            if exc.category in ("blocked", "timeout", "selector_drift"):
-                await store_negative(fingerprint, exc.category)
-            if exc.category == "blocked":
-                await record_block_event()
-            metric["outcome"] = exc.category if exc.category in _OUTCOME_CATEGORIES else "error"
-            return self._error(query, str(exc))
+                if await circuit_is_open():
+                    force_fallback = True
+                else:
+                    try:
+                        results = await search_web(
+                            query,
+                            max_results=max_results,
+                            region=region,
+                            time_range=time_range,
+                            safesearch=safesearch,
+                            include_domain=include_domain,
+                            exclude_domains=exclude_domains,
+                        )
+                    except WebSearchError as exc:
+                        if exc.category == "blocked":
+                            await store_negative(fingerprint, "blocked")
+                            await record_block_event()
+                            force_fallback = True  # fall to Mwmbl once the slot is released
+                        else:
+                            if exc.category in ("timeout", "selector_drift"):
+                                await store_negative(fingerprint, exc.category)
+                            metric["outcome"] = exc.category if exc.category in _OUTCOME_CATEGORIES else "error"
+                            return self._error(query, str(exc))
+
+        if force_fallback:
+            fallback = await self._fallback_results(query, max_results, include_domain, exclude_domains)
+            if fallback is None:
+                metric["outcome"] = "fallback_error"
+                return self._error(query, "Web search is temporarily unavailable")
+            results, used_fallback = fallback, True
 
         serialized = self._serialize(results)
         enriched_count, partial, warnings = 0, False, []
         if depth == "advanced" and serialized:
             enriched_count, partial, warnings = await self._enrich(serialized, query, max_content_chars, max_total)
+        if used_fallback:
+            warnings = [_FALLBACK_WARNING, *warnings][:_MAX_WARNINGS]
 
         envelope: WebSearchEnvelope = {
             "success": True,
@@ -261,13 +292,35 @@ class WebSearchNode(BaseNode):
             "partial": partial,
             "warnings": warnings,
         }
-        metric.update(outcome="ok" if serialized else "zero", count=len(serialized))
+        if used_fallback:
+            metric.update(outcome="fallback_ok" if serialized else "fallback_zero", count=len(serialized))
+        else:
+            metric.update(outcome="ok" if serialized else "zero", count=len(serialized))
 
         if max_age > 0:
             await store(cache_key, cache_options, max_age, envelope, key_prefix=_KEY_PREFIX)
             envelope = {**envelope, "cacheState": "miss"}
             metric["cache"] = "miss"
         return envelope
+
+    async def _fallback_results(
+        self, query: str, max_results: int, include_domain: str, exclude_domains: List[str]
+    ) -> List[SearchResult] | None:
+        try:
+            async with acquire_global_slot():
+                if await mwmbl_circuit_is_open():
+                    return None
+                return await search_mwmbl(
+                    query, max_results=max_results, include_domain=include_domain, exclude_domains=exclude_domains
+                )
+        except WebSearchError as exc:
+            logger.warning("web search fallback failed (%s)", exc.category)
+            await record_mwmbl_failure()
+            return None
+        except Exception as exc:
+            logger.warning("web search fallback failed unexpectedly: %s", _sanitize_error(exc))
+            await record_mwmbl_failure()
+            return None
 
     async def _enrich(
         self, results: List[WebSearchResultItem], query: str, max_content_chars: int, max_total: int
