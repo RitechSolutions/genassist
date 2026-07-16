@@ -29,7 +29,8 @@ import {
 import { useReportedFeedback } from "../hooks/useReportedFeedback";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
 import { StatusSelect } from "../components/StatusSelect";
-import { STATUS_META, STATUS_ORDER, formatDate } from "../constants";
+import { STATUS_META, STATUS_ORDER } from "../constants";
+import { formatDateTime } from "@/helpers/utils";
 
 const PAGE_SIZE = 20;
 
@@ -176,7 +177,7 @@ export default function ReportedFeedback() {
       key: "reported_at",
       headerClassName: "w-[160px]",
       className: "whitespace-nowrap text-xs text-muted-foreground",
-      cell: (item) => formatDate(item.reported_at),
+      cell: (item) => formatDateTime(item.reported_at),
     },
     {
       header: "Status",

@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
 import { DailyConversationsChartEmptyState } from "../AnalyticsEmptyStates";
 import { analyticsFadeUpClass } from "../../constants/animations";
-import { cn } from "@/helpers/utils";
+import { cn, formatChartDate } from "@/helpers/utils";
 import {
   CHART_SERIES_COLORS,
   CHART_NEUTRALS,
@@ -29,10 +29,6 @@ interface AgentExecutionChartProps {
 
 const COLORS = CHART_SERIES_COLORS;
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecutionChartProps) {
   if (loading) {
@@ -61,7 +57,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
   }
 
   const data = dates.map((date) => ({
-    date: formatDate(date),
+    date: formatChartDate(date),
     ...pivot.get(date),
   }));
 

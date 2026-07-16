@@ -10,6 +10,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { Skeleton } from "@/components/skeleton";
 import { CHART_NEUTRALS, chartTooltipStyle, chartTooltipCursor } from "@/constants/chartColors";
+import { formatChartDate } from "@/helpers/utils";
 
 export interface JobEventWithDate {
   created_at?: string;
@@ -25,10 +26,6 @@ interface DailyConversationsChartProps {
 
 const SERIES_KEY = "count";
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 function getDateKey(createdAt: string | undefined): string | null {
   if (!createdAt) return null;
@@ -58,7 +55,7 @@ export function DailyConversationsChart({
   }
   const dates = Array.from(dayCounts.keys()).sort();
   const data = dates.map((date) => ({
-    date: formatDate(date),
+    date: formatChartDate(date),
     [SERIES_KEY]: dayCounts.get(date) ?? 0,
   }));
   const total = (events ?? []).length;

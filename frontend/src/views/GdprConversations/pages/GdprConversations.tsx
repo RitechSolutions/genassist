@@ -9,6 +9,7 @@ import { Card } from "@/components/card";
 import { Badge } from "@/components/badge";
 import { DataTable, Column } from "@/components/ui/data-table";
 import { PaginationBar } from "@/components/PaginationBar";
+import { formatDateTime } from "@/helpers/utils";
 
 import {
   deleteConversationForGdpr,
@@ -24,15 +25,6 @@ import { TranscriptDialog } from "@/views/Transcripts/components/TranscriptDialo
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 
 const PAGE_SIZE = 10;
-
-const formatDate = (value: string | null | undefined): string => {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
-};
 
 const getRequesterEmail = (item: GdprConversationItem): string | null => {
   const attrs = item.custom_attributes;
@@ -351,14 +343,14 @@ export default function GdprConversations() {
       key: "created_at",
       headerClassName: "w-[160px]",
       className: "text-xs text-muted-foreground whitespace-nowrap",
-      cell: (item) => formatDate(item.created_at),
+      cell: (item) => formatDateTime(item.created_at),
     },
     {
       header: "Updated",
       key: "updated_at",
       headerClassName: "w-[160px]",
       className: "text-xs text-muted-foreground whitespace-nowrap",
-      cell: (item) => formatDate(item.updated_at),
+      cell: (item) => formatDateTime(item.updated_at),
     },
     {
       header: "Open",
