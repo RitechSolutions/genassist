@@ -5,16 +5,17 @@ from sqlalchemy import select
 from app.db.models.role_permission import RolePermissionModel
 from uuid import UUID
 
+from app.repositories.db_repository import DbRepository
 from app.schemas.role_permission import RolePermissionCreate
 
 @inject
-class RolePermissionsRepository:
+class RolePermissionsRepository(DbRepository[RolePermissionModel]):
     """
     Repository for RolePermission join-table operations.
     """
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(RolePermissionModel, db)
 
     async def create(self, data: RolePermissionCreate) -> RolePermissionModel:
         # Optional: check if pair already exists
@@ -34,19 +35,9 @@ class RolePermissionsRepository:
         await self.db.refresh(rp)
         return rp
 
-    async def get_by_id(self, rp_id: UUID) -> RolePermissionModel:
-        result = await self.db.execute(
-            select(RolePermissionModel).where(RolePermissionModel.id == rp_id)
-        )
-        return result.scalars().first()
-
     async def get_all(self) -> list[RolePermissionModel]:
         result = await self.db.execute(select(RolePermissionModel))
         return result.scalars().all()
-
-    async def delete(self, rp: RolePermissionModel):
-        await self.db.delete(rp)
-        await self.db.commit()
 
     async def update(
         self, rp_id: UUID, data: RolePermissionCreate

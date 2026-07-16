@@ -3,14 +3,15 @@ from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.db.models import UserTypeModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.user import UserTypeCreate
 
 @inject
-class UserTypesRepository:
+class UserTypesRepository(DbRepository[UserTypeModel]):
     """Repository for user-related database operations."""
 
     def __init__(self, db: AsyncSession):  # Auto-inject db
-        self.db = db
+        super().__init__(UserTypeModel, db)
 
     async def create(self, user_type: UserTypeCreate):
         new_user_type = UserTypeModel(
@@ -31,19 +32,6 @@ class UserTypesRepository:
         await self.db.commit()
         await self.db.refresh(user_type)
         return user_type
-
-
-    async def delete(self, user_type: UserTypeModel):
-        await self.db.delete(user_type)
-        await self.db.commit()
-
-
-    async def get_all(self) -> list[UserTypeModel]:
-        result = await self.db.execute(
-            select(UserTypeModel)
-            .order_by(UserTypeModel.created_at.asc())
-        )
-        return result.scalars().all()
 
 
     async def get_by_name(self, name: str) -> UserTypeModel | None:

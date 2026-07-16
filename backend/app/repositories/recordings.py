@@ -10,6 +10,7 @@ from sqlalchemy import false, or_, select, func, cast, Date
 from app.db.models.recording import RecordingModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.agent import AgentModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.recording import RecordingCreate
 
 # Metric definitions: (raw_key, display_key, scale_factor)
@@ -48,11 +49,11 @@ def format_raw_metrics(raw: dict) -> dict:
 
 
 @inject
-class RecordingsRepository:
+class RecordingsRepository(DbRepository[RecordingModel]):
     """Repository for user-related database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(RecordingModel, db)
 
     @staticmethod
     def _apply_filters(

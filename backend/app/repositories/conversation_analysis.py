@@ -4,13 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 from app.db.models.conversation import ConversationAnalysisModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.conversation_analysis import ConversationAnalysisCreate
 
 @inject
-class ConversationAnalysisRepository:
+class ConversationAnalysisRepository(DbRepository[ConversationAnalysisModel]):
 
     def __init__(self, db: AsyncSession):  # Auto-inject db
-        self.db = db
+        super().__init__(ConversationAnalysisModel, db)
 
     async def save_conversation_analysis(self, analysis_data: ConversationAnalysisCreate) -> ConversationAnalysisModel:
         new_analysis = ConversationAnalysisModel(

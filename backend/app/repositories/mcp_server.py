@@ -8,16 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models.mcp_server import MCPServerModel, MCPServerWorkflowModel
+from app.repositories.db_repository import DbRepository
 
 logger = logging.getLogger(__name__)
 
 
 @inject
-class MCPServerRepository:
+class MCPServerRepository(DbRepository[MCPServerModel]):
     """Repository for MCP Server database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(MCPServerModel, db)
 
     async def create(
         self,
