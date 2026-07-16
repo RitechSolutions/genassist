@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ListEmptyState } from "@/components/ListEmptyState";
-import { TableCell, TableRow } from "@/components/table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
@@ -82,14 +82,6 @@ export function FineTuneJobsCard({
         .some((s) => s.includes(q))
     );
   }, [jobs, searchQuery]);
-
-  const headers = [
-    "Name",
-    "Model",
-    "Status",
-    "Accuracy",
-    { label: "Action", className: "text-center pr-4 whitespace-nowrap" },
-  ];
 
   const handleDelete = (job: FineTuneJob) => {
     setJobToDelete(job);
@@ -239,44 +231,51 @@ export function FineTuneJobsCard({
     );
   };
 
-  const renderRow = (job: FineTuneJob) => {
-    const jobIdentifier = job.id || job.openai_job_id;
-    const handleRowClick = () => {
-      if (!jobIdentifier) return;
-      navigate(`/fine-tune/${jobIdentifier}`);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
-      if (!jobIdentifier) return;
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        navigate(`/fine-tune/${jobIdentifier}`);
-      }
-    };
-
-    return (
-      <TableRow
-        key={job.id}
-        className="text-sm cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
-        onClick={handleRowClick}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-      >
-        <TableCell className="font-medium text-foreground">
-          {job.suffix || job.fine_tuned_model || job.id || "—"}
-        </TableCell>
-        <TableCell className="text-muted-foreground">{job.model || "—"}</TableCell>
-        <TableCell className="min-w-[180px]">{renderStatus(job)}</TableCell>
-        <TableCell className="min-w-[140px]">{renderAccuracy(job)}</TableCell>
-        <TableCell
-          className="w-[72px] text-center"
+  const columns: Column<FineTuneJob>[] = [
+    {
+      header: "Name",
+      key: "name",
+      className: "font-medium text-foreground",
+      cell: (job) => job.suffix || job.fine_tuned_model || job.id || "—",
+    },
+    {
+      header: "Model",
+      key: "model",
+      className: "text-muted-foreground",
+      cell: (job) => job.model || "—",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "min-w-[180px]",
+      cell: (job) => renderStatus(job),
+    },
+    {
+      header: "Accuracy",
+      key: "accuracy",
+      className: "min-w-[140px]",
+      cell: (job) => renderAccuracy(job),
+    },
+    {
+      header: "Action",
+      key: "action",
+      headerClassName: "text-center pr-4 whitespace-nowrap",
+      className: "w-[72px] text-center",
+      cell: (job) => (
+        <div
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
           {renderActions(job)}
-        </TableCell>
-      </TableRow>
-    );
+        </div>
+      ),
+    },
+  ];
+
+  const handleRowClick = (job: FineTuneJob) => {
+    const jobIdentifier = job.id || job.openai_job_id;
+    if (!jobIdentifier) return;
+    navigate(`/fine-tune/${jobIdentifier}`);
   };
 
   const isSearchActive = searchQuery.trim().length > 0;
@@ -331,13 +330,14 @@ export function FineTuneJobsCard({
 
       <DataTable
         data={filtered}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
+        onRowClick={handleRowClick}
         emptyMessage="No Fine-Tune jobs found"
-        searchEmptyMessage="No jobs matching your search"
+        notFoundMessage="No jobs matching your search"
         emptyState={emptyState}
       />
 

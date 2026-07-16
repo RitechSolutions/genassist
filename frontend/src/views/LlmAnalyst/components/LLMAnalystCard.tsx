@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { toast } from "react-hot-toast";
@@ -58,41 +58,58 @@ export function LLMAnalystCard({
     }
   };
 
-  const headers = ["Name", "Provider", "Prompt", "Status", "Actions"];
-
-  const renderRow = (analyst: LLMAnalyst) => (
-    <TableRow key={analyst.id}>
-      <TableCell className="font-medium break-all">{analyst.name}</TableCell>
-      <TableCell className="truncate">{analyst.llm_provider?.name}</TableCell>
-      <TableCell>
-        <span className="line-clamp-2">{analyst.prompt}</span>
-      </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<LLMAnalyst>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (analyst) => analyst.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Provider",
+      key: "provider",
+      cell: (analyst) => analyst.llm_provider?.name,
+      className: "truncate",
+    },
+    {
+      header: "Prompt",
+      key: "prompt",
+      cell: (analyst) => <span className="line-clamp-2">{analyst.prompt}</span>,
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (analyst) => (
         <Badge variant={analyst.is_active ? "default" : "secondary"}>
           {analyst.is_active ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (analyst) => (
         <ActionButtons
           onEdit={() => onEdit(analyst)}
           onDelete={() => handleDeleteClick(analyst)}
           editTitle="Edit"
           deleteTitle="Delete"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filtered}
+        columns={columns}
         loading={loading}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No LLM Analysts found"
-        searchEmptyMessage="No LLM Analysts found matching your search"
+        notFoundMessage="No LLM Analysts found matching your search"
       />
 
       <ConfirmDialog

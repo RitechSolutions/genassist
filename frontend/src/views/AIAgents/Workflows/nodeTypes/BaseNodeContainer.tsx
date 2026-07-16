@@ -18,7 +18,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { getNodeBgColor, getNodeIconColor } from "../utils/nodeColors";

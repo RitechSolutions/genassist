@@ -29,8 +29,60 @@
     --ai-brand: 245 100% 65%;
     --ai-brand-hover: 243 75% 59%;
     --ai-brand-light: 258 90% 66%;
+    /* Semantic status tokens — prefer these over literal green/amber/blue classes */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 92% 12%;
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 98%;
+    /* Categorical chart series — replaces per-file hex palettes */
+    --chart-1: 229 86% 51%;
+    --chart-2: 258 90% 66%;
+    --chart-3: 160 84% 39%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 340 82% 60%;
+    --chart-6: 190 90% 45%;
     --radius: 0.75rem;
     --handler-diameter: 14;
+  }
+
+  /* Dark theme token values. Inert until a `.dark` class is applied to <html>
+     (no theme toggle is wired yet). Token-driven components adapt automatically;
+     views still using literal color classes will need dark: variants before
+     dark mode is switched on for users. */
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 229 86% 61%;
+    --primary-hover: 229 86% 71%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 229 86% 61%;
+    --brand-600: 229 86% 61%;
+    --brand-50: 229 40% 14%;
+    --ai-brand: 245 100% 70%;
+    --ai-brand-hover: 243 75% 64%;
+    --ai-brand-light: 258 90% 71%;
+    --success: 142 64% 40%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 38 92% 12%;
+    --info: 217 91% 65%;
+    --info-foreground: 0 0% 98%;
   }
 }
 

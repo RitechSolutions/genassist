@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/button";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { Webhook } from "@/interfaces/webhook.interface";
 import { getAllWebhooks, deleteWebhook } from "@/services/webhook";
@@ -79,20 +79,45 @@ export function WebhookCard({
       w.url.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const headers = ["Name", "URL", "Method", "Status", "Created", "Actions"];
-
-  const renderRow = (w: Webhook) => (
-    <TableRow key={w.id}>
-      <TableCell className="font-medium break-all">{w.name}</TableCell>
-      <TableCell className="font-mono truncate">{w.url}</TableCell>
-      <TableCell className="truncate">{w.method}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<Webhook>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (w) => w.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "URL",
+      key: "url",
+      cell: (w) => w.url,
+      className: "font-mono truncate",
+    },
+    {
+      header: "Method",
+      key: "method",
+      cell: (w) => w.method,
+      className: "truncate",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (w) => (
         <Badge variant={w.is_active === 1 ? "default" : "secondary"}>
           {w.is_active === 1 ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell className="truncate">{formatDate(w.created_at)}</TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Created",
+      key: "created_at",
+      cell: (w) => formatDate(w.created_at),
+      className: "truncate",
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (w) => (
         <ActionButtons
           onEdit={() => onEditWebhook(w)}
           onDelete={() => {
@@ -102,21 +127,21 @@ export function WebhookCard({
           editTitle="Edit Webhook"
           deleteTitle="Delete Webhook"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filtered}
+        columns={columns}
         loading={loading}
         error={null}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No webhooks found"
-        searchEmptyMessage="No matching webhooks"
+        notFoundMessage="No matching webhooks"
         emptyState={
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">
