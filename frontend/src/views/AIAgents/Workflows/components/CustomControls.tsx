@@ -84,8 +84,8 @@ const CustomControls: React.FC<CustomControlsProps> = ({
           type="button"
           className="react-flow__controls-button"
           onClick={onAutoArrange}
-          title="Rearrange nodes"
-          aria-label="Rearrange nodes"
+          title="Arrange nodes"
+          aria-label="Arrange nodes"
         >
           <Wand2 size={14} />
         </button>

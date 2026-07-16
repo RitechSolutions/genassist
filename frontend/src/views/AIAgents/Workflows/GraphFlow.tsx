@@ -182,7 +182,7 @@ const GraphFlowContent: React.FC = () => {
     [nodes, reactFlowInstance, setNodes]
   );
 
-  /** Rearrange every node into a clean left-to-right layout (see utils/autoArrangeLayout). */
+  /** Arrange every node into a clean left-to-right layout (see utils/autoArrangeLayout). */
   const handleAutoArrange = useCallback(() => {
     const positions = computeAutoArrangeLayout({ nodes, edges });
     setNodes((nds) =>
