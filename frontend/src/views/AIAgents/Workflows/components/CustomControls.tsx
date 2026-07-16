@@ -1,6 +1,6 @@
 import React from "react";
 import { useReactFlow } from "reactflow";
-import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock, Wand2 } from "lucide-react";
 import ShortcutsHelp from "./ShortcutsHelp";
 
 interface CustomControlsProps {
@@ -10,6 +10,7 @@ interface CustomControlsProps {
   onNodesDraggableChange: (draggable: boolean) => void;
   onNodesConnectableChange: (connectable: boolean) => void;
   onElementsSelectableChange: (selectable: boolean) => void;
+  onAutoArrange: () => void;
 }
 
 const CustomControls: React.FC<CustomControlsProps> = ({
@@ -19,6 +20,7 @@ const CustomControls: React.FC<CustomControlsProps> = ({
   onNodesDraggableChange,
   onNodesConnectableChange,
   onElementsSelectableChange,
+  onAutoArrange,
 }) => {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
@@ -77,6 +79,15 @@ const CustomControls: React.FC<CustomControlsProps> = ({
           aria-label="Fit view"
         >
           <Maximize2 size={14} />
+        </button>
+        <button
+          type="button"
+          className="react-flow__controls-button"
+          onClick={onAutoArrange}
+          title="Rearrange nodes"
+          aria-label="Rearrange nodes"
+        >
+          <Wand2 size={14} />
         </button>
         <button
           type="button"

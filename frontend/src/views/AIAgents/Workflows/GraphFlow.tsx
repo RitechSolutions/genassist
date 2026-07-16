@@ -49,6 +49,7 @@ import { Button } from "@/components/button";
 import { History, ChevronLeft, X, Plus } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
+import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
 import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
 import { getAllAppSettings } from "@/services/appSettings";
@@ -180,6 +181,16 @@ const GraphFlowContent: React.FC = () => {
     },
     [nodes, reactFlowInstance, setNodes]
   );
+
+  /** Rearrange every node into a clean left-to-right layout (see utils/autoArrangeLayout). */
+  const handleAutoArrange = useCallback(() => {
+    const positions = computeAutoArrangeLayout({ nodes, edges });
+    setNodes((nds) =>
+      nds.map((n) => (positions[n.id] ? { ...n, position: positions[n.id] } : n))
+    );
+    // Fit the view after react-flow commits the new positions.
+    requestAnimationFrame(() => reactFlowInstance?.fitView({ padding: 0.2, duration: 400 }));
+  }, [nodes, edges, setNodes, reactFlowInstance]);
 
   // Smart defaults — dynamically auto-fill integration nodes using schemas + existing connections
   const smartDefaultsApplied = useRef(false);
@@ -317,10 +328,15 @@ const GraphFlowContent: React.FC = () => {
 
         setIsSettling(false);
         setHasUnsavedChanges(false);
+
+        // The <ReactFlow fitView> prop only fits at mount — before async-loaded nodes exist — so
+        // a freshly opened workflow (whose nodes can sit at large coordinates) renders off-screen.
+        // Frame it now that its nodes have loaded.
+        if (nodes.length > 0) reactFlowInstance?.fitView({ padding: 0.2 });
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isSettling, nodes, edges, workflow]);
+  }, [isSettling, nodes, edges, workflow, reactFlowInstance]);
 
   useEffect(() => {
     if (isSettling || !lastSavedWorkflowRef.current) return;
@@ -1076,6 +1092,7 @@ const GraphFlowContent: React.FC = () => {
                     onNodesDraggableChange={setNodesDraggable}
                     onNodesConnectableChange={setNodesConnectable}
                     onElementsSelectableChange={setElementsSelectable}
+                    onAutoArrange={handleAutoArrange}
                   />
                   <Panel position="top-center" className="mt-4">
                     <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
