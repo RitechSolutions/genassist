@@ -43,6 +43,7 @@ from .tool_builder_node import ToolBuilderNode
 from .tts_node import TTSNode
 from .voice_agent_node import VoiceAgentNode
 from .web_scraper_node import WebScraperNode
+from .web_search_node import WebSearchNode
 from .whatsapp_tool_node import WhatsAppToolNode
 from .workflow_executor_node import WorkflowExecutorNode
 from .zendesk_tool_node import ZendeskToolNode
@@ -88,6 +89,7 @@ __all__ = [
     "STTNode",
     "VoiceAgentNode",
     "WebScraperNode",
+    "WebSearchNode",
     "HtmlToImageNode",
     "FinalizeConversationNode",
     "NLPNode",

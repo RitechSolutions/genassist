@@ -319,6 +319,14 @@ class ProjectSettings(BaseSettings):
     # Conversation history max messages for chat input node
     CONVERSATION_HISTORY_NODE_MAX_MESSAGES: int = 100
 
+    # === Web Search Node ===
+    # Kill switch: when False every search returns a structured failure envelope
+    # immediately and no upstream traffic is sent.
+    WEB_SEARCH_ENABLED: bool = True
+    # Max searches per tenant per minute. Only the request that actually runs the
+    # search counts; duplicate in-flight requests reuse that result and are not charged.
+    WEB_SEARCH_TENANT_PER_MINUTE: int = 30
+
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
