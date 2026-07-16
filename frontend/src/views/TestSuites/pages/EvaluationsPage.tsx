@@ -72,11 +72,18 @@ const buildTechniqueConfigs = (
   }
 
   if (data.metrics.includes("tool_used")) {
-    const expectedArgs = parseJsonObject(data.toolExpectedArgsText);
+    // Advanced validation only applies when the tool must be called; drop it otherwise.
+    const includeAdvanced = data.toolShouldCall;
+    const expectedArgs = includeAdvanced ? parseJsonObject(data.toolExpectedArgsText) : undefined;
     configs.tool_used = {
       should_call: data.toolShouldCall,
       ...(data.toolName.trim() ? {tool: data.toolName.trim()} : {}),
+      ...(data.toolNode.trim() ? {node: data.toolNode.trim()} : {}),
       ...(expectedArgs ? {expected_args: expectedArgs} : {}),
+      ...(includeAdvanced && data.toolResultNotEmpty ? {result_not_empty: true} : {}),
+      ...(includeAdvanced && data.toolResultContains.trim()
+        ? {result_contains: data.toolResultContains.trim()}
+        : {}),
     };
   }
 
@@ -225,6 +232,9 @@ const EvaluationsPage: React.FC = () => {
       toolExpectedArgsText: toolCfg?.expected_args
         ? JSON.stringify(toolCfg.expected_args, null, 2)
         : "",
+      toolNode: (toolCfg?.node as string) ?? "",
+      toolResultNotEmpty: Boolean(toolCfg?.result_not_empty),
+      toolResultContains: (toolCfg?.result_contains as string) ?? "",
       routeExpected: (routeCfg?.expected as string) ?? "",
       routeNode: (routeCfg?.node as string) ?? "",
       actionNode: (actionCfg?.node as string) ?? "",

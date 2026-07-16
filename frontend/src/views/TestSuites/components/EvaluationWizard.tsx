@@ -44,9 +44,9 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
   {
     label: "Agent process",
     metrics: [
-      { value: "tool_used", label: "Tool Used", description: "The agent called (or avoided) a specific tool" },
-      { value: "route_taken", label: "Route Taken", description: "A router node chose the expected branch" },
-      { value: "action_taken", label: "Action Taken", description: "A specific side-effect node ran successfully" },
+      { value: "tool_used", label: "Tool Usage", description: "Define whether a tool should or should not be used" },
+      { value: "route_taken", label: "Route Taken", description: "Select the route the workflow is expected to take" },
+      { value: "action_taken", label: "Action Taken", description: "Define whether an action should or should not happen" },
       { value: "no_errors", label: "No Errors", description: "The run completed without any node failures" },
     ],
   },
@@ -68,6 +68,22 @@ const CONFIG_METRICS = [
   "action_taken",
   "llm_judge",
 ];
+
+const isJsonObject = (text: string): boolean => {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+};
+
+// A score field is valid when empty (a default applies) or a number in [0, 1].
+const isValidScore = (text: string): boolean => {
+  if (text.trim() === "") return true;
+  const value = Number(text);
+  return Number.isFinite(value) && value >= 0 && value <= 1;
+};
 
 const NLI_MODEL_OPTIONS = [
   { value: "cross-encoder/nli-deberta-v3-base", label: "DeBERTa v3 Base (NLI)" },
@@ -132,6 +148,9 @@ export interface EvaluationWizardData {
   toolName: string;
   toolShouldCall: boolean;
   toolExpectedArgsText: string;
+  toolNode: string;
+  toolResultNotEmpty: boolean;
+  toolResultContains: string;
   routeExpected: string;
   routeNode: string;
   actionNode: string;
@@ -209,6 +228,24 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [toolName, setToolName] = useState(initialData?.toolName ?? "");
   const [toolShouldCall, setToolShouldCall] = useState(initialData?.toolShouldCall ?? true);
   const [toolExpectedArgsText, setToolExpectedArgsText] = useState(initialData?.toolExpectedArgsText ?? "");
+  const [toolNode, setToolNode] = useState(initialData?.toolNode ?? "");
+  const [toolResultNotEmpty, setToolResultNotEmpty] = useState(initialData?.toolResultNotEmpty ?? false);
+  const [toolResultContains, setToolResultContains] = useState(initialData?.toolResultContains ?? "");
+  const [toolAdvancedOpen, setToolAdvancedOpen] = useState(false);
+
+  const toolRuleSummary = (): string => {
+    const agentPart = toolNode.trim() ? `the "${toolNode.trim()}" agent` : "any agent";
+    const toolPart = toolName.trim() ? `"${toolName.trim()}"` : "any tool";
+    if (!toolShouldCall) {
+      return `Passes when ${agentPart} does NOT call ${toolPart}.`;
+    }
+    const extraClauses: string[] = [];
+    if (toolExpectedArgsText.trim()) extraClauses.push("the arguments match your JSON");
+    if (toolResultNotEmpty) extraClauses.push("the result is not empty");
+    if (toolResultContains.trim()) extraClauses.push(`the result contains "${toolResultContains.trim()}"`);
+    const extras = extraClauses.length ? `, and ${extraClauses.join(", and ")}` : "";
+    return `Passes when ${agentPart} calls ${toolPart}${extras}.`;
+  };
 
   // Route Taken config
   const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
@@ -229,10 +266,20 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
 
+  const toolArgsInvalid =
+    metrics.includes("tool_used") &&
+    toolShouldCall &&
+    toolExpectedArgsText.trim() !== "" &&
+    !isJsonObject(toolExpectedArgsText);
+  const nliScoreInvalid = metrics.includes("nli_eval") && !isValidScore(nliMinEntailScore);
+  const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
+  const judgeScoreInvalid = metrics.includes("llm_judge") && !isValidScore(judgeMinScore);
+
   const isConfigureStepValid = (): boolean => {
     if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
     if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
     if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
+    if (toolArgsInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
     return true;
   };
 
@@ -287,6 +334,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         toolName,
         toolShouldCall,
         toolExpectedArgsText,
+        toolNode,
+        toolResultNotEmpty,
+        toolResultContains,
         routeExpected,
         routeNode,
         actionNode,
@@ -329,6 +379,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setToolName("");
     setToolShouldCall(true);
     setToolExpectedArgsText("");
+    setToolNode("");
+    setToolResultNotEmpty(false);
+    setToolResultContains("");
+    setToolAdvancedOpen(false);
     setRouteExpected("");
     setRouteNode("");
     setActionNode("");
@@ -521,19 +575,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     className="mt-1"
                     placeholder="0.5"
                   />
+                  {nliScoreInvalid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
+                  )}
                 </div>
-                {false && (
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="nli-fail-on-contradiction"
-                      checked={nliFailOnContradiction}
-                      onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
-                    />
-                    <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
-                      Fail on contradiction
-                    </Label>
-                  </div>
-                )}
               </div>
             )}
 
@@ -569,20 +614,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     className="mt-1"
                     placeholder="0.5"
                   />
+                  {provScoreInvalid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
+                  )}
                 </div>
-                {false && (
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="prov-fail-on-violation"
-                      checked={provFailOnViolation}
-                      onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
-                    />
-                    <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
-                      Fail on violation
-                    </Label>
-                  </div>
-                )}
-
                 {provMode === "embeddings" && (
                   <>
                     <div>
@@ -651,10 +686,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="text-sm font-semibold flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                  Tool Used Config
+                  Tool Usage Config
                 </div>
                 <p className="text-xs text-gray-500">
-                  Checks whether the agent called a specific tool during the run.
+                  Checks whether an agent called a specific tool during the run.
                 </p>
                 <div>
                   <Label className="text-xs">Tool Name</Label>
@@ -668,24 +703,85 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     Leave empty to check whether any tool was called.
                   </p>
                 </div>
+                <div>
+                  <Label className="text-xs">Agent (optional)</Label>
+                  <Input
+                    value={toolNode}
+                    onChange={(e) => setToolNode(e.target.value)}
+                    placeholder="Any agent"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Defaults to any agent. Name one (id or label) to only count its calls — useful
+                    when several agents share tool names.
+                  </p>
+                </div>
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
-                    <div className="text-xs font-medium">Must be called</div>
+                    <div className="text-xs font-medium">
+                      {toolShouldCall ? "Must be called" : "Should not be used"}
+                    </div>
                     <div className="text-xs text-gray-500">
                       Turn off to assert the tool was NOT called
                     </div>
                   </div>
                   <Switch checked={toolShouldCall} onCheckedChange={setToolShouldCall} />
                 </div>
-                <div>
-                  <Label className="text-xs">Expected Arguments (JSON, optional)</Label>
-                  <Textarea
-                    value={toolExpectedArgsText}
-                    onChange={(e) => setToolExpectedArgsText(e.target.value)}
-                    placeholder='{"query": "vacation policy"}'
-                    rows={2}
-                    className="mt-1 font-mono text-xs"
-                  />
+
+                {toolShouldCall && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setToolAdvancedOpen((open) => !open)}
+                      className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                    >
+                      {toolAdvancedOpen ? "▾" : "▸"} Advanced validation
+                    </button>
+                    {toolAdvancedOpen && (
+                      <div className="space-y-3 mt-3">
+                        <div>
+                          <Label className="text-xs">Expected Arguments (JSON, optional)</Label>
+                          <Textarea
+                            value={toolExpectedArgsText}
+                            onChange={(e) => setToolExpectedArgsText(e.target.value)}
+                            placeholder='{"query": "vacation policy"}'
+                            rows={2}
+                            className="mt-1 font-mono text-xs"
+                          />
+                          {toolArgsInvalid && (
+                            <p className="text-xs text-red-500 mt-1">
+                              Enter a valid JSON object, e.g. {'{"query": "vacation policy"}'}.
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                          <div>
+                            <div className="text-xs font-medium">Result must not be empty</div>
+                            <div className="text-xs text-gray-500">
+                              Fail if the call returned nothing (e.g. an empty retrieval)
+                            </div>
+                          </div>
+                          <Switch checked={toolResultNotEmpty} onCheckedChange={setToolResultNotEmpty} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Result must contain (optional)</Label>
+                          <Input
+                            value={toolResultContains}
+                            onChange={(e) => setToolResultContains(e.target.value)}
+                            placeholder="Text the tool's result must include"
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-0.5">
+                    Rule
+                  </div>
+                  <p className="text-xs text-gray-600">{toolRuleSummary()}</p>
                 </div>
               </div>
             )}
@@ -802,6 +898,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     className="mt-1"
                     placeholder="0.5"
                   />
+                  {judgeScoreInvalid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
+                  )}
                 </div>
                 <div>
                   <Label className="text-xs">Grounding Source Field (optional)</Label>

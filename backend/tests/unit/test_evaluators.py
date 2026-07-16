@@ -132,7 +132,7 @@ class TestTraceAwareEvaluators:
 
 
 # Synthetic trace fixture with generic placeholder values (not tied to any workflow).
-def _agent_trace(*, tool_name="lookup_tool", tool_args=None, route="true", action_status="success"):
+def _agent_trace(*, tool_name="lookup_tool", tool_args=None, tool_result="sample tool result", route="true", action_status="success"):
     return {
         "output": "Sample agent response.",
         "state": {
@@ -150,7 +150,7 @@ def _agent_trace(*, tool_name="lookup_tool", tool_args=None, route="true", actio
                             {
                                 "tool_name": tool_name,
                                 "args": tool_args or {"topic": "sample"},
-                                "result": "sample tool result",
+                                "result": tool_result,
                             }
                         ],
                     },
@@ -186,6 +186,131 @@ def _agent_trace(*, tool_name="lookup_tool", tool_args=None, route="true", actio
         "token_usage": {},
         "cost_usd": None,
     }
+
+
+def _multi_agent_trace():
+    """Two agents, each calling a different tool — for agent-scoped assertions."""
+    return {
+        "output": "Sample multi-agent response.",
+        "state": {
+            "input": {"message": "Sample user question?"},
+            "errors": [],
+            "nodeExecutionStatus": {
+                "analyst": {
+                    "name": "Analyst",
+                    "type": "agentNode",
+                    "input": {},
+                    "output": {
+                        "message": "Analyst response.",
+                        "tools_used": [
+                            {"tool_name": "read_homepage", "args": {"url": "https://x.com"}, "result": "Homepage text."}
+                        ],
+                    },
+                    "status": "success",
+                    "error": None,
+                },
+                "strategist": {
+                    "name": "Strategist",
+                    "type": "agentNode",
+                    "input": {},
+                    "output": {
+                        "message": "Strategist response.",
+                        "tools_used": [
+                            {"tool_name": "opportunity_playbook", "args": {"query": "saas"}, "result": "Playbook text."}
+                        ],
+                    },
+                    "status": "success",
+                    "error": None,
+                },
+            },
+        },
+        "token_usage": {},
+        "cost_usd": None,
+    }
+
+
+class TestToolUsageMultiAgent:
+    def setup_method(self):
+        self.registry = SimpleEvaluatorRegistry()
+
+    async def _tool_used(self, config):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_multi_agent_trace(),
+            technique_configs={"tool_used": config},
+        )
+        return metrics["tool_used"]
+
+    @pytest.mark.asyncio
+    async def test_tool_scoped_to_owning_agent_passes(self):
+        result = await self._tool_used({"tool": "read_homepage", "node": "Analyst"})
+        assert result["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_tool_scoped_to_other_agent_fails(self):
+        result = await self._tool_used({"tool": "read_homepage", "node": "Strategist"})
+        assert result["passed"] is False
+        assert "by node" in (result["comment"] or "")
+
+    @pytest.mark.asyncio
+    async def test_each_agent_matches_its_own_tool(self):
+        analyst = await self._tool_used({"tool": "read_homepage", "node": "Analyst"})
+        strategist = await self._tool_used({"tool": "opportunity_playbook", "node": "Strategist"})
+        assert analyst["passed"] is True
+        assert strategist["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_forbidden_tool_not_called_by_any_agent_passes(self):
+        result = await self._tool_used({"tool": "escalate", "should_call": False})
+        assert result["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_forbidden_tool_scoped_to_agent_that_did_not_call_it_passes(self):
+        result = await self._tool_used(
+            {"tool": "read_homepage", "should_call": False, "node": "Strategist"}
+        )
+        assert result["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_expected_args_and_result_together(self):
+        result = await self._tool_used(
+            {
+                "tool": "read_homepage",
+                "node": "Analyst",
+                "expected_args": {"url": "https://x.com"},
+                "result_not_empty": True,
+            }
+        )
+        assert result["passed"] is True
+
+
+class TestEvaluatorFailureVisibility:
+    @pytest.mark.asyncio
+    async def test_evaluator_exception_becomes_failed_metric(self):
+        registry = SimpleEvaluatorRegistry()
+
+        async def _boom(**_kwargs):
+            raise RuntimeError("secret-internal-detail")
+
+        registry._evaluators["exact_match"] = _boom
+        metrics = await registry.evaluate(
+            ["exact_match", "no_errors"],
+            inputs={},
+            outputs="x",
+            reference_outputs="x",
+            execution_trace=_agent_trace(),
+        )
+        # The broken evaluator surfaces as a failed metric, not a missing one.
+        assert metrics["exact_match"]["passed"] is False
+        comment = metrics["exact_match"]["comment"] or ""
+        # The raw exception is not leaked into the user-facing comment.
+        assert "secret-internal-detail" not in comment
+        assert "server logs" in comment.lower()
+        # Other evaluators are unaffected.
+        assert "no_errors" in metrics
 
 
 class TestEnrichedContext:
@@ -284,6 +409,141 @@ class TestProcessCheckEvaluators:
             },
         )
         assert metrics["tool_used"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_tool_used_scoped_to_node_id_passes(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "node": "agent1"}},
+        )
+        assert metrics["tool_used"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_tool_used_scoped_to_node_name_passes(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "node": "Sample Agent"}},
+        )
+        assert metrics["tool_used"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_tool_used_scoped_to_other_node_fails(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "node": "kb1"}},
+        )
+        assert metrics["tool_used"]["passed"] is False
+        assert "by node" in (metrics["tool_used"]["comment"] or "")
+
+    @pytest.mark.asyncio
+    async def test_tool_used_result_not_empty_passes_with_real_result(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool", tool_result="useful content"),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_not_empty": True}},
+        )
+        assert metrics["tool_used"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_tool_used_result_not_empty_fails_on_no_results_sentinel(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool", tool_result="No results found."),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_not_empty": True}},
+        )
+        assert metrics["tool_used"]["passed"] is False
+        assert "result" in (metrics["tool_used"]["comment"] or "")
+
+    @pytest.mark.asyncio
+    async def test_tool_used_result_not_empty_fails_on_blank_result(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool", tool_result=""),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_not_empty": True}},
+        )
+        assert metrics["tool_used"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_tool_used_result_assertion_honest_fail_when_trace_lacks_results(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool", tool_result=None),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_not_empty": True}},
+        )
+        assert metrics["tool_used"]["passed"] is False
+        assert "does not record" in (metrics["tool_used"]["comment"] or "")
+
+    @pytest.mark.asyncio
+    async def test_tool_used_result_not_empty_fails_on_structurally_empty_result(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool", tool_result=[]),
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_not_empty": True}},
+        )
+        assert metrics["tool_used"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_tool_used_result_contains(self):
+        trace = _agent_trace(tool_name="lookup_tool", tool_result="policy: remote work allowed")
+        passing = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_contains": "remote work"}},
+        )
+        failing = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={"tool_used": {"tool": "lookup_tool", "result_contains": "vacation days"}},
+        )
+        assert passing["tool_used"]["passed"] is True
+        assert failing["tool_used"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_tool_used_should_call_false_scoped_to_other_node_passes(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={
+                "tool_used": {"tool": "lookup_tool", "node": "kb1", "should_call": False}
+            },
+        )
+        assert metrics["tool_used"]["passed"] is True
 
     @pytest.mark.asyncio
     async def test_route_taken(self):
