@@ -26,12 +26,47 @@ import type { TestSuite } from "@/interfaces/testSuite.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 
-const METRICS = [
-  { value: "exact_match", label: "Exact Match", description: "Checks if output exactly matches expected" },
-  { value: "contains", label: "Contains", description: "Checks if output contains expected text" },
-  { value: "json_match", label: "JSON Match", description: "Compares JSON structure and values" },
-  { value: "nli_eval", label: "NLI Evaluation", description: "Natural Language Inference check" },
-  { value: "provenance_eval", label: "Provenance Evaluation", description: "Verifies output is grounded in context" },
+interface MetricDef {
+  value: string;
+  label: string;
+  description: string;
+}
+
+const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
+  {
+    label: "Output match",
+    metrics: [
+      { value: "exact_match", label: "Exact Match", description: "Output exactly equals the expected value" },
+      { value: "contains", label: "Contains", description: "Output contains the expected text" },
+      { value: "json_match", label: "JSON Match", description: "Output matches the expected JSON structure and values" },
+    ],
+  },
+  {
+    label: "Agent process",
+    metrics: [
+      { value: "tool_used", label: "Tool Used", description: "The agent called (or avoided) a specific tool" },
+      { value: "route_taken", label: "Route Taken", description: "A router node chose the expected branch" },
+      { value: "action_taken", label: "Action Taken", description: "A specific side-effect node ran successfully" },
+      { value: "no_errors", label: "No Errors", description: "The run completed without any node failures" },
+    ],
+  },
+  {
+    label: "Grounding & LLM judge",
+    metrics: [
+      { value: "nli_eval", label: "NLI Evaluation", description: "Natural Language Inference entailment check" },
+      { value: "provenance_eval", label: "Provenance Evaluation", description: "Verifies the answer is grounded in context" },
+      { value: "llm_judge", label: "LLM Judge", description: "Grades the answer against a custom rubric" },
+    ],
+  },
+];
+
+const CONFIG_METRICS = [
+  "nli_eval",
+  "provenance_eval",
+  "tool_used",
+  "route_taken",
+  "action_taken",
+  "llm_judge",
 ];
 
 const NLI_MODEL_OPTIONS = [
@@ -47,6 +82,34 @@ const STEPS: { key: WizardStep; label: string; icon: React.ElementType }[] = [
   { key: "validation", label: "Validation", icon: Settings },
   { key: "configure", label: "Configure", icon: Workflow },
 ];
+
+const MetricOption: React.FC<{
+  metric: MetricDef;
+  selected: boolean;
+  onToggle: (checked: boolean) => void;
+}> = ({ metric, selected, onToggle }) => (
+  <div
+    className={cn(
+      "flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
+      selected ? "border-primary bg-primary/5" : "hover:border-gray-300"
+    )}
+    onClick={() => onToggle(!selected)}
+  >
+    <Checkbox
+      id={`metric-${metric.value}`}
+      checked={selected}
+      onClick={(e) => e.stopPropagation()}
+      onCheckedChange={(checked) => onToggle(Boolean(checked))}
+      className="mt-0.5"
+    />
+    <div className="flex-1">
+      <Label htmlFor={`metric-${metric.value}`} className="text-sm font-medium cursor-pointer">
+        {metric.label}
+      </Label>
+      <p className="text-xs text-gray-500 mt-0.5">{metric.description}</p>
+    </div>
+  </div>
+);
 
 export interface EvaluationWizardData {
   name: string;
@@ -66,6 +129,18 @@ export interface EvaluationWizardData {
   provFailOnViolation: boolean;
   provLlmProviderId: string;
   provLlmJudgeSystemPromptSuffix: string;
+  toolName: string;
+  toolShouldCall: boolean;
+  toolExpectedArgsText: string;
+  routeExpected: string;
+  routeNode: string;
+  actionNode: string;
+  actionNodeType: string;
+  actionShouldFire: boolean;
+  judgeRubric: string;
+  judgeMinScore: string;
+  judgeProviderId: string;
+  judgeSourceField: string;
 }
 
 interface EvaluationWizardProps {
@@ -130,7 +205,36 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     initialData?.provLlmJudgeSystemPromptSuffix ?? ""
   );
 
+  // Tool Used config
+  const [toolName, setToolName] = useState(initialData?.toolName ?? "");
+  const [toolShouldCall, setToolShouldCall] = useState(initialData?.toolShouldCall ?? true);
+  const [toolExpectedArgsText, setToolExpectedArgsText] = useState(initialData?.toolExpectedArgsText ?? "");
+
+  // Route Taken config
+  const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
+  const [routeNode, setRouteNode] = useState(initialData?.routeNode ?? "");
+
+  // Action Taken config
+  const [actionNode, setActionNode] = useState(initialData?.actionNode ?? "");
+  const [actionNodeType, setActionNodeType] = useState(initialData?.actionNodeType ?? "");
+  const [actionShouldFire, setActionShouldFire] = useState(initialData?.actionShouldFire ?? true);
+
+  // LLM Judge config
+  const [judgeRubric, setJudgeRubric] = useState(initialData?.judgeRubric ?? "");
+  const [judgeMinScore, setJudgeMinScore] = useState(initialData?.judgeMinScore ?? "0.5");
+  const [judgeProviderId, setJudgeProviderId] = useState(
+    initialData?.judgeProviderId ?? providers[0]?.id ?? ""
+  );
+  const [judgeSourceField, setJudgeSourceField] = useState(initialData?.judgeSourceField ?? "");
+
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
+
+  const isConfigureStepValid = (): boolean => {
+    if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
+    if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
+    if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
+    return true;
+  };
 
   const canProceed = (): boolean => {
     switch (step) {
@@ -141,7 +245,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
       case "validation":
         return metrics.length > 0;
       case "configure":
-        return true;
+        return isConfigureStepValid();
       default:
         return false;
     }
@@ -180,6 +284,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         provFailOnViolation,
         provLlmProviderId,
         provLlmJudgeSystemPromptSuffix,
+        toolName,
+        toolShouldCall,
+        toolExpectedArgsText,
+        routeExpected,
+        routeNode,
+        actionNode,
+        actionNodeType,
+        actionShouldFire,
+        judgeRubric,
+        judgeMinScore,
+        judgeProviderId,
+        judgeSourceField,
       });
       // Reset form on successful create
       if (mode === "create") {
@@ -210,6 +326,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setProvFailOnViolation(false);
     setProvLlmProviderId(providers[0]?.id ?? "");
     setProvLlmJudgeSystemPromptSuffix("");
+    setToolName("");
+    setToolShouldCall(true);
+    setToolExpectedArgsText("");
+    setRouteExpected("");
+    setRouteNode("");
+    setActionNode("");
+    setActionNodeType("");
+    setActionShouldFire(true);
+    setJudgeRubric("");
+    setJudgeMinScore("0.5");
+    setJudgeProviderId(providers[0]?.id ?? "");
+    setJudgeSourceField("");
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -219,7 +347,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     onOpenChange(open);
   };
 
-  const needsConfigStep = metrics.includes("nli_eval") || metrics.includes("provenance_eval");
+  const needsConfigStep = metrics.some((m) => CONFIG_METRICS.includes(m));
 
   const renderStepContent = () => {
     switch (step) {
@@ -317,56 +445,34 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
       case "validation":
         return (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
               <Label className="text-sm font-medium">Validation Methods *</Label>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-gray-500">
                 Select at least one method to validate your agent's outputs
               </p>
-              <div className="space-y-2">
-                {METRICS.map((metric) => (
-                  <div
+            </div>
+            {METRIC_GROUPS.map((group) => (
+              <div key={group.label} className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  {group.label}
+                </div>
+                {group.metrics.map((metric) => (
+                  <MetricOption
                     key={metric.value}
-                    className={cn(
-                      "flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
-                      metrics.includes(metric.value)
-                        ? "border-primary bg-primary/5"
-                        : "hover:border-gray-300"
-                    )}
-                    onClick={() => {
+                    metric={metric}
+                    selected={metrics.includes(metric.value)}
+                    onToggle={(checked) =>
                       setMetrics((prev) =>
-                        prev.includes(metric.value)
-                          ? prev.filter((m) => m !== metric.value)
-                          : [...prev, metric.value]
-                      );
-                    }}
-                  >
-                    <Checkbox
-                      id={`metric-${metric.value}`}
-                      checked={metrics.includes(metric.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      onCheckedChange={(checked) => {
-                        setMetrics((prev) =>
-                          checked
-                            ? [...prev, metric.value]
-                            : prev.filter((m) => m !== metric.value)
-                        );
-                      }}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1">
-                      <Label
-                        htmlFor={`metric-${metric.value}`}
-                        className="text-sm font-medium cursor-pointer"
-                      >
-                        {metric.label}
-                      </Label>
-                      <p className="text-xs text-gray-500 mt-0.5">{metric.description}</p>
-                    </div>
-                  </div>
+                        checked
+                          ? [...prev, metric.value]
+                          : prev.filter((m) => m !== metric.value)
+                      )
+                    }
+                  />
                 ))}
               </div>
-            </div>
+            ))}
           </div>
         );
 
@@ -451,7 +557,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="embeddings">Embeddings</SelectItem>
-                      <SelectItem value="llm">LLM Judge</SelectItem>
+                      <SelectItem value="llm">LLM Verification</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -527,7 +633,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs">Additional Judge Instructions</Label>
+                      <Label className="text-xs">Additional Verification Instructions</Label>
                       <Textarea
                         value={provLlmJudgeSystemPromptSuffix}
                         onChange={(e) => setProvLlmJudgeSystemPromptSuffix(e.target.value)}
@@ -538,6 +644,178 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {metrics.includes("tool_used") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                  Tool Used Config
+                </div>
+                <p className="text-xs text-gray-500">
+                  Checks whether the agent called a specific tool during the run.
+                </p>
+                <div>
+                  <Label className="text-xs">Tool Name</Label>
+                  <Input
+                    value={toolName}
+                    onChange={(e) => setToolName(e.target.value)}
+                    placeholder="e.g. search_handbook"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Leave empty to check whether any tool was called.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <div className="text-xs font-medium">Must be called</div>
+                    <div className="text-xs text-gray-500">
+                      Turn off to assert the tool was NOT called
+                    </div>
+                  </div>
+                  <Switch checked={toolShouldCall} onCheckedChange={setToolShouldCall} />
+                </div>
+                <div>
+                  <Label className="text-xs">Expected Arguments (JSON, optional)</Label>
+                  <Textarea
+                    value={toolExpectedArgsText}
+                    onChange={(e) => setToolExpectedArgsText(e.target.value)}
+                    placeholder='{"query": "vacation policy"}'
+                    rows={2}
+                    className="mt-1 font-mono text-xs"
+                  />
+                </div>
+              </div>
+            )}
+
+            {metrics.includes("route_taken") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                  Route Taken Config
+                </div>
+                <p className="text-xs text-gray-500">
+                  Checks that a router node selected the expected branch.
+                </p>
+                <div>
+                  <Label className="text-xs">Expected Route *</Label>
+                  <Input
+                    value={routeExpected}
+                    onChange={(e) => setRouteExpected(e.target.value)}
+                    placeholder="e.g. escalate"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Router Node (id or label, optional)</Label>
+                  <Input
+                    value={routeNode}
+                    onChange={(e) => setRouteNode(e.target.value)}
+                    placeholder="Leave empty to match any router node"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            )}
+
+            {metrics.includes("action_taken") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                  Action Taken Config
+                </div>
+                <p className="text-xs text-gray-500">
+                  Checks that a specific side-effect node ran successfully. Provide a node
+                  or a node type.
+                </p>
+                <div>
+                  <Label className="text-xs">Node (id or label)</Label>
+                  <Input
+                    value={actionNode}
+                    onChange={(e) => setActionNode(e.target.value)}
+                    placeholder="e.g. Create Zendesk Ticket"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Node Type</Label>
+                  <Input
+                    value={actionNodeType}
+                    onChange={(e) => setActionNodeType(e.target.value)}
+                    placeholder="e.g. zendeskTicketNode"
+                    className="mt-1"
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <div className="text-xs font-medium">Must fire</div>
+                    <div className="text-xs text-gray-500">
+                      Turn off to assert the node did NOT run
+                    </div>
+                  </div>
+                  <Switch checked={actionShouldFire} onCheckedChange={setActionShouldFire} />
+                </div>
+              </div>
+            )}
+
+            {metrics.includes("llm_judge") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-pink-500"></span>
+                  LLM Judge Config
+                </div>
+                <p className="text-xs text-gray-500">
+                  Grades the answer against a rubric you write. One criterion per judge works best.
+                </p>
+                <div>
+                  <Label className="text-xs">Rubric *</Label>
+                  <Textarea
+                    value={judgeRubric}
+                    onChange={(e) => setJudgeRubric(e.target.value)}
+                    placeholder="e.g. Score 1.0 if the answer is polite and offers a next step, 0.0 otherwise."
+                    rows={4}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">LLM Provider</Label>
+                  <Select value={judgeProviderId} onValueChange={setJudgeProviderId}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {providers.map((provider) => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {provider.name} ({provider.llm_model_provider} - {provider.llm_model})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Min Score (0-1)</Label>
+                  <Input
+                    value={judgeMinScore}
+                    onChange={(e) => setJudgeMinScore(e.target.value)}
+                    className="mt-1"
+                    placeholder="0.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Grounding Source Field (optional)</Label>
+                  <Input
+                    value={judgeSourceField}
+                    onChange={(e) => setJudgeSourceField(e.target.value)}
+                    placeholder="e.g. trace.retrievals"
+                    className="mt-1 font-mono text-xs"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Dotted path into the run to check the answer against (e.g. knowledge-base
+                    retrievals).
+                  </p>
+                </div>
               </div>
             )}
           </div>

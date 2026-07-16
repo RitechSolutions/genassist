@@ -25,6 +25,88 @@ import {Badge} from "@/components/badge";
 import {EvaluationWizard, EvaluationWizardData} from "../components/EvaluationWizard";
 import toast from "react-hot-toast";
 
+const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
+  if (!text.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(text);
+    const isPlainObject = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+    return isPlainObject ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const buildTechniqueConfigs = (
+  data: EvaluationWizardData
+): Record<string, Record<string, unknown>> => {
+  const configs: Record<string, Record<string, unknown>> = {};
+
+  if (data.metrics.includes("nli_eval")) {
+    configs.nli_eval = {
+      min_entail_score: Number(data.nliMinEntailScore || "0.5"),
+      fail_on_contradiction: data.nliFailOnContradiction,
+      ...(data.nliModelName.trim() ? {nli_model_name: data.nliModelName.trim()} : {}),
+    };
+  }
+
+  if (data.metrics.includes("provenance_eval")) {
+    const isLlmMode = data.provMode === "llm";
+    configs.provenance_eval = {
+      min_score: Number(data.provMinScore || "0.5"),
+      fail_on_violation: data.provFailOnViolation,
+      use_llm_judge: isLlmMode,
+      provenance_mode: data.provMode,
+      ...(isLlmMode && data.provLlmProviderId.trim()
+        ? {llm_provider_id: data.provLlmProviderId.trim()}
+        : {}),
+      ...(isLlmMode && data.provLlmJudgeSystemPromptSuffix.trim()
+        ? {llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim()}
+        : {}),
+      ...(!isLlmMode
+        ? {
+            embedding_type: data.provEmbeddingType,
+            embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
+          }
+        : {}),
+    };
+  }
+
+  if (data.metrics.includes("tool_used")) {
+    const expectedArgs = parseJsonObject(data.toolExpectedArgsText);
+    configs.tool_used = {
+      should_call: data.toolShouldCall,
+      ...(data.toolName.trim() ? {tool: data.toolName.trim()} : {}),
+      ...(expectedArgs ? {expected_args: expectedArgs} : {}),
+    };
+  }
+
+  if (data.metrics.includes("route_taken")) {
+    configs.route_taken = {
+      expected: data.routeExpected.trim(),
+      ...(data.routeNode.trim() ? {node: data.routeNode.trim()} : {}),
+    };
+  }
+
+  if (data.metrics.includes("action_taken")) {
+    configs.action_taken = {
+      should_fire: data.actionShouldFire,
+      ...(data.actionNode.trim() ? {node: data.actionNode.trim()} : {}),
+      ...(data.actionNodeType.trim() ? {node_type: data.actionNodeType.trim()} : {}),
+    };
+  }
+
+  if (data.metrics.includes("llm_judge")) {
+    configs.llm_judge = {
+      rubric: data.judgeRubric.trim(),
+      min_score: Number(data.judgeMinScore || "0.5"),
+      ...(data.judgeProviderId.trim() ? {llm_provider_id: data.judgeProviderId.trim()} : {}),
+      ...(data.judgeSourceField.trim() ? {source_field: data.judgeSourceField.trim()} : {}),
+    };
+  }
+
+  return configs;
+};
+
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
   const [suites, setSuites] = useState<TestSuite[]>([]);
@@ -112,6 +194,10 @@ const EvaluationsPage: React.FC = () => {
   const getEditInitialData = (evaluation: TestEvaluationConfig): Partial<EvaluationWizardData> => {
     const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
     const provCfg = evaluation.technique_configs?.["provenance_eval"] as Record<string, unknown> | undefined;
+    const toolCfg = evaluation.technique_configs?.["tool_used"] as Record<string, unknown> | undefined;
+    const routeCfg = evaluation.technique_configs?.["route_taken"] as Record<string, unknown> | undefined;
+    const actionCfg = evaluation.technique_configs?.["action_taken"] as Record<string, unknown> | undefined;
+    const judgeCfg = evaluation.technique_configs?.["llm_judge"] as Record<string, unknown> | undefined;
     const metaWithoutMemory = evaluation.input_metadata
       ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
       : {};
@@ -134,6 +220,20 @@ const EvaluationsPage: React.FC = () => {
       provFailOnViolation: Boolean(provCfg?.fail_on_violation),
       provLlmProviderId: (provCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
       provLlmJudgeSystemPromptSuffix: (provCfg?.llm_judge_system_prompt_suffix as string) ?? "",
+      toolName: (toolCfg?.tool as string) ?? "",
+      toolShouldCall: toolCfg?.should_call === undefined ? true : Boolean(toolCfg.should_call),
+      toolExpectedArgsText: toolCfg?.expected_args
+        ? JSON.stringify(toolCfg.expected_args, null, 2)
+        : "",
+      routeExpected: (routeCfg?.expected as string) ?? "",
+      routeNode: (routeCfg?.node as string) ?? "",
+      actionNode: (actionCfg?.node as string) ?? "",
+      actionNodeType: (actionCfg?.node_type as string) ?? "",
+      actionShouldFire: actionCfg?.should_fire === undefined ? true : Boolean(actionCfg.should_fire),
+      judgeRubric: (judgeCfg?.rubric as string) ?? "",
+      judgeMinScore: String(judgeCfg?.min_score ?? "0.5"),
+      judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
+      judgeSourceField: (judgeCfg?.source_field as string) ?? "",
     };
   };
 
@@ -159,39 +259,7 @@ const EvaluationsPage: React.FC = () => {
       suite_id: data.suiteId,
       workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
       techniques: data.metrics,
-      technique_configs: {
-        ...(data.metrics.includes("nli_eval")
-          ? {
-              nli_eval: {
-                min_entail_score: Number(data.nliMinEntailScore || "0.5"),
-                fail_on_contradiction: data.nliFailOnContradiction,
-                ...(data.nliModelName.trim() ? { nli_model_name: data.nliModelName.trim() } : {}),
-              },
-            }
-          : {}),
-        ...(data.metrics.includes("provenance_eval")
-          ? {
-              provenance_eval: {
-                min_score: Number(data.provMinScore || "0.5"),
-                fail_on_violation: data.provFailOnViolation,
-                use_llm_judge: data.provMode === "llm",
-                ...(data.provMode === "llm" && data.provLlmProviderId.trim()
-                  ? { llm_provider_id: data.provLlmProviderId.trim() }
-                  : {}),
-                ...(data.provMode === "llm" && data.provLlmJudgeSystemPromptSuffix.trim()
-                  ? { llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim() }
-                  : {}),
-                ...(data.provMode === "embeddings"
-                  ? {
-                      embedding_type: data.provEmbeddingType,
-                      embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
-                    }
-                  : {}),
-                provenance_mode: data.provMode,
-              },
-            }
-          : {}),
-      },
+      technique_configs: buildTechniqueConfigs(data),
       input_metadata: parsedMetadata,
     });
 
@@ -258,41 +326,7 @@ const EvaluationsPage: React.FC = () => {
       suite_id: data.suiteId,
       workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
       techniques: data.metrics,
-      technique_configs: {
-        ...(data.metrics.includes("nli_eval")
-          ? {
-              nli_eval: {
-                min_entail_score: Number(data.nliMinEntailScore || "0.5"),
-                fail_on_contradiction: data.nliFailOnContradiction,
-                ...(data.nliModelName.trim()
-                  ? { nli_model_name: data.nliModelName.trim() }
-                  : {}),
-              },
-            }
-          : {}),
-        ...(data.metrics.includes("provenance_eval")
-          ? {
-              provenance_eval: {
-                min_score: Number(data.provMinScore || "0.5"),
-                fail_on_violation: data.provFailOnViolation,
-                use_llm_judge: data.provMode === "llm",
-                ...(data.provMode === "llm" && data.provLlmProviderId.trim()
-                  ? { llm_provider_id: data.provLlmProviderId.trim() }
-                  : {}),
-                ...(data.provMode === "llm" && data.provLlmJudgeSystemPromptSuffix.trim()
-                  ? { llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim() }
-                  : {}),
-                ...(data.provMode === "embeddings"
-                  ? {
-                      embedding_type: data.provEmbeddingType,
-                      embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
-                    }
-                  : {}),
-                provenance_mode: data.provMode,
-              },
-            }
-          : {}),
-      },
+      technique_configs: buildTechniqueConfigs(data),
       input_metadata: parsedMetadata,
     });
     if (!created) return;
