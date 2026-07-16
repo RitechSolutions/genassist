@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp } from "lucide-react";
+import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp, X } from "lucide-react";
 import { RichInput } from "@/components/richInput";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
@@ -447,8 +447,21 @@ const NodePanel: React.FC<NodePanelProps> = ({
                       placeholder="Search nodes..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 h-9 text-sm w-full"
+                      className="pl-9 pr-9 h-9 text-sm w-full"
                     />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery("");
+                          searchInputRef.current?.focus();
+                        }}
+                        aria-label="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center h-4 w-4 rounded-full bg-muted-foreground/40 text-background hover:bg-muted-foreground/60 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 {renderNodeCategories()}
