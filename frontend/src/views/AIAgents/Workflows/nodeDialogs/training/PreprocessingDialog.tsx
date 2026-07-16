@@ -27,13 +27,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@/components/ui/select";
+} from "@/components/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";

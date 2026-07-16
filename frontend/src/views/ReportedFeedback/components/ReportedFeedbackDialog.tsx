@@ -20,7 +20,7 @@ import {
   FeedbackStatus,
   ReportedFeedbackItem,
 } from "@/services/reportedFeedback";
-import { formatDate } from "../constants";
+import { formatDateTime } from "@/helpers/utils";
 import { StatusSelect } from "./StatusSelect";
 
 type ReportedFeedbackDialogProps = {
@@ -137,12 +137,12 @@ export function ReportedFeedbackDialog({
             <Meta
               icon={Clock}
               label="Reported at"
-              value={formatDate(issue.reported_at)}
+              value={formatDateTime(issue.reported_at)}
             />
             <Meta
               icon={MessageCircle}
               label="Conversation"
-              value={`${issue.conversation_topic || "Untitled"} · ${formatDate(
+              value={`${issue.conversation_topic || "Untitled"} · ${formatDateTime(
                 issue.conversation_date,
               )}`}
             />

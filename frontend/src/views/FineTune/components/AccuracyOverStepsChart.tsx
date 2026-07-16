@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { Skeleton } from "@/components/skeleton";
+import { CHART_NEUTRALS, chartTooltipStyle, chartTooltipCursor } from "@/constants/chartColors";
 
 export interface StepDataPoint {
   label: string;
@@ -102,12 +103,12 @@ export function AccuracyOverStepsChart({
                   <stop offset="100%" stopColor={stroke} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRALS.grid} vertical={false} />
               <XAxis
                 dataKey="label"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 dy={6}
                 interval={0}
                 minTickGap={0}
@@ -116,21 +117,15 @@ export function AccuracyOverStepsChart({
                 domain={yDomain}
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 allowDecimals={!isPercent}
                 tickFormatter={(v) =>
                   isPercent ? `${v}%` : formatNumberTick(Number(v))
                 }
               />
               <Tooltip
-                contentStyle={{
-                  background: "white",
-                  border: "1px solid #e4e4e7",
-                  borderRadius: "10px",
-                  fontSize: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                }}
-                cursor={{ stroke: "#e4e4e7", strokeWidth: 1 }}
+                contentStyle={chartTooltipStyle}
+                cursor={chartTooltipCursor}
                 formatter={(value: number) =>
                   isPercent
                     ? [`${value}%`, valueLabel]

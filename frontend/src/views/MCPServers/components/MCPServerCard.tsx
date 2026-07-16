@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/button";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { MCPServer } from "@/interfaces/mcp-server.interface";
 import { getAllMCPServers, deleteMCPServer } from "@/services/mcpServer";
@@ -94,61 +94,84 @@ export function MCPServerCard({
     );
   });
 
-  const headers = ["Name", "Auth", "Workflows", "Status", "Created", "Actions"];
-
   const handleRowClick = (server: MCPServer) => {
     setSelectedServerId(server.id);
     setIsDetailsDialogOpen(true);
   };
 
-  const renderRow = (s: MCPServer) => (
-    <TableRow 
-      key={s.id}
-      className="cursor-pointer hover:bg-gray-50"
-      onClick={() => handleRowClick(s)}
-    >
-      <TableCell className="font-medium break-all">{s.name}</TableCell>
-      <TableCell className="whitespace-nowrap">
+  const columns: Column<MCPServer>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (s) => s.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Auth",
+      key: "auth",
+      className: "whitespace-nowrap",
+      cell: (s) => (
         <Badge variant="outline" className="font-normal">
           {s.auth_type === "oauth2" ? "OAuth 2.0 / OIDC" : "API key"}
         </Badge>
-      </TableCell>
-      <TableCell className="truncate">
-        {s.workflows.length === 0
+      ),
+    },
+    {
+      header: "Workflows",
+      key: "workflows",
+      className: "truncate",
+      cell: (s) =>
+        s.workflows.length === 0
           ? "No workflows"
-          : `${s.workflows.length} workflow${s.workflows.length === 1 ? "" : "s"}`}
-      </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+          : `${s.workflows.length} workflow${s.workflows.length === 1 ? "" : "s"}`,
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (s) => (
         <Badge variant={s.is_active === 1 ? "default" : "secondary"}>
           {s.is_active === 1 ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell className="truncate">{formatDate(s.created_at)}</TableCell>
-      <TableCell onClick={(e) => e.stopPropagation()}>
-        <ActionButtons
-          onEdit={() => onEditServer(s)}
-          onDelete={() => {
-            setServerToDelete(s);
-            setIsDeleteDialogOpen(true);
-          }}
-          editTitle="Edit MCP Server"
-          deleteTitle="Delete MCP Server"
-        />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+    {
+      header: "Created",
+      key: "created_at",
+      cell: (s) => formatDate(s.created_at),
+      className: "truncate",
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (s) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ActionButtons
+            onEdit={() => onEditServer(s)}
+            onDelete={() => {
+              setServerToDelete(s);
+              setIsDeleteDialogOpen(true);
+            }}
+            editTitle="Edit MCP Server"
+            deleteTitle="Delete MCP Server"
+          />
+        </div>
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filtered}
+        columns={columns}
         loading={loading}
         error={null}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
+        onRowClick={handleRowClick}
         emptyMessage="No MCP servers found"
-        searchEmptyMessage="No matching MCP servers"
+        notFoundMessage="No matching MCP servers"
         emptyState={
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">

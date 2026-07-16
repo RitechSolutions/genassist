@@ -17,7 +17,7 @@ const ServerStatusBanner: React.FC = () => {
           <button
             onClick={async () => { setPending(true); await probeApiHealth(); setPending(false); }}
             disabled={pending}
-            className="ml-4 inline-flex items-center rounded-md bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+            className="ml-4 inline-flex items-center rounded-md bg-destructive px-3 py-1 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
           >
             {pending ? 'Checking…' : 'Retry'}
           </button>
