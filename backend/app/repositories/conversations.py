@@ -347,7 +347,7 @@ class ConversationRepository:
 
         if conversation_filter.id_suffix:
             query = query.where(
-                cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}")
+                cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}%")
             )
 
         custom_attrs = conversation_filter.custom_attributes_dict
