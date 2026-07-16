@@ -1103,7 +1103,7 @@ const GraphFlowContent: React.FC = () => {
 
             {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons) */}
             <div
-              className={`fixed top-2 z-20 flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
+              className={`fixed top-2 z-20 flex flex-row flex-wrap items-start justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
                 (() => {
                   if (showNodePanel && showWorkflowPanel) {
                     return "right-[calc(360px+20rem+1rem)]";
@@ -1124,20 +1124,39 @@ const GraphFlowContent: React.FC = () => {
                 onTestWorkflow={handleTestGraph}
                 onSaveWorkflow={handleSaveWorkflow}
                 onExecutionStateChange={setExecutionState}
-                onToggleWorkflowPanel={toggleWorkflowPanel}
               />
 
-              <Button
-                onClick={toggleNodePanel}
-                size="icon"
-                variant="ghost"
-                className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
-              >
-                {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                <span className="sr-only">
-                  {showNodePanel ? "Close Node Panel" : "Open Node Panel"}
-                </span>
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={toggleNodePanel}
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+                >
+                  {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  <span className="sr-only">
+                    {showNodePanel ? "Close Node Panel" : "Open Node Panel"}
+                  </span>
+                </Button>
+
+                <Button
+                  onClick={toggleWorkflowPanel}
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+                >
+                  {showWorkflowPanel ? (
+                    <X className="h-4 w-4" />
+                  ) : (
+                    <History className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">
+                    {showWorkflowPanel
+                      ? "Close Saved Versions"
+                      : "Open Saved Versions"}
+                  </span>
+                </Button>
+              </div>
             </div>
 
             <NodePanel

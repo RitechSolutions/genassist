@@ -35,7 +35,12 @@ from .agent_security_settings import AgentSecuritySettingsModel
 from .app_settings import AppSettingsModel
 from .file import FileModel, StorageProvider
 from .files_upload_session import FilesUploadSessionModel
-from .fine_tuning import FineTuningEventModel, FineTuningJobModel, OpenAIFileModel
+from .fine_tuning import (
+    BedrockFineTuningJobModel,
+    FineTuningEventModel,
+    FineTuningJobModel,
+    OpenAIFileModel,
+)
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
 from .message_issue import MessageIssueModel
@@ -112,6 +117,7 @@ __all__ = [
     "TenantModel",
     "OpenAIFileModel",
     "FineTuningJobModel",
+    "BedrockFineTuningJobModel",
     "AppSettingsModel",
     "WebhookModel",
     "FineTuningEventModel",
@@ -176,6 +182,7 @@ models = [
     TenantModel,
     AppSettingsModel,
     FineTuningEventModel,
+    BedrockFineTuningJobModel,
     MCPServerModel,
     MCPServerWorkflowModel,
     FileModel,
