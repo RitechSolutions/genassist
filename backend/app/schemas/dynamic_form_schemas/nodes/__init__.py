@@ -33,6 +33,7 @@ from .stt_schema import STT_NODE_DIALOG_SCHEMA
 from .voice_agent_schema import VOICE_AGENT_NODE_DIALOG_SCHEMA
 from .finalize_conversation_schema import FINALIZE_CONVERSATION_NODE_DIALOG_SCHEMA
 from .web_scraper_schema import WEB_SCRAPER_NODE_DIALOG_SCHEMA
+from .web_search_schema import WEB_SEARCH_NODE_DIALOG_SCHEMA
 from .html_to_image_schema import HTML_TO_IMAGE_NODE_DIALOG_SCHEMA
 from .nlp_schema import NLP_NODE_DIALOG_SCHEMA
 
@@ -70,6 +71,7 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "voiceAgentNode": "Voice Agent",
     "finalizeConversationNode": "End Conversation",
     "webScraperNode": "Web Scraper",
+    "webSearchNode": "Web Search",
     "htmlToImageNode": "HTML to Image",
     "nlpNode": "Text Analysis",
 }
@@ -108,6 +110,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "voiceAgentNode": VOICE_AGENT_NODE_DIALOG_SCHEMA,
     "finalizeConversationNode": FINALIZE_CONVERSATION_NODE_DIALOG_SCHEMA,
     "webScraperNode": WEB_SCRAPER_NODE_DIALOG_SCHEMA,
+    "webSearchNode": WEB_SEARCH_NODE_DIALOG_SCHEMA,
     "htmlToImageNode": HTML_TO_IMAGE_NODE_DIALOG_SCHEMA,
     "nlpNode": NLP_NODE_DIALOG_SCHEMA,
 }
@@ -268,6 +271,11 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   ],
 
   "webScraperNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "webSearchNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],

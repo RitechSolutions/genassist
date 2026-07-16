@@ -3,6 +3,7 @@ import ChatInputNode from "./chat/chatInputNode";
 import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
 import WebScraperNode from "./tools/webScraperNode";
+import WebSearchNode from "./tools/webSearchNode";
 import HtmlToImageNode from "./tools/htmlToImageNode";
 import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
@@ -17,6 +18,7 @@ import {
 import {
   API_TOOL_NODE_DEFINITION,
   WEB_SCRAPER_NODE_DEFINITION,
+  WEB_SEARCH_NODE_DEFINITION,
   HTML_TO_IMAGE_NODE_DEFINITION,
   OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
@@ -110,6 +112,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(WEB_SCRAPER_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WEB_SEARCH_NODE_DEFINITION);
   nodeRegistry.registerNodeType(HTML_TO_IMAGE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(OPEN_API_NODE_DEFINITION);
 
@@ -182,6 +185,7 @@ export const getNodeTypes = () => {
     finalizeConversationNode: FinalizeConversationNode,
     apiToolNode: APIToolNode,
     webScraperNode: WebScraperNode,
+    webSearchNode: WebSearchNode,
     htmlToImageNode: HtmlToImageNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,

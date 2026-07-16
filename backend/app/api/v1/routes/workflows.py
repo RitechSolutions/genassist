@@ -68,6 +68,7 @@ SUPPORTED_NODE_TYPES = [
     "voiceAgentNode",
     "createWorkflowScheduleNode",
     "webScraperNode",
+    "webSearchNode",
     "htmlToImageNode",
     "nlpNode",
 ]

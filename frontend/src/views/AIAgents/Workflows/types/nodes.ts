@@ -208,6 +208,20 @@ export interface WebScraperNodeData extends BaseNodeData {
   maxAge: number;
 }
 
+// Web Search Node Data
+export type WebSearchDepth = "basic" | "advanced";
+
+export interface WebSearchNodeData extends BaseNodeData {
+  query: string;
+  maxResults: number;
+  searchDepth: WebSearchDepth;
+  includeDomains: string;
+  excludeDomains: string;
+  maxContentChars: number;
+  maxTotalContentChars: number;
+  maxAge: number;
+}
+
 // HTML to Image Node Data
 export type HtmlToImageCaptureMode = "fullPage" | "viewport";
 
@@ -600,7 +614,8 @@ export type NodeData =
   | STTNodeData
   | VoiceAgentNodeData
   | WebScraperNodeData
-  | HtmlToImageNodeData;
+  | HtmlToImageNodeData
+  | WebSearchNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
