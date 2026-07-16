@@ -601,7 +601,7 @@ class SimpleEvaluatorRegistry:
         )
 
         if use_llm_judge:
-            llm_score, llm_reason = await self._run_llm_judge(
+            llm_score, llm_reason = await self._run_provenance_judge(
                 answer=_normalize_text(answer),
                 context=_normalize_text(context_text),
                 provider_id=config.get("llm_provider_id"),
@@ -640,7 +640,7 @@ class SimpleEvaluatorRegistry:
         overlap = answer_tokens & context_tokens
         return len(overlap) / float(len(answer_tokens))
 
-    async def _run_llm_judge(
+    async def _run_provenance_judge(
         self,
         *,
         answer: str,
@@ -648,6 +648,7 @@ class SimpleEvaluatorRegistry:
         provider_id: str | None = None,
         system_prompt_suffix: str = "",
     ) -> tuple[float | None, str | None]:
+        """Grounding-locked judge used by provenance_eval; distinct from the rubric-based _llm_judge."""
         base_instructions = (
             "You are a strict provenance judge. Given a CONTEXT and an ANSWER, "
             "decide whether the answer is fully supported by the context, "
