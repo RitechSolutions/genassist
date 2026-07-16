@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { METRIC_COLORS } from "@/constants/chartColors";
 import { Card } from "@/components/card";
 import { cn } from "@/helpers/utils";
 import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
@@ -31,10 +32,10 @@ const LABELS: Record<string, string> = {
 };
 
 const SERIES = [
-  { key: "satisfaction", color: "#10b981" },
-  { key: "serviceQuality", color: "#8b5cf6" },
-  { key: "resolutionRate", color: "#f59e0b" },
-  { key: "efficiency", color: "#06b6d4" },
+  { key: "satisfaction", color: METRIC_COLORS.satisfaction },
+  { key: "serviceQuality", color: METRIC_COLORS.serviceQuality },
+  { key: "resolutionRate", color: METRIC_COLORS.resolutionRate },
+  { key: "efficiency", color: METRIC_COLORS.efficiency },
 ] as const;
 
 function formatDateLabel(dateStr: string): string {

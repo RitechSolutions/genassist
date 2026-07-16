@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { getAllRoles, deleteRole } from "@/services/roles";
 import { formatDate } from "@/helpers/utils";
 import { Role } from "@/interfaces/role.interface";
 import { toast } from "react-hot-toast";
-import { getPaginationMeta } from "@/helpers/pagination";
-import { PaginationBar } from "@/components/PaginationBar";
 
 interface RolesCardProps {
   searchQuery: string;
@@ -25,14 +23,12 @@ export function RolesCard({
   onEditRole,
   updatedRole = null,
 }: RolesCardProps) {
-  const PAGE_SIZE = 10;
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
 
   // roles that cannot be edited
   const restrictedRoles = new Set(["admin", "superadmin"]);
@@ -50,10 +46,6 @@ export function RolesCard({
       );
     }
   }, [updatedRole]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
 
   const fetchRoles = async () => {
     try {
@@ -97,31 +89,40 @@ export function RolesCard({
     role.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const pagination = getPaginationMeta(filteredRoles.length, PAGE_SIZE, currentPage);
-  const paginatedRoles = filteredRoles.slice(pagination.startIndex, pagination.endIndex);
-  const pageItemCount = paginatedRoles.length;
-
-  const headers = [
-    "ID",
-    "Name",
-    "Status",
-    "Created At",
-    "Updated At",
-    "Actions",
-  ];
-
-  const renderRow = (role: Role, index: number) => (
-    <TableRow key={role.id}>
-      <TableCell>{pagination.startIndex + index + 1}</TableCell>
-      <TableCell className="font-medium break-all">{role.name}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<Role>[] = [
+    { header: "ID", key: "id", cell: (_role, index) => index + 1 },
+    {
+      header: "Name",
+      key: "name",
+      cell: (role) => role.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (role) => (
         <Badge variant={role.is_active === 1 ? "default" : "secondary"}>
           {role.is_active === 1 ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell className="truncate">{formatDate(role.created_at)}</TableCell>
-      <TableCell className="truncate">{formatDate(role.updated_at)}</TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Created At",
+      key: "created_at",
+      cell: (role) => formatDate(role.created_at),
+      className: "truncate",
+    },
+    {
+      header: "Updated At",
+      key: "updated_at",
+      cell: (role) => formatDate(role.updated_at),
+      className: "truncate",
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (role) => (
         <ActionButtons
           canEdit={!restrictedRoles.has(role.name)}
           canDelete={!restrictedRoles.has(role.name)}
@@ -130,29 +131,21 @@ export function RolesCard({
           editTitle="Edit Role"
           deleteTitle="Delete Role"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
-        data={paginatedRoles}
+        data={filteredRoles}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No roles found"
-        searchEmptyMessage="No roles found matching your search"
-      />
-
-      <PaginationBar
-        total={pagination.total}
-        pageSize={PAGE_SIZE}
-        currentPage={pagination.safePage}
-        pageItemCount={pageItemCount}
-        onPageChange={setCurrentPage}
+        notFoundMessage="No roles found matching your search"
       />
 
       <ConfirmDialog
