@@ -19,7 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import { ChevronLeft, ChevronRight, Check, Database, Workflow, Settings, ClipboardCheck } from "lucide-react";
 import { cn } from "@/helpers/utils";
 import type { TestSuite } from "@/interfaces/testSuite.interface";

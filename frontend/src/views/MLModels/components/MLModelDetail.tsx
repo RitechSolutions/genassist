@@ -56,7 +56,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import { Label } from "@/components/label";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import JsonViewer from "@/components/JsonViewer";

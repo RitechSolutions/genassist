@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ListEmptyState } from "@/components/ListEmptyState";
-import { TableCell, TableRow } from "@/components/table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
@@ -81,14 +81,6 @@ export function BedrockFineTuneJobsCard({
         .some((s) => s.includes(q))
     );
   }, [jobs, searchQuery]);
-
-  const headers = [
-    "Name",
-    "Base Model",
-    "Status",
-    "Deployment",
-    { label: "Action", className: "text-center pr-4 whitespace-nowrap" },
-  ];
 
   const handleDelete = (job: BedrockFineTuneJob) => {
     setJobToDelete(job);
@@ -188,7 +180,7 @@ export function BedrockFineTuneJobsCard({
 
     if (status === "active") {
       return (
-        <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-emerald-500 text-emerald-600">
+        <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-success text-success">
           Active
         </Badge>
       );
@@ -229,7 +221,7 @@ export function BedrockFineTuneJobsCard({
             }}
             title="Cancel job"
           >
-            <Ban className="h-4 w-4 text-amber-600" />
+            <Ban className="h-4 w-4 text-warning" />
           </Button>
         )}
         <Button
@@ -253,43 +245,50 @@ export function BedrockFineTuneJobsCard({
     );
   };
 
-  const renderRow = (job: BedrockFineTuneJob) => {
-    const handleRowClick = () => {
-      if (!job.id) return;
-      navigate(`/bedrock-fine-tune/${job.id}`);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
-      if (!job.id) return;
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        navigate(`/bedrock-fine-tune/${job.id}`);
-      }
-    };
-
-    return (
-      <TableRow
-        key={job.id}
-        className="text-sm cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
-        onClick={handleRowClick}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-      >
-        <TableCell className="font-medium text-foreground">
-          {job.suffix || job.custom_model_name || job.id || "—"}
-        </TableCell>
-        <TableCell className="text-muted-foreground">{job.base_model_id || "—"}</TableCell>
-        <TableCell className="min-w-[160px]">{renderStatus(job)}</TableCell>
-        <TableCell className="min-w-[140px]">{renderDeployment(job)}</TableCell>
-        <TableCell
-          className="w-[72px] text-center"
+  const columns: Column<BedrockFineTuneJob>[] = [
+    {
+      header: "Name",
+      key: "name",
+      className: "font-medium text-foreground",
+      cell: (job) => job.suffix || job.custom_model_name || job.id || "—",
+    },
+    {
+      header: "Base Model",
+      key: "base_model",
+      className: "text-muted-foreground",
+      cell: (job) => job.base_model_id || "—",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "min-w-[160px]",
+      cell: (job) => renderStatus(job),
+    },
+    {
+      header: "Deployment",
+      key: "deployment",
+      className: "min-w-[140px]",
+      cell: (job) => renderDeployment(job),
+    },
+    {
+      header: "Action",
+      key: "action",
+      headerClassName: "text-center pr-4 whitespace-nowrap",
+      className: "w-[72px] text-center",
+      cell: (job) => (
+        <div
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
           {renderActions(job)}
-        </TableCell>
-      </TableRow>
-    );
+        </div>
+      ),
+    },
+  ];
+
+  const handleRowClick = (job: BedrockFineTuneJob) => {
+    if (!job.id) return;
+    navigate(`/bedrock-fine-tune/${job.id}`);
   };
 
   const isSearchActive = searchQuery.trim().length > 0;
@@ -344,13 +343,14 @@ export function BedrockFineTuneJobsCard({
 
       <DataTable
         data={filtered}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
+        onRowClick={handleRowClick}
         emptyMessage="No Bedrock fine-tune jobs found"
-        searchEmptyMessage="No jobs matching your search"
+        notFoundMessage="No jobs matching your search"
         emptyState={emptyState}
       />
 

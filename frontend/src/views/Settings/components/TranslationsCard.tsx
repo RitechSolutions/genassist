@@ -1,20 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ListEmptyState } from "@/components/ListEmptyState";
-import { TableCell, TableRow } from "@/components/table";
 import { Button } from "@/components/button";
 import { Pencil, Trash2, Languages, Plus } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { deleteTranslation, getTranslations } from "@/services/translations";
 import { Translation } from "@/interfaces/translation.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-
-const HEADERS = [
-  { label: "Key", className: "w-48" },
-  { label: "Default", className: "w-64" },
-  { label: "Languages", className: "w-48" },
-  { label: "Actions", className: "w-28" },
-];
 
 interface TranslationsCardProps {
   searchQuery: string;
@@ -141,63 +134,77 @@ export function TranslationsCard({
     [isSearchActive, onAddTranslation]
   );
 
-  const renderRow = (row: Translation) => {
-    const cellClass =
-      "max-w-[200px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
-    const longCellClass =
-      "max-w-[280px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
+  const cellClass =
+    "max-w-[200px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
+  const longCellClass =
+    "max-w-[280px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
 
-    const langCodes = Object.keys(row.translations)
-      .filter((code) => row.translations[code]?.trim())
-      .map((code) => code.toUpperCase());
-
-    return (
-      <TableRow key={row.id || row.key}>
-        <TableCell className={cellClass} title={row.key}>
-          {row.key}
-        </TableCell>
-        <TableCell className={longCellClass} title={row.default ?? ""}>
-          {row.default ?? ""}
-        </TableCell>
-        <TableCell className={cellClass}>
-          {langCodes.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {langCodes.map((code) => (
-                <span
-                  key={code}
-                  className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium"
-                >
-                  {code}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="text-muted-foreground text-sm">None</span>
-          )}
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onEditTranslation(row, "edit")}
-              title="Edit translation"
-            >
-              <Pencil className="w-4 h-4 text-black" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handleDeleteClick(row)}
-              title="Delete translation"
-            >
-              <Trash2 className="w-4 h-4 text-red-500" />
-            </Button>
+  const columns: Column<Translation>[] = [
+    {
+      header: "Key",
+      key: "key",
+      headerClassName: "w-48",
+      className: cellClass,
+      cell: (row) => <span title={row.key}>{row.key}</span>,
+    },
+    {
+      header: "Default",
+      key: "default",
+      headerClassName: "w-64",
+      className: longCellClass,
+      cell: (row) => <span title={row.default ?? ""}>{row.default ?? ""}</span>,
+    },
+    {
+      header: "Languages",
+      key: "languages",
+      headerClassName: "w-48",
+      className: cellClass,
+      cell: (row) => {
+        const langCodes = Object.keys(row.translations)
+          .filter((code) => row.translations[code]?.trim())
+          .map((code) => code.toUpperCase());
+        return langCodes.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {langCodes.map((code) => (
+              <span
+                key={code}
+                className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium"
+              >
+                {code}
+              </span>
+            ))}
           </div>
-        </TableCell>
-      </TableRow>
-    );
-  };
+        ) : (
+          <span className="text-muted-foreground text-sm">None</span>
+        );
+      },
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      headerClassName: "w-28",
+      cell: (row) => (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEditTranslation(row, "edit")}
+            title="Edit translation"
+          >
+            <Pencil className="w-4 h-4 text-foreground" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => handleDeleteClick(row)}
+            title="Delete translation"
+          >
+            <Trash2 className="w-4 h-4 text-destructive" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -215,13 +222,13 @@ export function TranslationsCard({
 
       <DataTable
         data={filteredTranslations}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={HEADERS}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No translations found"
-        searchEmptyMessage="No translations found matching your search"
+        notFoundMessage="No translations found matching your search"
         emptyState={emptyState}
       />
 

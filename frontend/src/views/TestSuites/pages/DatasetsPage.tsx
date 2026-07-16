@@ -16,7 +16,7 @@ import {Input} from "@/components/ui/input";
 import {Textarea} from "@/components/ui/textarea";
 import {Label} from "@/components/label";
 import {useNavigate} from "react-router-dom";
-import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
+import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/dialog";
 import {ChevronDown, ChevronRight, Clock, Database, Import, Pencil, Plus, Trash2} from "lucide-react";
 import {ConfirmDialog} from "@/components/ConfirmDialog";
 import {fetchConversationById, fetchTranscripts} from "@/services/transcripts";

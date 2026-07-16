@@ -16,7 +16,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import type { ApiKey } from "@/interfaces/api-key.interface";
 import { rotateApiKey } from "@/services/apiKeys";
 import toast from "react-hot-toast";

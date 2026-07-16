@@ -13,6 +13,7 @@ import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
 import { NodeBreakdownChartEmptyState } from "../AnalyticsEmptyStates";
 import { analyticsFadeUpClass } from "../../constants/animations";
 import { cn } from "@/helpers/utils";
+import { CHART_NEUTRALS } from "@/constants/chartColors";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 
@@ -139,12 +140,12 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
               barCategoryGap="35%"
               barGap={2}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" horizontal={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRALS.grid} horizontal={false} />
               <XAxis
                 type="number"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 allowDecimals={false}
               />
               <YAxis
@@ -155,7 +156,7 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
                 tickLine={false}
                 tick={{ fontSize: 11, fill: "#52525b" }}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f4f4f5" }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: CHART_NEUTRALS.grid }} />
               <Bar dataKey="executions" radius={[0, 3, 3, 0]} barSize={8}>
                 {data.map((_, i) => (
                   <Cell key={i} fill="#93c5fd" />

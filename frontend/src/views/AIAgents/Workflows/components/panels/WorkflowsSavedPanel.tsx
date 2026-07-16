@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { createWorkflow, updateWorkflow } from "@/services/workflows";

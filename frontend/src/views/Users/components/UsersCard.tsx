@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
@@ -13,8 +13,6 @@ import { currentUserIsAdmin, getCurrentUserId } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { User } from "@/interfaces/user.interface";
 import { UserGroup } from "@/interfaces/userGroup.interface";
-import { getPaginationMeta } from "@/helpers/pagination";
-import { PaginationBar } from "@/components/PaginationBar";
 
 interface UsersCardProps {
   searchQuery: string;
@@ -29,13 +27,11 @@ export function UsersCard({
   onEditUser,
   updatedUser = null,
 }: UsersCardProps) {
-  const PAGE_SIZE = 10;
   const isAdmin = currentUserIsAdmin();
   const [users, setUsers] = useState<User[]>([]);
   const [groupMap, setGroupMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [showDeleted, setShowDeleted] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -90,10 +86,6 @@ export function UsersCard({
     }
   }, [updatedUser]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, showDeleted]);
-
   const filteredUsers = users.filter((user) => {
     const q = searchQuery.toLowerCase();
     if (!q) return true;
@@ -105,10 +97,6 @@ export function UsersCard({
       groupName.toLowerCase().includes(q)
     );
   });
-
-  const pagination = getPaginationMeta(filteredUsers.length, PAGE_SIZE, currentPage);
-  const paginatedUsers = filteredUsers.slice(pagination.startIndex, pagination.endIndex);
-  const pageItemCount = paginatedUsers.length;
 
   const currentUserId = getCurrentUserId();
 
@@ -160,72 +148,92 @@ export function UsersCard({
     }
   };
 
-  const headers = [
-    "ID",
-    "Username",
-    "Email",
-    "Status",
-    "User Type",
-    "Roles",
-    "Group",
-    "Action",
-  ];
-
-  const renderRow = (user: User, index: number) => {
-    const isDeleted = user.is_deleted === 1;
-    const isSelf = Boolean(currentUserId && user.id === currentUserId);
-    const additionalGroupCount = new Set(
-      (user.supervised_group_ids ?? []).filter((id) => id && id !== user.group_id)
-    ).size;
-
-    return (
-      <TableRow key={user.id}>
-        <TableCell>{pagination.startIndex + index + 1}</TableCell>
-        <TableCell className="font-medium break-all">{user.username}</TableCell>
-        <TableCell className="truncate">{user.email}</TableCell>
-        <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-          <div className="flex flex-wrap gap-1">
-            <Badge variant={user.is_active === 1 ? "default" : "secondary"}>
-              {user.is_active === 1 ? "Active" : "Inactive"}
+  const columns: Column<User>[] = [
+    { header: "ID", key: "id", cell: (_user, index) => index + 1 },
+    {
+      header: "Username",
+      key: "username",
+      cell: (user) => user.username,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Email",
+      key: "email",
+      cell: (user) => user.email,
+      className: "truncate",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (user) => (
+        <div className="flex flex-wrap gap-1">
+          <Badge variant={user.is_active === 1 ? "default" : "secondary"}>
+            {user.is_active === 1 ? "Active" : "Inactive"}
+          </Badge>
+          {user.is_deleted === 1 && (
+            <Badge variant="outline" className="text-muted-foreground">
+              Deleted
             </Badge>
-            {isDeleted && (
-              <Badge variant="outline" className="text-muted-foreground">
-                Deleted
+          )}
+        </div>
+      ),
+    },
+    {
+      header: "User Type",
+      key: "user_type",
+      cell: (user) => user.user_type?.name || "N/A",
+      className: "truncate",
+    },
+    {
+      header: "Roles",
+      key: "roles",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (user) => (
+        <div className="flex gap-1 flex-wrap">
+          {user.roles && user.roles.length > 0 ? (
+            user.roles.map((role, roleIndex) => (
+              <Badge key={roleIndex} variant="outline">
+                {role.name}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: "Group",
+      key: "group",
+      className: "truncate",
+      cell: (user) => {
+        const additionalGroupCount = new Set(
+          (user.supervised_group_ids ?? []).filter(
+            (id) => id && id !== user.group_id
+          )
+        ).size;
+        return user.group_id ? (
+          <div className="inline-flex items-center gap-1">
+            <span>{groupMap[user.group_id] ?? "—"}</span>
+            {additionalGroupCount > 0 && (
+              <Badge variant="outline" className="px-1.5 py-0 text-[10px] leading-4">
+                +{additionalGroupCount}
               </Badge>
             )}
           </div>
-        </TableCell>
-        <TableCell className="truncate">
-          {user.user_type?.name || "N/A"}
-        </TableCell>
-        <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-          <div className="flex gap-1 flex-wrap">
-            {user.roles && user.roles.length > 0 ? (
-              user.roles.map((role, roleIndex) => (
-                <Badge key={roleIndex} variant="outline">
-                  {role.name}
-                </Badge>
-              ))
-            ) : (
-              <span className="text-gray-400">—</span>
-            )}
-          </div>
-        </TableCell>
-        <TableCell className="truncate">
-          {user.group_id ? (
-            <div className="inline-flex items-center gap-1">
-              <span>{groupMap[user.group_id] ?? "—"}</span>
-              {additionalGroupCount > 0 && (
-                <Badge variant="outline" className="px-1.5 py-0 text-[10px] leading-4">
-                  +{additionalGroupCount}
-                </Badge>
-              )}
-            </div>
-          ) : (
-            "—"
-          )}
-        </TableCell>
-        <TableCell>
+        ) : (
+          "—"
+        );
+      },
+    },
+    {
+      header: "Action",
+      key: "action",
+      cell: (user) => {
+        const isDeleted = user.is_deleted === 1;
+        const isSelf = Boolean(currentUserId && user.id === currentUserId);
+        return (
           <ActionButtons
             canEdit={!isDeleted}
             canDelete={!isDeleted && !isSelf}
@@ -237,10 +245,10 @@ export function UsersCard({
             deleteTitle="Delete User"
             revertTitle="Revert user"
           />
-        </TableCell>
-      </TableRow>
-    );
-  };
+        );
+      },
+    },
+  ];
 
   return (
     <>
@@ -258,22 +266,14 @@ export function UsersCard({
       )}
 
       <DataTable
-        data={paginatedUsers}
+        data={filteredUsers}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No users found"
-        searchEmptyMessage="No users found matching your search"
-      />
-
-      <PaginationBar
-        total={pagination.total}
-        pageSize={PAGE_SIZE}
-        currentPage={pagination.safePage}
-        pageItemCount={pageItemCount}
-        onPageChange={setCurrentPage}
+        notFoundMessage="No users found matching your search"
       />
 
       <ConfirmDialog

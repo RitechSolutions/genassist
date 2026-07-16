@@ -10,9 +10,9 @@ export function SentimentDistribution({ positive = 0, neutral = 0, negative = 0 
   const total = positive + neutral + negative || 1;
 
   const sentiments = [
-    { name: "Positive", value: (positive / total) * 100, color: "bg-green-500", textColor: "text-green-600" },
-    { name: "Neutral", value: (neutral / total) * 100, color: "bg-yellow-500", textColor: "text-yellow-600" },
-    { name: "Negative", value: (negative / total) * 100, color: "bg-red-500", textColor: "text-red-600" }
+    { name: "Positive", value: (positive / total) * 100, color: "bg-success", textColor: "text-success" },
+    { name: "Neutral", value: (neutral / total) * 100, color: "bg-warning", textColor: "text-warning" },
+    { name: "Negative", value: (negative / total) * 100, color: "bg-destructive", textColor: "text-destructive" }
   ];
 
   return (

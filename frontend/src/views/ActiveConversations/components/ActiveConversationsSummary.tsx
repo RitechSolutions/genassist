@@ -9,9 +9,9 @@ interface SummaryProps {
 
 export function ActiveConversationsSummary({ total, counts, loading }: SummaryProps) {
   const sentiments = [
-    { label: "Bad", count: counts.bad, color: "bg-red-500" },
-    { label: "Neutral", count: counts.neutral, color: "bg-blue-500" },
-    { label: "Good", count: counts.good, color: "bg-green-500" },
+    { label: "Bad", count: counts.bad, color: "bg-destructive" },
+    { label: "Neutral", count: counts.neutral, color: "bg-info" },
+    { label: "Good", count: counts.good, color: "bg-success" },
   ];
 
   return (

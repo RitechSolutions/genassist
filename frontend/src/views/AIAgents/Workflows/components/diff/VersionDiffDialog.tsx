@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Loader2, AlertTriangle, RefreshCw, List, Network } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/tabs';
 import { Button } from '@/components/button';
 import { cn } from '@/helpers/utils';

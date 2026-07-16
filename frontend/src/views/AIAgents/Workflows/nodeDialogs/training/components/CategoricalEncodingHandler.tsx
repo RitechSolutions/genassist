@@ -7,7 +7,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import {
   CategoricalEncodingConfig,
   CategoricalEncodingItem,

@@ -223,7 +223,7 @@ export function LanguagesCard({
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:ring-destructive"
             >
               {isDeleting ? (
                 <>

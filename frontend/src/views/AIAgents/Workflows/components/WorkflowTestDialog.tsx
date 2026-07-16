@@ -6,7 +6,7 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";

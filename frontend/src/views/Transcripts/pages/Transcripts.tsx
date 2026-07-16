@@ -1,4 +1,5 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
+import { METRIC_COLORS } from "@/constants/chartColors";
 import { AppSidebar } from "@/layout/app-sidebar";
 import {
   MessageSquare,
@@ -91,10 +92,10 @@ const QUALITY_RANGES: Record<QualityLevel, { min?: number; max?: number }> = {
 
 // Icons & colors aligned with AnalyticsMetricsSection
 const QUALITY_METRICS: { key: QualityFilterKey; label: string; shortLabel: string; icon: ReactNode; color: string }[] = [
-  { key: "customer_satisfaction", label: "Customer Satisfaction", shortLabel: "Satisfaction", icon: <SmileIcon className="h-3.5 w-3.5" style={{ color: "#10b981" }} />, color: "#10b981" },
-  { key: "quality_of_service", label: "Quality of Service", shortLabel: "Quality", icon: <Award className="h-3.5 w-3.5" style={{ color: "#8b5cf6" }} />, color: "#8b5cf6" },
-  { key: "resolution_rate", label: "Resolution Rate", shortLabel: "Resolution", icon: <CheckCircle className="h-3.5 w-3.5" style={{ color: "#f59e0b" }} />, color: "#f59e0b" },
-  { key: "efficiency", label: "Efficiency", shortLabel: "Efficiency", icon: <Zap className="h-3.5 w-3.5" style={{ color: "#06b6d4" }} />, color: "#06b6d4" },
+  { key: "customer_satisfaction", label: "Customer Satisfaction", shortLabel: "Satisfaction", icon: <SmileIcon className="h-3.5 w-3.5" style={{ color: METRIC_COLORS.satisfaction }} />, color: METRIC_COLORS.satisfaction },
+  { key: "quality_of_service", label: "Quality of Service", shortLabel: "Quality", icon: <Award className="h-3.5 w-3.5" style={{ color: METRIC_COLORS.serviceQuality }} />, color: METRIC_COLORS.serviceQuality },
+  { key: "resolution_rate", label: "Resolution Rate", shortLabel: "Resolution", icon: <CheckCircle className="h-3.5 w-3.5" style={{ color: METRIC_COLORS.resolutionRate }} />, color: METRIC_COLORS.resolutionRate },
+  { key: "efficiency", label: "Efficiency", shortLabel: "Efficiency", icon: <Zap className="h-3.5 w-3.5" style={{ color: METRIC_COLORS.efficiency }} />, color: METRIC_COLORS.efficiency },
 ];
 
 type StatusFilter = "all" | "live" | "finalized";
@@ -486,10 +487,10 @@ const Transcripts = () => {
     const sortMap: Record<string, { label: string; icon: ReactNode }> = {
       thumbs_down_count: { label: `Thumbs Down \u00b7 ${dirLabel}`, icon: <ThumbsDown className="h-4 w-4 text-red-600 shrink-0" /> },
       thumbs_up_count: { label: `Thumbs Up \u00b7 ${dirLabel}`, icon: <ThumbsUp className="h-4 w-4 text-green-600 shrink-0" /> },
-      customer_satisfaction: { label: `Satisfaction \u00b7 ${dirLabel}`, icon: <SmileIcon className="h-4 w-4 shrink-0" style={{ color: "#10b981" }} /> },
-      quality_of_service: { label: `Quality \u00b7 ${dirLabel}`, icon: <Award className="h-4 w-4 shrink-0" style={{ color: "#8b5cf6" }} /> },
-      resolution_rate: { label: `Resolution \u00b7 ${dirLabel}`, icon: <CheckCircle className="h-4 w-4 shrink-0" style={{ color: "#f59e0b" }} /> },
-      efficiency: { label: `Efficiency \u00b7 ${dirLabel}`, icon: <Zap className="h-4 w-4 shrink-0" style={{ color: "#06b6d4" }} /> },
+      customer_satisfaction: { label: `Satisfaction \u00b7 ${dirLabel}`, icon: <SmileIcon className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.satisfaction }} /> },
+      quality_of_service: { label: `Quality \u00b7 ${dirLabel}`, icon: <Award className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.serviceQuality }} /> },
+      resolution_rate: { label: `Resolution \u00b7 ${dirLabel}`, icon: <CheckCircle className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.resolutionRate }} /> },
+      efficiency: { label: `Efficiency \u00b7 ${dirLabel}`, icon: <Zap className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.efficiency }} /> },
     };
     return sortMap[orderBy] ?? null;
   };
@@ -904,7 +905,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center gap-2">
-                          <SmileIcon className="h-4 w-4" style={{ color: "#10b981" }} />
+                          <SmileIcon className="h-4 w-4" style={{ color: METRIC_COLORS.satisfaction }} />
                           Customer Satisfaction
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
@@ -918,7 +919,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center gap-2">
-                          <Award className="h-4 w-4" style={{ color: "#8b5cf6" }} />
+                          <Award className="h-4 w-4" style={{ color: METRIC_COLORS.serviceQuality }} />
                           Quality of Service
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
@@ -932,7 +933,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center gap-2">
-                          <CheckCircle className="h-4 w-4" style={{ color: "#f59e0b" }} />
+                          <CheckCircle className="h-4 w-4" style={{ color: METRIC_COLORS.resolutionRate }} />
                           Resolution Rate
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
@@ -946,7 +947,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center gap-2">
-                          <Zap className="h-4 w-4" style={{ color: "#06b6d4" }} />
+                          <Zap className="h-4 w-4" style={{ color: METRIC_COLORS.efficiency }} />
                           Efficiency
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>

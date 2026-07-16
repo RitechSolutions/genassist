@@ -693,7 +693,7 @@ function TranscriptDialogContent({
                 sentiment === "positive"
                   ? "bg-green-600 text-white"
                   : sentiment === "negative"
-                  ? "bg-red-600 text-white"
+                  ? "bg-destructive text-destructive-foreground"
                   : "bg-purple-600 text-white"
               }
             >
@@ -1022,7 +1022,7 @@ function TranscriptDialogContent({
                 </div>
                 <Button
                   onClick={handleFinalize}
-                  className="bg-red-600 text-white w-full"
+                  className="bg-destructive text-destructive-foreground w-full"
                   disabled={isFinalizing}
                 >
                   {isFinalizing ? "Finalizing..." : "Finalize Conversation"}

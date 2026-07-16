@@ -12,7 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
 import { DailyConversationsChartEmptyState } from "../AnalyticsEmptyStates";
 import { analyticsFadeUpClass } from "../../constants/animations";
-import { cn } from "@/helpers/utils";
+import { cn, formatChartDate } from "@/helpers/utils";
+import {
+  CHART_SERIES_COLORS,
+  CHART_NEUTRALS,
+  chartTooltipStyle,
+  chartTooltipCursor,
+} from "@/constants/chartColors";
 import type { AgentDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 
 interface AgentExecutionChartProps {
@@ -21,15 +27,8 @@ interface AgentExecutionChartProps {
   agentNameMap: Record<string, string>;
 }
 
-const COLORS = [
-  "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444",
-  "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#14b8a6",
-];
+const COLORS = CHART_SERIES_COLORS;
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecutionChartProps) {
   if (loading) {
@@ -58,7 +57,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
   }
 
   const data = dates.map((date) => ({
-    date: formatDate(date),
+    date: formatChartDate(date),
     ...pivot.get(date),
   }));
 
@@ -97,29 +96,23 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
                   );
                 })}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRALS.grid} vertical={false} />
               <XAxis
                 dataKey="date"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 dy={6}
               />
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 allowDecimals={false}
               />
               <Tooltip
-                contentStyle={{
-                  background: "white",
-                  border: "1px solid #e4e4e7",
-                  borderRadius: "10px",
-                  fontSize: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                }}
-                cursor={{ stroke: "#e4e4e7", strokeWidth: 1 }}
+                contentStyle={chartTooltipStyle}
+                cursor={chartTooltipCursor}
                 formatter={(value: number, agentId: string) => [
                   value.toLocaleString(),
                   agentNameMap[agentId] ?? agentId.slice(0, 8) + "…",
