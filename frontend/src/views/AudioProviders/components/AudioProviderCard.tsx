@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/button";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { AudioProvider } from "@/interfaces/audioProvider.interface";
 import { getAllAudioProviders, deleteAudioProvider } from "@/services/audioProviders";
@@ -122,43 +122,65 @@ export function AudioProviderCard({
     return <Badge variant="secondary">{labels[capability] || capability}</Badge>;
   };
 
-  const headers = ["Name", "Type", "Capability", "Status", "Connection", "Actions"];
-
-  const renderRow = (provider: AudioProvider) => (
-    <TableRow key={provider.id}>
-      <TableCell className="font-medium break-all">{provider.name}</TableCell>
-      <TableCell className="truncate">{provider.provider_type}</TableCell>
-      <TableCell>{getCapabilityBadge(provider.capability)}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<AudioProvider>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (provider) => provider.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Type",
+      key: "provider_type",
+      cell: (provider) => provider.provider_type,
+      className: "truncate",
+    },
+    {
+      header: "Capability",
+      key: "capability",
+      cell: (provider) => getCapabilityBadge(provider.capability),
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (provider) => (
         <Badge variant={provider.is_active ? "default" : "secondary"}>
           {provider.is_active ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        {getConnectionBadge(provider)}
-      </TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Connection",
+      key: "connection",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (provider) => getConnectionBadge(provider),
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (provider) => (
         <ActionButtons
           onEdit={() => onEdit(provider)}
           onDelete={() => handleDeleteClick(provider)}
           editTitle="Edit"
           deleteTitle="Delete"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filteredProviders}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No Audio Providers found"
-        searchEmptyMessage="No Audio Providers matching your search"
+        notFoundMessage="No Audio Providers matching your search"
         emptyState={
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="rounded-full bg-gray-100 p-4">

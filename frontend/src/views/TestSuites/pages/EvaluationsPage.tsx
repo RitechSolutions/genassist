@@ -7,7 +7,7 @@ import {getTestRun, getTestRunsBatch, listTestSuites, startTestRun} from "@/serv
 import {WorkflowMinimal} from "@/interfaces/workflow.interface";
 import {TestRun, TestSuite} from "@/interfaces/testSuite.interface";
 import {Button} from "@/components/button";
-import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
+import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/dialog";
 import {ListChecks, Pencil, Play, Plus, Trash2} from "lucide-react";
 import {
   appendRunToEvaluation,

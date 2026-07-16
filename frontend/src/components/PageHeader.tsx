@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { Button } from "@/components/button";
 import { SearchInput } from "@/components/SearchInput";
+import { PageTitle } from "@/components/Heading";
 
 interface PageHeaderProps {
   title: string;
@@ -28,7 +29,7 @@ export function PageHeader({
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
       <div className="min-w-0">
-        <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">{title}</h1>
+        <PageTitle className="mb-1 animate-fade-down">{title}</PageTitle>
         <p className="text-sm md:text-base text-muted-foreground animate-fade-up">{subtitle}</p>
       </div>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">

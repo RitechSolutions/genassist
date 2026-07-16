@@ -23,7 +23,7 @@ const ServerDownPage: React.FC = () => {
               <button
                 onClick={async () => { setPending(true); await probeApiHealth(); setPending(false); }}
                 disabled={pending}
-                className="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-red-500"
+                className="inline-flex items-center rounded-md bg-destructive px-4 py-2 text-destructive-foreground text-sm font-medium hover:bg-destructive/90 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-destructive"
               >
                 {pending ? 'Checking…' : 'Retry'}
               </button>
