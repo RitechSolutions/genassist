@@ -54,6 +54,9 @@ function App() {
     quickInput: true,
   });
 
+  // Which presentation of the chat to render (see GenAgentChat `mode`).
+  const [chatMode, setChatMode] = useState<"floating" | "inputbar" | "embedded">("floating");
+
   const [customLogo, setCustomLogo] = useState<FileState>({
     useCustom: false,
     file: null,
@@ -1035,6 +1038,18 @@ function App() {
                     style={{ width: 20, height: 20, cursor: "pointer" }}
                   />
                 </div>
+                <div style={formGroupStyle}>
+                  <label style={labelStyle}>Chat Mode</label>
+                  <select
+                    style={selectStyle}
+                    value={chatMode}
+                    onChange={(e) => setChatMode(e.target.value as "floating" | "inputbar" | "embedded")}
+                  >
+                    <option value="floating">Floating</option>
+                    <option value="inputbar">Input Bar</option>
+                    <option value="embedded">Embedded</option>
+                  </select>
+                </div>
               </div>
         </>
       )}
@@ -1105,47 +1120,79 @@ function App() {
         </div>
       </div>
 
-      {/* Chat Widget - Floating Mode */}
-      <GenAgentChat
-        baseUrl={chatSettings.baseUrl}
-        websocketUrl={chatSettings.websocketUrl}
-        apiKey={chatSettings.apiKey}
-        tenant={chatSettings.tenant || undefined}
-        metadata={metadata}
-        theme={theme}
-        useAudio={featureFlags.useAudio}
-        useFile={featureFlags.useFile}
-        headerTitle={chatSettings.name}
-        agentName={chatSettings.agentName}
-        logoUrl={chatSettings.logoUrl}
-        brandLogoUrl={chatSettings.brandLogoUrl}
-        useWs={featureFlags.useWs}
-        usePoll={featureFlags.usePoll}
-        quickInput={featureFlags.quickInput}
-        serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
-        serverUnavailableContactUrl="https://www.ritech.co/"
-        serverUnavailableContactLabel="Contact Support"
-        onError={handleError}
-        mode="floating"
-        floatingConfig={{
-          position: "bottom-right",
-          offset: { x: 20, y: 20 },
-        }}
-        onConfigLoaded={({ chatInputMetadata }: { chatInputMetadata?: any }) => {
-          const next = (chatInputMetadata && typeof chatInputMetadata === "object" && !Array.isArray(chatInputMetadata))
-            ? (chatInputMetadata as Record<string, any>)
-            : {};
-          setAgentChatInputMetadata(next);
-          try {
-            localStorage.setItem(
-              `genassist_agent_chat_input_metadata:${chatSettings.apiKey}`,
-              JSON.stringify(next)
-            );
-          } catch {
-            // ignore
-          }
-        }}
-      />
+      {/* Chat Widget */}
+      {(() => {
+        const chatWidget = (
+          <GenAgentChat
+            baseUrl={chatSettings.baseUrl}
+            websocketUrl={chatSettings.websocketUrl}
+            apiKey={chatSettings.apiKey}
+            tenant={chatSettings.tenant || undefined}
+            metadata={metadata}
+            theme={theme}
+            useAudio={featureFlags.useAudio}
+            useFile={featureFlags.useFile}
+            headerTitle={chatSettings.name}
+            description={chatSettings.description}
+            agentName={chatSettings.agentName}
+            logoUrl={chatSettings.logoUrl}
+            brandLogoUrl={chatSettings.brandLogoUrl}
+            useWs={featureFlags.useWs}
+            usePoll={featureFlags.usePoll}
+            quickInput={featureFlags.quickInput}
+            serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
+            serverUnavailableContactUrl="https://www.ritech.co/"
+            serverUnavailableContactLabel="Contact Support"
+            onError={handleError}
+            mode={chatMode}
+            floatingConfig={{
+              position: "bottom-right",
+              offset: { x: 20, y: 20 },
+            }}
+            onConfigLoaded={({ chatInputMetadata }: { chatInputMetadata?: any }) => {
+              const next = (chatInputMetadata && typeof chatInputMetadata === "object" && !Array.isArray(chatInputMetadata))
+                ? (chatInputMetadata as Record<string, any>)
+                : {};
+              setAgentChatInputMetadata(next);
+              try {
+                localStorage.setItem(
+                  `genassist_agent_chat_input_metadata:${chatSettings.apiKey}`,
+                  JSON.stringify(next)
+                );
+              } catch {
+                // ignore
+              }
+            }}
+          />
+        );
+
+        // The input-bar variant renders inline where it is placed — dock it to the
+        // bottom-center of the viewport for the demo. Embedded gets a sized box.
+        if (chatMode === "inputbar") {
+          return (
+            <div
+              style={{
+                position: "fixed",
+                left: "50%",
+                transform: "translateX(-50%)",
+                bottom: 28,
+                width: "min(680px, calc(100vw - 40px))",
+                zIndex: 1000,
+              }}
+            >
+              {chatWidget}
+            </div>
+          );
+        }
+        if (chatMode === "embedded") {
+          return (
+            <div style={{ position: "fixed", right: 24, bottom: 24, width: 384, height: 620, zIndex: 1000 }}>
+              {chatWidget}
+            </div>
+          );
+        }
+        return chatWidget;
+      })()}
 
       {/* Add Parameter Modal */}
       {showAddParamModal && (
