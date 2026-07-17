@@ -2,10 +2,11 @@ from typing import Optional, List
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.translation import LanguageUpdate, TranslationCreate, TranslationUpdate
@@ -30,10 +31,16 @@ class LanguagesRepository(DbRepository[LanguageModel]):
         )
         return list(result.scalars().all())
 
-    async def get_by_code(self, code: str) -> Optional[LanguageModel]:
-        result = await self.db.execute(
-            select(LanguageModel).where(LanguageModel.code == code)
+    async def get_by_code(
+        self, code: str, *, include_deleted: bool = False
+    ) -> Optional[LanguageModel]:
+        query = select(LanguageModel).where(LanguageModel.code == code)
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if include_deleted
+            else query
         )
+        result = await self.db.execute(exec_query)
         return result.scalars().first()
 
     async def create(self, code: str, name: str) -> LanguageModel:
@@ -54,7 +61,20 @@ class LanguagesRepository(DbRepository[LanguageModel]):
 
     async def delete(self, model: LanguageModel) -> None:
         model.is_deleted = 1
+        await self.db.execute(
+            delete(TranslationValueModel).where(
+                TranslationValueModel.language_id == model.id
+            )
+        )
         await self.db.commit()
+
+    async def restore(self, model: LanguageModel, name: str) -> LanguageModel:
+        model.is_deleted = 0
+        model.is_active = True
+        model.name = name
+        await self.db.commit()
+        await self.db.refresh(model)
+        return model
 
     async def get_code_to_id_map(self) -> dict[str, UUID]:
         langs = await self.get_active()
