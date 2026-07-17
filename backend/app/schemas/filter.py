@@ -78,7 +78,7 @@ class ConversationFilter(BaseFilterModel):
             "primarily for GDPR Right-to-Erasure flows."
         ),
     )
-    id_suffix: Optional[str] = Field(None, description="Filter conversations by the last N characters of the UUID")
+    id_suffix: Optional[str] = Field(None, description="Filter conversations by any substring of the UUID (e.g. the displayed '#').")
     custom_attributes: Optional[str] = Field(
         None,
         description='JSON-encoded custom attribute filters, e.g. {"region": "Germany"}',

@@ -17,19 +17,14 @@ from app.db.models.support_ticket import (
     TicketSyncOutboxModel,
 )
 from app.db.models.user import UserModel
+from app.repositories.db_repository import DbRepository
 from app.services.support_ticket_dedup import normalize_title
 
 
 @inject
-class SupportTicketRepository:
+class SupportTicketRepository(DbRepository[SupportTicketModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def create(self, ticket: SupportTicketModel) -> SupportTicketModel:
-        self.db.add(ticket)
-        await self.db.commit()
-        await self.db.refresh(ticket)
-        return ticket
+        super().__init__(SupportTicketModel, db)
 
     async def get_user_email(self, user_id: UUID) -> Optional[str]:
         result = await self.db.execute(

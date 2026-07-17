@@ -292,6 +292,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     "message": f"The agent could not complete your request: {error_detail}",
                     "error": error_detail,
                     "steps": steps,
+                    "tools_used": result.get("tools_used", []),
                 }
 
             # Prepare output
@@ -303,6 +304,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             output = {
                 "message": response,
                 "steps": steps,
+                "tools_used": result.get("tools_used", []),
             }
 
             return output

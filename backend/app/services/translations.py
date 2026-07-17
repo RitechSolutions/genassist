@@ -37,7 +37,9 @@ def _parse_lang_code(accept_language: Optional[str]) -> Optional[str]:
 
 def _model_to_read(row: TranslationKeyModel) -> TranslationRead:
     """Convert a TranslationKeyModel (with eagerly loaded values) to TranslationRead."""
-    translations = {v.language.code: v.value for v in row.values}
+    translations = {
+        v.language.code: v.value for v in row.values if v.language is not None
+    }
     return TranslationRead(
         id=row.id,
         key=row.key,
@@ -102,14 +104,25 @@ class LanguagesService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.repository.delete(model)
         await invalidate_cache("languages:get_all", None)
+        # Deleting a language also removes its translation values, so the
+        # cached translation list (used for agent available-language lists)
+        # must be refreshed too.
+        await invalidate_cache("translations:get_all", None)
 
     async def create(self, dto: LanguageCreate) -> LanguageRead:
-        existing = await self.repository.get_by_code(dto.code)
-        if existing:
+        # Look up including soft-deleted rows: the unique `code` constraint ignores
+        # is_deleted, so a previously deleted language still occupies the code slot.
+        existing = await self.repository.get_by_code(dto.code, include_deleted=True)
+        if existing and not existing.is_deleted:
             raise AppException(
                 status_code=400, error_key=ErrorKey.LANGUAGE_ALREADY_EXISTS
             )
-        row = await self.repository.create(dto.code, dto.name)
+        if existing:
+            # Revive the soft-deleted language instead of inserting a duplicate
+            # (which would violate the unique constraint and raise a 400).
+            row = await self.repository.restore(existing, dto.name)
+        else:
+            row = await self.repository.create(dto.code, dto.name)
         await invalidate_cache("languages:get_all", None)
         return LanguageRead.model_validate(row, from_attributes=True)
 

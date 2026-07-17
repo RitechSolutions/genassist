@@ -44,21 +44,22 @@ import {
   getTenantId,
 } from "@/services/auth";
 import toast from "react-hot-toast";
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
 import { FeatureFlags } from "@/config/featureFlags";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { cn } from "@/helpers/utils";
 import { GenAssistLogo } from "@/components/GenAssistLogo";
 import { NotificationBellPopover } from "@/components/NotificationBellPopover";
+import { CommandSearchDialog } from "@/components/CommandSearchDialog";
 
 // ---------------------------------------------------------------------------
 // Types & data
 // ---------------------------------------------------------------------------
 
-type BadgeTone = "new" | "beta" | "count";
+export type BadgeTone = "new" | "beta" | "count";
 
-type MenuItem = {
+export type MenuItem = {
   title: string;
   icon?: React.ElementType;
   url: string;
@@ -69,7 +70,7 @@ type MenuItem = {
   badgeTone?: BadgeTone;
 };
 
-type NavGroup = {
+export type NavGroup = {
   label: string;
   items: MenuItem[];
 };
@@ -571,7 +572,7 @@ export function AppSidebar() {
   const [username, setUsername] = useState<string>("");
   const [tenantId, setTenantId] = useState<string>("");
   const [query, setQuery] = useState<string>("");
-  const searchRef = useRef<HTMLInputElement>(null);
+  const [commandOpen, setCommandOpen] = useState<boolean>(false);
   const { getFeatureItem } = useFeatureFlag();
 
   const location = useLocation();
@@ -674,17 +675,20 @@ export function AppSidebar() {
     }
   }, [currentPath, isMobile, setOpenMobile]);
 
-  // ⌘K / Ctrl+K focuses the menu search.
+  const inWorkflowEditor = currentPath.startsWith("/ai-agents/workflow/");
+
+  // ⌘K / Ctrl+K toggles the centered command-search palette.
   useEffect(() => {
+    if (inWorkflowEditor) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        searchRef.current?.focus();
+        setCommandOpen((open) => !open);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [inWorkflowEditor]);
 
   const filterItems = useCallback(
     (items: MenuItem[]): MenuItem[] => {
@@ -712,20 +716,35 @@ export function AppSidebar() {
     [getFeatureItem]
   );
 
-  const filteredGroups = useMemo(
+  // Permission/feature-flag filtered nav (no text search) — the command
+  // palette consumes these and does its own fuzzy filtering.
+  const navigableGroups = useMemo(
     () =>
       navGroups
+        .map((group) => ({ ...group, items: filterItems(group.items) }))
+        .filter((group) => group.items.length > 0),
+    [filterItems]
+  );
+
+  const navigableFooter = useMemo(
+    () => filterItems(footerItems),
+    [filterItems]
+  );
+
+  const filteredGroups = useMemo(
+    () =>
+      navigableGroups
         .map((group) => ({
           ...group,
-          items: filterBySearch(filterItems(group.items), query),
+          items: filterBySearch(group.items, query),
         }))
         .filter((group) => group.items.length > 0),
-    [filterItems, query]
+    [navigableGroups, query]
   );
 
   const filteredFooter = useMemo(
-    () => filterBySearch(filterItems(footerItems), query),
-    [filterItems, query]
+    () => filterBySearch(navigableFooter, query),
+    [navigableFooter, query]
   );
 
   const hasResults = filteredGroups.length > 0 || filteredFooter.length > 0;
@@ -740,6 +759,12 @@ export function AppSidebar() {
 
   return (
     <Sidebar variant="floating" side="left">
+      <CommandSearchDialog
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        groups={navigableGroups}
+        footer={navigableFooter}
+      />
       <SidebarContent
         className="flex flex-col bg-white"
         style={{ height: "100%" }}
@@ -758,7 +783,6 @@ export function AppSidebar() {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
             <input
-              ref={searchRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}

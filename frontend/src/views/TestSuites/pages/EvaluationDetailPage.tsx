@@ -33,6 +33,57 @@ import { cn } from "@/helpers/utils";
 
 type ResultFilter = "all" | "passed" | "failed";
 
+const getMetricSourceLabel = (
+  technique: string,
+  config: Record<string, unknown> | undefined
+): string | null => {
+  switch (technique) {
+    case "exact_match":
+    case "contains":
+    case "json_match":
+      return "Expected Output";
+    case "field_equals":
+      return config?.expected !== undefined ? "Configured expected value" : "Expected Output";
+    case "nli_eval": {
+      const evidenceField = config?.evidence_field as string | undefined;
+      return evidenceField ? `Run data: ${evidenceField}` : "Expected Output (evidence)";
+    }
+    case "provenance_eval": {
+      const contextField = config?.context_field as string | undefined;
+      return contextField ? `Run data: ${contextField}` : "Expected Output (context)";
+    }
+    case "llm_judge": {
+      const sourceField = config?.source_field as string | undefined;
+      return sourceField ? `Run data: ${sourceField}` : "Rubric only (no source)";
+    }
+    default:
+      return null;
+  }
+};
+
+// True only when the metric actually grades against the test case's expected output.
+// The configurable metrics fall back to expected output unless a config override
+// points them elsewhere (an inline expected value, or an evidence/context field).
+const usesExpectedOutput = (
+  technique: string,
+  config: Record<string, unknown> | undefined
+): boolean => {
+  switch (technique) {
+    case "exact_match":
+    case "contains":
+    case "json_match":
+      return true;
+    case "field_equals":
+      return config?.expected === undefined;
+    case "nli_eval":
+      return !config?.evidence_field;
+    case "provenance_eval":
+      return !config?.context_field;
+    default:
+      return false;
+  }
+};
+
 const RunStatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const inProgress = status === "queued" || status === "running";
   return (
@@ -516,6 +567,22 @@ const EvaluationDetailPage: React.FC = () => {
                         {filteredResults.map((result) => {
                           const passed = isResultPassed(result);
                           const isExpanded = expandedResultId === result.id;
+                          const gradedTechniques = Object.keys(result.metrics ?? {});
+                          const caseExpectedOutput = result.case_id
+                            ? expectedOutputByCaseId[result.case_id]
+                            : undefined;
+                          // Show Expected Output only when a graded metric actually uses it,
+                          // so process-only checks never imply they were graded against it.
+                          const showExpectedOutput =
+                            gradedTechniques.length === 0 ||
+                            gradedTechniques.some((tech) =>
+                              usesExpectedOutput(
+                                tech,
+                                evaluation?.technique_configs?.[tech] as
+                                  | Record<string, unknown>
+                                  | undefined
+                              )
+                            );
 
                           return (
                             <div
@@ -591,23 +658,39 @@ const EvaluationDetailPage: React.FC = () => {
                               {/* Expanded content */}
                               {isExpanded && (
                                 <div className="border-t bg-gray-50 p-4 space-y-4">
-                                  {/* Metric comments */}
+                                  {/* Metric comments + grading source */}
                                   {result.metrics && (
                                     <div className="space-y-1">
-                                      {Object.entries(result.metrics).map(
-                                        ([tech, metricValue]) =>
-                                          metricValue.comment ? (
-                                            <div key={`${result.id}-${tech}-comment`} className="text-xs">
-                                              <span className="font-semibold text-gray-700">{tech}:</span>{" "}
+                                      {Object.entries(result.metrics).map(([tech, metricValue]) => {
+                                        const sourceLabel = getMetricSourceLabel(
+                                          tech,
+                                          evaluation?.technique_configs?.[tech]
+                                        );
+                                        if (!metricValue.comment && !sourceLabel) return null;
+                                        return (
+                                          <div key={`${result.id}-${tech}-comment`} className="text-xs">
+                                            <span className="font-semibold text-gray-700">{tech}:</span>{" "}
+                                            {metricValue.comment && (
                                               <span className="text-gray-600">{metricValue.comment}</span>
-                                            </div>
-                                          ) : null,
-                                      )}
+                                            )}
+                                            {sourceLabel && (
+                                              <span className="text-gray-400">
+                                                {metricValue.comment ? " — " : ""}checked against: {sourceLabel}
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
 
                                   {/* Input/Output comparison */}
-                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                  <div
+                                    className={cn(
+                                      "grid grid-cols-1 gap-4",
+                                      showExpectedOutput && "lg:grid-cols-2"
+                                    )}
+                                  >
                                     <div>
                                       <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
@@ -623,21 +706,19 @@ const EvaluationDetailPage: React.FC = () => {
                                         />
                                       </div>
                                     </div>
-                                    <div>
-                                      <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                                        Expected Output
+                                    {showExpectedOutput && (
+                                      <div>
+                                        <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                          Expected Output
+                                        </div>
+                                        <div className="bg-white rounded border p-2 text-xs">
+                                          <JsonViewer
+                                            data={(caseExpectedOutput ?? {}) as unknown as never}
+                                          />
+                                        </div>
                                       </div>
-                                      <div className="bg-white rounded border p-2 text-xs">
-                                        <JsonViewer
-                                          data={
-                                            ((result.case_id &&
-                                              (expectedOutputByCaseId[result.case_id] as unknown)) ??
-                                              {}) as unknown as never
-                                          }
-                                        />
-                                      </div>
-                                    </div>
+                                    )}
                                   </div>
 
                                   <div>
