@@ -6,15 +6,16 @@ from typing import List, Optional
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.datasource import DataSourceModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.datasource import DataSourceCreate
 from starlette_context import context
 
 @inject
-class DataSourcesRepository:
+class DataSourcesRepository(DbRepository[DataSourceModel]):
     """Repository for datasource-related database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(DataSourceModel, db)
 
     async def create(self, datasource_data: DataSourceCreate) -> DataSourceModel:
         """Create a new datasource."""

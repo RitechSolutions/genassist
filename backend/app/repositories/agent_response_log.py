@@ -7,17 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.db.models.agent_response_log import AgentResponseLogModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.filter import AgentResponseLogFilter
 
 
 @inject
-class AgentResponseLogRepository:
+class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
     """
     Repository for persisting and querying agent response logs.
     """
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(AgentResponseLogModel, db)
 
     async def log_response(
         self,

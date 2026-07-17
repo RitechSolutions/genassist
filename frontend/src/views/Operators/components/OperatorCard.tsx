@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/card";
 import { ThumbsUp, Clock, Star } from "lucide-react";
 import { OperatorDetailsDialog } from "./OperatorDetailsDialog";
-import { useLocation } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { fetchOperators } from "@/services/operators";
 import { Operator } from "@/interfaces/operator.interface";
 import { formatCallDuration } from "@/helpers/formatters";
@@ -23,6 +23,18 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
 
   const location = useLocation();
   const isDashboard = location.pathname === "/dashboard";
+
+  // Deep link
+  const [searchParams, setSearchParams] = useSearchParams();
+  const operatorParam = searchParams.get("operator");
+
+  const handleModalOpenChange = (open: boolean) => {
+    setIsModalOpen(open);
+    if (!open && operatorParam) {
+      searchParams.delete("operator");
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
   useEffect(() => {
     const getOperators = async () => {
@@ -53,6 +65,16 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
 
     getOperators();
   }, [isDashboard, refreshKey]);
+
+  // Open the profile dialog when a matching ?operator=<id> is present.
+  useEffect(() => {
+    if (!operatorParam || operators.length === 0) return;
+    const match = operators.find((op) => op.id === operatorParam);
+    if (match) {
+      setSelectedAgent(match);
+      setIsModalOpen(true);
+    }
+  }, [operatorParam, operators]);
 
   function getInitials(firstName = "", lastName = "") {
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
@@ -160,7 +182,7 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
       <OperatorDetailsDialog
         operator={selectedAgent}
         isOpen={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={handleModalOpenChange}
       />
     </>
   );
