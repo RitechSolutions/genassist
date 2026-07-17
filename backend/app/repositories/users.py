@@ -24,6 +24,7 @@ from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.db.models.user import UserModel
 from app.db.models.user_type import UserTypeModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -32,11 +33,11 @@ logger = logging.getLogger(__name__)
 username_key_builder = make_key_builder("username")
 
 @inject
-class UserRepository:
+class UserRepository(DbRepository[UserModel]):
     """Repository for user-related database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(UserModel, db)
 
     async def create(self, user: UserCreate):
         # Validate user type

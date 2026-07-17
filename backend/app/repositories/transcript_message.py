@@ -19,13 +19,14 @@ from app.db.models.message_model import MessageFeedbackModel, TranscriptMessageM
 from app.db.models.operator import OperatorModel
 from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.conversation_transcript import TranscriptSegmentFeedback
 
 
 @inject
-class TranscriptMessageRepository:
+class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(TranscriptMessageModel, db)
 
 
     async def save_messages(self, messages: List[TranscriptMessageModel]) -> List[TranscriptMessageModel]:

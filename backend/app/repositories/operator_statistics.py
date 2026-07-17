@@ -3,12 +3,13 @@ from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.db.models.operator import OperatorStatisticsModel,OperatorModel
+from app.repositories.db_repository import DbRepository
 
 
 @inject
-class OperatorStatisticsRepository:
+class OperatorStatisticsRepository(DbRepository[OperatorStatisticsModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(OperatorStatisticsModel, db)
 
 
     async def get_by_operator_id(self, operator_id: UUID):

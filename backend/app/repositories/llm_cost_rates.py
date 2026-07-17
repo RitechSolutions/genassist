@@ -5,12 +5,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.llm_cost_rate import LlmCostRateModel
+from app.repositories.db_repository import DbRepository
 
 
 @inject
-class LlmCostRateRepository:
+class LlmCostRateRepository(DbRepository[LlmCostRateModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(LlmCostRateModel, db)
 
     async def list_active(self) -> list[LlmCostRateModel]:
         result = await self.db.execute(

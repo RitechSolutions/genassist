@@ -7,6 +7,7 @@ from typing import List, Optional
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model import MLModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.ml_model import MLModelCreate
 from starlette_context import context
 import logging
@@ -15,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 @inject
-class MLModelsRepository:
+class MLModelsRepository(DbRepository[MLModel]):
     """Repository for ML model-related database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(MLModel, db)
 
     async def create(self, ml_model_data: MLModelCreate) -> MLModel:
         """Create a new ML model."""

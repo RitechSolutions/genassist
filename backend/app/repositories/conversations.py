@@ -28,6 +28,7 @@ from app.db.models.conversation import ConversationAnalysisModel
 from app.db.models.operator import OperatorModel
 from app.db.models import AgentModel
 from app.db.models.user import UserModel
+from app.repositories.db_repository import DbRepository
 
 # KPI score fields on ConversationAnalysisModel (0-10 scale).
 # Used for sorting, filtering, and join detection.
@@ -41,10 +42,10 @@ ANALYSIS_SCORE_FIELDS = frozenset({
 
 
 @inject
-class ConversationRepository:
+class ConversationRepository(DbRepository[ConversationModel]):
 
     def __init__(self, db: AsyncSession):  # Auto-inject db
-        self.db = db
+        super().__init__(ConversationModel, db)
 
     async def resolve_group_id_for_operator(self, operator_id: UUID) -> Optional[UUID]:
         """User group for an agent's operator (console user), else agent creator's group."""

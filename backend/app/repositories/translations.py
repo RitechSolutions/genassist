@@ -7,13 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.translation import LanguageUpdate, TranslationCreate, TranslationUpdate
 
 
 @inject
-class LanguagesRepository:
+class LanguagesRepository(DbRepository[LanguageModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(LanguageModel, db)
 
     async def get_all(self) -> List[LanguageModel]:
         result = await self.db.execute(
@@ -42,12 +43,6 @@ class LanguagesRepository:
         await self.db.refresh(obj)
         return obj
 
-    async def get_by_id(self, language_id: UUID) -> Optional[LanguageModel]:
-        result = await self.db.execute(
-            select(LanguageModel).where(LanguageModel.id == language_id)
-        )
-        return result.scalars().first()
-
     async def update(self, model: LanguageModel, dto: LanguageUpdate) -> LanguageModel:
         if dto.name is not None:
             model.name = dto.name
@@ -67,9 +62,9 @@ class LanguagesRepository:
 
 
 @inject
-class TranslationsRepository:
+class TranslationsRepository(DbRepository[TranslationKeyModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(TranslationKeyModel, db)
 
     @staticmethod
     def _eager_options():
