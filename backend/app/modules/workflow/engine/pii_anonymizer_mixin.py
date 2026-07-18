@@ -150,6 +150,19 @@ class PIIAnonymizerMixin:
             del self._pii_history_token_items
             del self._pii_prompt_token_items
 
+    def _mask_for_llm(self, text: str) -> str:
+        """Mask PII in text added to a prompt during a run.
+        Updates the prompt's token map so the final unmask step can
+        still restore the real values in the result.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+        masked, token_map = _service.mask(text)
+        items = token_map.get("items", []) if token_map else []
+        if items:
+            getattr(self, "_pii_prompt_token_items", []).extend(items)
+        return masked
+
     def _unmask_for_tool(self, text: str) -> str:
         """Unmask PII tokens in a string using the current combined token map.
 

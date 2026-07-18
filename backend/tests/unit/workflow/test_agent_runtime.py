@@ -1,10 +1,4 @@
-"""Unit tests for the shared agent runtime (``run_agent_once``).
-
-Pure unit tests: the agent classes, the module injector and the usage-merge
-helper are patched, so no live LLM / DB / Redis is required. These assert the
-invoke-path core that ``AgentNode`` delegates to — agent-class selection,
-provider-resolution reuse, usage merge and steps normalization.
-"""
+"""Unit tests for the shared agent runtime (``run_agent_once``)"""
 
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -20,7 +14,6 @@ _AGENT_NAMES = ("ReActAgent", "ReActAgentLC", "SimpleToolAgent", "ToolAgent")
 
 
 def _fake_agent_class(result):
-    """Build a (class_mock, instance_mock) pair whose invoke returns ``result``."""
     instance = MagicMock()
     instance.invoke = AsyncMock(return_value=result)
     return MagicMock(return_value=instance), instance
@@ -35,10 +28,6 @@ def _fake_injector(model="resolved-model"):
 
 
 def _patch_runtime(result, model="resolved-model"):
-    """Patch all four agent classes, the injector and the usage merge.
-
-    Returns (ExitStack, classes, injector, merge) — the caller enters the stack.
-    """
     stack = ExitStack()
     classes = {}
     for name in _AGENT_NAMES:
@@ -80,7 +69,6 @@ def _base_kwargs(**overrides):
     ],
 )
 async def test_selects_agent_class_per_type(agent_type, expected):
-    """The type key routes to exactly one agent class; the rest are untouched."""
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
         await run_agent_once(**_base_kwargs(agent_type=agent_type))
@@ -94,7 +82,6 @@ async def test_selects_agent_class_per_type(agent_type, expected):
 
 @pytest.mark.asyncio
 async def test_tool_and_react_agents_receive_max_iterations():
-    """ToolAgent/ReAct variants are built with max_iterations."""
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
         await run_agent_once(**_base_kwargs(agent_type="ReActAgent", max_iterations=3))
@@ -105,7 +92,6 @@ async def test_tool_and_react_agents_receive_max_iterations():
 
 @pytest.mark.asyncio
 async def test_simple_tool_agent_built_without_max_iterations():
-    """SimpleToolExecutor maps to SimpleToolAgent, constructed without max_iterations."""
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
         await run_agent_once(**_base_kwargs(agent_type="SimpleToolExecutor"))
@@ -125,7 +111,6 @@ async def test_simple_tool_agent_built_without_max_iterations():
     ],
 )
 async def test_steps_normalization_reads_the_right_key(agent_type, steps_key):
-    """ReAct variants read reasoning_steps; others read steps."""
     result = {"response": "ok", "reasoning_steps": [{"r": 1}], "steps": [{"s": 2}]}
     stack, _, _, _ = _patch_runtime(result)
     with stack:
@@ -136,7 +121,6 @@ async def test_steps_normalization_reads_the_right_key(agent_type, steps_key):
 
 @pytest.mark.asyncio
 async def test_merges_usage_from_result():
-    """Usage merge is awaited with the raw result, state, node id and provider id."""
     result = {"response": "ok"}
     stack, _, _, merge = _patch_runtime(result)
     state = SimpleNamespace()
@@ -148,7 +132,6 @@ async def test_merges_usage_from_result():
 
 @pytest.mark.asyncio
 async def test_invoke_receives_prompt_and_history():
-    """The prompt and chat history are forwarded to the agent's invoke."""
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     history = [{"role": "user", "content": "earlier"}]
     with stack:
@@ -160,7 +143,6 @@ async def test_invoke_receives_prompt_and_history():
 
 @pytest.mark.asyncio
 async def test_missing_history_defaults_to_empty_list():
-    """A None chat history is normalized to an empty list before invoke."""
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
         await run_agent_once(**_base_kwargs(chat_history=None))
@@ -171,7 +153,6 @@ async def test_missing_history_defaults_to_empty_list():
 
 @pytest.mark.asyncio
 async def test_result_fields_mapped_and_raw_preserved():
-    """AgentRunResult mirrors the result dict and keeps the raw payload verbatim."""
     result = {
         "response": "Paris",
         "status": "success",
@@ -196,7 +177,6 @@ async def test_result_fields_mapped_and_raw_preserved():
 
 @pytest.mark.asyncio
 async def test_supplied_llm_model_skips_provider_resolution():
-    """Passing llm_model reuses it and never resolves a provider."""
     stack, classes, injector, _ = _patch_runtime({"response": "ok"})
     with stack:
         run = await run_agent_once(**_base_kwargs(llm_model="reused-model"))

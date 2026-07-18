@@ -88,10 +88,27 @@ class WorkflowService:
             result.append(wf)
         return result
 
+    @staticmethod
+    def _validate_sub_agents(payload: dict) -> None:
+        """Extra check of sub-agent parent/child links for a clearer save-time error"""
+        from app.core.exceptions.error_messages import ErrorKey
+        from app.modules.workflow.agents.sub_agents.graph import (
+            SubAgentTopologyError,
+            validate_sub_agent_topology,
+        )
+
+        try:
+            validate_sub_agent_topology(payload.get("nodes"), payload.get("edges"))
+        except SubAgentTopologyError as e:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_SERVER_ERROR, status_code=400, error_detail=str(e)
+            ) from e
+
     # ---------- WRITE ----------
     async def create(self, data: WorkflowCreate) -> WorkflowInDB:
         # convert schema ➜ ORM
         payload = data.model_dump()
+        self._validate_sub_agents(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         new_workflow = WorkflowModel(**payload)
@@ -107,6 +124,7 @@ class WorkflowService:
 
         # mutate ORM object in place
         payload = data.model_dump()
+        self._validate_sub_agents(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         for field, value in payload.items():

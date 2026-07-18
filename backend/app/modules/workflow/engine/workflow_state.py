@@ -38,6 +38,7 @@ class WorkflowState:
         workflow: dict,
         initial_values: dict = None,
         thread_id: str = str(uuid.uuid4()),
+        registry_managed: bool = False,
     ):
         """Initialize the workflow state
 
@@ -45,8 +46,13 @@ class WorkflowState:
             thread_id: Unique identifier for the thread
             workflow: Workflow dictionary
             initial_values: Dictionary with dot notation for nested initialization
+            registry_managed: True only on the interactive registry path that can
+                persist and resume sub-agent frames; other entry points may run
+                single_turn delegations but not the persistent (task/chat) ones
         """
         self.thread_id = thread_id
+        self.registry_managed = registry_managed
+        self.sub_agent_persistent_claimed = False
         if initial_values is None:
             initial_values = {}
         self.initial_values = initial_values

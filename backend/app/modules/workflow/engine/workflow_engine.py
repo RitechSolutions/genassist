@@ -49,6 +49,7 @@ from app.modules.workflow.engine.nodes import (
     SlackToolNode,
     SQLNode,
     STTNode,
+    SubAgentNode,
     TemplateNode,
     ThreadRAGNode,
     ToolBuilderNode,
@@ -73,6 +74,14 @@ def _sanitize_output_for_memory(output: Any) -> Any:
     """Strip nested audio payloads (base64 blobs) from an output before it is
     persisted to conversation memory. A bare audio dict (e.g. a TTS node's
     output, where the dict itself IS the audio) is kept as-is."""
+    # A sub-agent pause stores a control envelope as the output; persist only the
+    # child's plain question to the root history, not the control JSON
+    if (
+        isinstance(output, dict)
+        and output.get("status") == "awaiting_input"
+        and isinstance(output.get("sub_agent"), dict)
+    ):
+        return output["sub_agent"].get("message", "")
     if (
         isinstance(output, dict)
         and isinstance(output.get("audio"), dict)
@@ -148,6 +157,7 @@ class WorkflowEngine:
         cls._node_registry["htmlToImageNode"] = HtmlToImageNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
+        cls._node_registry["subAgentNode"] = SubAgentNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -258,6 +268,7 @@ class WorkflowEngine:
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
+        registry_managed: bool = False,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -267,6 +278,8 @@ class WorkflowEngine:
             input_data: Input data for the workflow
             thread_id: Thread ID for this execution
             persist: Whether to persist conversation to memory
+            registry_managed: True only on the interactive registry path; gates
+                persistent (task/chat) sub-agent delegations
 
         Returns:
             WorkflowState with execution results
@@ -308,6 +321,7 @@ class WorkflowEngine:
                 workflow=self.workflow,
                 thread_id=thread_id or str(uuid.uuid4()),
                 initial_values=initial_values,
+                registry_managed=registry_managed,
             )
 
             try:
@@ -366,6 +380,10 @@ class WorkflowEngine:
         starting_nodes = []
         for node in self.workflow["nodes"]:
             node_id = node["id"]
+            # subAgentNode only runs as a child engine's explicit start node, never
+            # as an inferred entry point of the main flow
+            if node.get("type") == "subAgentNode":
+                continue
             if node_id not in target_edges or not target_edges[node_id]:
                 starting_nodes.append(node_id)
 
@@ -485,6 +503,8 @@ class WorkflowEngine:
 
         next_nodes = []
         for edge in source_edges.get(node_id, []):
+            if edge.get("sourceHandle") == "output_sub_agent":
+                continue
             next_nodes.append(edge["target"])
 
         return next_nodes
