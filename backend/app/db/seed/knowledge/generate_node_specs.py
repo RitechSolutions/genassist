@@ -54,6 +54,28 @@ NODE_DESCRIPTIONS = {
             "Email classifier that routes to different actions",
         ],
     },
+    "subAgentNode": {
+        "category": "AI",
+        "description": (
+            "A specialist child agent a parent agentNode (or another subAgentNode) delegates to. "
+            "It never sits in the main flow: attach it to a parent by wiring its output_sub_agent "
+            "port to the parent's input_sub_agents port, and the parent gains a delegation tool for it. "
+            "Three collaboration modes: single_turn (answers once and returns to the parent, like an "
+            "agent-as-tool), task (does a bounded job, may ask the user one clarifying question, then "
+            "calls finish_task), and chat (owns the conversation until it calls return_to_parent)."
+        ),
+        "when_to_use": (
+            "Use a sub-agent for stateful, context-dependent, multi-step work that may need to clarify "
+            "with the user (task/chat modes) or for isolating a reusable specialist (single_turn). Prefer "
+            "a plain toolBuilderNode tool for stateless, atomic operations instead. The canvas assistant "
+            "attaches one via the as_sub_agent_for action (target = the parent agent's id)."
+        ),
+        "example_use_cases": [
+            "A flight-search specialist that asks 'Is a layover okay?' before booking (task mode)",
+            "A billing-support agent that takes over the chat until the issue is resolved (chat mode)",
+            "An isolated summarizer the parent calls and gets one answer back from (single_turn mode)",
+        ],
+    },
     "llmModelNode": {
         "category": "AI",
         "description": "A standalone LLM call node. Sends a system prompt + user prompt to a language model and returns the response. Similar to agentNode but without tool calling or ReAct loops.",
@@ -364,6 +386,8 @@ def generate_node_specs() -> str:
     lines.append("- `text`: can connect to `any` or `text` ports")
     lines.append("- `tools`: can ONLY connect to other `tools` ports")
     lines.append("  - Used for: toolBuilderNode.output_tool -> agentNode.input_tools")
+    lines.append("- `sub_agents`: can ONLY connect to other `sub_agents` ports")
+    lines.append("  - Used for: subAgentNode.output_sub_agent -> agentNode.input_sub_agents (delegation)")
     lines.append("")
 
     # ── Common Patterns ───────────────────────────────────────────────────
@@ -382,6 +406,11 @@ def generate_node_specs() -> str:
     lines.append("toolBuilderNode 'KB' -> knowledgeBaseNode (tool)")
     lines.append("toolBuilderNode 'API' -> apiToolNode (tool)")
     lines.append("Both toolBuilderNodes connect output_tool -> agentNode.input_tools")
+    lines.append("")
+    lines.append("### Chatbot with a Sub-Agent")
+    lines.append("chatInputNode -> agentNode -> chatOutputNode")
+    lines.append("subAgentNode 'flight_search' (task mode) attached to the agent")
+    lines.append("subAgentNode.output_sub_agent -> agentNode.input_sub_agents (delegation)")
     lines.append("")
     lines.append("### Branching Workflow")
     lines.append("chatInputNode -> agentNode -> routerNode")
@@ -543,6 +572,7 @@ def generate_node_specs() -> str:
     lines.append("- `edges.from`/`edges.to`: reference uniqueId values")
     lines.append("- `edges.sourceHandle` defaults to \"output\", `edges.targetHandle` defaults to \"input\"")
     lines.append("- For tool connections: sourceHandle=\"output_tool\", targetHandle=\"input_tools\"")
+    lines.append("- For sub-agent delegation: sourceHandle=\"output_sub_agent\", targetHandle=\"input_sub_agents\" (from the subAgentNode to its parent)")
     lines.append("- For router branches: sourceHandle=\"output_true\" or \"output_false\"")
     lines.append("")
 
