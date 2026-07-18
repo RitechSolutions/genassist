@@ -7,10 +7,7 @@ import logging
 from typing import Any, Dict
 
 from app.core.utils.token_utils import calculate_history_tokens
-from app.modules.workflow.agents.react_agent import ReActAgent
-from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
-from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
-from app.modules.workflow.agents.tool_agent import ToolAgent
+from app.modules.workflow.agents.agent_runtime import run_agent_once
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.llm.provider import LLMProvider
@@ -229,41 +226,6 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         logger.info("Agent type: %s", agent_type)
 
         try:
-            from app.dependencies.injector import injector
-            llm_provider = injector.get(LLMProvider)
-            llm_model = await llm_provider.get_model_for_node(provider_id, fallback_chain_id)
-            logger.info("Agent type selected: %s, LLM model: %s",
-                        agent_type, llm_model)
-
-            # Create agent based on type
-            if agent_type == "ReActAgent":
-                agent = ReActAgent(
-                    llm_model=llm_model,
-                    system_prompt=system_prompt,
-                    tools=tools,
-                    max_iterations=max_iterations
-                )
-            elif agent_type == "ReActAgentLC":
-                agent = ReActAgentLC(
-                    llm_model=llm_model,
-                    system_prompt=system_prompt,
-                    tools=tools,
-                    max_iterations=max_iterations
-                )
-            elif agent_type == "SimpleToolExecutor":
-                agent = SimpleToolAgent(
-                    llm_model=llm_model,
-                    system_prompt=system_prompt,
-                    tools=tools,
-                )
-            else:
-                agent = ToolAgent(
-                    llm_model=llm_model,
-                    system_prompt=system_prompt,
-                    tools=tools,
-                    max_iterations=max_iterations
-                )
-
             # Get chat history if memory is enabled
             chat_history = []
             if memory_enabled:
@@ -271,40 +233,40 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     self.get_memory(), config, provider_id, system_prompt, prompt
                 )
 
-            # Invoke the agent
-            result = await agent.invoke(prompt, chat_history=chat_history)
-            logger.debug("Agent result: %s", result)
-
-            from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
-
-            await merge_llm_usage_from_result(
-                self.get_state(), result, self.node_id, provider_id
+            run = await run_agent_once(
+                state=self.get_state(),
+                node_id=self.node_id,
+                provider_id=provider_id,
+                fallback_chain_id=fallback_chain_id,
+                agent_type=agent_type,
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                tools=tools,
+                max_iterations=max_iterations,
+                chat_history=chat_history,
             )
 
-            steps_key = "reasoning_steps" if agent_type in ["ReActAgent", "ReActAgentLC"] else "steps"
-            steps = result.get(steps_key, [])
-
             # The agent caught an error internally and returned a standardized error response
-            if result.get("status") == "error":
-                error_detail = result.get("error") or "an unknown error occurred"
+            if run.status == "error":
+                error_detail = run.error or "an unknown error occurred"
                 logger.error("Agent '%s' returned an error: %s", agent_type, error_detail)
                 return {
                     "message": f"The agent could not complete your request: {error_detail}",
                     "error": error_detail,
-                    "steps": steps,
-                    "tools_used": result.get("tools_used", []),
+                    "steps": run.steps,
+                    "tools_used": run.tools_used,
                 }
 
             # Prepare output
-            response = result.get("response")
+            response = run.response
             if response is None:
-                logger.warning("Agent '%s' returned no response. Result: %s", agent_type, result)
+                logger.warning("Agent '%s' returned no response. Result: %s", agent_type, run.raw)
                 response = "The agent did not return a response. Please try again or review the agent configuration."
 
             output = {
                 "message": response,
-                "steps": steps,
-                "tools_used": result.get("tools_used", []),
+                "steps": run.steps,
+                "tools_used": run.tools_used,
             }
 
             return output
