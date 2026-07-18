@@ -1,7 +1,7 @@
 import logging
 import json
-from typing import Any, Dict, Iterable, List
-from uuid import UUID
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from uuid import UUID, uuid4
 
 from injector import inject
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -30,6 +30,8 @@ from app.repositories.test_suite import (
 )
 from app.schemas.test_suite import (
     ImportCasesFromConversationRequest,
+    PaginatedEvaluations,
+    StartedEvaluationRun,
     TestCaseCreate,
     TestCaseInDB,
     TestCaseUpdate,
@@ -44,11 +46,11 @@ from app.schemas.test_suite import (
     TestSuiteCreate,
     TestSuiteUpdate,
     TestSuiteInDB,
+    WorkflowEvaluationSummary,
 )
 from app.schemas.workflow import WorkflowInDB
 from app.services.workflow import WorkflowService
 from app.core.tenant_scope import get_tenant_context
-from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.services.realtime_notifications import emit_notification, notification_payload
 
@@ -1197,4 +1199,225 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.run_repo.soft_delete_all_by_ids(list(row.run_ids or []))
         await self.evaluation_repo.soft_delete(row)
+
+    async def start_workflow_evaluations(
+        self,
+        workflow_id: UUID,
+        dispatch: Callable[
+            [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
+        ],
+    ) -> List[StartedEvaluationRun]:
+        """Queue and dispatch a run for every evaluation targeting this workflow.
+
+        An evaluation targets the workflow either directly (``workflow_id``) or
+        through its dataset's default workflow. Each evaluation is created and
+        dispatched independently: one failure is reported as ``failed_to_start``
+        and does not prevent the rest from running.
+        """
+        targeted = await self._evaluations_for_workflow(workflow_id)
+
+        results: List[StartedEvaluationRun] = []
+        for ev in targeted:
+            try:
+                run = await self._start_evaluation_run(ev, dispatch)
+                results.append(
+                    StartedEvaluationRun(
+                        evaluation_id=ev.id,
+                        run_id=run.id,
+                        suite_id=run.suite_id,
+                        status=run.status,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to start evaluation %s for workflow %s", ev.id, workflow_id
+                )
+                results.append(
+                    StartedEvaluationRun(
+                        evaluation_id=ev.id,
+                        status="failed_to_start",
+                        error="Failed to start evaluation.",
+                    )
+                )
+        return results
+
+    async def _evaluations_for_workflow(
+        self, workflow_id: UUID
+    ) -> List[TestEvaluationModel]:
+        """The Run all scope: every evaluation for the workflow (DB-filtered)."""
+        return await self.evaluation_repo.get_all_for_workflow(workflow_id)
+
+    async def get_workflow_evaluation_summaries(
+        self,
+    ) -> List[WorkflowEvaluationSummary]:
+        """One row per workflow (and the unassigned bucket): count, health, running."""
+        count_rows = await self.evaluation_repo.count_by_effective_workflow()
+        pointers = await self.evaluation_repo.get_latest_run_pointers()
+        stats_by_workflow = await self._compute_workflow_stats(pointers)
+        summaries: List[WorkflowEvaluationSummary] = []
+        for workflow_id, count in count_rows:
+            health, finished, any_running = stats_by_workflow.get(
+                workflow_id, (None, 0, False)
+            )
+            summaries.append(
+                WorkflowEvaluationSummary(
+                    workflow_id=workflow_id,
+                    eval_count=count,
+                    health=health,
+                    finished_count=finished,
+                    any_running=any_running,
+                )
+            )
+        return summaries
+
+    async def _compute_workflow_stats(
+        self,
+        pointers: List[Tuple[Optional[UUID], List[str]]],
+    ) -> Dict[Optional[UUID], Tuple[Optional[float], int, bool]]:
+        """(health, finished_count, any_running) per workflow from latest runs.
+
+        Health is the mean accuracy over evaluations whose latest run has finished,
+        counting a failed run as 0. Queued/running runs set ``any_running`` and are
+        not scored. Only each evaluation's latest run (``run_ids[0]``) is fetched.
+        """
+        latest_run_to_workflow: Dict[str, Optional[UUID]] = {}
+        for workflow_id, run_ids in pointers:
+            if run_ids:
+                latest_run_to_workflow[run_ids[0]] = workflow_id
+        if not latest_run_to_workflow:
+            return {}
+
+        runs = await self.run_repo.get_by_ids(list(latest_run_to_workflow.keys()))
+        sums: Dict[Optional[UUID], float] = {}
+        counts: Dict[Optional[UUID], int] = {}
+        running: Dict[Optional[UUID], bool] = {}
+        for run in runs:
+            workflow_id = latest_run_to_workflow.get(str(run.id))
+            if run.status in ("queued", "running"):
+                running[workflow_id] = True
+                continue
+            if run.status == "failed":
+                sums[workflow_id] = sums.get(workflow_id, 0.0)
+                counts[workflow_id] = counts.get(workflow_id, 0) + 1
+                continue
+            if run.status == "completed":
+                accuracy = self._run_accuracy(run.summary_metrics)
+                if accuracy is None:
+                    continue
+                sums[workflow_id] = sums.get(workflow_id, 0.0) + accuracy
+                counts[workflow_id] = counts.get(workflow_id, 0) + 1
+
+        stats: Dict[Optional[UUID], Tuple[Optional[float], int, bool]] = {}
+        for workflow_id in set(counts) | set(running):
+            count = counts.get(workflow_id, 0)
+            health = sums[workflow_id] / count if count else None
+            stats[workflow_id] = (health, count, running.get(workflow_id, False))
+        return stats
+
+    async def workflow_has_active_run(self, workflow_id: Optional[UUID]) -> bool:
+        """True if any evaluation in the workflow has a queued/running latest run."""
+        pointer_lists = await self.evaluation_repo.get_run_pointers_for_workflow(
+            workflow_id
+        )
+        latest_run_ids = [run_ids[0] for run_ids in pointer_lists if run_ids]
+        if not latest_run_ids:
+            return False
+        runs = await self.run_repo.get_by_ids(latest_run_ids)
+        return any(run.status in ("queued", "running") for run in runs)
+
+    @staticmethod
+    def _run_accuracy(summary_metrics: Optional[Dict[str, Any]]) -> Optional[float]:
+        """Mean accuracy across a run's metrics, matching the per-row display."""
+        if not summary_metrics:
+            return None
+        accuracies = [
+            metric["accuracy"]
+            for metric in summary_metrics.values()
+            if isinstance(metric, dict)
+            and isinstance(metric.get("accuracy"), (int, float))
+            and not isinstance(metric.get("accuracy"), bool)
+        ]
+        if not accuracies:
+            return None
+        return sum(accuracies) / len(accuracies)
+
+    async def list_workflow_evaluations(
+        self,
+        workflow_id: Optional[UUID],
+        page: int,
+        page_size: int,
+        search: Optional[str] = None,
+    ) -> PaginatedEvaluations:
+        """One page of a workflow's evaluations (``workflow_id=None`` = unassigned).
+
+        Filtering, search and pagination run in the database, so only the
+        requested page is loaded.
+        """
+        page = max(page, 1)
+        page_size = max(1, min(page_size, 100))
+        offset = (page - 1) * page_size
+        rows = await self.evaluation_repo.get_page_for_workflow(
+            workflow_id, offset, page_size, search
+        )
+        total = await self.evaluation_repo.count_for_workflow(workflow_id, search)
+        total_unfiltered = (
+            total
+            if not (search and search.strip())
+            else await self.evaluation_repo.count_for_workflow(workflow_id, None)
+        )
+        any_running = await self.workflow_has_active_run(workflow_id)
+        return PaginatedEvaluations(
+            items=[
+                TestEvaluationInDB.model_validate(row, from_attributes=True)
+                for row in rows
+            ],
+            total=total,
+            total_unfiltered=total_unfiltered,
+            page=page,
+            page_size=page_size,
+            any_running=any_running,
+        )
+
+    async def _start_evaluation_run(
+        self,
+        ev: TestEvaluationModel,
+        dispatch: Callable[
+            [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
+        ],
+    ) -> TestRunInDB:
+        """Create, record and dispatch a single evaluation run.
+
+        Create, attach and dispatch are treated as one unit: if attaching or
+        dispatching fails after the run is created, the run is marked ``failed``
+        so it is never left stranded in ``queued`` while the caller reports the
+        evaluation as failed to start.
+        """
+        input_metadata = dict(ev.input_metadata or {})
+        if input_metadata.get("use_memory"):
+            input_metadata["thread_id"] = str(uuid4())
+        data = TestRunCreate(
+            techniques=list(ev.techniques or []),
+            technique_configs=ev.technique_configs or None,
+            workflow_id=ev.workflow_id,
+            input_metadata=input_metadata or None,
+        )
+        run = await self.create_run(ev.suite_id, data)
+        try:
+            await self.append_run_to_evaluation(ev.id, str(run.id))
+            dispatch(run, input_metadata or None, ev.technique_configs or None)
+        except Exception:
+            await self._mark_run_failed_to_start(run.id)
+            raise
+        return run
+
+    async def _mark_run_failed_to_start(self, run_id: UUID) -> None:
+        """Flip a still-queued run to ``failed`` so it is not left dangling."""
+        try:
+            row = await self.run_repo.get_by_id(run_id)
+            if row and row.status == "queued":
+                row.status = "failed"
+                row.summary_metrics = {"error": "Failed to dispatch run"}
+                await self.run_repo.update(row)
+        except Exception:
+            logger.exception("Could not mark run %s as failed after start error", run_id)
 
