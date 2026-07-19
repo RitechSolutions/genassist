@@ -2,17 +2,16 @@
 
 import datetime
 import logging
-from typing import Any, Dict, Optional, get_args
+from typing import Any, Dict, Optional
+
+from pydantic import ValidationError
 
 from app.modules.workflow.agents.agent_runtime import run_agent_once
-from app.modules.workflow.agents.sub_agents.models import SubAgentMode
+from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
 
 logger = logging.getLogger(__name__)
-
-_ALLOWED_TYPES = {"ReActAgent", "ReActAgentLC", "ToolSelector"}
-_ALLOWED_MODES = frozenset(get_args(SubAgentMode))
 
 
 class SubAgentNode(AgentNode):
@@ -26,8 +25,6 @@ class SubAgentNode(AgentNode):
         provider_id = config.get("providerId")
         fallback_chain_id = config.get("fallbackChainId")
         agent_type = config.get("type", "ToolSelector")
-        if agent_type not in _ALLOWED_TYPES:
-            agent_type = "ToolSelector"
         max_iterations = config.get("maxIterations", 7)
         memory_enabled = config.get("memory", False)
         mode = config.get("mode", "single_turn")
@@ -92,20 +89,34 @@ class SubAgentNode(AgentNode):
             return {"message": "The sub-agent could not complete the task.", "error": str(e)}
 
     def _validate_config_values(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # Provider presence is a runtime-only requirement (drafts save without one)
         if not config.get("providerId"):
             return {"message": "The sub-agent is missing an LLM provider.", "error": "missing providerId"}
-        if config.get("mode", "single_turn") not in _ALLOWED_MODES:
-            return {"message": f"The sub-agent has an invalid mode: {config.get('mode')}.", "error": "invalid mode"}
         try:
-            timeout = float(config.get("timeoutSeconds", 120))
-        except (TypeError, ValueError):
-            return {"message": "The sub-agent has an invalid timeout.", "error": "invalid timeoutSeconds"}
-        if not 5 <= timeout <= 300:
-            return {
-                "message": "The sub-agent timeout must be between 5 and 300 seconds.",
-                "error": "timeout out of range",
-            }
+            SubAgentConfig.model_validate(config)
+        except ValidationError as exc:
+            return self._config_value_error(config, exc)
         return None
+
+    @staticmethod
+    def _config_value_error(config: Dict[str, Any], exc: ValidationError) -> Dict[str, Any]:
+        err = exc.errors()[0]
+        field = err["loc"][0] if err.get("loc") else ""
+        if field == "mode":
+            return {"message": f"The sub-agent has an invalid mode: {config.get('mode')}.", "error": "invalid mode"}
+        if field == "type":
+            return {
+                "message": f"The sub-agent has an unsupported agent type: {config.get('type')}.",
+                "error": "invalid agent type",
+            }
+        if field == "timeoutSeconds":
+            if "between" in err.get("msg", ""):
+                return {
+                    "message": "The sub-agent timeout must be between 5 and 300 seconds.",
+                    "error": "timeout out of range",
+                }
+            return {"message": "The sub-agent has an invalid timeout.", "error": "invalid timeoutSeconds"}
+        return {"message": "The sub-agent configuration is invalid.", "error": "invalid config"}
 
     @staticmethod
     def _completion_instructions(mode: str) -> str:

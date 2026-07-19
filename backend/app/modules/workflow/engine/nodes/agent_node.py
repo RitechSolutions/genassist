@@ -431,7 +431,6 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             invocation_id=envelope["invocation_id"],
             mode=envelope["mode"],
             task=(envelope.get("task", "") or "")[:MAX_TASK_CHARS],
-            depth=depth + 1,
             inherit_pii=pii,
             workflow_fingerprint=sub_graph.fingerprint(workflow.get("nodes", []), workflow.get("edges", [])),
             parent_resume=resume,
@@ -456,6 +455,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         continuation = self._build_continuation_prompt(
             resume.get("child_task", ""), resume.get("child_result", ""), pii
         )
+        prior_prompt = resume.get("user_prompt") or ""
+        if prior_prompt:
+            continuation = f"{prior_prompt}\n\n{continuation}"
         return completed_count + 1, steps, tools_used, continuation
 
     def _build_delegation_failure_prompt(self, tool_name: str, reason: str, pii: bool) -> str:

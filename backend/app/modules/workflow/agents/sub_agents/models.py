@@ -1,17 +1,58 @@
 """Persisted shapes for sub-agent delegation frames"""
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal
+from math import isfinite
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SubAgentMode = Literal["single_turn", "task", "chat"]
+SubAgentAgentType = Literal["ToolSelector", "ReActAgent", "ReActAgentLC"]
 
 FRAME_VERSION = 1
 FRAME_TTL_HOURS = 24
 
 MAX_TASK_CHARS = 4000
 MAX_USER_PROMPT_CHARS = 4000
+
+MIN_TIMEOUT_SECONDS = 5.0
+MAX_TIMEOUT_SECONDS = 300.0
+DEFAULT_CHILD_TIMEOUT_SECONDS = 120.0
+
+
+def clamp_child_timeout_seconds(value: Any) -> float:
+    """Read a child timeout for the parent: return a finite float in range, or the default"""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_CHILD_TIMEOUT_SECONDS
+    if not isfinite(seconds) or not (MIN_TIMEOUT_SECONDS <= seconds <= MAX_TIMEOUT_SECONDS):
+        return DEFAULT_CHILD_TIMEOUT_SECONDS
+    return seconds
+
+
+class SubAgentConfig(BaseModel):
+
+    model_config = ConfigDict(extra="ignore")
+
+    providerId: Optional[str] = None
+    description: Optional[str] = None
+    mode: SubAgentMode = "single_turn"
+    type: SubAgentAgentType = "ToolSelector"
+    timeoutSeconds: float = DEFAULT_CHILD_TIMEOUT_SECONDS
+
+    @field_validator("timeoutSeconds", mode="before")
+    @classmethod
+    def _finite_in_range(cls, value: Any) -> float:
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("timeoutSeconds must be a number") from exc
+        if not isfinite(seconds):
+            raise ValueError("timeoutSeconds must be a finite number")
+        if not (MIN_TIMEOUT_SECONDS <= seconds <= MAX_TIMEOUT_SECONDS):
+            raise ValueError("timeoutSeconds must be between 5 and 300")
+        return seconds
 
 
 def _now_iso() -> str:
@@ -48,7 +89,6 @@ class SubAgentFrame(BaseModel):
     invocation_id: str
     mode: Literal["task", "chat"]
     task: str = Field(default="", max_length=MAX_TASK_CHARS)
-    depth: int = 0
     inherit_pii: bool = False
     created_at: str = Field(default_factory=_now_iso)
     expires_at: str = Field(default_factory=_expiry_iso)

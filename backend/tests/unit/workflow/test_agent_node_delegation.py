@@ -333,6 +333,31 @@ async def test_active_delegation_depth_limit_returns_error_without_frame():
 
 
 @pytest.mark.asyncio
+async def test_resume_prepends_saved_user_prompt_context():
+    resume = {
+        "node_outputs": {},
+        "node_execution_status": {},
+        "request_context": {},
+        "completed_count": 1,
+        "accumulated_steps": [],
+        "accumulated_tools_used": [],
+        "child_node_id": "child",
+        "mode": "task",
+        "child_task": "task B",
+        "child_result": "result B",
+        "user_prompt": "PRIOR-CONTEXT-FROM-CHILD-A",
+    }
+    node = _parent_node(
+        mode="task", initial_values={"message": "hi", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    _, run_once = await _run_loop(node, [_rr("final")], delegation_map=dmap)
+    first_prompt = run_once.await_args_list[0].kwargs["user_prompt"]
+    assert "PRIOR-CONTEXT-FROM-CHILD-A" in first_prompt
+    assert "result B" in first_prompt
+
+
+@pytest.mark.asyncio
 async def test_resume_rehydrates_outputs_and_continues():
     resume = {
         "node_outputs": {"n1": {"x": 1}},

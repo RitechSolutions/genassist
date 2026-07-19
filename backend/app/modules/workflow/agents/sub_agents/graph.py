@@ -7,6 +7,10 @@ import unicodedata
 from typing import Any, Dict, List
 
 from app.modules.workflow.agents.base_tool import to_snake_case
+from app.modules.workflow.agents.sub_agents.models import (
+    DEFAULT_CHILD_TIMEOUT_SECONDS,
+    clamp_child_timeout_seconds,
+)
 
 SUB_AGENT_SOURCE_HANDLE = "output_sub_agent"
 SUB_AGENT_TARGET_HANDLE = "input_sub_agents"
@@ -16,14 +20,9 @@ STARTER_SOURCE_HANDLE = "starter_processor"
 MAX_DELEGATION_DEPTH = 3
 RESERVED_TOOL_NAMES = frozenset({"finish_task", "return_to_parent"})
 
-DEFAULT_CHILD_TIMEOUT_SECONDS = 120.0
-
 
 def child_timeout_seconds(node_data: Dict[str, Any]) -> float:
-    try:
-        return float(node_data.get("timeoutSeconds", DEFAULT_CHILD_TIMEOUT_SECONDS) or DEFAULT_CHILD_TIMEOUT_SECONDS)
-    except (TypeError, ValueError):
-        return DEFAULT_CHILD_TIMEOUT_SECONDS
+    return clamp_child_timeout_seconds(node_data.get("timeoutSeconds", DEFAULT_CHILD_TIMEOUT_SECONDS))
 
 
 class SubAgentTopologyError(ValueError):

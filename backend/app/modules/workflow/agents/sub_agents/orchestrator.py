@@ -3,13 +3,15 @@
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional
 
 from fastapi_injector import RequestScopeFactory
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
 from app.dependencies.injector import injector
+from app.modules.workflow.agents.sub_agents.models import SubAgentMode
 
 if TYPE_CHECKING:
     from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -19,18 +21,20 @@ logger = logging.getLogger(__name__)
 ENVELOPE_VERSION = 1
 _ENVELOPE_KEY = "__sub_agent__"
 
-Envelope = TypedDict(
-    "Envelope",
-    {
-        "__sub_agent__": int,
-        "status": str,
-        "message": str,
-        "child_node_id": str,
-        "mode": str,
-        "invocation_id": str,
-        "task": str,
-    },
-)
+
+class Envelope(BaseModel):
+    """Delegation result the parent's agent loop consumes"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    version: int = Field(alias=_ENVELOPE_KEY)
+    status: Literal["completed", "active"]
+    message: str
+    child_node_id: str
+    mode: SubAgentMode
+    invocation_id: str
+    task: str
+
 
 SUB_AGENT_CONTROL_ATTR = "sub_agent_control"
 
@@ -55,7 +59,9 @@ def make_envelope(*, status: str, message: str, child_node_id: str, mode: str, i
     )
 
 
-def parse_envelope(text: Any) -> Optional[Envelope]:
+def parse_envelope(text: Any) -> Optional[Dict[str, Any]]:
+    """Return a fully validated envelope dict, or None for anything that is not a
+    current-version delegation result"""
     if not isinstance(text, str):
         return None
     try:
@@ -64,9 +70,11 @@ def parse_envelope(text: Any) -> Optional[Envelope]:
         return None
     if not isinstance(data, dict) or data.get(_ENVELOPE_KEY) != ENVELOPE_VERSION:
         return None
-    if data.get("status") not in ("completed", "active"):
+    try:
+        envelope = Envelope.model_validate(data)
+    except ValidationError:
         return None
-    return data
+    return envelope.model_dump(by_alias=True)
 
 
 def child_completion(child_state: "WorkflowState") -> Optional[Dict[str, Any]]:

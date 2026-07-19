@@ -92,4 +92,59 @@ describe("createNodeFromAction — as_sub_agent_for", () => {
     const { edges } = createNodeFromAction(action, [agentNode]);
     expect(edges).toHaveLength(0);
   });
+
+  it("adds the node but drops the edge when it collides with a sibling name", () => {
+    const sibling: Node = {
+      id: "sub-existing",
+      type: "subAgentNode",
+      position: { x: 0, y: 0 },
+      data: { name: "Flight Search", mode: "single_turn" },
+    };
+    const siblingEdge = {
+      id: "e-existing",
+      source: "sub-existing",
+      target: "agent-1",
+      sourceHandle: "output_sub_agent",
+      targetHandle: "input_sub_agents",
+    };
+    const action: AddNodeAction = {
+      type: "add_node",
+      nodeType: "subAgentNode",
+      label: "Flight Search",
+      asSubAgentFor: "agent-1",
+    };
+    const { nodes, edges } = createNodeFromAction(
+      action,
+      [agentNode, sibling],
+      [siblingEdge]
+    );
+    expect(nodes).toHaveLength(1);
+    expect(edges).toHaveLength(0);
+  });
+
+  it("adds the node but drops the edge when it would exceed max depth", () => {
+    const deleg = (child: string, parent: string) => ({
+      id: `e-${child}-${parent}`,
+      source: child,
+      target: parent,
+      sourceHandle: "output_sub_agent",
+      targetHandle: "input_sub_agents",
+    });
+    const chain: Node[] = [
+      agentNode,
+      { id: "c1", type: "subAgentNode", position: { x: 0, y: 0 }, data: { name: "c1", mode: "single_turn" } },
+      { id: "c2", type: "subAgentNode", position: { x: 0, y: 0 }, data: { name: "c2", mode: "single_turn" } },
+      { id: "c3", type: "subAgentNode", position: { x: 0, y: 0 }, data: { name: "c3", mode: "single_turn" } },
+    ];
+    const chainEdges = [deleg("c1", "agent-1"), deleg("c2", "c1"), deleg("c3", "c2")];
+    const action: AddNodeAction = {
+      type: "add_node",
+      nodeType: "subAgentNode",
+      label: "c4",
+      asSubAgentFor: "c3",
+    };
+    const { nodes, edges } = createNodeFromAction(action, chain, chainEdges);
+    expect(nodes).toHaveLength(1);
+    expect(edges).toHaveLength(0);
+  });
 });

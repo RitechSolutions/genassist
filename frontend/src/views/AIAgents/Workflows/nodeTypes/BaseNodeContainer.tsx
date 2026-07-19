@@ -39,7 +39,6 @@ interface BaseNodeContainerProps<T extends NodeData> {
   nodeType: string;
   nodeContent?: NodeContentRow[];
   onSettings?: () => void;
-  disableTest?: boolean;
   children?: React.ReactNode;
 }
 
@@ -54,7 +53,6 @@ const BaseNodeContainer = <T extends NodeData>({
   nodeType,
   nodeContent,
   onSettings,
-  disableTest = false,
   children,
 }: BaseNodeContainerProps<T>) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
@@ -168,7 +166,7 @@ const BaseNodeContainer = <T extends NodeData>({
         hasError={hasError}
         isSpecialNode={isSpecialNode}
         onSettings={onSettings}
-        onTest={disableTest ? undefined : handleTest}
+        onTest={handleTest}
         onHelpClick={() => setIsHelpDialogOpen(true)}
         onDeleteClick={() => setIsDeleteDialogOpen(true)}
       />
@@ -204,16 +202,14 @@ const BaseNodeContainer = <T extends NodeData>({
       )}
 
       {/* Generic Test Dialog*/}
-      {!disableTest && (
-        <GenericTestDialog
-          isOpen={isTestDialogOpen}
-          onClose={() => setIsTestDialogOpen(false)}
-          nodeType={nodeType}
-          nodeData={data}
-          nodeId={id}
-          nodeName={nodeName}
-        />
-      )}
+      <GenericTestDialog
+        isOpen={isTestDialogOpen}
+        onClose={() => setIsTestDialogOpen(false)}
+        nodeType={nodeType}
+        nodeData={data}
+        nodeId={id}
+        nodeName={nodeName}
+      />
 
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}

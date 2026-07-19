@@ -5,6 +5,7 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   Connection,
+  Edge,
   Node,
   Panel,
   ReactFlowInstance,
@@ -508,18 +509,24 @@ const GraphFlowContent: React.FC = () => {
     }
   }, [agentId, loadAgent]);
 
+  // One gate for connect, reconnect, and assistant edges
+  const checkConnection = useCallback(
+    (params: Connection, ignoreEdgeId?: string): { ok: boolean; reason?: string } => {
+      if (!validateConnection(params)) {
+        return { ok: false };
+      }
+      const scopedEdges = ignoreEdgeId ? edges.filter((e) => e.id !== ignoreEdgeId) : edges;
+      return validateSubAgentConnection(params, nodes, scopedEdges);
+    },
+    [validateConnection, nodes, edges]
+  );
+
   // Connection handler with special handling for connections
   const onConnect = useCallback(
     (params: Connection) => {
-      // Validate schema compatibility before allowing connection
-      if (!validateConnection(params)) {
-        return;
-      }
-
-      // Sub-agent wiring encodes non-obvious topology rules; surface why a reject happened
-      const subAgentCheck = validateSubAgentConnection(params, nodes, edges);
-      if (!subAgentCheck.ok) {
-        toast.error(subAgentCheck.reason ?? "Invalid sub-agent connection.");
+      const check = checkConnection(params);
+      if (!check.ok) {
+        if (check.reason) toast.error(check.reason);
         return;
       }
 
@@ -542,18 +549,27 @@ const GraphFlowContent: React.FC = () => {
 
       setEdges((eds) => addEdge(edgeWithMarker, eds));
     },
-    [setEdges, validateConnection, nodes, edges]
+    [setEdges, checkConnection]
   );
 
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
   }, []);
- 
-  const onReconnect = useCallback((oldEdge, newConnection) => {
-    edgeReconnectSuccessful.current = true;
-    setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
-  }, []);
- 
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      const check = checkConnection(newConnection, oldEdge.id);
+      if (!check.ok) {
+        if (check.reason) toast.error(check.reason);
+        edgeReconnectSuccessful.current = true;
+        return;
+      }
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [setEdges, checkConnection]
+  );
+
   const onReconnectEnd = useCallback((_, edge) => {
     if (!edgeReconnectSuccessful.current) {
       setEdges((eds) => eds.filter((e) => e.id !== edge.id));

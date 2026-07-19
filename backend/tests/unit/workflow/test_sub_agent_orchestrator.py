@@ -1,6 +1,7 @@
 """Child-engine orchestration: derived thread, persist=False, durable history, timeout"""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -146,6 +147,38 @@ def test_envelope_round_trip_and_gating():
     assert parsed["child_node_id"] == "c"
     assert orchestrator.parse_envelope("not json") is None
     assert orchestrator.parse_envelope('{"status": "completed"}') is None
+
+
+def test_parse_envelope_rejects_malformed_payloads():
+    missing_key = json.dumps({"__sub_agent__": 1, "status": "completed", "message": "x"})
+    assert orchestrator.parse_envelope(missing_key) is None
+
+    wrong_type = json.dumps(
+        {
+            "__sub_agent__": 1,
+            "status": "completed",
+            "message": "x",
+            "child_node_id": 123,
+            "mode": "task",
+            "invocation_id": "inv",
+            "task": "t",
+        }
+    )
+    assert orchestrator.parse_envelope(wrong_type) is None
+
+    # Unknown status -> None
+    bad_status = json.dumps(
+        {
+            "__sub_agent__": 1,
+            "status": "bogus",
+            "message": "x",
+            "child_node_id": "c",
+            "mode": "task",
+            "invocation_id": "inv",
+            "task": "t",
+        }
+    )
+    assert orchestrator.parse_envelope(bad_status) is None
 
 
 def test_child_completion_and_message_helpers():

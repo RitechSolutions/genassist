@@ -33,15 +33,22 @@ const SubAgentNode: React.FC<NodeProps<SubAgentNodeData>> = ({
   const color = getNodeColor(nodeDefinition.category);
 
   useEffect(() => {
-    if (data.providerId) {
-      getLLMProvider(data.providerId).then((provider) => {
-        if (provider) {
-          setProviderName(
-            `${provider.name} (${provider.llm_model_provider} - ${provider.llm_model})`
-          );
-        }
-      });
+    if (!data.providerId) {
+      setProviderName("");
+      return;
     }
+    // Guard against a stale response landing after the provider changed
+    let active = true;
+    getLLMProvider(data.providerId).then((provider) => {
+      if (active && provider) {
+        setProviderName(
+          `${provider.name} (${provider.llm_model_provider} - ${provider.llm_model})`
+        );
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [data.providerId]);
 
   const toolCount = useMemo(

@@ -91,12 +91,15 @@ class WorkflowService:
 
     @staticmethod
     def _validate_sub_agents(payload: dict) -> None:
-        """Extra check of sub-agent parent/child links for a clearer save-time error"""
+        """Save-time sub-agent check"""
+        from pydantic import ValidationError
+
         from app.core.exceptions.error_messages import ErrorKey
         from app.modules.workflow.agents.sub_agents.graph import (
             SubAgentTopologyError,
             validate_sub_agent_topology,
         )
+        from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 
         try:
             validate_sub_agent_topology(payload.get("nodes"), payload.get("edges"))
@@ -107,6 +110,21 @@ class WorkflowService:
                 error_variables=[str(e)],
                 error_detail=str(e),
             ) from e
+
+        for node in payload.get("nodes") or []:
+            if node.get("type") != "subAgentNode":
+                continue
+            try:
+                SubAgentConfig.model_validate(node.get("data") or {})
+            except ValidationError as e:
+                name = (node.get("data") or {}).get("name") or node.get("id")
+                detail = f"'{name}': {e.errors()[0].get('msg', 'invalid configuration')}"
+                raise AppException(
+                    error_key=ErrorKey.SUB_AGENT_INVALID_CONFIG,
+                    status_code=400,
+                    error_variables=[detail],
+                    error_detail=detail,
+                ) from e
 
     # ---------- WRITE ----------
     async def create(self, data: WorkflowCreate) -> WorkflowInDB:

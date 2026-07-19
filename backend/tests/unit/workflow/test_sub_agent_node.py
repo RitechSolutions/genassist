@@ -77,6 +77,30 @@ async def test_timeout_out_of_range_returns_error():
     assert output["error"] == "timeout out of range"
 
 
+@pytest.mark.asyncio
+async def test_negative_timeout_returns_out_of_range_error():
+    node = _make_node()
+    with patch.object(SubAgentNode, "get_connected_nodes", return_value=[]):
+        output = await node.process({"providerId": "p", "mode": "task", "timeoutSeconds": -5})
+    assert output["error"] == "timeout out of range"
+
+
+@pytest.mark.asyncio
+async def test_non_finite_timeout_returns_invalid_error():
+    node = _make_node()
+    with patch.object(SubAgentNode, "get_connected_nodes", return_value=[]):
+        output = await node.process({"providerId": "p", "mode": "task", "timeoutSeconds": float("inf")})
+    assert output["error"] == "invalid timeoutSeconds"
+
+
+@pytest.mark.asyncio
+async def test_unsupported_agent_type_rejected_not_coerced():
+    node = _make_node()
+    with patch.object(SubAgentNode, "get_connected_nodes", return_value=[]):
+        output = await node.process({"providerId": "p", "mode": "single_turn", "type": "SimpleToolExecutor"})
+    assert output["error"] == "invalid agent type"
+
+
 def test_single_turn_has_no_completion_tool():
     assert _make_node()._build_completion_tool("single_turn") is None
 

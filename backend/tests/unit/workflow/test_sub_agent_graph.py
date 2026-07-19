@@ -1,14 +1,18 @@
 """Topology validation and semantic fingerprint for sub-agent wiring"""
 
 import pytest
+from pydantic import ValidationError
 
 from app.modules.workflow.agents.sub_agents.graph import (
+    DEFAULT_CHILD_TIMEOUT_SECONDS,
     SubAgentGraph,
     SubAgentTopologyError,
+    child_timeout_seconds,
     delegation_tool_name,
     fingerprint,
     validate_sub_agent_topology,
 )
+from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 
 
 def _agent(node_id, name="Agent"):
@@ -229,3 +233,36 @@ def test_fingerprint_sensitive_to_provider_and_prompt():
     base = fingerprint(_nodes(), edges)
     assert fingerprint(_nodes(provider="prov-2"), edges) != base
     assert fingerprint(_nodes(prompt="Be terse."), edges) != base
+
+
+def test_child_timeout_clamps_bad_values_to_default():
+    assert child_timeout_seconds({"timeoutSeconds": 60}) == 60.0
+    assert child_timeout_seconds({"timeoutSeconds": -5}) == DEFAULT_CHILD_TIMEOUT_SECONDS
+    assert child_timeout_seconds({"timeoutSeconds": float("inf")}) == DEFAULT_CHILD_TIMEOUT_SECONDS
+    assert child_timeout_seconds({"timeoutSeconds": float("nan")}) == DEFAULT_CHILD_TIMEOUT_SECONDS
+    assert child_timeout_seconds({"timeoutSeconds": "abc"}) == DEFAULT_CHILD_TIMEOUT_SECONDS
+    assert child_timeout_seconds({"timeoutSeconds": 999}) == DEFAULT_CHILD_TIMEOUT_SECONDS
+    assert child_timeout_seconds({}) == DEFAULT_CHILD_TIMEOUT_SECONDS
+
+
+def test_sub_agent_config_accepts_draft_and_valid_values():
+    SubAgentConfig.model_validate({})
+    SubAgentConfig.model_validate(
+        {"providerId": "p", "description": "d", "mode": "task", "type": "ReActAgent", "timeoutSeconds": 30}
+    )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"timeoutSeconds": 999},
+        {"timeoutSeconds": -1},
+        {"timeoutSeconds": float("nan")},
+        {"timeoutSeconds": "abc"},
+        {"mode": "bogus"},
+        {"type": "SimpleToolExecutor"},
+    ],
+)
+def test_sub_agent_config_rejects_bad_values(bad):
+    with pytest.raises(ValidationError):
+        SubAgentConfig.model_validate(bad)

@@ -4,6 +4,7 @@ import nodeRegistry from "../registry/nodeRegistry";
 import {
   SUB_AGENT_SOURCE_HANDLE,
   SUB_AGENT_TARGET_HANDLE,
+  validateSubAgentConnection,
 } from "./subAgentGraph";
 
 // ── Types ──
@@ -265,6 +266,7 @@ function makeEdge(
 export function createNodeFromAction(
   action: AddNodeAction,
   existingNodes: Node[],
+  existingEdges: Edge[] = [],
 ): { nodes: Node[]; edges: Edge[] } {
   const nodeDef = nodeRegistry.getNodeType(action.nodeType);
   if (!nodeDef) return { nodes: [], edges: [] };
@@ -321,9 +323,17 @@ export function createNodeFromAction(
   // ── Sub-agent pattern: attach child to a parent agent/sub-agent ──
   if (action.asSubAgentFor) {
     const parent = existingNodes.find((n) => n.id === action.asSubAgentFor);
-    const parentIsAgent =
-      parent?.type === "agentNode" || parent?.type === "subAgentNode";
-    if (action.nodeType !== "subAgentNode" || !parentIsAgent) {
+    const check = validateSubAgentConnection(
+      {
+        source: id,
+        target: action.asSubAgentFor,
+        sourceHandle: SUB_AGENT_SOURCE_HANDLE,
+        targetHandle: SUB_AGENT_TARGET_HANDLE,
+      },
+      [...existingNodes, node],
+      existingEdges,
+    );
+    if (!check.ok || !parent) {
       return { nodes: [node], edges: [] };
     }
     node.position = { x: parent.position?.x ?? position.x, y: (parent.position?.y ?? position.y) + 250 };
