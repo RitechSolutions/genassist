@@ -143,6 +143,15 @@ async def test_oversize_fails_handoff_without_dropping_node_outputs():
     assert STACK_KEY not in mem.metadata
 
 
+@pytest.mark.asyncio
+async def test_non_serializable_frame_fails_before_write():
+    mem = FakeMemory()
+    frame = _frame(parent_resume=ParentResume(node_outputs={"agent": {"input": object()}}))
+    with pytest.raises(SubAgentSessionError):
+        await write_frame(mem, _stack(frames=[frame]))
+    assert STACK_KEY not in mem.metadata
+
+
 def test_ownership_checks():
     stack = _stack(agent_id="agentA", frames=[_frame(workflow_id="wf1")])
     assert is_owned(stack, "agentA", "wf1")

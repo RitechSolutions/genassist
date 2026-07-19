@@ -10,16 +10,16 @@ from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
+from app.core.utils.string_utils import truncate_for_log
 from app.dependencies.injector import injector
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
+from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
 from app.services.llm_providers import LlmProviderService
-from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
-from app.core.utils.string_utils import truncate_for_log
 from app.services.workflow import WorkflowService
 
 router = APIRouter()
@@ -423,8 +423,7 @@ async def test_individual_node(test_data: Dict[str, Any]):
         }
         workflow_engine = WorkflowEngine(workflow_config)
 
-        # Execute the workflow
-        state = await workflow_engine.execute_from_node(input_data=input_data)
+        state = await workflow_engine.execute_from_node(start_node_id=test_id, input_data=input_data)
 
         return state.format_state_as_response()
 

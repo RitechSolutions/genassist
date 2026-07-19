@@ -313,6 +313,30 @@ export const WorkflowExecutionProvider: React.FC<
       );
       const node = getNodeById(nodeId);
 
+      // Session values come from execution when present, else from the chat input schema
+      const resolveSessionData = () => {
+        if (Object.keys(state.session).length > 0) {
+          return state.session;
+        }
+        const chatInputNode = nodes.find((n) => n.type === "chatInputNode");
+        if (chatInputNode?.data?.inputSchema) {
+          return (
+            generateSampleOutput(chatInputNode.data.inputSchema as NodeSchema) ||
+            {}
+          );
+        }
+        return state.session;
+      };
+
+      if (node?.type === "subAgentNode") {
+        return {
+          session: {
+            ...resolveSessionData(),
+            message: "The task delegated by the parent agent",
+          },
+        };
+      }
+
       if (
         predecessorIds.length === 0 &&
         node &&
@@ -339,10 +363,12 @@ export const WorkflowExecutionProvider: React.FC<
         .filter((edge) => edge.target === nodeId)
         .map((edge) => edge.source)
         .filter((predecessorId) => {
-          // If current node is an agent, exclude toolBuilder nodes
           if (currentNode?.type === "agentNode") {
             const predecessorNode = getNodeById(predecessorId);
-            return predecessorNode?.type !== "toolBuilderNode";
+            return (
+              predecessorNode?.type !== "toolBuilderNode" &&
+              predecessorNode?.type !== "subAgentNode"
+            );
           }
           return true;
         });
@@ -384,18 +410,8 @@ export const WorkflowExecutionProvider: React.FC<
         });
       }
 
-      // Get session data - either from execution or generate from chatInputNode schema
-      let sessionData = state.session;
-      if (Object.keys(sessionData).length === 0) {
-        // Find chatInputNode and generate session from its schema
-        const chatInputNode = nodes.find((n) => n.type === "chatInputNode");
-        if (chatInputNode?.data?.inputSchema) {
-          sessionData = generateSampleOutput(chatInputNode.data.inputSchema as NodeSchema) || {};
-        }
-      }
-
       const availableData: Record<string, unknown> = {
-        session: sessionData,
+        session: resolveSessionData(),
         source: source,
         node_outputs: nodeOutputs,
         // predecessors: predecessorIds,

@@ -3,7 +3,6 @@ Agent node implementation using the BaseNode class.
 """
 
 import asyncio
-import copy
 import datetime
 import logging
 import uuid
@@ -22,6 +21,23 @@ logger = logging.getLogger(__name__)
 MAX_DELEGATIONS = 5
 CONTINUATION_TASK_CAP = 2000
 CONTINUATION_RESULT_CAP = 8000
+
+
+def _frame_snapshot(value: Any) -> Any:
+    """JSON-safe copy for a persisted frame"""
+    from app.modules.workflow.engine.nodes.ml import ml_utils
+
+    return ml_utils.sanitize_for_json(value)
+
+
+def _without_tool_references(execution_status: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop live ``tools_reference`` objects from node inputs"""
+    stripped = {}
+    for node_id, entry in execution_status.items():
+        if isinstance(entry, dict) and isinstance(entry.get("input"), dict):
+            entry = {**entry, "input": {k: v for k, v in entry["input"].items() if k != "tools_reference"}}
+        stripped[node_id] = entry
+    return stripped
 
 
 class AgentNode(PIIAnonymizerMixin, BaseNode):
@@ -400,13 +416,13 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         workflow = state.workflow
         resume = ParentResume(
-            node_outputs=copy.deepcopy(state.node_outputs),
-            node_execution_status=copy.deepcopy(state.node_execution_status),
-            request_context=state.capture_resume_context(),
+            node_outputs=_frame_snapshot(state.node_outputs),
+            node_execution_status=_frame_snapshot(_without_tool_references(state.node_execution_status)),
+            request_context=_frame_snapshot(state.capture_resume_context()),
             user_prompt=current_prompt[:MAX_USER_PROMPT_CHARS],
             completed_count=completed_count,
-            accumulated_steps=steps,
-            accumulated_tools_used=tools_used,
+            accumulated_steps=_frame_snapshot(steps),
+            accumulated_tools_used=_frame_snapshot(tools_used),
         )
         frame = SubAgentFrame(
             child_node_id=envelope["child_node_id"],

@@ -1,5 +1,6 @@
 """Byte-identical output shapes for AgentNode with no sub-agents attached"""
 
+import json
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -294,6 +295,23 @@ async def test_active_delegation_writes_frame_then_pauses():
     top = stack.top()
     assert top.child_node_id == "child" and top.mode == "task" and top.invocation_id == "inv9"
     assert top.parent_resume is not None
+
+
+@pytest.mark.asyncio
+async def test_pause_frame_is_strictly_json_serializable_with_live_tools():
+    node = _parent_node(mode="task")
+    node.get_state().set_node_input(
+        "parent", {"system_prompt": "s", "prompt": "q", "tools_reference": [_Tool("request_task_child")]}
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [_rr(_env("active", "Need a date?", mode="task"), return_direct=True, tool="request_task_child")]
+    with pytest.raises(WorkflowPausedException):
+        await _run_loop(node, results, delegation_map=dmap)
+
+    stored = node.get_memory().metadata[sub_session.STACK_KEY]
+    json.dumps(stored)
+    resume = stored["frames"][-1]["parent_resume"]
+    assert "tools_reference" not in resume["node_execution_status"]["parent"]["input"]
 
 
 @pytest.mark.asyncio

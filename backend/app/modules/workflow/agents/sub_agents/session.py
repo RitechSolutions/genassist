@@ -26,9 +26,13 @@ class SubAgentSessionError(Exception):
 
 
 async def write_frame(memory: Any, stack: SubAgentStack) -> None:
-    """Persist the stack before any child side effect or pause; oversize fails."""
+    """Save the handoff stack before the child runs or pauses"""
     payload = stack.model_dump()
-    if len(json.dumps(payload, default=str)) > MAX_STACK_BYTES:
+    try:
+        encoded = json.dumps(payload)
+    except (TypeError, ValueError) as exc:
+        raise SubAgentSessionError(f"sub-agent handoff state is not JSON-serializable: {exc}") from exc
+    if len(encoded) > MAX_STACK_BYTES:
         raise SubAgentSessionError("sub-agent handoff state exceeds size limit")
     await memory.set_metadata(STACK_KEY, payload)
 
