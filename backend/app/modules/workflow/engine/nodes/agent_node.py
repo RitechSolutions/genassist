@@ -195,7 +195,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     def _build_delegation_tools(self, config: Dict[str, Any]):
         """Build one delegation tool per directly-attached sub-agent child"""
         from app.modules.workflow.agents.base_tool import BaseTool
-        from app.modules.workflow.agents.sub_agents.graph import SubAgentGraph, delegation_tool_name
+        from app.modules.workflow.agents.sub_agents.graph import (
+            SubAgentGraph,
+            child_timeout_seconds,
+            delegation_tool_name,
+        )
 
         workflow = self.get_state().workflow
         graph = SubAgentGraph(workflow.get("nodes", []), workflow.get("edges", []))
@@ -212,7 +216,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             child_data = graph.nodes_by_id.get(child_id, {}).get("data", {})
             name = child_data.get("name", child_id)
             mode = child_data.get("mode", "single_turn")
-            timeout_seconds = float(child_data.get("timeoutSeconds", 120) or 120)
+            timeout_seconds = child_timeout_seconds(child_data)
             tool = BaseTool(
                 node_id=child_id,
                 name=delegation_tool_name(name),
@@ -240,7 +244,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
     def _make_delegation_function(self, *, child_id: str, mode: str, timeout_seconds: float, inherit_pii: bool = False):
         """Closure the LLM calls to delegate; runs the child and returns an envelope"""
+        from app.modules.workflow.agents.sub_agents import graph as sub_graph
         from app.modules.workflow.agents.sub_agents import orchestrator
+        from app.modules.workflow.agents.sub_agents import session as sub_session
 
         state = self.get_state()
 
@@ -254,6 +260,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 if getattr(state, "sub_agent_persistent_claimed", False):
                     return "Another sub-agent delegation is already in progress for this turn."
                 state.sub_agent_persistent_claimed = True
+                try:
+                    stack = await sub_session.read_frame_strict(self.get_memory())
+                except sub_session.SubAgentSessionError:
+                    state.sub_agent_persistent_claimed = False
+                    return "This conversation could not be resumed. Please start a new message."
+                depth = len(stack.frames) if stack else 0
+                if depth >= sub_graph.MAX_DELEGATION_DEPTH:
+                    state.sub_agent_persistent_claimed = False
+                    return "The sub-agent delegation depth limit was reached."
 
             invocation_id = uuid.uuid4().hex
             try:
@@ -269,9 +284,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 )
             except asyncio.TimeoutError:
                 return f"The sub-agent did not respond in time ({int(timeout_seconds)}s)."
-            except Exception as exc:  # noqa: BLE001 — controlled parent-visible failure, no retry
+            except Exception:
                 logger.exception("Sub-agent delegation to %s failed", child_id)
-                return f"The sub-agent could not complete the task: {exc}"
+                return "The sub-agent could not complete the task."
 
             completion = orchestrator.child_completion(child_state)
             message = orchestrator.child_message(child_state)
@@ -330,16 +345,19 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
             envelope = orchestrator.parse_envelope(run.response)
             if envelope is None:
-                return self._shape_delegated_output(run, steps, tools_used)
+                all_tools = [t for t in all_tools if t.name != called]
+                delegation_map = {k: v for k, v in delegation_map.items() if k != called}
+                current_prompt = self._build_delegation_failure_prompt(called, run.response, pii)
+                continue
 
             child_id = envelope["child_node_id"]
             child_msg = envelope.get("message", "") or ""
             if envelope["status"] == "active":
-                depth_limited = await self._pause_for_sub_agent(
+                blocked = await self._pause_for_sub_agent(
                     envelope, steps, tools_used, completed_count, current_prompt, pii
                 )
-                if depth_limited is not None:
-                    return depth_limited
+                if blocked is not None:
+                    return blocked
                 from app.modules.workflow.engine.workflow_state import WorkflowPausedException
 
                 raise WorkflowPausedException({
@@ -349,11 +367,13 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 })
 
             completed_count += 1
+            state.sub_agent_persistent_claimed = False
             steps.append({"type": "sub_agent", "child_node_id": child_id, "mode": envelope["mode"]})
             current_prompt = self._build_continuation_prompt(envelope.get("task", ""), child_msg, pii)
 
     async def _pause_for_sub_agent(self, envelope, steps, tools_used, completed_count, current_prompt, pii=False):
-        """Persist a frame before pausing; return a result dict if the depth cap blocks it"""
+        """Persist a frame before pausing; return a result dict if the depth cap
+        or a corrupt stack blocks the pause"""
         from app.modules.workflow.agents.sub_agents import graph as sub_graph
         from app.modules.workflow.agents.sub_agents import session as sub_session
         from app.modules.workflow.agents.sub_agents.models import (
@@ -369,7 +389,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         try:
             stack = await sub_session.read_frame_strict(memory)
         except sub_session.SubAgentSessionError:
-            stack = None
+            return self._shape_delegated_message(
+                "This conversation could not be resumed. Please start a new message.", steps, tools_used
+            )
         depth = len(stack.frames) if stack else 0
         if depth >= sub_graph.MAX_DELEGATION_DEPTH:
             return self._shape_delegated_message(
@@ -419,6 +441,16 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             resume.get("child_task", ""), resume.get("child_result", ""), pii
         )
         return completed_count + 1, steps, tools_used, continuation
+
+    def _build_delegation_failure_prompt(self, tool_name: str, reason: str, pii: bool) -> str:
+        reason = reason or ""
+        if pii:
+            reason = self._mask_for_llm(reason)
+        return (
+            f"You tried to delegate to the '{tool_name}' specialist, but it is "
+            f"unavailable in this context: {reason}\n"
+            "Do not call that tool again; answer the user yourself with what you have."
+        )
 
     def _build_continuation_prompt(self, task: str, child_answer: str, pii: bool) -> str:
         task = (task or "")[:CONTINUATION_TASK_CAP]

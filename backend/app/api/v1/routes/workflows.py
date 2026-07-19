@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.dependencies.injector import injector
+from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.utils import generate_python_function_template
@@ -31,6 +33,7 @@ SUPPORTED_NODE_TYPES = [
     "chatOutputNode",
     "routerNode",
     "agentNode",
+    "subAgentNode",
     "apiToolNode",
     "openApiNode",
     "templateNode",
@@ -329,16 +332,31 @@ async def test_workflow(
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         start_node_id = input_data.get("human_in_the_loop_node_id")
 
+        turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
+        supplied_thread = bool(input_data.get("thread_id"))
+        if turn_router.has_sub_agents():
+            input_data.setdefault("agent_id", workflow_config["id"])
+            if supplied_thread and not start_node_id:
+                routed = await turn_router.route_turn(
+                    input_data.get("message", ""), thread_id, input_data, persist=True
+                )
+                if routed is not None:
+                    return routed
+
         state = await workflow_engine.execute_from_node(
             start_node_id=start_node_id,
             input_data=input_data,
             thread_id=thread_id,
+            registry_managed=supplied_thread,
         )
 
-        return state.format_state_as_response()
+        return turn_router.finalize(state.format_state_as_response())
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
+        raise
+    except AppException:
+        # Sub-agent session errors carry their own status/key
         raise
     except Exception as e:
         logger.error(f"Error testing workflow with new engine: {e}")

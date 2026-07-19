@@ -5,6 +5,7 @@ import pytest
 from app.modules.workflow.agents.sub_agents.graph import (
     SubAgentGraph,
     SubAgentTopologyError,
+    delegation_tool_name,
     fingerprint,
     validate_sub_agent_topology,
 )
@@ -118,6 +119,29 @@ def test_reserved_name_rejected():
     assert any("reserved" in v for v in exc.value.violations)
 
 
+def test_reserved_name_after_clamp_rejected():
+    nodes = [_agent("p"), _sub("c", "Finish Task!")]
+    with pytest.raises(SubAgentTopologyError) as exc:
+        _validate(nodes, [_deleg("c", "p")])
+    assert any("reserved" in v for v in exc.value.violations)
+
+
+def test_delegation_tool_name_clamps_to_ascii_snake_case():
+    assert delegation_tool_name("Billing/Refunds") == "request_task_billing_refunds"
+    assert delegation_tool_name("Éclair Vérification") == "request_task_eclair_verification"
+    assert delegation_tool_name("straße") == "request_task_stra_e"
+    assert delegation_tool_name("Flight  Search!") == "request_task_flight_search"
+    assert delegation_tool_name("data—sync") == "request_task_data_sync"
+    assert delegation_tool_name("中文名") == "request_task_"
+
+
+def test_name_empty_after_clamp_rejected():
+    nodes = [_agent("p"), _sub("c", "中文名")]
+    with pytest.raises(SubAgentTopologyError) as exc:
+        _validate(nodes, [_deleg("c", "p")])
+    assert any("at least one letter or number" in v for v in exc.value.violations)
+
+
 def test_hitl_in_child_tool_subflow_rejected():
     nodes = [
         _agent("p"),
@@ -151,10 +175,15 @@ def test_task_child_under_tool_subflow_parent_rejected():
 
 
 def test_all_violations_reported_together():
-    nodes = [_agent("p"), _agent("c")]
+    nodes = [_agent("p1"), _agent("p2"), _sub("c", "finish_task", mode="task"), _sub("c2", "Nested")]
+    edges = [_deleg("c", "p1"), _deleg("c", "p2"), _deleg("c2", "c")]
     with pytest.raises(SubAgentTopologyError) as exc:
-        _validate(nodes, [_deleg("c", "p")])
-    assert len(exc.value.violations) >= 1
+        _validate(nodes, edges)
+    violations = exc.value.violations
+    assert any("more than one parent" in v for v in violations)
+    assert any("reserved" in v for v in violations)
+    assert any("cannot have its own sub-agents" in v for v in violations)
+    assert len(violations) >= 3
 
 
 def test_fingerprint_stable_under_ui_only_changes():
@@ -185,3 +214,18 @@ def test_fingerprint_changes_on_semantic_change():
     changed_mode = [_agent("p"), _sub("c", "H", mode="chat")]
     assert fingerprint(changed_mode, edges) != base
     assert fingerprint(nodes, []) != base
+
+
+def test_fingerprint_sensitive_to_provider_and_prompt():
+    def _nodes(provider="prov-1", prompt="Be helpful."):
+        child = {
+            "id": "c",
+            "type": "subAgentNode",
+            "data": {"name": "H", "mode": "task", "providerId": provider, "systemPrompt": prompt},
+        }
+        return [_agent("p"), child]
+
+    edges = [_deleg("c", "p")]
+    base = fingerprint(_nodes(), edges)
+    assert fingerprint(_nodes(provider="prov-2"), edges) != base
+    assert fingerprint(_nodes(prompt="Be terse."), edges) != base

@@ -113,7 +113,47 @@ class TestMask:
         ):
             _, token_map = svc.mask(original)
 
-        json.dumps(token_map)  # must not raise
+        json.dumps(token_map)
+
+
+class TestMaskContinuation:
+
+    def _mask_one_email(self, text: str, existing_items=None):
+        svc = PIIAnonymizer()
+        analyzer = MagicMock()
+        analyzer.analyze.return_value = [_make_analyzer_result(9, 24, "EMAIL_ADDRESS")]
+        with patch(
+            "app.modules.workflow.engine.pii_anonymizer._get_engines",
+            return_value=analyzer,
+        ):
+            return svc.mask(text, existing_items=existing_items)
+
+    def test_counters_continue_from_existing_items(self):
+        existing = [{"token": "johndoe1@example.com", "original": "alice@example.com", "entity_type": "EMAIL_ADDRESS"}]
+        masked, token_map = self._mask_one_email("Email is bob@example.com", existing_items=existing)
+
+        assert "johndoe2@example.com" in masked
+        assert token_map["items"][0]["token"] == "johndoe2@example.com"
+        assert len(token_map["items"]) == 1, "map must hold only this call's items"
+
+    def test_other_entity_types_do_not_shift_numbering(self):
+        existing = [{"token": "(555) 010-0001", "original": "555-867-5309", "entity_type": "PHONE_NUMBER"}]
+        masked, token_map = self._mask_one_email("Email is bob@example.com", existing_items=existing)
+
+        assert "johndoe1@example.com" in masked
+        assert token_map["items"][0]["token"] == "johndoe1@example.com"
+
+    def test_omitted_existing_items_keeps_legacy_numbering(self):
+        svc = PIIAnonymizer()
+        analyzer = MagicMock()
+        analyzer.analyze.return_value = [_make_analyzer_result(9, 24, "EMAIL_ADDRESS")]
+        with patch(
+            "app.modules.workflow.engine.pii_anonymizer._get_engines",
+            return_value=analyzer,
+        ):
+            masked, _ = svc.mask("Email is bob@example.com")
+
+        assert "johndoe1@example.com" in masked
 
 
 class TestUnmask:

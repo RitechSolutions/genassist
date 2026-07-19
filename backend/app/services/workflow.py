@@ -1,11 +1,16 @@
 import logging
 from typing import List
 from uuid import UUID
-from fastapi import Depends
+
 from injector import inject
 from sqlalchemy import select
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.workflow_secrets import (
+    decrypt_hidden_defaults,
+    encrypt_hidden_defaults,
+)
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.operator import OperatorModel
@@ -13,10 +18,6 @@ from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowMinimal, WorkflowUpdate
-from app.core.utils.workflow_secrets import (
-    decrypt_hidden_defaults,
-    encrypt_hidden_defaults,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,10 @@ class WorkflowService:
             validate_sub_agent_topology(payload.get("nodes"), payload.get("edges"))
         except SubAgentTopologyError as e:
             raise AppException(
-                error_key=ErrorKey.INTERNAL_SERVER_ERROR, status_code=400, error_detail=str(e)
+                error_key=ErrorKey.SUB_AGENT_INVALID_TOPOLOGY,
+                status_code=400,
+                error_variables=[str(e)],
+                error_detail=str(e),
             ) from e
 
     # ---------- WRITE ----------

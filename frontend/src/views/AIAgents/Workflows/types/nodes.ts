@@ -293,11 +293,13 @@ export interface BaseLLMNodeData extends BaseNodeData {
 export interface AgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "Chain-of-Thought" | "ReActAgentLC";
 }
+/** Collaboration mode controlling how control returns to the parent */
+export type SubAgentMode = "single_turn" | "task" | "chat";
+
 // Sub-Agent Node Data (a specialist child a parent agent delegates to)
 export interface SubAgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "ReActAgentLC";
-  /** Collaboration mode controlling how control returns to the parent */
-  mode: "single_turn" | "task" | "chat";
+  mode: SubAgentMode;
   /** Shown to the parent agent so it knows when to delegate */
   description: string;
   /** Seconds the parent waits for one delegated turn (5–300) */

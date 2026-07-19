@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { BaseLLMNodeData, SubAgentNodeData } from "../types/nodes";
+import { BaseLLMNodeData, SubAgentMode, SubAgentNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,10 +15,11 @@ import {
 import { ModelConfiguration } from "../components/ModelConfiguration";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { clampToolName } from "../utils/subAgentGraph";
 
 type SubAgentDialogProps = BaseNodeDialogProps<SubAgentNodeData, SubAgentNodeData>;
 
-const MODE_HELP: Record<SubAgentNodeData["mode"], string> = {
+const MODE_HELP: Record<SubAgentMode, string> = {
   single_turn: "Answers once and returns to the parent automatically. No clarifying questions.",
   task: "Does a bounded job. May ask the user one clarifying question, then calls finish_task.",
   chat: "Takes over the conversation and owns turns until it hands control back to the parent.",
@@ -43,6 +44,14 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
   const handleSave = () => {
     const name = (config.name || "").trim();
     const description = (config.description || "").trim();
+    if (!name) {
+      toast.error("Give the sub-agent a name.");
+      return;
+    }
+    if (!clampToolName(name)) {
+      toast.error("Sub-agent name must contain at least one letter or number.");
+      return;
+    }
     if (!config.providerId) {
       toast.error("Select an LLM provider for the sub-agent.");
       return;
@@ -88,7 +97,7 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
         <Select
           value={config.mode}
           onValueChange={(mode) =>
-            setConfig((prev) => ({ ...prev, mode: mode as SubAgentNodeData["mode"] }))
+            setConfig((prev) => ({ ...prev, mode: mode as SubAgentMode }))
           }
         >
           <SelectTrigger id="sub-agent-mode" className="w-full">
@@ -139,6 +148,7 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
         config={config}
         onConfigChange={handleModelConfigChange}
         typeSelect="agent"
+        allowedAgentTypes={["ToolSelector", "ReActAgent", "ReActAgentLC"]}
         showUserPrompt={false}
       />
     </NodeConfigPanel>

@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NodeProps, useEdges, useNodes } from "reactflow";
-import { SubAgentNodeData } from "../../types/nodes";
+import { SubAgentMode, SubAgentNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
 import { SubAgentDialog } from "../../nodeDialogs/SubAgentDialog";
 import { getLLMProvider } from "@/services/llmProviders";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
+import {
+  connectedToolNodes,
+  countSubAgentEdges,
+} from "../../utils/subAgentGraph";
 
 export const SUB_AGENT_NODE_TYPE = "subAgentNode";
 
-const MODE_LABELS: Record<string, string> = {
+const MODE_LABELS: Record<SubAgentMode, string> = {
   single_turn: "Single Turn",
   task: "Task",
   chat: "Chat",
@@ -42,26 +46,12 @@ const SubAgentNode: React.FC<NodeProps<SubAgentNodeData>> = ({
 
   const toolCount = useMemo(
     () =>
-      nodes.filter(
-        (node) =>
-          nodeRegistry.getAllToolTypes().includes(node.type) &&
-          edges.some(
-            (edge) =>
-              edge.target === id &&
-              edge.source === node.id &&
-              edge.targetHandle === "input_tools"
-          )
-      ).length,
+      connectedToolNodes(id, nodes, edges, nodeRegistry.getAllToolTypes())
+        .length,
     [nodes, edges, id]
   );
 
-  const subAgentCount = useMemo(
-    () =>
-      edges.filter(
-        (edge) => edge.target === id && edge.targetHandle === "input_sub_agents"
-      ).length,
-    [edges, id]
-  );
+  const subAgentCount = useMemo(() => countSubAgentEdges(id, edges), [edges, id]);
 
   const onUpdate = (updatedData: SubAgentNodeData) => {
     if (data.updateNodeData) {
@@ -112,7 +102,6 @@ const SubAgentNode: React.FC<NodeProps<SubAgentNodeData>> = ({
         nodeType="subAgentNode"
         nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-        disableTest
       />
 
       <SubAgentDialog

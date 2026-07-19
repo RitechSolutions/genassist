@@ -7,6 +7,10 @@ import { AgentDialog } from "../../nodeDialogs/AgentDialog";
 import { getLLMProvider } from "@/services/llmProviders";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
+import {
+  connectedToolNodes,
+  countSubAgentEdges,
+} from "../../utils/subAgentGraph";
 
 interface ToolNodeData {
   name?: string;
@@ -48,18 +52,14 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
 
   // Get available tools from connected nodes
   useEffect(() => {
-    const connectedToolNodes = nodes.filter(
-      (node) =>
-        nodeRegistry.getAllToolTypes().includes(node.type) &&
-        edges.some(
-          (edge) =>
-            edge.target === id &&
-            edge.source === node.id &&
-            edge.targetHandle === "input_tools"
-        )
+    const connected = connectedToolNodes(
+      id,
+      nodes,
+      edges,
+      nodeRegistry.getAllToolTypes()
     );
 
-    const tools = connectedToolNodes.map((node) => {
+    const tools = connected.map((node) => {
       const nodeData = node.data as ToolNodeData;
       return {
         id: node.id,
@@ -77,13 +77,7 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
     return availableTools;
   }, [availableTools]);
 
-  const subAgentCount = useMemo(
-    () =>
-      edges.filter(
-        (edge) => edge.target === id && edge.targetHandle === "input_sub_agents"
-      ).length,
-    [edges, id]
-  );
+  const subAgentCount = useMemo(() => countSubAgentEdges(id, edges), [edges, id]);
 
   // Handle updates from the dialog
   const onUpdate = (updatedData: AgentNodeData) => {

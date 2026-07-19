@@ -29,6 +29,13 @@ import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorCo
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
 
+const DEFAULT_AGENT_TYPE_OPTIONS: string[] = [
+  "ReActAgent",
+  "ToolSelector",
+  "SimpleToolExecutor",
+  "ReActAgentLC",
+];
+
 export interface ModelConfigurationProps {
   id: string;
   config: BaseLLMNodeData;
@@ -36,6 +43,8 @@ export interface ModelConfigurationProps {
   typeSelect: "agent" | "model";
   /** Hide the User Prompt block */
   showUserPrompt?: boolean;
+  /** Restrict the agent-type select; defaults to every supported type */
+  allowedAgentTypes?: BaseLLMNodeData["type"][];
 }
 
 export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
@@ -44,6 +53,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   onConfigChange,
   typeSelect = "model",
   showUserPrompt = true,
+  allowedAgentTypes,
 }) => {
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt);
   const [userPrompt, setUserPrompt] = useState(config.userPrompt);
@@ -389,12 +399,13 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               </SelectTrigger>
               {typeSelect === "agent" && (
                 <SelectContent>
-                  <SelectItem value="ReActAgent">ReActAgent</SelectItem>
-                  <SelectItem value="ToolSelector">ToolSelector</SelectItem>
-                  <SelectItem value="SimpleToolExecutor">
-                    SimpleToolExecutor
-                  </SelectItem>
-                  <SelectItem value="ReActAgentLC">ReActAgentLC</SelectItem>
+                  {(allowedAgentTypes ?? DEFAULT_AGENT_TYPE_OPTIONS).map(
+                    (agentType) => (
+                      <SelectItem key={agentType} value={agentType}>
+                        {agentType}
+                      </SelectItem>
+                    )
+                  )}
                 </SelectContent>
               )}
               {typeSelect === "model" && (

@@ -1,5 +1,6 @@
 """RegistryItem sub-agent routing: HITL precedence, frame route, resume, stale, finalize"""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -100,6 +101,35 @@ async def test_active_child_turn_returns_success_message():
 
 
 @pytest.mark.asyncio
+async def test_resume_child_timeout_returns_controlled_message_and_keeps_frame():
+    item = _make_item()
+    mem = _seed_stack()
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(side_effect=asyncio.TimeoutError())),
+    ):
+        result = await item.execute("a reply", {"thread_id": "t1"})
+    assert result["status"] == "success"
+    assert "did not respond in time" in result["output"]["message"]
+    assert mem.metadata[sub_session.STACK_KEY]["frames"][0]["invocation_id"] == "inv1"
+
+
+@pytest.mark.asyncio
+async def test_resume_child_error_returns_controlled_message_and_keeps_frame():
+    item = _make_item()
+    mem = _seed_stack()
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(side_effect=RuntimeError("db exploded"))),
+    ):
+        result = await item.execute("a reply", {"thread_id": "t1"})
+    assert result["status"] == "success"
+    assert "could not complete the task" in result["output"]["message"]
+    assert "db exploded" not in result["output"]["message"]
+    assert mem.metadata[sub_session.STACK_KEY]["frames"][0]["invocation_id"] == "inv1"
+
+
+@pytest.mark.asyncio
 async def test_completed_child_pops_frame_and_reenters_parent():
     item = _make_item()
     mem = _seed_stack()
@@ -152,7 +182,7 @@ def test_finalize_converts_sub_agent_pause_to_success():
     item = _make_item()
     pause = {"status": "awaiting_input", "sub_agent": {"message": "clarify?"}, "node_id": "parent"}
     response = {"status": "awaiting_input", "output": dict(pause), "state": {"output": dict(pause)}}
-    finalized = item._finalize_response(response)
+    finalized = item._router.finalize(response)
     assert finalized["status"] == "success"
     assert finalized["output"] == {"message": "clarify?"}
     assert finalized["state"]["output"] == {"message": "clarify?"}
@@ -162,6 +192,6 @@ def test_finalize_converts_sub_agent_pause_to_success():
 def test_finalize_leaves_hitl_form_pause_untouched():
     item = _make_item()
     response = {"status": "awaiting_input", "output": {"status": "awaiting_input", "form_schema": {"fields": []}}}
-    finalized = item._finalize_response(response)
+    finalized = item._router.finalize(response)
     assert finalized["status"] == "awaiting_input"
     assert "form_schema" in finalized["output"]

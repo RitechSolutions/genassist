@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.modules.workflow.agents.agent_runtime import AgentRunResult
+from app.modules.workflow.agents.memory import InMemoryConversationMemory
+from app.modules.workflow.agents.sub_agents import orchestrator
+from app.modules.workflow.agents.sub_agents import session as sub_session
+from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
+from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
 
 _RUNTIME = "app.modules.workflow.agents.agent_runtime"
 _MERGE = "app.modules.workflow.engine.llm_usage_tracking.merge_llm_usage_from_result"
@@ -135,13 +141,6 @@ async def test_memory_enabled_forwards_chat_history():
 
 # Delegation loop
 
-from app.modules.workflow.agents.agent_runtime import AgentRunResult
-from app.modules.workflow.agents.memory import InMemoryConversationMemory
-from app.modules.workflow.agents.sub_agents import orchestrator
-from app.modules.workflow.agents.sub_agents import session as sub_session
-from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
-from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
-
 _AGENT_ONCE = "app.modules.workflow.engine.nodes.agent_node.run_agent_once"
 _ORCH_RUN = "app.modules.workflow.agents.sub_agents.orchestrator.run_child_turn"
 
@@ -235,11 +234,43 @@ async def test_single_turn_delegation_then_final_answer():
 
 
 @pytest.mark.asyncio
-async def test_unparsable_envelope_treated_as_plain_result():
+async def test_unparsable_envelope_feeds_model_and_strips_tool():
     node = _parent_node()
-    results = [_rr("just a normal tool reply", return_direct=True, tool="request_task_child")]
-    out, _ = await _run_loop(node, results)
-    assert out["message"] == "just a normal tool reply"
+    results = [
+        _rr("The sub-agent could not complete the task.", return_direct=True, tool="request_task_child"),
+        _rr("graceful model answer"),
+    ]
+    out, run_once = await _run_loop(node, results)
+    assert out["message"] == "graceful model answer"
+    assert run_once.await_count == 2
+    second_call = run_once.await_args_list[1].kwargs
+    assert "request_task_child" not in {t.name for t in second_call["tools"]}
+    assert "unavailable in this context" in second_call["user_prompt"]
+    assert "could not complete the task" in second_call["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_guard_string_from_chat_child_becomes_model_context():
+    node = _parent_node(registry_managed=False, mode="chat")
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "chat"}}
+    guard = "This sub-agent needs an interactive chat session and can't be used in this context."
+    results = [
+        _rr(guard, return_direct=True, tool="request_task_child"),
+        _rr("I can help with that myself."),
+    ]
+    out, _ = await _run_loop(node, results, delegation_map=dmap)
+    assert out["message"] == "I can help with that myself."
+    assert guard not in out["message"]
+
+
+@pytest.mark.asyncio
+async def test_ordinary_return_direct_tool_still_returns_directly():
+    node = _parent_node()
+    all_tools = [_Tool("request_task_child"), _Tool("other_tool")]
+    results = [_rr("direct tool result", return_direct=True, tool="other_tool")]
+    out, run_once = await _run_loop(node, results, all_tools=all_tools)
+    assert out["message"] == "direct tool result"
+    assert run_once.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -340,3 +371,79 @@ async def test_delegation_function_admits_one_persistent_per_turn():
         result = await fn({"parameters": {"task": "do x"}})
     assert "already in progress" in result
     run_child.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delegation_depth_pre_check_blocks_before_child_runs():
+    node = _parent_node(registry_managed=True, thread_id="t-depth")
+    frames = [
+        SubAgentFrame(
+            child_node_id="child", parent_node_id="parent", workflow_id="wf1", invocation_id=f"inv{i}", mode="task"
+        )
+        for i in range(3)
+    ]
+    await sub_session.write_frame(node.get_memory(), SubAgentStack(agent_id="agentA", frames=frames))
+    fn = node._make_delegation_function(child_id="child", mode="task", timeout_seconds=120)
+    with patch(_ORCH_RUN, AsyncMock()) as run_child:
+        result = await fn({"parameters": {"task": "do x"}})
+    assert "depth limit" in result.lower()
+    run_child.assert_not_called()
+    assert node.get_state().sub_agent_persistent_claimed is False
+
+
+@pytest.mark.asyncio
+async def test_corrupt_stack_pre_check_fails_delegation_and_releases_claim():
+    node = _parent_node(registry_managed=True, thread_id="t-corrupt")
+    node.get_memory().metadata[sub_session.STACK_KEY] = {"version": 1, "agent_id": "agentA", "frames": "junk"}
+    fn = node._make_delegation_function(child_id="child", mode="chat", timeout_seconds=120)
+    with patch(_ORCH_RUN, AsyncMock()) as run_child:
+        result = await fn({"parameters": {"task": "do x"}})
+    assert "could not be resumed" in result
+    run_child.assert_not_called()
+    assert node.get_state().sub_agent_persistent_claimed is False
+
+
+@pytest.mark.asyncio
+async def test_claim_flag_reset_after_synchronous_completion():
+    node = _parent_node(mode="task")
+    node.get_state().sub_agent_persistent_claimed = True  # as the delegation tool would set it
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [
+        _rr(_env("completed", "done", mode="task"), return_direct=True, tool="request_task_child"),
+        _rr("final"),
+    ]
+    out, _ = await _run_loop(node, results, delegation_map=dmap)
+    assert out["message"] == "final"
+    assert node.get_state().sub_agent_persistent_claimed is False
+
+
+@pytest.mark.asyncio
+async def test_corrupt_stack_on_pause_fails_delegation_without_overwrite():
+    node = _parent_node(mode="task")
+    corrupt = {"version": 1, "agent_id": "agentA", "frames": "junk"}
+    node.get_memory().metadata[sub_session.STACK_KEY] = dict(corrupt)
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [_rr(_env("active", "a question?", mode="task"), return_direct=True, tool="request_task_child")]
+    out, _ = await _run_loop(node, results, delegation_map=dmap)
+    assert "could not be resumed" in out["message"]
+    assert node.get_memory().metadata[sub_session.STACK_KEY] == corrupt
+
+
+def test_pii_wrapped_tool_receives_original_values():
+    node = _parent_node(thread_id="t-pii")
+    node._pii_prompt_token_items = [
+        {"token": "johndoe1@example.com", "original": "alice@example.com", "entity_type": "EMAIL_ADDRESS"}
+    ]
+    seen = {}
+
+    class _CapturingTool:
+        name = "request_task_child"
+
+        def invoke(self, **kwargs):
+            seen.update(kwargs)
+            return "ok"
+
+    tool = _CapturingTool()
+    node._wrap_tools_for_pii_unmask([tool])
+    tool.invoke(task="Email johndoe1@example.com the itinerary")
+    assert seen["task"] == "Email alice@example.com the itinerary"

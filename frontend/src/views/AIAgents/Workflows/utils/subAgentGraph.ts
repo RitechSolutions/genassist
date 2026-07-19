@@ -32,7 +32,9 @@ export interface ConnectionCheck {
   reason?: string;
 }
 
-const isUpper = (ch: string): boolean => ch >= "A" && ch <= "Z";
+const TOOLS_TARGET_HANDLE = "input_tools";
+
+const isUpper = (ch: string): boolean => ch !== ch.toLowerCase() && ch === ch.toUpperCase();
 
 /** Character-for-character port of the backend ``to_snake_case`` so names collide identically */
 export function toSnakeCase(value: string): string {
@@ -59,9 +61,40 @@ export function toSnakeCase(value: string): string {
   return final;
 }
 
+export function clampToolName(value: string): string {
+  const folded = (value ?? "").normalize("NFKD").replace(/\p{M}+/gu, "");
+  const clamped = toSnakeCase(folded).replace(/[^a-z0-9_]+/g, "_");
+  return clamped.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 /** Runtime name of the delegation tool the parent calls for this child */
 export function delegationToolName(childName: string): string {
-  return `request_task_${toSnakeCase(childName || "")}`;
+  return `request_task_${clampToolName(childName || "")}`;
+}
+
+/** Count of sub-agent children attached to this node's sub-agent port */
+export function countSubAgentEdges(nodeId: string, edges: SubAgentGraphEdge[]): number {
+  return edges.filter(
+    (edge) => edge.target === nodeId && edge.targetHandle === SUB_AGENT_TARGET_HANDLE
+  ).length;
+}
+
+export function connectedToolNodes<N extends SubAgentGraphNode>(
+  nodeId: string,
+  nodes: N[],
+  edges: SubAgentGraphEdge[],
+  toolTypes: string[]
+): N[] {
+  return nodes.filter(
+    (node) =>
+      toolTypes.includes(node.type ?? "") &&
+      edges.some(
+        (edge) =>
+          edge.target === nodeId &&
+          edge.source === node.id &&
+          edge.targetHandle === TOOLS_TARGET_HANDLE
+      )
+  );
 }
 
 function buildDelegationMaps(edges: SubAgentGraphEdge[]): {
@@ -182,7 +215,11 @@ export function validateSubAgentConnection(
   }
 
   const childName = childNode?.data?.name || child;
-  if (RESERVED_TOOL_NAMES.has(toSnakeCase(childNode?.data?.name || ""))) {
+  const clampedName = clampToolName(childName);
+  if (!clampedName) {
+    return { ok: false, reason: "Sub-agent name must contain at least one letter or number." };
+  }
+  if (RESERVED_TOOL_NAMES.has(clampedName)) {
     return { ok: false, reason: "That sub-agent name is reserved (finish_task / return_to_parent)." };
   }
   const toolName = delegationToolName(childName);
@@ -193,6 +230,15 @@ export function validateSubAgentConnection(
   );
   if (siblingNames.has(toolName)) {
     return { ok: false, reason: "Another sub-agent under this parent has the same name." };
+  }
+
+  const parentToolNames = new Set(
+    edges
+      .filter((edge) => edge.targetHandle === TOOLS_TARGET_HANDLE && edge.target === parent)
+      .map((edge) => toSnakeCase(byId.get(edge.source ?? "")?.data?.name ?? ""))
+  );
+  if (parentToolNames.has(toolName)) {
+    return { ok: false, reason: "A tool on this parent already uses this name." };
   }
 
   return { ok: true };

@@ -2,13 +2,16 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from app.modules.workflow.agents.react_agent import ReActAgent
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
 from app.modules.workflow.agents.tool_agent import ToolAgent
 from app.modules.workflow.llm.provider import LLMProvider
+
+if TYPE_CHECKING:
+    from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ class AgentRunResult:
 
 async def run_agent_once(
     *,
-    state,
+    state: "WorkflowState",
     node_id: str,
     provider_id: Optional[str],
     fallback_chain_id: Optional[str],

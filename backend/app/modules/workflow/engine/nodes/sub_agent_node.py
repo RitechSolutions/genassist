@@ -2,16 +2,17 @@
 
 import datetime
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, get_args
 
 from app.modules.workflow.agents.agent_runtime import run_agent_once
+from app.modules.workflow.agents.sub_agents.models import SubAgentMode
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
 
 logger = logging.getLogger(__name__)
 
 _ALLOWED_TYPES = {"ReActAgent", "ReActAgentLC", "ToolSelector"}
-_ALLOWED_MODES = {"single_turn", "task", "chat"}
+_ALLOWED_MODES = frozenset(get_args(SubAgentMode))
 
 
 class SubAgentNode(AgentNode):
@@ -88,7 +89,7 @@ class SubAgentNode(AgentNode):
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:
             logger.exception("Error processing sub-agent node")
-            return {"message": f"The sub-agent could not complete the task: {e}", "error": str(e)}
+            return {"message": "The sub-agent could not complete the task.", "error": str(e)}
 
     def _validate_config_values(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if not config.get("providerId"):

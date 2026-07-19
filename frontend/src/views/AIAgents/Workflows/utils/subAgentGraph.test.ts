@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  clampToolName,
+  connectedToolNodes,
+  countSubAgentEdges,
   delegationToolName,
   toSnakeCase,
   validateSubAgentConnection,
@@ -38,6 +41,45 @@ describe("toSnakeCase", () => {
   it("collapses 'My Child' and 'my_child' to the same delegation tool name", () => {
     expect(delegationToolName("My Child")).toBe(delegationToolName("my_child"));
     expect(delegationToolName("Flight Search")).toBe("request_task_flight_search");
+  });
+});
+
+describe("shared node helpers", () => {
+  it("counts only sub-agent edges targeting the node", () => {
+    const edges: SubAgentGraphEdge[] = [
+      delegationEdge("c1", "a"),
+      delegationEdge("c2", "a"),
+      delegationEdge("c3", "b"),
+      { source: "t", target: "a", sourceHandle: "output_tool", targetHandle: "input_tools" },
+    ];
+    expect(countSubAgentEdges("a", edges)).toBe(2);
+    expect(countSubAgentEdges("b", edges)).toBe(1);
+    expect(countSubAgentEdges("x", edges)).toBe(0);
+  });
+
+  it("returns only tool-typed nodes wired into the tools port", () => {
+    const nodes = [
+      node("t1", "toolBuilderNode", { name: "T1" }),
+      node("t2", "toolBuilderNode", { name: "T2" }),
+      node("c", "subAgentNode", { name: "C" }),
+    ];
+    const edges: SubAgentGraphEdge[] = [
+      { source: "t1", target: "a", sourceHandle: "output_tool", targetHandle: "input_tools" },
+      { source: "c", target: "a", sourceHandle: "output_sub_agent", targetHandle: "input_sub_agents" },
+    ];
+    const connected = connectedToolNodes("a", nodes, edges, ["toolBuilderNode"]);
+    expect(connected.map((n) => n.id)).toEqual(["t1"]);
+  });
+});
+
+describe("clampToolName", () => {
+  it("matches the backend clamp on the shared vectors", () => {
+    expect(delegationToolName("Billing/Refunds")).toBe("request_task_billing_refunds");
+    expect(delegationToolName("Éclair Vérification")).toBe("request_task_eclair_verification");
+    expect(delegationToolName("straße")).toBe("request_task_stra_e");
+    expect(delegationToolName("Flight  Search!")).toBe("request_task_flight_search");
+    expect(delegationToolName("data—sync")).toBe("request_task_data_sync");
+    expect(clampToolName("中文名")).toBe("");
   });
 });
 
@@ -169,5 +211,32 @@ describe("validateSubAgentConnection", () => {
     ];
     const res = validateSubAgentConnection(connect("c", "a"), nodes, []);
     expect(res.ok).toBe(false);
+  });
+
+  it("falls back to the node id for the reserved-name check", () => {
+    const nodes = [node("a", "agentNode"), node("finish_task", "subAgentNode")];
+    const res = validateSubAgentConnection(connect("finish_task", "a"), nodes, []);
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects a name that clamps to empty", () => {
+    const nodes = [node("a", "agentNode"), node("c", "subAgentNode", { name: "中文名" })];
+    const res = validateSubAgentConnection(connect("c", "a"), nodes, []);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toContain("letter or number");
+  });
+
+  it("rejects a delegation name colliding with a parent tool", () => {
+    const nodes = [
+      node("a", "agentNode"),
+      node("t", "toolBuilderNode", { name: "Request Task Billing" }),
+      node("c", "subAgentNode", { name: "Billing" }),
+    ];
+    const edges: SubAgentGraphEdge[] = [
+      { source: "t", target: "a", sourceHandle: "output_tool", targetHandle: "input_tools" },
+    ];
+    const res = validateSubAgentConnection(connect("c", "a"), nodes, edges);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toContain("tool");
   });
 });

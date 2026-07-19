@@ -73,6 +73,14 @@ export const SUB_AGENT_HELP_CONTENT: NodeHelpContent = {
         "Save the node configuration.",
       ],
     },
+    {
+      title: "Testing",
+      bullets: [
+        "Node test button: a one-shot smoke run against a sample message with the sub-agent's own model, prompt, and tools. Task and Chat modes show either the result or the first clarifying question.",
+        "Full delegation (Task/Chat pause and resume) is exercised from the workflow test chat: the parent delegates, the sub-agent's question arrives as a normal reply, and your next message routes back to it.",
+        "Editing the workflow while a delegation is active invalidates that conversation; start a new one after saving changes.",
+      ],
+    },
   ],
 };
 

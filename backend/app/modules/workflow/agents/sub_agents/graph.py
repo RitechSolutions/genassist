@@ -1,13 +1,9 @@
-"""Sub-agent topology: build the delegation forest, validate it, fingerprint it.
-
-Validation is the primary guard (runtime ``_build_delegation_tools`` always
-runs it; save-time is a secondary UX call), so it reports every violation at
-once. The fingerprint is semantic — UI-only node keys are stripped and nodes
-sorted — so a canvas drag/select does not invalidate a live session.
-"""
+"""Sub-agent topology: build the delegation forest, validate it, fingerprint it"""
 
 import hashlib
 import json
+import re
+import unicodedata
 from typing import Any, Dict, List
 
 from app.modules.workflow.agents.base_tool import to_snake_case
@@ -20,7 +16,14 @@ STARTER_SOURCE_HANDLE = "starter_processor"
 MAX_DELEGATION_DEPTH = 3
 RESERVED_TOOL_NAMES = frozenset({"finish_task", "return_to_parent"})
 
-_UI_ONLY_NODE_KEYS = frozenset({"width", "height", "position", "positionAbsolute", "dragging", "selected"})
+DEFAULT_CHILD_TIMEOUT_SECONDS = 120.0
+
+
+def child_timeout_seconds(node_data: Dict[str, Any]) -> float:
+    try:
+        return float(node_data.get("timeoutSeconds", DEFAULT_CHILD_TIMEOUT_SECONDS) or DEFAULT_CHILD_TIMEOUT_SECONDS)
+    except (TypeError, ValueError):
+        return DEFAULT_CHILD_TIMEOUT_SECONDS
 
 
 class SubAgentTopologyError(ValueError):
@@ -36,9 +39,16 @@ def sub_agent_edges(edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [e for e in edges if e.get("targetHandle") == SUB_AGENT_TARGET_HANDLE]
 
 
+def _clamp_tool_name(name: str) -> str:
+    folded = unicodedata.normalize("NFKD", name or "")
+    folded = "".join(ch for ch in folded if not unicodedata.category(ch).startswith("M"))
+    clamped = re.sub(r"[^a-z0-9_]+", "_", to_snake_case(folded))
+    return re.sub(r"_+", "_", clamped).strip("_")
+
+
 def delegation_tool_name(child_name: str) -> str:
     """Runtime name of the tool the parent calls to delegate to this child."""
-    return f"request_task_{to_snake_case(child_name or '')}"
+    return f"request_task_{_clamp_tool_name(child_name)}"
 
 
 class SubAgentGraph:
@@ -81,7 +91,7 @@ class SubAgentGraph:
         return out
 
     def depth_of(self, child_id: str, _seen: set | None = None) -> int:
-        """Delegation hops from a root agent down to this child (root child = 1)."""
+        """Delegation hops from a root agent down to this child"""
         _seen = _seen if _seen is not None else set()
         parents = self.parents_of.get(child_id, [])
         if not parents or child_id in _seen:
@@ -113,7 +123,7 @@ class SubAgentGraph:
         return names
 
     def _subflow_node_ids(self, tool_builder_id: str) -> set:
-        """Nodes reachable inside a tool builder's sub-flow (normal data-flow edges)."""
+        """Nodes reachable inside a tool builder's sub-flow"""
         starts = [
             e["target"]
             for e in self.edges
@@ -175,18 +185,19 @@ class SubAgentGraph:
             parent_tools = self._parent_tool_names(parent_id)
             seen_names: set = set()
             for child_id in children:
-                name = delegation_tool_name(self.child_name(child_id))
+                child_name = self.child_name(child_id)
+                clamped = _clamp_tool_name(child_name)
+                if not clamped:
+                    violations.append(f"sub-agent name '{child_name}' must contain at least one letter or number")
+                name = delegation_tool_name(child_name)
                 if name in seen_names:
                     violations.append(f"duplicate sub-agent name under one parent: '{name}'")
                 seen_names.add(name)
-                if to_snake_case(self.child_name(child_id)) in RESERVED_TOOL_NAMES:
-                    violations.append(f"sub-agent name '{self.child_name(child_id)}' is reserved")
+                if clamped in RESERVED_TOOL_NAMES:
+                    violations.append(f"sub-agent name '{child_name}' is reserved")
                 if name in parent_tools:
                     violations.append(f"sub-agent tool '{name}' collides with a parent tool name")
 
-        # mode rules: task children are leaves; single_turn subtrees stay single_turn;
-        # persistent (task/chat) modes only run directly under a top-level agent,
-        # since only that parent runs registry-managed (can pause/resume).
         for child_id in self.parents_of:
             mode = self.child_mode(child_id)
             if mode == "task" and self.children_of.get(child_id):
@@ -220,7 +231,7 @@ class SubAgentGraph:
                     violations.append(f"sub-agent '{child_id}' has a Human-in-the-Loop node in its tools")
                     break
 
-        # a parent inside a tool sub-flow cannot host a task/chat child (pause can't unwind)
+        # a parent inside a tool sub-flow cannot host a task/chat child
         subflow_nodes: set = set()
         for tb_id in {e["source"] for e in self.edges if e.get("sourceHandle") == STARTER_SOURCE_HANDLE}:
             subflow_nodes |= self._subflow_node_ids(tb_id)
@@ -259,7 +270,6 @@ def _normalize_graph_for_fingerprint(nodes: List[Dict[str, Any]], edges: List[Di
 
 
 def fingerprint(nodes: List[Dict[str, Any]] | None, edges: List[Dict[str, Any]] | None) -> str:
-    """Stable sha256 of the semantic graph, insensitive to UI-only node changes."""
     normalized = _normalize_graph_for_fingerprint(nodes or [], edges or [])
     payload = json.dumps(normalized, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

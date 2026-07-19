@@ -1,6 +1,10 @@
 import { Node, Edge, MarkerType } from "reactflow";
 import { v4 as uuidv4 } from "uuid";
 import nodeRegistry from "../registry/nodeRegistry";
+import {
+  SUB_AGENT_SOURCE_HANDLE,
+  SUB_AGENT_TARGET_HANDLE,
+} from "./subAgentGraph";
 
 // ── Types ──
 
@@ -325,7 +329,7 @@ export function createNodeFromAction(
     node.position = { x: parent.position?.x ?? position.x, y: (parent.position?.y ?? position.y) + 250 };
     return {
       nodes: [node],
-      edges: [makeEdge(id, action.asSubAgentFor, "output_sub_agent", "input_sub_agents")],
+      edges: [makeEdge(id, action.asSubAgentFor, SUB_AGENT_SOURCE_HANDLE, SUB_AGENT_TARGET_HANDLE)],
     };
   }
 
