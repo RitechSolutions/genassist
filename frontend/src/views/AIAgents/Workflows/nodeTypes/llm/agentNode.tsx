@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { NodeProps, useNodes, useEdges } from "reactflow";
 import { AgentNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
@@ -77,6 +77,14 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
     return availableTools;
   }, [availableTools]);
 
+  const subAgentCount = useMemo(
+    () =>
+      edges.filter(
+        (edge) => edge.target === id && edge.targetHandle === "input_sub_agents"
+      ).length,
+    [edges, id]
+  );
+
   // Handle updates from the dialog
   const onUpdate = (updatedData: AgentNodeData) => {
     if (data.updateNodeData) {
@@ -101,6 +109,11 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
       label: "Tools",
       value:
         availableTools.length === 0 ? "" : `${availableTools.length} connected`,
+      placeholder: "None connected",
+    },
+    {
+      label: "Sub-agents",
+      value: subAgentCount === 0 ? "" : `${subAgentCount} connected`,
       placeholder: "None connected",
     },
   ];

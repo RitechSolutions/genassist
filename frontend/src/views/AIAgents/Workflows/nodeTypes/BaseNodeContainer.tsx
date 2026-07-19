@@ -39,6 +39,7 @@ interface BaseNodeContainerProps<T extends NodeData> {
   nodeType: string;
   nodeContent?: NodeContentRow[];
   onSettings?: () => void;
+  disableTest?: boolean;
   children?: React.ReactNode;
 }
 
@@ -53,6 +54,7 @@ const BaseNodeContainer = <T extends NodeData>({
   nodeType,
   nodeContent,
   onSettings,
+  disableTest = false,
   children,
 }: BaseNodeContainerProps<T>) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
@@ -89,7 +91,9 @@ const BaseNodeContainer = <T extends NodeData>({
   const hasError = !hasNodeBeenExecuted(id) || hasValidationError;
   const isSpecialNode =
     nodeType === "chatInputNode" || nodeType === "chatOutputNode";
-  const isAgentNode = nodeType === "agentNode";
+  // Sub-agents share the agent's gradient treatment
+  const isAgentNode =
+    nodeType === "agentNode" || nodeType === "subAgentNode";
 
   const cardColor = hasError
     ? "red-200"
@@ -164,7 +168,7 @@ const BaseNodeContainer = <T extends NodeData>({
         hasError={hasError}
         isSpecialNode={isSpecialNode}
         onSettings={onSettings}
-        onTest={handleTest}
+        onTest={disableTest ? undefined : handleTest}
         onHelpClick={() => setIsHelpDialogOpen(true)}
         onDeleteClick={() => setIsDeleteDialogOpen(true)}
       />
@@ -199,15 +203,17 @@ const BaseNodeContainer = <T extends NodeData>({
         card
       )}
 
-      {/* Generic Test Dialog - automatically included */}
-      <GenericTestDialog
-        isOpen={isTestDialogOpen}
-        onClose={() => setIsTestDialogOpen(false)}
-        nodeType={nodeType}
-        nodeData={data}
-        nodeId={id}
-        nodeName={nodeName}
-      />
+      {/* Generic Test Dialog*/}
+      {!disableTest && (
+        <GenericTestDialog
+          isOpen={isTestDialogOpen}
+          onClose={() => setIsTestDialogOpen(false)}
+          nodeType={nodeType}
+          nodeData={data}
+          nodeId={id}
+          nodeName={nodeName}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}

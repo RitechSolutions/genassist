@@ -1,6 +1,7 @@
 const NODE_TYPE_LABELS: Record<string, string> = {
   // LLM
   agentNode: "AI Agent",
+  subAgentNode: "Sub-Agent",
   llmModelNode: "Language Model",
   toolBuilderNode: "Tool Builder",
   mcpNode: "MCP Server",

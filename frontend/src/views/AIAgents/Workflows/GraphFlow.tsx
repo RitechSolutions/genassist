@@ -50,6 +50,8 @@ import { History, ChevronLeft, X, Plus } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
+import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import toast from "react-hot-toast";
 import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
 import { getAllAppSettings } from "@/services/appSettings";
@@ -393,13 +395,16 @@ const GraphFlowContent: React.FC = () => {
   // Restore functions to nodes after loading
   const restoreNodeFunctions = useCallback(
     (loadedNodes: Node[]): Node[] => {
-      return loadedNodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          updateNodeData,
-        },
-      }));
+      return loadedNodes.map((node) => {
+        const hydrated = nodeRegistry.hydrateNode(node);
+        return {
+          ...hydrated,
+          data: {
+            ...hydrated.data,
+            updateNodeData,
+          },
+        };
+      });
     },
     [updateNodeData]
   );
@@ -511,6 +516,13 @@ const GraphFlowContent: React.FC = () => {
         return;
       }
 
+      // Sub-agent wiring encodes non-obvious topology rules; surface why a reject happened
+      const subAgentCheck = validateSubAgentConnection(params, nodes, edges);
+      if (!subAgentCheck.ok) {
+        toast.error(subAgentCheck.reason ?? "Invalid sub-agent connection.");
+        return;
+      }
+
       // Add arrow marker to the edge
       const edgeWithMarker = {
         ...params,
@@ -530,7 +542,7 @@ const GraphFlowContent: React.FC = () => {
 
       setEdges((eds) => addEdge(edgeWithMarker, eds));
     },
-    [setEdges, validateConnection]
+    [setEdges, validateConnection, nodes, edges]
   );
 
   const onReconnectStart = useCallback(() => {

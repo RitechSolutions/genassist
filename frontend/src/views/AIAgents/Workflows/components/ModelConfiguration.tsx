@@ -34,6 +34,8 @@ export interface ModelConfigurationProps {
   config: BaseLLMNodeData;
   onConfigChange: (config: BaseLLMNodeData) => void;
   typeSelect: "agent" | "model";
+  /** Hide the User Prompt block */
+  showUserPrompt?: boolean;
 }
 
 export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
@@ -41,6 +43,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   config,
   onConfigChange,
   typeSelect = "model",
+  showUserPrompt = true,
 }) => {
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt);
   const [userPrompt, setUserPrompt] = useState(config.userPrompt);
@@ -346,30 +349,32 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           placeholder="Enter system prompt"
         />
       </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor={`user-prompt-input-${id}`}>User Prompt</Label>
-          {workflow?.id && (
-            <PromptEditorButton
-              workflowId={workflow.id}
-              nodeId={id}
-              promptField="userPrompt"
-              currentValue={userPrompt || ""}
-              onPromptChange={(val) => {
-                setUserPrompt(val);
-                onConfigChange({ ...config, userPrompt: val });
-              }}
-              defaultProviderId={config.providerId}
-            />
-          )}
+      {showUserPrompt && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor={`user-prompt-input-${id}`}>User Prompt</Label>
+            {workflow?.id && (
+              <PromptEditorButton
+                workflowId={workflow.id}
+                nodeId={id}
+                promptField="userPrompt"
+                currentValue={userPrompt || ""}
+                onPromptChange={(val) => {
+                  setUserPrompt(val);
+                  onConfigChange({ ...config, userPrompt: val });
+                }}
+                defaultProviderId={config.providerId}
+              />
+            )}
+          </div>
+          <DraggableTextArea
+            id={`user-prompt-input-${id}`}
+            value={userPrompt}
+            onChange={handleUserPromptChange}
+            placeholder="Enter user prompt"
+          />
         </div>
-        <DraggableTextArea
-          id={`user-prompt-input-${id}`}
-          value={userPrompt}
-          onChange={handleUserPromptChange}
-          placeholder="Enter user prompt"
-        />
-      </div>
+      )}
       {typeSelect && (
         <div className="flex flex-row gap-2 space-y-2 w-full justify-center items-center">
           <div className="flex-1 space-y-2">

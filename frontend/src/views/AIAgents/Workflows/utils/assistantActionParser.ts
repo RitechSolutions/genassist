@@ -18,6 +18,8 @@ export interface AddNodeAction {
   thenConnectToLabel?: string;
   /** When set, wraps the new node in a toolBuilderNode and connects both to this agent node id */
   asToolFor?: string;
+  /** When set, attaches this subAgentNode to the given parent agent/sub-agent id as a delegate */
+  asSubAgentFor?: string;
 }
 
 export interface UpdateNodeAction {
@@ -102,6 +104,7 @@ export function parseAgentActions(text: string): ParseResult {
           thenConnectTo: parsed.then_connect_to,
           thenConnectToLabel: parsed.then_connect_to_label,
           asToolFor: parsed.as_tool_for,
+          asSubAgentFor: parsed.as_sub_agent_for,
         });
       }
     } catch {
@@ -280,7 +283,7 @@ export function createNodeFromAction(
   const resolvedThenConnectTo = resolveId(action.thenConnectTo, action.thenConnectToLabel);
 
   const id = uuidv4();
-  const anchorId = action.asToolFor ?? resolvedConnectTo;
+  const anchorId = action.asToolFor ?? action.asSubAgentFor ?? resolvedConnectTo;
   const position = calculateNodePosition(anchorId, existingNodes);
 
   const overrideData: Record<string, unknown> = {};
@@ -308,6 +311,21 @@ export function createNodeFromAction(
         makeEdge(tbId, action.asToolFor, "output_tool", "input_tools"),
         makeEdge(tbId, id, "starter_processor", "input"),
       ],
+    };
+  }
+
+  // ── Sub-agent pattern: attach child to a parent agent/sub-agent ──
+  if (action.asSubAgentFor) {
+    const parent = existingNodes.find((n) => n.id === action.asSubAgentFor);
+    const parentIsAgent =
+      parent?.type === "agentNode" || parent?.type === "subAgentNode";
+    if (action.nodeType !== "subAgentNode" || !parentIsAgent) {
+      return { nodes: [node], edges: [] };
+    }
+    node.position = { x: parent.position?.x ?? position.x, y: (parent.position?.y ?? position.y) + 250 };
+    return {
+      nodes: [node],
+      edges: [makeEdge(id, action.asSubAgentFor, "output_sub_agent", "input_sub_agents")],
     };
   }
 
