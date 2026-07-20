@@ -1,8 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
+import { SidebarTrigger } from "@/components/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import SecurityPanel from "@/views/AIAgents/components/Customer/SecurityPanel";
 

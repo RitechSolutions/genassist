@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
@@ -359,53 +357,37 @@ const MLModelDetail: React.FC = () => {
 
   if (loading) {
     return (
-      <SidebarProvider>
-        <div className="min-h-screen flex w-full overflow-x-hidden">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-            <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 p-4 sm:p-6 lg:p-8">
-              <div className="max-w-7xl mx-auto">
-                <div className="flex justify-center items-center py-12">
-                  <div className="text-sm text-gray-500">Loading model details...</div>
-                </div>
-              </div>
+      <>
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-center items-center py-12">
+              <div className="text-sm text-gray-500">Loading model details...</div>
             </div>
-          </main>
+          </div>
         </div>
-      </SidebarProvider>
+      </>
     );
   }
 
   if (!model) {
     return (
-      <SidebarProvider>
-        <div className="min-h-screen flex w-full overflow-x-hidden">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-            <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 p-4 sm:p-6 lg:p-8">
-              <div className="max-w-7xl mx-auto">
-                <div className="flex flex-col items-center justify-center py-12 gap-4">
-                  <AlertCircle className="h-12 w-12 text-gray-400" />
-                  <h3 className="font-medium text-lg">Model not found</h3>
-                  <Button onClick={() => navigate("/ml-models")}>Back to ML Models</Button>
-                </div>
-              </div>
+      <>
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <AlertCircle className="h-12 w-12 text-gray-400" />
+              <h3 className="font-medium text-lg">Model not found</h3>
+              <Button onClick={() => navigate("/ml-models")}>Back to ML Models</Button>
             </div>
-          </main>
+          </div>
         </div>
-      </SidebarProvider>
+      </>
     );
   }
 
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
               <div className="space-y-6">
@@ -863,9 +845,7 @@ const MLModelDetail: React.FC = () => {
               </div>
             </div>
           </div>
-        </main>
-      </div>
-    </SidebarProvider>
+    </>
   );
 };
 

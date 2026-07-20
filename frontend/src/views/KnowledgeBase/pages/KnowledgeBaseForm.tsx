@@ -44,8 +44,6 @@ import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
 import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
-import { SidebarProvider, SidebarTrigger } from '@/components/sidebar';
-import { AppSidebar } from '@/layout/app-sidebar';
 import { useIsMobile } from '@/hooks/useMobile';
 import { Progress } from '@/components/progress';
 
@@ -635,26 +633,16 @@ const KnowledgeBaseForm: React.FC = () => {
 
   if (loading && isEditMode && !editingItem) {
     return (
-      <SidebarProvider>
-        <div className="min-h-screen flex w-full overflow-x-hidden">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative">
-            <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-sm text-gray-500">Loading...</div>
-            </div>
-          </main>
+      <>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-gray-500">Loading...</div>
         </div>
-      </SidebarProvider>
+      </>
     );
   }
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-8">
               <div className="flex items-center">
@@ -1431,8 +1419,6 @@ const KnowledgeBaseForm: React.FC = () => {
               </form>
             </div>
           </div>
-        </main>
-      </div>
 
       {isDataSourceDialogOpen && (
         <DataSourceDialog
@@ -1454,7 +1440,7 @@ const KnowledgeBaseForm: React.FC = () => {
         description="You have unsaved changes. Save first and then trigger sync?"
         primaryButtonText="Save & Sync"
       />
-    </SidebarProvider>
+    </>
   );
 };
 
