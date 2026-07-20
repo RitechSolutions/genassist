@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Check, Copy, Info, Loader2, RefreshCw, Rocket } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Copy, Info, Loader2, PowerOff, RefreshCw, Rocket } from "lucide-react";
 import { Button } from "@/components/button";
 import { Card } from "@/components/card";
 import { toast } from "react-hot-toast";
 import {
   deployBedrockCustomModel,
   getBedrockFineTuneJob,
+  undeployBedrockCustomModel,
 } from "@/services/bedrockFineTune";
 import type { BedrockFineTuneJob } from "@/interfaces/bedrockFineTune.interface";
 import { PageLayout } from "@/components/PageLayout";
@@ -26,6 +27,7 @@ export default function BedrockFineTuneJobDetail() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [undeploying, setUndeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchJob = async (showSpinner = true) => {
@@ -70,6 +72,20 @@ export default function BedrockFineTuneJobDetail() {
       toast.error("Failed to deploy model");
     } finally {
       setDeploying(false);
+    }
+  };
+
+  const handleUndeploy = async () => {
+    if (!id) return;
+    setUndeploying(true);
+    try {
+      const updated = await undeployBedrockCustomModel(id);
+      if (updated) setJob(updated);
+      toast.success("Deployment removed");
+    } catch {
+      toast.error("Failed to undeploy model");
+    } finally {
+      setUndeploying(false);
     }
   };
 
@@ -211,6 +227,26 @@ export default function BedrockFineTuneJobDetail() {
                       this fine-tuned model.
                     </p>
                   </div>
+                  {normalizedDeployment === "active" && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleUndeploy}
+                        disabled={undeploying}
+                      >
+                        {undeploying ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <PowerOff className="h-4 w-4 mr-2" />
+                        )}
+                        Undeploy
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Removes the AWS deployment to stop ongoing charges.
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : canDeploy ? (
                 <div className="space-y-3">

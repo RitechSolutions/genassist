@@ -21268,6 +21268,57 @@
         }
       }
     },
+    "/api/bedrock/fine-tuning/jobs/{job_id}/undeploy": {
+      "post": {
+        "tags": [
+          "v1",
+          "Bedrock Fine-Tuning"
+        ],
+        "summary": "Undeploy Custom Model",
+        "description": "Tear down the on-demand custom model deployment for a Nova job.",
+        "operationId": "undeploy_custom_model_api_bedrock_fine_tuning_jobs__job_id__undeploy_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bedrock/models/fine-tunable": {
       "get": {
         "tags": [
