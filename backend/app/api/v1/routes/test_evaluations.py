@@ -83,6 +83,13 @@ async def update_evaluation(
     data: TestEvaluationUpdate,
     service: TestSuiteService = Injected(TestSuiteService),
 ):
+    """Refuses with 409 while the evaluation is queued/running — its config must
+    not change underneath an executing run."""
+    if await service.evaluation_has_active_run(evaluation_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This evaluation is running. Wait for it to finish before editing.",
+        )
     return await service.update_evaluation(evaluation_id, data)
 
 
@@ -108,6 +115,13 @@ async def delete_evaluation(
     evaluation_id: UUID,
     service: TestSuiteService = Injected(TestSuiteService),
 ):
+    """Refuses with 409 while the evaluation is queued/running — deleting would
+    soft-delete a run the worker is still writing to."""
+    if await service.evaluation_has_active_run(evaluation_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This evaluation is running. Wait for it to finish before deleting.",
+        )
     await service.delete_evaluation(evaluation_id)
 
 

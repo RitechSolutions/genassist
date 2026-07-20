@@ -1314,6 +1314,17 @@ class TestSuiteService:
             stats[workflow_id] = (health, count, running.get(workflow_id, False))
         return stats
 
+    async def evaluation_has_active_run(self, evaluation_id: UUID) -> bool:
+        """True if this evaluation's latest run is queued or running.
+
+        Used to block edits and deletes while an evaluation is executing.
+        """
+        row = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not row or not row.run_ids:
+            return False
+        runs = await self.run_repo.get_by_ids([row.run_ids[0]])
+        return any(run.status in ("queued", "running") for run in runs)
+
     async def workflow_has_active_run(self, workflow_id: Optional[UUID]) -> bool:
         """True if any evaluation in the workflow has a queued/running latest run."""
         pointer_lists = await self.evaluation_repo.get_run_pointers_for_workflow(

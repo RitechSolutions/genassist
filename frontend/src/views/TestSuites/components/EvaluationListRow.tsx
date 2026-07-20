@@ -78,6 +78,8 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
           size="icon"
           className="h-8 w-8"
           aria-label="Edit evaluation"
+          disabled={isRunning}
+          title={isRunning ? "Can't edit while this evaluation is running" : "Edit evaluation"}
           onClick={onEdit}
         >
           <Pencil className="h-4 w-4" />
@@ -87,9 +89,11 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
           size="icon"
           className="h-8 w-8"
           aria-label="Delete evaluation"
+          disabled={isRunning}
+          title={isRunning ? "Can't delete while this evaluation is running" : "Delete evaluation"}
           onClick={onDelete}
         >
-          <Trash2 className="h-4 w-4 text-red-500" />
+          <Trash2 className={isRunning ? "h-4 w-4 text-gray-400" : "h-4 w-4 text-red-500"} />
         </Button>
         <Button size="sm" className="ml-1" disabled={isRunning} onClick={onRun}>
           <Play className="h-3.5 w-3.5 mr-1" />
