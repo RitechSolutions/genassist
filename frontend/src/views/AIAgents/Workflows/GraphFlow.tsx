@@ -58,6 +58,7 @@ import { getAllNodeSchemas } from "@/services/workflows";
 import type { AppSetting } from "@/interfaces/app-setting.interface";
 import type { DataSource } from "@/interfaces/dataSource.interface";
 import type { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import WorkflowMiniMap from "./components/WorkflowMiniMap";
 
 // Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
@@ -127,6 +128,11 @@ const GraphFlowContent: React.FC = () => {
 
   // Level-of-detail: true when zoomed out over a large graph (see LowDetailWatcher)
   const [lowDetail, setLowDetail] = useState(false);
+
+  // Minimap auto-reveal — the minimap stays hidden until the user moves around the
+  // canvas, then fades back out after a short idle (see revealMinimap below).
+  const [minimapVisible, setMinimapVisible] = useState(false);
+  const minimapHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -546,9 +552,37 @@ const GraphFlowContent: React.FC = () => {
     if (!edgeReconnectSuccessful.current) {
       setEdges((eds) => eds.filter((e) => e.id !== edge.id));
     }
- 
+
     edgeReconnectSuccessful.current = true;
   }, []);
+
+  // --- Minimap auto-reveal ---------------------------------------------------
+  // Show the minimap the moment the user moves around the canvas, then fade it
+  // back out ~1.5s after they stop. Keeps the corner clear while idle but gives
+  // an overview the instant you start navigating.
+  const revealMinimap = useCallback(() => {
+    setMinimapVisible(true);
+    if (minimapHideTimer.current) clearTimeout(minimapHideTimer.current);
+    minimapHideTimer.current = setTimeout(() => setMinimapVisible(false), 1500);
+  }, []);
+
+  // onMove also fires for programmatic viewport changes (initial fitView, auto-arrange,
+  // search focus, zoom buttons), which pass a null sourceEvent — ignore those so the
+  // minimap only reacts to real user pans/zooms and never flashes on load.
+  const handleCanvasMove = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      if (event) revealMinimap();
+    },
+    [revealMinimap]
+  );
+
+  // Clear any pending hide timer on unmount.
+  useEffect(
+    () => () => {
+      if (minimapHideTimer.current) clearTimeout(minimapHideTimer.current);
+    },
+    []
+  );
 
   // Toggle panel functions
   const toggleNodePanel = () => {
@@ -1077,6 +1111,9 @@ const GraphFlowContent: React.FC = () => {
                   onReconnect={onReconnect}
                   onReconnectStart={onReconnectStart}
                   onReconnectEnd={onReconnectEnd}
+                  onMove={handleCanvasMove}
+                  onNodeDrag={revealMinimap}
+                  onSelectionDrag={revealMinimap}
                   nodesDraggable={nodesDraggable}
                   nodesConnectable={nodesConnectable}
                   elementsSelectable={elementsSelectable}
@@ -1085,6 +1122,7 @@ const GraphFlowContent: React.FC = () => {
                 >
                   <LowDetailWatcher onChange={setLowDetail} />
                   <Background />
+                  <WorkflowMiniMap visible={minimapVisible} />
                   <CustomControls
                     nodesDraggable={nodesDraggable}
                     nodesConnectable={nodesConnectable}

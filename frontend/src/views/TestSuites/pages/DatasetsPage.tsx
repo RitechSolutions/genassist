@@ -25,6 +25,7 @@ import {getWorkflowsMinimal} from "@/services/workflows";
 import type {WorkflowMinimal} from "@/interfaces/workflow.interface";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/select";
 import {PageListSkeleton} from "@/components/skeletons";
+import {EntityTitle} from "../components/EntityTitle";
 
 const CONV_PAGE_SIZE = 20;
 
@@ -306,7 +307,7 @@ const DatasetsPage: React.FC = () => {
                       className="min-w-0 flex-1 text-left"
                     >
                       <div className="flex items-center gap-2">
-                        <div className="text-lg font-semibold truncate">{suite.name}</div>
+                        <EntityTitle>{suite.name}</EntityTitle>
                         <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black shrink-0">
                           DATASET
                         </span>
