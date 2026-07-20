@@ -40,6 +40,10 @@ def _starter_edge(tool_builder, target):
     return {"source": tool_builder, "target": target, "sourceHandle": "starter_processor", "targetHandle": "input"}
 
 
+def _main_edge(source, target):
+    return {"source": source, "target": target, "sourceHandle": "output", "targetHandle": "input"}
+
+
 def _validate(nodes, edges):
     SubAgentGraph(nodes, edges).validate()
 
@@ -51,6 +55,32 @@ def test_no_delegations_is_noop():
 def test_valid_single_child_passes():
     nodes = [_agent("p"), _sub("c", "Helper")]
     _validate(nodes, [_deleg("c", "p")])
+
+
+def test_main_flow_edge_into_sub_agent_rejected():
+    nodes = [_agent("p"), _sub("c", "Helper")]
+    with pytest.raises(SubAgentTopologyError) as exc:
+        validate_sub_agent_topology(nodes, [_deleg("c", "p"), _main_edge("p", "c")])
+    assert any("main-flow" in v for v in exc.value.violations)
+
+
+def test_sub_agent_main_flow_edge_rejected_without_any_delegation():
+    nodes = [_agent("p"), _sub("c", "Helper")]
+    with pytest.raises(SubAgentTopologyError) as exc:
+        validate_sub_agent_topology(nodes, [_main_edge("p", "c")])
+    assert any("main-flow" in v for v in exc.value.violations)
+
+
+def test_sub_agent_main_flow_output_edge_rejected():
+    nodes = [_agent("p"), _sub("c", "Helper"), {"id": "out", "type": "chatOutputNode", "data": {}}]
+    with pytest.raises(SubAgentTopologyError) as exc:
+        validate_sub_agent_topology(nodes, [_deleg("c", "p"), _main_edge("c", "out")])
+    assert any("delegation handle" in v for v in exc.value.violations)
+
+
+def test_sub_agent_with_tools_is_not_flagged_as_main_flow():
+    nodes = [_agent("p"), _sub("c", "Helper"), {"id": "tb", "type": "toolBuilderNode", "data": {"name": "T"}}]
+    validate_sub_agent_topology(nodes, [_deleg("c", "p"), _tools_edge("tb", "c")])
 
 
 def test_source_must_be_sub_agent():

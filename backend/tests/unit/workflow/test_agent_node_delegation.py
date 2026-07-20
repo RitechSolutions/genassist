@@ -1,5 +1,6 @@
 """Byte-identical output shapes for AgentNode with no sub-agents attached"""
 
+import asyncio
 import json
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -144,6 +145,7 @@ async def test_memory_enabled_forwards_chat_history():
 
 _AGENT_ONCE = "app.modules.workflow.engine.nodes.agent_node.run_agent_once"
 _ORCH_RUN = "app.modules.workflow.agents.sub_agents.orchestrator.run_child_turn"
+_ORCH_DISCARD = "app.modules.workflow.agents.sub_agents.orchestrator.discard_child_memory"
 
 
 class _Tool:
@@ -474,6 +476,58 @@ async def test_claim_flag_reset_after_synchronous_completion():
 
 
 @pytest.mark.asyncio
+async def test_timed_out_persistent_delegation_releases_claim():
+    node = _parent_node(registry_managed=True, thread_id="t-timeout", mode="task")
+    fn = node._make_delegation_function(child_id="child", mode="task", timeout_seconds=1)
+    with patch(_ORCH_RUN, AsyncMock(side_effect=asyncio.TimeoutError())):
+        result = await fn({"parameters": {"task": "do x"}})
+    assert "did not respond in time" in result
+    assert node.get_state().sub_agent_persistent_claimed is False
+
+
+@pytest.mark.asyncio
+async def test_failed_persistent_delegation_releases_claim():
+    node = _parent_node(registry_managed=True, thread_id="t-fail", mode="chat")
+    fn = node._make_delegation_function(child_id="child", mode="chat", timeout_seconds=120)
+    with patch(_ORCH_RUN, AsyncMock(side_effect=RuntimeError("db exploded"))):
+        result = await fn({"parameters": {"task": "do x"}})
+    assert "could not complete the task" in result
+    assert node.get_state().sub_agent_persistent_claimed is False
+
+
+@pytest.mark.asyncio
+async def test_completed_delegation_discards_child_memory():
+    node = _parent_node(thread_id="t-evict")
+    child_state = SimpleNamespace(
+        get_node_output=lambda cid: None,
+        get_last_node_output=lambda: {"message": "child answer"},
+        sub_agent_control=None,
+    )
+    fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=120)
+    with (
+        patch(_ORCH_RUN, AsyncMock(return_value=child_state)),
+        patch(_ORCH_DISCARD) as discard,
+    ):
+        result = await fn({"parameters": {"task": "do x"}})
+    assert orchestrator.parse_envelope(result)["status"] == "completed"
+    discard.assert_called_once()
+    assert discard.call_args.args[:2] == ("t-evict", "child")
+
+
+@pytest.mark.asyncio
+async def test_failed_delegation_discards_child_memory():
+    node = _parent_node(thread_id="t-evict-fail")
+    fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=1)
+    with (
+        patch(_ORCH_RUN, AsyncMock(side_effect=asyncio.TimeoutError())),
+        patch(_ORCH_DISCARD) as discard,
+    ):
+        await fn({"parameters": {"task": "do x"}})
+    discard.assert_called_once()
+    assert discard.call_args.args[:2] == ("t-evict-fail", "child")
+
+
+@pytest.mark.asyncio
 async def test_corrupt_stack_on_pause_fails_delegation_without_overwrite():
     node = _parent_node(mode="task")
     corrupt = {"version": 1, "agent_id": "agentA", "frames": "junk"}
@@ -611,3 +665,34 @@ def test_pii_wrapped_tool_receives_original_values():
     node._wrap_tools_for_pii_unmask([tool])
     tool.invoke(task="Email johndoe1@example.com the itinerary")
     assert seen["task"] == "Email alice@example.com the itinerary"
+
+
+def test_capture_resume_context_drops_sub_agent_resume_marker():
+    from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+    node = _parent_node(
+        initial_values={"message": "hi", "agent_id": "a", SUB_AGENT_RESUME_KEY: {"child_result": "prev"}}
+    )
+    ctx = node.get_state().capture_resume_context()
+    assert SUB_AGENT_RESUME_KEY not in ctx["initial_values"]
+    assert ctx["initial_values"]["message"] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_pause_frame_does_not_nest_prior_resume_marker():
+    from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+    node = _parent_node(
+        mode="task",
+        initial_values={"message": "hi", "agent_id": "agentA", SUB_AGENT_RESUME_KEY: {"child_result": "prev"}},
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [
+        _rr(_env("active", "another?", mode="task", invocation_id="inv2"), return_direct=True, tool="request_task_child")
+    ]
+    with pytest.raises(WorkflowPausedException):
+        await _run_loop(node, results, delegation_map=dmap)
+
+    stack = await sub_session.read_frame_strict(node.get_memory())
+    captured = stack.top().parent_resume.request_context.get("initial_values", {})
+    assert SUB_AGENT_RESUME_KEY not in captured

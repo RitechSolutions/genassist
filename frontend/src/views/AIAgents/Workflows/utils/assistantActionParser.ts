@@ -299,6 +299,29 @@ export function createNodeFromAction(
   const node = nodeRegistry.createNode(action.nodeType, id, position, overrideData);
   if (!node) return { nodes: [], edges: [] };
 
+  // Sub-agents only link to a parent via the delegation handle
+  if (action.nodeType === "subAgentNode") {
+    const parentId = action.asSubAgentFor ?? resolvedConnectTo;
+    const parent = existingNodes.find((n) => n.id === parentId);
+    if (!parentId || !parent) return { nodes: [node], edges: [] };
+    const check = validateSubAgentConnection(
+      {
+        source: id,
+        target: parentId,
+        sourceHandle: SUB_AGENT_SOURCE_HANDLE,
+        targetHandle: SUB_AGENT_TARGET_HANDLE,
+      },
+      [...existingNodes, node],
+      existingEdges,
+    );
+    if (!check.ok) return { nodes: [node], edges: [] };
+    node.position = { x: parent.position?.x ?? position.x, y: (parent.position?.y ?? position.y) + 250 };
+    return {
+      nodes: [node],
+      edges: [makeEdge(id, parentId, SUB_AGENT_SOURCE_HANDLE, SUB_AGENT_TARGET_HANDLE)],
+    };
+  }
+
   // ── Tool pattern: wrap in toolBuilderNode ──
   if (action.asToolFor) {
     const tbId = uuidv4();
@@ -317,29 +340,6 @@ export function createNodeFromAction(
         makeEdge(tbId, action.asToolFor, "output_tool", "input_tools"),
         makeEdge(tbId, id, "starter_processor", "input"),
       ],
-    };
-  }
-
-  // ── Sub-agent pattern: attach child to a parent agent/sub-agent ──
-  if (action.asSubAgentFor) {
-    const parent = existingNodes.find((n) => n.id === action.asSubAgentFor);
-    const check = validateSubAgentConnection(
-      {
-        source: id,
-        target: action.asSubAgentFor,
-        sourceHandle: SUB_AGENT_SOURCE_HANDLE,
-        targetHandle: SUB_AGENT_TARGET_HANDLE,
-      },
-      [...existingNodes, node],
-      existingEdges,
-    );
-    if (!check.ok || !parent) {
-      return { nodes: [node], edges: [] };
-    }
-    node.position = { x: parent.position?.x ?? position.x, y: (parent.position?.y ?? position.y) + 250 };
-    return {
-      nodes: [node],
-      edges: [makeEdge(id, action.asSubAgentFor, SUB_AGENT_SOURCE_HANDLE, SUB_AGENT_TARGET_HANDLE)],
     };
   }
 

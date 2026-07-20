@@ -200,3 +200,40 @@ async def test_completed_child_resumes_parent_registry_managed():
     assert resume["child_steps"] == [{"i": 1}]
     assert resume["child_tools_used"] == ["search"]
     assert mem.metadata[sub_session.STACK_KEY] is None
+
+
+@pytest.mark.asyncio
+async def test_resume_turn_forwards_session_to_child():
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = _fake_state({"status": "success", "output": {"message": "ok"}}, last_output={"message": "ok"})
+    run_child = AsyncMock(return_value=child_state)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", run_child),
+    ):
+        await router.route_turn(
+            "a reply", "t1", {"message": "a reply", "session": {"customer_name": "Ada"}}, persist=True
+        )
+    assert run_child.await_args.kwargs["session"] == {"customer_name": "Ada"}
+
+
+@pytest.mark.asyncio
+async def test_completed_child_discards_child_memory():
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = SimpleNamespace(
+        sub_agent_control={"result": "child done"},
+        get_last_node_output=lambda: {"message": "child done"},
+        node_outputs={"child": {"message": "child done"}},
+    )
+    router.workflow_engine.execute_from_node = AsyncMock(
+        return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+        patch(f"{_ORCH}.discard_child_memory") as discard,
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    discard.assert_called_once_with("t1", "child", "inv1")

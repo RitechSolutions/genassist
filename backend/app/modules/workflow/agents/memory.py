@@ -1211,6 +1211,12 @@ class ConversationMemory:
         return cls._instances[thread_id]
 
     @classmethod
+    def discard(cls, thread_id: str) -> None:
+        """Drop one cached instance; used for sub-agent threads that would
+        otherwise accumulate one entry per delegation"""
+        cls._instances.pop(thread_id, None)
+
+    @classmethod
     def clear_all(cls) -> None:
         """Clear all conversation memories"""
         cls._instances.clear()

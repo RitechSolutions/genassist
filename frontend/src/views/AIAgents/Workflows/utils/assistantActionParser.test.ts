@@ -147,4 +147,30 @@ describe("createNodeFromAction — as_sub_agent_for", () => {
     expect(nodes).toHaveLength(1);
     expect(edges).toHaveLength(0);
   });
+
+  it("reroutes a subAgentNode's connect_to into a delegation edge, never main flow", () => {
+    const action: AddNodeAction = {
+      type: "add_node",
+      nodeType: "subAgentNode",
+      label: "Flight Search",
+      connectTo: "agent-1",
+    };
+    const { edges } = createNodeFromAction(action, [agentNode]);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].sourceHandle).toBe("output_sub_agent");
+    expect(edges[0].targetHandle).toBe("input_sub_agents");
+    expect(edges[0].target).toBe("agent-1");
+    expect(edges.some((e) => e.targetHandle === "input")).toBe(false);
+  });
+
+  it("drops a subAgentNode's connect_to edge when the target is not an agent/sub-agent", () => {
+    const plainNode: Node = { id: "tpl-1", type: "templateNode", position: { x: 0, y: 0 }, data: {} };
+    const action: AddNodeAction = {
+      type: "add_node",
+      nodeType: "subAgentNode",
+      connectTo: "tpl-1",
+    };
+    const { edges } = createNodeFromAction(action, [plainNode]);
+    expect(edges).toHaveLength(0);
+  });
 });

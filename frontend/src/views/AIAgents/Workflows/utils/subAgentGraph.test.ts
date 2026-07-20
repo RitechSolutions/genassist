@@ -23,13 +23,6 @@ const delegationEdge = (child: string, parent: string): SubAgentGraphEdge => ({
   targetHandle: "input_sub_agents",
 });
 
-const connect = (child: string, parent: string) => ({
-  source: child,
-  target: parent,
-  sourceHandle: "output_sub_agent",
-  targetHandle: "input_sub_agents",
-});
-
 describe("toSnakeCase", () => {
   it("mirrors the backend normalizer", () => {
     expect(toSnakeCase("My Child")).toBe("my_child");
@@ -116,25 +109,25 @@ describe("validateSubAgentConnection", () => {
 
   it("accepts a single_turn sub-agent attached to an agent", () => {
     const nodes = [node("a", "agentNode"), node("c", "subAgentNode", { mode: "single_turn" })];
-    const res = validateSubAgentConnection(connect("c", "a"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("c", "a"), nodes, []);
     expect(res.ok).toBe(true);
   });
 
   it("rejects self-attachment", () => {
     const nodes = [node("c", "subAgentNode")];
-    const res = validateSubAgentConnection(connect("c", "c"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("c", "c"), nodes, []);
     expect(res.ok).toBe(false);
   });
 
   it("rejects a child that is not a subAgentNode", () => {
     const nodes = [node("a", "agentNode"), node("t", "toolBuilderNode")];
-    const res = validateSubAgentConnection(connect("t", "a"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("t", "a"), nodes, []);
     expect(res.ok).toBe(false);
   });
 
   it("rejects a parent that is not an agent or sub-agent", () => {
     const nodes = [node("tpl", "templateNode"), node("c", "subAgentNode")];
-    const res = validateSubAgentConnection(connect("c", "tpl"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("c", "tpl"), nodes, []);
     expect(res.ok).toBe(false);
   });
 
@@ -145,7 +138,7 @@ describe("validateSubAgentConnection", () => {
       node("c", "subAgentNode", { mode: "single_turn" }),
     ];
     const edges = [delegationEdge("c", "a")];
-    const res = validateSubAgentConnection(connect("c", "a2"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("c", "a2"), nodes, edges);
     expect(res.ok).toBe(false);
   });
 
@@ -155,7 +148,7 @@ describe("validateSubAgentConnection", () => {
       node("b", "subAgentNode", { mode: "single_turn" }),
     ];
     const edges = [delegationEdge("a", "b")];
-    const res = validateSubAgentConnection(connect("b", "a"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("b", "a"), nodes, edges);
     expect(res.ok).toBe(false);
   });
 
@@ -167,7 +160,7 @@ describe("validateSubAgentConnection", () => {
       node("s3", "subAgentNode", { mode: "single_turn" }),
     ];
     const edges = [delegationEdge("s1", "a"), delegationEdge("s2", "s1")];
-    const res = validateSubAgentConnection(connect("s3", "s2"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("s3", "s2"), nodes, edges);
     expect(res.ok).toBe(false);
   });
 
@@ -178,7 +171,7 @@ describe("validateSubAgentConnection", () => {
       node("c", "subAgentNode", { mode: "chat" }),
     ];
     const edges = [delegationEdge("s1", "a")];
-    const res = validateSubAgentConnection(connect("c", "s1"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("c", "s1"), nodes, edges);
     expect(res.ok).toBe(false);
   });
 
@@ -189,7 +182,7 @@ describe("validateSubAgentConnection", () => {
       node("c", "subAgentNode", { mode: "single_turn" }),
     ];
     const edges = [delegationEdge("p", "a")];
-    const res = validateSubAgentConnection(connect("c", "p"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("c", "p"), nodes, edges);
     expect(res.ok).toBe(false);
   });
 
@@ -200,7 +193,7 @@ describe("validateSubAgentConnection", () => {
       node("c2", "subAgentNode", { name: "my_child", mode: "single_turn" }),
     ];
     const edges = [delegationEdge("c1", "a")];
-    const res = validateSubAgentConnection(connect("c2", "a"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("c2", "a"), nodes, edges);
     expect(res.ok).toBe(false);
   });
 
@@ -209,19 +202,19 @@ describe("validateSubAgentConnection", () => {
       node("a", "agentNode"),
       node("c", "subAgentNode", { name: "finish_task", mode: "single_turn" }),
     ];
-    const res = validateSubAgentConnection(connect("c", "a"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("c", "a"), nodes, []);
     expect(res.ok).toBe(false);
   });
 
   it("falls back to the node id for the reserved-name check", () => {
     const nodes = [node("a", "agentNode"), node("finish_task", "subAgentNode")];
-    const res = validateSubAgentConnection(connect("finish_task", "a"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("finish_task", "a"), nodes, []);
     expect(res.ok).toBe(false);
   });
 
   it("rejects a name that clamps to empty", () => {
     const nodes = [node("a", "agentNode"), node("c", "subAgentNode", { name: "中文名" })];
-    const res = validateSubAgentConnection(connect("c", "a"), nodes, []);
+    const res = validateSubAgentConnection(delegationEdge("c", "a"), nodes, []);
     expect(res.ok).toBe(false);
     expect(res.reason).toContain("letter or number");
   });
@@ -235,7 +228,7 @@ describe("validateSubAgentConnection", () => {
     const edges: SubAgentGraphEdge[] = [
       { source: "t", target: "a", sourceHandle: "output_tool", targetHandle: "input_tools" },
     ];
-    const res = validateSubAgentConnection(connect("c", "a"), nodes, edges);
+    const res = validateSubAgentConnection(delegationEdge("c", "a"), nodes, edges);
     expect(res.ok).toBe(false);
     expect(res.reason).toContain("tool");
   });

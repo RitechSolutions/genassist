@@ -470,12 +470,18 @@ class WorkflowState:
         any metadata the pre-pause nodes saw) would be lost. node_outputs is captured
         separately by the pausing node.
         """
+        from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+        # The sub-agent resume marker is re-supplied on every resume; capturing it would
+        # nest each prior payload into the next frame until the size guard trips.
+        initial = {k: v for k, v in (self.initial_values or {}).items() if k != SUB_AGENT_RESUME_KEY}
+        session = {k: v for k, v in (self.get_session() or {}).items() if k != SUB_AGENT_RESUME_KEY}
         # Deep copy so a later resume (which restores this) can't alias and mutate the
         # values this execution is still using; also matches the JSON round-trip the Redis
         # memory backend performs, keeping behaviour identical across backends.
         return copy.deepcopy({
-            "initial_values": self.initial_values,
-            "session": self.get_session(),
+            "initial_values": initial,
+            "session": session,
         })
 
     def restore_resume_context(

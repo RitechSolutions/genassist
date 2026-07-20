@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.modules.workflow.agents.sub_agents import messages
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,7 @@ class SubAgentTurnRouter:
         try:
             stack = await sub_session.read_frame_strict(memory)
         except sub_session.SubAgentSessionError:
-            return self._plain_message(
-                "This conversation could not be resumed. Please start a new message."
-            )
+            return self._plain_message(messages.CONVERSATION_UNRESUMABLE)
 
         if stack is None:
             return None
@@ -54,7 +53,7 @@ class SubAgentTurnRouter:
     async def _run_active_child(self, session_message, thread_id, input_data, persist, memory, stack):
         from app.modules.workflow.agents.sub_agents import orchestrator
         from app.modules.workflow.agents.sub_agents import session as sub_session
-        from app.modules.workflow.agents.sub_agents.models import SubAgentStack
+        from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY, SubAgentStack
 
         frame = stack.top()
         timeout_seconds = self._child_timeout(frame.child_node_id)
@@ -65,16 +64,15 @@ class SubAgentTurnRouter:
                 child_node_id=frame.child_node_id,
                 invocation_id=frame.invocation_id,
                 message=session_message,
+                session=input_data.get("session"),
                 timeout_seconds=timeout_seconds,
                 inherit_pii=frame.inherit_pii,
             )
         except asyncio.TimeoutError:
-            return self._plain_message(
-                f"The sub-agent did not respond in time ({int(timeout_seconds)}s). Please send your message again."
-            )
+            return self._plain_message(messages.child_timeout(timeout_seconds, retry=True))
         except Exception:
             logger.exception("Sub-agent resume turn for %s failed", frame.child_node_id)
-            return self._plain_message("The sub-agent could not complete the task. Please try again.")
+            return self._plain_message(messages.child_failed(retry=True))
 
         completion = orchestrator.child_completion(child_state)
         if completion is None:
@@ -88,6 +86,7 @@ class SubAgentTurnRouter:
             await sub_session.write_frame(memory, SubAgentStack(agent_id=stack.agent_id, frames=remaining))
         else:
             await sub_session.clear_stack(memory)
+        orchestrator.discard_child_memory(thread_id, frame.child_node_id, frame.invocation_id)
 
         resume = {
             **frame.parent_resume.model_dump(),
@@ -99,7 +98,7 @@ class SubAgentTurnRouter:
         }
         state = await self.workflow_engine.execute_from_node(
             start_node_id=frame.parent_node_id,
-            input_data={**input_data, "__sub_agent_resume": resume},
+            input_data={**input_data, SUB_AGENT_RESUME_KEY: resume},
             thread_id=thread_id,
             persist=persist,
             registry_managed=True,

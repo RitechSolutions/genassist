@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from pydantic import ValidationError
 
 from app.modules.workflow.agents.agent_runtime import run_agent_once
+from app.modules.workflow.agents.sub_agents import messages
 from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
@@ -86,7 +87,7 @@ class SubAgentNode(AgentNode):
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:
             logger.exception("Error processing sub-agent node")
-            return {"message": "The sub-agent could not complete the task.", "error": str(e)}
+            return {"message": messages.child_failed(), "error": str(e)}
 
     def _validate_config_values(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # Provider presence is a runtime-only requirement (drafts save without one)

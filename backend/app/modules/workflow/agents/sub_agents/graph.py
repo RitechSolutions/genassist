@@ -38,6 +38,20 @@ def sub_agent_edges(edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [e for e in edges if e.get("targetHandle") == SUB_AGENT_TARGET_HANDLE]
 
 
+def _validate_sub_agent_isolation(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> List[str]:
+    sub_ids = {n.get("id") for n in nodes if n.get("type") == "subAgentNode"}
+    if not sub_ids:
+        return []
+    violations: List[str] = []
+    for edge in edges:
+        source, target = edge.get("source"), edge.get("target")
+        if source in sub_ids and edge.get("sourceHandle") != SUB_AGENT_SOURCE_HANDLE:
+            violations.append(f"sub-agent '{source}' can only connect through its delegation handle, not the main flow")
+        if target in sub_ids and edge.get("targetHandle") not in (SUB_AGENT_TARGET_HANDLE, TOOLS_TARGET_HANDLE):
+            violations.append(f"sub-agent '{target}' cannot receive a main-flow connection")
+    return violations
+
+
 def _clamp_tool_name(name: str) -> str:
     folded = unicodedata.normalize("NFKD", name or "")
     folded = "".join(ch for ch in folded if not unicodedata.category(ch).startswith("M"))
@@ -242,10 +256,19 @@ class SubAgentGraph:
 
 
 def validate_sub_agent_topology(nodes: List[Dict[str, Any]] | None, edges: List[Dict[str, Any]] | None) -> None:
-    """No-op when there are no delegation edges; otherwise validate the topology."""
-    graph = SubAgentGraph(nodes or [], edges or [])
+    """Check sub-agent isolation whenever a subAgentNode exists, and the full
+    delegation topology when there are delegation edges"""
+    nodes = nodes or []
+    edges = edges or []
+    graph = SubAgentGraph(nodes, edges)
+    violations = _validate_sub_agent_isolation(nodes, edges)
     if graph.has_delegations:
-        graph.validate()
+        try:
+            graph.validate()
+        except SubAgentTopologyError as e:
+            violations.extend(e.violations)
+    if violations:
+        raise SubAgentTopologyError(violations)
 
 
 def _normalize_graph_for_fingerprint(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Dict[str, Any]:

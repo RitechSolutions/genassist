@@ -45,6 +45,13 @@ def child_thread_id(root_thread_id: str, child_node_id: str, invocation_id: str)
     return f"{root_thread_id}:sub:{child_node_id}:{invocation_id}"
 
 
+def discard_child_memory(root_thread_id: str, child_node_id: str, invocation_id: str) -> None:
+    """Drop the finished child's cached ConversationMemory"""
+    from app.modules.workflow.agents.memory import ConversationMemory
+
+    ConversationMemory.discard(child_thread_id(root_thread_id, child_node_id, invocation_id))
+
+
 def make_envelope(*, status: str, message: str, child_node_id: str, mode: str, invocation_id: str, task: str) -> str:
     return json.dumps(
         {
@@ -90,11 +97,14 @@ def child_message(child_state: "WorkflowState") -> str:
 
 
 def _canonical_session(session: Dict[str, Any]) -> Dict[str, Any]:
-    """Strip flatten artifacts so a child inherits a clean namespace"""
+    """Strip flatten artifacts and the parent's resume marker so a child inherits a clean namespace"""
+    from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
     return {
         key: value
         for key, value in session.items()
-        if not (isinstance(key, str) and (key == "session" or key.startswith("session.")))
+        if key != SUB_AGENT_RESUME_KEY
+        and not (isinstance(key, str) and (key == "session" or key.startswith("session.")))
     }
 
 

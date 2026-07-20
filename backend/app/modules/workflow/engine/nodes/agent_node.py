@@ -262,7 +262,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     def _make_delegation_function(self, *, child_id: str, mode: str, timeout_seconds: float, inherit_pii: bool = False):
         """Closure the LLM calls to delegate; runs the child and returns an envelope"""
         from app.modules.workflow.agents.sub_agents import graph as sub_graph
-        from app.modules.workflow.agents.sub_agents import orchestrator
+        from app.modules.workflow.agents.sub_agents import messages, orchestrator
         from app.modules.workflow.agents.sub_agents import session as sub_session
 
         state = self.get_state()
@@ -271,27 +271,28 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             task = (payload or {}).get("parameters", {}).get("task", "") or ""
             persistent = mode in ("task", "chat")
             if persistent and not getattr(state, "registry_managed", False):
-                return "This sub-agent needs an interactive chat session and can't be used in this context."
+                return messages.NEEDS_INTERACTIVE_SESSION
             if persistent:
                 # Sync check-and-set before the first await: one persistent delegation per turn
                 if getattr(state, "sub_agent_persistent_claimed", False):
-                    return "Another sub-agent delegation is already in progress for this turn."
+                    return messages.DELEGATION_IN_PROGRESS
                 state.sub_agent_persistent_claimed = True
                 try:
                     stack = await sub_session.read_frame_strict(self.get_memory())
                 except sub_session.SubAgentSessionError:
                     state.sub_agent_persistent_claimed = False
-                    return "This conversation could not be resumed. Please start a new message."
+                    return messages.CONVERSATION_UNRESUMABLE
                 depth = len(stack.frames) if stack else 0
                 if depth >= sub_graph.MAX_DELEGATION_DEPTH:
                     state.sub_agent_persistent_claimed = False
-                    return "The sub-agent delegation depth limit was reached."
+                    return messages.DELEGATION_DEPTH_REACHED
 
             invocation_id = uuid.uuid4().hex
+            root_thread_id = state.get_thread_id()
             try:
                 child_state = await orchestrator.run_child_turn(
                     workflow=state.workflow,
-                    root_thread_id=state.get_thread_id(),
+                    root_thread_id=root_thread_id,
                     child_node_id=child_id,
                     invocation_id=invocation_id,
                     message=task,
@@ -300,10 +301,16 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     inherit_pii=inherit_pii,
                 )
             except asyncio.TimeoutError:
-                return f"The sub-agent did not respond in time ({int(timeout_seconds)}s)."
+                if persistent:
+                    state.sub_agent_persistent_claimed = False
+                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+                return messages.child_timeout(timeout_seconds)
             except Exception:
+                if persistent:
+                    state.sub_agent_persistent_claimed = False
+                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
                 logger.exception("Sub-agent delegation to %s failed", child_id)
-                return "The sub-agent could not complete the task."
+                return messages.child_failed()
 
             child_output = child_state.get_node_output(child_id)
             if child_output is not None:
@@ -317,6 +324,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     message = completion["result"]
             else:
                 status = "active"
+            if status == "completed":
+                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
             return orchestrator.make_envelope(
                 status=status, message=message, child_node_id=child_id, mode=mode,
                 invocation_id=invocation_id, task=task,
@@ -337,6 +346,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     ) -> Dict[str, Any]:
         """Invoke the agent, resolving delegation tool calls, until it answers or pauses"""
         from app.modules.workflow.agents.sub_agents import orchestrator
+        from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
 
         pii = bool(config.get("piiMasking"))
         state = self.get_state()
@@ -346,7 +356,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         completed_count = 0
         current_prompt = prompt
 
-        resume = (state.initial_values or {}).get("__sub_agent_resume")
+        resume = (state.initial_values or {}).get(SUB_AGENT_RESUME_KEY)
         if resume:
             completed_count, steps, tools_used, current_prompt = self._apply_sub_agent_resume(resume, pii)
             spent = {s["child_node_id"] for s in steps if s.get("type") == "sub_agent" and s.get("child_node_id")}
@@ -408,6 +418,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         """Persist a frame before pausing; return a result dict if the depth cap
         or a corrupt stack blocks the pause"""
         from app.modules.workflow.agents.sub_agents import graph as sub_graph
+        from app.modules.workflow.agents.sub_agents import messages
         from app.modules.workflow.agents.sub_agents import session as sub_session
         from app.modules.workflow.agents.sub_agents.models import (
             MAX_TASK_CHARS,
@@ -422,14 +433,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         try:
             stack = await sub_session.read_frame_strict(memory)
         except sub_session.SubAgentSessionError:
-            return self._shape_delegated_message(
-                "This conversation could not be resumed. Please start a new message.", steps, tools_used
-            )
+            return self._shape_delegated_message(messages.CONVERSATION_UNRESUMABLE, steps, tools_used)
         depth = len(stack.frames) if stack else 0
         if depth >= sub_graph.MAX_DELEGATION_DEPTH:
-            return self._shape_delegated_message(
-                "The sub-agent delegation depth limit was reached.", steps, tools_used
-            )
+            return self._shape_delegated_message(messages.DELEGATION_DEPTH_REACHED, steps, tools_used)
 
         workflow = state.workflow
         resume = ParentResume(
@@ -602,7 +609,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     self.get_memory(), config, provider_id, system_prompt, prompt
                 )
 
-            resuming = bool((self.get_state().initial_values or {}).get("__sub_agent_resume"))
+            from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+            resuming = bool((self.get_state().initial_values or {}).get(SUB_AGENT_RESUME_KEY))
             if delegation_map or resuming:
                 return await self._run_agent_with_delegations(
                     config=config,

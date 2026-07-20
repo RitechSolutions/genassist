@@ -128,6 +128,13 @@ def test_canonical_session_strips_flatten_artifacts():
     assert canon == {"message": "m", "thread_id": "t", "agent_id": "a", "conversation_history": "h"}
 
 
+def test_canonical_session_strips_sub_agent_resume_marker():
+    from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+    canon = orchestrator._canonical_session({"customer_name": "Ada", SUB_AGENT_RESUME_KEY: {"child_result": "x"}})
+    assert canon == {"customer_name": "Ada"}
+
+
 @pytest.mark.asyncio
 async def test_run_child_turn_passes_canonical_nested_session():
     child_state = _fake_child_state()

@@ -12,6 +12,8 @@ SubAgentAgentType = Literal["ToolSelector", "ReActAgent", "ReActAgentLC"]
 FRAME_VERSION = 1
 FRAME_TTL_HOURS = 24
 
+SUB_AGENT_RESUME_KEY = "__sub_agent_resume"
+
 MAX_TASK_CHARS = 4000
 MAX_USER_PROMPT_CHARS = 4000
 
