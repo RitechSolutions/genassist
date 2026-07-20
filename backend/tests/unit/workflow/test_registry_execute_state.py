@@ -30,8 +30,11 @@ def _make_item(nodes=_NODES, edges=_EDGES):
     return RegistryItem(agent)
 
 
-def _fake_state(response):
-    return SimpleNamespace(format_state_as_response=lambda: response)
+def _fake_state(response, last_output=None):
+    return SimpleNamespace(
+        format_state_as_response=lambda: response,
+        get_last_node_output=lambda: last_output,
+    )
 
 
 def _seed_stack(mode="task", fingerprint=None):
@@ -90,7 +93,10 @@ async def test_missing_thread_id_skips_frame_path():
 async def test_active_child_turn_returns_success_message():
     item = _make_item()
     mem = _seed_stack()
-    child_state = _fake_state({"status": "success", "output": {"message": "Is a layover okay?"}})
+    child_state = _fake_state(
+        {"status": "success", "output": {"message": "Is a layover okay?"}},
+        last_output={"message": "Is a layover okay?"},
+    )
     with (
         patch.object(ConversationMemory, "get_instance", return_value=mem),
         patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),

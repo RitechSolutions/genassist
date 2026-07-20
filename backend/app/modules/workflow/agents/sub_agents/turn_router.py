@@ -78,7 +78,10 @@ class SubAgentTurnRouter:
 
         completion = orchestrator.child_completion(child_state)
         if completion is None:
-            return self.finalize(child_state.format_state_as_response())
+            response = child_state.format_state_as_response()
+            if self._is_awaiting_sub_agent(response.get("output")):
+                return self.finalize(response)
+            return self._message_only(response, orchestrator.child_message(child_state))
 
         remaining = stack.frames[:-1]
         if remaining:
@@ -92,6 +95,7 @@ class SubAgentTurnRouter:
             "mode": frame.mode,
             "child_task": frame.task,
             "child_result": completion.get("result", orchestrator.child_message(child_state)),
+            **self._child_trace(child_state, frame.child_node_id),
         }
         state = await self.workflow_engine.execute_from_node(
             start_node_id=frame.parent_node_id,
@@ -114,14 +118,38 @@ class SubAgentTurnRouter:
         """Turn a sub-agent “waiting” pause into a normal success message so the plugin
         doesn't show an empty form"""
         output = response.get("output")
-        if isinstance(output, dict) and output.get("status") == "awaiting_input" and "sub_agent" in output:
-            message = {"message": (output.get("sub_agent") or {}).get("message", "")}
-            response["status"] = "success"
-            response["output"] = message
-            state = response.get("state")
-            if isinstance(state, dict) and isinstance(state.get("output"), dict):
-                state["output"] = dict(message)
+        if self._is_awaiting_sub_agent(output):
+            return self._message_only(response, (output.get("sub_agent") or {}).get("message", ""))
         return response
+
+    @staticmethod
+    def _is_awaiting_sub_agent(output) -> bool:
+        return isinstance(output, dict) and output.get("status") == "awaiting_input" and "sub_agent" in output
+
+    def _message_only(self, response: dict, text: str) -> dict:
+        """Reduce a child response to a plain success message"""
+        message = {"message": text}
+        response["status"] = "success"
+        response["output"] = message
+        state = response.get("state")
+        if isinstance(state, dict) and isinstance(state.get("output"), dict):
+            state["output"] = dict(message)
+        return response
+
+    @staticmethod
+    def _child_trace(child_state, child_id: str) -> dict:
+        """Bounded child step/tool trace for the parent's resume marker; empty if unavailable"""
+        from app.modules.workflow.engine.nodes.agent_node import SUB_AGENT_TRACE_STEPS_CAP
+
+        output = getattr(child_state, "node_outputs", {}).get(child_id)
+        if not isinstance(output, dict):
+            return {}
+        steps = output.get("steps")
+        tools_used = output.get("tools_used")
+        return {
+            "child_steps": steps[-SUB_AGENT_TRACE_STEPS_CAP:] if isinstance(steps, list) else [],
+            "child_tools_used": tools_used[-SUB_AGENT_TRACE_STEPS_CAP:] if isinstance(tools_used, list) else [],
+        }
 
     def _plain_message(self, message: str) -> dict:
         return {"status": "success", "output": {"message": message}, "token_usage": {}, "cost_usd": 0.0}

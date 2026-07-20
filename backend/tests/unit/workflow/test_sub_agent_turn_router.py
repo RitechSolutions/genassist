@@ -30,8 +30,11 @@ def _make_router(owner_id="agentA", nodes=_NODES, edges=_EDGES):
     return SubAgentTurnRouter(engine, owner_id=owner_id)
 
 
-def _fake_state(response):
-    return SimpleNamespace(format_state_as_response=lambda: response)
+def _fake_state(response, last_output=None):
+    return SimpleNamespace(
+        format_state_as_response=lambda: response,
+        get_last_node_output=lambda: last_output,
+    )
 
 
 def _seed_stack(fingerprint=None):
@@ -97,7 +100,10 @@ async def test_corrupt_stack_returns_controlled_message():
 async def test_active_child_question_returns_success_message():
     router = _make_router()
     mem = _seed_stack()
-    child_state = _fake_state({"status": "success", "output": {"message": "Is a layover okay?"}})
+    child_state = _fake_state(
+        {"status": "success", "output": {"message": "Is a layover okay?"}},
+        last_output={"message": "Is a layover okay?"},
+    )
     with (
         patch.object(ConversationMemory, "get_instance", return_value=mem),
         patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
@@ -105,6 +111,53 @@ async def test_active_child_question_returns_success_message():
         result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
     assert result["status"] == "success"
     assert result["output"]["message"] == "Is a layover okay?"
+
+
+@pytest.mark.asyncio
+async def test_active_child_output_is_message_only():
+    router = _make_router()
+    mem = _seed_stack()
+    node_status = {"child": {"status": "completed"}}
+    child_state = _fake_state(
+        {
+            "status": "success",
+            "output": {"message": "Booked.", "steps": [{"n": 1}], "tools_used": ["search"]},
+            "state": {
+                "output": {"message": "Booked.", "steps": [{"n": 1}]},
+                "nodeExecutionStatus": node_status,
+            },
+        },
+        last_output={"message": "Booked.", "steps": [{"n": 1}], "tools_used": ["search"]},
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    assert result["status"] == "success"
+    assert result["output"] == {"message": "Booked."}
+    assert result["state"]["output"] == {"message": "Booked."}
+    assert result["state"]["nodeExecutionStatus"] == node_status
+
+
+@pytest.mark.asyncio
+async def test_active_child_nested_pause_passes_through_finalize():
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = _fake_state(
+        {
+            "status": "awaiting_input",
+            "output": {"status": "awaiting_input", "sub_agent": {"message": "Which city?"}},
+            "state": {"output": {"status": "awaiting_input", "sub_agent": {"message": "Which city?"}}},
+        }
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    assert result["status"] == "success"
+    assert result["output"] == {"message": "Which city?"}
 
 
 @pytest.mark.asyncio
@@ -127,6 +180,7 @@ async def test_completed_child_resumes_parent_registry_managed():
     child_state = SimpleNamespace(
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
+        node_outputs={"child": {"message": "child done", "steps": [{"i": 1}], "tools_used": ["search"]}},
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
@@ -141,5 +195,8 @@ async def test_completed_child_resumes_parent_registry_managed():
     _, kwargs = router.workflow_engine.execute_from_node.call_args
     assert kwargs["start_node_id"] == "parent"
     assert kwargs["registry_managed"] is True
-    assert kwargs["input_data"]["__sub_agent_resume"]["child_result"] == "child done"
+    resume = kwargs["input_data"]["__sub_agent_resume"]
+    assert resume["child_result"] == "child done"
+    assert resume["child_steps"] == [{"i": 1}]
+    assert resume["child_tools_used"] == ["search"]
     assert mem.metadata[sub_session.STACK_KEY] is None

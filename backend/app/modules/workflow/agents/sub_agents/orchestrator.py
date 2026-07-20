@@ -89,6 +89,15 @@ def child_message(child_state: "WorkflowState") -> str:
     return "" if output is None else str(output)
 
 
+def _canonical_session(session: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip flatten artifacts so a child inherits a clean namespace"""
+    return {
+        key: value
+        for key, value in session.items()
+        if not (isinstance(key, str) and (key == "session" or key.startswith("session.")))
+    }
+
+
 def _force_child_pii(nodes: list, child_node_id: str) -> list:
     out = []
     for node in nodes:
@@ -105,7 +114,7 @@ async def run_child_turn(
     child_node_id: str,
     invocation_id: str,
     message: str,
-    session_flat: Optional[Dict[str, Any]] = None,
+    session: Optional[Dict[str, Any]] = None,
     timeout_seconds: float,
     inherit_pii: bool = False,
 ) -> "WorkflowState":
@@ -122,7 +131,11 @@ async def run_child_turn(
     }
     engine = WorkflowEngine(workflow_config)
     thread_id = child_thread_id(root_thread_id, child_node_id, invocation_id)
-    input_data = {"message": message, **(session_flat or {})}
+    # Pass the parent session as one nested object
+    input_data = {"message": message}
+    canonical = _canonical_session(session or {})
+    if canonical:
+        input_data["session"] = canonical
 
     tenant = get_tenant_context()
     factory = injector.get(RequestScopeFactory)

@@ -382,17 +382,30 @@ async def test_resume_rehydrates_outputs_and_continues():
 
 
 @pytest.mark.asyncio
-async def test_five_cap_strips_delegation_tools():
+async def test_completed_child_tool_removed_after_one_call():
     node = _parent_node()
     all_tools = [_Tool("request_task_child"), _Tool("other_tool")]
-    results = [_rr(_env("completed", f"answer {i}"), return_direct=True, tool="request_task_child") for i in range(5)]
-    results.append(_rr("forced final answer"))
+    results = [
+        _rr(_env("completed", "child answer"), return_direct=True, tool="request_task_child"),
+        _rr("final answer"),
+    ]
     out, run_once = await _run_loop(node, results, all_tools=all_tools)
-    assert out["message"] == "forced final answer"
-    assert run_once.await_count == 6
-    sixth_tools = run_once.await_args_list[5].kwargs["tools"]
-    names = {t.name for t in sixth_tools}
-    assert "request_task_child" not in names and "other_tool" in names
+    assert out["message"] == "final answer"
+    assert run_once.await_count == 2
+    second_tools = {t.name for t in run_once.await_args_list[1].kwargs["tools"]}
+    assert "request_task_child" not in second_tools
+    assert "other_tool" in second_tools
+
+
+@pytest.mark.asyncio
+async def test_repeated_same_child_delegation_capped_at_one():
+    """The 5x5 pathology: even if the model re-emits the same delegation, only one child run happens"""
+    node = _parent_node()
+    results = [_rr(_env("completed", f"answer {i}"), return_direct=True, tool="request_task_child") for i in range(5)]
+    out, run_once = await _run_loop(node, results)
+    sub_markers = [s for s in out["steps"] if s.get("type") == "sub_agent"]
+    assert len(sub_markers) == 1
+    assert run_once.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -470,6 +483,87 @@ async def test_corrupt_stack_on_pause_fails_delegation_without_overwrite():
     out, _ = await _run_loop(node, results, delegation_map=dmap)
     assert "could not be resumed" in out["message"]
     assert node.get_memory().metadata[sub_session.STACK_KEY] == corrupt
+
+
+@pytest.mark.asyncio
+async def test_delegation_folds_only_child_output_not_session_or_path():
+    node = _parent_node()
+    child = WorkflowState(workflow={"nodes": [], "edges": []}, thread_id="t-child", initial_values={})
+    child.set_node_output("child", {"message": "child answer", "steps": [{"a": 1}], "tools_used": ["t"]})
+    child.llm_usage = [{"input_tokens": 5, "output_tokens": 7}]
+    child.update_session_value("child_only_key", "x")
+    fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=120)
+    with patch(_ORCH_RUN, AsyncMock(return_value=child)):
+        result = await fn({"parameters": {"task": "do x"}})
+
+    parent = node.get_state()
+    assert parent.node_outputs["child"]["message"] == "child answer"
+    assert parent.llm_usage == []
+    assert parent.execution_path == []
+    assert "child_only_key" not in parent.get_session()
+    assert orchestrator.parse_envelope(result)["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_in_turn_marker_carries_child_trace():
+    node = _parent_node()
+    node.get_state().node_outputs["child"] = {
+        "message": "done",
+        "steps": [{"i": 1}, {"i": 2}],
+        "tools_used": ["search"],
+    }
+    results = [
+        _rr(_env("completed", "child answer"), return_direct=True, tool="request_task_child"),
+        _rr("final answer"),
+    ]
+    out, _ = await _run_loop(node, results)
+    marker = next(s for s in out["steps"] if s.get("type") == "sub_agent")
+    assert marker["child_steps"] == [{"i": 1}, {"i": 2}]
+    assert marker["child_tools_used"] == ["search"]
+
+
+@pytest.mark.asyncio
+async def test_in_turn_marker_caps_child_trace():
+    node = _parent_node()
+    node.get_state().node_outputs["child"] = {
+        "steps": [{"i": i} for i in range(35)],
+        "tools_used": [f"t{i}" for i in range(35)],
+    }
+    results = [
+        _rr(_env("completed", "child answer"), return_direct=True, tool="request_task_child"),
+        _rr("final answer"),
+    ]
+    out, _ = await _run_loop(node, results)
+    marker = next(s for s in out["steps"] if s.get("type") == "sub_agent")
+    assert len(marker["child_steps"]) == 30
+    assert marker["child_steps"][0] == {"i": 5}
+    assert len(marker["child_tools_used"]) == 30
+
+
+@pytest.mark.asyncio
+async def test_resume_marker_carries_child_trace_from_resume_dict():
+    resume = {
+        "node_outputs": {},
+        "node_execution_status": {},
+        "request_context": {},
+        "completed_count": 0,
+        "accumulated_steps": [],
+        "accumulated_tools_used": [],
+        "child_node_id": "child",
+        "mode": "task",
+        "child_task": "do x",
+        "child_result": "child final result",
+        "child_steps": [{"i": 1}],
+        "child_tools_used": ["search"],
+    }
+    node = _parent_node(
+        mode="task", initial_values={"message": "hi", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    out, _ = await _run_loop(node, [_rr("final after resume")], delegation_map=dmap)
+    marker = next(s for s in out["steps"] if s.get("type") == "sub_agent")
+    assert marker["child_steps"] == [{"i": 1}]
+    assert marker["child_tools_used"] == ["search"]
 
 
 def test_pii_wrapped_tool_receives_original_values():

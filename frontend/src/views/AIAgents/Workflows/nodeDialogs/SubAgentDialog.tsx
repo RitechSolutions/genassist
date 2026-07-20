@@ -92,63 +92,76 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
         ...config,
       }}
     >
-      <div className="space-y-2">
-        <Label htmlFor="sub-agent-mode">Collaboration Mode</Label>
-        <Select
-          value={config.mode}
-          onValueChange={(mode) =>
-            setConfig((prev) => ({ ...prev, mode: mode as SubAgentMode }))
-          }
-        >
-          <SelectTrigger id="sub-agent-mode" className="w-full">
-            <SelectValue placeholder="Select a mode" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="single_turn">Single Turn</SelectItem>
-            <SelectItem value="task">Task</SelectItem>
-            <SelectItem value="chat">Chat</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">{MODE_HELP[config.mode]}</p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="sub-agent-description">Delegation Description</Label>
-        <Textarea
-          id="sub-agent-description"
-          value={config.description || ""}
-          onChange={(e) =>
-            setConfig((prev) => ({ ...prev, description: e.target.value }))
-          }
-          placeholder="What this sub-agent handles, e.g. searches flights and checks fares"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="sub-agent-timeout">Timeout (seconds)</Label>
-        <RichInput
-          id="sub-agent-timeout"
-          type="number"
-          min={5}
-          max={300}
-          step={5}
-          value={config.timeoutSeconds ?? 120}
-          onChange={(e) =>
-            setConfig((prev) => ({
-              ...prev,
-              timeoutSeconds: parseInt(e.target.value) || 120,
-            }))
-          }
-          placeholder="120"
-        />
-      </div>
-
       <ModelConfiguration
         id="sub-agent-config"
         config={config}
         onConfigChange={handleModelConfigChange}
         typeSelect="agent"
         allowedAgentTypes={["ToolSelector", "ReActAgent", "ReActAgentLC"]}
+        fieldsAfterName={
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="sub-agent-mode">Collaboration Mode</Label>
+              <Select
+                value={config.mode}
+                onValueChange={(mode) =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    mode: mode as SubAgentMode,
+                  }))
+                }
+              >
+                <SelectTrigger id="sub-agent-mode" className="w-full">
+                  <SelectValue placeholder="Select a mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single_turn">Single Turn</SelectItem>
+                  <SelectItem value="task">Task</SelectItem>
+                  <SelectItem value="chat">Chat</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {MODE_HELP[config.mode]}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="sub-agent-description">
+                Delegation Description
+              </Label>
+              <Textarea
+                id="sub-agent-description"
+                value={config.description || ""}
+                onChange={(e) =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="What this sub agent handles, e.g. searches flights and checks fares"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="sub-agent-timeout">Timeout (seconds)</Label>
+              <RichInput
+                id="sub-agent-timeout"
+                type="number"
+                min={5}
+                max={300}
+                step={5}
+                value={config.timeoutSeconds ?? 120}
+                onChange={(e) =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    timeoutSeconds: parseInt(e.target.value) || 120,
+                  }))
+                }
+                placeholder="120"
+              />
+            </div>
+          </>
+        }
         showUserPrompt={false}
       />
     </NodeConfigPanel>

@@ -41,6 +41,8 @@ export interface ModelConfigurationProps {
   config: BaseLLMNodeData;
   onConfigChange: (config: BaseLLMNodeData) => void;
   typeSelect: "agent" | "model";
+  /** Render additional fields immediately after Node Name. */
+  fieldsAfterName?: React.ReactNode;
   /** Hide the User Prompt block */
   showUserPrompt?: boolean;
   /** Restrict the agent-type select; defaults to every supported type */
@@ -52,6 +54,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   config,
   onConfigChange,
   typeSelect = "model",
+  fieldsAfterName,
   showUserPrompt = true,
   allowedAgentTypes,
 }) => {
@@ -279,6 +282,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           className="w-full"
         />
       </div>
+      {fieldsAfterName}
       <div className="space-y-2">
         <Label htmlFor={`provider-select-${id}`}>Select Provider</Label>
         <Select

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 MAX_DELEGATIONS = 5
 CONTINUATION_TASK_CAP = 2000
 CONTINUATION_RESULT_CAP = 8000
+SUB_AGENT_TRACE_STEPS_CAP = 30
 
 
 def _frame_snapshot(value: Any) -> Any:
@@ -294,7 +295,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     child_node_id=child_id,
                     invocation_id=invocation_id,
                     message=task,
-                    session_flat=state.get_session_flat(),
+                    session=state.get_session(),
                     timeout_seconds=timeout_seconds,
                     inherit_pii=inherit_pii,
                 )
@@ -303,6 +304,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             except Exception:
                 logger.exception("Sub-agent delegation to %s failed", child_id)
                 return "The sub-agent could not complete the task."
+
+            child_output = child_state.get_node_output(child_id)
+            if child_output is not None:
+                state.node_outputs[child_id] = child_output
 
             completion = orchestrator.child_completion(child_state)
             message = orchestrator.child_message(child_state)
@@ -384,7 +389,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
             completed_count += 1
             state.sub_agent_persistent_claimed = False
-            steps.append({"type": "sub_agent", "child_node_id": child_id, "mode": envelope["mode"]})
+            all_tools = [t for t in all_tools if delegation_map.get(t.name, {}).get("child_node_id") != child_id]
+            delegation_map = {k: v for k, v in delegation_map.items() if v.get("child_node_id") != child_id}
+            steps.append(
+                {"type": "sub_agent", "child_node_id": child_id, "mode": envelope["mode"], **self._child_trace(child_id)}
+            )
             current_prompt = self._build_continuation_prompt(envelope.get("task", ""), child_msg, pii)
 
     async def _pause_for_sub_agent(self, envelope, steps, tools_used, completed_count, current_prompt, pii=False):
@@ -451,7 +460,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         steps = list(resume.get("accumulated_steps") or [])
         tools_used = list(resume.get("accumulated_tools_used") or [])
         completed_count = resume.get("completed_count", 0)
-        steps.append({"type": "sub_agent", "child_node_id": resume.get("child_node_id", ""), "mode": resume.get("mode", "")})
+        child_trace = {k: resume[k] for k in ("child_steps", "child_tools_used") if isinstance(resume.get(k), list)}
+        steps.append(
+            {
+                "type": "sub_agent",
+                "child_node_id": resume.get("child_node_id", ""),
+                "mode": resume.get("mode", ""),
+                **child_trace,
+            }
+        )
         continuation = self._build_continuation_prompt(
             resume.get("child_task", ""), resume.get("child_result", ""), pii
         )
@@ -504,6 +521,18 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     @staticmethod
     def _shape_delegated_message(message: str, steps, tools_used) -> Dict[str, Any]:
         return {"message": message, "steps": steps, "tools_used": tools_used}
+
+    def _child_trace(self, child_id: str) -> Dict[str, Any]:
+        """Nested observability"""
+        output = self.get_state().node_outputs.get(child_id)
+        if not isinstance(output, dict):
+            return {}
+        steps = output.get("steps")
+        tools_used = output.get("tools_used")
+        return {
+            "child_steps": steps[-SUB_AGENT_TRACE_STEPS_CAP:] if isinstance(steps, list) else [],
+            "child_tools_used": tools_used[-SUB_AGENT_TRACE_STEPS_CAP:] if isinstance(tools_used, list) else [],
+        }
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

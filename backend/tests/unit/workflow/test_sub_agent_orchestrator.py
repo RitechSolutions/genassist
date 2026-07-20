@@ -114,6 +114,48 @@ async def test_run_child_turn_timeout_surfaced_and_session_closed():
     child_state.get_memory().add_input_output.assert_not_called()
 
 
+def test_canonical_session_strips_flatten_artifacts():
+    polluted = {
+        "message": "m",
+        "thread_id": "t",
+        "agent_id": "a",
+        "conversation_history": "h",
+        "session.message": "m",
+        "session.session.message": "m",
+        "session": {"message": "m"},
+    }
+    canon = orchestrator._canonical_session(polluted)
+    assert canon == {"message": "m", "thread_id": "t", "agent_id": "a", "conversation_history": "h"}
+
+
+@pytest.mark.asyncio
+async def test_run_child_turn_passes_canonical_nested_session():
+    child_state = _fake_child_state()
+    stack, engine, _, _, _ = _patch_env(child_state)
+    polluted = {
+        "message": "orig",
+        "thread_id": "t",
+        "agent_id": "a",
+        "session.message": "orig",
+        "session.session.message": "orig",
+        "session": {"message": "orig"},
+    }
+    with stack:
+        await orchestrator.run_child_turn(
+            workflow=_WORKFLOW,
+            root_thread_id="root",
+            child_node_id="child",
+            invocation_id="inv",
+            message="task",
+            session=polluted,
+            timeout_seconds=120,
+        )
+    input_data = engine.execute_from_node.call_args.kwargs["input_data"]
+    assert input_data["message"] == "task"
+    assert not any(isinstance(k, str) and k.startswith("session.") for k in input_data)
+    assert input_data["session"] == {"message": "orig", "thread_id": "t", "agent_id": "a"}
+
+
 @pytest.mark.asyncio
 async def test_run_child_turn_forces_child_pii_when_inherited():
     child_state = _fake_child_state()
