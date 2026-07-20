@@ -541,6 +541,33 @@ async def test_in_turn_marker_caps_child_trace():
 
 
 @pytest.mark.asyncio
+async def test_resume_does_not_reoffer_completed_child_tool():
+    resume = {
+        "node_outputs": {},
+        "node_execution_status": {},
+        "request_context": {},
+        "completed_count": 1,
+        "accumulated_steps": [],
+        "accumulated_tools_used": [],
+        "child_node_id": "child",
+        "mode": "task",
+        "child_task": "do x",
+        "child_result": "child result",
+    }
+    node = _parent_node(
+        mode="task", initial_values={"message": "hi", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [_rr(_env("completed", "again", mode="task"), return_direct=True, tool="request_task_child")]
+    out, run_once = await _run_loop(node, results, delegation_map=dmap)
+    first_tools = {t.name for t in run_once.await_args_list[0].kwargs["tools"]}
+    assert "request_task_child" not in first_tools
+    assert run_once.await_count == 1
+    sub_markers = [s for s in out["steps"] if s.get("type") == "sub_agent"]
+    assert len(sub_markers) == 1
+
+
+@pytest.mark.asyncio
 async def test_resume_marker_carries_child_trace_from_resume_dict():
     resume = {
         "node_outputs": {},

@@ -324,6 +324,13 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         return _delegate
 
+    @staticmethod
+    def _drop_child_tools(all_tools, delegation_map, child_ids):
+        """Remove delegation tools for children already delegated this turn"""
+        all_tools = [t for t in all_tools if delegation_map.get(t.name, {}).get("child_node_id") not in child_ids]
+        delegation_map = {k: v for k, v in delegation_map.items() if v.get("child_node_id") not in child_ids}
+        return all_tools, delegation_map
+
     async def _run_agent_with_delegations(
         self, *, config, provider_id, fallback_chain_id, agent_type,
         system_prompt, prompt, all_tools, delegation_map, max_iterations, chat_history,
@@ -342,6 +349,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         resume = (state.initial_values or {}).get("__sub_agent_resume")
         if resume:
             completed_count, steps, tools_used, current_prompt = self._apply_sub_agent_resume(resume, pii)
+            spent = {s["child_node_id"] for s in steps if s.get("type") == "sub_agent" and s.get("child_node_id")}
+            all_tools, delegation_map = self._drop_child_tools(all_tools, delegation_map, spent)
 
         while True:
             active_tools = (
@@ -389,8 +398,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
             completed_count += 1
             state.sub_agent_persistent_claimed = False
-            all_tools = [t for t in all_tools if delegation_map.get(t.name, {}).get("child_node_id") != child_id]
-            delegation_map = {k: v for k, v in delegation_map.items() if v.get("child_node_id") != child_id}
+            all_tools, delegation_map = self._drop_child_tools(all_tools, delegation_map, {child_id})
             steps.append(
                 {"type": "sub_agent", "child_node_id": child_id, "mode": envelope["mode"], **self._child_trace(child_id)}
             )
