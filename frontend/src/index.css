@@ -374,6 +374,59 @@ input[type="checkbox"]:hover {
 }
 
 /* ============================================================================
+   WORKFLOW MINIMAP (see components/WorkflowMiniMap.tsx).
+   Two-class selector (`.react-flow__minimap.wf-minimap`) so it outranks React
+   Flow's base `.react-flow__minimap { background:#fff }`. Node fills come from
+   the nodeColor callback; the container + mask are themed here for light/dark.
+   ============================================================================ */
+.react-flow__minimap.wf-minimap {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  /* Sit just to the right of the bottom-left zoom/lock controls: React Flow anchors
+     the panel 15px from the left, so shift it clear of the ~36px controls column
+     (15 + 36 + ~13 gap). Bottom margin stays 15px so it lines up with the controls. */
+  margin-left: 64px;
+  /* Hidden until the user moves around the canvas; GraphFlow toggles `is-visible`
+     (see revealMinimap). Hovering keeps it up so it stays usable as a nav control. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.react-flow__minimap.wf-minimap.is-visible,
+.react-flow__minimap.wf-minimap:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Mask = everything OUTSIDE the current viewport; a soft dim reads as "the rest
+   of the graph". Set via CSS (not the maskColor prop) so it can be theme-aware. */
+.wf-minimap .react-flow__minimap-mask {
+  fill: rgba(148, 163, 184, 0.22);
+}
+
+.dark .react-flow__minimap.wf-minimap {
+  background-color: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.4);
+}
+
+.dark .wf-minimap .react-flow__minimap-mask {
+  fill: rgba(2, 6, 23, 0.5);
+}
+
+/* The minimap adds clutter on small screens where the controls already crowd
+   the canvas — hide it there (mirrors the mobile treatment elsewhere). */
+@media (max-width: 768px) {
+  .react-flow__minimap.wf-minimap {
+    display: none;
+  }
+}
+
+/* ============================================================================
    LOW-DETAIL MODE (level-of-detail rendering).
    Toggled by the `.rf-low-detail` class on the flow root when the canvas is
    zoomed out over a large graph (see LowDetailWatcher in GraphFlow.tsx). Drops
