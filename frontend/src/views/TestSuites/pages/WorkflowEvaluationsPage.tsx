@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ListChecks, Loader2, Play, Plus, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -23,7 +24,6 @@ import {
   appendRunToEvaluation,
   deleteTestEvaluation,
   getWorkflowEvaluationsPage,
-  PaginatedEvaluations,
   runWorkflowEvaluations,
   updateTestEvaluation,
 } from "@/services/testEvaluations";
@@ -37,6 +37,7 @@ import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../he
 
 const PAGE_SIZE = 20;
 const UNASSIGNED = "unassigned";
+const RUNNING_POLL_MS = 5000;
 
 const WorkflowEvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -47,13 +48,9 @@ const WorkflowEvaluationsPage: React.FC = () => {
   const [suites, setSuites] = useState<TestSuite[]>([]);
   const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
 
-  const [pageData, setPageData] = useState<PaginatedEvaluations | null>(null);
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
 
   const [lastRunsByEvaluationId, setLastRunsByEvaluationId] = useState<
     Record<string, TestRun | null>
@@ -98,6 +95,28 @@ const WorkflowEvaluationsPage: React.FC = () => {
   const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
   const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
 
+  // staleTime 0 makes react-query refetch this when the tab regains focus. The
+  // interval is the page's only poll: it runs when a batch is active that this
+  // session isn't already tracking, and react-query pauses it in a hidden tab.
+  const {
+    data: pageData = null,
+    dataUpdatedAt,
+    isPending: isLoading,
+    isError: hasError,
+    refetch: refetchPage,
+  } = useQuery({
+    queryKey: ["workflow-evaluations", workflowId, page, search],
+    queryFn: async () =>
+      (await getWorkflowEvaluationsPage(workflowId, {
+        page,
+        pageSize: PAGE_SIZE,
+        search,
+      })) ?? null,
+    staleTime: 0,
+    refetchInterval: (query) =>
+      query.state.data?.any_running && !isWorkflowRunning ? RUNNING_POLL_MS : false,
+  });
+
   const evaluations = pageData?.items ?? [];
   const total = pageData?.total ?? 0;
   const totalUnfiltered = pageData?.total_unfiltered ?? 0;
@@ -128,30 +147,6 @@ const WorkflowEvaluationsPage: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setIsLoading(true);
-      setHasError(false);
-      try {
-        const data = await getWorkflowEvaluationsPage(workflowId, {
-          page,
-          pageSize: PAGE_SIZE,
-          search,
-        });
-        if (!cancelled) setPageData(data ?? null);
-      } catch {
-        if (!cancelled) setHasError(true);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [workflowId, page, search, reloadKey]);
-
   // Load the latest run for each evaluation on the page.
   useEffect(() => {
     const loadLastRuns = async () => {
@@ -179,82 +174,10 @@ const WorkflowEvaluationsPage: React.FC = () => {
       }
     };
     void loadLastRuns();
-  }, [pageData]);
-
-  // Keep in-flight runs fresh so "Running" clears after they finish (even post-refresh).
-  const activeRunIds = useMemo(
-    () =>
-      Object.values(lastRunsByEvaluationId)
-        .filter(
-          (run): run is TestRun =>
-            !!run && (run.status === "queued" || run.status === "running"),
-        )
-        .map((run) => run.id)
-        .sort()
-        .join(","),
-    [lastRunsByEvaluationId],
-  );
-  useEffect(() => {
-    if (!activeRunIds) return;
-    const runIds = activeRunIds.split(",");
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const runs = await getTestRunsBatch(runIds);
-        setLastRunsByEvaluationId((prev) => {
-          const runIdToEvalId: Record<string, string> = {};
-          Object.entries(prev).forEach(([evalId, run]) => {
-            if (run?.id) runIdToEvalId[run.id] = evalId;
-          });
-          let changed = false;
-          const next = { ...prev };
-          (runs ?? []).forEach((run) => {
-            const evalId = run?.id ? runIdToEvalId[run.id] : undefined;
-            if (evalId && next[evalId]?.status !== run.status) {
-              next[evalId] = run;
-              changed = true;
-            }
-          });
-          return changed ? next : prev;
-        });
-      } catch {
-        // transient — keep polling
-      }
-      if (!cancelled) window.setTimeout(poll, 3000);
-    };
-    const timer = window.setTimeout(poll, 3000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [activeRunIds]);
-
-  // A batch may be running from another page/tab. While any_running is set,
-  // silently refetch so the workflow-level "Running" state clears when it ends.
-  useEffect(() => {
-    if (!pageData?.any_running) return;
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const data = await getWorkflowEvaluationsPage(workflowId, {
-          page,
-          pageSize: PAGE_SIZE,
-          search,
-        });
-        if (!cancelled && data) setPageData(data);
-      } catch {
-        // transient — keep polling
-      }
-      if (!cancelled) window.setTimeout(poll, 4000);
-    };
-    const timer = window.setTimeout(poll, 4000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [pageData?.any_running, workflowId, page, search]);
+    // Keyed on dataUpdatedAt, not pageData: react-query's structural sharing keeps
+    // the same object reference when a poll returns identical rows, but run status
+    // lives in test_runs — so it must refresh on every fetch, not only on change.
+  }, [dataUpdatedAt]);
 
   const isEvaluationRunning = (evaluation: TestEvaluationConfig): boolean => {
     if (evaluation.id && runningEvalIds.has(evaluation.id)) return true;
@@ -292,6 +215,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
         await appendRunToEvaluation(evaluation.id, created.id);
         setLastRunsByEvaluationId((prev) => ({ ...prev, [evaluation.id as string]: created }));
         toast.success("Evaluation started");
+        void refetchPage(); // any_running turns on, which starts the status poll
       }
     } catch {
       toast.error("Failed to start evaluation");
@@ -317,6 +241,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
       if (isStale()) return; // don't touch another workflow's guard/progress
       isRunAllInFlight.current = false;
       setIsWorkflowRunning(false);
+      void refetchPage(); // settle any_running/health once the batch ends
     };
 
     try {
@@ -347,6 +272,11 @@ const WorkflowEvaluationsPage: React.FC = () => {
       const maxPollErrors = 5;
       const poll = async () => {
         if (isStale()) return;
+        // Don't poll a hidden tab; pick back up on the next tick.
+        if (document.visibilityState !== "visible") {
+          runAllPollTimer.current = window.setTimeout(poll, RUNNING_POLL_MS);
+          return;
+        }
         try {
           const runs = await getTestRunsBatch(runIds);
           consecutivePollErrors = 0;
@@ -373,7 +303,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
             return;
           }
         }
-        if (!isStale()) runAllPollTimer.current = window.setTimeout(poll, 3000);
+        if (!isStale()) runAllPollTimer.current = window.setTimeout(poll, RUNNING_POLL_MS);
       };
       runAllPollTimer.current = window.setTimeout(poll, 2000);
     } catch (error) {
@@ -381,7 +311,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
       const status = (error as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
         toast.error("This workflow already has running evaluations");
-        setReloadKey((key) => key + 1); // refetch so any_running blocks the button
+        void refetchPage(); // refetch so any_running blocks the button
       } else {
         toast.error("Failed to start evaluations");
       }
@@ -389,31 +319,57 @@ const WorkflowEvaluationsPage: React.FC = () => {
     }
   };
 
+  // The backend refuses (409) if the evaluation started running since the page
+  // loaded, so a stale UI can't edit or delete a run in flight.
+  const isRunningConflict = (error: unknown): boolean =>
+    (error as { response?: { status?: number } })?.response?.status === 409;
+
   const handleEditSubmit = async (data: EvaluationWizardData) => {
     if (!editingEvaluation?.id) return;
-    const updated = await updateTestEvaluation(editingEvaluation.id, {
-      name: data.name.trim(),
-      description: data.description.trim() || undefined,
-      suite_id: data.suiteId,
-      workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
-      techniques: data.metrics,
-      technique_configs: buildTechniqueConfigs(data),
-      input_metadata: wizardMetadata(data),
-    });
-    if (!updated) return;
-    setEditingEvaluation(null);
-    toast.success("Evaluation updated");
-    setReloadKey((key) => key + 1); // its workflow may have changed — refetch the page
+    try {
+      const updated = await updateTestEvaluation(editingEvaluation.id, {
+        name: data.name.trim(),
+        description: data.description.trim() || undefined,
+        suite_id: data.suiteId,
+        workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
+        techniques: data.metrics,
+        technique_configs: buildTechniqueConfigs(data),
+        input_metadata: wizardMetadata(data),
+      });
+      if (!updated) return;
+      setEditingEvaluation(null);
+      toast.success("Evaluation updated");
+      void refetchPage(); // its workflow may have changed — refetch the page
+    } catch (error) {
+      if (isRunningConflict(error)) {
+        toast.error("This evaluation is running. Wait for it to finish before editing.");
+        setEditingEvaluation(null);
+        void refetchPage();
+      } else {
+        toast.error("Failed to update evaluation");
+      }
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await deleteTestEvaluation(id);
+    try {
+      await deleteTestEvaluation(id);
+    } catch (error) {
+      setDeletingEvaluationId(null);
+      if (isRunningConflict(error)) {
+        toast.error("This evaluation is running. Wait for it to finish before deleting.");
+        void refetchPage();
+      } else {
+        toast.error("Failed to delete evaluation");
+      }
+      return;
+    }
     setDeletingEvaluationId(null);
     toast.success("Evaluation deleted");
     if (evaluations.length === 1 && page > 1) {
       setPage((current) => current - 1);
     } else {
-      setReloadKey((key) => key + 1);
+      void refetchPage();
     }
   };
 
@@ -484,7 +440,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
         ) : hasError ? (
           <div className="py-16 text-center">
             <p className="text-sm text-gray-500 mb-3">Couldn't load evaluations.</p>
-            <Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+            <Button variant="outline" onClick={() => void refetchPage()}>
               Retry
             </Button>
           </div>

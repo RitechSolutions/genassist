@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ChevronRight, Layers, ListChecks, Loader2, Play, Plus } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -28,6 +29,8 @@ import { buildTechniqueConfigs, wizardMetadata } from "../helpers/evaluationForm
 import { accuracyColorClass } from "../helpers/evaluationMetrics";
 
 const UNASSIGNED = "unassigned";
+const SUMMARIES_QUERY_KEY = ["workflow-evaluation-summaries"];
+const RUNNING_POLL_MS = 5000;
 
 interface WorkflowRow {
   key: string;
@@ -42,12 +45,12 @@ interface WorkflowRow {
 
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
-  const [summaries, setSummaries] = useState<WorkflowEvaluationSummary[]>([]);
+  const queryClient = useQueryClient();
   const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
   const [suites, setSuites] = useState<TestSuite[]>([]);
   const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  const [isReferenceLoading, setIsReferenceLoading] = useState(true);
+  const [hasReferenceError, setHasReferenceError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -55,27 +58,46 @@ const EvaluationsPage: React.FC = () => {
   // Synchronous guard against rapid double-clicks (state updates are async).
   const inFlightWorkflowIds = useRef<Set<string>>(new Set());
 
+  // Summaries carry the live health and running state. staleTime 0 makes
+  // react-query refetch them when the tab regains focus; the interval only runs
+  // while a batch is active and react-query pauses it in a hidden tab.
+  const {
+    data: summaries = [],
+    isPending: isSummariesLoading,
+    isError: hasSummariesError,
+    refetch: refetchSummaries,
+  } = useQuery({
+    queryKey: SUMMARIES_QUERY_KEY,
+    queryFn: async () => (await getWorkflowEvaluationSummaries()) ?? [],
+    staleTime: 0,
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((summary) => summary.any_running)
+        ? RUNNING_POLL_MS
+        : false,
+  });
+
+  const isLoading = isSummariesLoading || isReferenceLoading;
+  const hasError = hasSummariesError || hasReferenceError;
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      setIsLoading(true);
-      setHasError(false);
+      setIsReferenceLoading(true);
+      setHasReferenceError(false);
       try {
-        const [summaryData, workflowData, suiteData, providersData] = await Promise.all([
-          getWorkflowEvaluationSummaries(),
+        const [workflowData, suiteData, providersData] = await Promise.all([
           getWorkflowsMinimal(),
           listTestSuites(),
           getLLMProvidersMinimal(),
         ]);
         if (cancelled) return;
-        setSummaries(summaryData ?? []);
         setWorkflows(workflowData ?? []);
         setSuites(suiteData ?? []);
         setProviders((providersData ?? []).filter((p) => p.is_active === 1));
       } catch {
-        if (!cancelled) setHasError(true);
+        if (!cancelled) setHasReferenceError(true);
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) setIsReferenceLoading(false);
       }
     };
     void load();
@@ -83,29 +105,6 @@ const EvaluationsPage: React.FC = () => {
       cancelled = true;
     };
   }, [reloadKey]);
-
-  // While any workflow is running, refresh summaries so health and the running
-  // state settle back once its batch finishes (no skeleton — silent refetch).
-  const hasRunningWorkflow = useMemo(() => summaries.some((s) => s.any_running), [summaries]);
-  useEffect(() => {
-    if (!hasRunningWorkflow) return;
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const data = await getWorkflowEvaluationSummaries();
-        if (!cancelled && data) setSummaries(data);
-      } catch {
-        // transient — keep polling
-      }
-      if (!cancelled) window.setTimeout(poll, 4000);
-    };
-    const timer = window.setTimeout(poll, 4000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [hasRunningWorkflow]);
 
   const rows = useMemo<WorkflowRow[]>(() => {
     const nameFor = (workflowId: string | null): string => {
@@ -137,8 +136,8 @@ const EvaluationsPage: React.FC = () => {
   };
 
   const markWorkflowRunning = (workflowId: string) => {
-    setSummaries((prev) =>
-      prev.map((summary) =>
+    queryClient.setQueryData<WorkflowEvaluationSummary[]>(SUMMARIES_QUERY_KEY, (prev) =>
+      (prev ?? []).map((summary) =>
         summary.workflow_id === workflowId ? { ...summary, any_running: true } : summary,
       ),
     );
@@ -278,7 +277,13 @@ const EvaluationsPage: React.FC = () => {
         ) : hasError ? (
           <div className="py-16 text-center">
             <p className="text-sm text-gray-500 mb-3">Couldn't load evaluations.</p>
-            <Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReloadKey((key) => key + 1);
+                void refetchSummaries();
+              }}
+            >
               Retry
             </Button>
           </div>
