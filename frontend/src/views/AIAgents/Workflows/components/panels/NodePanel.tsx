@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp, X } from "lucide-react";
+import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp, X, ExternalLink } from "lucide-react";
 import { RichInput } from "@/components/richInput";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
@@ -40,6 +40,7 @@ import {
   defaultHelpHeaderGradient,
   helpHeaderGradientByCategory,
 } from "@/views/AIAgents/Workflows/utils/helpHeaderGradients";
+import { getNodeDocsUrl } from "@/views/AIAgents/Workflows/utils/nodeDocsLinks";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -57,6 +58,7 @@ interface HelpDialogState {
   icon: string;
   category: string;
   helpContent: NodeHelpContent;
+  docsUrl?: string;
 }
 
 const NodePanel: React.FC<NodePanelProps> = ({
@@ -310,6 +312,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                           categoryLabel[nodeType.category] ?? nodeType.category,
                         icon: nodeType.icon,
                         category: nodeType.category,
+                        docsUrl: getNodeDocsUrl(nodeType.type),
                         helpContent: nodeType.helpContent ?? {
                           intro: nodeType.description,
                           sections: nodeType.shortDescription
@@ -638,6 +641,17 @@ const NodePanel: React.FC<NodePanelProps> = ({
                       </Badge>
                     </div>
                   </DialogHeader>
+                  {selectedHelp.docsUrl && (
+                    <a
+                      href={selectedHelp.docsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Docs
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-8">

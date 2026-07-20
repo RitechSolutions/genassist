@@ -1,7 +1,13 @@
 import React from "react";
 import { useReactFlow } from "reactflow";
-import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock, Wand2 } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock, BrushCleaning } from "lucide-react";
 import ShortcutsHelp from "./ShortcutsHelp";
+
+// Show ⌘ on macOS, Ctrl elsewhere (for the arrange-nodes shortcut hint).
+const isMac =
+  typeof navigator !== "undefined" &&
+  /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
+const ARRANGE_SHORTCUT = isMac ? "⌘M" : "Ctrl+M";
 
 interface CustomControlsProps {
   nodesDraggable: boolean;
@@ -84,10 +90,10 @@ const CustomControls: React.FC<CustomControlsProps> = ({
           type="button"
           className="react-flow__controls-button"
           onClick={onAutoArrange}
-          title="Arrange nodes"
-          aria-label="Arrange nodes"
+          title={`Arrange nodes (${ARRANGE_SHORTCUT})`}
+          aria-label={`Arrange nodes (${ARRANGE_SHORTCUT})`}
         >
-          <Wand2 size={14} />
+          <BrushCleaning size={14} />
         </button>
         <button
           type="button"

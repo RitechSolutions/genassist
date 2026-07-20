@@ -1061,6 +1061,19 @@ const GraphFlowContent: React.FC = () => {
     return () => window.removeEventListener("keydown", handleSearchKey);
   }, [nodeSearchOpen, closeNodeSearch, showNodePanel]);
 
+  // Shortcut: ⌘M/Ctrl+M auto-arranges (cleans up) the node layout on the canvas.
+  useEffect(() => {
+    const handleArrangeKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "m" || e.key === "M")) {
+        if (isEditableEventTarget(e.target as HTMLElement)) return;
+        e.preventDefault();
+        handleAutoArrange();
+      }
+    };
+    window.addEventListener("keydown", handleArrangeKey);
+    return () => window.removeEventListener("keydown", handleArrangeKey);
+  }, [handleAutoArrange]);
+
   // Close search on any canvas click (pane or node)
   const handleCanvasClickClose = useCallback(() => {
     if (nodeSearchOpen) closeNodeSearch();
