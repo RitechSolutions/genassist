@@ -17595,6 +17595,7 @@
           "Test Evaluations"
         ],
         "summary": "Update Evaluation",
+        "description": "Refuses with 409 while the evaluation is queued/running \u2014 its config must\nnot change underneath an executing run.",
         "operationId": "update_evaluation_api_genagent_eval_evaluations__evaluation_id__patch",
         "security": [
           {
@@ -17655,6 +17656,7 @@
           "Test Evaluations"
         ],
         "summary": "Delete Evaluation",
+        "description": "Refuses with 409 while the evaluation is queued/running \u2014 deleting would\nsoft-delete a run the worker is still writing to.",
         "operationId": "delete_evaluation_api_genagent_eval_evaluations__evaluation_id__delete",
         "security": [
           {
@@ -17738,6 +17740,189 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TestEvaluation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/workflows/{workflow_id}/evaluations/run": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Run Workflow Evaluations",
+        "description": "Queue a run for every evaluation that targets this workflow. Returns the\nper-evaluation outcome immediately; execution is handled by background\nworkers. Evaluations that could not be queued are reported individually.\n\nA Redis ``SET NX`` lock makes the \"no active run?\" check and the batch start\none atomic operation, so two concurrent requests cannot both start a batch.\nRefuses with 409 while a batch is starting or the workflow already has\nqueued/running evaluations.",
+        "operationId": "run_workflow_evaluations_api_genagent_eval_workflows__workflow_id__evaluations_run_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StartedEvaluationRun"
+                  },
+                  "title": "Response Run Workflow Evaluations Api Genagent Eval Workflows  Workflow Id  Evaluations Run Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/workflows/evaluation-summaries": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "List Workflow Evaluation Summaries",
+        "description": "One row per workflow (and the unassigned bucket): count, health, running.",
+        "operationId": "list_workflow_evaluation_summaries_api_genagent_eval_workflows_evaluation_summaries_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowEvaluationSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Workflow Evaluation Summaries Api Genagent Eval Workflows Evaluation Summaries Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/eval/workflows/{workflow_id}/evaluations": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "List Workflow Evaluations",
+        "description": "A page of one workflow's evaluations. Use ``unassigned`` for evals with no workflow.",
+        "operationId": "list_workflow_evaluations_api_genagent_eval_workflows__workflow_id__evaluations_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEvaluations"
                 }
               }
             }
@@ -35586,6 +35771,47 @@
         "title": "OperatorStatisticsRead",
         "description": "Used for returning OperatorRead Statistics"
       },
+      "PaginatedEvaluations": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TestEvaluationInDB"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_unfiltered": {
+            "type": "integer",
+            "title": "Total Unfiltered"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "any_running": {
+            "type": "boolean",
+            "title": "Any Running",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "total_unfiltered",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedEvaluations",
+        "description": "One page of a workflow's evaluations.\n\n``total`` is the count for the current search; ``total_unfiltered`` is the\nworkflow's full evaluation count (ignoring search), so the header can show\n\"N of M\". ``any_running`` reflects the whole workflow (across all pages), not\njust this page, so the client can block a duplicate \"Run all\"."
+      },
       "PaginatedResponse_AgentListItem_": {
         "properties": {
           "items": {
@@ -36978,6 +37204,61 @@
         ],
         "title": "SortField"
       },
+      "StartedEvaluationRun": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Evaluation Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suite Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "status"
+        ],
+        "title": "StartedEvaluationRun",
+        "description": "Outcome of starting one evaluation in a batch/workflow run.\n\n``run_id``/``suite_id`` are unset and ``error`` is populated when the\nevaluation could not be queued (``status == \"failed_to_start\"``)."
+      },
       "SupportTicketCommentCreate": {
         "properties": {
           "body": {
@@ -38036,6 +38317,104 @@
           "suite_id"
         ],
         "title": "TestEvaluationCreate"
+      },
+      "TestEvaluationInDB": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "suite_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Suite Id"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "techniques": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques"
+          },
+          "technique_configs": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technique Configs"
+          },
+          "input_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Metadata"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Run Ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "suite_id",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TestEvaluationInDB"
       },
       "TestEvaluationUpdate": {
         "properties": {
@@ -40251,6 +40630,53 @@
           "version"
         ],
         "title": "WorkflowCreate"
+      },
+      "WorkflowEvaluationSummary": {
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "eval_count": {
+            "type": "integer",
+            "title": "Eval Count"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "finished_count": {
+            "type": "integer",
+            "title": "Finished Count",
+            "default": 0
+          },
+          "any_running": {
+            "type": "boolean",
+            "title": "Any Running",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "eval_count"
+        ],
+        "title": "WorkflowEvaluationSummary",
+        "description": "One overview row: a workflow (or the unassigned bucket) and its eval count.\n\n``health`` is the mean accuracy across the workflow's evaluations whose latest\nrun has finished, counting failed runs as 0; ``None`` when none have finished.\n``finished_count`` is how many evaluations contributed to ``health``.\n``any_running`` is true when any evaluation's latest run is queued or running."
       },
       "WorkflowMinimal": {
         "properties": {
