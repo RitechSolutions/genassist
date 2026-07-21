@@ -17,6 +17,10 @@ export interface TestCase {
   expected_output?: Record<string, unknown>;
   tags?: string[];
   weight?: number;
+  /** Cases sharing a source conversation replay as one memory thread. */
+  source_conversation_id?: string | null;
+  /** Position of this turn within its source conversation. */
+  turn_index?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -46,6 +50,8 @@ export interface TestResult {
   execution_trace?: Record<string, unknown>;
   metrics?: Record<string, TestResultMetric>;
   error?: string | null;
+  /** scored | execution_failed | scoring_failed | skipped; null for legacy results. */
+  status?: string | null;
   created_at?: string;
   updated_at?: string;
 }
