@@ -19,6 +19,7 @@ import {
   Contact,
   ShieldCheck,
   Search,
+  LayoutGrid,
 } from "lucide-react";
 import {
   Sidebar,
@@ -85,6 +86,15 @@ const navGroups: NavGroup[] = [
         icon: UserRoundCog,
         url: "/ai-agents",
         permissionsRequired: ["read:llm_analyst"],
+      },
+      {
+        title: "Templates",
+        icon: LayoutGrid,
+        url: "/templates",
+        permissionsRequired: ["*", "read:template"],
+        feature_flag: FeatureFlags.FEATURE.TEMPLATE_MARKETPLACE,
+        badge: "NEW",
+        badgeTone: "new",
       },
       {
         title: "Conversations",

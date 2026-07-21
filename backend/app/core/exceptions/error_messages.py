@@ -14,6 +14,8 @@ class ErrorKey(Enum):
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND"
+    TEMPLATE_INVALID = "TEMPLATE_INVALID"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
     INVALID_FILE_FORMAT = "invalid_file_format"
     NO_SELECTED_FILE = "no_selected_file"
@@ -173,6 +175,8 @@ ERROR_MESSAGES = {
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
+        ErrorKey.TEMPLATE_NOT_FOUND: "Template not found.",
+        ErrorKey.TEMPLATE_INVALID: "The template is invalid or cannot be used.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
         ErrorKey.NO_SELECTED_FILE: "No selected file",
         ErrorKey.INVALID_RECORDED_AT: "Invalid recorded_at format. Use ISO 8601: YYYY-MM-DDTHH:MM:SSZ",

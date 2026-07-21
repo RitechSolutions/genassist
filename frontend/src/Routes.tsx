@@ -59,6 +59,7 @@ import HelpCenterIndex from "@/views/HelpCenter/Index";
 import NewTicketPage from "@/views/HelpCenter/pages/NewTicket";
 import TicketDetailPage from "@/views/HelpCenter/pages/TicketDetail";
 import MCPServersPage from "@/views/MCPServers/pages/MCPServers";
+import TemplatesPage from "@/views/Templates/pages/Templates";
 import TestSuitesIndex from "@/views/TestSuites/Index";
 import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
 import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
@@ -102,6 +103,9 @@ export const RoutesProvider = () => {
   );
   const showBedrockFineTune = useFeatureFlagVisible(
     FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE
+  );
+  const showTemplateMarketplace = useFeatureFlagVisible(
+    FeatureFlagKeys.FEATURE.TEMPLATE_MARKETPLACE
   );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
@@ -192,6 +196,16 @@ export const RoutesProvider = () => {
                 <ProtectedRoute requiredPermissions={["read:conversation"]}>
                   <ReportedFeedback />
                 </ProtectedRoute>
+              ),
+            },
+            {
+              path: "templates",
+              element: showTemplateMarketplace ? (
+                <ProtectedRoute requiredPermissions={["read:template"]}>
+                  <TemplatesPage />
+                </ProtectedRoute>
+              ) : (
+                <Navigate to="/dashboard" replace />
               ),
             },
             {
@@ -582,7 +596,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [showLocalFineTune, showBedrockFineTune],
+    [showLocalFineTune, showBedrockFineTune, showTemplateMarketplace],
   );
 
   const organizationRouter = useMemo(
