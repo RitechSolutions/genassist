@@ -1,8 +1,9 @@
 """
 Token usage extraction utilities for LLM responses.
 
-Extracts input_tokens, output_tokens, total_tokens from LangChain AIMessage
-response_metadata, handling provider-specific structures (OpenAI, Anthropic, etc.).
+Extracts input_tokens, output_tokens, total_tokens from a LangChain AIMessage,
+preferring the standardized usage_metadata attribute with a response_metadata
+fallback for provider-specific structures (OpenAI, Anthropic, etc.).
 """
 
 from typing import Any, Dict, Optional
@@ -73,10 +74,7 @@ def extract_usage_from_response_metadata(metadata: Dict[str, Any]) -> Optional[D
 
 def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, int]]:
     """
-    Extract token usage from a LangChain AIMessage.
-
-    Args:
-        message: AIMessage instance (from llm.ainvoke) with response_metadata
+    Extract token usage from a LangChain AIMessage. Prefer ``usage_metadata`` first.
 
     Returns:
         Dict with input_tokens, output_tokens, total_tokens, or None if not found.
@@ -84,25 +82,37 @@ def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, int]]:
     if message is None:
         return None
 
-    metadata = None
-    if hasattr(message, "response_metadata"):
-        metadata = getattr(message, "response_metadata", None)
-    elif hasattr(message, "usage_metadata"):
-        metadata = getattr(message, "usage_metadata", None)
-        if metadata and not isinstance(metadata, dict):
-            metadata = {"usage_metadata": metadata} if metadata else None
+    response_metadata = getattr(message, "response_metadata", None)
 
-    if not metadata:
+    usage = None
+    usage_metadata = getattr(message, "usage_metadata", None)
+    if isinstance(usage_metadata, dict):
+        input_tokens = usage_metadata.get("input_tokens")
+        output_tokens = usage_metadata.get("output_tokens")
+        if input_tokens is not None or output_tokens is not None:
+            input_tokens = input_tokens if input_tokens is not None else 0
+            output_tokens = output_tokens if output_tokens is not None else 0
+            total_tokens = usage_metadata.get("total_tokens")
+            if total_tokens is None:
+                total_tokens = input_tokens + output_tokens
+            usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+            }
+
+    if usage is None and response_metadata:
+        usage = extract_usage_from_response_metadata(response_metadata)
+
+    if usage is None:
         return None
-
-    usage = extract_usage_from_response_metadata(metadata)
 
     # If this response came from a FallbackChatModel, record which provider actually
     # answered so usage can be attributed correctly (the primary may have failed over).
-    if usage is not None and isinstance(metadata, dict):
+    if isinstance(response_metadata, dict):
         from app.modules.workflow.llm.fallback_exceptions import FALLBACK_PROVIDER_ID_KEY
 
-        responding_provider_id = metadata.get(FALLBACK_PROVIDER_ID_KEY)
+        responding_provider_id = response_metadata.get(FALLBACK_PROVIDER_ID_KEY)
         if responding_provider_id:
             usage["provider_id"] = responding_provider_id
 
