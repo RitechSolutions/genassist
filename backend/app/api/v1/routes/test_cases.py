@@ -64,6 +64,20 @@ async def import_cases_from_conversation(
     )
 
 
+@router.delete(
+    "/suites/{suite_id}/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def remove_conversation_from_suite(
+    suite_id: UUID,
+    conversation_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Remove every case imported from one conversation, leaving the rest intact."""
+    await service.remove_conversation_from_suite(suite_id, conversation_id)
+
+
 @router.patch(
     "/cases/{case_id}",
     response_model=TestCase,
