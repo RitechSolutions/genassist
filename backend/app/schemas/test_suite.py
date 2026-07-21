@@ -25,6 +25,17 @@ class TestCaseBase(BaseModel):
         default=None,
         description="Optional weight used when aggregating metrics.",
     )
+    source_conversation_id: Optional[UUID] = Field(
+        default=None,
+        description=(
+            "Conversation this case was imported from. Cases sharing a value "
+            "replay as one memory thread; null cases are independent."
+        ),
+    )
+    turn_index: Optional[int] = Field(
+        default=None,
+        description="Position of this turn within its source conversation.",
+    )
 
 
 class TestCaseCreate(TestCaseBase):
@@ -117,6 +128,13 @@ class TestResultBase(BaseModel):
     )
     metrics: Optional[Dict[str, TestResultMetrics]] = None
     error: Optional[str] = None
+    status: Optional[str] = Field(
+        default=None,
+        description=(
+            "scored | execution_failed | scoring_failed | skipped. Null for "
+            "results recorded before statuses were introduced."
+        ),
+    )
 
 
 class TestResultInDB(TestResultBase):
