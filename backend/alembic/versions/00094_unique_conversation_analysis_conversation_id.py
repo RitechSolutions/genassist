@@ -22,7 +22,7 @@ from typing import Sequence, Union
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '3900c6b0aaeb'
+revision: str = '322883fb3a4d'
 down_revision: Union[str, None] = '21f612ab93ba'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
