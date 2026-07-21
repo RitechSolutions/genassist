@@ -67,8 +67,8 @@ const HintChip: React.FC<{ keyContent: React.ReactNode; label: string }> = ({
   keyContent,
   label,
 }) => (
-  <span className="inline-flex items-center gap-1.5 text-gray-600">
-    <kbd className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-md border border-gray-200 bg-white px-1.5 text-[11px] font-medium text-gray-600 shadow-sm">
+  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+    <kbd className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-md border border-border bg-card px-1.5 text-[11px] font-medium text-muted-foreground shadow-sm">
       {keyContent}
     </kbd>
     <span>{label}</span>
@@ -154,11 +154,11 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
     <div className="fixed bottom-6 inset-x-0 mx-auto z-50 w-full max-w-xl px-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
       {/* Results panel — grows upward from the input */}
       {showResultsPanel && (
-        <div className="mb-2 max-h-[46vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-1.5 shadow-xl shadow-black/10">
+        <div className="mb-2 max-h-[46vh] overflow-y-auto rounded-2xl border border-border bg-card p-1.5 shadow-xl shadow-black/10">
           {/* /agent command (command mode) */}
           {isCommand && showAgentCommand && (
             <div className="mb-1">
-              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Command
               </div>
               <button
@@ -170,8 +170,8 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-800">/agent</p>
-                  <p className="truncate text-xs text-gray-500">
+                  <p className="text-sm font-semibold text-foreground">/agent</p>
+                  <p className="truncate text-xs text-muted-foreground">
                     Ask AI to build or edit this workflow
                   </p>
                 </div>
@@ -185,7 +185,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
           {/* Existing matching nodes (search mode) */}
           {existingResults.length > 0 && (
             <div className="mb-1">
-              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 On this workflow
               </div>
               {existingResults.map((item) => (
@@ -193,7 +193,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => onFocusNode(item.id)}
-                  className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
+                  className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted"
                 >
                   <div
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${getNodeBgColor(
@@ -203,10 +203,10 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
                     {renderIcon(item.icon, `h-4 w-4 ${getNodeIconColor(item.category)}`)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-800">{item.name}</p>
-                    <p className="truncate text-xs text-gray-400">{item.typeLabel}</p>
+                    <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{item.typeLabel}</p>
                   </div>
-                  <span className="flex shrink-0 items-center gap-1 text-xs text-gray-400 opacity-0 transition-opacity group-hover:opacity-100">
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
                     <Crosshair className="h-3.5 w-3.5" /> Focus
                   </span>
                 </button>
@@ -217,7 +217,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
           {/* Node types to add */}
           {addResults.length > 0 && (
             <div>
-              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Add new node
               </div>
               {addResults.map((item) => (
@@ -225,7 +225,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
                   key={item.type}
                   type="button"
                   onClick={() => onAddNode(item.type)}
-                  className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
+                  className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted"
                 >
                   <div
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${getNodeBgColor(
@@ -235,8 +235,8 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
                     {renderIcon(item.icon, `h-4 w-4 ${getNodeIconColor(item.category)}`)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-800">{item.label}</p>
-                    <p className="truncate text-xs text-gray-400">{item.description}</p>
+                    <p className="truncate text-sm font-medium text-foreground">{item.label}</p>
+                    <p className="truncate text-xs text-muted-foreground">{item.description}</p>
                   </div>
                   <span className="flex shrink-0 items-center gap-1 rounded-full bg-[hsl(var(--brand-50))] px-2 py-1 text-xs font-medium text-[hsl(var(--brand-600))]">
                     <Plus className="h-3.5 w-3.5" /> Add
@@ -247,7 +247,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
           )}
 
           {!hasAnyResult && (
-            <div className="px-3 py-6 text-center text-sm text-gray-400">
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               {isCommand
                 ? `No commands or nodes match “${trimmed.replace(/^\//, "")}”`
                 : `No nodes match “${trimmed}”`}
@@ -257,7 +257,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
       )}
 
       {/* Input + hints — one cohesive card */}
-      <div className="overflow-hidden rounded-[26px] border border-[hsl(var(--brand-600))] bg-white shadow-lg transition-all focus-within:ring-2 focus-within:ring-[hsl(var(--brand-600))]/30">
+      <div className="overflow-hidden rounded-[26px] border border-[hsl(var(--brand-600))] bg-card shadow-lg transition-all focus-within:ring-2 focus-within:ring-[hsl(var(--brand-600))]/30">
       <div className="relative flex items-center">
         {/* Left indicator: /agent badge in agent mode, Search icon otherwise */}
         {isAgent ? (
@@ -304,7 +304,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
             {isSearch && hasQuery && (
               <span
                 className={`absolute right-12 text-xs font-medium tabular-nums ${
-                  matchCount > 0 ? "text-[hsl(var(--brand-600))]" : "text-gray-400"
+                  matchCount > 0 ? "text-[hsl(var(--brand-600))]" : "text-muted-foreground"
                 }`}
               >
                 {matchCount > 0
@@ -315,7 +315,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-muted-foreground transition-colors"
             >
               <X className="h-4 w-4" />
               <span className="sr-only">Close search</span>
@@ -325,7 +325,7 @@ const WorkflowCommandPalette: React.FC<WorkflowCommandPaletteProps> = ({
       </div>
 
       {/* Footer hints — folded into the same card, more visible */}
-      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-gray-100 bg-gray-50 px-4 py-2.5 text-xs">
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-border bg-muted px-4 py-2.5 text-xs">
         {isAgent ? (
           <>
             <HintChip keyContent={<CornerDownLeft className="h-3 w-3" />} label="send to AI" />

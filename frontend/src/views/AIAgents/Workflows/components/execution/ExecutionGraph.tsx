@@ -71,13 +71,13 @@ const OrderedFallbackList: React.FC<{
             selectedNodeId === node.nodeId && 'ring-2 ring-brand-600 ring-offset-1'
           )}
         >
-          <span className="w-5 text-xs tabular-nums text-gray-400">{(node.order ?? 0) + 1}</span>
+          <span className="w-5 text-xs tabular-nums text-muted-foreground">{(node.order ?? 0) + 1}</span>
           <Icon
             className={cn('h-4 w-4 shrink-0', style.accentClass, style.spin && 'animate-spin')}
             aria-hidden="true"
           />
-          <span className="flex-1 truncate font-medium text-gray-800">{node.name}</span>
-          <span className="text-xs tabular-nums text-gray-500">{formatDuration(node.durationMs)}</span>
+          <span className="flex-1 truncate font-medium text-foreground">{node.name}</span>
+          <span className="text-xs tabular-nums text-muted-foreground">{formatDuration(node.durationMs)}</span>
         </button>
       );
     })}
@@ -116,18 +116,18 @@ const PathStepper: React.FC<{ orderedNodeIds: string[] }> = ({ orderedNodeIds })
 
   return (
     <Panel position="bottom-right">
-      <div className="flex items-center gap-0.5 rounded-full border border-gray-200 bg-white px-1 shadow-[0_0_2px_1px_rgba(0,0,0,0.08)]">
+      <div className="flex items-center gap-0.5 rounded-full border border-border bg-card px-1 shadow-[0_0_2px_1px_rgba(0,0,0,0.08)]">
         <button
           type="button"
           onClick={() => focusNode(index < 0 ? 0 : index - 1)}
           disabled={atStart}
           title="Previous node"
           aria-label="Previous node"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="min-w-[2.75rem] select-none text-center text-xs font-medium tabular-nums text-gray-600">
+        <span className="min-w-[2.75rem] select-none text-center text-xs font-medium tabular-nums text-muted-foreground">
           {index < 0 ? '–' : index + 1}/{total}
         </span>
         <button
@@ -136,7 +136,7 @@ const PathStepper: React.FC<{ orderedNodeIds: string[] }> = ({ orderedNodeIds })
           disabled={atEnd}
           title="Next node"
           aria-label="Next node"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
@@ -233,20 +233,20 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   if (!hasGraph) {
     if (!model.nodes.length) {
       return (
-        <div className="flex h-full items-center justify-center rounded-md border border-dashed border-gray-200 text-sm text-gray-500">
+        <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
           No node execution data to display.
         </div>
       );
     }
     return (
-      <div className="h-full rounded-md border border-gray-200 bg-white">
+      <div className="h-full rounded-md border border-border bg-card">
         <OrderedFallbackList model={model} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+    <div className="h-full overflow-hidden rounded-md border border-border bg-muted">
       <ReactFlowProvider>
         <ReactFlow
           nodes={displayNodes}

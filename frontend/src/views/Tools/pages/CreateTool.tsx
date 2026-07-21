@@ -336,7 +336,7 @@ export default function CreateTool() {
                   onToolTypeChange={setToolType}
                 />
 
-                <div className="-mx-6 my-6 border-t border-gray-200" />
+                <div className="-mx-6 my-6 border-t border-border" />
 
                 <ParameterSection
                   dynamicParams={dynamicParams}
@@ -345,7 +345,7 @@ export default function CreateTool() {
                   removeItem={removeItem}
                 />
 
-                <div className="-mx-6 my-6 border-t border-gray-200" />
+                <div className="-mx-6 my-6 border-t border-border" />
 
                 {toolType === "api" ? (
                   <ApiConfigSection
@@ -384,7 +384,7 @@ export default function CreateTool() {
                   />
                 )}
 
-                <div className="-mx-6 my-6 border-t border-gray-200" />
+                <div className="-mx-6 my-6 border-t border-border" />
 
                 <SubmitButtons
                   onCancel={() => navigate("/tools")}

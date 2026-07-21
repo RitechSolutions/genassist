@@ -11,6 +11,7 @@ import { getFileManagerSettings, type FileManagerSettings } from '@/services/fil
 import { getSecuritySettings, type SecuritySettings } from '@/services/appSettings';
 import { FileManagerSettingsCard } from '../components/FileManagerSettingsCard';
 import { SecuritySettingsCard } from '../components/SecuritySettingsCard';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { User } from '@/interfaces/user.interface';
 
 const SettingsPage = () => {
@@ -75,11 +76,14 @@ const SettingsPage = () => {
     <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
-              <header className="mb-8">
-                <h1 className="text-2xl sm:text-3xl font-bold mb-2 animate-fade-down">Settings</h1>
-                <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">
-                  Manage your account settings and preferences
-                </p>
+              <header className="mb-8 flex items-start justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-bold mb-2 animate-fade-down">Settings</h1>
+                  <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">
+                    Manage your account settings and preferences
+                  </p>
+                </div>
+                <ThemeToggle className="shrink-0 animate-fade-down" />
               </header>
 
               <div className="grid grid-cols-1">
@@ -92,7 +96,7 @@ const SettingsPage = () => {
                   />
                 ))}
 
-                <Card className="md:col-span-2 mt-6">
+                <Card className="dark:bg-zinc-900 md:col-span-2 mt-6">
                   <div className="p-6">
                     <h2 className="text-xl font-semibold mb-4 animate-fade-up">Advanced Configuration</h2>
                     <div className="space-y-4">
@@ -158,11 +162,11 @@ const SettingsPage = () => {
                 </Card>
 
                 {(fileManagerSettings?.values.file_manager_enabled === true && fileManagerSettings.is_active === 1 && (
-                  <Card className="md:col-span-2 mt-6">
+                  <Card className="dark:bg-zinc-900 md:col-span-2 mt-6">
                     <FileManagerSettingsCard settings={fileManagerSettings} />
                   </Card>
                 )) || (
-                  <Card className="md:col-span-2 mt-6 animate-fade-up animate-delay-200">
+                  <Card className="dark:bg-zinc-900 md:col-span-2 mt-6 animate-fade-up animate-delay-200">
                     <div className="p-6">
                       <h2 className="text-xl font-semibold mb-4 animate-fade-up">File Manager Settings</h2>
                       <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
@@ -173,7 +177,7 @@ const SettingsPage = () => {
                   </Card>
                 )}
 
-                <Card className="md:col-span-2 mt-6">
+                <Card className="dark:bg-zinc-900 md:col-span-2 mt-6">
                   <SecuritySettingsCard
                     settings={securitySettings}
                     onSaved={(updated) => setSecuritySettings(updated)}
@@ -191,7 +195,7 @@ const SettingsPage = () => {
           </div>
           <footer className="mt-4">
             <div className="max-w-7xl mx-auto w-full">
-              <p className="text-right px-2 sm:px-4 text-xs sm:text-sm text-gray-500">
+              <p className="text-right px-2 sm:px-4 text-xs sm:text-sm text-muted-foreground">
                 Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
               </p>
             </div>

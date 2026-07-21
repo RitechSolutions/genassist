@@ -68,7 +68,7 @@ export function FileUploadField({
             <button
               type="button"
               onClick={() => onRemoveFile(file.id)}
-              className="h-8 w-8 flex items-center justify-center rounded-full bg-white border text-red-600 hover:bg-red-50"
+              className="h-8 w-8 flex items-center justify-center rounded-full bg-background border text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
             >
               <Trash2 className="w-4 h-4" />
             </button>

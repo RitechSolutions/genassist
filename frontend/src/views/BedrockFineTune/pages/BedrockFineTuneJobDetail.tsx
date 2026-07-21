@@ -199,7 +199,7 @@ export default function BedrockFineTuneJobDetail() {
               ]}
             />
 
-            <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up rounded-lg border text-card-foreground h-full">
+            <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card animate-fade-up rounded-lg border text-card-foreground h-full">
               <p className="text-sm font-semibold mb-4">Deployment</p>
               {hasDeployment && job.deployment_arn ? (
                 <div className="space-y-3">
@@ -248,7 +248,7 @@ export default function BedrockFineTuneJobDetail() {
               )}
 
               {hyperEntries.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-zinc-200">
+                <div className="mt-6 pt-4 border-t border-border">
                   <p className="text-sm font-semibold mb-3">Hyperparameters</p>
                   <div className="grid grid-cols-2 gap-3">
                     {hyperEntries.map(([key, value]) => (
