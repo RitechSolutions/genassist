@@ -374,6 +374,20 @@ input[type="checkbox"]:hover {
   background-color: #101014;
 }
 
+.dark .react-flow__controls-button {
+  background-color: hsl(var(--card));
+  border-bottom-color: hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.dark .react-flow__controls-button:hover {
+  background-color: hsl(var(--muted));
+}
+
+.dark .react-flow__controls .react-flow__controls-button svg {
+  fill: hsl(var(--muted-foreground));
+}
+
 .react-flow__controls-button svg {
   pointer-events: none;
   width: 14px !important;

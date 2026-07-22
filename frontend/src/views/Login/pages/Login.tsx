@@ -208,7 +208,11 @@ const LoginPage = () => {
         <div className="flex items-center justify-center p-4 bg-card">
           <div className="w-full max-w-md space-y-6">
             <div className="space-y-2">
-              <GenAssistLogo width={200} height={52} />
+              <GenAssistLogo
+                width={200}
+                height={52}
+                className="text-zinc-900 dark:text-zinc-100"
+              />
 
               <h1 className="text-3xl font-bold tracking-tight">Sign in</h1>
               <p className="text-muted-foreground">
