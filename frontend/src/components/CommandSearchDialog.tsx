@@ -30,8 +30,8 @@ function ResultBadge({ label, tone = 'beta' }: { label: string; tone?: BadgeTone
     <span
       className={cn(
         'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none',
-        tone === 'new' && 'bg-emerald-50 text-emerald-600',
-        tone === 'beta' && 'bg-blue-50 text-blue-600',
+        tone === 'new' && 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
+        tone === 'beta' && 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
         tone === 'count' && 'min-w-[18px] rounded-full bg-blue-600 px-1 text-center text-white'
       )}
     >
@@ -64,13 +64,13 @@ function ResultItem({
   return (
     <CommandItem value={value} onSelect={() => onSelect(url)} className="gap-2.5">
       {Icon ? (
-        <Icon className="h-4 w-4 shrink-0 text-zinc-500" strokeWidth={2.25} />
+        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={2.25} />
       ) : (
         <span className="h-4 w-4 shrink-0" />
       )}
-      <span className="truncate text-zinc-700">{title}</span>
+      <span className="truncate text-muted-foreground">{title}</span>
       {badge && <ResultBadge label={badge} tone={badgeTone} />}
-      {context && <span className="ml-auto truncate pl-3 text-xs text-zinc-400">{context}</span>}
+      {context && <span className="ml-auto truncate pl-3 text-xs text-muted-foreground">{context}</span>}
     </CommandItem>
   );
 }
@@ -87,18 +87,18 @@ function ThreadGroup({
   const Icon = group.icon;
   return (
     <div className="p-1">
-      <div className="flex items-center gap-2.5 px-2.5 py-[7px] text-sm font-medium text-zinc-600">
-        <Icon className="h-4 w-4 shrink-0 text-zinc-500" strokeWidth={2.25} />
+      <div className="flex items-center gap-2.5 px-2.5 py-[7px] text-sm font-medium text-muted-foreground">
+        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={2.25} />
         <span className="truncate">{group.page}</span>
       </div>
       <div className="relative py-0.5 pl-[30px]">
-        <div className="absolute bottom-0 left-[18px] top-0 w-px bg-zinc-200" />
+        <div className="absolute bottom-0 left-[18px] top-0 w-px bg-muted" />
         {group.items.map((item) => (
           <CommandItem
             key={item.value}
             value={item.value}
             onSelect={() => onSelect(item.url)}
-            className="text-zinc-600"
+            className="text-muted-foreground"
           >
             <span className="truncate">{item.title}</span>
           </CommandItem>
@@ -113,14 +113,14 @@ function ThreadSkeleton() {
   return (
     <div className="p-1" aria-hidden>
       <div className="flex items-center gap-2.5 px-2.5 py-[7px]">
-        <span className="h-4 w-4 shrink-0 animate-pulse rounded bg-zinc-200" />
-        <span className="h-3.5 w-24 animate-pulse rounded bg-zinc-200" />
+        <span className="h-4 w-4 shrink-0 animate-pulse rounded bg-muted" />
+        <span className="h-3.5 w-24 animate-pulse rounded bg-muted" />
       </div>
       <div className="relative py-0.5 pl-[30px]">
-        <div className="absolute bottom-0 left-[18px] top-0 w-px bg-zinc-100" />
+        <div className="absolute bottom-0 left-[18px] top-0 w-px bg-muted" />
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="px-2 py-2">
-            <span className="block h-3.5 w-40 animate-pulse rounded bg-zinc-100" />
+            <span className="block h-3.5 w-40 animate-pulse rounded bg-muted" />
           </div>
         ))}
       </div>
@@ -201,7 +201,7 @@ export function CommandSearchDialog({ open, onOpenChange, groups, footer }: Comm
 
           <Command
             shouldFilter={false}
-            className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-zinc-400 [&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2.5"
+            className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2.5"
           >
             <CommandInput
               value={query}
@@ -210,7 +210,7 @@ export function CommandSearchDialog({ open, onOpenChange, groups, footer }: Comm
             />
             <CommandList className="max-h-[60vh] p-1">
               {!loading && !hasResults && (
-                <CommandEmpty className="py-10 text-zinc-400">No results found.</CommandEmpty>
+                <CommandEmpty className="py-10 text-muted-foreground">No results found.</CommandEmpty>
               )}
 
               {/* Static nav ("pages") */}
@@ -256,7 +256,7 @@ export function CommandSearchDialog({ open, onOpenChange, groups, footer }: Comm
               {/* Skeleton while the first results load; a subtle note while more arrive */}
               {loading && dynamicGroups.length === 0 && <ThreadSkeleton />}
               {loading && dynamicGroups.length > 0 && (
-                <div className="px-3 py-2 text-center text-xs text-zinc-400">Searching…</div>
+                <div className="px-3 py-2 text-center text-xs text-muted-foreground">Searching…</div>
               )}
             </CommandList>
           </Command>

@@ -32,7 +32,7 @@ export function ToolSection({
   sample,
 }: ToolSectionProps) {
   return (
-    <div className="space-y-6 pt-2 border-b last:border-b-0 border-gray-200 pb-8">
+    <div className="space-y-6 pt-2 border-b last:border-b-0 border-border pb-8">
       <div className="flex justify-between pb-2">
         <div>
           <h2 className="text-lg font-semibold">{title}</h2>

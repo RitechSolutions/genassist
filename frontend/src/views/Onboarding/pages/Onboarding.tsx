@@ -128,7 +128,7 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="min-h-screen flex flex-col bg-muted">
       <OnboardingHeader />
 
       <main className="flex-1 flex flex-col items-center justify-center px-4 gap-8">

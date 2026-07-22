@@ -260,7 +260,7 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                   <CreateNewSelectItem />
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Model used to decide between the true and false outputs.
               </p>
             </div>
@@ -330,7 +330,7 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 If the provider, prompt, or model output is invalid, this branch
                 is used.
               </p>

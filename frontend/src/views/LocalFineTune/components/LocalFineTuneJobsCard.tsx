@@ -58,7 +58,7 @@ function renderLocalJobStatus(job: LocalFineTuneJob) {
 
   if (normalizedStatus === "succeeded") {
     return (
-      <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-teal-200 bg-teal-50 text-teal-800">
+      <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-500/30 dark:bg-teal-500/15 dark:text-teal-400">
         Completed
       </Badge>
     );
@@ -137,7 +137,7 @@ export function LocalFineTuneJobsCard({
           const secondary = getLocalFineTuneJobNameSubtitle(job, primary);
           return (
             <div className="flex flex-col gap-0.5 min-w-0">
-              <span className="font-medium text-zinc-800 truncate">{primary}</span>
+              <span className="font-medium text-foreground truncate">{primary}</span>
               {secondary ? (
                 <span className="text-xs text-muted-foreground truncate">{secondary}</span>
               ) : null}
@@ -158,7 +158,7 @@ export function LocalFineTuneJobsCard({
         header: "Created",
         key: "created_at",
         cell: (job) => (
-          <span className="text-xs text-zinc-500 tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {formatShortDate(job.created_at)}
           </span>
         ),

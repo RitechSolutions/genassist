@@ -150,7 +150,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
               min="1"
               className="w-full"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Number of results to retrieve from RAG
             </p>
           </div>

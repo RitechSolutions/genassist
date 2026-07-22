@@ -15,8 +15,8 @@ export function AttributeBreakdownChartBodySkeleton() {
           </div>
         ))}
       </div>
-      <div className="mt-6 overflow-hidden rounded-lg border border-gray-100">
-        <div className="flex gap-4 border-b border-gray-100 bg-gray-50/80 px-4 py-3">
+      <div className="mt-6 overflow-hidden rounded-lg border border-border">
+        <div className="flex gap-4 border-b border-border bg-muted/80 px-4 py-3">
           {Array.from({ length: 6 }, (_, i) => (
             <Skeleton key={i} className="h-3 flex-1" />
           ))}
@@ -24,7 +24,7 @@ export function AttributeBreakdownChartBodySkeleton() {
         {Array.from({ length: 3 }, (_, row) => (
           <div
             key={row}
-            className="flex gap-4 border-t border-gray-100 px-4 py-3"
+            className="flex gap-4 border-t border-border px-4 py-3"
           >
             {Array.from({ length: 6 }, (_, col) => (
               <Skeleton key={col} className="h-4 flex-1" />
@@ -44,7 +44,7 @@ export function AttributeBreakdownChartSkeleton({
   className,
 }: AttributeBreakdownChartSkeletonProps) {
   return (
-    <Card className={cn("mt-6 bg-white", analyticsFadeUpClass, className)}>
+    <Card className={cn("mt-6 bg-card dark:bg-zinc-900", analyticsFadeUpClass, className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div className="space-y-2">
           <Skeleton className="h-5 w-52" />

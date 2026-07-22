@@ -5,7 +5,7 @@ interface ErrorBannerProps {
 export const ErrorBanner = ({ message }: ErrorBannerProps) => {
   if (!message) return null;
   return (
-    <div className="w-full max-w-2xl text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2.5 text-center">
+    <div className="w-full max-w-2xl text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2.5 text-center dark:text-red-400 dark:bg-red-500/15 dark:border-red-500/30">
       {message}
     </div>
   );

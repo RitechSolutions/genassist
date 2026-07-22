@@ -19,10 +19,10 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
             pressed={toggleStates[field.label] || false}
             onPressedChange={() => onToggle(field.label)}
             aria-label={field.label}
-            className="relative px-0 h-6 w-11 bg-zinc-200 hover:bg-zinc-300 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground rounded-full"
+            className="relative px-0 h-6 w-11 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground rounded-full"
           >
             <span
-              className="absolute left-[2px] transition-transform h-5 w-5 rounded-full bg-white data-[state=on]:translate-x-[20px]"
+              className="absolute left-[2px] transition-transform h-5 w-5 rounded-full bg-white shadow-sm data-[state=on]:translate-x-[20px]"
               data-state={toggleStates[field.label] ? 'on' : 'off'}
             />
           </Toggle>
@@ -82,7 +82,7 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
   };
 
   return (
-    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
+    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-card dark:bg-zinc-900">
       <div className="flex items-center gap-3 mb-4">
         <section.icon className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
         <div>

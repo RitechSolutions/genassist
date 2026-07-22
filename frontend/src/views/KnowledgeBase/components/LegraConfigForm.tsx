@@ -25,13 +25,13 @@ const LegraConfigForm: React.FC<LegraConfigFormProps> = ({
   };
 
   return (
-    <div className="bg-gray-50 rounded-lg">
+    <div className="bg-muted rounded-lg">
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
-          <HelpCircle className="h-5 w-5 text-gray-500" />
+          <HelpCircle className="h-5 w-5 text-muted-foreground" />
           <div>
             <div className="font-medium">Legra</div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Enable Legra for graph building with custom questions
             </p>
           </div>
@@ -55,7 +55,7 @@ const LegraConfigForm: React.FC<LegraConfigFormProps> = ({
             />
           </div>
 
-          <p className="text-sm text-gray-500 mt-4">
+          <p className="text-sm text-muted-foreground mt-4">
             Add one question per line. These questions will guide Legra during
             the graph building process.
           </p>

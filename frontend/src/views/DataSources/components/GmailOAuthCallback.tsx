@@ -90,11 +90,11 @@ export function GmailOAuthCallback() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center bg-white p-8 rounded-lg shadow-xl max-w-lg w-full">
+    <div className="min-h-screen flex items-center justify-center bg-muted">
+      <div className="text-center bg-card p-8 rounded-lg shadow-xl max-w-lg w-full">
         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
         <p className="text-lg font-medium mb-2">{statusMessage}</p>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           Please wait while we complete the setup...
         </p>
       </div>

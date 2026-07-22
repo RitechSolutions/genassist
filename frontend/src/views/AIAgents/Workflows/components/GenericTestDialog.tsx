@@ -403,12 +403,12 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       <DialogContent className="max-w-2xl max-h-[85vh] w-full overflow-hidden" style={{ zIndex: 1201 }}>
         <DialogHeader>
           <DialogTitle>{`Test ${nodeName}`}</DialogTitle>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Test this node using sample inputs or extracted variables.
           </p>
           {!nodeId && (
-            <div className="mt-2 p-2 bg-yellow-50 rounded-md border border-yellow-200">
-              <div className="text-xs text-yellow-700">
+            <div className="mt-2 p-2 bg-yellow-50 rounded-md border border-yellow-200 dark:bg-yellow-500/15 dark:border-yellow-500/30">
+              <div className="text-xs text-yellow-700 dark:text-yellow-400">
                 ⚠️ Warning: Node ID not provided. Input fields cannot be
                 prefilled with available data from the workflow.
               </div>

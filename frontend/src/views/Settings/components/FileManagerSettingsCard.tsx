@@ -77,7 +77,7 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
   };
 
   return (
-    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
+    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-card dark:bg-zinc-900">
       <div className="flex items-center gap-3 mb-4">
         <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
         <div>
