@@ -7,6 +7,7 @@ import logging
 
 from injector import inject
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.dependencies.injector import injector
@@ -71,13 +72,11 @@ class OpenAPINode(BaseNode):
                     "Failed to load OpenAPI specification from: %s",
                     file_source
                 )
-                return {
-                    "status": 500,
-                    "error": (
-                        f"Failed to load OpenAPI specification. "
-                        "Please check file path/URL and format."
-                    ),
-                }
+                error_msg = (
+                    "Failed to load OpenAPI specification. "
+                    "Please check file path/URL and format."
+                )
+                return node_failure(error_msg, code=500, output={"status": 500, "error": error_msg})
 
             # Get LLM provider
             llm_provider = injector.get(LLMProvider)
@@ -98,10 +97,8 @@ class OpenAPINode(BaseNode):
 
         except Exception as e:
             logger.error("OpenAPI node execution failed: %s", e, exc_info=True)
-            return {
-                "status": 500,
-                "error": f"OpenAPI node execution failed: {str(e)}"
-            }
+            error_msg = f"OpenAPI node execution failed: {str(e)}"
+            return node_failure(error_msg, code=500, output={"status": 500, "error": error_msg})
 
     async def _answer_query_about_spec(
         self,

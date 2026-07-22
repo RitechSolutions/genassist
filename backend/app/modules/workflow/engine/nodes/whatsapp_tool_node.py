@@ -7,6 +7,7 @@ from typing import Dict, Any, cast
 from uuid import UUID
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 from app.modules.integration.whatsapp import WhatsAppConnector
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
@@ -45,7 +46,7 @@ class WhatsAppToolNode(BaseNode):
         if not all([app_settings_id, to, text]):
             error_msg = "WhatsApp tool: app_settings_id, recipient_number and message are required"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         try:
             # Get app settings from database
@@ -65,23 +66,23 @@ class WhatsAppToolNode(BaseNode):
                     "WhatsApp tool: whatsapp_token not found or invalid in app settings"
                 )
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             if not phone_number_id or not isinstance(phone_number_id, str):
                 error_msg = "WhatsApp tool: phone_number_id not found or invalid in app settings"
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             # Validate recipient_number and message are strings
             if not isinstance(to, str):
                 error_msg = "WhatsApp tool: recipient_number must be a string"
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             if not isinstance(text, str):
                 error_msg = "WhatsApp tool: message must be a string"
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             # At this point, we know to and text are strings
             recipient_number: str = cast(str, to)
@@ -99,4 +100,4 @@ class WhatsAppToolNode(BaseNode):
         except Exception as e:
             error_msg = f"Error sending WhatsApp message: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=500, output={"status": 500, "data": {"error": error_msg}})

@@ -13,6 +13,7 @@ from uuid import UUID
 
 from app.modules.data.utils.file_extractor import FileTextExtractor
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class FileReaderNode(BaseNode):
 
         if not file_id and not file_url:
             logger.warning("FileReaderNode: no fileId or fileUrl configured")
-            return {"error": "No file configured for File Reader node"}
+            return node_failure("No file configured for File Reader node")
 
         try:
             from app.dependencies.injector import injector
@@ -62,7 +63,7 @@ class FileReaderNode(BaseNode):
                 content = await file_service.get_file_content_from_url(file_url)
 
             if not content:
-                return {"error": "File is empty"}
+                return node_failure("File is empty")
 
             extractor = FileTextExtractor()
             text = extractor.extract_from_bytes(file_name or "file.bin", content)
@@ -77,7 +78,7 @@ class FileReaderNode(BaseNode):
         except Exception as e:
             error_msg = f"Error reading file: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {"error": error_msg}
+            return node_failure(error_msg)
 
     async def _read_chat_documents(self) -> str:
         """Read every document attached in the chat, skipping images."""

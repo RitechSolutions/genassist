@@ -601,6 +601,33 @@ class WorkflowState:
             "execution_end_time": self.execution_end_time,
         }
 
+    def _collect_failed_nodes(self) -> list[dict]:
+        """Collect the nodes that failed in this run, latest run per node only.
+
+        Re-run nodes are archived under prefixed keys (e.g. ``node_id_0``); only
+        the latest run keeps the un-suffixed ``node_id`` key. We ignore archived
+        keys so a node that failed once and later succeeded is not reported as
+        failed (mirrors the frontend's `stripArchivedKeys`).
+        """
+        import re
+
+        keys = set(self.node_execution_status.keys())
+        failed: list[dict] = []
+        for node_id, entry in self.node_execution_status.items():
+            # Skip archived earlier runs: "<base>_<n>" where <base> is also a key.
+            match = re.match(r"^(.+)_(\d+)$", node_id)
+            if match and match.group(1) in keys:
+                continue
+            if not isinstance(entry, dict) or entry.get("status") != "failed":
+                continue
+            failed.append({
+                "node_id": node_id,
+                "name": entry.get("name") or "",
+                "type": entry.get("type") or "",
+                "error": entry.get("error") or "",
+            })
+        return failed
+
     def format_state_as_response(self):
         """
         Format the workflow state as a response and sanitize for JSON compliance.
@@ -631,9 +658,18 @@ class WorkflowState:
         else:
             status = "success"
 
+        # Surface node-level failures at the run level. This is ADDITIVE: the
+        # top-level `status` stays "success" (the workflow still completed and
+        # produced a response), but `has_failures`/`failed_nodes` let callers and
+        # the UI know a node did not do its job (e.g. a Zendesk ticket that was
+        # never created despite a 200-style flow). See node_result.is_node_failure.
+        failed_nodes = self._collect_failed_nodes()
+
         token_usage = self.get_total_llm_usage()
         response = {
             "status": status,
+            "has_failures": len(failed_nodes) > 0,
+            "failed_nodes": failed_nodes,
             "input": _input,
             "output": output,
             "performance_metrics": performance_metrics,

@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Literal
 import json
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.mcp.mcp_client import MCPClientV2
 
@@ -235,24 +236,24 @@ class MCPNode(BaseNode):
         if not connection_type:
             error_msg = "MCP node: connectionType is required. Must be one of: 'stdio', 'sse', 'http'"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         if not connection_config:
             error_msg = "MCP node: connectionConfig is required"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         if not tool_name:
             error_msg = "MCP node: tool_name is required for direct execution"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         # Validate tool is whitelisted
         whitelisted_tools = node_data.get("whitelistedTools", [])
         if tool_name not in whitelisted_tools:
             error_msg = f"Tool '{tool_name}' is not whitelisted. Whitelisted tools: {whitelisted_tools}"
             logger.error(error_msg)
-            return {"status": 403, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=403, output={"status": 403, "data": {"error": error_msg}})
 
         try:
             # Get MCP client
@@ -265,8 +266,8 @@ class MCPNode(BaseNode):
             # Validation or MCP server error
             error_msg = str(e)
             logger.error(f"MCP tool execution error: {error_msg}")
-            return {"status": "error", "output": error_msg}
+            return node_failure(error_msg, output={"status": "error", "output": error_msg})
         except Exception as e:
             error_msg = f"Error executing MCP tool '{tool_name}': {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {"status": "error", "output": error_msg}
+            return node_failure(error_msg, output={"status": "error", "output": error_msg})

@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from uuid import UUID
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 from app.modules.integration.zendesk import ZendeskConnector
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
@@ -42,7 +43,7 @@ class ZendeskToolNode(BaseNode):
         if not subject or not description:
             error_msg = "Zendesk tool: Missing required fields: subject or description"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400)
 
         try:
             # Get app settings from database
@@ -68,6 +69,18 @@ class ZendeskToolNode(BaseNode):
                 custom_fields=custom_fields,
             )
 
+            # The connector swallows Zendesk API errors and returns None. That
+            # previously looked like a success (no exception, no output). Treat a
+            # missing ticket as an explicit failure so admins/agents know the
+            # ticket was never created.
+            if result is None:
+                error_msg = (
+                    "Zendesk ticket was not created: the Zendesk API rejected the "
+                    "request or was unreachable."
+                )
+                logger.error(error_msg)
+                return node_failure(error_msg, code=502)
+
             await self._persist_pii_to_conversation(
                 requester_email=requester_email,
                 requester_name=requester_name,
@@ -78,7 +91,7 @@ class ZendeskToolNode(BaseNode):
         except Exception as e:
             error_msg = f"Error creating Zendesk ticket: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=500)
 
     async def _persist_pii_to_conversation(
         self,

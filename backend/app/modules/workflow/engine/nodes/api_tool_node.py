@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any
 import aiohttp
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 
 
 logger = logging.getLogger(__name__)
@@ -42,11 +43,11 @@ class ApiToolNode(BaseNode):
         except (aiohttp.ClientError, json.JSONDecodeError, ValueError) as e:
             error_msg = f"Error processing API tool: {str(e)}"
             logger.error(error_msg)
-            return {
-                "status": 500,
-                "data": {"error": error_msg},
-                "headers": {}
-            }
+            return node_failure(
+                error_msg,
+                code=500,
+                output={"status": 500, "data": {"error": error_msg}, "headers": {}},
+            )
 
     async def _make_api_call(self, method: str, endpoint: str, headers: Dict[str, str],
                              parameters: Dict[str, Any], request_body: str | dict) -> Dict[str, Any]:
@@ -97,10 +98,11 @@ class ApiToolNode(BaseNode):
 
         except (aiohttp.ClientError, json.JSONDecodeError, ValueError) as e:
             logger.error(f"API call failed: {str(e)}")
-            return {
-                "status": 500,
-                "data": {"error": str(e)},
-            }
+            return node_failure(
+                str(e),
+                code=500,
+                output={"status": 500, "data": {"error": str(e)}},
+            )
 
     async def _process_response(self, response: aiohttp.ClientResponse, method: str) -> Dict[str, Any]:
         """Process the aiohttp response and return standardized format"""
@@ -127,8 +129,12 @@ class ApiToolNode(BaseNode):
 
         except aiohttp.ClientResponseError as e:
             logger.error(f"HTTP error {e.status}: {e.message}")
-            return {
-                "status": e.status,
-                "data": {"error": e.message},
-                "headers": dict(response.headers) if hasattr(response, 'headers') else {}
-            }
+            return node_failure(
+                f"HTTP {e.status}: {e.message}",
+                code=e.status,
+                output={
+                    "status": e.status,
+                    "data": {"error": e.message},
+                    "headers": dict(response.headers) if hasattr(response, 'headers') else {},
+                },
+            )
