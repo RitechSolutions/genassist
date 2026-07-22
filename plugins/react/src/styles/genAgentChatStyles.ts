@@ -621,6 +621,130 @@ export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSS
   };
 }
 
+/* ===== Input-bar variant styles ===== */
+
+// Outer wrapper: relative so the FAQ list / conversation panel can float above the bar.
+export function getInputBarRootStyle(fontFamily: string): React.CSSProperties {
+  return {
+    position: 'relative',
+    width: '100%',
+    maxWidth: '680px',
+    margin: '0 auto',
+    boxSizing: 'border-box',
+    fontFamily,
+  };
+}
+
+// The docked "Chat Input" pill itself.
+export function getInputBarBarStyle(): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    width: '100%',
+    boxSizing: 'border-box',
+    background: '#ffffff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '28px',
+    padding: '6px 8px 6px 16px',
+    boxShadow: '0 6px 24px rgba(0, 0, 0, 0.10)',
+    position: 'relative',
+    minWidth: 0,
+  };
+}
+
+// Floating layer anchored just above the bar (shared by the FAQ list and the panel).
+const inputBarFloatingBase: React.CSSProperties = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 'calc(100% + 12px)',
+  zIndex: 40,
+};
+
+export function getInputBarFaqListStyle(): React.CSSProperties {
+  return {
+    ...inputBarFloatingBase,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '8px',
+  };
+}
+
+export function getInputBarFaqChipStyle(t: ThemeParams): React.CSSProperties {
+  return {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    textAlign: 'left',
+    padding: '12px 18px',
+    borderRadius: '22px',
+    border: 'none',
+    // Standalone pill using the agent's configured primary color (matches the welcome-card FAQs).
+    background: t.primaryColor,
+    color: '#ffffff',
+    fontSize: t.fontSize,
+    fontFamily: t.fontFamily,
+    fontWeight: 500,
+    lineHeight: 1.3,
+    cursor: 'pointer',
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.14)',
+    outline: 'none',
+  };
+}
+
+// Compact "agent replied" preview shown above the collapsed bar when a response arrives
+// while the conversation panel is closed. Width/margin are set by the caller so it tracks
+// the bar's collapsed/expanded width.
+export function getInputBarReplyCardStyle(backgroundColor: string): React.CSSProperties {
+  return {
+    ...inputBarFloatingBase,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    textAlign: 'left',
+    padding: '12px 16px',
+    background: backgroundColor,
+    border: '1px solid #ececec',
+    borderRadius: '22px',
+    boxShadow: '0 10px 32px rgba(0, 0, 0, 0.12)',
+    cursor: 'pointer',
+    boxSizing: 'border-box',
+    outline: 'none',
+  };
+}
+
+export function getInputBarPanelStyle(backgroundColor: string): React.CSSProperties {
+  return {
+    ...inputBarFloatingBase,
+    transformOrigin: 'bottom center',
+    display: 'flex',
+    flexDirection: 'column',
+    height: 'min(70vh, 520px)',
+    maxHeight: 'min(70vh, 520px)',
+    background: backgroundColor,
+    border: '1px solid #ececec',
+    borderRadius: '20px',
+    boxShadow: '0 14px 44px rgba(0, 0, 0, 0.16)',
+    overflow: 'hidden',
+  };
+}
+
+export function getInputBarPanelHeaderStyle(backgroundColor: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 12px',
+    // No divider — messages fade out under the header via the gradient overlay below it.
+    background: backgroundColor,
+    flexShrink: 0,
+    position: 'relative',
+    // Above the message-fade overlay.
+    zIndex: 6,
+  };
+}
+
 export const CSS_KEYFRAMES = `
   @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
   .ga-textarea-nosb {
@@ -630,6 +754,27 @@ export const CSS_KEYFRAMES = `
     box-sizing: border-box;
   }
   .ga-textarea-nosb::-webkit-scrollbar { width: 0; height: 0; }
+  /* Custom scrollbar for the message list (all modes). Thin, rounded, subtle; the thumb
+     shows on hover/scroll and darkens on hover. Firefox uses scrollbar-width/color. */
+  .ga-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+  }
+  .ga-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .ga-scroll::-webkit-scrollbar-track { background: transparent; }
+  .ga-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.35);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+    min-height: 40px;
+  }
+  .ga-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 116, 139, 0.6);
+    background-clip: padding-box;
+  }
+  .ga-scroll::-webkit-scrollbar-corner { background: transparent; }
   .ga-input-disclaimer a {
     color: #9ca3af !important;
     text-decoration: underline;
@@ -724,6 +869,46 @@ export const CSS_KEYFRAMES = `
   @media (prefers-reduced-motion: reduce) {
     .ga-widget-in, .ga-widget-out { animation: none !important; }
     .ga-quick { animation: none !important; }
+  }
+  /* ===== Input-bar variant ===== */
+  /* Docked "Chat Input" bar entrance. */
+  @keyframes ga-inbar-bar-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  /* Conversation panel grows up from the bar (gentle easeOutQuint for a smooth reveal). */
+  @keyframes ga-inbar-panel-in {
+    from { opacity: 0; transform: translateY(22px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes ga-inbar-panel-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to   { opacity: 0; transform: translateY(12px) scale(0.98); }
+  }
+  /* FAQ chips: fade + rise + slight scale for a soft, springy entrance. */
+  @keyframes ga-inbar-faq-in {
+    from { opacity: 0; transform: translateY(14px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  /* Individual messages slide in. */
+  @keyframes ga-inbar-rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .ga-inbar-bar { animation: ga-inbar-bar-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .ga-inbar-panel-in  { animation: ga-inbar-panel-in 440ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .ga-inbar-panel-out { animation: ga-inbar-panel-out 260ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+  .ga-inbar-faq { animation: ga-inbar-faq-in 440ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  /* Each direct child of the message list animates in once, when first mounted (React
+     keeps existing nodes by key, so only newly appended messages replay it). */
+  .ga-inbar-body > * { animation: ga-inbar-rise 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .ga-inbar-faq-btn { transition: filter 0.15s ease, transform 0.15s ease; }
+  .ga-inbar-faq-btn:hover { filter: brightness(0.93); transform: translateY(-1px); }
+  /* Agent-reply preview card. */
+  .ga-inbar-reply { animation: ga-inbar-faq-in 440ms cubic-bezier(0.22, 1, 0.36, 1) both; transition: transform 0.12s ease, box-shadow 0.15s ease; }
+  .ga-inbar-reply:hover { transform: translateY(-1px); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.16); }
+  @media (prefers-reduced-motion: reduce) {
+    .ga-inbar-bar, .ga-inbar-panel-in, .ga-inbar-panel-out, .ga-inbar-faq, .ga-inbar-reply, .ga-inbar-body > * { animation: none !important; }
   }
   .grecaptcha-badge {
     display: none !important;

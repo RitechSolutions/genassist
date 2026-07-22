@@ -327,6 +327,7 @@ export class ChatService {
         agent_available_languages: availableLanguages,
         live_voice_enabled: data.live_voice_enabled === true,
         live_voice_ready: data.live_voice_ready === true,
+        greet_on_start: data.greet_on_start === true,
       };
     } catch (_error) {
       return null;
