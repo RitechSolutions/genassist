@@ -31,13 +31,13 @@ const VectorConfigForm: React.FC<VectorConfigFormProps> = ({ vectorConfig, onCha
   };
 
   return (
-    <div className="bg-gray-50 rounded-lg">
+    <div className="bg-muted rounded-lg">
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
-          <Database className="h-5 w-5 text-gray-500" />
+          <Database className="h-5 w-5 text-muted-foreground" />
           <div>
             <div className="font-medium">Vector Database</div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Enable vector database for semantic search
             </p>
           </div>

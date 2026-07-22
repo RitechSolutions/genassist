@@ -30,7 +30,7 @@ const ExecutionStatusNodeComponent: React.FC<NodeProps<ExecutionStatusNodeData>>
   return (
     <div
       className={cn(
-        'relative w-[210px] rounded-lg border bg-white px-3 py-2 shadow-sm transition-shadow',
+        'relative w-[210px] rounded-lg border bg-card px-3 py-2 shadow-sm transition-shadow',
         style.nodeClass,
         data.isSelected ? 'ring-2 ring-brand-600 ring-offset-2 shadow-md' : 'hover:shadow-md'
       )}
@@ -41,7 +41,7 @@ const ExecutionStatusNodeComponent: React.FC<NodeProps<ExecutionStatusNodeData>>
       {/* Execution-order badge */}
       {data.order !== undefined && (
         <span
-          className="absolute -left-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full border border-gray-300 bg-white px-1 text-[10px] font-semibold tabular-nums text-gray-600 shadow-sm"
+          className="absolute -left-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full border border-border bg-card px-1 text-[10px] font-semibold tabular-nums text-muted-foreground shadow-sm"
           aria-label={`Step ${data.order + 1}`}
         >
           {data.order + 1}
@@ -58,7 +58,7 @@ const ExecutionStatusNodeComponent: React.FC<NodeProps<ExecutionStatusNodeData>>
 
       <div className="flex items-center gap-1.5">
         <Icon className={cn('h-4 w-4 shrink-0', style.accentClass, style.spin && 'animate-spin')} aria-hidden="true" />
-        <span className="truncate text-sm font-medium text-gray-800" title={data.name}>
+        <span className="truncate text-sm font-medium text-foreground" title={data.name}>
           {data.name}
         </span>
       </div>
@@ -74,7 +74,7 @@ const ExecutionStatusNodeComponent: React.FC<NodeProps<ExecutionStatusNodeData>>
         </span>
         {data.durationMs !== undefined && (
           <span
-            className={cn('text-[10px] tabular-nums text-gray-500', data.isSlowest && 'font-semibold text-amber-600')}
+            className={cn('text-[10px] tabular-nums text-muted-foreground', data.isSlowest && 'font-semibold text-amber-600 dark:text-amber-400')}
           >
             {formatDuration(data.durationMs)}
           </span>

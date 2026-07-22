@@ -109,7 +109,7 @@ export function LanguagesCard({
 
   if (loading) {
     return (
-      <Card className="p-8 flex justify-center items-center">
+      <Card className="dark:bg-zinc-900 p-8 flex justify-center items-center">
         <Loader2 className="w-6 h-6 animate-spin" />
       </Card>
     );
@@ -117,7 +117,7 @@ export function LanguagesCard({
 
   if (error) {
     return (
-      <Card className="p-8">
+      <Card className="dark:bg-zinc-900 p-8">
         <div className="text-center text-red-500">{error}</div>
       </Card>
     );
@@ -127,10 +127,10 @@ export function LanguagesCard({
 
   return (
     <>
-      <Card className="overflow-hidden shadow-sm">
+      <Card className="dark:bg-zinc-900 overflow-hidden shadow-sm">
         {filteredLanguages.length === 0 ? (
           <ListEmptyState
-            icon={<Globe2 className="h-12 w-12 text-gray-400" />}
+            icon={<Globe2 className="h-12 w-12 text-muted-foreground" />}
             title={
               isSearchActive
                 ? "No matching languages"
@@ -187,7 +187,7 @@ export function LanguagesCard({
                         onClick={() => onEditLanguage(language)}
                         title="Edit Language"
                       >
-                        <Pencil className="w-4 h-4 text-black" />
+                        <Pencil className="w-4 h-4 text-foreground" />
                       </Button>
                       <Button
                         variant="ghost"

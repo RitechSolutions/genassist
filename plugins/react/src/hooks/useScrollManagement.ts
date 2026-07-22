@@ -74,7 +74,7 @@ export function useScrollManagement({
   }, [conversationId]);
 
   useEffect(() => {
-    if ((mode === 'floating' || mode === 'fullscreen') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
+    if ((mode === 'floating' || mode === 'fullscreen' || mode === 'inputbar') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
       hasAnchoredHistory.current = false;
       isUserAtBottomRef.current = true;
 

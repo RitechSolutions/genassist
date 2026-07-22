@@ -85,6 +85,15 @@ export async function deployBedrockCustomModel(
   );
 }
 
+export async function undeployBedrockCustomModel(
+  id: string
+): Promise<BedrockFineTuneJob | null> {
+  return apiRequest<BedrockFineTuneJob>(
+    "POST",
+    `bedrock/fine-tuning/jobs/${id}/undeploy`
+  );
+}
+
 export async function listBedrockTrainingFiles(): Promise<BedrockTrainingFile[]> {
   const res = await apiRequest<BedrockTrainingFile[] | PaginatedResponse<BedrockTrainingFile>>(
     "GET",

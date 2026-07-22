@@ -8,7 +8,7 @@ Both columns are nullable: legacy and manually created cases have no source
 conversation and are treated as independent single-turn conversations.
 
 Revision ID: 4e1c7a9d2b05
-Revises: 21f612ab93ba
+Revises: 322883fb3a4d
 Create Date: 2026-07-20 10:00:00.000000
 
 """
@@ -21,7 +21,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "4e1c7a9d2b05"
-down_revision: Union[str, None] = "21f612ab93ba"
+down_revision: Union[str, None] = "322883fb3a4d"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -41,6 +41,7 @@ import {
   helpHeaderGradientByCategory,
 } from "@/views/AIAgents/Workflows/utils/helpHeaderGradients";
 import { getNodeDocsUrl } from "@/views/AIAgents/Workflows/utils/nodeDocsLinks";
+import { isNewNode } from "@/views/AIAgents/Workflows/utils/newNodes";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -283,7 +284,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 key={nodeType.type}
                 className={`${bgColor} border border-border rounded-lg p-[2px] cursor-pointer transition-all duration-200 select-none ${
                   isDragging
-                    ? "opacity-50 scale-95 border-2 border-dashed border-blue-400 bg-blue-50"
+                    ? "opacity-50 scale-95 border-2 border-dashed border-blue-400 bg-blue-50 dark:bg-blue-500/15"
                     : "hover:shadow-sm"
                 }`}
                 onClick={() => onAddNode(nodeType.type)}
@@ -295,9 +296,14 @@ const NodePanel: React.FC<NodePanelProps> = ({
                   <div className="shrink-0 w-4 h-4">
                     {renderIcon(nodeType.icon, `h-4 w-4 ${iconColor}`)}
                   </div>
-                  <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0">
+                  <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0 truncate">
                     {nodeType.label}
                   </p>
+                  {isNewNode(nodeType.type) && (
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                      NEW
+                    </span>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -399,7 +405,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
       ></div>
 
       <div
-        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border ${
+        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-background shadow-lg rounded-xl transition-transform duration-300 border ${
           selectedHelp ? "z-40" : "z-[1001]"
         } ${
           isOpen ? "translate-x-0" : "translate-x-[calc(100%+0.5rem)]"
@@ -522,7 +528,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm text-gray-700 leading-relaxed">
+                                <div className="text-sm text-muted-foreground leading-relaxed">
                                   <FormattedText text={msg.text} />
                                 </div>
                                 {msg.actions && msg.actions.length > 0 && (
@@ -532,10 +538,10 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                       const isUpdate = action.type === "update_node";
                                       const Icon = isAdd ? Plus : isUpdate ? Pencil : Trash2;
                                       const colorClass = isAdd
-                                        ? "bg-green-50 text-green-700 border-green-200"
+                                        ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30"
                                         : isUpdate
-                                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                                        : "bg-red-50 text-red-700 border-red-200";
+                                        ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/30"
+                                        : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
                                       const actionKey = `${action.type}-${getActionLabel(action)}`;
                                       return (
                                         <span
@@ -561,7 +567,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                               <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--brand-600))] animate-pulse" />
                             </div>
                           </div>
-                          <div className="text-sm text-gray-400 flex items-center gap-1">
+                          <div className="text-sm text-muted-foreground flex items-center gap-1">
                             <span className="animate-pulse">Thinking</span>
                             <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
                             <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
@@ -583,7 +589,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                       onKeyDown={handleKeyDown}
                       placeholder="Ask AI to update your workflow..."
                       disabled={isThinking}
-                      className="w-full h-10 bg-white rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
+                      className="w-full h-10 bg-card rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
                     />
                     <button
                       onClick={handleSend}
@@ -608,9 +614,9 @@ const NodePanel: React.FC<NodePanelProps> = ({
           }
         }}
       >
-        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-gray-200 shadow-2xl">
+        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-border shadow-2xl">
           {selectedHelp && (
-            <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-white">
+            <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-card">
               <div
                 className={`px-10 pt-10 pb-6 ${
                   helpHeaderGradientByCategory[selectedHelp.category] ??

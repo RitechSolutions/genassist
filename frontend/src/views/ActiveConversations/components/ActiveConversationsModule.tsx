@@ -175,7 +175,7 @@ export function ActiveConversationsModule({
   const pageItems = displayLimit > 0 ? withMessages.slice(0, displayLimit) : withMessages;
 
   return (
-    <Card className="mb-5 rounded-xl border border-border bg-white p-4 text-card-foreground shadow-sm animate-fade-up sm:p-6">
+    <Card className="mb-5 rounded-xl border border-border bg-card dark:bg-zinc-900 p-4 text-card-foreground shadow-sm animate-fade-up sm:p-6">
       <ActiveConversationsHeader title={title} />
 
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">

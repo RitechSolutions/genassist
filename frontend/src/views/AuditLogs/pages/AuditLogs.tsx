@@ -158,7 +158,7 @@ export default function AuditLogs() {
 
                   <div className="w-40">
                     <Select value={selectedUser ?? ""} onValueChange={(value) => setSelectedUser(value === "" ? null : value)}>
-                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-card focus:ring-0 focus:ring-offset-0">
                         <span className="truncate">{selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}</span>
                       </SelectTrigger>
                       <SelectContent>
@@ -172,7 +172,7 @@ export default function AuditLogs() {
 
                   <div className="w-40">
                     <Select value={selectedAction ?? undefined} onValueChange={(value) => setSelectedAction(value || null)}>
-                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-card focus:ring-0 focus:ring-offset-0">
                         {selectedAction ? selectedAction : "Select Action"}
                       </SelectTrigger>
                       <SelectContent>
@@ -189,7 +189,7 @@ export default function AuditLogs() {
                       value={tableName}
                       onChange={(e) => setTableName(e.target.value)}
                       placeholder="Table name"
-                      className="text-sm bg-white"
+                      className="text-sm bg-card"
                     />
                   </div>
 

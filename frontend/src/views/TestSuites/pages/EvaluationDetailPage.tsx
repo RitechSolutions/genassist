@@ -303,8 +303,8 @@ const EvaluationDetailPage: React.FC = () => {
             <ChevronLeft className="h-4 w-4 mr-2" />
             Back to Evaluations
           </Button>
-          <div className="bg-white rounded-lg border p-4">
-            <div className="text-sm text-gray-600">Evaluation not found.</div>
+          <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4">
+            <div className="text-sm text-muted-foreground">Evaluation not found.</div>
           </div>
         </div>
       </PageLayout>
@@ -321,9 +321,9 @@ const EvaluationDetailPage: React.FC = () => {
           </Button>
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <h1 className="text-xl font-semibold text-gray-900">{evaluation.name}</h1>
+              <h1 className="text-xl font-semibold text-foreground">{evaluation.name}</h1>
               {evaluation.description && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {evaluation.description}
                 </p>
               )}
@@ -335,7 +335,7 @@ const EvaluationDetailPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border p-4 space-y-2">
+        <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4 space-y-2">
           <div className="text-sm">
             <strong>Dataset:</strong> {suite?.name ?? evaluation.suite_id}
           </div>
@@ -352,13 +352,13 @@ const EvaluationDetailPage: React.FC = () => {
           </div>
           <div className="text-sm">
             <strong>Extra metadata:</strong>
-            <div className="mt-2 bg-gray-50 rounded p-2">
+            <div className="mt-2 bg-muted rounded p-2">
               <JsonViewer data={(evaluation.input_metadata ?? {}) as unknown as never} />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border p-4">
+        <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Previous Executions</h2>
             <Badge variant="secondary" className="text-xs">
@@ -385,8 +385,8 @@ const EvaluationDetailPage: React.FC = () => {
             ) : runs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Play className="h-10 w-10 text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">No executions yet</p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-sm text-muted-foreground">No executions yet</p>
+                <p className="text-xs text-muted-foreground mt-1">
                   Click "Execute Evaluation" to run your first test
                 </p>
               </div>
@@ -411,7 +411,7 @@ const EvaluationDetailPage: React.FC = () => {
                   <button
                     key={run.id}
                     type="button"
-                    className="w-full text-left border rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                    className="w-full text-left border rounded-lg p-3 hover:bg-muted transition-colors"
                     onClick={() => {
                       setSelectedRunId(run.id ?? null);
                       setIsRunDetailsOpen(true);
@@ -431,7 +431,7 @@ const EvaluationDetailPage: React.FC = () => {
                             />
                             <span className={cn(
                               "text-xs font-medium",
-                              avgAccuracy >= 0.9 ? "text-green-600" : avgAccuracy >= 0.7 ? "text-amber-600" : "text-red-600"
+                              avgAccuracy >= 0.9 ? "text-green-600 dark:text-green-400" : avgAccuracy >= 0.7 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
                             )}>
                               {Math.round(avgAccuracy * 100)}%
                             </span>
@@ -443,7 +443,7 @@ const EvaluationDetailPage: React.FC = () => {
                       </div>
                       <RunStatusBadge status={run.status} />
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-muted-foreground mt-1">
                       {new Date(run.created_at ?? "").toLocaleString()}
                     </div>
                     {summaryMetrics && (
@@ -452,14 +452,14 @@ const EvaluationDetailPage: React.FC = () => {
                           .filter(([tech]) => tech !== RUN_TOTALS_KEY)
                           .map(([tech, summary]) => {
                           const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
-                          let colorClasses = "bg-gray-100 text-gray-700 border border-gray-200";
+                          let colorClasses = "bg-muted text-muted-foreground border border-border";
                           if (acc !== null) {
                             if (acc >= 0.9) {
-                              colorClasses = "bg-green-50 text-green-700 border border-green-200";
+                              colorClasses = "bg-green-50 text-green-700 border border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30";
                             } else if (acc >= 0.7) {
-                              colorClasses = "bg-amber-50 text-amber-700 border border-amber-200";
+                              colorClasses = "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30";
                             } else {
-                              colorClasses = "bg-red-50 text-red-700 border border-red-200";
+                              colorClasses = "bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
                             }
                           }
                           return (
@@ -494,7 +494,7 @@ const EvaluationDetailPage: React.FC = () => {
                 {selectedRun && <RunStatusBadge status={selectedRun.status} />}
               </div>
               {selectedRun?.created_at && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {new Date(selectedRun.created_at).toLocaleString()}
                 </p>
               )}
@@ -503,7 +503,7 @@ const EvaluationDetailPage: React.FC = () => {
               {selectedRun && (
                 <>
                   {/* Summary metrics with progress bars */}
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-muted rounded-lg p-4">
                     <div className="text-sm font-medium mb-3">Evaluation Summary</div>
                     {runTotals && runTotals.scored < runTotals.cases && (
                       <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
@@ -529,20 +529,20 @@ const EvaluationDetailPage: React.FC = () => {
                           return (
                             <div
                               key={tech}
-                              className="bg-white rounded-lg border p-3"
+                              className="bg-card dark:bg-zinc-900 rounded-lg border p-3"
                             >
-                              <div className="text-xs font-medium text-gray-600 mb-2">{tech}</div>
+                              <div className="text-xs font-medium text-muted-foreground mb-2">{tech}</div>
                               {acc !== null && (
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between">
                                     <span className={cn(
                                       "text-lg font-semibold",
-                                      acc >= 0.9 ? "text-green-600" : acc >= 0.7 ? "text-amber-600" : "text-red-600"
+                                      acc >= 0.9 ? "text-green-600 dark:text-green-400" : acc >= 0.7 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
                                     )}>
                                       {Math.round(acc * 100)}%
                                     </span>
                                     {typeof summary.cases === "number" && (
-                                      <span className="text-xs text-gray-500">{summary.cases} cases</span>
+                                      <span className="text-xs text-muted-foreground">{summary.cases} cases</span>
                                     )}
                                   </div>
                                   <Progress
@@ -564,7 +564,7 @@ const EvaluationDetailPage: React.FC = () => {
                         })}
                       </div>
                     ) : (
-                      <div className="text-sm text-gray-500">No metrics available</div>
+                      <div className="text-sm text-muted-foreground">No metrics available</div>
                     )}
                   </div>
 
@@ -578,11 +578,11 @@ const EvaluationDetailPage: React.FC = () => {
                             All ({selectedRunResults.length})
                           </TabsTrigger>
                           <TabsTrigger value="passed" className="text-xs px-3 py-1">
-                            <CheckCircle2 className="h-3 w-3 mr-1 text-green-600" />
+                            <CheckCircle2 className="h-3 w-3 mr-1 text-green-600 dark:text-green-400" />
                             Passed ({passedCount})
                           </TabsTrigger>
                           <TabsTrigger value="failed" className="text-xs px-3 py-1">
-                            <XCircle className="h-3 w-3 mr-1 text-red-600" />
+                            <XCircle className="h-3 w-3 mr-1 text-red-600 dark:text-red-400" />
                             Failed ({failedCount})
                           </TabsTrigger>
                           <TabsTrigger value="not_scored" className="text-xs px-3 py-1">
@@ -612,7 +612,7 @@ const EvaluationDetailPage: React.FC = () => {
                     ) : filteredResults.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-8 text-center">
                         <AlertCircle className="h-10 w-10 text-gray-300 mb-2" />
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-muted-foreground">
                           {resultFilter === "all"
                             ? "No test results available yet."
                             : resultFilter === "passed"
@@ -660,17 +660,17 @@ const EvaluationDetailPage: React.FC = () => {
                               {/* Result header - always visible */}
                               <button
                                 type="button"
-                                className="w-full p-3 text-left hover:bg-gray-50 transition-colors"
+                                className="w-full p-3 text-left hover:bg-muted transition-colors"
                                 onClick={() => setExpandedResultId(isExpanded ? null : result.id ?? null)}
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     {notScored ? (
-                                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                                      <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
                                     ) : passed ? (
-                                      <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                                      <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
                                     )}
                                     <span className="font-medium text-sm">
                                       Case #{result.case_id?.slice(-4)}
@@ -691,8 +691,8 @@ const EvaluationDetailPage: React.FC = () => {
                                               className={cn(
                                                 "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
                                                 metricValue.passed
-                                                  ? "bg-green-50 text-green-700"
-                                                  : "bg-red-50 text-red-700"
+                                                  ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
+                                                  : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
                                               )}
                                             >
                                               <span className="font-semibold mr-1">{tech}</span>
@@ -709,16 +709,16 @@ const EvaluationDetailPage: React.FC = () => {
                                       </div>
                                     )}
                                     {isExpanded ? (
-                                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
                                     ) : (
-                                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                     )}
                                   </div>
                                 </div>
 
                                 {/* Comments preview */}
                                 {!isExpanded && result.metrics && (
-                                  <div className="mt-1 text-[11px] text-gray-500 line-clamp-1">
+                                  <div className="mt-1 text-[11px] text-muted-foreground line-clamp-1">
                                     {Object.entries(result.metrics)
                                       .filter(([, m]) => m.comment)
                                       .map(([tech, m]) => `${tech}: ${m.comment}`)
@@ -729,7 +729,7 @@ const EvaluationDetailPage: React.FC = () => {
 
                               {/* Expanded content */}
                               {isExpanded && (
-                                <div className="border-t bg-gray-50 p-4 space-y-4">
+                                <div className="border-t bg-muted p-4 space-y-4">
                                   {/* Metric comments + grading source */}
                                   {result.metrics && (
                                     <div className="space-y-1">
@@ -741,12 +741,12 @@ const EvaluationDetailPage: React.FC = () => {
                                         if (!metricValue.comment && !sourceLabel) return null;
                                         return (
                                           <div key={`${result.id}-${tech}-comment`} className="text-xs">
-                                            <span className="font-semibold text-gray-700">{tech}:</span>{" "}
+                                            <span className="font-semibold text-muted-foreground">{tech}:</span>{" "}
                                             {metricValue.comment && (
-                                              <span className="text-gray-600">{metricValue.comment}</span>
+                                              <span className="text-muted-foreground">{metricValue.comment}</span>
                                             )}
                                             {sourceLabel && (
-                                              <span className="text-gray-400">
+                                              <span className="text-muted-foreground">
                                                 {metricValue.comment ? " — " : ""}checked against: {sourceLabel}
                                               </span>
                                             )}
@@ -764,11 +764,11 @@ const EvaluationDetailPage: React.FC = () => {
                                     )}
                                   >
                                     <div>
-                                      <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                                      <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                         Input
                                       </div>
-                                      <div className="bg-white rounded border p-2 text-xs">
+                                      <div className="bg-card dark:bg-zinc-900 rounded border p-2 text-xs">
                                         <JsonViewer
                                           data={
                                             ((result.case_id &&
@@ -780,11 +780,11 @@ const EvaluationDetailPage: React.FC = () => {
                                     </div>
                                     {showExpectedOutput && (
                                       <div>
-                                        <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                                        <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                                           <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
                                           Expected Output
                                         </div>
-                                        <div className="bg-white rounded border p-2 text-xs">
+                                        <div className="bg-card dark:bg-zinc-900 rounded border p-2 text-xs">
                                           <JsonViewer
                                             data={(caseExpectedOutput ?? {}) as unknown as never}
                                           />
@@ -794,7 +794,7 @@ const EvaluationDetailPage: React.FC = () => {
                                   </div>
 
                                   <div>
-                                    <div className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                                    <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                                       <span className={cn(
                                         "w-1.5 h-1.5 rounded-full",
                                         passed ? "bg-success" : "bg-destructive"
@@ -802,8 +802,8 @@ const EvaluationDetailPage: React.FC = () => {
                                       Actual Output
                                     </div>
                                     <div className={cn(
-                                      "bg-white rounded border p-2 text-xs",
-                                      !passed && "border-red-200"
+                                      "bg-card dark:bg-zinc-900 rounded border p-2 text-xs",
+                                      !passed && "border-red-200 dark:border-red-500/30"
                                     )}>
                                       {result.actual_output &&
                                       "value" in result.actual_output &&
@@ -821,10 +821,10 @@ const EvaluationDetailPage: React.FC = () => {
 
                                   {result.execution_trace && Object.keys(result.execution_trace).length > 0 && (
                                     <div>
-                                      <div className="text-xs font-medium text-gray-600 mb-1">
+                                      <div className="text-xs font-medium text-muted-foreground mb-1">
                                         Execution Trace
                                       </div>
-                                      <div className="bg-white rounded border p-2 text-xs">
+                                      <div className="bg-card dark:bg-zinc-900 rounded border p-2 text-xs">
                                         <JsonViewer
                                           data={(result.execution_trace ?? {}) as unknown as never}
                                         />
@@ -833,7 +833,7 @@ const EvaluationDetailPage: React.FC = () => {
                                   )}
 
                                   {result.error && (
-                                    <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700">
+                                    <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 dark:bg-red-500/15 dark:border-red-500/30 dark:text-red-400">
                                       <div className="font-medium mb-1">Error</div>
                                       {result.error}
                                     </div>

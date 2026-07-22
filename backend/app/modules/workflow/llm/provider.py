@@ -33,6 +33,12 @@ async def build_chat_model(
     original_provider = (provider_name or "").lower()
     provider = original_provider
 
+    # Bedrock ARN model ids (custom / fine-tuned / provisioned / inference-profile) don't
+    # encode their foundation-model family, so langchain_aws requires an explicit
+    # `provider`. Pull the user-selected family out of connection_data here so it never
+    # collides with init_chat_model's own `model_provider` routing kwarg in the spread below.
+    bedrock_model_provider = cd.pop("model_provider", None)
+
     if provider == "vllm":
         provider = "openai"
         cd["api_key"] = "EMPTY"
@@ -49,6 +55,12 @@ async def build_chat_model(
         provider = "openai"
         if "base_url" not in cd:
             cd["base_url"] = "https://openrouter.ai/api/v1"
+    elif provider == "bedrock":
+        # Use the Converse API instead of the legacy InvokeModel path so inference params
+        # (max_tokens, temperature) are normalized into inferenceConfig across model
+        # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles
+        # it, and it's AWS's recommended API for Nova/Claude/Llama/custom models alike.
+        provider = "bedrock_converse"
 
     if provider == "openai" and original_provider == "openai":
         os.environ["OPENAI_API_KEY"] = cd.get("api_key", "")
@@ -60,6 +72,15 @@ async def build_chat_model(
         **cd,
         "model": model_name,
     }
+
+    # A full ARN needs the foundation-model family passed through to ChatBedrockConverse
+    # as `provider`; plain base model ids infer it themselves and must not receive it.
+    if original_provider == "bedrock" and isinstance(model_name, str) and model_name.startswith("arn:"):
+        if not bedrock_model_provider:
+            raise ValueError(
+                "Select a Model Provider (e.g. amazon, anthropic) when using a Bedrock model ARN."
+            )
+        model_kwargs["provider"] = bedrock_model_provider
 
     # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
     # invocation of this model (including nested agent loops) is traced. No-op unless

@@ -371,7 +371,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
 
   return (
     <div
-      className="fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-white border shadow-lg rounded-lg transform transition-transform duration-200 ease-in-out translate-x-0 animate-in slide-in-from-right"
+      className="fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-card border shadow-lg rounded-lg transform transition-transform duration-200 ease-in-out translate-x-0 animate-in slide-in-from-right"
     >
       <div className="h-full flex flex-col">
         <div className="p-4 border-b">
@@ -405,7 +405,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {isCompareMode ? (
             <div className="mb-4 space-y-2">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {compareSelection.length < 2
                   ? `Select two versions to compare (${compareSelection.length}/2).`
                   : "Two versions selected. Deselect one to choose a different pair."}
@@ -441,7 +441,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
           )}
 
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-2 rounded-md text-sm">
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 dark:bg-red-500/15 dark:border-red-500/30 dark:text-red-400 p-2 rounded-md text-sm">
               {error}
             </div>
           )}
@@ -456,8 +456,8 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                       ? !!workflow.id && compareSelection.includes(workflow.id)
                       : selectedWorkflowId === workflow.id
                   )
-                    ? "bg-blue-50 border-blue-200"
-                    : "hover:bg-gray-50"
+                    ? "bg-blue-50 border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/30"
+                    : "hover:bg-muted"
                 }`}
                 onClick={() =>
                   isCompareMode
@@ -481,20 +481,20 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                   <div className="flex items-center gap-2">
                     <div className="font-medium truncate">{workflow.name}</div>
                     {workflow.id === activeWorkflowId && (
-                      <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 px-2 py-0.5 rounded-full">
                         <Power className="h-3 w-3" />
                         Active
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500 truncate">
+                  <div className="text-xs text-muted-foreground truncate">
                     {workflow.description || "No description"}
                   </div>
                   <span className="inline-flex items-center gap-1 text-xs text-white bg-gray-400 px-2 py-0.5 rounded-full">
                     v{workflow.version}
                   </span>
                   {workflow.updated_at && (
-                    <div className="text-[11px] text-gray-400 mt-1">
+                    <div className="text-[11px] text-muted-foreground mt-1">
                       <div
                         className="truncate"
                         title={
@@ -608,7 +608,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                 className={versionError ? "border-red-500" : ""}
               />
               {versionError && (
-                <p className="text-sm text-red-600">{versionError}</p>
+                <p className="text-sm text-red-600 dark:text-red-400">{versionError}</p>
               )}
             </div>
           </div>

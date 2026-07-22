@@ -167,9 +167,7 @@ export function PageListSkeleton({
       className={
         COMPACT_VARIANTS.includes(variant)
           ? "space-y-2"
-          : variant === "conversation"
-            ? "divide-y divide-border"
-            : "divide-y divide-gray-100"
+          : "divide-y divide-border"
       }
     >
       {Array.from({ length: rows }, (_, i) => (
@@ -185,7 +183,7 @@ export function PageListSkeleton({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white overflow-hidden",
+        "rounded-lg border bg-card overflow-hidden",
         className
       )}
     >

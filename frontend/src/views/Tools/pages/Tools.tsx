@@ -104,7 +104,7 @@ export default function Tools() {
                     setFilterType(val as "all" | "api" | "function")
                   }
                 >
-                  <SelectTrigger className="w-full bg-white">
+                  <SelectTrigger className="w-full bg-card">
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
                   <SelectContent>

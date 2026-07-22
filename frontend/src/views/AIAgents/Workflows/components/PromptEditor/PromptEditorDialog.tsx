@@ -141,7 +141,7 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
       />
       {/* Panel — above Sheet (1201) and Dialog (1301) but below Select popover (1400) */}
       <div
-        className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-5xl rounded-lg border border-gray-200 bg-white shadow-lg animate-in fade-in-0 zoom-in-95"
+        className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-5xl rounded-lg border border-border bg-card shadow-lg animate-in fade-in-0 zoom-in-95"
         style={{ zIndex: 1350 }}
       >
         <div className="flex flex-col h-[80vh] min-h-0">
@@ -152,7 +152,7 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                 <h2 className="text-lg font-semibold leading-none tracking-tight flex items-center gap-2">
                   Prompt Editor <Badge variant="default">Beta</Badge>
                 </h2>
-                <p className="text-sm text-gray-500 mt-1.5">
+                <p className="text-sm text-muted-foreground mt-1.5">
                   Edit, version, evaluate, and optimize your prompt
                 </p>
               </div>
@@ -206,13 +206,13 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                       />
                     </div>
 
-                    <div className="sticky bottom-0 z-20 bg-white border-t pt-3 pb-2">
+                    <div className="sticky bottom-0 z-20 bg-card border-t pt-3 pb-2">
                       {saveVersionStatus && (
                         <div
                           className={`text-xs mb-2 rounded-md px-2 py-1 ${
                             saveVersionStatus.type === "error"
                               ? "text-destructive bg-destructive/10 border border-destructive/20"
-                              : "text-green-700 bg-green-50 border border-green-200"
+                              : "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-500/15 border border-green-200 dark:border-green-500/30"
                           }`}
                         >
                           {saveVersionStatus.message}
@@ -229,7 +229,7 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                             onClick={() => setIsSaveLabelOpen(false)}
                           />
                           <div
-                            className="absolute left-0 right-0 -top-2 translate-y-[-100%] z-[70] rounded-md border bg-white shadow-lg p-3"
+                            className="absolute left-0 right-0 -top-2 translate-y-[-100%] z-[70] rounded-md border bg-card shadow-lg p-3"
                             role="dialog"
                             aria-label="Save version label"
                           >
@@ -302,7 +302,7 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsVersionsPanelOpen(true)}
-                      className="h-full rounded-md border bg-white px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+                      className="h-full rounded-md border bg-card px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
                       aria-label="Show versions panel"
                       title="Show versions"
                     >

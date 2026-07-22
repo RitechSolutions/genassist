@@ -51,12 +51,12 @@ export function NotificationsSettings() {
         </p>
       </header>
 
-      <Card className="overflow-hidden rounded-lg border bg-white shadow-sm">
+      <Card className="overflow-hidden rounded-lg border bg-card dark:bg-zinc-900 shadow-sm">
         <div className="px-6 py-4">
-          <h3 className="text-base font-semibold text-zinc-900">
+          <h3 className="text-base font-semibold text-foreground">
             Notification types
           </h3>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             Enable or disable notification types based on your access level.
             {isAdmin ? (
               <>
@@ -71,12 +71,12 @@ export function NotificationsSettings() {
         <div className="px-6 py-3">
           <div className="flex items-center justify-between gap-4 px-2 py-2">
             <div className="flex items-start gap-3 min-w-0 flex-1">
-              <Bell className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+              <Bell className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900">
+                <p className="text-sm font-medium text-foreground">
                   Conversation Started
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Get notified when a new conversation is started.
                 </p>
               </div>
@@ -95,7 +95,7 @@ export function NotificationsSettings() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 rounded-full text-zinc-600"
+                  className="h-9 w-9 rounded-full text-muted-foreground"
                   title="Who receives this notification"
                   disabled={adminTargetingLoading}
                   onClick={() => setAudienceTypeKey("conversation_started")}
@@ -108,12 +108,12 @@ export function NotificationsSettings() {
           </div>
           <div className="flex items-center justify-between gap-4 px-2 py-2">
             <div className="flex items-start gap-3 min-w-0 flex-1">
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900">
+                <p className="text-sm font-medium text-foreground">
                   High Hostility Detected
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Get notified when a live conversation reaches high hostility.
                 </p>
               </div>
@@ -132,7 +132,7 @@ export function NotificationsSettings() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 rounded-full text-zinc-600"
+                  className="h-9 w-9 rounded-full text-muted-foreground"
                   title="Who receives this notification"
                   disabled={adminTargetingLoading}
                   onClick={() => setAudienceTypeKey("conversation_hostility")}
@@ -145,12 +145,12 @@ export function NotificationsSettings() {
           </div>
           <div className="flex items-center justify-between gap-4 px-2 py-2">
             <div className="flex items-start gap-3 min-w-0 flex-1">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900">
+                <p className="text-sm font-medium text-foreground">
                   Live Conversation Finalized
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Get notified when a high-hostility conversation is finalized.
                 </p>
               </div>
@@ -169,7 +169,7 @@ export function NotificationsSettings() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 rounded-full text-zinc-600"
+                  className="h-9 w-9 rounded-full text-muted-foreground"
                   title="Who receives this notification"
                   disabled={adminTargetingLoading}
                   onClick={() =>
@@ -185,12 +185,12 @@ export function NotificationsSettings() {
           {settings.canManageWorkflowFailed ? (
             <div className="flex items-center justify-between gap-4 px-2 py-2">
               <div className="flex items-start gap-3 min-w-0 flex-1">
-                <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-900">
+                  <p className="text-sm font-medium text-foreground">
                     Workflow Run Failed
                   </p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-muted-foreground">
                     Tenant-level setting for failed pipeline and test runs.
                   </p>
                 </div>
@@ -207,7 +207,7 @@ export function NotificationsSettings() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 rounded-full text-zinc-600"
+                    className="h-9 w-9 rounded-full text-muted-foreground"
                     title="Who receives this notification"
                     disabled={adminTargetingLoading}
                     onClick={() => setAudienceTypeKey("workflow_failed")}

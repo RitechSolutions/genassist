@@ -200,16 +200,16 @@ const DatasetDetailPage: React.FC = () => {
           </Button>
           {suite?.name && (
             <div className="text-right">
-              <h1 className="text-xl font-semibold text-gray-900">{suite.name}</h1>
+              <h1 className="text-xl font-semibold text-foreground">{suite.name}</h1>
               {suite.description && (
-                <p className="text-xs text-gray-500">{suite.description}</p>
+                <p className="text-xs text-muted-foreground">{suite.description}</p>
               )}
             </div>
           )}
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div className="bg-white rounded-lg border p-4 space-y-3">
+          <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4 space-y-3">
             <h2 className="text-lg font-semibold">Add Dataset Record</h2>
             <Label className="text-xs">Input</Label>
             <Textarea
@@ -233,10 +233,10 @@ const DatasetDetailPage: React.FC = () => {
             </Button>
           </div>
 
-          <div className="bg-white rounded-lg border p-4">
+          <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Dataset Records</h2>
-              <span className="inline-flex items-center text-xs rounded-full bg-gray-100 px-3 py-1">
+              <span className="inline-flex items-center text-xs rounded-full bg-muted px-3 py-1">
                 {importedCount} conversation{importedCount === 1 ? "" : "s"} ·{" "}
                 {cases.length} record{cases.length === 1 ? "" : "s"}
               </span>
@@ -264,7 +264,7 @@ const DatasetDetailPage: React.FC = () => {
                 />
               ))}
               {filteredCases.length === 0 && (
-                <div className="text-sm text-gray-400">No records found.</div>
+                <div className="text-sm text-muted-foreground">No records found.</div>
               )}
             </div>
           </div>

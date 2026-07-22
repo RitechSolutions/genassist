@@ -108,7 +108,7 @@ export function AuditLogCard({
         </Table>
 
         {isRefreshing && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-md">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px] rounded-md">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         )}
