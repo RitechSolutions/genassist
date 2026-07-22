@@ -25,12 +25,12 @@ export function JobSummaryStatsCard({
 }: JobSummaryStatsCardProps) {
   if (loading) {
     return (
-      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up rounded-lg border text-card-foreground">
+      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card animate-fade-up rounded-lg border text-card-foreground">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="relative flex flex-col gap-3 py-2 sm:py-0">
-              <div className="h-7 w-20 bg-zinc-100 rounded animate-pulse" />
-              <div className="h-4 w-24 bg-zinc-100 rounded animate-pulse" />
+              <div className="h-7 w-20 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
             </div>
           ))}
         </div>
@@ -49,7 +49,7 @@ export function JobSummaryStatsCard({
         ];
 
   return (
-    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up rounded-lg border text-card-foreground">
+    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card animate-fade-up rounded-lg border text-card-foreground">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
         {metrics.map((metric, index) => (
           <div key={metric.label} className="relative">
@@ -65,8 +65,8 @@ export function JobSummaryStatsCard({
             </div>
             {index < metrics.length - 1 && (
               <>
-                <div className="hidden xl:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
-                <div className="xl:hidden border-b border-zinc-100 mt-3" />
+                <div className="hidden xl:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-border" />
+                <div className="xl:hidden border-b border-border mt-3" />
               </>
             )}
           </div>

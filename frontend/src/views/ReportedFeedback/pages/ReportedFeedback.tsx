@@ -259,7 +259,7 @@ export default function ReportedFeedback() {
         searchQuery={statusFilter === "all" ? "" : statusFilter}
         emptyState={
           <ListEmptyState
-            icon={<MessageSquare className="h-12 w-12 text-gray-400" />}
+            icon={<MessageSquare className="h-12 w-12 text-muted-foreground" />}
             title={
               hasActiveFilters ? "No matching feedback" : "No reported feedback yet"
             }

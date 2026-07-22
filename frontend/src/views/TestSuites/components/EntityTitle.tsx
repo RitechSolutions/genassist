@@ -30,7 +30,7 @@ export const EntityTitle: React.FC<EntityTitleProps> = ({
     className={cn(
       "block min-w-0 truncate leading-tight",
       levelClasses[level],
-      muted ? "text-gray-500" : "text-gray-900",
+      muted ? "text-muted-foreground" : "text-foreground",
       className,
     )}
   >

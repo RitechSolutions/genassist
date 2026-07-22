@@ -82,7 +82,7 @@ const CustomArrowEdge: React.FC<CustomArrowEdgeProps> = ({
           className="nodrag nopan"
         >
           {data?.label && (
-            <div className="bg-white px-2 py-1 rounded border shadow-sm text-xs">
+            <div className="bg-card px-2 py-1 rounded border shadow-sm text-xs">
               {data.label}
             </div>
           )}

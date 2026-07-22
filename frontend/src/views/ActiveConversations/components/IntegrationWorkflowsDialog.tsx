@@ -163,13 +163,13 @@ export function IntegrationWorkflowsDialog({
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="h-24 bg-gray-100 rounded-lg animate-pulse"
+                  className="h-24 bg-muted rounded-lg animate-pulse"
                 />
               ))}
             </div>
           ) : error ? (
             <div className="text-center py-8">
-              <p className="text-red-600 mb-4">{error}</p>
+              <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
               <Button
                 onClick={() => onOpenChange(false)}
                 variant="secondary"
@@ -180,14 +180,14 @@ export function IntegrationWorkflowsDialog({
           ) : workflows.length === 0 ? (
             <div className="text-center py-12">
               <div className="mb-4 flex justify-center">
-                <div className="bg-gray-100 p-4 rounded-full">
-                  {getIcon(integration.icon, "w-8 h-8 text-gray-400")}
+                <div className="bg-muted p-4 rounded-full">
+                  {getIcon(integration.icon, "w-8 h-8 text-muted-foreground")}
                 </div>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <h3 className="text-lg font-semibold text-foreground mb-2">
                 No workflows yet
               </h3>
-              <p className="text-gray-600 mb-6 max-w-sm mx-auto">
+              <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
                 Create your first workflow using {integration.name} to automate
                 your processes.
               </p>
@@ -224,7 +224,7 @@ export function IntegrationWorkflowsDialog({
                       )}
                       
                       <div className="flex items-center gap-3 flex-wrap">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-100 text-green-700 rounded-md text-xs font-medium">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-100 text-green-700 rounded-md text-xs font-medium dark:bg-green-500/20 dark:text-green-400">
                           {getIcon(integration.icon, "w-3.5 h-3.5")}
                           <span>
                             Used {workflow.usageCount}x
@@ -232,7 +232,7 @@ export function IntegrationWorkflowsDialog({
                         </div>
                         
                         {workflow.executionState ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium dark:bg-blue-500/20 dark:text-blue-400">
                             <Sparkles className="w-3.5 h-3.5" />
                             Active
                           </span>

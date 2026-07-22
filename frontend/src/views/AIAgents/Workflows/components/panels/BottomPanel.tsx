@@ -179,7 +179,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   return (
     <>
-      <div className="flex gap-2 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
+      <div className="flex gap-2 bg-background/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
         {onSaveWorkflow && (
           <Button
             onClick={handleSaveToServer}

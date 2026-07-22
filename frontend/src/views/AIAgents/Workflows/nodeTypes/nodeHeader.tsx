@@ -36,6 +36,10 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
   onDeleteClick: onDeleteClick,
 }) => {
   const isSpecialNoError = isSpecialNode && !hasError;
+  // Header text color. Special I/O nodes have a dark-blue header → white text.
+  // Everything else adapts (dark on the light pastel, light on the solid dark header).
+  const titleColor = isSpecialNoError ? "white" : "accent-foreground";
+  const subtitleColor = isSpecialNoError ? "white" : "muted-foreground";
 
   return (
     <CardHeader className="relative overflow-hidden">
@@ -52,14 +56,14 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
           <div className="min-w-0">
             <h3
               className={`text-sm font-semibold text-${
-                isSpecialNoError ? "white" : "accent-foreground"
+                titleColor
               } truncate`}
             >
               {title}
             </h3>
             <p
               className={`text-xs text-${
-                isSpecialNoError ? "white" : "muted-foreground"
+                subtitleColor
               } truncate`}
             >
               {subtitle}
@@ -71,7 +75,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
             <Button
               size="icon"
               variant="ghost"
-              className="h-8 w-8 text-accent-foreground hover:bg-white"
+              className={`h-8 w-8 text-${titleColor} hover:bg-black/10`}
               onClick={onSettings}
               data-node-settings
             >
@@ -83,8 +87,8 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
               size="icon"
               variant="ghost"
               className={`h-8 w-8 text-${
-                isSpecialNoError ? "white" : "accent-foreground"
-              } hover:bg-white`}
+                titleColor
+              } hover:bg-black/10`}
               onClick={onTest}
             >
               <Play className="h-4 w-4" />
@@ -96,8 +100,8 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
                 size="icon"
                 variant="ghost"
                 className={`h-8 w-8 text-${
-                  isSpecialNoError ? "white" : "accent-foreground"
-                } hover:bg-white`}
+                  titleColor
+                } hover:bg-black/10`}
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -112,7 +116,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={onDeleteClick}
-                className="text-red-600 focus:bg-red-50 focus:text-red-700"
+                className="text-red-600 focus:bg-red-50 focus:text-red-700 dark:text-red-400"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete

@@ -23,16 +23,16 @@ const NodeIdentityRow: React.FC<{ node: NodeDiff }> = ({ node }) => {
   return (
     <div
       className={cn(
-        'flex items-center gap-2.5 rounded-md border border-slate-200 border-l-[3px] bg-white px-3 py-2',
+        'flex items-center gap-2.5 rounded-md border border-border border-l-[3px] bg-card px-3 py-2',
         style.railClass
       )}
     >
       <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dotClass)} aria-hidden="true" />
       <span className="sr-only">{style.label}:</span>
-      <span className="flex-1 truncate text-sm font-medium text-slate-700" title={node.label}>
+      <span className="flex-1 truncate text-sm font-medium text-muted-foreground" title={node.label}>
         {node.label}
       </span>
-      <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+      <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
         {node.type}
       </span>
     </div>
@@ -42,8 +42,8 @@ const NodeIdentityRow: React.FC<{ node: NodeDiff }> = ({ node }) => {
 /** Section header: uppercase label + count in a compact square. */
 const SectionLabel: React.FC<{ children: React.ReactNode; count: number }> = ({ children, count }) => (
   <span className="flex items-center gap-2">
-    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</span>
-    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-md bg-slate-100 px-1 text-[11px] font-semibold tabular-nums text-slate-500">
+    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</span>
+    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-md bg-muted px-1 text-[11px] font-semibold tabular-nums text-muted-foreground">
       {count}
     </span>
   </span>
@@ -74,7 +74,7 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
     <div className="flex h-full flex-col">
       {/* Summary strip (FR-4): one calm segmented row of stat tiles. */}
       <div
-        className="grid grid-cols-4 divide-x divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white"
+        className="grid grid-cols-4 divide-x divide-border overflow-hidden rounded-lg border border-border bg-card"
         role="list"
         aria-label="Change summary"
       >
@@ -85,16 +85,16 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
           return (
             <div key={status} role="listitem" className="flex items-center gap-2.5 px-3 py-2.5">
               <span
-                className={cn('h-2 w-2 shrink-0 rounded-full', active ? style.dotClass : 'bg-slate-200')}
+                className={cn('h-2 w-2 shrink-0 rounded-full', active ? style.dotClass : 'bg-muted')}
                 aria-hidden="true"
               />
               <div className="flex min-w-0 flex-col leading-tight">
                 <span
-                  className={cn('text-lg font-semibold tabular-nums', active ? 'text-slate-800' : 'text-slate-400')}
+                  className={cn('text-lg font-semibold tabular-nums', active ? 'text-foreground' : 'text-muted-foreground')}
                 >
                   {value}
                 </span>
-                <span className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <span className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   {style.label}
                 </span>
               </div>
@@ -105,11 +105,11 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
 
       {!hasChanges ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 ring-1 ring-emerald-100">
-            <Check className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-500/15 ring-1 ring-emerald-100">
+            <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           </span>
-          <p className="text-sm font-medium text-slate-700">No differences</p>
-          <p className="max-w-xs text-xs text-slate-500">
+          <p className="text-sm font-medium text-muted-foreground">No differences</p>
+          <p className="max-w-xs text-xs text-muted-foreground">
             These two versions are identical — no nodes or connections were added, removed, or modified.
           </p>
         </div>
@@ -130,7 +130,7 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
                           key={node.id}
                           value={node.id}
                           className={cn(
-                            'overflow-hidden rounded-md border border-slate-200 border-l-[3px] bg-white',
+                            'overflow-hidden rounded-md border border-border border-l-[3px] bg-card',
                             style.railClass
                           )}
                         >
@@ -140,16 +140,16 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
                                 className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dotClass)}
                                 aria-hidden="true"
                               />
-                              <span className="truncate text-sm font-medium text-slate-700">{node.label}</span>
-                              <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                              <span className="truncate text-sm font-medium text-muted-foreground">{node.label}</span>
+                              <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                                 {node.type}
                               </span>
-                              <span className="ml-auto shrink-0 pr-2 text-[11px] tabular-nums text-slate-400">
+                              <span className="ml-auto shrink-0 pr-2 text-[11px] tabular-nums text-muted-foreground">
                                 {node.fieldChanges.length} {node.fieldChanges.length === 1 ? 'field' : 'fields'}
                               </span>
                             </span>
                           </AccordionTrigger>
-                          <AccordionContent className="space-y-2 border-t border-slate-100 bg-slate-50/40 px-3 py-2.5">
+                          <AccordionContent className="space-y-2 border-t border-border bg-muted/40 px-3 py-2.5">
                             {node.fieldChanges.map((change) => (
                               <FieldChangeRow key={change.key} change={change} />
                             ))}
@@ -192,11 +192,11 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
               <AccordionItem value="connections" className="border-none">
                 <AccordionTrigger className="py-1 hover:no-underline">
                   <span className="flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Connections</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</span>
                     <span className="flex items-center gap-1.5 text-[11px] font-medium tabular-nums">
-                      <span className="text-emerald-600">+{addedEdges.length}</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">+{addedEdges.length}</span>
                       <span className="text-slate-300">/</span>
-                      <span className="text-rose-600">−{removedEdges.length}</span>
+                      <span className="text-rose-600 dark:text-rose-400">−{removedEdges.length}</span>
                     </span>
                   </span>
                 </AccordionTrigger>
@@ -207,7 +207,7 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
                       <div
                         key={`${edge.status}-${edge.id}`}
                         className={cn(
-                          'flex items-center gap-2.5 rounded-md border border-slate-200 border-l-[3px] bg-white px-3 py-2 text-sm',
+                          'flex items-center gap-2.5 rounded-md border border-border border-l-[3px] bg-card px-3 py-2 text-sm',
                           style.railClass
                         )}
                       >
@@ -218,9 +218,9 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
                           {style.glyph}
                         </span>
                         <span className="sr-only">{style.label} connection:</span>
-                        <span className="truncate font-medium text-slate-700">{edge.sourceLabel}</span>
+                        <span className="truncate font-medium text-muted-foreground">{edge.sourceLabel}</span>
                         <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300" aria-hidden="true" />
-                        <span className="truncate font-medium text-slate-700">{edge.targetLabel}</span>
+                        <span className="truncate font-medium text-muted-foreground">{edge.targetLabel}</span>
                       </div>
                     );
                   })}

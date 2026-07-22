@@ -98,7 +98,7 @@ export function UserGroupsCard({
       header: "Description",
       key: "description",
       cell: (group) => group.description ?? "—",
-      className: "text-zinc-500",
+      className: "text-muted-foreground",
     },
     {
       header: "Created At",
@@ -133,7 +133,7 @@ export function UserGroupsCard({
   const emptyState = useMemo(
     () => (
       <ListEmptyState
-        icon={<UsersRound className="h-12 w-12 text-gray-400" />}
+        icon={<UsersRound className="h-12 w-12 text-muted-foreground" />}
         title={
           isSearchActive
             ? "No matching user groups"

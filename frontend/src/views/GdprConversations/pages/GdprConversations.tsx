@@ -331,7 +331,7 @@ export default function GdprConversations() {
         <div className="flex flex-wrap gap-1">
           <Badge variant="default">{item.status ?? "—"}</Badge>
           {item.pii_redacted_at && (
-            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
+            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
               Redacted
             </Badge>
           )}
@@ -379,7 +379,7 @@ export default function GdprConversations() {
     <PageLayout>
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6 text-amber-600" />
+          <ShieldAlert className="h-6 w-6 text-amber-600 dark:text-amber-400" />
           <h1 className="text-2xl md:text-3xl font-bold animate-fade-down">
             GDPR Right-to-Erasure
           </h1>
@@ -398,7 +398,7 @@ export default function GdprConversations() {
           className="flex flex-col gap-2 sm:flex-row sm:items-center"
         >
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="email"
               required
@@ -406,7 +406,7 @@ export default function GdprConversations() {
               placeholder="user@example.com"
               value={emailQuery}
               onChange={(event) => setEmailQuery(event.target.value)}
-              className="w-full rounded-full border bg-white px-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-full border bg-card px-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <Button type="submit" className="rounded-full" disabled={loading}>

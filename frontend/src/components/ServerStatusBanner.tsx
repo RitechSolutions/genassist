@@ -11,7 +11,7 @@ const ServerStatusBanner: React.FC = () => {
 
   return (
     <div className="sticky top-0 z-50">
-      <Alert className="rounded-none border-0 text-red-900 bg-red-50">
+      <Alert className="rounded-none border-0 text-red-900 bg-red-50 dark:bg-red-500/15 dark:text-red-400">
         <AlertDescription className="flex items-center justify-between">
           <span className="font-medium">Server connection error.</span>
           <button

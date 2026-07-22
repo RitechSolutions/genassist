@@ -305,7 +305,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Select the machine learning algorithm to use
             </p>
           </div>
@@ -335,7 +335,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 className="w-full"
               />
             )}
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Name of the column containing the target variable to predict
             </p>
           </div>
@@ -363,7 +363,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                       );
                     })}
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {featureColumns.length} of{" "}
                   {analysisResult.column_names.filter(
                     (col) => col !== targetColumn
@@ -375,7 +375,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
               /* Text input when no column names available */
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Columns</span>
+                  <span className="text-sm text-muted-foreground">Columns</span>
                   <Button
                     type="button"
                     variant="outline"
@@ -397,7 +397,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                   />
                   {featureColumns.length > 0 && (
                     <>
-                      <div className="flex flex-wrap gap-2 p-2 border rounded bg-gray-50">
+                      <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
                         {featureColumns.map((column, index) => (
                           <div key={index} className="flex items-center gap-1">
                             <Badge variant="default">{column}</Badge>
@@ -412,14 +412,14 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                           </div>
                         ))}
                       </div>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         {featureColumns.length} column
                         {featureColumns.length !== 1 ? "s" : ""} added
                       </p>
                     </>
                   )}
                   {featureColumns.length === 0 && (
-                    <p className="text-sm text-gray-500 italic">
+                    <p className="text-sm text-muted-foreground italic">
                       No feature columns defined. Add columns to specify which
                       features to use for training.
                     </p>
@@ -427,7 +427,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 </div>
               </div>
             )}
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Select the columns to use as features for training the model
             </p>
           </div>
@@ -445,7 +445,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
               step={0.05}
               className="w-full"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Fraction of data to use for validation (10% - 50%)
             </p>
           </div>

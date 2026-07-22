@@ -263,16 +263,16 @@ const DatasetsPage: React.FC = () => {
         onActionClick={() => setIsCreateDialogOpen(true)}
       />
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {isLoading ? (
           <PageListSkeleton bordered={false} />
         ) : filteredSuites.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <Database className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <Database className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">No datasets yet</h3>
-            <p className="text-sm text-gray-500 max-w-sm">
+            <p className="text-sm text-muted-foreground max-w-sm">
               {searchQuery
                 ? "No datasets match your search. Try adjusting your query."
                 : "Datasets contain test cases for evaluating your AI agents. Create your first dataset to get started."}
@@ -285,7 +285,7 @@ const DatasetsPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {filteredSuites.map((suite) => {
               const recordCount = suite.id ? recordCounts[suite.id] ?? 0 : 0;
               const updatedAt = suite.updated_at
@@ -298,7 +298,7 @@ const DatasetsPage: React.FC = () => {
               return (
                 <div
                   key={suite.id}
-                  className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
+                  className="w-full py-4 px-6 text-left hover:bg-muted transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <button
@@ -308,14 +308,14 @@ const DatasetsPage: React.FC = () => {
                     >
                       <div className="flex items-center gap-2">
                         <EntityTitle>{suite.name}</EntityTitle>
-                        <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black shrink-0">
+                        <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-foreground shrink-0">
                           DATASET
                         </span>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
                         {suite.description || "No description"}
                       </p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Database className="h-3 w-3" />
                           {recordCount} record{recordCount !== 1 ? "s" : ""}
@@ -472,9 +472,9 @@ const DatasetsPage: React.FC = () => {
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6">
             {isLoadingConversations ? (
-              <div className="text-sm text-gray-400 py-4">Loading conversations…</div>
+              <div className="text-sm text-muted-foreground py-4">Loading conversations…</div>
             ) : conversations.length === 0 ? (
-              <div className="text-sm text-gray-400 py-4">No conversations found.</div>
+              <div className="text-sm text-muted-foreground py-4">No conversations found.</div>
             ) : (
               <div className="space-y-2 py-2">
                 {conversations.map((conv) => {
@@ -487,13 +487,13 @@ const DatasetsPage: React.FC = () => {
                           onClick={() => toggleExpandConversation(conv.id)}
                         >
                           <ChevronDown
-                            className={`h-3.5 w-3.5 text-gray-400 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
+                            className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
                           />
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-foreground">
                               #{conv.id.slice(-4)}
                             </p>
-                            <p className="text-xs text-gray-400 mt-0.5">
+                            <p className="text-xs text-muted-foreground mt-0.5">
                               {conv.conversation_date
                                 ? new Date(conv.conversation_date).toLocaleDateString()
                                 : "—"}{" "}
@@ -513,11 +513,11 @@ const DatasetsPage: React.FC = () => {
                       </div>
 
                       {isExpanded && (
-                        <div className="border-t bg-gray-50 px-3 py-2 max-h-60 overflow-y-auto space-y-1.5">
+                        <div className="border-t bg-muted px-3 py-2 max-h-60 overflow-y-auto space-y-1.5">
                           {isLoadingMessages ? (
-                            <p className="text-xs text-gray-400">Loading messages…</p>
+                            <p className="text-xs text-muted-foreground">Loading messages…</p>
                           ) : expandedMessages.length === 0 ? (
-                            <p className="text-xs text-gray-400">No messages found.</p>
+                            <p className="text-xs text-muted-foreground">No messages found.</p>
                           ) : (
                             expandedMessages.map((msg, idx) => {
                               const isAgent = msg.speaker?.toLowerCase() === "agent";
@@ -526,14 +526,14 @@ const DatasetsPage: React.FC = () => {
                                   key={(msg as { id?: string }).id ?? idx}
                                   className={`flex flex-col ${isAgent ? "items-end" : "items-start"}`}
                                 >
-                                  <span className="text-[10px] text-black font-medium mb-0.5 capitalize">
+                                  <span className="text-[10px] text-foreground font-medium mb-0.5 capitalize">
                                     {msg.speaker}
                                   </span>
                                   <div
                                     className={`max-w-[80%] rounded-lg px-2.5 py-1.5 text-xs leading-tight break-words ${
                                       isAgent
                                         ? "bg-blue-500 text-white rounded-tr-none"
-                                        : "bg-gray-200 text-gray-900 rounded-tl-none"
+                                        : "bg-muted text-foreground rounded-tl-none"
                                     }`}
                                   >
                                     {msg.text}
@@ -552,7 +552,7 @@ const DatasetsPage: React.FC = () => {
           </div>
 
           <DialogFooter className="border-t px-6 py-3 shrink-0 flex items-center justify-between">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-muted-foreground">
               {convTotal} conversation{convTotal !== 1 ? "s" : ""} total
             </span>
             <div className="flex items-center gap-2">
@@ -564,7 +564,7 @@ const DatasetsPage: React.FC = () => {
               >
                 Previous
               </Button>
-              <span className="text-xs text-gray-500">Page {convPage + 1}</span>
+              <span className="text-xs text-muted-foreground">Page {convPage + 1}</span>
               <Button
                 variant="outline"
                 size="sm"

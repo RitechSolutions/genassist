@@ -296,7 +296,7 @@ export function BedrockFineTuneJobsCard({
   const emptyState = useMemo(
     () => (
       <ListEmptyState
-        icon={<Sparkles className="h-12 w-12 text-gray-400" />}
+        icon={<Sparkles className="h-12 w-12 text-muted-foreground" />}
         title={
           isSearchActive
             ? "No matching fine-tune jobs"

@@ -213,12 +213,12 @@ const AgentList: React.FC<AgentListProps> = ({
             <div className="flex items-center gap-2">
               <h4 className="text-base font-semibold">{agentName}</h4>
               {agent.is_system && (
-                <span className="inline-flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center text-xs text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/15 px-2 py-0.5 rounded-full">
                   System
                 </span>
               )}
               {!isActive && (
-                <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-500/15 px-2 py-0.5 rounded-full">
                   <AlertCircle className="h-3 w-3" />
                   Inactive
                 </span>
@@ -227,8 +227,8 @@ const AgentList: React.FC<AgentListProps> = ({
                 <span
                   className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
                     scheduleStatusByAgent[agent.id] === "active"
-                      ? "text-green-700 bg-green-50"
-                      : "text-gray-600 bg-gray-100"
+                      ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-500/15"
+                      : "text-muted-foreground bg-muted"
                   }`}
                   title={
                     scheduleStatusByAgent[agent.id] === "active"
@@ -279,7 +279,7 @@ const AgentList: React.FC<AgentListProps> = ({
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
-                    className="text-black"
+                    className="text-foreground"
                     onClick={() => onManageKeys(agent.id)}
                   >
                     <KeyRoundIcon className="mr-2 h-4 w-4" />
@@ -352,11 +352,11 @@ const AgentList: React.FC<AgentListProps> = ({
         <div className="min-w-0">
           <h2 className="text-3xl font-bold">
             Agent Studio{" "}
-            <span className="hidden sm:inline text-xl sm:text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
+            <span className="hidden sm:inline text-xl sm:text-2xl text-muted-foreground font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
           </h2>
-          <p className="text-zinc-400 font-normal">View and manage workflows</p>
+          <p className="text-muted-foreground font-normal">View and manage workflows</p>
           <div className="mt-2 sm:hidden">
-            <span className="text-zinc-400 font-normal text-base">
+            <span className="text-muted-foreground font-normal text-base">
               ({activeCount} Active, {inactiveCount} Inactive)
             </span>
           </div>
@@ -386,13 +386,13 @@ const AgentList: React.FC<AgentListProps> = ({
         </TabsList>
       </Tabs>
 
-      <div className="rounded-md border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-md border bg-card dark:bg-zinc-900 shadow-sm overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="agent" rows={5} bordered={false} />
         ) : isListEmpty ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <Workflow className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <Workflow className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">
               {isSearchActive
@@ -401,7 +401,7 @@ const AgentList: React.FC<AgentListProps> = ({
                   ? "No system agents"
                   : "No agents yet"}
             </h3>
-            <p className="text-sm text-gray-500 max-w-sm px-4">
+            <p className="text-sm text-muted-foreground max-w-sm px-4">
               {isSearchActive
                 ? "Try adjusting your search query."
                 : activeTab === "system"

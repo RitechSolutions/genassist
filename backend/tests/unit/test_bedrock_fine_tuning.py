@@ -270,6 +270,38 @@ async def test_sync_deployment_noop_without_arn(bedrock_service, mock_repository
     mock_repository.update_deployment.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_undeploy_custom_model_success(bedrock_service, mock_repository):
+    job = MagicMock()
+    job.id = "job-1"
+    job.deployment_arn = "arn:aws:bedrock:us-east-1:123:custom-model-deployment/x"
+    mock_repository.get_job_by_id.return_value = job
+    bedrock_service._bedrock_client.delete_custom_model_deployment = MagicMock()
+
+    await bedrock_service.undeploy_custom_model("job-1")
+
+    bedrock_service._bedrock_client.delete_custom_model_deployment.assert_called_once_with(
+        customModelDeploymentIdentifier=job.deployment_arn
+    )
+    mock_repository.clear_deployment.assert_awaited_once_with(id=job.id)
+
+
+@pytest.mark.asyncio
+async def test_undeploy_custom_model_without_deployment_raises(bedrock_service, mock_repository):
+    job = MagicMock()
+    job.id = "job-1"
+    job.deployment_arn = None
+    mock_repository.get_job_by_id.return_value = job
+    bedrock_service._bedrock_client.delete_custom_model_deployment = MagicMock()
+
+    with pytest.raises(AppException) as exc:
+        await bedrock_service.undeploy_custom_model("job-1")
+
+    assert exc.value.error_key == ErrorKey.ERROR_UNDEPLOY_MODEL_BEDROCK
+    bedrock_service._bedrock_client.delete_custom_model_deployment.assert_not_called()
+    mock_repository.clear_deployment.assert_not_awaited()
+
+
 def test_build_nova_jsonl_entry_skips_when_no_output(bedrock_service):
     import json
 

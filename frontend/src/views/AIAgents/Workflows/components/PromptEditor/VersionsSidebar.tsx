@@ -104,7 +104,7 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
             className={cn(
               "w-full rounded-md border px-3 py-2 transition-colors",
               "hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-ring",
-              isSelected ? "bg-blue-50 border-blue-200" : "bg-white",
+              isSelected ? "bg-blue-50 border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/30" : "bg-card",
             )}
             aria-current={isSelected ? "true" : "false"}
             role="button"

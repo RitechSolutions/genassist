@@ -201,7 +201,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             The text-analysis operation this node performs.
           </p>
         </div>
@@ -215,7 +215,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
             placeholder="{{source.message}}"
             className="w-full"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             The text to analyze. Supports {"{{variables}}"}.
           </p>
         </div>
@@ -231,7 +231,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
                 placeholder="billing, technical, general"
                 className="w-full"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Comma-separated list of category labels.
               </p>
             </div>
@@ -267,7 +267,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               The numeric range used for the sentiment and urgency scores.
             </p>
           </div>
@@ -283,7 +283,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
               placeholder="order_number, email, plan"
               className="w-full"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               The entities to extract from the input text.
             </p>
           </div>
@@ -305,7 +305,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
                 placeholder="200"
                 className="w-full"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Approximate maximum length of the summary.
               </p>
             </div>

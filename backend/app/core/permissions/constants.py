@@ -203,6 +203,7 @@ class BedrockPermissions:
     READ_JOB = "read:bedrock_job"
     READ_FINE_TUNABLE_MODELS = "read:bedrock_fine_tunable_models"
     DEPLOY_MODEL = "deploy:bedrock_model"
+    UNDEPLOY_MODEL = "undeploy:bedrock_model"
 
 
 class LocalFineTuningPermissions:

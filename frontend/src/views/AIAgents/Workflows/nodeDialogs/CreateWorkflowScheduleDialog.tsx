@@ -150,7 +150,7 @@ export const CreateWorkflowScheduleDialog: React.FC<
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           The latest published version of this workflow runs on each scheduled
           execution.
         </p>
@@ -176,7 +176,7 @@ export const CreateWorkflowScheduleDialog: React.FC<
           placeholder="0 0 * * *"
           className="w-full"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Format: minute hour day month weekday (e.g. */15 * * * *).
         </p>
       </div>
@@ -201,7 +201,7 @@ export const CreateWorkflowScheduleDialog: React.FC<
           placeholder='{ "customer_id": "123" }'
           className="w-full font-mono text-xs"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Optional extra input-node fields merged into each run's payload.
         </p>
       </div>

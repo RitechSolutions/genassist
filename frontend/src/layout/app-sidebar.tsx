@@ -364,8 +364,10 @@ function NavBadge({
     <span
       className={cn(
         "rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-        tone === "new" && "bg-emerald-50 text-emerald-600",
-        tone === "beta" && "bg-blue-50 text-blue-600",
+        tone === "new" &&
+          "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+        tone === "beta" &&
+          "bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400",
         tone === "count" &&
           "min-w-[18px] rounded-full bg-blue-600 px-1 text-center text-white",
         className
@@ -391,8 +393,8 @@ function NavLink({
       className={cn(
         "group/link flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-sm font-medium transition-colors duration-150",
         active
-          ? "bg-zinc-100 text-zinc-900"
-          : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800"
+          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+          : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-100"
       )}
     >
       {item.icon && (
@@ -400,8 +402,8 @@ function NavLink({
           className={cn(
             "h-4 w-4 shrink-0",
             active
-              ? "text-zinc-700"
-              : "text-zinc-500 group-hover/link:text-zinc-600"
+              ? "text-zinc-700 dark:text-zinc-200"
+              : "text-zinc-500 group-hover/link:text-zinc-600 dark:text-zinc-500 dark:group-hover/link:text-zinc-300"
           )}
           strokeWidth={2.25}
         />
@@ -434,10 +436,10 @@ function CollapsibleMenuItem({
         aria-expanded={isOpen}
         className={cn(
           "group/parent flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-sm font-medium transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200 dark:focus-visible:ring-zinc-700",
           childActive
-            ? "text-zinc-900"
-            : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800"
+            ? "text-zinc-900 dark:text-zinc-50"
+            : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-100"
         )}
       >
         {item.icon && (
@@ -445,8 +447,8 @@ function CollapsibleMenuItem({
             className={cn(
               "h-4 w-4 shrink-0",
               childActive
-                ? "text-zinc-700"
-                : "text-zinc-500 group-hover/parent:text-zinc-600"
+                ? "text-zinc-700 dark:text-zinc-200"
+                : "text-zinc-500 group-hover/parent:text-zinc-600 dark:text-zinc-500 dark:group-hover/parent:text-zinc-300"
             )}
             strokeWidth={2.25}
           />
@@ -456,7 +458,7 @@ function CollapsibleMenuItem({
         <ChevronRight
           strokeWidth={2.25}
           className={cn(
-            "ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform duration-200",
+            "ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400 dark:text-zinc-500 transition-transform duration-200",
             isOpen && "rotate-90"
           )}
         />
@@ -470,7 +472,7 @@ function CollapsibleMenuItem({
       >
         <div className="overflow-hidden">
           <div className="relative py-0.5 pl-[30px]">
-            <div className="absolute bottom-0 left-[18px] top-0 w-px bg-zinc-200" />
+            <div className="absolute bottom-0 left-[18px] top-0 w-px bg-zinc-200 dark:bg-zinc-700" />
             {item.children?.map((child, i) => {
               const active = isPathActive(currentPath, child.url);
               return (
@@ -479,10 +481,10 @@ function CollapsibleMenuItem({
                   to={child.url}
                   className={cn(
                     "flex items-center rounded-md px-2.5 py-[6px] text-sm transition-colors duration-150",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200 dark:focus-visible:ring-zinc-700",
                     active
-                      ? "bg-zinc-100 font-semibold text-zinc-900"
-                      : "font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+                      ? "bg-zinc-100 font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                      : "font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200"
                   )}
                 >
                   <span className="truncate">{child.title}</span>
@@ -520,7 +522,7 @@ function UserFooter({
     .join("");
 
   return (
-    <div className="border-t border-zinc-100 px-3 py-3">
+    <div className="border-t border-zinc-100 dark:border-zinc-800 px-3 py-3">
       <div className="flex items-center gap-1.5">
         <div className="min-w-0 flex-1">
           <DropdownMenu>
@@ -528,29 +530,29 @@ function UserFooter({
               <button
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors",
-                  "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
+                  "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200 dark:hover:bg-zinc-800/60 dark:focus-visible:ring-zinc-700"
                 )}
               >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">
                   {initials || "U"}
                 </div>
                 <div className="min-w-0 text-left">
-                  <div className="truncate text-[13px] font-medium text-zinc-600">
+                  <div className="truncate text-[13px] font-medium text-zinc-600 dark:text-zinc-300">
                     {username}
                   </div>
                   {tenantId ? (
-                    <div className="truncate text-[11px] text-zinc-400">
+                    <div className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
                       Tenant: <span className="font-medium">{tenantId}</span>
                     </div>
                   ) : null}
                 </div>
-                <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
+                <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-48">
               <DropdownMenuItem
                 onClick={onLogout}
-                className="flex items-center gap-2 text-red-600"
+                className="flex items-center gap-2 text-red-600 dark:text-red-400"
               >
                 <LogOut className="h-4 w-4" />
                 <span>Logout</span>
@@ -766,12 +768,12 @@ export function AppSidebar() {
         footer={navigableFooter}
       />
       <SidebarContent
-        className="flex flex-col bg-white"
+        className="flex flex-col bg-white dark:bg-zinc-900"
         style={{ height: "100%" }}
       >
         {/* Logo */}
         <div className="flex items-center px-5 pb-3 pt-5">
-          <GenAssistLogo width={150} />
+          <GenAssistLogo width={150} className="text-zinc-900 dark:text-zinc-100" />
           <NotificationBellPopover
             compact
             className="ml-auto mr-2 shrink-0 !border-0 !bg-transparent shadow-none hover:!bg-transparent"
@@ -781,7 +783,7 @@ export function AppSidebar() {
         {/* Search */}
         <div className="px-3 pb-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
             <input
               type="text"
               value={query}
@@ -791,22 +793,24 @@ export function AppSidebar() {
               className={cn(
                 "w-full rounded-md border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-10 text-sm text-zinc-700",
                 "placeholder:text-zinc-400 transition-colors",
-                "focus:border-zinc-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-100"
+                "focus:border-zinc-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-100",
+                "dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder:text-zinc-500",
+                "dark:focus:border-zinc-600 dark:focus:bg-zinc-800 dark:focus:ring-zinc-700"
               )}
             />
-            <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-zinc-200 bg-white px-1 py-0.5 text-[10px] font-medium text-zinc-400">
+            <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-zinc-200 bg-white px-1 py-0.5 text-[10px] font-medium text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500">
               ⌘K
             </kbd>
           </div>
         </div>
 
         {/* Scrollable nav */}
-        <nav className="flex-1 overflow-y-auto px-3 pb-2">
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2">
           {filteredGroups.map((group, gIdx) => (
             <SidebarGroup key={group.label} className="p-0">
               <div
                 className={cn(
-                  "px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400",
+                  "px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500",
                   gIdx === 0 ? "pt-1" : "pt-4"
                 )}
               >
@@ -836,7 +840,7 @@ export function AppSidebar() {
           ))}
 
           {searching && !hasResults && (
-            <p className="px-2.5 py-6 text-center text-sm text-zinc-400">
+            <p className="px-2.5 py-6 text-center text-sm text-zinc-400 dark:text-zinc-500">
               No menu items match “{query.trim()}”.
             </p>
           )}
@@ -844,7 +848,7 @@ export function AppSidebar() {
 
         {/* Pinned footer nav */}
         {filteredFooter.length > 0 && (
-          <div className="border-t border-zinc-100 px-3 py-2">
+          <div className="border-t border-zinc-100 dark:border-zinc-800 px-3 py-2">
             <SidebarMenu className="gap-0.5">
               {filteredFooter.map((item, iIdx) => (
                 <SidebarMenuItem key={iIdx}>

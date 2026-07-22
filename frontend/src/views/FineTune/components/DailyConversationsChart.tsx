@@ -61,17 +61,17 @@ export function DailyConversationsChart({
   const total = (events ?? []).length;
 
   return (
-    <Card className="bg-white shadow-sm">
+    <Card className="bg-card shadow-sm">
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <CardTitle className="text-sm font-semibold text-zinc-700">
+          <CardTitle className="text-sm font-semibold text-muted-foreground">
             Daily Conversations
           </CardTitle>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
               Total
-              <span className="font-semibold text-zinc-700 ml-0.5">{total.toLocaleString()}</span>
+              <span className="font-semibold text-muted-foreground ml-0.5">{total.toLocaleString()}</span>
             </span>
           </div>
         </div>

@@ -152,6 +152,20 @@ async def deploy_custom_model(
     return job.to_dict()
 
 
+@router.post("/fine-tuning/jobs/{job_id}/undeploy", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.Bedrock.UNDEPLOY_MODEL)),
+])
+async def undeploy_custom_model(
+    job_id: UUID,
+    service: BedrockFineTuningService = Injected(BedrockFineTuningService),
+):
+    """Tear down the on-demand custom model deployment for a Nova job."""
+    logger.info(f"User {get_current_user_id()} undeploying Bedrock custom model for job: {job_id}")
+    job = await service.undeploy_custom_model(job_id)
+    return job.to_dict()
+
+
 @router.get("/models/fine-tunable", dependencies=[
     Depends(auth),
 ])

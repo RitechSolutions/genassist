@@ -702,7 +702,7 @@ function TranscriptDialogContent({
             {isConnected && (
               <Badge
                 variant="outline"
-                className="bg-green-50 text-green-700 border-green-200"
+                className="bg-green-50 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30"
               >
                 Live
               </Badge>
@@ -710,7 +710,7 @@ function TranscriptDialogContent({
             {isCurrentUserSupervisor && (
               <Badge
                 variant="outline"
-                className="bg-blue-50 text-blue-700 border-blue-200"
+                className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/30"
               >
                 Supervisor Mode
               </Badge>
@@ -718,7 +718,7 @@ function TranscriptDialogContent({
             {isTakenOverByOther && (
               <Badge
                 variant="outline"
-                className="bg-amber-50 text-amber-800 border-amber-200"
+                className="bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30"
               >
                 Taken over
               </Badge>
@@ -755,15 +755,15 @@ function TranscriptDialogContent({
                       <div className="flex items-center gap-2">
                         {userFeedback.feedback === "good" ? (
                           <>
-                            <ThumbsUp className="w-5 h-5 text-green-600" />
-                            <span className="text-sm font-medium text-green-600">
+                            <ThumbsUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                            <span className="text-sm font-medium text-green-600 dark:text-green-400">
                               Good
                             </span>
                           </>
                         ) : (
                           <>
-                            <ThumbsDown className="w-5 h-5 text-red-600" />
-                            <span className="text-sm font-medium text-red-600">
+                            <ThumbsDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                            <span className="text-sm font-medium text-red-600 dark:text-red-400">
                               Bad
                             </span>
                           </>
@@ -774,12 +774,12 @@ function TranscriptDialogContent({
                       <h4 className="text-sm font-medium mb-2">
                         Feedback for this message
                       </h4>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-muted-foreground mb-2">
                         {new Date(
                           userFeedback.feedback_timestamp
                         ).toLocaleString()}
                       </p>
-                      <p className="text-sm text-gray-700 leading-relaxed">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         {userFeedback.feedback_message}
                       </p>
                     </div>
@@ -806,8 +806,8 @@ function TranscriptDialogContent({
                           onClick={() => setFeedbackType("good")}
                           className={`p-2 rounded ${
                             feedbackType === "good"
-                              ? "bg-green-100 text-green-600"
-                              : "bg-gray-100 text-gray-400 hover:text-gray-600"
+                              ? "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400"
+                              : "bg-muted text-muted-foreground hover:text-muted-foreground"
                           }`}
                         >
                           <ThumbsUp className="w-4 h-4" />
@@ -817,8 +817,8 @@ function TranscriptDialogContent({
                           onClick={() => setFeedbackType("bad")}
                           className={`p-2 rounded ${
                             feedbackType === "bad"
-                              ? "bg-red-100 text-red-600"
-                              : "bg-gray-100 text-gray-400 hover:text-gray-600"
+                              ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400"
+                              : "bg-muted text-muted-foreground hover:text-muted-foreground"
                           }`}
                         >
                           <ThumbsDown className="w-4 h-4" />
@@ -907,7 +907,7 @@ function TranscriptDialogContent({
                         className="flex justify-center my-3"
                         key={`takeover-${idx}-${entry.create_time}`}
                       >
-                        <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center">
+                        <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center dark:bg-blue-500/20 dark:text-blue-400">
                           <User className="w-3 h-3 mr-1" />
                           {isCurrentUserSupervisor
                             ? "You took over"
@@ -942,19 +942,19 @@ function TranscriptDialogContent({
                           isAgent ? "items-end" : "items-start"
                         }`}
                       >
-                        <span className="text-[11px] text-black font-medium mb-1">
+                        <span className="text-[11px] text-foreground font-medium mb-1">
                           {speakerName}
                         </span>
                         <div
                           className={`p-2 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words ${
                             isAgent
                               ? "bg-blue-500 text-white rounded-tl-lg"
-                              : "bg-gray-200 text-gray-900 rounded-tr-lg"
+                              : "bg-muted text-foreground rounded-tr-lg"
                           }`}
                         >
                           <ConversationEntryWrapper entry={entry} conversationId={transcript.id} />
                           <span className={`block text-[10px] text-right mt-1 ${
-                            isAgent ? "text-white/70" : "text-gray-500"
+                            isAgent ? "text-white/70" : "text-muted-foreground"
                           }`}>
                             {formatMessageTime(entry.create_time)}
                           </span>
@@ -965,7 +965,7 @@ function TranscriptDialogContent({
                 })}
                 {isThinking && !isCurrentUserSupervisor && (
                   <div className="flex flex-col items-end">
-                    <span className="text-[11px] text-black font-medium mb-1">
+                    <span className="text-[11px] text-foreground font-medium mb-1">
                       Agent
                     </span>
                     <div className="p-3 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words bg-blue-500 text-white rounded-tl-lg">
@@ -1029,9 +1029,9 @@ function TranscriptDialogContent({
                 </Button>
               </>
             ) : (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/15">
                 <div className="flex items-start gap-3">
-                  <User className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                  <User className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
                   <div>
                     <p className="text-sm font-medium text-amber-900">
                       Conversation already taken over by <span className="font-medium">{supervisorDisplayName}</span>
@@ -1057,7 +1057,7 @@ function InfoBox({
   value: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center p-3 bg-gray-100 rounded-lg">
+    <div className="flex flex-col items-center p-3 bg-muted rounded-lg">
       {icon}
       <span className="text-sm font-medium">{value}</span>
       <span className="text-xs text-muted-foreground">{label}</span>
@@ -1067,8 +1067,8 @@ function InfoBox({
 
 function TopicBox({ text }: { text: string }) {
   return (
-    <div className="flex bg-amber-50 rounded-xl p-4">
-      <AlertTriangle className="w-5 h-5 text-amber-600 mt-1" />
+    <div className="flex bg-amber-50 rounded-xl p-4 dark:bg-amber-500/15">
+      <AlertTriangle className="w-5 h-5 text-amber-600 mt-1 dark:text-amber-400" />
       <div className="flex flex-col justify-start items-start ml-3">
         <span className="text-sm font-semibold leading-tight">Topic</span>
         <span className="text-sm">{text}</span>

@@ -183,13 +183,13 @@ export function AudioProviderCard({
         notFoundMessage="No Audio Providers matching your search"
         emptyState={
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <Volume2 className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <Volume2 className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">
               {searchQuery ? "No Audio Providers matching your search" : "No Audio Providers found"}
             </h3>
-            <p className="text-sm text-gray-500 max-w-sm px-4">
+            <p className="text-sm text-muted-foreground max-w-sm px-4">
               {searchQuery
                 ? "Try adjusting your search query."
                 : "Add your first audio provider to enable TTS and STT capabilities."}

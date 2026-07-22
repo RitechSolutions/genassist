@@ -379,7 +379,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate("/tests/evaluations")}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-2"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
         >
           <ArrowLeft className="h-4 w-4" /> All workflows
         </button>
@@ -425,7 +425,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
       </div>
 
       <div className="relative mb-4 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -434,22 +434,22 @@ const WorkflowEvaluationsPage: React.FC = () => {
         />
       </div>
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {isLoading ? (
           <PageListSkeleton variant="evaluation" bordered={false} />
         ) : hasError ? (
           <div className="py-16 text-center">
-            <p className="text-sm text-gray-500 mb-3">Couldn't load evaluations.</p>
+            <p className="text-sm text-muted-foreground mb-3">Couldn't load evaluations.</p>
             <Button variant="outline" onClick={() => void refetchPage()}>
               Retry
             </Button>
           </div>
         ) : evaluations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <ListChecks className="h-10 w-10 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <ListChecks className="h-10 w-10 text-muted-foreground" />
             </div>
-            <p className="text-sm text-gray-500 max-w-sm">
+            <p className="text-sm text-muted-foreground max-w-sm">
               {search
                 ? "No evaluations match your search."
                 : "This workflow has no evaluations yet."}
@@ -461,7 +461,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {evaluations.map((evaluation) => (
               <EvaluationListRow
                 key={evaluation.id}
@@ -517,7 +517,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Delete Evaluation</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Are you sure you want to delete this evaluation? This will also permanently delete all
             associated runs and their results. This action cannot be undone.
           </p>

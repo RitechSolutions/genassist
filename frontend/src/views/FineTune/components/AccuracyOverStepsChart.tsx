@@ -66,10 +66,10 @@ export function AccuracyOverStepsChart({
   const latestDisplay = isPercent ? `${latest}%` : formatNumberTick(latest);
 
   return (
-    <Card className="rounded-lg border text-card-foreground bg-white shadow-sm">
+    <Card className="rounded-lg border text-card-foreground bg-card shadow-sm">
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <CardTitle className="text-sm font-semibold text-zinc-700">{title}</CardTitle>
+          <CardTitle className="text-sm font-semibold text-muted-foreground">{title}</CardTitle>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span
@@ -77,13 +77,13 @@ export function AccuracyOverStepsChart({
                 style={{ backgroundColor: stroke }}
               />
               Steps
-              <span className="font-semibold text-zinc-700 ml-0.5">{data.length}</span>
+              <span className="font-semibold text-muted-foreground ml-0.5">{data.length}</span>
             </span>
             {data.length > 0 && (
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
                 Latest
-                <span className="font-semibold text-zinc-700 ml-0.5">{latestDisplay}</span>
+                <span className="font-semibold text-muted-foreground ml-0.5">{latestDisplay}</span>
               </span>
             )}
           </div>

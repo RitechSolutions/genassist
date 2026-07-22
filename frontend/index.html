@@ -7,6 +7,22 @@
     <meta name="description" content="GenAssist AI" />
     <meta name="author" content="Ritech Solutions" />
     <link rel="icon" href="favicon.ico" />
+    <!-- Apply the persisted/system theme before first paint to avoid a flash of
+         the wrong theme. Kept in sync with storageKey in context/ThemeProvider.tsx. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("theme");
+          var theme = stored || "system";
+          var prefersDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (theme === "dark" || (theme === "system" && prefersDark)) {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
   <body>

@@ -143,13 +143,13 @@ export function AgentNodeBreakdownDialog({
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-zinc-50 border-b">
-                    <th className="text-left px-3 py-2 font-medium text-zinc-500">Node Type</th>
-                    <th className="text-right px-3 py-2 font-medium text-zinc-500">Executions</th>
-                    <th className="text-right px-3 py-2 font-medium text-zinc-500">Success</th>
-                    <th className="text-right px-3 py-2 font-medium text-zinc-500">Failed</th>
-                    <th className="text-right px-3 py-2 font-medium text-zinc-500">Success %</th>
-                    <th className="text-right px-3 py-2 font-medium text-zinc-500">Avg (ms)</th>
+                  <tr className="bg-muted border-b">
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Node Type</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Executions</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Success</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Failed</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Success %</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Avg (ms)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,30 +163,30 @@ export function AgentNodeBreakdownDialog({
                         ? Math.round((item.execution_count / totalNodeExecutions) * 100)
                         : 0;
                     return (
-                      <tr key={item.node_type} className="border-b last:border-0 hover:bg-zinc-50">
+                      <tr key={item.node_type} className="border-b last:border-0 hover:bg-muted">
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-1.5">
                             <span
                               className="w-2 h-2 rounded-full shrink-0"
                               style={{ backgroundColor: colorOf(i) }}
                             />
-                            <span className="text-zinc-700 truncate max-w-[160px]">
+                            <span className="text-muted-foreground truncate max-w-[160px]">
                               {nodeTypeLabel(item.node_type)}
                             </span>
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {item.execution_count.toLocaleString()}
-                          <span className="text-zinc-400 ml-1">({pct}%)</span>
+                          <span className="text-muted-foreground ml-1">({pct}%)</span>
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-green-600 font-medium">
+                        <td className="px-3 py-2 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">
                           {item.success_count.toLocaleString()}
                         </td>
-                        <td className={`px-3 py-2 text-right tabular-nums font-medium ${item.failure_count > 0 ? "text-red-500" : "text-zinc-400"}`}>
+                        <td className={`px-3 py-2 text-right tabular-nums font-medium ${item.failure_count > 0 ? "text-red-500" : "text-muted-foreground"}`}>
                           {item.failure_count.toLocaleString()}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{successRate}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-zinc-500">
+                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                           {item.avg_execution_ms != null
                             ? `${Math.round(item.avg_execution_ms)}`
                             : "—"}

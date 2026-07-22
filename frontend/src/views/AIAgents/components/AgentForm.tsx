@@ -578,7 +578,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   return (
     <>
       {success && (
-        <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 rounded-md">
+        <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 rounded-md">
           <CheckCircle2 className="h-4 w-4" />
           <p className="text-sm font-medium">
             Agent successfully {isEditMode ? "updated" : "created"}!
@@ -588,7 +588,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
       <form onSubmit={handleSubmit} id={formId}>
         <div className="space-y-6">
-          <div className={`${plain ? "" : "rounded-lg border bg-white p-6 "}`}>
+          <div className={`${plain ? "" : "rounded-lg border bg-card p-6 "}`}>
             <div className="space-y-6">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -770,7 +770,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                                       )}{" "}
                                       MB
                                     </span>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-green-50 border border-green-200 text-green-700 font-medium">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-green-50 border border-green-200 text-green-700 dark:bg-green-500/15 dark:border-green-500/30 dark:text-green-400 font-medium">
                                       <CheckCircle2 className="h-3 w-3 mr-1" />
                                       Ready
                                     </span>
@@ -901,7 +901,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   </Button>
                 </div>
                 {formData.possible_queries.length > 0 ? (
-                  <div className="px-4 py-3 space-y-3 bg-white">
+                  <div className="px-4 py-3 space-y-3 bg-card">
                     {formData.possible_queries.map((query, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground w-5 text-center">
@@ -938,7 +938,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     ))}
                   </div>
                 ) : (
-                  <div className="px-4 py-6 bg-white text-center">
+                  <div className="px-4 py-6 bg-card text-center">
                     <p className="text-sm text-muted-foreground">
                       No FAQs added yet. Add questions to help guide users.
                     </p>
@@ -971,7 +971,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   </Button>
                 </div>
                 {formData.thinking_phrases.length > 0 ? (
-                  <div className="px-4 py-3 space-y-3 bg-white">
+                  <div className="px-4 py-3 space-y-3 bg-card">
                     <p className="text-xs text-muted-foreground">
                       Separate multiple phrases with | (e.g.,
                       "Thinking...|Processing...")
@@ -1030,7 +1030,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="px-4 py-6 bg-white text-center">
+                  <div className="px-4 py-6 bg-card text-center">
                     <p className="text-sm text-muted-foreground">
                       No thinking phrases added. These appear while the agent is
                       processing.
@@ -1085,7 +1085,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   />
                 </div>
                 {formData.greet_on_start && (
-                  <div className="px-4 py-3 space-y-2 bg-white">
+                  <div className="px-4 py-3 space-y-2 bg-card">
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="greeting_prompt">Greeting instructions (optional)</Label>
                       {isEditMode && id && (

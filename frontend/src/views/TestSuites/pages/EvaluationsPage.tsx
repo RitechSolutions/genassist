@@ -205,29 +205,29 @@ const EvaluationsPage: React.FC = () => {
       <tr
         key={row.key}
         onClick={() => openWorkflow(row)}
-        className="hover:bg-gray-50 transition-colors cursor-pointer"
+        className="hover:bg-muted transition-colors cursor-pointer"
       >
         <td className="px-6 py-4">
           <div className="flex items-center gap-2 min-w-0">
-            <Layers className="h-4 w-4 text-gray-400 shrink-0" />
+            <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
             <EntityTitle muted={row.isUnassigned}>{row.name}</EntityTitle>
           </div>
         </td>
         <td className="px-6 py-4">
           <div className="flex items-center gap-1.5" title={healthTooltip}>
             {row.anyRunning ? (
-              <Loader2 className="h-3.5 w-3.5 text-blue-600 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 animate-spin" />
             ) : (
-              <Activity className="h-3.5 w-3.5 text-gray-400" />
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
             )}
             {row.health !== null ? (
               <span className={cn("font-medium", accuracyColorClass(row.health))}>
                 {Math.round(row.health * 100)}%
               </span>
             ) : row.anyRunning ? (
-              <span className="text-blue-600">Running…</span>
+              <span className="text-blue-600 dark:text-blue-400">Running…</span>
             ) : (
-              <span className="text-gray-400">No scores yet</span>
+              <span className="text-muted-foreground">No scores yet</span>
             )}
           </div>
         </td>
@@ -271,12 +271,12 @@ const EvaluationsPage: React.FC = () => {
         onActionClick={() => setIsCreateDialogOpen(true)}
       />
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {isLoading ? (
           <PageListSkeleton variant="evaluation" bordered={false} />
         ) : hasError ? (
           <div className="py-16 text-center">
-            <p className="text-sm text-gray-500 mb-3">Couldn't load evaluations.</p>
+            <p className="text-sm text-muted-foreground mb-3">Couldn't load evaluations.</p>
             <Button
               variant="outline"
               onClick={() => {
@@ -289,11 +289,11 @@ const EvaluationsPage: React.FC = () => {
           </div>
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <ListChecks className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <ListChecks className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">No evaluations yet</h3>
-            <p className="text-sm text-gray-500 max-w-sm">
+            <p className="text-sm text-muted-foreground max-w-sm">
               {searchQuery
                 ? "No workflows match your search."
                 : "Evaluations help you test your AI agents against golden datasets. Create your first evaluation to get started."}
@@ -309,14 +309,14 @@ const EvaluationsPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                <tr className="border-b bg-muted text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   <th className="px-6 py-3 font-medium">Workflow</th>
                   <th className="px-6 py-3 font-medium">Health</th>
                   <th className="px-6 py-3 font-medium">Evaluations</th>
                   <th className="px-6 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">{rows.map(renderRow)}</tbody>
+              <tbody className="divide-y divide-border">{rows.map(renderRow)}</tbody>
             </table>
           </div>
         )}

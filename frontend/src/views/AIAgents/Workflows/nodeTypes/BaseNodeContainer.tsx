@@ -27,6 +27,8 @@ import {
   defaultHelpHeaderGradient,
   helpHeaderGradientByCategory,
 } from "../utils/helpHeaderGradients";
+import { getNodeDocsUrl } from "../utils/nodeDocsLinks";
+import { ExternalLink } from "lucide-react";
 
 interface BaseNodeContainerProps<T extends NodeData> {
   id: string;
@@ -91,14 +93,19 @@ const BaseNodeContainer = <T extends NodeData>({
     nodeType === "chatInputNode" || nodeType === "chatOutputNode";
   const isAgentNode = nodeType === "agentNode";
 
-  const cardColor = hasError
-    ? "red-200"
+  const nodeCategory = nodeDefinition?.category ?? "utils";
+  // Header/frame background. Light mode keeps the soft pastel; dark mode uses a
+  // SOLID dark shade of the node's own color — same hue, no transparency (values
+  // live in nodeColors). The agent node uses the same treatment as the rest; its
+  // only distinction is the animated gradient border (applied below).
+  const cardBg = hasError
+    ? "bg-red-200 dark:bg-[#330f10]"
     : isSpecialNode
-    ? "brand-600"
-    : `${color.split("-")[0]}-50`;
+    ? "bg-brand-600"
+    : getNodeBgColor(nodeCategory);
   const iconColor = hasError ? "red-600" : isSpecialNode ? "white" : color;
   const icon = hasError ? "CircleAlert" : iconName;
-  const nodeCategory = nodeDefinition?.category ?? "utils";
+  const docsUrl = getNodeDocsUrl(nodeType);
   const categoryLabel: Record<string, string> = {
     io: "I/O",
     ai: "AI",
@@ -150,7 +157,7 @@ const BaseNodeContainer = <T extends NodeData>({
 
   const card = (
     <div
-      className={`rounded-[6px] bg-${cardColor} ${NODE_WIDTH} self-stretch ${isAgentNode ? "" : `border-2 ${getBorderColor()}`}`}
+      className={`rounded-lg ${cardBg} ${NODE_WIDTH} self-stretch ${isAgentNode ? "" : `border-2 ${getBorderColor()}`}`}
       style={{
         boxShadow: isAgentNode ? undefined : "0 0 10px rgba(0, 0, 0, 0.2)",
       }}
@@ -218,8 +225,8 @@ const BaseNodeContainer = <T extends NodeData>({
       />
 
       <Dialog open={isHelpDialogOpen} onOpenChange={setIsHelpDialogOpen}>
-        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-gray-200 shadow-2xl">
-          <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-white">
+        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-border shadow-2xl">
+          <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-card">
             <div
               className={`px-10 pt-10 pb-6 ${
                 helpHeaderGradientByCategory[nodeCategory] ??
@@ -250,6 +257,17 @@ const BaseNodeContainer = <T extends NodeData>({
                     </Badge>
                   </div>
                 </DialogHeader>
+                {docsUrl && (
+                  <a
+                    href={docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Docs
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-8">

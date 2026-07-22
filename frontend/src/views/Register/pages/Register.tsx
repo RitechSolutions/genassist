@@ -37,7 +37,7 @@ const RegisterPage = () => {
 
   return (
     <div className="min-h-screen grid md:grid-cols-2">
-      <div className="flex items-center justify-center p-4 bg-white">
+      <div className="flex items-center justify-center p-4 bg-card">
         <div className="w-full max-w-md space-y-6">
           <div className="space-y-2">
             <GenAssistLogo width={200} height={52} />
@@ -45,7 +45,7 @@ const RegisterPage = () => {
             <h1 className="text-3xl font-bold tracking-tight">
               Create an account
             </h1>
-            <p className="text-zinc-500">
+            <p className="text-muted-foreground">
               Enter your details to create your account
             </p>
           </div>
@@ -53,11 +53,11 @@ const RegisterPage = () => {
           <RegisterForm onSubmit={handleRegister} isLoading={isLoading} />
 
           <div className="text-center text-sm mt-8">
-            <span className="text-zinc-500">Already have an account? </span>
+            <span className="text-muted-foreground">Already have an account? </span>
             <Link
               to="/login"
               state={location.state}
-              className="text-black hover:underline font-medium"
+              className="text-foreground hover:underline font-medium"
             >
               Sign in
             </Link>
