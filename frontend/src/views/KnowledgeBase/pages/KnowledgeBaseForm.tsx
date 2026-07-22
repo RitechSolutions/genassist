@@ -635,7 +635,7 @@ const KnowledgeBaseForm: React.FC = () => {
     return (
       <>
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-sm text-gray-500">Loading...</div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
         </div>
       </>
     );
@@ -662,7 +662,7 @@ const KnowledgeBaseForm: React.FC = () => {
               )}
 
               {success && (
-                <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 rounded-md">
+                <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 rounded-md">
                   <CheckCircle2 className="h-4 w-4" />
                   <p className="text-sm font-medium">{success}</p>
                 </div>
@@ -670,13 +670,13 @@ const KnowledgeBaseForm: React.FC = () => {
 
               <form ref={formRef} onSubmit={handleSubmit}>
                 <div className="space-y-6">
-                  <div className="rounded-lg border bg-white">
+                  <div className="rounded-lg border bg-card dark:bg-zinc-900">
                     {/* Basic Information */}
                     <div className="p-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div>
                           <h3 className="text-lg font-semibold">Basic Information</h3>
-                          <p className="text-sm text-gray-500 mt-1">Basic information about the knowledge base.</p>
+                          <p className="text-sm text-muted-foreground mt-1">Basic information about the knowledge base.</p>
                         </div>
 
                         <div className="md:col-span-2 space-y-6">
@@ -799,11 +799,11 @@ const KnowledgeBaseForm: React.FC = () => {
                                   </SelectContent>
                                 </Select>
                               </div>
-                              <div className="mt-4 rounded-lg border bg-white p-4">
+                              <div className="mt-4 rounded-lg border bg-card dark:bg-zinc-900 p-4">
                                 <div className="flex items-center justify-between">
                                   <div className="flex-1 pr-4">
-                                    <div className="text-sm font-medium text-gray-900">Use HTTP request</div>
-                                    <p className="text-sm text-gray-500 mt-1">
+                                    <div className="text-sm font-medium text-foreground">Use HTTP request</div>
+                                    <p className="text-sm text-muted-foreground mt-1">
                                       Fetch content via a direct HTTP request instead of browser scraping.
                                     </p>
                                   </div>
@@ -1083,13 +1083,13 @@ const KnowledgeBaseForm: React.FC = () => {
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  <div className="rounded-lg border bg-white p-4">
+                                  <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
                                     <div className="flex items-center justify-between">
                                       <div className="flex-1 pr-4">
-                                        <div className="text-sm font-medium text-gray-900">
+                                        <div className="text-sm font-medium text-foreground">
                                           Allow Unpublished Articles
                                         </div>
-                                        <p className="text-sm text-gray-500 mt-1">
+                                        <p className="text-sm text-muted-foreground mt-1">
                                           Allow unpublished articles to be indexed in the knowledge base.
                                         </p>
                                       </div>
@@ -1117,11 +1117,11 @@ const KnowledgeBaseForm: React.FC = () => {
 
                               {formData.type === 'salesforce' && (
                                 <div className="flex flex-col gap-6 mt-6">
-                                  <div className="rounded-lg border bg-white p-4">
+                                  <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
                                     <div className="flex items-center justify-between">
                                       <div className="flex-1 pr-4">
-                                        <div className="text-sm font-medium text-gray-900">Allow HTML Content</div>
-                                        <p className="text-sm text-gray-500 mt-1">
+                                        <div className="text-sm font-medium text-foreground">Allow HTML Content</div>
+                                        <p className="text-sm text-muted-foreground mt-1">
                                           Allow HTML content to be indexed in the knowledge base.
                                         </p>
                                       </div>
@@ -1150,11 +1150,11 @@ const KnowledgeBaseForm: React.FC = () => {
                               ) && (
                                 <div className="col-span-2 space-y-4">
                                   <div className="flex flex-col gap-6 mt-6">
-                                    <div className="rounded-lg border bg-white p-4">
+                                    <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
                                       <div className="flex items-center justify-between">
                                         <div className="flex-1 pr-4">
-                                          <div className="text-sm font-medium text-gray-900">Sync Schedule</div>
-                                          <p className="text-sm text-gray-500 mt-1">
+                                          <div className="text-sm font-medium text-foreground">Sync Schedule</div>
+                                          <p className="text-sm text-muted-foreground mt-1">
                                             Enable automatic syncing on a schedule.
                                           </p>
                                         </div>
@@ -1189,7 +1189,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                             editingItem.last_sync_status ||
                                             editingItem.last_sync_error) && (
                                             <>
-                                              <span className="text-xs text-gray-600">
+                                              <span className="text-xs text-muted-foreground">
                                                 Last sync
                                                 {editingItem.last_synced
                                                   ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
@@ -1259,7 +1259,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                     )}
 
                                     <Collapsible>
-                                      <CollapsibleTrigger className="group flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                      <CollapsibleTrigger className="group flex items-center justify-between w-full p-3 bg-muted rounded-lg hover:bg-muted transition-colors">
                                         <h4 className="text-sm font-medium">Processing & Output</h4>
                                         <ChevronDown className="h-4 w-4 group-data-[state=open]:hidden" />
                                         <ChevronUp className="h-4 w-4 hidden group-data-[state=open]:block" />
@@ -1390,7 +1390,7 @@ const KnowledgeBaseForm: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="my-0 border-t border-gray-200" />
+                    <div className="my-0 border-t border-border" />
 
                     <DynamicRagConfigSection
                       ragConfig={dynamicRagConfig}

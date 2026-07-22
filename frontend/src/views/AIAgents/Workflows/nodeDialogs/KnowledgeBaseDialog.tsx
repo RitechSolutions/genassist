@@ -162,7 +162,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
             href="/knowledge-base"
             target="_blank"
             rel="noreferrer"
-            className="text-sm flex items-center gap-1 text-blue-600 hover:text-blue-700"
+            className="text-sm flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700"
           >
             <Plus className="w-4 h-4" /> Configure new KB{" "}
             <ExternalLink className="w-3 h-3" />
@@ -187,7 +187,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
             ))}
           </div>
         </ScrollArea>
-        <p className="text-xs text-gray-500 break-words">
+        <p className="text-xs text-muted-foreground break-words">
           Select the knowledge bases you want to query.
         </p>
       </div>

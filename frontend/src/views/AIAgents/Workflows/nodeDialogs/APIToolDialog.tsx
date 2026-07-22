@@ -184,7 +184,7 @@ export const APIToolDialog: React.FC<
           placeholder="https://api.example.com/data"
           className="break-all w-full"
         />
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Use {"{{field}}"} to define dynamic parameters
         </div>
       </div>
@@ -308,7 +308,7 @@ export const APIToolDialog: React.FC<
             placeholder='{"key": "value"}'
             className="font-mono text-xs h-24 resize-none w-full"
           />
-          <div className="text-xs text-gray-500 break-words">
+          <div className="text-xs text-muted-foreground break-words">
             Use {"{{field}}"} to define dynamic parameters
           </div>
         </div>

@@ -98,9 +98,9 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
   };
 
   return (
-    <Card className="bg-white border border-border rounded-xl overflow-hidden shadow-sm animate-fade-up">
+    <Card className="bg-card dark:bg-zinc-900 border border-border rounded-xl overflow-hidden shadow-sm animate-fade-up">
       {/* Header */}
-      <div className="bg-white flex items-center justify-between p-6">
+      <div className="bg-card dark:bg-zinc-900 flex items-center justify-between p-6">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold text-foreground">Your Agents</h3>
         </div>

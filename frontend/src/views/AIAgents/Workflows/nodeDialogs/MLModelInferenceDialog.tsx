@@ -146,7 +146,7 @@ export const MLModelInferenceDialog: React.FC<
                 <SelectItem key={model.id} value={model.id}>
                   <div className="flex items-center gap-2">
                     <span>{model.name}</span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-muted-foreground">
                       ({model.model_type})
                     </span>
                   </div>
@@ -155,7 +155,7 @@ export const MLModelInferenceDialog: React.FC<
             </SelectContent>
           </Select>
           {selectedModel && (
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-muted-foreground">
               {selectedModel.description}
             </div>
           )}
@@ -167,12 +167,12 @@ export const MLModelInferenceDialog: React.FC<
           selectedModel.features.length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Inference Values</Label>
-              <div className="space-y-3 pl-2 border-l-2 border-gray-200">
+              <div className="space-y-3 pl-2 border-l-2 border-border">
                 {selectedModel.features.map((key) => (
                   <div key={key} className="space-y-1">
                     <Label
                       htmlFor={`param-${key}`}
-                      className="text-xs text-gray-600"
+                      className="text-xs text-muted-foreground"
                     >
                       {key}
                     </Label>
@@ -185,7 +185,7 @@ export const MLModelInferenceDialog: React.FC<
                       placeholder={`Add value`}
                       className="text-sm"
                     />
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-muted-foreground">
                       Use {"{{variable}}"} for dynamic values
                     </div>
                   </div>
@@ -195,7 +195,7 @@ export const MLModelInferenceDialog: React.FC<
           )}
 
         {!selectedModel && !loading && (
-          <div className="text-sm text-gray-500 text-center py-4">
+          <div className="text-sm text-muted-foreground text-center py-4">
             Select an ML model to configure inference parameters
           </div>
         )}

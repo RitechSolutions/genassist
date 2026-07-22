@@ -14,16 +14,21 @@ export const getNodeColor = (nodeCategory: string): string => {
   return nodeColors[nodeCategory] || nodeColors.default;
 };
 
+// Light mode keeps the soft pastel tint; dark mode uses a SOLID (opaque) dark
+// shade of the category's own color — same hue as the icon, no transparency, so
+// the canvas grid never shows through the header. These are the flattened
+// equivalents of the saturated color at ~20% over the dark canvas. The classes
+// are literal here so Tailwind picks up the arbitrary values without a safelist.
 export const nodeBgColors: Record<string, string> = {
-  io: "bg-brand-50",
-  ai: "bg-pink-50",
-  routing: "bg-orange-50",
-  integrations: "bg-green-50",
-  formatting: "bg-purple-50",
-  tools: "bg-sky-50",
-  training: "bg-rose-50",
-  audio: "bg-teal-50",
-  default: "bg-brand-50",
+  io: "bg-brand-50 dark:bg-[#0c1438]",
+  ai: "bg-pink-50 dark:bg-[#330f21]",
+  routing: "bg-orange-50 dark:bg-[#391e0d]",
+  integrations: "bg-green-50 dark:bg-[#0c2818]",
+  formatting: "bg-purple-50 dark:bg-[#251238]",
+  tools: "bg-sky-50 dark:bg-[#082231]",
+  training: "bg-rose-50 dark:bg-[#340d17]",
+  audio: "bg-teal-50 dark:bg-[#0a2524]",
+  default: "bg-brand-50 dark:bg-[#0c1438]",
 };
 
 export const getNodeBgColor = (nodeCategory: string): string => {

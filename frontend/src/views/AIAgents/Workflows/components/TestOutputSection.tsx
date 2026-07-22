@@ -23,7 +23,7 @@ export const TestOutputSection: React.FC<TestOutputSectionProps> = ({
     </div>
 
     {error && (
-      <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded-md text-xs mb-2">
+      <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded-md text-xs mb-2 dark:bg-red-500/15 dark:border-red-500/30 dark:text-red-400">
         {error}
       </div>
     )}
@@ -36,7 +36,7 @@ export const TestOutputSection: React.FC<TestOutputSectionProps> = ({
       if (audioUrl) {
         return (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2">
+            <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2 dark:text-teal-400 dark:bg-teal-500/15 dark:border-teal-500/30">
               <Volume2 className="h-4 w-4" />
               Audio generated successfully
             </div>

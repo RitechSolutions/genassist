@@ -100,7 +100,7 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
 
   return (
     <>
-      <Card className="p-4 shadow-sm animate-fade-up bg-white">
+      <Card className="p-4 shadow-sm animate-fade-up bg-card dark:bg-zinc-900">
         <CardHeader
           title={isDashboard ? "Top Performing Operators" : ""}
           tooltipText={

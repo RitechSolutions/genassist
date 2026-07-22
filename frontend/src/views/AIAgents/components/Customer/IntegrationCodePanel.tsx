@@ -43,23 +43,23 @@ const CodeSection = ({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <div
         className={cn(
-          "relative rounded-xl border border-[#E5E7EB] bg-[#F7F7F8] p-4",
+          "relative rounded-xl border border-[#E5E7EB] bg-[#F7F7F8] dark:border-zinc-700 dark:bg-zinc-900 p-4",
           minHeightClass
         )}
       >
         <button
           type="button"
           onClick={() => onCopy(code, copyId)}
-          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-white/70 hover:text-gray-900"
+          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-white/70 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-gray-100"
           aria-label={`Copy ${title}`}
         >
           <Copy className="h-4 w-4" />
           {isCopied ? "Copied" : "Copy"}
         </button>
-        <pre className="whitespace-pre-wrap break-words pr-12 text-xs leading-relaxed text-gray-700 font-mono">
+        <pre className="whitespace-pre-wrap break-words pr-12 text-xs leading-relaxed text-gray-700 dark:text-gray-300 font-mono">
           {code}
         </pre>
       </div>
@@ -123,7 +123,7 @@ export const IntegrationCodePanel = ({
     return (
       <div
         className={cn(
-          "w-full rounded-2xl border border-[#E5E7EB] bg-white p-4 text-sm text-muted-foreground shadow-sm",
+          "w-full rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm",
           className
         )}
         style={style}
@@ -285,36 +285,36 @@ struct ContentView: View {
   return (
     <div
       className={cn(
-        "w-full rounded-2xl border border-[#E5E7EB] bg-white shadow-sm",
+        "w-full rounded-2xl border border-border bg-card shadow-sm",
         className
       )}
       style={style}
       title={panelLabel}
     >
       <Tabs defaultValue="curl" className="w-full">
-        <div className="sticky top-0 z-10 rounded-t-2xl bg-white px-4 pt-4 pb-3">
-          <TabsList className="grid w-full grid-cols-4 rounded-full bg-[#F4F4F5] p-1">
+        <div className="sticky top-0 z-10 rounded-t-2xl bg-card px-4 pt-4 pb-3">
+          <TabsList className="grid w-full grid-cols-4 rounded-full bg-muted p-1">
             <TabsTrigger
               value="curl"
-              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             >
               Curl -X
             </TabsTrigger>
             <TabsTrigger
               value="react"
-              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             >
               React
             </TabsTrigger>
             <TabsTrigger
               value="flutter"
-              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             >
               Flutter
             </TabsTrigger>
             <TabsTrigger
               value="swift"
-              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             >
               iOS (Swift)
             </TabsTrigger>

@@ -147,7 +147,7 @@ export const WebScraperDialog: React.FC<
           placeholder="https://example.com"
           className="break-all w-full"
         />
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Use {"{{field}}"} to define dynamic parameters
         </div>
       </div>
@@ -184,7 +184,7 @@ export const WebScraperDialog: React.FC<
             <SelectItem value="fullPage">Full Page</SelectItem>
           </SelectContent>
         </Select>
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Capture a viewport or full-page screenshot of the rendered page.
         </div>
       </div>
@@ -250,7 +250,7 @@ export const WebScraperDialog: React.FC<
       <div className="space-y-2">
         <button
           type="button"
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-muted-foreground"
           onClick={() => setShowAdvanced((v) => !v)}
         >
           {showAdvanced ? (
@@ -275,7 +275,7 @@ export const WebScraperDialog: React.FC<
                 placeholder="0"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Extra wait after load before capturing, for slow
                 client-rendered pages.
               </div>
@@ -307,7 +307,7 @@ export const WebScraperDialog: React.FC<
                 placeholder="0"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Serve a cached result newer than this. 0 disables caching.
               </div>
             </div>

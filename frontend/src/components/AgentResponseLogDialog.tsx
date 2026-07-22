@@ -92,7 +92,7 @@ export function AgentResponseLogDialog({
             <p className="text-sm text-muted-foreground">Loading...</p>
           )}
           {!loading && error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           )}
           {!loading && !error && data && (
             <>
@@ -111,16 +111,16 @@ export function AgentResponseLogDialog({
                 )}
               </div>
               <div>
-                <div className="text-xs font-semibold text-gray-700 mb-1">Response (JSON)</div>
+                <div className="text-xs font-semibold text-muted-foreground mb-1">Response (JSON)</div>
                 {parsedResponse != null && typeof parsedResponse === "object" ? (
-                  <div className="border border-gray-200 rounded-md overflow-hidden">
+                  <div className="border border-border rounded-md overflow-hidden">
                     <JsonViewer
                       data={parsedResponse as unknown as never}
                       onCopy={(d) => navigator.clipboard.writeText(JSON.stringify(d, null, 2))}
                     />
                   </div>
                 ) : (
-                  <pre className="text-xs whitespace-pre-wrap bg-gray-50 border border-gray-200 p-3 rounded-md max-h-[300px] overflow-auto">
+                  <pre className="text-xs whitespace-pre-wrap bg-muted border border-border p-3 rounded-md max-h-[300px] overflow-auto">
                     {data.raw_response ?? "—"}
                   </pre>
                 )}

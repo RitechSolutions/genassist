@@ -1182,7 +1182,7 @@ const GraphFlowContent: React.FC = () => {
                   onClick={toggleNodePanel}
                   size="icon"
                   variant="ghost"
-                  className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+                  className="rounded-full h-10 w-10 shadow-md bg-card hover:bg-muted border border-border"
                 >
                   {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                   <span className="sr-only">
@@ -1194,7 +1194,7 @@ const GraphFlowContent: React.FC = () => {
                   onClick={toggleWorkflowPanel}
                   size="icon"
                   variant="ghost"
-                  className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+                  className="rounded-full h-10 w-10 shadow-md bg-card hover:bg-muted border border-border"
                 >
                   {showWorkflowPanel ? (
                     <X className="h-4 w-4" />

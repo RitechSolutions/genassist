@@ -135,7 +135,7 @@ const NodeAnalyticsPage = () => {
         header: "Agent",
         key: "agent_id",
         cell: (item) => (
-          <span className="text-xs text-zinc-600">
+          <span className="text-xs text-muted-foreground">
             {agentNameMap[item.agent_id] ?? item.agent_id.slice(0, 8) + "…"}
           </span>
         ),
@@ -157,7 +157,7 @@ const NodeAnalyticsPage = () => {
         key: "success_count",
         description: "Node runs that completed without errors.",
         cell: (item) => (
-          <span className="text-green-600 font-medium">
+          <span className="text-green-600 dark:text-green-400 font-medium">
             {item.success_count.toLocaleString()}
           </span>
         ),
@@ -167,7 +167,7 @@ const NodeAnalyticsPage = () => {
         key: "failure_count",
         description: "Node runs that threw an error or timed out.",
         cell: (item) => (
-          <span className={item.failure_count > 0 ? "text-red-500 font-medium" : "text-zinc-400"}>
+          <span className={item.failure_count > 0 ? "text-red-500 font-medium" : "text-muted-foreground"}>
             {item.failure_count.toLocaleString()}
           </span>
         ),

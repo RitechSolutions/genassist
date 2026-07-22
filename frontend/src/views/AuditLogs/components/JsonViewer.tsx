@@ -189,7 +189,7 @@ export function JsonViewer({ jsonData, className }: JsonViewerProps) {
       </div>
 
       <ScrollArea className="max-h-[400px] w-full overflow-y-auto">
-        <pre className="whitespace-pre-wrap break-words text-sm bg-white text-black p-3 rounded-md">
+        <pre className="whitespace-pre-wrap break-words text-sm bg-card text-foreground p-3 rounded-md">
           <CollapsibleJSON value={jsonData} expanded={true} />
         </pre>
       </ScrollArea>
