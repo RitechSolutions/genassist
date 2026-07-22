@@ -17,7 +17,7 @@ export function ScoreCard({
   iconClassName = "",
 }: ScoreCardProps) {
   return (
-    <div className={`flex bg-gray-100 rounded-xl p-4 ${className}`}>
+    <div className={`flex bg-muted rounded-xl p-4 ${className}`}>
       <Icon className={`w-5 h-5 mt-1 ${iconClassName}`} />
       <div className="flex flex-col justify-start items-start ml-3">
         <span className="text-sm font-semibold leading-tight">{value}</span>
@@ -42,7 +42,7 @@ export function ScoreCards({ metrics, className = "" }: ScoreCardsProps) {
         icon={ThumbsUp}
         label="Satisfaction"
         value={formatScorePercentage(metrics.customerSatisfaction)}
-        iconClassName="text-green-600"
+        iconClassName="text-green-600 dark:text-green-400"
         className="w-full"
       />
 
@@ -50,7 +50,7 @@ export function ScoreCards({ metrics, className = "" }: ScoreCardsProps) {
         icon={Clock}
         label="Service Quality"
         value={formatScorePercentage(metrics.serviceQuality)}
-        iconClassName="text-purple-600"
+        iconClassName="text-purple-600 dark:text-purple-400"
         className="w-full"
       />
 
@@ -58,7 +58,7 @@ export function ScoreCards({ metrics, className = "" }: ScoreCardsProps) {
         icon={CheckCircle}
         label="Resolution Rate"
         value={formatScorePercentage(metrics.resolutionRate)}
-        iconClassName="text-red-600"
+        iconClassName="text-red-600 dark:text-red-400"
         className="col-span-2 w-full"
       />
     </div>

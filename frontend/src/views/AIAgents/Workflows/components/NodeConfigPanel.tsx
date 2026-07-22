@@ -410,9 +410,9 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           <div className="flex flex-1 gap-6 overflow-hidden px-6 pl-8">
             {/* Left side - JSON State section */}
             {jsonStateDisplay && isJsonPanelVisible && (
-              <div className="min-w-80 flex-1 border-r border-gray-200 pr-6 flex flex-col py-6">
-                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-200">
-                  <p className="text-xs text-gray-500">
+              <div className="min-w-80 flex-1 border-r border-border pr-6 flex flex-col py-6">
+                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-border">
+                  <p className="text-xs text-muted-foreground">
                     Drag variables to input fields
                   </p>
                   <Button
@@ -428,8 +428,8 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
                   </Button>
                 </div>
 
-                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
-                  <div className="p-3 bg-white min-w-max">
+                <div className="flex-1 bg-card rounded-lg border border-border overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
+                  <div className="p-3 bg-card min-w-max">
                     {jsonStateDisplay.data ? (
                       <JsonViewer
                         data={jsonStateDisplay.data as Record<string, unknown>}
@@ -445,9 +445,9 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
                 </div>
 
                 {showHelp && (
-                  <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/30">
                     <div className="flex items-start gap-2">
-                      <div className="text-blue-600 mt-0.5">
+                      <div className="text-blue-600 mt-0.5 dark:text-blue-400">
                         <svg
                           className="h-4 w-4"
                           fill="none"
@@ -462,7 +462,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
                           />
                         </svg>
                       </div>
-                      <div className="text-xs text-blue-800">
+                      <div className="text-xs text-blue-800 dark:text-blue-400">
                         <p className="font-medium mb-1">💡 How to use:</p>
                         <ul className="space-y-0.5">
                           <li>
@@ -489,7 +489,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
               </div>
             )}
             {jsonStateDisplay && !isJsonPanelVisible && (
-              <div className="w-10 flex-shrink-0 border-r border-gray-200 flex flex-col items-center py-4">
+              <div className="w-10 flex-shrink-0 border-r border-border flex flex-col items-center py-4">
                 <Button
                   type="button"
                   variant="ghost"
@@ -514,7 +514,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
 
           {/* Sticky Footer with Action Buttons */}
           <div className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3 items-center justify-between">
-            <div className="text-xs text-gray-400 flex items-center gap-2">{nodeDefinition?.icon && renderIcon(nodeDefinition?.icon, "w-4 h-4 text-gray-500")} {nodeDefinition?.type} </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-2">{nodeDefinition?.icon && renderIcon(nodeDefinition?.icon, "w-4 h-4 text-gray-500")} {nodeDefinition?.type} </div>
             <div className="flex justify-end gap-2">{footer}</div>
           </div>
           </div>
@@ -523,7 +523,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
             type="button"
             variant="ghost"
             size="icon"
-            className="absolute left-0 bottom-5 z-30 h-8 w-8 -translate-x-1/2 rounded-full bg-white/50 shadow-md backdrop-blur-sm transition-colors hover:bg-white/70 hover:text-accent-foreground"
+            className="absolute left-0 bottom-5 z-30 h-8 w-8 -translate-x-1/2 rounded-full bg-background/50 shadow-md backdrop-blur-sm transition-colors hover:bg-background/70 hover:text-accent-foreground"
             onClick={() => setIsPinned((p) => !p)}
             title={isPinned ? "Unlock – panel can close when clicking outside" : "Lock – keep panel open while navigating"}
             aria-label={isPinned ? "Unlock panel" : "Lock panel"}

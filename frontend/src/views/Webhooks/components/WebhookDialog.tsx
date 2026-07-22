@@ -246,7 +246,7 @@ export function WebhookDialog({
                     id="url"
                     value={url}
                     readOnly
-                    className="bg-gray-100 cursor-not-allowed pr-20"
+                    className="bg-muted cursor-not-allowed pr-20"
                   />
                   <div className="absolute top-1/2 right-2 -translate-y-1/2 flex items-center space-x-1 z-10">
                     <Button

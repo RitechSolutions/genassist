@@ -55,7 +55,7 @@ export function LocalFineTuneListSummary({
         title: "In progress",
         value: counts.active.toLocaleString(),
         valueClassName:
-          counts.active > 0 ? "text-blue-600" : "text-muted-foreground",
+          counts.active > 0 ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground",
         sub: "Queued, running, or saving output",
         icon: Activity,
         iconColor: "#2563eb",
@@ -66,7 +66,7 @@ export function LocalFineTuneListSummary({
         title: "Completed",
         value: counts.succeeded.toLocaleString(),
         valueClassName:
-          counts.succeeded > 0 ? "text-emerald-600" : "text-muted-foreground",
+          counts.succeeded > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
         sub: "Successful runs",
         icon: CheckCircle2,
         iconColor: "#059669",
@@ -76,7 +76,7 @@ export function LocalFineTuneListSummary({
         title: "Failed",
         value: counts.failed.toLocaleString(),
         valueClassName:
-          counts.failed > 0 ? "text-rose-600" : "text-muted-foreground",
+          counts.failed > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground",
         sub: "Needs attention",
         icon: XCircle,
         iconColor: "#e11d48",
@@ -89,13 +89,13 @@ export function LocalFineTuneListSummary({
 
   if (loading) {
     return (
-      <Card className="rounded-lg border text-card-foreground w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-        <div className="h-3 w-48 bg-zinc-100 rounded animate-pulse mb-4" />
+      <Card className="rounded-lg border text-card-foreground w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card animate-fade-up">
+        <div className="h-3 w-48 bg-muted rounded animate-pulse mb-4" />
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
           {Array.from({ length: PLACEHOLDER_COUNT }).map((_, i) => (
             <div key={i} className="flex flex-col gap-3 py-2 sm:py-0">
-              <div className="h-7 w-16 bg-zinc-100 rounded animate-pulse" />
-              <div className="h-4 w-24 bg-zinc-100 rounded animate-pulse" />
+              <div className="h-7 w-16 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
             </div>
           ))}
         </div>
@@ -106,7 +106,7 @@ export function LocalFineTuneListSummary({
   const total = counts.total;
 
   return (
-    <Card className="rounded-lg border text-card-foreground w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
+    <Card className="rounded-lg border text-card-foreground w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card animate-fade-up">
       <p className="text-xs text-muted-foreground mb-4">
         {total > 0 ? (
           <>
@@ -156,8 +156,8 @@ export function LocalFineTuneListSummary({
               </div>
               {!isLast && (
                 <>
-                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
-                  <div className="lg:hidden border-b border-zinc-100 mt-3" />
+                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-border" />
+                  <div className="lg:hidden border-b border-border mt-3" />
                 </>
               )}
             </div>

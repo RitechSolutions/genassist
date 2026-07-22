@@ -28,7 +28,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
   onDelete,
   onRun,
 }) => (
-  <div className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors">
+  <div className="w-full py-4 px-6 text-left hover:bg-muted transition-colors">
     <div className="flex items-center justify-between gap-4">
       <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left">
         <div className="flex items-center gap-2">
@@ -37,33 +37,33 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
             EVAL
           </Badge>
         </div>
-        <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+        <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
           {evaluation.description || "No description"}
         </p>
 
         {isRunning ? (
-          <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-600">
+          <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
             <Loader2 className="h-3 w-3 animate-spin" />
             {lastRunStatus === "queued" ? "Queued" : "Running…"}
           </div>
         ) : lastRunStatus === "failed" ? (
-          <div className="mt-2 text-xs font-medium text-red-600">Last run failed</div>
+          <div className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">Last run failed</div>
         ) : avgAccuracy !== null ? (
           <div className="flex items-center gap-2 mt-2">
-            <Progress value={avgAccuracy * 100} className="h-2 w-32 bg-gray-100" />
+            <Progress value={avgAccuracy * 100} className="h-2 w-32 bg-muted" />
             <span className={`text-xs font-medium ${accuracyColorClass(avgAccuracy)}`}>
               {Math.round(avgAccuracy * 100)}% accuracy
             </span>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted-foreground">
               ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})
             </span>
           </div>
         ) : (
-          <div className="mt-2 text-xs text-gray-400">Not run yet</div>
+          <div className="mt-2 text-xs text-muted-foreground">Not run yet</div>
         )}
 
         <div className="flex flex-wrap items-center gap-1 mt-2">
-          <span className="text-xs text-gray-500 mr-1">Metrics:</span>
+          <span className="text-xs text-muted-foreground mr-1">Metrics:</span>
           {evaluation.techniques.map((tech) => (
             <Badge key={tech} variant="outline" className="text-[10px] px-1.5 py-0">
               {tech}
@@ -93,7 +93,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
           title={isRunning ? "Can't delete while this evaluation is running" : "Delete evaluation"}
           onClick={onDelete}
         >
-          <Trash2 className={isRunning ? "h-4 w-4 text-gray-400" : "h-4 w-4 text-red-500"} />
+          <Trash2 className={isRunning ? "h-4 w-4 text-muted-foreground" : "h-4 w-4 text-red-500"} />
         </Button>
         <Button size="sm" className="ml-1" disabled={isRunning} onClick={onRun}>
           <Play className="h-3.5 w-3.5 mr-1" />

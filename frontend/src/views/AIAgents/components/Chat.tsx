@@ -197,7 +197,7 @@ const Chat: React.FC = () => {
                       ? "bg-primary text-primary-foreground"
                       : message.role === "assistant"
                       ? "bg-card border text-card-foreground shadow-sm"
-                      : "bg-yellow-100 border-yellow-200 border text-yellow-800"
+                      : "bg-yellow-100 border-yellow-200 border text-yellow-800 dark:bg-yellow-500/20 dark:border-yellow-500/30 dark:text-yellow-400"
                   }`}
                 >
                   <p className="whitespace-pre-wrap">{message.content}</p>

@@ -20,28 +20,28 @@ export function KpiMetrics({ operator }: KpiMetricsProps) {
         icon={<Clock4 className="w-5 h-5" />}
         value={responseTime}
         label="Responsiveness"
-        iconColor="text-black"
+        iconColor="text-foreground"
       />
       
       <MetricCard
         icon={<ThumbsUp className="w-5 h-5" />}
         value={satisfaction}
         label="Satisfaction"
-        iconColor="text-green-600"
+        iconColor="text-green-600 dark:text-green-400"
       />
       
       <MetricCard
         icon={<Clock4 className="w-5 h-5" />}
         value={serviceQuality}
         label="Service Quality"
-        iconColor="text-blue-600"
+        iconColor="text-blue-600 dark:text-blue-400"
       />
       
       <MetricCard
         icon={<CircleCheckBig className="w-5 h-5" />}
         value={resolutionRate}
         label="Resolution Rate"
-        iconColor="text-red-600"
+        iconColor="text-red-600 dark:text-red-400"
       />
     </div>
   );

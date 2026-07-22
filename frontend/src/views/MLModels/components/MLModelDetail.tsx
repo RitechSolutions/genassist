@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
@@ -359,53 +357,37 @@ const MLModelDetail: React.FC = () => {
 
   if (loading) {
     return (
-      <SidebarProvider>
-        <div className="min-h-screen flex w-full overflow-x-hidden">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-            <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 p-4 sm:p-6 lg:p-8">
-              <div className="max-w-7xl mx-auto">
-                <div className="flex justify-center items-center py-12">
-                  <div className="text-sm text-gray-500">Loading model details...</div>
-                </div>
-              </div>
+      <>
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-center items-center py-12">
+              <div className="text-sm text-muted-foreground">Loading model details...</div>
             </div>
-          </main>
+          </div>
         </div>
-      </SidebarProvider>
+      </>
     );
   }
 
   if (!model) {
     return (
-      <SidebarProvider>
-        <div className="min-h-screen flex w-full overflow-x-hidden">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-            <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 p-4 sm:p-6 lg:p-8">
-              <div className="max-w-7xl mx-auto">
-                <div className="flex flex-col items-center justify-center py-12 gap-4">
-                  <AlertCircle className="h-12 w-12 text-gray-400" />
-                  <h3 className="font-medium text-lg">Model not found</h3>
-                  <Button onClick={() => navigate("/ml-models")}>Back to ML Models</Button>
-                </div>
-              </div>
+      <>
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <AlertCircle className="h-12 w-12 text-muted-foreground" />
+              <h3 className="font-medium text-lg">Model not found</h3>
+              <Button onClick={() => navigate("/ml-models")}>Back to ML Models</Button>
             </div>
-          </main>
+          </div>
         </div>
-      </SidebarProvider>
+      </>
     );
   }
 
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
               <div className="space-y-6">
@@ -419,12 +401,12 @@ const MLModelDetail: React.FC = () => {
         </Button>
         <div>
           <h2 className="text-3xl font-bold">{model.name}</h2>
-          <p className="text-zinc-400 font-normal">{model.description}</p>
+          <p className="text-muted-foreground font-normal">{model.description}</p>
         </div>
       </div>
 
       {/* Section 1: Model Details */}
-      <div className="rounded-lg border bg-white p-6 mb-6">
+      <div className="rounded-lg border bg-card dark:bg-zinc-900 p-6 mb-6">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold mb-6">Model Information</h3>
           {model.pkl_file_id && (
@@ -436,21 +418,21 @@ const MLModelDetail: React.FC = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
-            <Label className="text-sm text-gray-500 mb-1 block">Model Type</Label>
+            <Label className="text-sm text-muted-foreground mb-1 block">Model Type</Label>
             <p className="text-sm font-medium">{getModelTypeLabel(model.model_type)}</p>
           </div>
           <div>
-            <Label className="text-sm text-gray-500 mb-1 block">Target Variable</Label>
+            <Label className="text-sm text-muted-foreground mb-1 block">Target Variable</Label>
             <p className="text-sm font-medium">{model.target_variable}</p>
           </div>
           <div>
-            <Label className="text-sm text-gray-500 mb-1 block">Features</Label>
+            <Label className="text-sm text-muted-foreground mb-1 block">Features</Label>
             <p className="text-sm font-medium">{model.features.length} feature{model.features.length > 1 ? "s" : ""}</p>
-            <p className="text-xs text-gray-500 mt-1">{model.features.join(", ")}</p>
+            <p className="text-xs text-muted-foreground mt-1">{model.features.join(", ")}</p>
           </div>
           {model.created_at && (
             <div>
-              <Label className="text-sm text-gray-500 mb-1 block">Created At</Label>
+              <Label className="text-sm text-muted-foreground mb-1 block">Created At</Label>
               <p className="text-sm font-medium">
                 {new Date(model.created_at).toLocaleString()}
               </p>
@@ -458,7 +440,7 @@ const MLModelDetail: React.FC = () => {
           )}
           {model.updated_at && (
             <div>
-              <Label className="text-sm text-gray-500 mb-1 block">Updated At</Label>
+              <Label className="text-sm text-muted-foreground mb-1 block">Updated At</Label>
               <p className="text-sm font-medium">
                 {new Date(model.updated_at).toLocaleString()}
               </p>
@@ -468,8 +450,8 @@ const MLModelDetail: React.FC = () => {
 
         {model.inference_params && Object.keys(model.inference_params).length > 0 && (
           <div className="mt-6 pt-6 border-t">
-            <Label className="text-sm text-gray-500 mb-2 block">Inference Parameters</Label>
-            <div className="bg-gray-50 rounded-md p-4">
+            <Label className="text-sm text-muted-foreground mb-2 block">Inference Parameters</Label>
+            <div className="bg-muted rounded-md p-4">
               <JsonViewer data={model.inference_params} />
             </div>
           </div>
@@ -479,7 +461,7 @@ const MLModelDetail: React.FC = () => {
       {/* Section 2: Training Pipeline & Runs */}
       <div className="space-y-6">
         {/* Assigned Workflow Section */}
-        <div className="rounded-lg border bg-white p-6">
+        <div className="rounded-lg border bg-card dark:bg-zinc-900 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-semibold">Training Pipeline Configuration</h3>
             <Button onClick={() => setShowConfigDialog(true)}>
@@ -490,9 +472,9 @@ const MLModelDetail: React.FC = () => {
 
           {pipelineConfigs.length === 0 ? (
             <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium text-lg mb-2">No pipeline configuration</h4>
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-sm text-muted-foreground mb-4">
                 Configure a training workflow to start training this model.
               </p>
               <Button onClick={() => setShowConfigDialog(true)}>
@@ -505,7 +487,7 @@ const MLModelDetail: React.FC = () => {
               {pipelineConfigs.map((config) => {
                 const workflow = workflows.find(w => w.id === config.workflow_id);
                 return (
-                  <div key={config.id} className="border rounded-lg p-4 bg-gray-50">
+                  <div key={config.id} className="border rounded-lg p-4 bg-muted">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
@@ -526,9 +508,9 @@ const MLModelDetail: React.FC = () => {
                           )}
                         </div>
                         {workflow?.description && (
-                          <p className="text-sm text-gray-600 mb-2">{workflow.description}</p>
+                          <p className="text-sm text-muted-foreground mb-2">{workflow.description}</p>
                         )}
-                        <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
                           {workflow?.version && (
                             <span>Version: {workflow.version}</span>
                           )}
@@ -581,7 +563,7 @@ const MLModelDetail: React.FC = () => {
         </div>
 
         {/* Pipeline Runs Section */}
-        <div className="rounded-lg border bg-white p-6">
+        <div className="rounded-lg border bg-card dark:bg-zinc-900 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-semibold">Pipeline Execution History</h3>
             {pipelineRuns.length > 0 && (
@@ -591,9 +573,9 @@ const MLModelDetail: React.FC = () => {
 
           {pipelineRuns.length === 0 ? (
             <div className="text-center py-12">
-              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium text-lg mb-2">No pipeline runs</h4>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Pipeline execution history will appear here after you run a training pipeline.
               </p>
             </div>
@@ -608,7 +590,7 @@ const MLModelDetail: React.FC = () => {
                   : null;
 
                 return (
-                  <div key={run.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                  <div key={run.id} className="border rounded-lg p-4 hover:bg-muted transition-colors">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
@@ -620,7 +602,7 @@ const MLModelDetail: React.FC = () => {
                             <Badge variant="outline" className="text-xs">Default Config</Badge>
                           )}
                         </div>
-                        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                           {run.started_at && (
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
@@ -632,13 +614,13 @@ const MLModelDetail: React.FC = () => {
                           )}
                         </div>
                         {run.error_message && (
-                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 dark:bg-red-500/15 dark:border-red-500/30 rounded text-sm text-red-700 dark:text-red-400">
                             <AlertCircle className="h-4 w-4 inline mr-1" />
                             {run.error_message}
                           </div>
                         )}
                         {isSuccessful && run.execution_output && (
-                          <div className="mt-2 text-xs text-gray-500">
+                          <div className="mt-2 text-xs text-muted-foreground">
                             Execution completed successfully
                           </div>
                         )}
@@ -664,7 +646,7 @@ const MLModelDetail: React.FC = () => {
                             variant="outline"
                             size="sm"
                             onClick={() => handlePromoteRun(run.id)}
-                            className="border-green-200 text-green-700 hover:bg-green-50"
+                            className="border-green-200 text-green-700 dark:border-green-500/30 dark:text-green-400 hover:bg-green-50"
                           >
                             <Star className="h-4 w-4 mr-1" />
                             Promote
@@ -732,7 +714,7 @@ const MLModelDetail: React.FC = () => {
                 value={cronSchedule}
                 onChange={(e) => setCronSchedule(e.target.value)}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Leave empty to run manually only. Format: minute hour day month weekday
               </p>
             </div>
@@ -770,7 +752,7 @@ const MLModelDetail: React.FC = () => {
                 rows={3}
               />
             </div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               After creating the workflow, you can configure it in the Workflow Studio by navigating to AI Agents → Workflow Studio.
             </p>
           </div>
@@ -809,8 +791,8 @@ const MLModelDetail: React.FC = () => {
               )}
               {selectedRun.error_message && (
                 <div>
-                  <Label className="text-sm font-semibold text-red-600">Error</Label>
-                  <p className="text-sm text-red-600">{selectedRun.error_message}</p>
+                  <Label className="text-sm font-semibold text-red-600 dark:text-red-400">Error</Label>
+                  <p className="text-sm text-red-600 dark:text-red-400">{selectedRun.error_message}</p>
                 </div>
               )}
               {runArtifacts.length > 0 && (
@@ -818,12 +800,12 @@ const MLModelDetail: React.FC = () => {
                   <Label className="text-sm font-semibold">Artifacts</Label>
                   <div className="mt-2 space-y-2">
                     {runArtifacts.map((artifact) => (
-                      <div key={artifact.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                      <div key={artifact.id} className="flex items-center justify-between p-3 bg-muted rounded-md">
                         <div className="flex items-center gap-2">
                           <FileCode className="h-4 w-4" />
                           <div>
                             <p className="text-sm font-medium">{artifact.artifact_name}</p>
-                            <p className="text-xs text-gray-500">{artifact.artifact_type}</p>
+                            <p className="text-xs text-muted-foreground">{artifact.artifact_type}</p>
                           </div>
                         </div>
                         <Button variant="outline" size="sm">
@@ -838,7 +820,7 @@ const MLModelDetail: React.FC = () => {
               {selectedRun.execution_output && (
                 <div>
                   <Label className="text-sm font-semibold">Execution Output</Label>
-                  <div className="mt-2 bg-gray-50 rounded-md p-4 max-h-96 overflow-y-auto">
+                  <div className="mt-2 bg-muted rounded-md p-4 max-h-96 overflow-y-auto">
                     <JsonViewer data={selectedRun.execution_output} />
                   </div>
                 </div>
@@ -863,9 +845,7 @@ const MLModelDetail: React.FC = () => {
               </div>
             </div>
           </div>
-        </main>
-      </div>
-    </SidebarProvider>
+    </>
   );
 };
 

@@ -1,6 +1,4 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { METRIC_COLORS } from "@/constants/chartColors";
-import { AppSidebar } from "@/layout/app-sidebar";
 import {
   MessageSquare,
   PlayCircle,
@@ -104,12 +102,12 @@ const formatScorePercentage = (value: number) =>
   value > 0 ? `${Math.round((value / 10) * 100)}%` : "—";
 
 const SENTIMENT_CONFIG: Record<string, { icon: ReactNode; bg: string; text: string; border: string }> = {
-  positive: { icon: <CheckCircle className="w-3 h-3" />, bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
-  neutral: { icon: <MinusCircle className="w-3 h-3" />, bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
-  negative: { icon: <AlertCircle className="w-3 h-3" />, bg: "bg-rose-50", text: "text-rose-600", border: "border-rose-200" },
-  "very-bad": { icon: <AlertCircle className="w-3 h-3" />, bg: "bg-rose-50", text: "text-rose-600", border: "border-rose-200" },
+  positive: { icon: <CheckCircle className="w-3 h-3" />, bg: "bg-emerald-50 dark:bg-emerald-500/15", text: "text-emerald-700 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-500/30" },
+  neutral: { icon: <MinusCircle className="w-3 h-3" />, bg: "bg-amber-50 dark:bg-amber-500/15", text: "text-amber-700 dark:text-amber-400", border: "border-amber-200 dark:border-amber-500/30" },
+  negative: { icon: <AlertCircle className="w-3 h-3" />, bg: "bg-rose-50 dark:bg-rose-500/15", text: "text-rose-600 dark:text-rose-400", border: "border-rose-200 dark:border-rose-500/30" },
+  "very-bad": { icon: <AlertCircle className="w-3 h-3" />, bg: "bg-rose-50 dark:bg-rose-500/15", text: "text-rose-600 dark:text-rose-400", border: "border-rose-200 dark:border-rose-500/30" },
 };
-const DEFAULT_SENTIMENT = { icon: <MinusCircle className="w-3 h-3" />, bg: "bg-gray-50", text: "text-gray-600", border: "border-gray-200" };
+const DEFAULT_SENTIMENT = { icon: <MinusCircle className="w-3 h-3" />, bg: "bg-muted", text: "text-muted-foreground", border: "border-border" };
 
 const Transcripts = () => {
   const location = useLocation();
@@ -485,8 +483,8 @@ const Transcripts = () => {
     if (!orderBy) return null;
     const dirLabel = sortDirection === "desc" ? "High\u2192Low" : "Low\u2192High";
     const sortMap: Record<string, { label: string; icon: ReactNode }> = {
-      thumbs_down_count: { label: `Thumbs Down \u00b7 ${dirLabel}`, icon: <ThumbsDown className="h-4 w-4 text-red-600 shrink-0" /> },
-      thumbs_up_count: { label: `Thumbs Up \u00b7 ${dirLabel}`, icon: <ThumbsUp className="h-4 w-4 text-green-600 shrink-0" /> },
+      thumbs_down_count: { label: `Thumbs Down \u00b7 ${dirLabel}`, icon: <ThumbsDown className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" /> },
+      thumbs_up_count: { label: `Thumbs Up \u00b7 ${dirLabel}`, icon: <ThumbsUp className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" /> },
       customer_satisfaction: { label: `Satisfaction \u00b7 ${dirLabel}`, icon: <SmileIcon className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.satisfaction }} /> },
       quality_of_service: { label: `Quality \u00b7 ${dirLabel}`, icon: <Award className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.serviceQuality }} /> },
       resolution_rate: { label: `Resolution \u00b7 ${dirLabel}`, icon: <CheckCircle className="h-4 w-4 shrink-0" style={{ color: METRIC_COLORS.resolutionRate }} /> },
@@ -584,11 +582,7 @@ const Transcripts = () => {
   };
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-4 w-full">
               {/* Top row: Title/Upload | Agent, Date Range, Search */}
@@ -613,7 +607,7 @@ const Transcripts = () => {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto">
                   <Select value={selectedAgentId} onValueChange={handleAgentChange}>
-                    <SelectTrigger className="w-full sm:w-[180px] bg-white">
+                    <SelectTrigger className="w-full sm:w-[180px] bg-card">
                       <SelectValue placeholder="All Agents" />
                     </SelectTrigger>
                     <SelectContent>
@@ -638,7 +632,7 @@ const Transcripts = () => {
               </div>
 
               {/* Filter bar */}
-              <div className="w-full flex flex-wrap items-start gap-2 rounded-2xl sm:rounded-full bg-white border border-gray-100 px-3 py-2 sm:py-1.5 shadow-sm">
+              <div className="w-full flex flex-wrap items-start gap-2 rounded-2xl sm:rounded-full bg-card dark:bg-zinc-900 border border-border px-3 py-2 sm:py-1.5 shadow-sm">
                 <Tabs
                   value={activeTab}
                   className="min-w-0"
@@ -666,7 +660,7 @@ const Transcripts = () => {
 
                 <div className="flex w-full sm:w-auto items-center gap-1.5 shrink-0 flex-wrap sm:ml-auto">
                   <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
-                    <SelectTrigger className="w-[120px] bg-white h-8 rounded-full text-xs">
+                    <SelectTrigger className="w-[120px] bg-card h-8 rounded-full text-xs">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -686,7 +680,7 @@ const Transcripts = () => {
                     </SelectContent>
                   </Select>
                   <Select value={supportType} onValueChange={handleSupportTypeChange}>
-                    <SelectTrigger className="w-[130px] bg-white h-8 rounded-full text-xs">
+                    <SelectTrigger className="w-[130px] bg-card h-8 rounded-full text-xs">
                       <SelectValue placeholder="Support Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -705,7 +699,7 @@ const Transcripts = () => {
                         className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 transition-colors ${
                           activeQualityCount > 0
                             ? "border-primary/30 bg-primary/5 text-foreground"
-                            : "border-input bg-white text-muted-foreground hover:bg-gray-50"
+                            : "border-input bg-card text-muted-foreground hover:bg-muted"
                         }`}
                       >
                         <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
@@ -775,7 +769,7 @@ const Transcripts = () => {
                           className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 transition-colors ${
                             activeCustomAttrCount > 0
                               ? "border-primary/30 bg-primary/5 text-foreground"
-                              : "border-input bg-white text-muted-foreground hover:bg-gray-50"
+                              : "border-input bg-card text-muted-foreground hover:bg-muted"
                           }`}
                         >
                           <Tag className="h-3.5 w-3.5 shrink-0" />
@@ -804,7 +798,7 @@ const Transcripts = () => {
                         {availableAttrKeys.map((attrKey) => (
                           <DropdownMenuSub key={attrKey}>
                             <DropdownMenuSubTrigger className="flex items-center gap-2">
-                              <Tag className="h-3.5 w-3.5 text-gray-400" />
+                              <Tag className="h-3.5 w-3.5 text-muted-foreground" />
                               {attrKey}
                               {customAttrFilters[attrKey] && (
                                 <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0">
@@ -845,7 +839,7 @@ const Transcripts = () => {
                         className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 transition-colors ${
                           activeSort
                             ? "border-primary/30 bg-primary/5 text-foreground"
-                            : "border-input bg-white text-muted-foreground hover:bg-gray-50"
+                            : "border-input bg-card text-muted-foreground hover:bg-muted"
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-1.5">
@@ -877,7 +871,7 @@ const Transcripts = () => {
                       )}
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center gap-2">
-                          <ThumbsDown className="h-4 w-4 text-red-600" />
+                          <ThumbsDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                           Thumbs Down
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
@@ -891,7 +885,7 @@ const Transcripts = () => {
                       </DropdownMenuSub>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center gap-2">
-                          <ThumbsUp className="h-4 w-4 text-green-600" />
+                          <ThumbsUp className="h-4 w-4 text-green-600 dark:text-green-400" />
                           Thumbs Up
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
@@ -999,7 +993,7 @@ const Transcripts = () => {
                 </div>
               </div>
 
-              <Card className="divide-y divide-gray-100 bg-white shadow-sm rounded-lg overflow-hidden">
+              <Card className="divide-y divide-border bg-card dark:bg-zinc-900 shadow-sm rounded-lg overflow-hidden">
                 {loading ? (
                   <PageListSkeleton variant="conversation" rows={6} bordered={false} />
                 ) : error ? (
@@ -1015,7 +1009,7 @@ const Transcripts = () => {
                       onClick={() => {
                         updateUrlParams({ conversation: transcript.id });
                       }}
-                      className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-gray-50/80"
+                      className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-muted/80"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex min-w-0 items-start gap-3 sm:gap-4">
@@ -1034,7 +1028,7 @@ const Transcripts = () => {
                               {transcript?.metadata?.topic}
                             </h3>
                             {isLiveTranscript(transcript) && (
-                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 flex items-center gap-1 animate-pulse">
+                              <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/30 flex items-center gap-1 animate-pulse">
                                 <Radio className="w-3 h-3" />
                                 <span>Live</span>
                               </Badge>
@@ -1042,7 +1036,7 @@ const Transcripts = () => {
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             <span>Duration: {formatDuration(transcript?.metadata?.duration ?? 0)}</span>
-                            <span className="hidden sm:inline h-3 w-px bg-gray-200" aria-hidden />
+                            <span className="hidden sm:inline h-3 w-px bg-muted" aria-hidden />
                             <span>
                               {transcript?.timestamp
                                 ? new Date(transcript.timestamp).toLocaleString()
@@ -1055,7 +1049,7 @@ const Transcripts = () => {
                               {qualityScores.map((s) => (
                                 <Tooltip key={s.key}>
                                   <TooltipTrigger asChild>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-zinc-200 bg-zinc-50 text-[11px] font-medium text-zinc-700">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-muted text-[11px] font-medium text-muted-foreground">
                                       {s.icon}
                                       {formatScorePercentage(s.value)}
                                     </span>
@@ -1073,9 +1067,9 @@ const Transcripts = () => {
                               {Object.entries(transcript.custom_attributes).map(([key, value]) => (
                                 <span
                                   key={key}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-[11px] font-medium text-gray-600"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-muted text-[11px] font-medium text-muted-foreground"
                                 >
-                                  <Tag className="h-3 w-3 text-gray-400" />
+                                  <Tag className="h-3 w-3 text-muted-foreground" />
                                   {key}: {String(value)}
                                 </span>
                               ))}
@@ -1107,7 +1101,7 @@ const Transcripts = () => {
                               return (
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium cursor-default ${isGoodFeedback ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-600 border-rose-200"}`}>
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium cursor-default ${isGoodFeedback ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30" : "bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30"}`}>
                                       {isGoodFeedback ? (
                                         <ThumbsUp className="w-3 h-3 shrink-0" />
                                       ) : (
@@ -1136,15 +1130,15 @@ const Transcripts = () => {
                   })
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                    <div className="rounded-full bg-gray-100 p-4">
-                      <MessageSquare className="h-12 w-12 text-gray-400" />
+                    <div className="rounded-full bg-muted p-4">
+                      <MessageSquare className="h-12 w-12 text-muted-foreground" />
                     </div>
                     <h3 className="font-medium text-lg">
                       {hasNarrowingFilters
                         ? "No conversations match your filters"
                         : "No transcripts yet"}
                     </h3>
-                    <p className="text-sm text-gray-500 max-w-sm px-4">
+                    <p className="text-sm text-muted-foreground max-w-sm px-4">
                       {hasNarrowingFilters
                         ? "Try adjusting your search or filters to see more results."
                         : "Nothing in this view yet. Try a wider date range or different filters if you expected conversations here."}
@@ -1162,8 +1156,6 @@ const Transcripts = () => {
               />
             </div>
           </div>
-        </main>
-      </div>
       <UploadMediaDialog
         isOpen={isUploadDialogOpen}
         onOpenChange={setIsUploadDialogOpen}
@@ -1188,7 +1180,7 @@ const Transcripts = () => {
           }
         />
       )}
-    </SidebarProvider>
+    </>
   );
 };
 

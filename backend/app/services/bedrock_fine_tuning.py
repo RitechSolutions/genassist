@@ -409,6 +409,30 @@ class BedrockFineTuningService:
             logger.exception(f"Error deploying Bedrock model for job {job_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK)
 
+    async def undeploy_custom_model(self, job_id: UUID) -> BedrockFineTuningJobModel:
+        """Tear down a job's on-demand custom model deployment in AWS.
+
+        Deletes the Bedrock deployment (which bills continuously while Active) and
+        resets the job back to NotDeployed so it can be redeployed later.
+        """
+        try:
+            job = await self.repository.get_job_by_id(job_id)
+            if not job:
+                raise AppException(ErrorKey.ERROR_JOB_NOT_FOUND)
+            if not job.deployment_arn:
+                raise AppException(ErrorKey.ERROR_UNDEPLOY_MODEL_BEDROCK)
+
+            await self._run(
+                self.bedrock.delete_custom_model_deployment,
+                customModelDeploymentIdentifier=job.deployment_arn,
+            )
+            return await self.repository.clear_deployment(id=job.id)
+        except AppException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error undeploying Bedrock model for job {job_id}: {str(e)}")
+            raise AppException(error_key=ErrorKey.ERROR_UNDEPLOY_MODEL_BEDROCK)
+
     async def delete_job(self, job_id: UUID) -> None:
         """Soft-delete the job so it no longer appears in GenAssist.
 

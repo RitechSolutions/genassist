@@ -77,11 +77,11 @@ const DynamicInput = React.forwardRef<HTMLInputElement, DynamicInputProps>(
           {...props}
         />
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg">
+          <div className="absolute z-20 w-full mt-1 bg-card border border-border rounded-md shadow-lg">
             {suggestions.map((param, index) => (
               <div
                 key={index}
-                className="px-3 py-2 hover:bg-gray-100 cursor-pointer break-words"
+                className="px-3 py-2 hover:bg-muted cursor-pointer break-words"
                 onClick={() => handleSuggestionClick(param)}
               >
                 {param}

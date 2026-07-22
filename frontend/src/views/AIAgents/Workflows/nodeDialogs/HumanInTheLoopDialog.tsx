@@ -270,14 +270,14 @@ export const HumanInTheLoopDialog: React.FC<
           {formFields.map((field, index) => (
             <div
               key={index}
-              className="p-2.5 bg-gray-50 rounded-lg border space-y-2"
+              className="p-2.5 bg-muted rounded-lg border space-y-2"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-medium truncate">
                     {field.label}
                   </span>
-                  <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-gray-200 rounded">
+                  <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
                     {field.type}
                   </span>
                   {field.required && (
@@ -307,7 +307,7 @@ export const HumanInTheLoopDialog: React.FC<
               {/* Per-field translation triggers — same UX as agent fields, scoped to this
                   node + field. Only shown once the field has a name (its key segment). */}
               {nodePrefix && field.name && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-200">
+                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-border">
                   <span className="text-xs text-muted-foreground mr-0.5">
                     Translate:
                   </span>

@@ -11,7 +11,10 @@ from app.auth.dependencies import auth
 from app.core.config.settings import settings
 from app.repositories.conversations import ConversationRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
+from app.repositories.operator_statistics import OperatorStatisticsRepository
 from app.modules.integration.zendesk import ZendeskConnector
+from app.services.conversation_analysis import ConversationAnalysisService
+from app.services.operator_statistics import OperatorStatisticsService
 from app.services.zendesk import analyze_ticket_for_db
 from app.tasks.zendesk_tasks import analyze_zendesk_tickets_async
 
@@ -109,8 +112,24 @@ async def zendesk_ticket_closed(
 
     analysis_payload = ConversationAnalysisCreate(**analysis_dict)
 
-    conv_anal_repo = ConversationAnalysisRepository(db)
-    new_analysis = await conv_anal_repo.save_conversation_analysis(analysis_payload)
+    analysis_service = ConversationAnalysisService(ConversationAnalysisRepository(db))
+    operator_statistics_service = OperatorStatisticsService(
+        OperatorStatisticsRepository(db)
+    )
+
+    # Snapshot any existing analysis before the upsert so a replace adjusts the
+    # operator's running statistics in place instead of double-counting.
+    previous_analysis = await analysis_service.get_by_conversation_id(conversation.id)
+    new_analysis = await analysis_service.save_conversation_analysis(analysis_payload)
+
+    # Fold this analysis into the operator's statistics. The direct webhook insert
+    # previously skipped this (unlike the finalize path), leaving stats out of sync.
+    await operator_statistics_service.update_from_analysis(
+        new_analysis,
+        conversation.operator_id,
+        conversation.duration or 0,
+        previous_analysis=previous_analysis,
+    )
 
     logger.info(
         f"✔ Saved ConversationAnalysis id={new_analysis.id} for conversation={conversation.id}"

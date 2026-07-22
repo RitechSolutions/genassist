@@ -32,6 +32,7 @@ export function useViewportManager({
   const [isExpanded, setIsExpanded] = useState(false);
 
   const isFullscreen = useMemo(() => {
+    if (mode === 'inputbar') return false;
     if (mode === 'fullscreen') return true;
     if (widget) return true;
     if (isFullscreenToggled) return true;

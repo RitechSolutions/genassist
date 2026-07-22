@@ -12,10 +12,10 @@ export const OnboardingInput = ({ value, disabled, onChange, onSubmit }: Onboard
     onSubmit={onSubmit}
     className="w-full max-w-2xl relative"
   >
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm focus-within:border-ai-brand/30 focus-within:shadow-md focus-within:shadow-ai-brand/5 transition-all duration-200">
+    <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ai-brand/30 focus-within:shadow-md focus-within:shadow-ai-brand/5 transition-all duration-200">
       <textarea
         rows={1}
-        className="w-full min-h-[100px] bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400 px-5 pt-4 pb-14 resize-none leading-relaxed"
+        className="w-full min-h-[100px] bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground px-5 pt-4 pb-14 resize-none leading-relaxed"
         placeholder="Describe what you want your agent to do..."
         value={value}
         onChange={(e) => onChange(e.target.value)}

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchAuditLogs, fetchUsers } from "@/services/auditLogs";
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
 import { AuditLogCard } from "@/views/AuditLogs/components/AuditLogCard";
 import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDetailsDialog";
 import { useIsMobile } from "@/hooks/useMobile";
@@ -138,11 +136,7 @@ export default function AuditLogs() {
   };
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-2xl xl:max-w-7xl mx-auto space-y-6">
               <div className="flex justify-between items-start">
@@ -164,7 +158,7 @@ export default function AuditLogs() {
 
                   <div className="w-40">
                     <Select value={selectedUser ?? ""} onValueChange={(value) => setSelectedUser(value === "" ? null : value)}>
-                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-card focus:ring-0 focus:ring-offset-0">
                         <span className="truncate">{selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}</span>
                       </SelectTrigger>
                       <SelectContent>
@@ -178,7 +172,7 @@ export default function AuditLogs() {
 
                   <div className="w-40">
                     <Select value={selectedAction ?? undefined} onValueChange={(value) => setSelectedAction(value || null)}>
-                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-card focus:ring-0 focus:ring-offset-0">
                         {selectedAction ? selectedAction : "Select Action"}
                       </SelectTrigger>
                       <SelectContent>
@@ -195,7 +189,7 @@ export default function AuditLogs() {
                       value={tableName}
                       onChange={(e) => setTableName(e.target.value)}
                       placeholder="Table name"
-                      className="text-sm bg-white"
+                      className="text-sm bg-card"
                     />
                   </div>
 
@@ -286,8 +280,6 @@ export default function AuditLogs() {
 
             </div>
           </div>
-        </main>
-      </div>
 
       <AuditLogDetailsDialog
         isOpen={isDialogOpen}
@@ -295,6 +287,6 @@ export default function AuditLogs() {
         auditLogId={selectedAuditLogId}
         users={users}
       />
-    </SidebarProvider>
+    </>
   );
 }

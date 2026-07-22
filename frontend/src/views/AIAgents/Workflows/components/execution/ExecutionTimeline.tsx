@@ -40,21 +40,21 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ model, selectedNo
                 type="button"
                 onClick={() => onSelectNode(node.nodeId)}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-gray-50',
+                  'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted',
                   isSelected && 'bg-brand-50 ring-1 ring-brand-200'
                 )}
               >
-                <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-gray-400">
+                <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
                   {(node.order ?? 0) + 1}
                 </span>
                 <Icon
                   className={cn('h-3.5 w-3.5 shrink-0', style.accentClass, style.spin && 'animate-spin')}
                   aria-hidden="true"
                 />
-                <span className="w-32 shrink-0 truncate text-xs font-medium text-gray-700" title={node.name}>
+                <span className="w-32 shrink-0 truncate text-xs font-medium text-muted-foreground" title={node.name}>
                   {node.name}
                 </span>
-                <span className="relative h-3 flex-1 overflow-hidden rounded-full bg-gray-100">
+                <span className="relative h-3 flex-1 overflow-hidden rounded-full bg-muted">
                   <span
                     className={cn(
                       'absolute inset-y-0 left-0 rounded-full',
@@ -64,7 +64,7 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ model, selectedNo
                     style={{ width: `${pct}%` }}
                   />
                 </span>
-                <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-gray-500">
+                <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
                   {formatDuration(node.durationMs)}
                 </span>
               </button>
