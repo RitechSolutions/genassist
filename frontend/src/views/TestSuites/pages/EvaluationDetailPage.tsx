@@ -54,6 +54,10 @@ const getMetricSourceLabel = (
     case "contains":
     case "json_match":
       return "Expected Output";
+    case "not_contains": {
+      const hasPhrases = Array.isArray(config?.phrases) ? (config.phrases as unknown[]).length > 0 : Boolean(config?.text);
+      return hasPhrases ? "Configured forbidden phrases" : "Forbidden phrases";
+    }
     case "field_equals":
       return config?.expected !== undefined ? "Configured expected value" : "Expected Output";
     case "nli_eval": {
