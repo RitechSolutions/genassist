@@ -32,9 +32,38 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # pg_trgm can be created inside the normal transaction; it enables the
-    # gin_trgm_ops operator class used by the topic/summary indexes below.
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+    # Try to enable pg_trgm (needed by the gin_trgm_ops operator class used by
+    # the topic/summary indexes). In some environments the migration role lacks
+    # CREATE privilege on the database, so this can fail. We tolerate that and
+    # simply skip the trigram indexes rather than blocking the whole migration:
+    # the critical FK/ordering indexes below don't depend on pg_trgm.
+    bind = op.get_bind()
+
+    def _trgm_installed() -> bool:
+        return bool(
+            bind.exec_driver_sql(
+                "SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'"
+            ).scalar()
+        )
+
+    trgm_available = _trgm_installed()
+    if not trgm_available:
+        # Attempt to create it inside a SAVEPOINT so a permission failure only
+        # rolls back this nested block and leaves the migration transaction
+        # usable (a raw failed statement would otherwise poison the whole txn).
+        try:
+            with bind.begin_nested():
+                op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            trgm_available = _trgm_installed()
+        except Exception:
+            trgm_available = False
+    if not trgm_available:
+        print(
+            "WARNING: pg_trgm extension is not installed and could not be "
+            "created; skipping trigram indexes (ix_conversations_topic_trgm, "
+            "ix_conversation_analysis_summary_trgm). Install pg_trgm and "
+            "create these indexes manually to speed up ILIKE searches."
+        )
 
     # CREATE INDEX CONCURRENTLY must run outside a transaction.
     with op.get_context().autocommit_block():
@@ -48,20 +77,22 @@ def upgrade() -> None:
         )
 
         # (2) Trigram indexes so ILIKE '%term%' is index-backed.
-        op.execute(
-            """
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS
-                ix_conversations_topic_trgm
-            ON conversations USING gin (topic gin_trgm_ops)
-            """
-        )
-        op.execute(
-            """
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS
-                ix_conversation_analysis_summary_trgm
-            ON conversation_analysis USING gin (summary gin_trgm_ops)
-            """
-        )
+        #     Only buildable when pg_trgm is present.
+        if trgm_available:
+            op.execute(
+                """
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                    ix_conversations_topic_trgm
+                ON conversations USING gin (topic gin_trgm_ops)
+                """
+            )
+            op.execute(
+                """
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                    ix_conversation_analysis_summary_trgm
+                ON conversation_analysis USING gin (summary gin_trgm_ops)
+                """
+            )
 
         # (3) Support ORDER BY created_at DESC + pagination for live rows.
         op.execute(
