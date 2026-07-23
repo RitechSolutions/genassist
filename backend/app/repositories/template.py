@@ -5,6 +5,7 @@ from injector import inject
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils.enums.template_status_enum import TemplateStatus
 from app.db.models.template import TemplateModel
 from app.repositories.db_repository import DbRepository
 
@@ -24,13 +25,13 @@ class TemplateRepository(DbRepository[TemplateModel]):
         """
         stmt = select(TemplateModel).where(
             TemplateModel.created_by == user_id,
-            TemplateModel.status == "private",
+            TemplateModel.status == TemplateStatus.PRIVATE,
             TemplateModel.is_deleted == 0,
         ).order_by(TemplateModel.created_at.desc())
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
-    async def list_by_status(self, status: str) -> List[TemplateModel]:
+    async def list_by_status(self, status: TemplateStatus) -> List[TemplateModel]:
         """Rows in a given lifecycle status (used against the master DB)."""
         stmt = (
             select(TemplateModel)
@@ -65,7 +66,7 @@ class TemplateRepository(DbRepository[TemplateModel]):
         await self.db.commit()
 
     async def find_published(
-        self, source_template_id: UUID, statuses: Iterable[str]
+        self, source_template_id: UUID, statuses: Iterable[TemplateStatus]
     ) -> Optional[TemplateModel]:
         """An existing master copy of a source template in one of the given statuses."""
         stmt = select(TemplateModel).where(

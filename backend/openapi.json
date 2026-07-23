@@ -17595,6 +17595,62 @@
         }
       }
     },
+    "/api/genagent/eval/suites/{suite_id}/conversations/{conversation_id}": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Remove Conversation From Suite",
+        "description": "Remove every case imported from one conversation, leaving the rest intact.",
+        "operationId": "remove_conversation_from_suite_api_genagent_eval_suites__suite_id__conversations__conversation_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "suite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Suite Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/cases/{case_id}": {
       "patch": {
         "tags": [
@@ -38938,6 +38994,31 @@
             "title": "Weight",
             "description": "Optional weight used when aggregating metrics."
           },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id",
+            "description": "Conversation this case was imported from. Cases sharing a value replay as one memory thread; null cases are independent."
+          },
+          "turn_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index",
+            "description": "Position of this turn within its source conversation."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -39016,6 +39097,31 @@
             ],
             "title": "Weight",
             "description": "Optional weight used when aggregating metrics."
+          },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id",
+            "description": "Conversation this case was imported from. Cases sharing a value replay as one memory thread; null cases are independent."
+          },
+          "turn_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index",
+            "description": "Position of this turn within its source conversation."
           },
           "suite_id": {
             "anyOf": [
@@ -39537,6 +39643,18 @@
               }
             ],
             "title": "Error"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "scored | execution_failed | scoring_failed | skipped. Null for results recorded before statuses were introduced."
           },
           "id": {
             "type": "string",

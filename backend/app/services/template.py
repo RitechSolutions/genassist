@@ -9,6 +9,7 @@ from injector import inject
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
+from app.core.utils.enums.template_status_enum import TemplateStatus
 from app.db.models.template import TemplateModel
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.repositories.template import TemplateRepository
@@ -26,11 +27,6 @@ from app.services.template_sanitizer import sanitize_graph, validate_node_types
 from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
-
-PRIVATE = "private"
-PENDING = "pending"
-APPROVED = "approved"
-REJECTED = "rejected"
 
 
 @inject
@@ -87,7 +83,7 @@ class TemplateService:
         current_tenant = get_tenant_context()
 
         async with self._master_repo() as mrepo:
-            approved_rows = await mrepo.list_by_status(APPROVED)
+            approved_rows = await mrepo.list_by_status(TemplateStatus.APPROVED)
             my_published = await mrepo.published_by_user(user_id)
 
         # map originating template id -> publish status, to annotate the owner's
@@ -127,7 +123,7 @@ class TemplateService:
         # approved cross-tenant template (master DB) — pending/rejected never exposed here
         async with self._master_repo() as mrepo:
             grow = await mrepo.get_by_id(template_id)
-            if grow and not grow.is_deleted and grow.status == APPROVED:
+            if grow and not grow.is_deleted and grow.status == TemplateStatus.APPROVED:
                 read = TemplateRead.model_validate(grow)
                 read.is_global = True
                 return read
@@ -141,8 +137,8 @@ class TemplateService:
     async def list_pending(self) -> List[TemplateListItem]:
         """Master review queue — pending publish submissions."""
         async with self._master_repo() as mrepo:
-            rows = await mrepo.list_by_status(PENDING)
-        return [self._to_item(row, publish_status=PENDING) for row in rows]
+            rows = await mrepo.list_by_status(TemplateStatus.PENDING)
+        return [self._to_item(row, publish_status=TemplateStatus.PENDING) for row in rows]
 
     # ---------- WRITE ----------
     async def create_from_agent(
@@ -194,7 +190,7 @@ class TemplateService:
             graph=graph,
             agent_config=agent_config,
             is_official=False,
-            status=PRIVATE,
+            status=TemplateStatus.PRIVATE,
             created_by=user_id,
         )
         created = await self.repository.create(template)
@@ -214,7 +210,7 @@ class TemplateService:
 
         current_tenant = get_tenant_context()
         async with self._master_repo() as mrepo:
-            existing = await mrepo.find_published(template_id, (PENDING, APPROVED))
+            existing = await mrepo.find_published(template_id, (TemplateStatus.PENDING, TemplateStatus.APPROVED))
             if existing is not None:
                 raise AppException(
                     error_key=ErrorKey.TEMPLATE_INVALID,
@@ -224,7 +220,7 @@ class TemplateService:
             # Retract any prior rejected copy so it doesn't linger beside the new
             # submission (a stale card status) or accumulate over re-publishes.
             while True:
-                stale = await mrepo.find_published(template_id, (REJECTED,))
+                stale = await mrepo.find_published(template_id, (TemplateStatus.REJECTED,))
                 if stale is None:
                     break
                 await mrepo.soft_delete(stale)
@@ -238,7 +234,7 @@ class TemplateService:
                 graph=graph,
                 agent_config=row.agent_config,
                 is_official=False,
-                status=PENDING,
+                status=TemplateStatus.PENDING,
                 source_tenant=current_tenant,
                 published_by=user_id,
                 source_template_id=template_id,
@@ -246,32 +242,32 @@ class TemplateService:
             )
             created = await mrepo.create(published)
             read = TemplateRead.model_validate(created)
-            read.publish_status = PENDING
+            read.publish_status = TemplateStatus.PENDING
             return read
 
     async def approve(self, template_id: UUID, user_id: UUID) -> None:
-        await self._transition(template_id, APPROVED, user_id)
+        await self._transition(template_id, TemplateStatus.APPROVED, user_id)
 
     async def reject(
         self, template_id: UUID, user_id: UUID, reason: Optional[str]
     ) -> None:
-        await self._transition(template_id, REJECTED, user_id, reason=reason)
+        await self._transition(template_id, TemplateStatus.REJECTED, user_id, reason=reason)
 
     async def _transition(
         self,
         template_id: UUID,
-        new_status: str,
+        new_status: TemplateStatus,
         user_id: UUID,
         reason: Optional[str] = None,
     ) -> None:
         async with self._master_repo() as mrepo:
             row = await mrepo.get_by_id(template_id)
-            if not row or row.is_deleted or row.status != PENDING:
+            if not row or row.is_deleted or row.status != TemplateStatus.PENDING:
                 raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
             row.status = new_status
             row.approved_by = user_id
             row.approved_at = datetime.now(timezone.utc)
-            if new_status == REJECTED:
+            if new_status == TemplateStatus.REJECTED:
                 row.rejection_reason = (reason or "")[:500]
             await mrepo.update(row)
 
@@ -349,7 +345,7 @@ class TemplateService:
         if not row or row.is_deleted or row.created_by != user_id:
             raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
         async with self._master_repo() as mrepo:
-            published = await mrepo.find_published(template_id, (PENDING, APPROVED))
+            published = await mrepo.find_published(template_id, (TemplateStatus.PENDING, TemplateStatus.APPROVED))
             if published is None:
                 return
             await mrepo.soft_delete(published)

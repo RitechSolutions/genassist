@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.utils.enums.template_status_enum import TemplateStatus
 from app.db.base import Base
 
 
@@ -43,8 +44,10 @@ class TemplateModel(Base):
     install_count = Column(Integer, nullable=False, server_default="0")
 
     # ---- publishing / approval lifecycle ----
-    # private (tenant-local) | pending | approved | rejected
-    status = Column(String(20), nullable=False, server_default="private")
+    # private (tenant-local) | pending | approved | rejected — see TemplateStatus.
+    # Kept as a plain String column (not sa.Enum) so no DB-level enum type is
+    # created; values are constrained in the app layer via TemplateStatus.
+    status = Column(String(20), nullable=False, server_default=TemplateStatus.PRIVATE.value)
     # Slug of the tenant a published copy originated from.
     source_tenant = Column(String(120), nullable=True)
     # User who submitted the publish request.
