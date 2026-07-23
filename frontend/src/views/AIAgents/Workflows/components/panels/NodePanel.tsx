@@ -528,7 +528,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm text-muted-foreground leading-relaxed">
+                                <div className="text-sm text-foreground leading-relaxed">
                                   <FormattedText text={msg.text} />
                                 </div>
                                 {msg.actions && msg.actions.length > 0 && (
@@ -594,7 +594,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                     <button
                       onClick={handleSend}
                       disabled={isThinking || !inputMessage.trim()}
-                      className="absolute right-1.5 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 disabled:opacity-100 disabled:cursor-not-allowed h-7 w-7 flex items-center justify-center transition-opacity"
+                      className="absolute right-1.5 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 dark:disabled:bg-zinc-700 disabled:opacity-100 disabled:cursor-not-allowed h-7 w-7 flex items-center justify-center transition-opacity"
                     >
                       <ArrowUp className="h-3.5 w-3.5 text-white" />
                     </button>

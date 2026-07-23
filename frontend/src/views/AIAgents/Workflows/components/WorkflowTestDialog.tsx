@@ -414,27 +414,27 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     switch (role) {
       case "user":
         return {
-          bgColor: "bg-blue-50",
-          textColor: "text-blue-800",
-          borderColor: "border-blue-100",
+          bgColor: "bg-blue-50 dark:bg-blue-500/15",
+          textColor: "text-blue-800 dark:text-blue-200",
+          borderColor: "border-blue-100 dark:border-blue-500/30",
         };
       case "assistant":
         return {
-          bgColor: "bg-green-50",
-          textColor: "text-green-800",
-          borderColor: "border-green-100",
+          bgColor: "bg-green-50 dark:bg-green-500/15",
+          textColor: "text-green-800 dark:text-green-200",
+          borderColor: "border-green-100 dark:border-green-500/30",
         };
       case "system":
         return {
-          bgColor: "bg-gray-50",
-          textColor: "text-gray-800",
-          borderColor: "border-gray-100",
+          bgColor: "bg-gray-50 dark:bg-zinc-800",
+          textColor: "text-gray-800 dark:text-zinc-200",
+          borderColor: "border-gray-100 dark:border-zinc-700",
         };
       default:
         return {
-          bgColor: "bg-gray-50",
-          textColor: "text-gray-800",
-          borderColor: "border-gray-100",
+          bgColor: "bg-gray-50 dark:bg-zinc-800",
+          textColor: "text-gray-800 dark:text-zinc-200",
+          borderColor: "border-gray-100 dark:border-zinc-700",
         };
     }
   };
