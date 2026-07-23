@@ -184,7 +184,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 <CreateNewSelectItem />
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Select the database data source to query
             </p>
           </div>
@@ -205,7 +205,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Choose how you want to provide the query
             </p>
           </div>
@@ -220,7 +220,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 placeholder="Enter or drag and drop your SQL query here"
                 className="w-full min-h-[150px] font-mono text-sm"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Enter the SQL query to execute. Use variables from previous
                 nodes if needed.
               </p>
@@ -253,7 +253,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                     <CreateNewSelectItem />
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Select the LLM provider to generate SQL from your text
                 </p>
               </div>
@@ -279,7 +279,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                   placeholder="Enter system prompt for the SQL generator"
                   className="w-full min-h-[100px] text-sm"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Optional system prompt to guide the SQL generation behavior
                 </p>
               </div>
@@ -293,7 +293,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                   placeholder="e.g., Show me all customers who made purchases last month"
                   className="w-full min-h-[100px] text-sm"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Describe what you want to query in plain English. AI will
                   convert it to SQL.
                 </p>
@@ -355,7 +355,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                   Add Parameter
                 </Button>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Optional parameters that can be used in the SQL query. These
                 will be passed to the backend for processing.
               </p>

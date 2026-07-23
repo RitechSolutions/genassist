@@ -222,6 +222,7 @@ async def get_agent_info(
         "agent_available_languages": available_languages,
         "live_voice_enabled": live_voice_enabled,
         "live_voice_ready": live_voice_ready,
+        "greet_on_start": bool(getattr(request.state, "agent_trigger_start_form", False)),
     }
 
     agent_security_settings = agent.security_settings if hasattr(agent, "security_settings") else None

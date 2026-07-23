@@ -75,9 +75,9 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
         </div>
       </div>
 
-      <div className="bg-gray-50 rounded-2xl p-4 !my-8 border-b border-gray-200 mb-8">
+      <div className="bg-muted rounded-2xl p-4 !my-8 border-b border-border mb-8">
         <h2 className="text-sm font-semibold mb-4">Code Instructions:</h2>
-        <ul className="list-disc list-inside text-sm text-gray-500 space-y-2">
+        <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
           <li>Use params to access input parameters</li>
           <li>Store your return value in result variable</li>
           <li>Available libraries: json, requests, datetime, math, re</li>
@@ -85,7 +85,7 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
         </ul>
       </div>
 
-      <div className="flex py-2 px-3 border-b border-gray-200 pb-8">
+      <div className="flex py-2 px-3 border-b border-border pb-8">
         <Button
           variant="outline"
           //   onClick={handleGenerateTemplate}
@@ -101,7 +101,7 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
         <h3 className="font-semibold text-lg text-[#18181B]">
           Test Your Python Code
         </h3>
-        <label className="text-sm text-gray-500 mb-2">
+        <label className="text-sm text-muted-foreground mb-2">
           Test Parameters (JSON)
         </label>
         <div className="relative p-6 h-[303px] bg-[#1C1C1C] rounded-[16px] overflow-hidden">
@@ -180,15 +180,15 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>
+        <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/15 p-2 rounded">{error}</p>
       )}
       {success && (
-        <p className="text-sm text-green-600 bg-green-50 p-2 rounded">
+        <p className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/15 p-2 rounded">
           {success}
         </p>
       )}
       {testResult && (
-        <pre className="bg-gray-100 p-4 rounded max-h-96 overflow-auto font-mono text-sm">
+        <pre className="bg-muted p-4 rounded max-h-96 overflow-auto font-mono text-sm">
           {testResult}
         </pre>
       )}

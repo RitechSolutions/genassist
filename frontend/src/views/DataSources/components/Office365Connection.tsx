@@ -140,7 +140,7 @@ export function Office365Connection({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Mail className="w-5 h-5 text-blue-600" />
+          <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           <span className="font-medium">Office365 Connection</span>
         </div>
         {getStatusBadge()}

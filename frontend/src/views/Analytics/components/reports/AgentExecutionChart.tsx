@@ -64,17 +64,17 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
   const totalConversations = items.reduce((s, i) => s + i.unique_conversations, 0);
 
   return (
-    <Card className={cn("bg-white shadow-sm", analyticsFadeUpClass)}>
+    <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <CardTitle className="text-sm font-semibold text-zinc-700">
+          <CardTitle className="text-sm font-semibold text-muted-foreground">
             Daily Conversations
           </CardTitle>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
               Total
-              <span className="font-semibold text-zinc-700 ml-0.5">{totalConversations.toLocaleString()}</span>
+              <span className="font-semibold text-muted-foreground ml-0.5">{totalConversations.toLocaleString()}</span>
             </span>
           </div>
         </div>

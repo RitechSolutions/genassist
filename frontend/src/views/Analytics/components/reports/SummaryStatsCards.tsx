@@ -31,7 +31,7 @@ function DeltaBadge({ delta }: { delta: number | undefined | null }) {
   if (delta === undefined || delta === null || delta === 0) return null;
   const isPositive = delta > 0;
   const Icon = isPositive ? TrendingUp : TrendingDown;
-  const color = isPositive ? "text-emerald-600" : "text-rose-500";
+  const color = isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500";
   return (
     <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${color}`}>
       <Icon className="w-3 h-3" />
@@ -53,9 +53,9 @@ function ppDiff(currentRate: number, previousRate: number): number | null {
 }
 
 function getResponseTimeColor(ms: number): string {
-  if (ms < 3000) return "text-emerald-600";
-  if (ms < 10000) return "text-amber-600";
-  return "text-rose-600";
+  if (ms < 3000) return "text-emerald-600 dark:text-emerald-400";
+  if (ms < 10000) return "text-amber-600 dark:text-amber-400";
+  return "text-rose-600 dark:text-rose-400";
 }
 
 function buildMetrics(
@@ -157,7 +157,7 @@ export function SummaryStatsCards({ summary, previousSummary, compareDateRange, 
   const metrics = buildMetrics(summary, containmentRate, previousSummary);
 
   return (
-    <Card className={cn("w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
+    <Card className={cn("w-full bg-card dark:bg-zinc-900 px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
       {previousSummary && compareDateRange?.from && compareDateRange?.to && (
         <p className="text-xs text-muted-foreground/60 mb-4">
           vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}

@@ -27,7 +27,7 @@ const DiffStatusNodeComponent: React.FC<NodeProps<DiffStatusNodeData>> = ({ id, 
   return (
     <div
       className={cn(
-        'relative w-[210px] rounded-lg border border-slate-200 border-l-[3px] bg-white px-3 py-2 shadow-sm transition-shadow',
+        'relative w-[210px] rounded-lg border border-border border-l-[3px] bg-card px-3 py-2 shadow-sm transition-shadow',
         style.railClass,
         data.isSelected ? 'shadow-md ring-2 ring-brand-600 ring-offset-2' : 'hover:shadow-md'
       )}
@@ -37,7 +37,7 @@ const DiffStatusNodeComponent: React.FC<NodeProps<DiffStatusNodeData>> = ({ id, 
 
       <div className="flex items-center gap-1.5">
         <span className={cn('h-2 w-2 shrink-0 rounded-full', style.dotClass)} aria-hidden="true" />
-        <span className="truncate text-sm font-medium text-slate-700" title={data.name}>
+        <span className="truncate text-sm font-medium text-muted-foreground" title={data.name}>
           {data.name}
         </span>
       </div>
@@ -53,7 +53,7 @@ const DiffStatusNodeComponent: React.FC<NodeProps<DiffStatusNodeData>> = ({ id, 
           {style.label}
         </span>
         {data.status === 'modified' && data.fieldChangeCount > 0 && (
-          <span className="text-[10px] tabular-nums text-slate-400">
+          <span className="text-[10px] tabular-nums text-muted-foreground">
             {data.fieldChangeCount} {data.fieldChangeCount === 1 ? 'field' : 'fields'}
           </span>
         )}

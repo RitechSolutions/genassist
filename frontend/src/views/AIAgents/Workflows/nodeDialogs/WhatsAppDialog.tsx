@@ -145,7 +145,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
             placeholder="e.g., 15551234567"
             className="w-full"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Include the country code in the phone number. You may use “+”, but
             not “00”.
           </p>

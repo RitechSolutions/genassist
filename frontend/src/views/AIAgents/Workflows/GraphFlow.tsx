@@ -1061,6 +1061,19 @@ const GraphFlowContent: React.FC = () => {
     return () => window.removeEventListener("keydown", handleSearchKey);
   }, [nodeSearchOpen, closeNodeSearch, showNodePanel]);
 
+  // Shortcut: ⌘M/Ctrl+M auto-arranges (cleans up) the node layout on the canvas.
+  useEffect(() => {
+    const handleArrangeKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "m" || e.key === "M")) {
+        if (isEditableEventTarget(e.target as HTMLElement)) return;
+        e.preventDefault();
+        handleAutoArrange();
+      }
+    };
+    window.addEventListener("keydown", handleArrangeKey);
+    return () => window.removeEventListener("keydown", handleArrangeKey);
+  }, [handleAutoArrange]);
+
   // Close search on any canvas click (pane or node)
   const handleCanvasClickClose = useCallback(() => {
     if (nodeSearchOpen) closeNodeSearch();
@@ -1169,7 +1182,7 @@ const GraphFlowContent: React.FC = () => {
                   onClick={toggleNodePanel}
                   size="icon"
                   variant="ghost"
-                  className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+                  className="rounded-full h-10 w-10 shadow-md bg-card hover:bg-muted border border-border"
                 >
                   {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                   <span className="sr-only">
@@ -1181,7 +1194,7 @@ const GraphFlowContent: React.FC = () => {
                   onClick={toggleWorkflowPanel}
                   size="icon"
                   variant="ghost"
-                  className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+                  className="rounded-full h-10 w-10 shadow-md bg-card hover:bg-muted border border-border"
                 >
                   {showWorkflowPanel ? (
                     <X className="h-4 w-4" />

@@ -108,7 +108,7 @@ export const HtmlToImageDialog: React.FC<
           placeholder="<html>...</html>"
           className="w-full min-h-[160px] font-mono"
         />
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           The HTML to render. Use {"{{field}}"} to define dynamic parameters. An
           upstream input overrides this value.
         </div>
@@ -130,7 +130,7 @@ export const HtmlToImageDialog: React.FC<
             <SelectItem value="viewport">Viewport</SelectItem>
           </SelectContent>
         </Select>
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Full Page captures the entire rendered content; Viewport captures only
           the configured viewport area.
         </div>
@@ -169,7 +169,7 @@ export const HtmlToImageDialog: React.FC<
       <div className="space-y-2">
         <button
           type="button"
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-muted-foreground"
           onClick={() => setShowAdvanced((v) => !v)}
         >
           {showAdvanced ? (
@@ -194,7 +194,7 @@ export const HtmlToImageDialog: React.FC<
                 placeholder="0"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Extra wait after render before capturing, for slow
                 client-rendered content.
               </div>

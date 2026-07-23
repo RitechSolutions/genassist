@@ -146,7 +146,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
     <div className="space-y-4">
       <div className="space-y-0.5">
         <Label>Filter Columns</Label>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Select which columns to keep in the dataframe
         </p>
       </div>
@@ -173,7 +173,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
                 );
               })}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {columns.filter((c) => c.selected).length} of {availableColumns.length}{" "}
               columns selected. Click badges to toggle selection.
             </p>
@@ -191,14 +191,14 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
             />
             {columns.length > 0 && (
               <>
-                <div className="flex flex-wrap gap-2 p-2 border rounded bg-gray-50">
+                <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
                   {columns.map((column) => (
                     <Badge key={column.name} variant="default">
                       {column.name}
                     </Badge>
                   ))}
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {columns.length} column{columns.length !== 1 ? "s" : ""} added
                 </p>
               </>

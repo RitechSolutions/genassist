@@ -28,18 +28,18 @@ export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCar
 
   if (loading) {
     return (
-      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
+      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card dark:bg-zinc-900 animate-fade-up">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
           {[1, 2, 3].map((index) => (
             <div key={index} className="relative">
               <div className="flex flex-col gap-3 sm:gap-4 py-2 sm:py-0">
-                <div className="h-8 w-20 bg-gray-200 rounded animate-pulse" />
-                <div className="h-5 w-28 bg-gray-200 rounded animate-pulse" />
+                <div className="h-8 w-20 bg-muted rounded animate-pulse" />
+                <div className="h-5 w-28 bg-muted rounded animate-pulse" />
               </div>
               {index < 3 && (
                 <>
-                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
-                  <div className="sm:hidden border-b border-zinc-200 mt-4" />
+                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-border" />
+                  <div className="sm:hidden border-b border-border mt-4" />
                 </>
               )}
             </div>
@@ -55,7 +55,7 @@ export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCar
       : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
 
   return (
-    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
+    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card dark:bg-zinc-900 animate-fade-up">
       <div className={`grid ${gridColsClass} gap-4 sm:gap-6 lg:gap-8`}>
         {metrics.map((metric, index) => {
           const ChangeIcon = getChangeIcon(metric.changeType);
@@ -85,8 +85,8 @@ export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCar
               {/* Vertical divider - hidden on mobile, shown on larger screens between items */}
               {index < metrics.length - 1 && (
                 <>
-                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
-                  <div className="sm:hidden border-b border-zinc-200 mt-4" />
+                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-border" />
+                  <div className="sm:hidden border-b border-border mt-4" />
                 </>
               )}
             </div>

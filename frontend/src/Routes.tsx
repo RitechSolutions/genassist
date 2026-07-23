@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
+import AppLayout from "@/layout/AppLayout";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
 import Index from "@/views/Index";
@@ -65,6 +66,7 @@ import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
 import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
 import DatasetDetailPage from "@/views/TestSuites/pages/DatasetDetailPage";
 import EvaluationDetailPage from "@/views/TestSuites/pages/EvaluationDetailPage";
+import WorkflowEvaluationsPage from "@/views/TestSuites/pages/WorkflowEvaluationsPage";
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
@@ -149,6 +151,9 @@ export const RoutesProvider = () => {
           element: <ProtectedLayout />,
           children: [
             { path: "", element: <Navigate to="/dashboard" replace /> },
+            {
+              element: <AppLayout />,
+              children: [
             { path: "dashboard", element: <Index /> },
             {
               path: "transcripts",
@@ -533,6 +538,14 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "tests/evaluations/workflows/:workflowId",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <WorkflowEvaluationsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "tests/evaluations/:evaluationId",
               element: (
                 <ProtectedRoute requiredPermissions={["test:workflow"]}>
@@ -575,6 +588,8 @@ export const RoutesProvider = () => {
                   <MCPServersPage />
                 </ProtectedRoute>
               ),
+            },
+              ],
             },
 
             { path: "change-password", element: <ChangePassword /> },

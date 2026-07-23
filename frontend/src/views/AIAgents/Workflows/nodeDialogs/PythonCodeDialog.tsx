@@ -139,15 +139,15 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
               wrap: true,
             }}
           />
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-muted-foreground">
             <ul className="list-disc list-inside space-y-1">
               <li className="break-words">
-                Use <code className="bg-gray-100 px-1 rounded">params</code>{" "}
+                Use <code className="bg-muted px-1 rounded">params</code>{" "}
                 dictionary to access input parameters
               </li>
               <li className="break-words">
                 Store your return value in{" "}
-                <code className="bg-gray-100 px-1 rounded">result</code>{" "}
+                <code className="bg-muted px-1 rounded">result</code>{" "}
                 variable
               </li>
               <li className="break-words">
@@ -176,7 +176,7 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
             placeholder="Enter a prompt (optional)"
             value={templatePrompt}
             onChange={(e) => setTemplatePrompt(e.target.value)}
-            className="mt-2 w-full rounded border border-gray-300 p-2 text-sm min-h-[80px] resize-y bg-background"
+            className="mt-2 w-full rounded border border-border p-2 text-sm min-h-[80px] resize-y bg-background"
             rows={4}
           />
           <DialogFooter className="mt-4">

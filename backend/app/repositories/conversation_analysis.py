@@ -14,8 +14,10 @@ class ConversationAnalysisRepository(DbRepository[ConversationAnalysisModel]):
         super().__init__(ConversationAnalysisModel, db)
 
     async def save_conversation_analysis(self, analysis_data: ConversationAnalysisCreate) -> ConversationAnalysisModel:
-        new_analysis = ConversationAnalysisModel(
-                conversation_id=analysis_data.conversation_id,
+        # Upsert by conversation_id: a conversation must have at most one analysis row.
+        # Re-analysis (finalize/backfill races, Zendesk re-close, etc.) must REPLACE the
+        # existing row in place rather than insert a duplicate.
+        fields = dict(
                 topic=analysis_data.topic,
                 summary=analysis_data.summary,
                 positive_sentiment=analysis_data.positive_sentiment,
@@ -30,10 +32,23 @@ class ConversationAnalysisRepository(DbRepository[ConversationAnalysisModel]):
                 response_time=analysis_data.response_time,
                 quality_of_service=analysis_data.quality_of_service,
                 )
-        self.db.add(new_analysis)
+
+        existing = await self.get_by_conversation_id(analysis_data.conversation_id)
+        if existing is not None:
+            # Update in place, preserving the same id (and any FK references to it).
+            for key, value in fields.items():
+                setattr(existing, key, value)
+            analysis = existing
+        else:
+            analysis = ConversationAnalysisModel(
+                    conversation_id=analysis_data.conversation_id,
+                    **fields,
+                    )
+            self.db.add(analysis)
+
         await self.db.commit()
-        await self.db.refresh(new_analysis)
-        return new_analysis
+        await self.db.refresh(analysis)
+        return analysis
 
     async def get_by_conversation_id(self, conversation_id: UUID) -> Optional[ConversationAnalysisModel]:
         query = select(ConversationAnalysisModel).where(ConversationAnalysisModel.conversation_id == conversation_id)

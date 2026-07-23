@@ -35,7 +35,7 @@ export function ActiveConversationsSummary({ total, counts, loading }: SummaryPr
             {sentiments.map((sentiment, index) => (
               <div
                 key={index}
-                className="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg bg-white px-2 py-3 shadow-sm sm:gap-2 sm:py-4"
+                className="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg bg-card px-2 py-3 shadow-sm sm:gap-2 sm:py-4"
               >
                 <div className="flex items-center justify-center shrink-0">
                   <div className={cn("w-4 h-[4px] rounded-xl", sentiment.color)} />

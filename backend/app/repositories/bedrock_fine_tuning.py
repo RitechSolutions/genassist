@@ -132,6 +132,24 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
         logger.info(f"Updated Bedrock job {id} deployment to {deployment_status}")
         return job
 
+    async def clear_deployment(self, id: UUID) -> BedrockFineTuningJobModel:
+        """Reset a job's deployment back to NotDeployed and drop its ARN.
+
+        Used after the AWS deployment has been torn down so the job can be
+        redeployed and no longer advertises a stale deployment ARN.
+        """
+        job = await self.get_job_by_id(id)
+        if not job:
+            raise AppException(ErrorKey.ERROR_JOB_NOT_FOUND)
+
+        job.deployment_status = BedrockDeploymentStatus.NOT_DEPLOYED
+        job.deployment_arn = None
+
+        await self.db.commit()
+        await self.db.refresh(job)
+        logger.info(f"Cleared Bedrock job {id} deployment")
+        return job
+
     async def list_jobs(
         self, status: Optional[BedrockJobStatus] = None
     ) -> List[BedrockFineTuningJobModel]:

@@ -145,7 +145,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
             <Label>State Entries</Label>
             <HoverCard>
               <HoverCardTrigger>
-                <HelpCircle className="h-4 w-4 text-gray-500" />
+                <HelpCircle className="h-4 w-4 text-muted-foreground" />
               </HoverCardTrigger>
               <HoverCardContent className="w-80">
                 <div className="space-y-2">
@@ -183,7 +183,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
         </div>
 
         {states.length === 0 && (
-          <div className="text-sm text-gray-500 text-center py-4 border border-dashed rounded-md">
+          <div className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-md">
             No state entries. Click "Add State" to add one.
           </div>
         )}
@@ -192,7 +192,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
           {states.map((state, index) => (
             <div
               key={index}
-              className="p-4 border border-gray-200 rounded-md space-y-3 bg-gray-50"
+              className="p-4 border border-border rounded-md space-y-3 bg-muted"
             >
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">
@@ -204,7 +204,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
                     variant="ghost"
                     size="sm"
                     onClick={() => removeStateEntry(index)}
-                    className="text-red-600 hover:text-red-700"
+                    className="text-red-600 hover:text-red-700 dark:text-red-400"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -242,7 +242,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
                       className="w-full"
                     />
                     {index === 0 && (
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         No stateful parameters found. Mark parameters as "stateful" in the Start node.
                       </p>
                     )}
@@ -261,7 +261,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
                   placeholder="Enter value or drag variable from JSON viewer"
                   className="w-full"
                 />
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-muted-foreground">
                   Use {"{{variable}}"} for dynamic values
                 </div>
               </div>
