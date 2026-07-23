@@ -6,7 +6,7 @@ tracking) plus a ``feature.templateMarketplace`` feature flag seeded hidden
 (``val='false'``) so the feature is off until an admin enables it.
 
 Revision ID: d4b1f2a3c5e6
-Revises: 21f612ab93ba
+Revises: e7a4b0c95d61
 Create Date: 2026-07-21 00:00:00.000000
 
 """
@@ -18,7 +18,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'd4b1f2a3c5e6'
-down_revision: Union[str, None] = '21f612ab93ba'
+down_revision: Union[str, None] = 'e7a4b0c95d61'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
