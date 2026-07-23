@@ -23,7 +23,11 @@ from app.schemas.template import (
 from app.schemas.workflow import WorkflowCreate
 from app.services.agent_config import AgentConfigService
 from app.services.template_catalog import get_official_template, get_official_templates
-from app.services.template_sanitizer import sanitize_graph, validate_node_types
+from app.services.template_sanitizer import (
+    sanitize_graph,
+    sanitize_test_input,
+    validate_node_types,
+)
 from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -178,7 +182,10 @@ class TemplateService:
             "greet_on_start": bool(agent.greet_on_start),
             "greeting_prompt": agent.greeting_prompt,
         }
-        graph = {"nodes": nodes, "edges": edges, "testInput": workflow.testInput}
+        graph = {"nodes": nodes, "edges": edges}
+        safe_test_input = sanitize_test_input(nodes, workflow.testInput)
+        if safe_test_input is not None:
+            graph["testInput"] = safe_test_input
 
         template = TemplateModel(
             title=data.title,
@@ -205,8 +212,9 @@ class TemplateService:
         source_graph = row.graph or {}
         nodes, edges = sanitize_graph(source_graph.get("nodes"), source_graph.get("edges"))
         graph = {"nodes": nodes, "edges": edges}
-        if source_graph.get("testInput") is not None:
-            graph["testInput"] = source_graph["testInput"]
+        safe_test_input = sanitize_test_input(nodes, source_graph.get("testInput"))
+        if safe_test_input is not None:
+            graph["testInput"] = safe_test_input
 
         current_tenant = get_tenant_context()
         async with self._master_repo() as mrepo:

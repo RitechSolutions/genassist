@@ -1,5 +1,5 @@
 """Unit tests for the Template Marketplace graph sanitizer."""
-from app.services.template_sanitizer import sanitize_graph
+from app.services.template_sanitizer import sanitize_graph, sanitize_test_input
 
 
 def _graph():
@@ -100,6 +100,56 @@ def test_does_not_mutate_input_and_preserves_edges():
     # original still has the secret (deep copy)
     assert nodes[1]["data"]["authToken"] == "super-secret"
     assert safe_edges == edges
+
+
+def test_strips_secret_looking_fields_by_substring():
+    # Node type whose secret lives under a key NOT in SECRET_DATA_FIELDS.
+    nodes = [
+        {
+            "id": "n1",
+            "type": "futureNode",
+            "data": {
+                "apiKey": "sk-leak",
+                "clientSecret": "shhh",
+                "accessToken": "at-leak",
+                "endpoint": "https://example.com",  # benign, must survive
+                "publicKey": "not-a-secret",         # benign, must survive
+            },
+        }
+    ]
+    safe_nodes, _ = sanitize_graph(nodes, [])
+    data = safe_nodes[0]["data"]
+    assert "apiKey" not in data
+    assert "clientSecret" not in data
+    assert "accessToken" not in data
+    assert data["endpoint"] == "https://example.com"
+    assert data["publicKey"] == "not-a-secret"
+
+
+def test_sanitize_test_input_drops_hidden_and_secret_keys():
+    nodes, _ = _graph()  # n5 marks apiKey as hidden
+    test_input = {
+        "message": "hello",          # visible → kept
+        "apiKey": "sk-secret",       # hidden field → dropped
+        "authToken": "t",            # secret-looking key → dropped
+        "thread_id": "abc",          # benign → kept
+    }
+    safe = sanitize_test_input(nodes, test_input)
+    assert safe == {"message": "hello", "thread_id": "abc"}
+
+
+def test_sanitize_test_input_handles_none_and_empty():
+    assert sanitize_test_input([], None) is None
+    assert sanitize_test_input(None, {}) is None
+    # A payload that is entirely secret collapses to None (no key stored).
+    assert sanitize_test_input([], {"password": "x"}) is None
+
+
+def test_sanitize_test_input_does_not_mutate_input():
+    original = {"message": "hi", "apiKey": "sk"}
+    nodes, _ = _graph()
+    sanitize_test_input(nodes, original)
+    assert original["apiKey"] == "sk"  # caller's dict untouched
 
 
 def test_handles_none_and_empty():

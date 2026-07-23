@@ -44,6 +44,33 @@ SECRET_DATA_FIELDS = (
     "headers",
 )
 
+# Defense-in-depth: any node.data (or testInput) key whose name *contains* one
+# of these substrings (case-insensitive) is stripped, even if it isn't in the
+# curated SECRET_DATA_FIELDS list above. This catches secret-bearing fields on
+# node types added later whose author forgot to extend SECRET_DATA_FIELDS.
+# Kept deliberately narrow (no bare "key"/"auth") so ordinary config fields
+# like ``publicKey`` or ``endpoint`` are never dropped by accident.
+SECRET_KEY_SUBSTRINGS = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "apikey",
+    "api_key",
+    "credential",
+    "private_key",
+    "privatekey",
+    "access_key",
+    "accesskey",
+)
+
+
+def _is_secret_key(key: Any) -> bool:
+    if not isinstance(key, str):
+        return False
+    lowered = key.lower()
+    return any(sub in lowered for sub in SECRET_KEY_SUBSTRINGS)
+
 
 def _blank(value: Any) -> Any:
     if isinstance(value, list):
@@ -71,9 +98,13 @@ def sanitize_graph(
             if field in data:
                 data[field] = _blank(data[field])
 
-        # 2. Strip inline secrets.
+        # 2. Strip inline secrets (curated field names).
         for field in SECRET_DATA_FIELDS:
             data.pop(field, None)
+
+        # 2b. Strip any other secret-looking field name (defense-in-depth).
+        for key in [k for k in list(data) if _is_secret_key(k)]:
+            data.pop(key, None)
 
         # 3. Strip hidden Chat-Input default values (encrypted secrets on read).
         input_schema = data.get("inputSchema")
@@ -83,6 +114,45 @@ def sanitize_graph(
                     field_schema.pop("defaultValue", None)
 
     return safe_nodes, safe_edges
+
+
+def sanitize_test_input(
+    nodes: Optional[List[dict]],
+    test_input: Optional[dict],
+) -> Optional[dict]:
+    """Return a shareable copy of ``testInput``, or ``None``.
+
+    ``testInput`` is the workflow's saved sample-run payload, keyed by Chat-Input
+    field name (e.g. ``{"message": "hi", "apiKey": "sk-..."}``). A value typed
+    into a *hidden* field — or any secret-looking key — is a per-tenant secret/PII
+    and must never travel inside a shared template. ``sanitize_graph`` already
+    blanks a hidden field's schema ``defaultValue``; this strips the matching
+    ``testInput`` value so the two stay in sync. Visible, non-secret sample values
+    are kept so the gallery's "try it" panel stays pre-filled.
+
+    ``nodes`` should be the (already sanitized) graph nodes — they still carry the
+    ``hidden`` flag in ``inputSchema``, which is what we key off here.
+    """
+    if not isinstance(test_input, dict):
+        return None
+
+    hidden_fields: set[str] = set()
+    for node in nodes or []:
+        data = node.get("data") if isinstance(node, dict) else None
+        if not isinstance(data, dict):
+            continue
+        input_schema = data.get("inputSchema")
+        if isinstance(input_schema, dict):
+            for field_name, field_schema in input_schema.items():
+                if isinstance(field_schema, dict) and field_schema.get("hidden"):
+                    hidden_fields.add(field_name)
+
+    safe: dict = {}
+    for key, value in test_input.items():
+        if key in hidden_fields or _is_secret_key(key):
+            continue
+        safe[key] = copy.deepcopy(value)
+    return safe or None
 
 
 def _valid_node_types() -> set[str]:

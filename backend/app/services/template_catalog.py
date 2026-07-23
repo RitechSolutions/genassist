@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.core.exceptions.exception_classes import AppException
-from app.services.template_sanitizer import sanitize_graph, validate_node_types
+from app.services.template_sanitizer import (
+    sanitize_graph,
+    sanitize_test_input,
+    validate_node_types,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +49,9 @@ def _load_template(meta: Dict[str, str]) -> Optional[Dict[str, Any]]:
 
     nodes, edges = sanitize_graph(data.get("nodes"), data.get("edges"))
     graph: Dict[str, Any] = {"nodes": nodes, "edges": edges}
-    if data.get("testInput") is not None:
-        graph["testInput"] = data.get("testInput")
+    safe_test_input = sanitize_test_input(nodes, data.get("testInput"))
+    if safe_test_input is not None:
+        graph["testInput"] = safe_test_input
 
     node_types = sorted(
         {n.get("type") for n in nodes if isinstance(n, dict) and n.get("type")}
