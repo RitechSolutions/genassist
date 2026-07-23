@@ -82,7 +82,7 @@ class TestExtractUsageFromAIMessage:
                 "stopReason": "end_turn",
                 "metrics": {"latencyMs": [123]},
                 "model_provider": "bedrock_converse",
-                "model_name": "us.amazon.nova-2-lite-v1:0",
+                "model_name": "eu.amazon.nova-2-lite-v1:0",
             }
 
         result = extract_usage_from_aimessage(MockMessage())
