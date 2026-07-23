@@ -490,7 +490,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                   <div className="text-xs text-muted-foreground truncate">
                     {workflow.description || "No description"}
                   </div>
-                  <span className="inline-flex items-center gap-1 text-xs text-white bg-gray-400 px-2 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-1 text-xs text-white bg-gray-400 dark:bg-zinc-700 px-2 py-0.5 rounded-full">
                     v{workflow.version}
                   </span>
                   {workflow.updated_at && (
