@@ -4,7 +4,10 @@ LLM pricing: database-backed rates (llm_cost_rates) with static fallback (USD pe
 DB rows override static defaults for the same provider/model keys.
 """
 
-from typing import Dict
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
+from typing import Dict, Optional
 
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
@@ -52,39 +55,71 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
 DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
 
 
+class PricingStatus(str, Enum):
+
+    CONFIGURED = "configured"  # tenant-managed llm_cost_rates row
+    FALLBACK = "fallback"  # bundled static rate table
+    UNPRICED = "unpriced"  # no matching rate; cost must stay NULL
+    LEGACY_ESTIMATE = "legacy_estimate"  # old cost copied during backfill; not calculated at runtime
+
+
+
+@dataclass(frozen=True)
+class PricingResolution:
+    status: PricingStatus
+    input_per_1k: Optional[Decimal]
+    output_per_1k: Optional[Decimal]
+    matched_model_key: Optional[str]
+
+
 def _normalize_model_name(model: str) -> str:
     if not model:
         return ""
     return str(model).lower().strip()
 
 
-def _merged_provider_pricing(provider_key: str, tenant: str) -> Dict[str, Dict[str, float]]:
-    static = dict(STATIC_LLM_PRICING_FALLBACK.get(provider_key, {}))
-    db_nested = get_db_pricing_nested(tenant)
-    db_prov = db_nested.get(provider_key, {})
-    static.update(db_prov)
-    return static
-
-
-def find_pricing(provider: str, model: str) -> Dict[str, float]:
+def find_pricing_with_status(provider: str, model: str) -> PricingResolution:
+    """Resolve a rate and report where it came from"""
     tenant = get_tenant_context()
     provider_key = (provider or "").lower()
     model_key = _normalize_model_name(model)
 
-    provider_pricing = _merged_provider_pricing(provider_key, tenant)
-    if not provider_pricing:
-        return DEFAULT_PRICING.copy()
+    db_provider_pricing = get_db_pricing_nested(tenant).get(provider_key, {})
+    provider_pricing = dict(STATIC_LLM_PRICING_FALLBACK.get(provider_key, {}))
+    provider_pricing.update(db_provider_pricing)
 
+    matched_key = None
     if model_key and model_key in provider_pricing:
-        return provider_pricing[model_key].copy()
+        matched_key = model_key
+    else:
+        prefix_matches = [
+            known
+            for known in provider_pricing
+            if not known.startswith("_") and model_key and model_key.startswith(known)
+        ]
+        if prefix_matches:
+            matched_key = max(prefix_matches, key=len)
+        elif "_default" in provider_pricing:
+            matched_key = "_default"
 
-    for known_model, pricing in provider_pricing.items():
-        if known_model.startswith("_"):
-            continue
-        if model_key and model_key.startswith(known_model):
-            return pricing.copy()
+    if matched_key is None:
+        return PricingResolution(PricingStatus.UNPRICED, None, None, None)
 
-    default_row = provider_pricing.get("_default")
-    if default_row:
-        return default_row.copy()
-    return DEFAULT_PRICING.copy()
+    rate = provider_pricing[matched_key]
+    return PricingResolution(
+        status=PricingStatus.CONFIGURED if matched_key in db_provider_pricing else PricingStatus.FALLBACK,
+        input_per_1k=Decimal(str(rate["input_per_1k"])),
+        output_per_1k=Decimal(str(rate["output_per_1k"])),
+        matched_model_key=matched_key,
+    )
+
+
+def find_pricing(provider: str, model: str) -> Dict[str, float]:
+    """Older helper for UI display: always returns float rates, or DEFAULT_PRICING if unknown"""
+    resolution = find_pricing_with_status(provider, model)
+    if resolution.status is PricingStatus.UNPRICED:
+        return DEFAULT_PRICING.copy()
+    return {
+        "input_per_1k": float(resolution.input_per_1k),
+        "output_per_1k": float(resolution.output_per_1k),
+    }

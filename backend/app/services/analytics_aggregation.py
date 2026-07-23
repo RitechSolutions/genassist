@@ -55,15 +55,10 @@ class AnalyticsAggregationService:
             if since is None:
                 logger.info("No logs found for backfill")
                 return {"agent_stats_upserted": 0, "node_stats_upserted": 0}
-            until = (
-                datetime.combine(to_date, time.max, tzinfo=timezone.utc)
-                if to_date is not None
-                else now
-            )
+            until = datetime.combine(to_date, time.max, tzinfo=timezone.utc) if to_date is not None else now
             affected_dates = await self.repo.get_affected_dates_since(since, until)
             logger.info(
-                f"Backfill: recomputing {len(affected_dates)} dates "
-                f"({from_date or 'earliest'} -> {to_date or 'now'})"
+                f"Backfill: recomputing {len(affected_dates)} dates ({from_date or 'earliest'} -> {to_date or 'now'})"
             )
             return await self._aggregate_dates_streaming(affected_dates)
 
@@ -121,8 +116,7 @@ class AnalyticsAggregationService:
             agent_rows += len(agent_stats)
             node_rows += len(node_stats)
         logger.info(
-            f"Backfill complete: {agent_rows} agent rows, {node_rows} node rows "
-            f"across {len(affected_dates)} dates"
+            f"Backfill complete: {agent_rows} agent rows, {node_rows} node rows across {len(affected_dates)} dates"
         )
         return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows}
 
@@ -172,6 +166,11 @@ class AnalyticsAggregationService:
             "finalized_conversation_ids": set(),
             "in_progress_conversation_ids": set(),
             "thumbs_data": {},  # maps conversation_id -> (thumbs_up, thumbs_down)
+            "input_tokens_sum": 0,
+            "output_tokens_sum": 0,
+            "cost_usd_sum": 0.0,
+            "has_token_data": False,
+            "has_cost_data": False,
         }
 
     def _create_node_bucket(self) -> dict:
@@ -257,6 +256,32 @@ class AnalyticsAggregationService:
             # RAG used — top-level boolean field
             if payload.get("rag_used"):
                 ab["rag_used_count"] += 1
+
+            # Prefer the dedicated token/cost columns. Use the JSON payload only when
+            # those columns are empty (older rows written before the columns existed)
+            token_usage = payload.get("token_usage") or {}
+            input_tokens = log.input_tokens if log.input_tokens is not None else token_usage.get("input_tokens")
+            output_tokens = log.output_tokens if log.output_tokens is not None else token_usage.get("output_tokens")
+            cost_usd = log.cost_usd if log.cost_usd is not None else payload.get("cost_usd")
+
+            if input_tokens is not None:
+                try:
+                    ab["input_tokens_sum"] += int(input_tokens)
+                    ab["has_token_data"] = True
+                except (TypeError, ValueError):
+                    pass
+            if output_tokens is not None:
+                try:
+                    ab["output_tokens_sum"] += int(output_tokens)
+                    ab["has_token_data"] = True
+                except (TypeError, ValueError):
+                    pass
+            if cost_usd is not None:
+                try:
+                    ab["cost_usd_sum"] += float(cost_usd)
+                    ab["has_cost_data"] = True
+                except (TypeError, ValueError):
+                    pass
 
             # Node-level stats — nodeExecutionStatus is a dict keyed by node UUID
             state = row_response.get("state") or {}
@@ -346,6 +371,9 @@ class AnalyticsAggregationService:
                     "in_progress_conversations": len(ab["in_progress_conversation_ids"]),
                     "thumbs_up_count": sum(t[0] for t in thumbs_values),
                     "thumbs_down_count": sum(t[1] for t in thumbs_values),
+                    "total_input_tokens": ab["input_tokens_sum"] if ab["has_token_data"] else None,
+                    "total_output_tokens": ab["output_tokens_sum"] if ab["has_token_data"] else None,
+                    "total_cost_usd": round(ab["cost_usd_sum"], 6) if ab["has_cost_data"] else None,
                 }
             )
         return agent_stats

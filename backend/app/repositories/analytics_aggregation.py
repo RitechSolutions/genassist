@@ -1,18 +1,16 @@
 import logging
 from datetime import date, datetime, time, timezone
 
-from app.core.utils.date_time_utils import utc_now
-from uuid import UUID
-
 from injector import inject
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils.date_time_utils import utc_now
+from app.db.base import generate_sequential_uuid
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
-from app.db.base import generate_sequential_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +55,7 @@ class AnalyticsAggregationRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_affected_dates_since(
-        self, since: datetime, until: datetime
-    ) -> list[date]:
+    async def get_affected_dates_since(self, since: datetime, until: datetime) -> list[date]:
         """Return distinct dates that have logs in the given time range."""
         stmt = (
             select(func.distinct(func.date(AgentResponseLogModel.logged_at)))
@@ -126,6 +122,9 @@ class AnalyticsAggregationRepository:
                     "in_progress_conversations": s.get("in_progress_conversations", 0),
                     "thumbs_up_count": s.get("thumbs_up_count", 0),
                     "thumbs_down_count": s.get("thumbs_down_count", 0),
+                    "total_input_tokens": s.get("total_input_tokens"),
+                    "total_output_tokens": s.get("total_output_tokens"),
+                    "total_cost_usd": s.get("total_cost_usd"),
                     "last_aggregated_at": now,
                     "is_deleted": 0,
                     "created_at": now,
@@ -134,7 +133,7 @@ class AnalyticsAggregationRepository:
             )
 
         for start in range(0, len(rows), _UPSERT_BATCH_SIZE):
-            chunk = rows[start:start + _UPSERT_BATCH_SIZE]
+            chunk = rows[start : start + _UPSERT_BATCH_SIZE]
             stmt = insert(AgentExecutionDailyStatsModel).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_agent_execution_daily_stats_agent_date",
@@ -155,6 +154,9 @@ class AnalyticsAggregationRepository:
                     "in_progress_conversations": stmt.excluded.in_progress_conversations,
                     "thumbs_up_count": stmt.excluded.thumbs_up_count,
                     "thumbs_down_count": stmt.excluded.thumbs_down_count,
+                    "total_input_tokens": stmt.excluded.total_input_tokens,
+                    "total_output_tokens": stmt.excluded.total_output_tokens,
+                    "total_cost_usd": stmt.excluded.total_cost_usd,
                     "last_aggregated_at": stmt.excluded.last_aggregated_at,
                     "updated_at": stmt.excluded.updated_at,
                 },
@@ -197,7 +199,7 @@ class AnalyticsAggregationRepository:
             )
 
         for start in range(0, len(rows), _UPSERT_BATCH_SIZE):
-            chunk = rows[start:start + _UPSERT_BATCH_SIZE]
+            chunk = rows[start : start + _UPSERT_BATCH_SIZE]
             stmt = insert(NodeExecutionDailyStatsModel).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_node_execution_daily_stats_agent_node_date",

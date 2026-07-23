@@ -1,10 +1,8 @@
 """Unit tests for LLM usage extraction utilities."""
 
-import pytest
-
 from app.core.utils.llm_usage_utils import (
-    extract_usage_from_response_metadata,
     extract_usage_from_aimessage,
+    extract_usage_from_response_metadata,
 )
 
 
@@ -35,6 +33,61 @@ class TestExtractUsageFromResponseMetadata:
 
     def test_missing_usage_returns_none(self):
         metadata = {"model": "gpt-4o", "finish_reason": "stop"}
+        assert extract_usage_from_response_metadata(metadata) is None
+
+    def test_explicit_zero_usage_is_reported_not_none(self):
+        metadata = {"token_usage": {"prompt_tokens": 0, "completion_tokens": 0}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def test_zero_input_with_nonzero_output_preserved(self):
+        metadata = {"usage": {"input_tokens": 0, "output_tokens": 5}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 5, "total_tokens": 5}
+
+    def test_google_zero_candidates_preserved(self):
+        metadata = {"usage_metadata": {"prompt_token_count": 100, "candidates_token_count": 0}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 100, "output_tokens": 0, "total_tokens": 100}
+
+    def test_top_level_zeros_are_reported(self):
+        metadata = {"input_tokens": 0, "output_tokens": 0}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def test_zero_from_first_source_not_overwritten_by_later_source(self):
+        metadata = {
+            "token_usage": {"prompt_tokens": 0, "completion_tokens": 4},
+            "usage_metadata": {"prompt_token_count": 999, "candidates_token_count": 999},
+        }
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 4, "total_tokens": 4}
+
+    def test_gap_fill_across_sources(self):
+        metadata = {
+            "token_usage": {"prompt_tokens": 5},
+            "usage": {"output_tokens": 7},
+        }
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12}
+
+    def test_non_numeric_junk_is_skipped_not_crashing(self):
+        metadata = {"token_usage": {"prompt_tokens": "", "completion_tokens": 42}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 42, "total_tokens": 42}
+
+    def test_top_level_junk_is_skipped_not_crashing(self):
+        metadata = {"input_tokens": [], "output_tokens": 3}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 3, "total_tokens": 3}
+
+    def test_anthropic_junk_is_skipped_not_crashing(self):
+        metadata = {"usage": {"input_tokens": "", "output_tokens": 5}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 5, "total_tokens": 5}
+
+    def test_all_junk_returns_none(self):
+        metadata = {"token_usage": {"prompt_tokens": "", "completion_tokens": {}}}
         assert extract_usage_from_response_metadata(metadata) is None
 
 

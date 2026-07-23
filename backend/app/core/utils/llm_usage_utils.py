@@ -6,11 +6,23 @@ preferring the standardized usage_metadata attribute with a response_metadata
 fallback for provider-specific structures (OpenAI, Anthropic, etc.).
 """
 
+import logging
 from typing import Any, Dict, Optional
 
-import logging
-
 logger = logging.getLogger(__name__)
+
+
+def _first_present(data: Dict[str, Any], *keys: str) -> Optional[int]:
+    """Return the first numeric value found among ``keys``. Zero is valid.
+
+    Skip non-numbers (``""``, ``[]``, ``None``, etc.) so a bad provider payload
+    can't break token math
+    """
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, (int, float)):
+            return value
+    return None
 
 
 def extract_usage_from_response_metadata(metadata: Dict[str, Any]) -> Optional[Dict[str, int]]:
@@ -35,34 +47,36 @@ def extract_usage_from_response_metadata(metadata: Dict[str, Any]) -> Optional[D
     # OpenAI: token_usage
     token_usage = metadata.get("token_usage") or metadata.get("usage")
     if token_usage:
-        input_tokens = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
-        output_tokens = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
+        input_tokens = _first_present(token_usage, "prompt_tokens", "input_tokens")
+        output_tokens = _first_present(token_usage, "completion_tokens", "output_tokens")
 
     # Anthropic: usage
-    if input_tokens is None and "usage" in metadata:
-        usage = metadata["usage"]
-        input_tokens = usage.get("input_tokens")
-        output_tokens = usage.get("output_tokens")
+    usage = metadata.get("usage")
+    if usage:
+        if input_tokens is None:
+            input_tokens = _first_present(usage, "input_tokens")
+        if output_tokens is None:
+            output_tokens = _first_present(usage, "output_tokens")
 
     # Google/Vertex: usage_metadata
     usage_metadata = metadata.get("usage_metadata")
-    if usage_metadata and input_tokens is None:
-        input_tokens = usage_metadata.get("prompt_token_count") or usage_metadata.get("input_tokens")
-        output_tokens = usage_metadata.get("candidates_token_count") or usage_metadata.get(
-            "output_tokens"
-        )
+    if usage_metadata:
+        if input_tokens is None:
+            input_tokens = _first_present(usage_metadata, "prompt_token_count", "input_tokens")
+        if output_tokens is None:
+            output_tokens = _first_present(usage_metadata, "candidates_token_count", "output_tokens")
 
     # Try top-level keys
     if input_tokens is None:
-        input_tokens = metadata.get("input_tokens") or metadata.get("prompt_tokens")
+        input_tokens = _first_present(metadata, "input_tokens", "prompt_tokens")
     if output_tokens is None:
-        output_tokens = metadata.get("output_tokens") or metadata.get("completion_tokens")
+        output_tokens = _first_present(metadata, "output_tokens", "completion_tokens")
 
     if input_tokens is None and output_tokens is None:
         return None
 
-    input_tokens = input_tokens or 0
-    output_tokens = output_tokens or 0
+    input_tokens = input_tokens if input_tokens is not None else 0
+    output_tokens = output_tokens if output_tokens is not None else 0
     total_tokens = input_tokens + output_tokens
 
     return {
