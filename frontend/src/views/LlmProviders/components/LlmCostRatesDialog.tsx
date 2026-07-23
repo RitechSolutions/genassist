@@ -41,6 +41,7 @@ const CSV_MODEL = `provider,model,input_per_1k,output_per_1k
 openai,gpt-4o,0.0025,0.01
 openai,gpt-4o-mini,0.00015,0.0006
 anthropic,claude-3-5-sonnet,0.003,0.015
+bedrock,eu.amazon.nova-2-lite-v1:0,0.0001,0.0004
 openrouter,_default,0.001,0.002
 vllm,_default,0,0`;
 
