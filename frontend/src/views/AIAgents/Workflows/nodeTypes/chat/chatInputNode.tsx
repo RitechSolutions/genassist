@@ -89,7 +89,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
       nodeType={CHAT_INPUT_NODE_TYPE}
     >
       {/* Node content */}
-      <div className="p-4 mx-0.5 mb-0.5 bg-white rounded-sm">
+      <div className="p-4 mx-0.5 mb-0.5 bg-card rounded-sm">
         <ParameterSection
           dynamicParams={dynamicParams}
           setDynamicParams={setDynamicParams}

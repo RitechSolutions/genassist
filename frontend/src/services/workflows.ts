@@ -48,10 +48,23 @@ export interface WorkflowTestPayload {
   workflow: Workflow;
 }
 
+/** A node that reported a failure during the run (e.g. an API/tool node whose
+ *  request completed but did not do its job). The run still completes. */
+export interface FailedNode {
+  node_id: string;
+  name: string;
+  type: string;
+  error: string;
+}
+
 export interface WorkflowTestResponse {
   status: string;
   input: string;
   output: string;
+  /** True when one or more nodes failed even though the run completed. */
+  has_failures?: boolean;
+  /** Details of the nodes that failed, if any. */
+  failed_nodes?: FailedNode[];
   [key: string]: any;
 }
 

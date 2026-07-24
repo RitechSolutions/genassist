@@ -87,7 +87,7 @@ export const PerformanceChart = ({ dateRange, agentId, groupId }: PerformanceCha
   }
 
   return (
-    <Card className={cn("bg-white p-4 shadow-sm sm:p-6", analyticsFadeUpClass)}>
+    <Card className={cn("bg-card dark:bg-zinc-900 p-4 shadow-sm sm:p-6", analyticsFadeUpClass)}>
       <h2 className="text-base sm:text-lg font-semibold mb-4">Daily Performance Trend</h2>
       <div
         className={`h-[300px] sm:h-[400px] w-full transition-opacity duration-200 ${loading ? "opacity-60" : ""}`}

@@ -36,6 +36,7 @@ import {
   MessageSquareText,
   Bug,
   Network,
+  AlertTriangle,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
@@ -414,27 +415,27 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     switch (role) {
       case "user":
         return {
-          bgColor: "bg-blue-50",
-          textColor: "text-blue-800",
-          borderColor: "border-blue-100",
+          bgColor: "bg-blue-50 dark:bg-blue-500/15",
+          textColor: "text-blue-800 dark:text-blue-200",
+          borderColor: "border-blue-100 dark:border-blue-500/30",
         };
       case "assistant":
         return {
-          bgColor: "bg-green-50",
-          textColor: "text-green-800",
-          borderColor: "border-green-100",
+          bgColor: "bg-green-50 dark:bg-green-500/15",
+          textColor: "text-green-800 dark:text-green-200",
+          borderColor: "border-green-100 dark:border-green-500/30",
         };
       case "system":
         return {
-          bgColor: "bg-gray-50",
-          textColor: "text-gray-800",
-          borderColor: "border-gray-100",
+          bgColor: "bg-gray-50 dark:bg-zinc-800",
+          textColor: "text-gray-800 dark:text-zinc-200",
+          borderColor: "border-gray-100 dark:border-zinc-700",
         };
       default:
         return {
-          bgColor: "bg-gray-50",
-          textColor: "text-gray-800",
-          borderColor: "border-gray-100",
+          bgColor: "bg-gray-50 dark:bg-zinc-800",
+          textColor: "text-gray-800 dark:text-zinc-200",
+          borderColor: "border-gray-100 dark:border-zinc-700",
         };
     }
   };
@@ -454,7 +455,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
           <ResizablePanelGroup
             direction="horizontal"
             autoSaveId="workflow-test-dialog"
-            className="rounded-md border border-gray-200"
+            className="rounded-md border border-border"
           >
             {/* LEFT — inputs: message, metadata, run action / paused form. */}
             <ResizablePanel
@@ -474,7 +475,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                       )}
                     </Label>
                     {prefilledFields.has("message") && (
-                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200 dark:text-blue-400 dark:bg-blue-500/15 dark:border-blue-500/30">
                         📝 Session
                       </span>
                     )}
@@ -492,7 +493,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     disabled={testing || !!pausedFormSchema}
                     className={`flex-1 ${
                       prefilledFields.has("message")
-                        ? "border-blue-300 bg-blue-50"
+                        ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15"
                         : ""
                     }`}
                   />
@@ -526,7 +527,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     </Button>
 
                     {showMetadata && (
-                      <div className="pl-4 space-y-4 border-l-2 border-gray-200">
+                      <div className="pl-4 space-y-4 border-l-2 border-border">
                         {/* Thread ID field - always show so saved testInput.thread_id is visible and usable */}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
@@ -545,7 +546,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                               value={testInput.thread_id || ""}
                               readOnly
                               disabled={testing}
-                              className="flex-1 bg-gray-50 cursor-not-allowed"
+                              className="flex-1 bg-muted cursor-not-allowed"
                             />
                             <Button
                               type="button"
@@ -582,13 +583,13 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                       <span className="text-red-500 ml-1">*</span>
                                     )}
                                     {field.type !== "string" && (
-                                      <span className="text-xs text-gray-500 ml-2">
+                                      <span className="text-xs text-muted-foreground ml-2">
                                         ({field.type})
                                       </span>
                                     )}
                                   </Label>
                                   {prefilledFields.has(key) && (
-                                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200 dark:text-blue-400 dark:bg-blue-500/15 dark:border-blue-500/30">
                                       📝 Session
                                     </span>
                                   )}
@@ -634,7 +635,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                     disabled={testing || !!pausedFormSchema}
                                     className={`flex-1 font-mono text-sm ${
                                       prefilledFields.has(key)
-                                        ? "border-blue-300 bg-blue-50"
+                                        ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15"
                                         : ""
                                     }`}
                                     rows={4}
@@ -654,7 +655,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                     disabled={testing || !!pausedFormSchema}
                                     className={`flex-1 ${
                                       prefilledFields.has(key)
-                                        ? "border-blue-300 bg-blue-50"
+                                        ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15"
                                         : ""
                                     }`}
                                   />
@@ -685,18 +686,18 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
                 {/* Paused Workflow — Dynamic User Input Form */}
                 {pausedFormSchema && (
-                  <div className="space-y-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
+                  <div className="space-y-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50 dark:border-blue-500/30 dark:bg-blue-500/15">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <ClipboardList className="h-5 w-5 text-blue-600" />
-                        <span className="font-medium text-blue-700">
+                        <ClipboardList className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        <span className="font-medium text-blue-700 dark:text-blue-400">
                           Workflow Paused — User Input Required
                         </span>
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-xs text-gray-500"
+                        className="text-xs text-muted-foreground"
                         onClick={handleStartOver}
                       >
                         <RefreshCw className="h-3 w-3 mr-1" />
@@ -705,7 +706,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     </div>
 
                     {pausedFormSchema.message && (
-                      <p className="text-sm text-gray-600">{pausedFormSchema.message}</p>
+                      <p className="text-sm text-muted-foreground">{pausedFormSchema.message}</p>
                     )}
 
                     <div className="space-y-3">
@@ -722,7 +723,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                               {field.required && (
                                 <span className="text-red-500 ml-1">*</span>
                               )}
-                              <span className="text-xs text-gray-500 ml-2">
+                              <span className="text-xs text-muted-foreground ml-2">
                                 ({field.type})
                               </span>
                             </Label>
@@ -824,20 +825,26 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
             <ResizablePanel id="results" order={2} defaultSize={67} minSize={45}>
               <div className="flex h-full flex-col overflow-hidden">
                 {/* Header: result label + status badge + view switcher */}
-                <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    <Label className="text-sm font-semibold text-gray-700">
+                    <Label className="text-sm font-semibold text-muted-foreground">
                       Result
                     </Label>
                     {response && (
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          response.status === "success"
-                            ? "border-green-200 bg-green-50 text-green-700"
-                            : "border-red-200 bg-red-50 text-red-600"
+                          response.has_failures
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : response.status === "success"
+                            ? "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400"
+                            : "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400"
                         }`}
                       >
-                        {response.status === "success" ? "Success" : "Failed"}
+                        {response.has_failures
+                          ? "Completed with errors"
+                          : response.status === "success"
+                          ? "Success"
+                          : "Failed"}
                       </span>
                     )}
                   </div>
@@ -878,16 +885,47 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                       workflow={workflow}
                     />
                   ) : testing && !response ? (
-                    <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-500">
+                    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Running the workflow…
                     </div>
                   ) : error ? (
-                    <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-md">
+                    <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-md dark:bg-red-500/15 dark:border-red-500/30 dark:text-red-400">
                       {error}
                     </div>
                   ) : response ? (
                     <div className="space-y-3">
+                      {/* One or more nodes failed even though the run completed
+                          (e.g. a ticket that was never created). The workflow still
+                          returned a response; this surfaces what went wrong. */}
+                      {response.has_failures &&
+                        Array.isArray(response.failed_nodes) &&
+                        response.failed_nodes.length > 0 && (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                            <div className="flex items-center gap-2 font-medium">
+                              <AlertTriangle className="h-4 w-4" />
+                              {response.failed_nodes.length === 1
+                                ? "1 node failed during this run"
+                                : `${response.failed_nodes.length} nodes failed during this run`}
+                            </div>
+                            <ul className="mt-1.5 list-disc space-y-1 pl-6">
+                              {response.failed_nodes.map((n) => (
+                                <li key={n.node_id}>
+                                  <span className="font-medium">
+                                    {n.name || n.type || n.node_id}
+                                  </span>
+                                  {n.error ? (
+                                    <span className="text-amber-700">: {n.error}</span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="mt-1.5 text-xs text-amber-700">
+                              The workflow still returned a response. Open the Execution
+                              tab to inspect each node.
+                            </div>
+                          </div>
+                        )}
                       {response?.status === "success" ? (
                         <>
                           {/* The user's test message */}
@@ -896,7 +934,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                               getMessageStyle("user").bgColor
                             } ${getMessageStyle("user").borderColor}`}
                           >
-                            <div className="font-semibold mb-1 text-xs uppercase text-blue-600">
+                            <div className="font-semibold mb-1 text-xs uppercase text-blue-600 dark:text-blue-400">
                               You
                             </div>
                             <div className="whitespace-pre-wrap">
@@ -909,8 +947,8 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
                           {/* Response or raw Debug view */}
                           {viewMode === "response" ? (
-                            <div className="p-3 rounded-md border bg-gray-50 border-gray-100">
-                              <div className="font-semibold mb-1 text-xs uppercase text-green-600">
+                            <div className="p-3 rounded-md border bg-muted border-border">
+                              <div className="font-semibold mb-1 text-xs uppercase text-green-600 dark:text-green-400">
                                 Response
                               </div>
                               {/* Play synthesized voice when the response carries audio */}
@@ -918,7 +956,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                 const audioUrl = getAudioUrl(response.output);
                                 return audioUrl ? (
                                   <div className="mb-3 space-y-2">
-                                    <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2">
+                                    <div className="flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-3 py-2 dark:text-teal-400 dark:bg-teal-500/15 dark:border-teal-500/30">
                                       <Volume2 className="h-4 w-4" />
                                       Voice response
                                     </div>
@@ -931,18 +969,18 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                 response.output &&
                                 (response.output as Record<string, unknown>)
                                   .parameters && (
-                                  <div className="mb-3 p-2 bg-white border rounded">
+                                  <div className="mb-3 p-2 bg-card border rounded">
                                     <div className="text-xs font-semibold mb-1">
                                       Parameters
                                     </div>
-                                    <div className="text-xs text-gray-700">
+                                    <div className="text-xs text-muted-foreground">
                                       datasource_id:{" "}
                                       {((
                                         (response.output as Record<string, unknown>)
                                           .parameters as Record<string, unknown>
                                       )?.datasource_id as string) || ""}
                                     </div>
-                                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto mt-1">
+                                    <pre className="text-xs bg-muted p-2 rounded overflow-auto mt-1">
                                       {JSON.stringify(
                                         ((
                                           (
@@ -977,8 +1015,8 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                               )}
                             </div>
                           ) : (
-                            <div className="p-3 rounded-md border bg-gray-50 border-gray-100">
-                              <div className="font-semibold mb-1 text-xs uppercase text-green-600">
+                            <div className="p-3 rounded-md border bg-muted border-border">
+                              <div className="font-semibold mb-1 text-xs uppercase text-green-600 dark:text-green-400">
                                 Debug View
                               </div>
                               <JsonViewer
@@ -993,20 +1031,20 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                           )}
                         </>
                       ) : (
-                        <div className="border border-red-200 rounded-md p-3 bg-red-50 text-sm text-red-600">
+                        <div className="border border-red-200 rounded-md p-3 bg-red-50 text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400">
                           Error processing workflow
                         </div>
                       )}
 
                       {response.workflow_id && (
-                        <div className="mt-2 text-xs text-gray-500">
+                        <div className="mt-2 text-xs text-muted-foreground">
                           Workflow ID: {response.workflow_id}
                         </div>
                       )}
                     </div>
                   ) : (
                     /* Empty state — nothing run yet */
-                    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-500">
+                    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
                       <MessageSquareText className="h-6 w-6" aria-hidden="true" />
                       <div className="text-sm font-medium">No results yet</div>
                       <div className="text-xs">

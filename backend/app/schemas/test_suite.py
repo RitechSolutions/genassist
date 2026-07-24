@@ -25,6 +25,17 @@ class TestCaseBase(BaseModel):
         default=None,
         description="Optional weight used when aggregating metrics.",
     )
+    source_conversation_id: Optional[UUID] = Field(
+        default=None,
+        description=(
+            "Conversation this case was imported from. Cases sharing a value "
+            "replay as one memory thread; null cases are independent."
+        ),
+    )
+    turn_index: Optional[int] = Field(
+        default=None,
+        description="Position of this turn within its source conversation.",
+    )
 
 
 class TestCaseCreate(TestCaseBase):
@@ -117,6 +128,13 @@ class TestResultBase(BaseModel):
     )
     metrics: Optional[Dict[str, TestResultMetrics]] = None
     error: Optional[str] = None
+    status: Optional[str] = Field(
+        default=None,
+        description=(
+            "scored | execution_failed | scoring_failed | skipped. Null for "
+            "results recorded before statuses were introduced."
+        ),
+    )
 
 
 class TestResultInDB(TestResultBase):
@@ -191,6 +209,20 @@ class BatchRunsRequest(BaseModel):
     )
 
 
+class StartedEvaluationRun(BaseModel):
+    """Outcome of starting one evaluation in a batch/workflow run.
+
+    ``run_id``/``suite_id`` are unset and ``error`` is populated when the
+    evaluation could not be queued (``status == "failed_to_start"``).
+    """
+
+    evaluation_id: UUID
+    run_id: Optional[UUID] = None
+    suite_id: Optional[UUID] = None
+    status: str
+    error: Optional[str] = None
+
+
 class TestEvaluationBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -226,4 +258,37 @@ class TestEvaluationInDB(TestEvaluationBase):
 
 class TestEvaluation(TestEvaluationInDB):
     pass
+
+
+class WorkflowEvaluationSummary(BaseModel):
+    """One overview row: a workflow (or the unassigned bucket) and its eval count.
+
+    ``health`` is the mean accuracy across the workflow's evaluations whose latest
+    run has finished, counting failed runs as 0; ``None`` when none have finished.
+    ``finished_count`` is how many evaluations contributed to ``health``.
+    ``any_running`` is true when any evaluation's latest run is queued or running.
+    """
+
+    workflow_id: Optional[UUID] = None
+    eval_count: int
+    health: Optional[float] = None
+    finished_count: int = 0
+    any_running: bool = False
+
+
+class PaginatedEvaluations(BaseModel):
+    """One page of a workflow's evaluations.
+
+    ``total`` is the count for the current search; ``total_unfiltered`` is the
+    workflow's full evaluation count (ignoring search), so the header can show
+    "N of M". ``any_running`` reflects the whole workflow (across all pages), not
+    just this page, so the client can block a duplicate "Run all".
+    """
+
+    items: List[TestEvaluationInDB] = Field(default_factory=list)
+    total: int
+    total_unfiltered: int
+    page: int
+    page_size: int
+    any_running: bool = False
 

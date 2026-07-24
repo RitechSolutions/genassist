@@ -15,7 +15,7 @@ export function AnalyticsChartCardSkeleton({
   className,
 }: AnalyticsChartCardSkeletonProps) {
   return (
-    <Card className={cn("bg-white shadow-sm", analyticsFadeUpClass, className)}>
+    <Card className={cn("bg-card shadow-sm", analyticsFadeUpClass, className)}>
       <CardHeader className="pb-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Skeleton className="h-4 w-40" />

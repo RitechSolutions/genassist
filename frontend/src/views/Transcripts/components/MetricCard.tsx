@@ -19,7 +19,7 @@ export function MetricCard({
   iconClassName = "",
 }: MetricCardProps) {
   return (
-    <div className={`flex flex-col items-center p-3 bg-gray-100 rounded-lg ${className}`}>
+    <div className={`flex flex-col items-center p-3 bg-muted rounded-lg ${className}`}>
       <Icon className={`w-5 h-5 mb-1 text-primary ${iconClassName}`} />
       <div className="text-sm font-medium">{value}</div>
       <span className="text-xs text-muted-foreground">{label}</span>
@@ -58,7 +58,7 @@ export function MetricCards({
         icon={Volume2}
         label="Sentiment"
         value={
-          <span className="px-2 py-0.5 text-xs font-normal rounded-full bg-yellow-100 text-orange-600 mb-1 capitalize">
+          <span className="px-2 py-0.5 text-xs font-normal rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-orange-600 dark:text-orange-400 mb-1 capitalize">
             {sentiment}
           </span>
         }

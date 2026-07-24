@@ -38,6 +38,7 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
     metrics: [
       { value: "exact_match", label: "Exact Match", description: "Output exactly equals the expected value" },
       { value: "contains", label: "Contains", description: "Output contains the expected text" },
+      { value: "not_contains", label: "Does Not Contain", description: "Output must not contain the specified text" },
       { value: "json_match", label: "JSON Match", description: "Output matches the expected JSON structure and values" },
     ],
   },
@@ -61,6 +62,7 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
 ];
 
 const CONFIG_METRICS = [
+  "not_contains",
   "nli_eval",
   "provenance_eval",
   "tool_used",
@@ -122,7 +124,7 @@ const MetricOption: React.FC<{
       <Label htmlFor={`metric-${metric.value}`} className="text-sm font-medium cursor-pointer">
         {metric.label}
       </Label>
-      <p className="text-xs text-gray-500 mt-0.5">{metric.description}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{metric.description}</p>
     </div>
   </div>
 );
@@ -151,6 +153,7 @@ export interface EvaluationWizardData {
   toolNode: string;
   toolResultNotEmpty: boolean;
   toolResultContains: string;
+  notContainsText: string;
   routeExpected: string;
   routeNode: string;
   actionNode: string;
@@ -247,6 +250,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     return `Passes when ${agentPart} calls ${toolPart}${extras}.`;
   };
 
+  // Does Not Contain config
+  const [notContainsText, setNotContainsText] = useState(initialData?.notContainsText ?? "");
+
   // Route Taken config
   const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
   const [routeNode, setRouteNode] = useState(initialData?.routeNode ?? "");
@@ -277,6 +283,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   const isConfigureStepValid = (): boolean => {
     if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
+    if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
     if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
     if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
     if (toolArgsInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
@@ -337,6 +344,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         toolNode,
         toolResultNotEmpty,
         toolResultContains,
+        notContainsText,
         routeExpected,
         routeNode,
         actionNode,
@@ -383,6 +391,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setToolResultNotEmpty(false);
     setToolResultContains("");
     setToolAdvancedOpen(false);
+    setNotContainsText("");
     setRouteExpected("");
     setRouteNode("");
     setActionNode("");
@@ -416,7 +425,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 placeholder="e.g. FAQ Regression Test"
                 className="mt-1.5"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Give your evaluation a descriptive name
               </p>
             </div>
@@ -453,7 +462,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Choose the dataset containing your test cases
               </p>
             </div>
@@ -488,7 +497,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
                 <div className="text-sm font-medium">Use Memory</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-muted-foreground">
                   Generate unique thread ID per run for conversation memory
                 </div>
               </div>
@@ -502,13 +511,13 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
           <div className="space-y-5">
             <div>
               <Label className="text-sm font-medium">Validation Methods *</Label>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Select at least one method to validate your agent's outputs
               </p>
             </div>
             {METRIC_GROUPS.map((group) => (
               <div key={group.label} className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {group.label}
                 </div>
                 {group.metrics.map((metric) => (
@@ -534,7 +543,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         return (
           <div className="space-y-4">
             {!needsConfigStep && (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <Settings className="h-12 w-12 mx-auto mb-3 text-gray-300" />
                 <p className="text-sm">No additional configuration needed.</p>
                 <p className="text-xs mt-1">
@@ -549,7 +558,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                   NLI Evaluation Config
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Uses workflow output as answer and expected output as evidence.
                 </p>
                 <div>
@@ -588,7 +597,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   <span className="w-2 h-2 rounded-full bg-green-500"></span>
                   Provenance Evaluation Config
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Uses workflow output as answer and expected output as context.
                 </p>
                 <div>
@@ -688,7 +697,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                   Tool Usage Config
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Checks whether an agent called a specific tool during the run.
                 </p>
                 <div>
@@ -699,7 +708,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     placeholder="e.g. search_handbook"
                     className="mt-1"
                   />
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Leave empty to check whether any tool was called.
                   </p>
                 </div>
@@ -711,7 +720,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     placeholder="Any agent"
                     className="mt-1"
                   />
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Defaults to any agent. Name one (id or label) to only count its calls — useful
                     when several agents share tool names.
                   </p>
@@ -721,7 +730,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     <div className="text-xs font-medium">
                       {toolShouldCall ? "Must be called" : "Should not be used"}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-muted-foreground">
                       Turn off to assert the tool was NOT called
                     </div>
                   </div>
@@ -733,7 +742,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     <button
                       type="button"
                       onClick={() => setToolAdvancedOpen((open) => !open)}
-                      className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                      className="text-xs font-medium text-muted-foreground hover:text-muted-foreground"
                     >
                       {toolAdvancedOpen ? "▾" : "▸"} Advanced validation
                     </button>
@@ -757,7 +766,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                         <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                           <div>
                             <div className="text-xs font-medium">Result must not be empty</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-muted-foreground">
                               Fail if the call returned nothing (e.g. an empty retrieval)
                             </div>
                           </div>
@@ -777,11 +786,34 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   </div>
                 )}
 
-                <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-0.5">
+                <div className="rounded-lg bg-muted border border-border px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">
                     Rule
                   </div>
-                  <p className="text-xs text-gray-600">{toolRuleSummary()}</p>
+                  <p className="text-xs text-muted-foreground">{toolRuleSummary()}</p>
+                </div>
+              </div>
+            )}
+
+            {metrics.includes("not_contains") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  Does Not Contain Config
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Fails the run if any of these phrases appears in the output. One phrase
+                  per line. Matching is case-insensitive.
+                </p>
+                <div>
+                  <Label className="text-xs">Forbidden Phrases *</Label>
+                  <Textarea
+                    value={notContainsText}
+                    onChange={(e) => setNotContainsText(e.target.value)}
+                    placeholder={"e.g.\ncompetitor name\nsocial security number"}
+                    rows={3}
+                    className="mt-1"
+                  />
                 </div>
               </div>
             )}
@@ -792,7 +824,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   <span className="w-2 h-2 rounded-full bg-orange-500"></span>
                   Route Taken Config
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Checks that a router node selected the expected branch.
                 </p>
                 <div>
@@ -822,7 +854,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   <span className="w-2 h-2 rounded-full bg-teal-500"></span>
                   Action Taken Config
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Checks that a specific side-effect node ran successfully. Provide a node
                   or a node type.
                 </p>
@@ -847,7 +879,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
                     <div className="text-xs font-medium">Must fire</div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-muted-foreground">
                       Turn off to assert the node did NOT run
                     </div>
                   </div>
@@ -862,7 +894,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   <span className="w-2 h-2 rounded-full bg-pink-500"></span>
                   LLM Judge Config
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Grades the answer against a rubric you write. One criterion per judge works best.
                 </p>
                 <div>
@@ -910,7 +942,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     placeholder="e.g. trace.retrievals"
                     className="mt-1 font-mono text-xs"
                   />
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Dotted path into the run to check the answer against (e.g. knowledge-base
                     retrievals).
                   </p>
@@ -949,7 +981,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                         "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
                         isActive && "bg-primary text-primary-foreground",
                         isCompleted && !isActive && "bg-primary/20 text-primary",
-                        !isActive && !isCompleted && "bg-gray-100 text-gray-500",
+                        !isActive && !isCompleted && "bg-muted text-muted-foreground",
                         isClickable && !isActive && "hover:bg-gray-200 cursor-pointer",
                         !isClickable && "opacity-50 cursor-not-allowed"
                       )}
@@ -965,7 +997,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                       <div
                         className={cn(
                           "flex-1 h-0.5 rounded-full max-w-8",
-                          index < currentStepIndex ? "bg-primary" : "bg-gray-200"
+                          index < currentStepIndex ? "bg-primary" : "bg-muted"
                         )}
                       />
                     )}

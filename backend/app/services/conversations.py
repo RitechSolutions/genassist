@@ -364,13 +364,18 @@ class ConversationService:
         # Get messages for analysis
         gpt_analysis = await self._analyze_transcript(conversation_id, resolved_analyst_id)
 
+        # Snapshot any pre-existing analysis so a replace (e.g. a concurrent backfill
+        # already created one) adjusts operator stats instead of double-counting.
+        previous_analysis = await self.conversation_analysis_service.get_by_conversation_id(
+                saved_conversation.id)
+
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis, resolved_analyst_id,
                     saved_conversation.id))
 
         # Update operator statistics
         await self.operator_statistics_service.update_from_analysis(conversation_analysis, conversation.operator_id,
-                saved_conversation.duration)
+                saved_conversation.duration, previous_analysis=previous_analysis)
 
         # Store in Zendesk if enabled
         store_in_zendesk = (os.getenv("STORE_CONVERSATIONS_IN_ZENDESK", "false").lower() == "true")
@@ -456,11 +461,15 @@ class ConversationService:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
 
         gpt_analysis = await self._analyze_transcript(conversation_id, llm_analyst_id)
+        # Snapshot any pre-existing analysis so re-analysis replaces the row and adjusts
+        # operator stats in place rather than counting the conversation twice.
+        previous_analysis = await self.conversation_analysis_service.get_by_conversation_id(
+                conversation_id)
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis, llm_analyst_id,
                     conversation_id))
         await self.operator_statistics_service.update_from_analysis(conversation_analysis, conversation.operator_id,
-                conversation.duration)
+                conversation.duration, previous_analysis=previous_analysis)
 
 
     async def store_zendesk_analysis(self, saved_conversation: ConversationModel,

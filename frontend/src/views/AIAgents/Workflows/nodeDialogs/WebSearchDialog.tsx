@@ -124,7 +124,7 @@ export const WebSearchDialog: React.FC<
           placeholder="Search the web for..."
           className="break-all w-full"
         />
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Use {"{{field}}"} to define dynamic parameters
         </div>
       </div>
@@ -141,7 +141,7 @@ export const WebSearchDialog: React.FC<
           placeholder="5"
           className="w-full"
         />
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Upper bound (up to 20); filtering may return fewer.
         </div>
       </div>
@@ -160,7 +160,7 @@ export const WebSearchDialog: React.FC<
             <SelectItem value="advanced">Advanced</SelectItem>
           </SelectContent>
         </Select>
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           Advanced fetches the most query-relevant page content from the top
           results within a total budget.
         </div>
@@ -169,7 +169,7 @@ export const WebSearchDialog: React.FC<
       <div className="space-y-2">
         <button
           type="button"
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-muted-foreground"
           onClick={() => setShowAdvanced((v) => !v)}
         >
           {showAdvanced ? (
@@ -191,7 +191,7 @@ export const WebSearchDialog: React.FC<
                 placeholder="example.com"
                 className="break-all w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Restrict results to one domain.
               </div>
             </div>
@@ -205,7 +205,7 @@ export const WebSearchDialog: React.FC<
                 placeholder="reddit.com, pinterest.com"
                 className="break-all w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Comma-separated, up to 10 domains.
               </div>
             </div>
@@ -224,7 +224,7 @@ export const WebSearchDialog: React.FC<
                 placeholder="2000"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Per-result content cap in advanced depth.
               </div>
             </div>
@@ -245,7 +245,7 @@ export const WebSearchDialog: React.FC<
                 placeholder="8000"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Total enrichment budget across results in advanced depth.
               </div>
             </div>
@@ -262,7 +262,7 @@ export const WebSearchDialog: React.FC<
                 placeholder="600"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Serve a cached result newer than this. 0 disables caching.
               </div>
             </div>

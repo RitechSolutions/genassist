@@ -61,7 +61,7 @@ export function ToolCard({
   }
 
   return (
-    <Card className="divide-y divide-gray-200 rounded-lg bg-white">
+    <Card className="divide-y divide-border rounded-lg bg-card">
       {filtered.map((tool) => (
         <div
           key={tool.id}
@@ -74,12 +74,12 @@ export function ToolCard({
             </div>
             {tool.id && (
               <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-gray-700">ID:</span>{" "}
+                <span className="font-medium text-muted-foreground">ID:</span>{" "}
                 <span className="truncate">{tool.id}</span>
               </p>
             )}
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-gray-700">Description:</span>{" "}
+              <span className="font-medium text-muted-foreground">Description:</span>{" "}
               <span className="text-wrap">{tool.description.length < 255 ? tool.description : tool.description + '...'}</span>
             </p>
           </div>

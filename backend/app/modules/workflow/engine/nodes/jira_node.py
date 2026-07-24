@@ -7,6 +7,7 @@ from typing import Dict, Any
 from uuid import UUID
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 from app.modules.integration.jira import JiraConnector
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
@@ -48,7 +49,7 @@ class JiraNode(BaseNode):
         if missing_parameters:
             error_msg = f"Jira Task Creator node missing these parameters: {', '.join(missing_parameters)}"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         try:
             # Get app settings from database
@@ -76,4 +77,4 @@ class JiraNode(BaseNode):
         except Exception as e:
             error_msg = f"Error creating Jira task: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=500, output={"status": 500, "data": {"error": error_msg}})

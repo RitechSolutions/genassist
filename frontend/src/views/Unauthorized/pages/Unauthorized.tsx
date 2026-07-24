@@ -3,11 +3,11 @@ import { Button } from "@/components/button";
 
 const UnauthorizedPage = () => {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center bg-white p-8 rounded-lg shadow-xl max-w-lg w-full">
-        <p className="text-black font-bold mb-4 text-lg">Unauthorized</p>
-        <Lock className="text-gray-500 mb-6 w-12 h-12 mx-auto" />
-        <p className="text-xl text-gray-600 mb-6">
+    <div className="min-h-screen flex items-center justify-center bg-muted">
+      <div className="text-center bg-card p-8 rounded-lg shadow-xl max-w-lg w-full">
+        <p className="text-foreground font-bold mb-4 text-lg">Unauthorized</p>
+        <Lock className="text-muted-foreground mb-6 w-12 h-12 mx-auto" />
+        <p className="text-xl text-muted-foreground mb-6">
           You don't have permission to access this page.
         </p>
         <Button

@@ -14,6 +14,8 @@ class ErrorKey(Enum):
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND"
+    TEMPLATE_INVALID = "TEMPLATE_INVALID"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
     INVALID_FILE_FORMAT = "invalid_file_format"
     NO_SELECTED_FILE = "no_selected_file"
@@ -141,6 +143,7 @@ class ErrorKey(Enum):
     ERROR_MONITOR_JOB_BEDROCK = "ERROR_MONITOR_JOB_BEDROCK"
     ERROR_CANCEL_JOB_BEDROCK = "ERROR_CANCEL_JOB_BEDROCK"
     ERROR_DEPLOY_MODEL_BEDROCK = "ERROR_DEPLOY_MODEL_BEDROCK"
+    ERROR_UNDEPLOY_MODEL_BEDROCK = "ERROR_UNDEPLOY_MODEL_BEDROCK"
     ERROR_BEDROCK_NOT_CONFIGURED = "ERROR_BEDROCK_NOT_CONFIGURED"
     ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN = "ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
@@ -176,6 +179,8 @@ ERROR_MESSAGES = {
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
+        ErrorKey.TEMPLATE_NOT_FOUND: "Template not found.",
+        ErrorKey.TEMPLATE_INVALID: "The template is invalid or cannot be used.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
         ErrorKey.NO_SELECTED_FILE: "No selected file",
         ErrorKey.INVALID_RECORDED_AT: "Invalid recorded_at format. Use ISO 8601: YYYY-MM-DDTHH:MM:SSZ",
@@ -301,6 +306,7 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_MONITOR_JOB_BEDROCK: "There was an error fetching the Bedrock job.",
         ErrorKey.ERROR_CANCEL_JOB_BEDROCK: "There was an error stopping the Bedrock job.",
         ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK: "Failed to deploy the customized Bedrock model.",
+        ErrorKey.ERROR_UNDEPLOY_MODEL_BEDROCK: "Failed to undeploy the customized Bedrock model.",
         ErrorKey.ERROR_BEDROCK_NOT_CONFIGURED: "Bedrock fine-tuning is not configured. Set the IAM role ARN and S3 bucket.",
         ErrorKey.ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN: "Training data must be uploaded through this app and belong to your account.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",

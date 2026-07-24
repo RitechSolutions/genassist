@@ -18,6 +18,16 @@ class AgentPermissions:
     SWITCH = "switch:agent"
 
 
+class TemplatePermissions:
+    """Template Marketplace permissions"""
+    READ = "read:template"
+    CREATE = "create:template"
+    INSTALL = "install:template"
+    DELETE = "delete:template"
+    PUBLISH = "publish:template"
+    APPROVE = "approve:template"
+
+
 class ApiKeyPermissions:
     """API Key CRUD permissions"""
     CREATE = "create:api_key"
@@ -203,6 +213,7 @@ class BedrockPermissions:
     READ_JOB = "read:bedrock_job"
     READ_FINE_TUNABLE_MODELS = "read:bedrock_fine_tunable_models"
     DEPLOY_MODEL = "deploy:bedrock_model"
+    UNDEPLOY_MODEL = "undeploy:bedrock_model"
 
 
 class LocalFineTuningPermissions:
@@ -247,6 +258,7 @@ class Permissions:
             ...
     """
     Agent = AgentPermissions
+    Template = TemplatePermissions
     ApiKey = ApiKeyPermissions
     AppSettings = AppSettingsPermissions
     AuditLog = AuditLogPermissions
@@ -293,7 +305,7 @@ def get_all_permission_constants() -> set[str]:
 
     # Get all permission classes
     permission_classes = [
-        AgentPermissions, ApiKeyPermissions, AppSettingsPermissions,
+        AgentPermissions, TemplatePermissions, ApiKeyPermissions, AppSettingsPermissions,
         AuditLogPermissions, ConversationPermissions, DataSourcePermissions,
         FeatureFlagPermissions, KnowledgeBasePermissions, LlmAnalystPermissions,
         LlmProviderPermissions, MlModelPermissions, OperatorPermissions,

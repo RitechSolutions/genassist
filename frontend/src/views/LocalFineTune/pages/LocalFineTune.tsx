@@ -55,7 +55,7 @@ export default function LocalFineTune() {
           <LocalFineTuneListSummary jobs={jobs} loading={loading} />
 
           {!loading && jobs.length === 0 && !error && (
-            <Card className="bg-blue-50/90 border-blue-200/80 shadow-sm animate-fade-up">
+            <Card className="bg-blue-50/90 border-blue-200/80 shadow-sm animate-fade-up dark:bg-blue-500/15 dark:border-blue-500/30">
               <CardContent className="p-4 flex items-start gap-3">
                 <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
                 <p className="text-sm text-blue-900 leading-relaxed">

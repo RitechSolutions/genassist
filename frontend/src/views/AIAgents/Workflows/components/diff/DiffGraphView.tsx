@@ -102,14 +102,14 @@ const DiffGraphPane: React.FC<DiffGraphPaneProps> = ({
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <div className="flex items-baseline justify-between gap-2 px-1 pb-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{title}</span>
-        <span className="truncate text-xs font-medium text-slate-600" title={subtitle}>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
+        <span className="truncate text-xs font-medium text-muted-foreground" title={subtitle}>
           {subtitle}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 bg-slate-50/60">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/60">
         {displayNodes.length === 0 ? (
-          <div className="flex h-full items-center justify-center p-4 text-center text-xs text-slate-500">
+          <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
             This version has no nodes.
           </div>
         ) : (
@@ -177,12 +177,12 @@ const DiffGraphView: React.FC<DiffGraphViewProps> = ({ diff }) => {
       </div>
 
       {/* Shared detail panel: reveals the selected node's field-level changes (FR-13). */}
-      <div className="h-40 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="h-40 shrink-0 overflow-hidden rounded-lg border border-border bg-card">
         {selectedNode && selectedStyle ? (
           <div className="flex h-full flex-col">
-            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+            <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-2">
               <span className={cn('h-2 w-2 shrink-0 rounded-full', selectedStyle.dotClass)} aria-hidden="true" />
-              <span className="truncate text-sm font-medium text-slate-700">{selectedNode.label}</span>
+              <span className="truncate text-sm font-medium text-muted-foreground">{selectedNode.label}</span>
               <span
                 className={cn(
                   'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium',
@@ -201,7 +201,7 @@ const DiffGraphView: React.FC<DiffGraphViewProps> = ({ diff }) => {
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {selectedNode.status === 'unchanged'
                     ? 'This node is unchanged between the two versions.'
                     : selectedNode.status === 'added'
@@ -212,7 +212,7 @@ const DiffGraphView: React.FC<DiffGraphViewProps> = ({ diff }) => {
             </ScrollArea>
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center px-3 text-center text-xs text-slate-500">
+          <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground">
             Select a node in either graph to see its changes.
           </div>
         )}

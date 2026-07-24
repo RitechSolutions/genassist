@@ -89,10 +89,10 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
 
       return (
         <div key={key} className="ml-2">
-          <div className="flex items-center gap-2 py-1 px-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
+          <div className="flex items-center gap-2 py-1 px-2 bg-muted rounded hover:bg-muted transition-colors">
             <button
               onClick={() => toggleExpanded(key)}
-              className="text-gray-500 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50 flex-shrink-0"
+              className="text-muted-foreground hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50 flex-shrink-0"
             >
               {isExpanded ? (
                 <ChevronDown className="h-3 w-3" />
@@ -113,12 +113,12 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
               <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
             </div>
 
-            <span className="text-gray-400 text-xs">{typeLabel}</span>
+            <span className="text-muted-foreground text-xs">{typeLabel}</span>
             {!isExpanded && <span className="text-gray-300 text-xs">...</span>}
           </div>
 
           {isExpanded && (
-            <div className="ml-4 mt-1 border-l border-gray-200 pl-3 bg-white">
+            <div className="ml-4 mt-1 border-l border-border pl-3 bg-card">
               {isArray ? (
                 (value as any[]).map((item, index) => {
                   const itemPath = buildArrayItemPath(currentPath, index);
@@ -177,7 +177,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
 
       return (
         <div key={key} className="ml-2">
-          <div className="flex items-center gap-2 py-1 px-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
+          <div className="flex items-center gap-2 py-1 px-2 bg-muted rounded hover:bg-muted transition-colors">
             {/* Draggable key badge for empty containers */}
             <div
               draggable
@@ -190,7 +190,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
               <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
             </div>
 
-            <span className="text-gray-400 text-xs">{typeLabel}</span>
+            <span className="text-muted-foreground text-xs">{typeLabel}</span>
           </div>
         </div>
       );
@@ -221,7 +221,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
     return (
       <div
         key={key}
-        className="flex items-center justify-between ml-2 py-1 px-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors"
+        className="flex items-center justify-between ml-2 py-1 px-2 bg-muted rounded hover:bg-muted transition-colors"
       >
         <div className="flex items-center gap-2 flex-1 min-w-max">
           {/* Draggable key badge */}
@@ -238,7 +238,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
 
           {/* Value with tooltip for long text */}
           <span
-            className="text-gray-600 text-xs font-mono whitespace-nowrap cursor-default"
+            className="text-muted-foreground text-xs font-mono whitespace-nowrap cursor-default"
             title={fullValueTooltip}
           >
             {displayValue}
@@ -249,7 +249,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   };
 
   return (
-    <div className="space-y-1 bg-white">
+    <div className="space-y-1 bg-card">
       {Object.entries(data).map(([key, value]) => {
         const currentPath = basePath ? `${basePath}.${key}` : key;
         return renderValue(key, value, currentPath);

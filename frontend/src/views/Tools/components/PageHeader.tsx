@@ -12,10 +12,10 @@ export const PageHeader: FC<PageHeaderProps> = ({ title, onBack }) => (
     <Button
       variant="ghost"
       size="icon"
-      className="p-2 rounded-full border border-[#E4E4E7] bg-white"
+      className="p-2 rounded-full border border-[#E4E4E7] bg-card"
       onClick={onBack}
     >
-      <ArrowLeft className="w-8 h-8 text-gray-600" />
+      <ArrowLeft className="w-8 h-8 text-muted-foreground" />
     </Button>
     <h1 className="text-2xl font-semibold">{title}</h1>
   </div>

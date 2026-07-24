@@ -13,6 +13,7 @@ from app.modules.workflow.agents.memory import InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents import orchestrator
 from app.modules.workflow.agents.sub_agents import session as sub_session
 from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
+from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
 
@@ -70,7 +71,10 @@ async def test_agent_internal_error_shape():
     with stack, patch.object(AgentNode, "get_connected_nodes", return_value=[]):
         output = await node.process(dict(_CONFIG))
 
-    assert output == {
+    failure = is_node_failure(output)
+    assert failure is not None
+    assert failure["error"] == "boom"
+    assert failure["output"] == {
         "message": "The agent could not complete your request: boom",
         "error": "boom",
         "steps": [],
@@ -85,7 +89,10 @@ async def test_raised_exception_shape():
     with stack, patch.object(AgentNode, "get_connected_nodes", return_value=[]):
         output = await node.process(dict(_CONFIG))
 
-    assert output == {
+    failure = is_node_failure(output)
+    assert failure is not None
+    assert failure["error"] == "kaboom"
+    assert failure["output"] == {
         "message": "The agent could not complete your request: kaboom",
         "error": "kaboom",
     }

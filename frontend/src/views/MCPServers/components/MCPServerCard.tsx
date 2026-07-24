@@ -174,13 +174,13 @@ export function MCPServerCard({
         notFoundMessage="No matching MCP servers"
         emptyState={
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <Database className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <Database className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">
               {searchQuery ? "No matching MCP servers" : "No MCP servers found"}
             </h3>
-            <p className="text-sm text-gray-500 max-w-sm px-4">
+            <p className="text-sm text-muted-foreground max-w-sm px-4">
               {searchQuery
                 ? "Try adjusting your search query."
                 : "Add your first MCP server to connect external tools and capabilities."}

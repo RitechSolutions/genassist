@@ -25,3 +25,7 @@ class TestCalculateCost:
     def test_unknown_model_uses_default_pricing(self):
         cost = self.calculator.calculate_cost("openai", "unknown-model-xyz", 1000, 1000)
         assert cost > 0
+
+    def test_bedrock_nova_lite(self):
+        cost = self.calculator.calculate_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 1000, 1000)
+        assert abs(cost - 0.0005) < 0.0001

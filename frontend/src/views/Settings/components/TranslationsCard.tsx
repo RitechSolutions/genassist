@@ -107,7 +107,7 @@ export function TranslationsCard({
   const emptyState = useMemo(
     () => (
       <ListEmptyState
-        icon={<Languages className="h-12 w-12 text-gray-400" />}
+        icon={<Languages className="h-12 w-12 text-muted-foreground" />}
         title={
           isSearchActive
             ? "No matching translations"

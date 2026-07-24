@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 from app.modules.integration.gmail_connector import GmailConnector
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,11 @@ class GmailToolNode(BaseNode):
         if not operation:
             error_msg = "No operation specified for Gmail tool"
             logger.error(error_msg)
-            self.output = {
-                "status": 400,
-                "data": {"error": error_msg},
-                "operation": "unknown"
-            }
-            return self.output
+            return node_failure(
+                error_msg,
+                code=400,
+                output={"status": 400, "data": {"error": error_msg}, "operation": "unknown"},
+            )
 
         # Get input data from connected edges (this would be handled by the engine)
         # For now, we'll use default values
@@ -111,11 +111,20 @@ class GmailToolNode(BaseNode):
                 }
 
             # self.save_output(response)
+            # A helper (or the unsupported-operation branch) may return an HTTP
+            # error envelope; record it as a failure while preserving the payload.
+            if isinstance(response, dict) and response.get("status", 200) >= 400:
+                error_msg = (response.get("data") or {}).get("error", "Gmail operation failed")
+                return node_failure(error_msg, code=response.get("status"), output=response)
             return response
         except Exception as e:
             error_msg = f"Error processing Gmail operation: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}, "operation": operation}
+            return node_failure(
+                error_msg,
+                code=500,
+                output={"status": 500, "data": {"error": error_msg}, "operation": operation},
+            )
 
     async def _send_email(self, to: str, subject: str, body: str,
                           html_body: Optional[str] = None, cc: Optional[List[str]] = None,

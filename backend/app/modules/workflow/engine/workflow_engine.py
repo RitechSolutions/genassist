@@ -70,6 +70,18 @@ from app.modules.workflow.utils import process_path_based_input_data
 logger = logging.getLogger(__name__)
 
 
+class MemoryPersistenceError(Exception):
+    """Raised when an awaited memory write fails, leaving the thread incomplete."""
+
+
+def should_persist_to_memory(
+    initial_values: Dict[str, Any], persist: bool, status: str
+) -> bool:
+    """Persist a completed turn on presence of a message field, so an intentionally
+    empty turn and its response still enter memory while a failed run never does."""
+    return bool(persist) and status == "completed" and "message" in initial_values
+
+
 def _sanitize_output_for_memory(output: Any) -> Any:
     """Strip nested audio payloads (base64 blobs) from an output before it is
     persisted to conversation memory. A bare audio dict (e.g. a TTS node's
@@ -269,6 +281,7 @@ class WorkflowEngine:
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
         registry_managed: bool = False,
+        await_persist: bool = False,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -280,6 +293,9 @@ class WorkflowEngine:
             persist: Whether to persist conversation to memory
             registry_managed: True only on the interactive registry path; gates
                 persistent (task/chat) sub-agent delegations
+            await_persist: Wait for the memory write instead of scheduling it in
+                the background. Required when replaying ordered turns so a turn is
+                stored before the next one reads it
 
         Returns:
             WorkflowState with execution results
@@ -353,15 +369,21 @@ class WorkflowEngine:
                 raise
 
             try:
-                if initial_values.get("message") and persist:
-                    asyncio.create_task(
-                        state.get_memory().add_input_output(
-                            initial_values.get("message", ""),
-                            _sanitize_output_for_memory(state.output)
-                        )
+                if should_persist_to_memory(initial_values, bool(persist), state.status):
+                    persistence = state.get_memory().add_input_output(
+                        initial_values.get("message", ""),
+                        _sanitize_output_for_memory(state.output)
                     )
+                    if await_persist:
+                        await persistence
+                    else:
+                        asyncio.create_task(persistence)
             except Exception as e:
                 logger.error(f"Error adding message to memory: {e}")
+                # Callers replaying ordered turns depend on this write; the next
+                # turn would otherwise run with incomplete context
+                if await_persist:
+                    raise MemoryPersistenceError(str(e)) from e
             return state
 
     def _find_starting_nodes(self) -> List[str]:

@@ -1,7 +1,7 @@
 import logging
 import json
-from typing import Any, Dict, Iterable, List
-from uuid import UUID
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from uuid import UUID, uuid4
 
 from injector import inject
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,7 +17,10 @@ from app.db.models.test_suite import (
     TestEvaluationModel,
 )
 from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.engine.workflow_engine import (
+    MemoryPersistenceError,
+    WorkflowEngine,
+)
 from app.modules.workflow.llm.provider import LLMProvider
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.repositories.conversations import ConversationRepository
@@ -30,6 +33,8 @@ from app.repositories.test_suite import (
 )
 from app.schemas.test_suite import (
     ImportCasesFromConversationRequest,
+    PaginatedEvaluations,
+    StartedEvaluationRun,
     TestCaseCreate,
     TestCaseInDB,
     TestCaseUpdate,
@@ -44,11 +49,11 @@ from app.schemas.test_suite import (
     TestSuiteCreate,
     TestSuiteUpdate,
     TestSuiteInDB,
+    WorkflowEvaluationSummary,
 )
 from app.schemas.workflow import WorkflowInDB
 from app.services.workflow import WorkflowService
 from app.core.tenant_scope import get_tenant_context
-from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.services.realtime_notifications import emit_notification, notification_payload
 
@@ -79,6 +84,50 @@ def _truncate_output(output: Any, max_length: int = 64000) -> Any:
     if isinstance(output, str) and len(output) > max_length:
         return output[: max_length - 3] + "..."
     return output
+
+
+# Reserved key holding run-level counts alongside the per-technique metrics.
+RUN_TOTALS_KEY = "_totals"
+
+
+class ResultStatus:
+    """Why a case did or did not produce metrics."""
+
+    SCORED = "scored"
+    EXECUTION_FAILED = "execution_failed"
+    SCORING_FAILED = "scoring_failed"
+    SKIPPED = "skipped"
+
+
+def _failure_reason(state: Any) -> str:
+    """Read the failure off the state's error list; ``output`` is empty on failure."""
+    errors = getattr(state, "errors", None) or []
+    if errors:
+        last = errors[-1]
+        message = last.get("message") if isinstance(last, dict) else str(last)
+        if message:
+            return str(message)
+    return "Workflow execution failed"
+
+
+def _group_cases_into_conversations(
+    cases: List["TestCaseInDB"],
+) -> List[List["TestCaseInDB"]]:
+    """
+    Group cases by source conversation and order each group by turn index.
+
+    Cases without a source conversation are independent single-turn conversations,
+    so they are keyed by their own id rather than collapsing into one group.
+    """
+    conversations: Dict[Any, List["TestCaseInDB"]] = {}
+    for case in cases:
+        key = case.source_conversation_id or case.id
+        conversations.setdefault(key, []).append(case)
+
+    for group in conversations.values():
+        group.sort(key=lambda case: (case.turn_index or 0, case.created_at))
+
+    return list(conversations.values())
 
 
 def _read_path(data: Any, path: str) -> Any:
@@ -244,6 +293,32 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
     }
 
 
+def _clean_forbidden_phrases(config: Dict[str, Any]) -> List[str]:
+    """Forbidden phrases from config: trimmed, de-duplicated (casefold), legacy ``text`` accepted.
+
+    Only a string or a list of strings is accepted; any other shape yields no phrases.
+    """
+    raw = config.get("phrases")
+    if raw is None:
+        raw = config.get("text")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    phrases: List[str] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, str):
+            continue
+        cleaned = entry.strip()
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        phrases.append(cleaned)
+    return phrases
+
+
 class SimpleEvaluatorRegistry:
     """
     Lightweight evaluator registry inspired by OpenEvals.
@@ -260,6 +335,7 @@ class SimpleEvaluatorRegistry:
         self._evaluators = {
             "exact_match": self._exact_match,
             "contains": self._contains,
+            "not_contains": self._not_contains,
             "json_match": self._json_match,
             "field_equals": self._field_equals,
             "no_errors": self._no_errors,
@@ -354,12 +430,40 @@ class SimpleEvaluatorRegistry:
     ) -> Dict[str, Any]:
         actual = _normalize_text(outputs)
         expected = _normalize_text(reference_outputs)
-        passed = bool(actual and expected and expected in actual)
+        passed = bool(actual and expected and expected.casefold() in actual.casefold())
         return {
             "key": "contains",
             "score": passed,
             "passed": passed,
             "comment": None if passed else "Expected text not found in output.",
+        }
+
+    async def _not_contains(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - not used by this evaluator
+        outputs: Any,
+        reference_outputs: Any,  # noqa: ARG002 - forbidden phrases come from config
+        payload: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Pass when none of the configured forbidden phrases appear in the output."""
+        phrases = _clean_forbidden_phrases(config)
+        if not phrases:
+            return {
+                "key": "not_contains",
+                "score": False,
+                "passed": False,
+                "comment": "No forbidden phrases configured.",
+            }
+        actual = _normalize_text(outputs).casefold()
+        found = [phrase for phrase in phrases if phrase.casefold() in actual]
+        passed = not found
+        return {
+            "key": "not_contains",
+            "score": passed,
+            "passed": passed,
+            "comment": None if passed else f"Forbidden phrases found in output: {', '.join(found)}.",
         }
 
     async def _json_match(
@@ -914,6 +1018,8 @@ class TestSuiteService:
             expected_output=data.expected_output,
             tags=data.tags,
             weight=data.weight,
+            source_conversation_id=data.source_conversation_id,
+            turn_index=data.turn_index,
         )
         created = await self.case_repo.create(orm)
         return TestCaseInDB.model_validate(created, from_attributes=True)
@@ -951,21 +1057,45 @@ class TestSuiteService:
         if not conversation:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
-        if replace:
-            await self.case_repo.soft_delete_all_for_suite(suite_id)
+        turns = extract_qa_pairs(conversation.messages)
+        if not turns:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.TRANSCRIPT_EMPTY,
+                error_detail="Conversation has no question/answer turns to import",
+            )
 
-        created: List[TestCaseInDB] = []
-        for question, answer in extract_qa_pairs(conversation.messages):
-            orm = TestCaseModel(
+        # Replacing the suite wipes every conversation; otherwise re-importing the
+        # same conversation replaces only its own turns, keeping the append idempotent.
+        if replace:
+            await self.case_repo.soft_delete_all_for_suite(suite_id, commit=False)
+        else:
+            await self.case_repo.soft_delete_for_conversation(
+                suite_id, conversation_id, commit=False
+            )
+
+        cases = [
+            TestCaseModel(
                 suite_id=suite_id,
+                source_conversation_id=conversation_id,
+                turn_index=turn_index,
                 input_data={"message": question},
                 expected_output={"value": answer},
                 tags=["imported"],
             )
-            case = await self.case_repo.create(orm)
-            created.append(TestCaseInDB.model_validate(case, from_attributes=True))
+            for turn_index, (question, answer) in enumerate(turns)
+        ]
+        created = await self.case_repo.create_many(cases)
+        return [TestCaseInDB.model_validate(c, from_attributes=True) for c in created]
 
-        return created
+    async def remove_conversation_from_suite(
+        self, suite_id: UUID, conversation_id: UUID
+    ) -> None:
+        """Soft-delete the cases imported from one conversation into a suite."""
+        suite = await self.suite_repo.get_by_id(suite_id)
+        if not suite:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        await self.case_repo.soft_delete_for_conversation(suite_id, conversation_id)
 
     # ---- Runs -------------------------------------------------------------
 
@@ -1049,19 +1179,73 @@ class TestSuiteService:
         evaluator_keys = run.techniques or self.evaluators.default_techniques()
 
         per_case_metrics: List[Dict[str, Any]] = []
+        status_counts: Dict[str, int] = {}
 
-        async def execute_single(case: TestCaseInDB) -> None:
+        async def record_case_error(
+            case: TestCaseInDB, error: str, status: str
+        ) -> None:
+            status_counts[status] = status_counts.get(status, 0) + 1
+            await self.result_repo.create(
+                TestResultModel(
+                    run_id=run.id,
+                    case_id=case.id,
+                    actual_output=None,
+                    metrics=None,
+                    error=error,
+                    status=status,
+                )
+            )
+
+        async def execute_single(case: TestCaseInDB, thread_id: str | None) -> bool:
+            """Run one turn. Returns False when the conversation must not continue."""
             merged_input: Dict[str, Any] = {}
             if run_input_metadata:
                 merged_input.update(run_input_metadata)
             if suite.default_input_metadata:
                 merged_input.update(suite.default_input_metadata)
             merged_input.update(case.input_data or {})
+
+            # Applied last so stored run, suite or case metadata cannot point a
+            # case at another conversation's memory thread.
+            if thread_id:
+                merged_input["thread_id"] = thread_id
+            else:
+                merged_input.pop("thread_id", None)
+            # Execution and scoring fail differently: a turn that never ran or never
+            # reached memory breaks the thread, while a scoring error does not.
             try:
                 state = await engine.execute_from_node(
                     input_data=merged_input,
-                    thread_id=merged_input.get("thread_id"),
+                    thread_id=thread_id,
+                    persist=bool(thread_id),
+                    await_persist=bool(thread_id),
                 )
+            except MemoryPersistenceError as exc:
+                logger.error("Memory write failed for test case %s: %s", case.id, exc)
+                await record_case_error(
+                    case,
+                    f"Memory write failed, later turns skipped: {exc}",
+                    ResultStatus.EXECUTION_FAILED,
+                )
+                return False
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Error executing test case %s: %s", case.id, exc)
+                await record_case_error(
+                    case, f"Execution failed: {exc}", ResultStatus.EXECUTION_FAILED
+                )
+                return False
+
+            # The engine reports some failures on the state instead of raising, and
+            # a failed run is never written to memory.
+            if getattr(state, "status", None) == "failed":
+                reason = _failure_reason(state)
+                logger.error("Test case %s finished in a failed state: %s", case.id, reason)
+                await record_case_error(
+                    case, f"Execution failed: {reason}", ResultStatus.EXECUTION_FAILED
+                )
+                return False
+
+            try:
                 output = state.output
                 truncated_output = _truncate_output(output)
                 # Capture full workflow execution response in the same shape used
@@ -1084,23 +1268,61 @@ class TestSuiteService:
                     execution_trace=execution_trace,
                     metrics=metrics,
                     error=None,
+                    status=ResultStatus.SCORED,
                 )
                 await self.result_repo.create(result)
                 per_case_metrics.append(metrics)
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.exception("Error executing test case %s: %s", case.id, exc)
-                result = TestResultModel(
-                    run_id=run.id,
-                    case_id=case.id,
-                    actual_output=None,
-                    metrics=None,
-                    error=str(exc),
+                status_counts[ResultStatus.SCORED] = (
+                    status_counts.get(ResultStatus.SCORED, 0) + 1
                 )
-                await self.result_repo.create(result)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Error scoring test case %s: %s", case.id, exc)
+                await record_case_error(
+                    case, f"Scoring failed: {exc}", ResultStatus.SCORING_FAILED
+                )
+            # The turn ran and persisted, so the conversation stays intact.
+            return True
 
-        # Execute sequentially for now to keep DB/session usage simple
-        for case in cases:
-            await execute_single(case)
+        use_memory = bool((run_input_metadata or {}).get("use_memory"))
+        conversations = _group_cases_into_conversations(cases)
+
+        # A fresh thread per conversation per run isolates conversations from each
+        # other and stops a run from reading a previous run's memory. Without memory
+        # every case runs threadless, so the engine isolates each one.
+        for conversation_cases in conversations:
+            thread_id = str(uuid4()) if use_memory else None
+
+            # A turn only reaches memory when its input carries a message field.
+            # Single-turn cases need no memory, so any input shape is valid there.
+            is_multi_turn = bool(thread_id) and len(conversation_cases) > 1
+
+            for position, case in enumerate(conversation_cases):
+                # A turn with no message field cannot be written to memory, so every
+                # turn after it would replay without its context. An empty message is
+                # fine: the field exists and is persisted.
+                missing_message = is_multi_turn and "message" not in (case.input_data or {})
+                if missing_message:
+                    await record_case_error(
+                        case,
+                        "Skipped: turn has no 'message' field, so it cannot join "
+                        "the conversation's memory",
+                        ResultStatus.SKIPPED,
+                    )
+                elif await execute_single(case, thread_id):
+                    continue
+
+                # Only a shared thread creates a dependency between turns. Without
+                # memory each case is independent, so a failure stops nothing.
+                if not thread_id:
+                    continue
+
+                for skipped in conversation_cases[position + 1:]:
+                    await record_case_error(
+                        skipped,
+                        "Skipped: an earlier turn was not persisted to memory",
+                        ResultStatus.SKIPPED,
+                    )
+                break
 
         # Aggregate metrics
         summary: Dict[str, Any] = {}
@@ -1125,6 +1347,19 @@ class TestSuiteService:
                 "accuracy": accuracy,
                 "cases": count,
             }
+
+        # Metrics above cover scored cases only. A case can run yet fail scoring, so
+        # "executed" and "scored" are counted separately rather than merged.
+        scored = status_counts.get(ResultStatus.SCORED, 0)
+        scoring_failed = status_counts.get(ResultStatus.SCORING_FAILED, 0)
+        summary[RUN_TOTALS_KEY] = {
+            "cases": len(cases),
+            "executed": scored + scoring_failed,
+            "scored": scored,
+            "scoring_failed": scoring_failed,
+            "execution_failed": status_counts.get(ResultStatus.EXECUTION_FAILED, 0),
+            "skipped": status_counts.get(ResultStatus.SKIPPED, 0),
+        }
 
         run.status = "completed"
         run.summary_metrics = summary
@@ -1197,4 +1432,237 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.run_repo.soft_delete_all_by_ids(list(row.run_ids or []))
         await self.evaluation_repo.soft_delete(row)
+
+    async def start_workflow_evaluations(
+        self,
+        workflow_id: UUID,
+        dispatch: Callable[
+            [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
+        ],
+    ) -> List[StartedEvaluationRun]:
+        """Queue and dispatch a run for every evaluation targeting this workflow.
+
+        An evaluation targets the workflow either directly (``workflow_id``) or
+        through its dataset's default workflow. Each evaluation is created and
+        dispatched independently: one failure is reported as ``failed_to_start``
+        and does not prevent the rest from running.
+        """
+        targeted = await self._evaluations_for_workflow(workflow_id)
+
+        results: List[StartedEvaluationRun] = []
+        for ev in targeted:
+            try:
+                run = await self._start_evaluation_run(ev, dispatch)
+                results.append(
+                    StartedEvaluationRun(
+                        evaluation_id=ev.id,
+                        run_id=run.id,
+                        suite_id=run.suite_id,
+                        status=run.status,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to start evaluation %s for workflow %s", ev.id, workflow_id
+                )
+                results.append(
+                    StartedEvaluationRun(
+                        evaluation_id=ev.id,
+                        status="failed_to_start",
+                        error="Failed to start evaluation.",
+                    )
+                )
+        return results
+
+    async def _evaluations_for_workflow(
+        self, workflow_id: UUID
+    ) -> List[TestEvaluationModel]:
+        """The Run all scope: every evaluation for the workflow (DB-filtered)."""
+        return await self.evaluation_repo.get_all_for_workflow(workflow_id)
+
+    async def get_workflow_evaluation_summaries(
+        self,
+    ) -> List[WorkflowEvaluationSummary]:
+        """One row per workflow (and the unassigned bucket): count, health, running."""
+        count_rows = await self.evaluation_repo.count_by_effective_workflow()
+        pointers = await self.evaluation_repo.get_latest_run_pointers()
+        stats_by_workflow = await self._compute_workflow_stats(pointers)
+        summaries: List[WorkflowEvaluationSummary] = []
+        for workflow_id, count in count_rows:
+            health, finished, any_running = stats_by_workflow.get(
+                workflow_id, (None, 0, False)
+            )
+            summaries.append(
+                WorkflowEvaluationSummary(
+                    workflow_id=workflow_id,
+                    eval_count=count,
+                    health=health,
+                    finished_count=finished,
+                    any_running=any_running,
+                )
+            )
+        return summaries
+
+    async def _compute_workflow_stats(
+        self,
+        pointers: List[Tuple[Optional[UUID], List[str]]],
+    ) -> Dict[Optional[UUID], Tuple[Optional[float], int, bool]]:
+        """(health, finished_count, any_running) per workflow from latest runs.
+
+        Health is the mean accuracy over evaluations whose latest run has finished,
+        counting a failed run as 0. Queued/running runs set ``any_running`` and are
+        not scored. Only each evaluation's latest run (``run_ids[0]``) is fetched.
+        """
+        latest_run_to_workflow: Dict[str, Optional[UUID]] = {}
+        for workflow_id, run_ids in pointers:
+            if run_ids:
+                latest_run_to_workflow[run_ids[0]] = workflow_id
+        if not latest_run_to_workflow:
+            return {}
+
+        runs = await self.run_repo.get_by_ids(list(latest_run_to_workflow.keys()))
+        sums: Dict[Optional[UUID], float] = {}
+        counts: Dict[Optional[UUID], int] = {}
+        running: Dict[Optional[UUID], bool] = {}
+        for run in runs:
+            workflow_id = latest_run_to_workflow.get(str(run.id))
+            if run.status in ("queued", "running"):
+                running[workflow_id] = True
+                continue
+            if run.status == "failed":
+                sums[workflow_id] = sums.get(workflow_id, 0.0)
+                counts[workflow_id] = counts.get(workflow_id, 0) + 1
+                continue
+            if run.status == "completed":
+                accuracy = self._run_accuracy(run.summary_metrics)
+                if accuracy is None:
+                    continue
+                sums[workflow_id] = sums.get(workflow_id, 0.0) + accuracy
+                counts[workflow_id] = counts.get(workflow_id, 0) + 1
+
+        stats: Dict[Optional[UUID], Tuple[Optional[float], int, bool]] = {}
+        for workflow_id in set(counts) | set(running):
+            count = counts.get(workflow_id, 0)
+            health = sums[workflow_id] / count if count else None
+            stats[workflow_id] = (health, count, running.get(workflow_id, False))
+        return stats
+
+    async def evaluation_has_active_run(self, evaluation_id: UUID) -> bool:
+        """True if this evaluation's latest run is queued or running.
+
+        Used to block edits and deletes while an evaluation is executing.
+        """
+        row = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not row or not row.run_ids:
+            return False
+        runs = await self.run_repo.get_by_ids([row.run_ids[0]])
+        return any(run.status in ("queued", "running") for run in runs)
+
+    async def workflow_has_active_run(self, workflow_id: Optional[UUID]) -> bool:
+        """True if any evaluation in the workflow has a queued/running latest run."""
+        pointer_lists = await self.evaluation_repo.get_run_pointers_for_workflow(
+            workflow_id
+        )
+        latest_run_ids = [run_ids[0] for run_ids in pointer_lists if run_ids]
+        if not latest_run_ids:
+            return False
+        runs = await self.run_repo.get_by_ids(latest_run_ids)
+        return any(run.status in ("queued", "running") for run in runs)
+
+    @staticmethod
+    def _run_accuracy(summary_metrics: Optional[Dict[str, Any]]) -> Optional[float]:
+        """Mean accuracy across a run's metrics, matching the per-row display."""
+        if not summary_metrics:
+            return None
+        accuracies = [
+            metric["accuracy"]
+            for metric in summary_metrics.values()
+            if isinstance(metric, dict)
+            and isinstance(metric.get("accuracy"), (int, float))
+            and not isinstance(metric.get("accuracy"), bool)
+        ]
+        if not accuracies:
+            return None
+        return sum(accuracies) / len(accuracies)
+
+    async def list_workflow_evaluations(
+        self,
+        workflow_id: Optional[UUID],
+        page: int,
+        page_size: int,
+        search: Optional[str] = None,
+    ) -> PaginatedEvaluations:
+        """One page of a workflow's evaluations (``workflow_id=None`` = unassigned).
+
+        Filtering, search and pagination run in the database, so only the
+        requested page is loaded.
+        """
+        page = max(page, 1)
+        page_size = max(1, min(page_size, 100))
+        offset = (page - 1) * page_size
+        rows = await self.evaluation_repo.get_page_for_workflow(
+            workflow_id, offset, page_size, search
+        )
+        total = await self.evaluation_repo.count_for_workflow(workflow_id, search)
+        total_unfiltered = (
+            total
+            if not (search and search.strip())
+            else await self.evaluation_repo.count_for_workflow(workflow_id, None)
+        )
+        any_running = await self.workflow_has_active_run(workflow_id)
+        return PaginatedEvaluations(
+            items=[
+                TestEvaluationInDB.model_validate(row, from_attributes=True)
+                for row in rows
+            ],
+            total=total,
+            total_unfiltered=total_unfiltered,
+            page=page,
+            page_size=page_size,
+            any_running=any_running,
+        )
+
+    async def _start_evaluation_run(
+        self,
+        ev: TestEvaluationModel,
+        dispatch: Callable[
+            [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
+        ],
+    ) -> TestRunInDB:
+        """Create, record and dispatch a single evaluation run.
+
+        Create, attach and dispatch are treated as one unit: if attaching or
+        dispatching fails after the run is created, the run is marked ``failed``
+        so it is never left stranded in ``queued`` while the caller reports the
+        evaluation as failed to start.
+        """
+        # Threads are generated per conversation during execution; a run-wide one
+        # would merge every conversation into a single memory thread.
+        input_metadata = dict(ev.input_metadata or {})
+        input_metadata.pop("thread_id", None)
+        data = TestRunCreate(
+            techniques=list(ev.techniques or []),
+            technique_configs=ev.technique_configs or None,
+            workflow_id=ev.workflow_id,
+            input_metadata=input_metadata or None,
+        )
+        run = await self.create_run(ev.suite_id, data)
+        try:
+            await self.append_run_to_evaluation(ev.id, str(run.id))
+            dispatch(run, input_metadata or None, ev.technique_configs or None)
+        except Exception:
+            await self._mark_run_failed_to_start(run.id)
+            raise
+        return run
+
+    async def _mark_run_failed_to_start(self, run_id: UUID) -> None:
+        """Flip a still-queued run to ``failed`` so it is not left dangling."""
+        try:
+            row = await self.run_repo.get_by_id(run_id)
+            if row and row.status == "queued":
+                row.status = "failed"
+                row.summary_metrics = {"error": "Failed to dispatch run"}
+                await self.run_repo.update(row)
+        except Exception:
+            logger.exception("Could not mark run %s as failed after start error", run_id)
 
