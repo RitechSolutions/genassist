@@ -426,7 +426,29 @@ class WorkflowEngine:
         # Check if aggregator requirements are satisfied
         # (skip for the starting node — its upstream nodes may not have run)
         node = self.executable_node(node_id, state)
-        if skip_requirement_check:
+
+        if node.is_deactivated():
+            # The user has deactivated (bypassed) this node in the editor. We do
+            # NOT run its logic. Instead we forward its resolved input straight
+            # through as its output, so downstream nodes — which pull their input
+            # from state.node_outputs — receive the upstream data unchanged, as
+            # if this node were not present. Chains of deactivated nodes compose
+            # because each one's forwarded output feeds the next.
+            if not skip_requirement_check and not node.check_if_requirement_satisfied():
+                # Wait for upstream inputs (e.g. an unfinished parallel branch)
+                # before passing through, mirroring normal-node behavior.
+                logger.debug(
+                    f"Deactivated node {node_id} requirements not satisfied, "
+                    "skipping for now"
+                )
+                return
+            logger.info(
+                f"Node {node_id} is deactivated — forwarding input to next nodes"
+            )
+            node.start_execution()
+            node.set_node_output(node.get_input_from_source())
+            node.complete_execution()
+        elif skip_requirement_check:
             node_output = await self._execute_single_node(node_id, state)
         elif node.check_if_requirement_satisfied():
             node_output = await self._execute_single_node(node_id, state)
