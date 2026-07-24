@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from typing import Any, Dict
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 
 
 logger = logging.getLogger(__name__)
@@ -78,11 +79,11 @@ class CalendarEventsNode(BaseNode):
             error_msg = get_error_message(e.error_key)
             logger.error(
                 f"Calendar operation failed with AppException: {error_msg}")
-            return {"result": error_msg}
+            return node_failure(error_msg, output={"result": error_msg})
         except Exception as e:
             error_msg = "An error happened while managing the event"
             logger.error(f"Calendar operation failed: {e}")
-            return {"result": error_msg}
+            return node_failure(error_msg, output={"result": error_msg})
 
     def _parse_dt(self, value: str | None, tz: ZoneInfo) -> datetime | None:
         """Parse an ISO date string to a timezone‑aware datetime (or return None)."""

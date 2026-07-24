@@ -12,6 +12,7 @@ from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
 from app.modules.workflow.agents.tool_agent import ToolAgent
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
@@ -288,12 +289,17 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             if result.get("status") == "error":
                 error_detail = result.get("error") or "an unknown error occurred"
                 logger.error("Agent '%s' returned an error: %s", agent_type, error_detail)
-                return {
-                    "message": f"The agent could not complete your request: {error_detail}",
-                    "error": error_detail,
-                    "steps": steps,
-                    "tools_used": result.get("tools_used", []),
-                }
+                # Record the failure but keep the apology message as the flow output
+                # so the user still gets a reply and downstream nodes still run.
+                return node_failure(
+                    error_detail,
+                    output={
+                        "message": f"The agent could not complete your request: {error_detail}",
+                        "error": error_detail,
+                        "steps": steps,
+                        "tools_used": result.get("tools_used", []),
+                    },
+                )
 
             # Prepare output
             response = result.get("response")
@@ -312,7 +318,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         except Exception as e:
             logger.exception("Error processing agent node")
             error_message = str(e)
-            return {
-                "message": f"The agent could not complete your request: {error_message}",
-                "error": error_message,
-            }
+            return node_failure(
+                error_message,
+                output={
+                    "message": f"The agent could not complete your request: {error_message}",
+                    "error": error_message,
+                },
+            )
