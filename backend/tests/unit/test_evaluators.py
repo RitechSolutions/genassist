@@ -131,6 +131,187 @@ class TestTraceAwareEvaluators:
         assert metrics["contains"]["passed"] is True
 
 
+class TestContainsAndNotContains:
+    def setup_method(self):
+        self.registry = SimpleEvaluatorRegistry()
+
+    @pytest.mark.asyncio
+    async def test_contains_is_case_insensitive(self):
+        metrics = await self.registry.evaluate(
+            ["contains"],
+            inputs={},
+            outputs="We are OPEN 24/7 for support",
+            reference_outputs={"value": "open 24/7"},
+        )
+        assert metrics["contains"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_not_contains_passes_when_forbidden_text_absent(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Here is the information you asked for.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"text": "I cannot help"}},
+        )
+        assert metrics["not_contains"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_not_contains_fails_when_forbidden_text_present(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Sorry, I cannot help with that request.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"text": "I cannot help"}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_not_contains_is_case_insensitive(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="The password is SECRET123.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"text": "secret"}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_not_contains_fails_when_forbidden_text_missing(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Any output at all.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"text": ""}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+        assert metrics["not_contains"]["comment"] == "No forbidden phrases configured."
+
+    @pytest.mark.asyncio
+    async def test_not_contains_passes_on_empty_output(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"text": "forbidden"}},
+        )
+        assert metrics["not_contains"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_not_contains_multiple_phrases_reports_matches(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="You could try Globex or initech instead.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"phrases": ["Acme", "Globex", "Initech"]}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+        assert "Globex" in metrics["not_contains"]["comment"]
+        assert "Initech" in metrics["not_contains"]["comment"]
+        assert "Acme" not in metrics["not_contains"]["comment"]
+
+    @pytest.mark.asyncio
+    async def test_not_contains_passes_when_no_phrase_present(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Our service lets you do everything from the app.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"phrases": ["Acme", "Globex"]}},
+        )
+        assert metrics["not_contains"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_not_contains_casefold_matches_german_sharp_s(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="DIE STRASSE IST GESPERRT.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"phrases": ["straße"]}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_contains_casefold_matches_german_sharp_s(self):
+        metrics = await self.registry.evaluate(
+            ["contains"],
+            inputs={},
+            outputs="Die Straße ist offen.",
+            reference_outputs={"value": "STRASSE"},
+        )
+        assert metrics["contains"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_not_contains_trims_and_dedupes_phrases(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Nothing forbidden here.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"phrases": ["  Acme  ", "acme", "", "   "]}},
+        )
+        assert metrics["not_contains"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_not_contains_empty_phrase_list_fails_with_config_message(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Any output.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"phrases": ["", "   "]}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+        assert metrics["not_contains"]["comment"] == "No forbidden phrases configured."
+
+    @pytest.mark.asyncio
+    async def test_not_contains_rejects_malformed_phrase_config(self):
+        for bad_phrases in (123, True, {"nested": "dict"}, [123, None, {}]):
+            metrics = await self.registry.evaluate(
+                ["not_contains"],
+                inputs={},
+                outputs="Any output.",
+                reference_outputs=None,
+                technique_configs={"not_contains": {"phrases": bad_phrases}},
+            )
+            assert metrics["not_contains"]["passed"] is False
+            assert metrics["not_contains"]["comment"] == "No forbidden phrases configured."
+
+    @pytest.mark.asyncio
+    async def test_not_contains_rejects_malformed_legacy_text(self):
+        metrics = await self.registry.evaluate(
+            ["not_contains"],
+            inputs={},
+            outputs="Any output.",
+            reference_outputs=None,
+            technique_configs={"not_contains": {"text": 123}},
+        )
+        assert metrics["not_contains"]["passed"] is False
+        assert metrics["not_contains"]["comment"] == "No forbidden phrases configured."
+
+    @pytest.mark.asyncio
+    async def test_contains_and_not_contains_coexist_with_independent_results(self):
+        # Same output graded by both: contains passes on the required phrase while
+        # not_contains fails on the forbidden one, so the case result reflects both.
+        metrics = await self.registry.evaluate(
+            ["contains", "not_contains"],
+            inputs={},
+            outputs="You can use our service, or try Acme instead.",
+            reference_outputs={"value": "our service"},
+            technique_configs={"not_contains": {"phrases": ["Acme"]}},
+        )
+        assert set(metrics) == {"contains", "not_contains"}
+        assert metrics["contains"]["passed"] is True
+        assert metrics["not_contains"]["passed"] is False
+        assert "Acme" in metrics["not_contains"]["comment"]
+
+
 # Synthetic trace fixture with generic placeholder values (not tied to any workflow).
 def _agent_trace(*, tool_name="lookup_tool", tool_args=None, tool_result="sample tool result", route="true", action_status="success"):
     return {

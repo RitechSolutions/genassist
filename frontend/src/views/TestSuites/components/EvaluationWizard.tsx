@@ -38,6 +38,7 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
     metrics: [
       { value: "exact_match", label: "Exact Match", description: "Output exactly equals the expected value" },
       { value: "contains", label: "Contains", description: "Output contains the expected text" },
+      { value: "not_contains", label: "Does Not Contain", description: "Output must not contain the specified text" },
       { value: "json_match", label: "JSON Match", description: "Output matches the expected JSON structure and values" },
     ],
   },
@@ -61,6 +62,7 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
 ];
 
 const CONFIG_METRICS = [
+  "not_contains",
   "nli_eval",
   "provenance_eval",
   "tool_used",
@@ -151,6 +153,7 @@ export interface EvaluationWizardData {
   toolNode: string;
   toolResultNotEmpty: boolean;
   toolResultContains: string;
+  notContainsText: string;
   routeExpected: string;
   routeNode: string;
   actionNode: string;
@@ -247,6 +250,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     return `Passes when ${agentPart} calls ${toolPart}${extras}.`;
   };
 
+  // Does Not Contain config
+  const [notContainsText, setNotContainsText] = useState(initialData?.notContainsText ?? "");
+
   // Route Taken config
   const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
   const [routeNode, setRouteNode] = useState(initialData?.routeNode ?? "");
@@ -277,6 +283,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   const isConfigureStepValid = (): boolean => {
     if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
+    if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
     if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
     if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
     if (toolArgsInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
@@ -337,6 +344,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         toolNode,
         toolResultNotEmpty,
         toolResultContains,
+        notContainsText,
         routeExpected,
         routeNode,
         actionNode,
@@ -383,6 +391,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setToolResultNotEmpty(false);
     setToolResultContains("");
     setToolAdvancedOpen(false);
+    setNotContainsText("");
     setRouteExpected("");
     setRouteNode("");
     setActionNode("");
@@ -782,6 +791,29 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     Rule
                   </div>
                   <p className="text-xs text-muted-foreground">{toolRuleSummary()}</p>
+                </div>
+              </div>
+            )}
+
+            {metrics.includes("not_contains") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  Does Not Contain Config
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Fails the run if any of these phrases appears in the output. One phrase
+                  per line. Matching is case-insensitive.
+                </p>
+                <div>
+                  <Label className="text-xs">Forbidden Phrases *</Label>
+                  <Textarea
+                    value={notContainsText}
+                    onChange={(e) => setNotContainsText(e.target.value)}
+                    placeholder={"e.g.\ncompetitor name\nsocial security number"}
+                    rows={3}
+                    className="mt-1"
+                  />
                 </div>
               </div>
             )}

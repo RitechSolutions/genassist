@@ -8,6 +8,7 @@ from typing import Any, Dict
 from app.modules.workflow.utils import execute_python_code
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class DataMapperNode(BaseNode):
         if not python_script:
             logger.warning("No Python script configured for data mapper")
             # Return empty result if no script
-            return {"error": "No Python script configured for data mapper"}
+            return node_failure("No Python script configured for data mapper")
 
         try:
             # Execute the Python script with resolved params from code_params
@@ -44,4 +45,4 @@ class DataMapperNode(BaseNode):
         except Exception as e:
             error_msg = f"Error processing data mapper: {str(e)}"
             logger.error(error_msg)
-            return {"error": error_msg, "input": python_script}
+            return node_failure(error_msg, details={"input": python_script})

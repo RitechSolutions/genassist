@@ -201,10 +201,8 @@ const WorkflowEvaluationsPage: React.FC = () => {
     if (!evaluation.id || isEvaluationRunning(evaluation)) return;
     setRunningEvalIds((prev) => new Set(prev).add(evaluation.id));
     try {
-      let runMetadata = evaluation.input_metadata ?? undefined;
-      if (runMetadata?.use_memory) {
-        runMetadata = { ...runMetadata, thread_id: crypto.randomUUID() };
-      }
+      // Memory threads are generated per conversation by the backend at run time.
+      const runMetadata = evaluation.input_metadata ?? undefined;
       const created = await startTestRun(evaluation.suite_id, {
         techniques: evaluation.techniques,
         technique_configs: evaluation.technique_configs,

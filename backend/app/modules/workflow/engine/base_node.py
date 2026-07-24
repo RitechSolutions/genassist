@@ -17,6 +17,7 @@ from app.core.observability.otel import (
 )
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.engine.node_result import is_node_failure, node_failure
 from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -141,7 +142,7 @@ class BaseNode(ABC):
             source_id = edge.get("source")
             if source_id:
                 _, node_type = self.get_node_config(source_id)
-                if "toolBuilderNode" in node_type or "mcpNode" in node_type:
+                if "toolBuilderNode" in node_type or "mcpNode" in node_type or "subAgentNode" in node_type:
                     continue
                 source_nodes.append(source_id)
 
@@ -379,6 +380,23 @@ class BaseNode(ABC):
                     # Process the node (implemented by subclasses)
                     result = await self.process(resolved_config_data)
 
+                    # A node can also fail WITHOUT raising — by returning an error
+                    # envelope, an HTTP-500-style body, or a swallowed None. Detect
+                    # that here so the failure is recorded, while still letting the
+                    # workflow continue with the node's (partial) output so the user
+                    # keeps getting a response. See node_result.is_node_failure.
+                    failure = is_node_failure(result)
+                    if failure is not None:
+                        if span is not None and span.is_recording():
+                            span.set_status(Status(StatusCode.ERROR, str(failure.get("error"))))
+                        flow_output = failure.get("output")
+                        if flow_output is not None:
+                            self.set_node_output(flow_output)
+                        self.complete_execution(error=failure.get("error"))
+                        # Return the RAW result (not the unwrapped output) so a caller
+                        # using this node as a tool can itself detect the failure.
+                        return result
+
                     # Set output data
                     if result is not None:
                         self.set_node_output(result)
@@ -395,6 +413,11 @@ class BaseNode(ABC):
                     error_msg = f"Error executing node {self.node_id}: {str(e)}"
                     logger.error(error_msg, exc_info=True)
                     self.complete_execution(error=error_msg)
+                    # Return a detectable failure envelope (not None) so a caller using
+                    # this node as a tool learns it failed. Downstream engine flow is
+                    # unchanged: no node output was stored and the envelope carries no
+                    # `next_nodes` key.
+                    return node_failure(error_msg, code=500)
         finally:
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
 

@@ -41,14 +41,43 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         )
         await self.db.commit()
 
-    async def soft_delete_all_for_suite(self, suite_id: UUID) -> None:
+    async def soft_delete_all_for_suite(
+        self, suite_id: UUID, commit: bool = True
+    ) -> None:
+        """Soft-delete every case in a suite. Skip the commit to batch with later writes."""
         await self.db.execute(
             update(TestCaseModel)
             .where(TestCaseModel.suite_id == str(suite_id))
             .values(is_deleted=1)
             .execution_options(synchronize_session="fetch")
         )
+        if commit:
+            await self.db.commit()
+
+    async def soft_delete_for_conversation(
+        self, suite_id: UUID, conversation_id: UUID, commit: bool = True
+    ) -> None:
+        """Soft-delete the active cases imported from one source conversation."""
+        await self.db.execute(
+            update(TestCaseModel)
+            .where(
+                TestCaseModel.suite_id == str(suite_id),
+                TestCaseModel.source_conversation_id == conversation_id,
+                TestCaseModel.is_deleted == 0,
+            )
+            .values(is_deleted=1)
+            .execution_options(synchronize_session="fetch")
+        )
+        if commit:
+            await self.db.commit()
+
+    async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
+        """Insert cases in a single transaction so a partial import cannot persist."""
+        self.db.add_all(cases)
         await self.db.commit()
+        for case in cases:
+            await self.db.refresh(case)
+        return cases
 
 
 @inject

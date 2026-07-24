@@ -7,6 +7,7 @@ import {
   deleteTestSuite,
   importCasesFromConversation,
   listTestCases,
+  removeConversationFromSuite,
   listTestSuites,
   updateTestSuite,
 } from "@/services/testSuites";
@@ -72,7 +73,14 @@ const DatasetsPage: React.FC = () => {
   const [expandedMessages, setExpandedMessages] = useState<TranscriptEntry[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [pendingImportConv, setPendingImportConv] = useState<BackendTranscript | null>(null);
+  const [importMode, setImportMode] = useState<"append" | "replace">("append");
   const [isImporting, setIsImporting] = useState(false);
+  const [pendingRemoveConv, setPendingRemoveConv] = useState<BackendTranscript | null>(null);
+  const [isRemovingConv, setIsRemovingConv] = useState(false);
+  // Conversation id -> number of turns already imported into the target dataset.
+  const [importedConversations, setImportedConversations] = useState<Map<string, number>>(
+    new Map(),
+  );
   const importSucceededRef = useRef(false);
   const idSuffixDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -169,6 +177,22 @@ const DatasetsPage: React.FC = () => {
     setIsLoadingConversations(false);
   }, []);
 
+  /** Refreshes both the dataset's record count and its imported conversations. */
+  const loadImportedConversations = async (suiteId: string) => {
+    const cases = (await listTestCases(suiteId)) ?? [];
+    const turnsByConversation = new Map<string, number>();
+    for (const entry of cases) {
+      const conversationId = entry.source_conversation_id;
+      if (!conversationId) continue;
+      turnsByConversation.set(
+        conversationId,
+        (turnsByConversation.get(conversationId) ?? 0) + 1,
+      );
+    }
+    setImportedConversations(turnsByConversation);
+    setRecordCounts((prev) => ({ ...prev, [suiteId]: cases.length }));
+  };
+
   const openImportDialog = async (suite: TestSuite) => {
     setImportTargetSuite(suite);
     setConvPage(0);
@@ -176,7 +200,12 @@ const DatasetsPage: React.FC = () => {
     setConvIdSuffix("");
     setExpandedConvId(null);
     setExpandedMessages([]);
+    setImportedConversations(new Map());
+    // Always reopen on the non-destructive mode so a previous "Replace all"
+    // cannot silently wipe the next dataset.
+    setImportMode("append");
     setIsImportDialogOpen(true);
+    if (suite.id) loadImportedConversations(suite.id);
     const wfs = await getWorkflowsMinimal();
     setWorkflows(wfs ?? []);
     loadConversations(0, "", "");
@@ -227,9 +256,14 @@ const DatasetsPage: React.FC = () => {
     importSucceededRef.current = true;
     setIsImporting(true);
     try {
-      await importCasesFromConversation(importTargetSuite.id, pendingImportConv.id, true);
+      await importCasesFromConversation(
+        importTargetSuite.id,
+        pendingImportConv.id,
+        importMode === "replace",
+      );
       toast.success("Cases imported successfully.");
       setPendingImportConv(null);
+      await loadImportedConversations(importTargetSuite.id);
     } catch (err: unknown) {
       importSucceededRef.current = false;
       const axiosErr = err as { response?: { data?: { error?: string } } };
@@ -237,6 +271,22 @@ const DatasetsPage: React.FC = () => {
       toast.error(msg);
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleConfirmRemoveConversation = async () => {
+    if (!importTargetSuite?.id || !pendingRemoveConv) return;
+    setIsRemovingConv(true);
+    try {
+      await removeConversationFromSuite(importTargetSuite.id, pendingRemoveConv.id);
+      toast.success("Conversation removed from dataset.");
+      await loadImportedConversations(importTargetSuite.id);
+      setPendingRemoveConv(null);
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      toast.error(axiosErr?.response?.data?.error ?? "Failed to remove conversation.");
+    } finally {
+      setIsRemovingConv(false);
     }
   };
 
@@ -437,6 +487,15 @@ const DatasetsPage: React.FC = () => {
             <DialogTitle>
               Import into "{importTargetSuite?.name}"
             </DialogTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              {importedConversations.size === 0
+                ? "No conversations imported into this dataset yet."
+                : `Already in this dataset: ${importedConversations.size} conversation${
+                    importedConversations.size === 1 ? "" : "s"
+                  } — ${[...importedConversations.entries()]
+                    .map(([id, turns]) => `#${id.slice(-4)} (${turns})`)
+                    .join(", ")}`}
+            </p>
           </DialogHeader>
 
           <div className="px-6 pb-2 shrink-0 flex gap-3">
@@ -468,6 +527,21 @@ const DatasetsPage: React.FC = () => {
                 maxLength={36}
               />
             </div>
+            <div className="w-44">
+              <Label className="text-xs mb-1 block">Import mode</Label>
+              <Select
+                value={importMode}
+                onValueChange={(v) => setImportMode(v as "append" | "replace")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="append">Add to dataset</SelectItem>
+                  <SelectItem value="replace">Replace all</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6">
@@ -479,8 +553,14 @@ const DatasetsPage: React.FC = () => {
               <div className="space-y-2 py-2">
                 {conversations.map((conv) => {
                   const isExpanded = expandedConvId === conv.id;
+                  const importedTurns = importedConversations.get(conv.id);
                   return (
-                    <div key={conv.id} className="border rounded overflow-hidden">
+                    <div
+                      key={conv.id}
+                      className={`border rounded overflow-hidden ${
+                        importedTurns ? "border-blue-300 bg-blue-50/40" : ""
+                      }`}
+                    >
                       <div className="p-3 flex items-center justify-between gap-3">
                         <button
                           className="flex items-center gap-2 min-w-0 text-left flex-1"
@@ -490,8 +570,14 @@ const DatasetsPage: React.FC = () => {
                             className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
                           />
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground">
+                            <p className="text-sm font-medium text-foreground flex items-center gap-2">
                               #{conv.id.slice(-4)}
+                              {importedTurns && (
+                                <span className="inline-flex items-center text-xs rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 font-normal">
+                                  In dataset · {importedTurns} turn
+                                  {importedTurns === 1 ? "" : "s"}
+                                </span>
+                              )}
                             </p>
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {conv.conversation_date
@@ -501,15 +587,32 @@ const DatasetsPage: React.FC = () => {
                             </p>
                           </div>
                         </button>
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setIsImportDialogOpen(false);
-                            setPendingImportConv(conv);
-                          }}
-                        >
-                          Import
-                        </Button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="sm"
+                            variant={importedTurns ? "outline" : "default"}
+                            onClick={() => {
+                              setIsImportDialogOpen(false);
+                              setPendingImportConv(conv);
+                            }}
+                          >
+                            {importedTurns ? "Re-import" : "Import"}
+                          </Button>
+                          {importedTurns && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-red-500"
+                              title="Remove this conversation from the dataset"
+                              onClick={() => {
+                                setIsImportDialogOpen(false);
+                                setPendingRemoveConv(conv);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
 
                       {isExpanded && (
@@ -579,7 +682,7 @@ const DatasetsPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Confirm import — replaces all existing records */}
+      {/* Confirm import — appends a conversation or replaces the whole dataset */}
       <ConfirmDialog
         isOpen={!!pendingImportConv}
         onOpenChange={(open) => {
@@ -593,8 +696,28 @@ const DatasetsPage: React.FC = () => {
         onConfirm={handleConfirmImport}
         isInProgress={isImporting}
         title={`Import from conversation #${pendingImportConv?.id.slice(-4) ?? ""}`}
-        description={`This will replace all existing records in "${importTargetSuite?.name ?? ""}" with Q&A pairs from conversation #${pendingImportConv?.id.slice(-4) ?? ""} (${pendingImportConv?.word_count ?? 0} words).`}
-        primaryButtonText="Replace & Import"
+        description={
+          importMode === "replace"
+            ? `This will replace all existing records in "${importTargetSuite?.name ?? ""}" with Q&A pairs from conversation #${pendingImportConv?.id.slice(-4) ?? ""} (${pendingImportConv?.word_count ?? 0} words).`
+            : `This will add Q&A pairs from conversation #${pendingImportConv?.id.slice(-4) ?? ""} (${pendingImportConv?.word_count ?? 0} words) to "${importTargetSuite?.name ?? ""}", keeping conversations already in the dataset. Re-importing the same conversation refreshes its turns.`
+        }
+        primaryButtonText={importMode === "replace" ? "Replace & Import" : "Add to Dataset"}
+      />
+
+      {/* Confirm removing one conversation's records from the dataset */}
+      <ConfirmDialog
+        isOpen={!!pendingRemoveConv}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemoveConv(null);
+            setIsImportDialogOpen(true);
+          }
+        }}
+        onConfirm={handleConfirmRemoveConversation}
+        isInProgress={isRemovingConv}
+        title={`Remove conversation #${pendingRemoveConv?.id.slice(-4) ?? ""}`}
+        description={`This removes the records imported from conversation #${pendingRemoveConv?.id.slice(-4) ?? ""} from "${importTargetSuite?.name ?? ""}". Other conversations in the dataset are kept.`}
+        primaryButtonText="Remove"
       />
 
       <ConfirmDialog

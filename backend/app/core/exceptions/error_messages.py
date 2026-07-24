@@ -14,6 +14,8 @@ class ErrorKey(Enum):
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND"
+    TEMPLATE_INVALID = "TEMPLATE_INVALID"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
     INVALID_FILE_FORMAT = "invalid_file_format"
     NO_SELECTED_FILE = "no_selected_file"
@@ -85,6 +87,9 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
+    SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
+    SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
+    SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
     OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
@@ -174,6 +179,8 @@ ERROR_MESSAGES = {
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
+        ErrorKey.TEMPLATE_NOT_FOUND: "Template not found.",
+        ErrorKey.TEMPLATE_INVALID: "The template is invalid or cannot be used.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
         ErrorKey.NO_SELECTED_FILE: "No selected file",
         ErrorKey.INVALID_RECORDED_AT: "Invalid recorded_at format. Use ISO 8601: YYYY-MM-DDTHH:MM:SSZ",
@@ -330,11 +337,17 @@ ERROR_MESSAGES = {
         ErrorKey.SSO_MICROSOFT_USER_DENIED: "Your account is not provisioned for GenAssist. Contact an administrator.",
         ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED: "SSO redirect target is not allowed by server configuration.",
         ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
+        ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
+        ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
+        ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+        ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
+        ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
+        ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
     },
 }
 

@@ -31,6 +31,7 @@ from .human_in_the_loop_schema import HUMAN_IN_THE_LOOP_NODE_DIALOG_SCHEMA
 from .tts_schema import TTS_NODE_DIALOG_SCHEMA
 from .stt_schema import STT_NODE_DIALOG_SCHEMA
 from .voice_agent_schema import VOICE_AGENT_NODE_DIALOG_SCHEMA
+from .sub_agent_schema import SUB_AGENT_NODE_DIALOG_SCHEMA
 from .finalize_conversation_schema import FINALIZE_CONVERSATION_NODE_DIALOG_SCHEMA
 from .web_scraper_schema import WEB_SCRAPER_NODE_DIALOG_SCHEMA
 from .web_search_schema import WEB_SEARCH_NODE_DIALOG_SCHEMA
@@ -69,6 +70,7 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "ttsNode": "Text to Speech",
     "sttNode": "Speech to Text",
     "voiceAgentNode": "Voice Agent",
+    "subAgentNode": "Sub-Agent",
     "finalizeConversationNode": "End Conversation",
     "webScraperNode": "Web Scraper",
     "webSearchNode": "Web Search",
@@ -108,6 +110,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "ttsNode": TTS_NODE_DIALOG_SCHEMA,
     "sttNode": STT_NODE_DIALOG_SCHEMA,
     "voiceAgentNode": VOICE_AGENT_NODE_DIALOG_SCHEMA,
+    "subAgentNode": SUB_AGENT_NODE_DIALOG_SCHEMA,
     "finalizeConversationNode": FINALIZE_CONVERSATION_NODE_DIALOG_SCHEMA,
     "webScraperNode": WEB_SCRAPER_NODE_DIALOG_SCHEMA,
     "webSearchNode": WEB_SEARCH_NODE_DIALOG_SCHEMA,
@@ -135,6 +138,7 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   "agentNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "input_tools", "type": "target", "position": "bottom", "compatibility": "tools" },
+    { "id": "input_sub_agents", "type": "target", "position": "bottom", "compatibility": "sub_agents" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],
 
@@ -263,6 +267,12 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "input_tools", "type": "target", "position": "bottom", "compatibility": "tools" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "subAgentNode": [
+    { "id": "output_sub_agent", "type": "source", "position": "top", "compatibility": "sub_agents" },
+    { "id": "input_tools", "type": "target", "position": "bottom", "compatibility": "tools" },
+    { "id": "input_sub_agents", "type": "target", "position": "bottom", "compatibility": "sub_agents" }
   ],
 
   "finalizeConversationNode": [

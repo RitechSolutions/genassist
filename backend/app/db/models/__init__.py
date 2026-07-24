@@ -53,6 +53,7 @@ from .ml_model_pipeline import (
     PipelineRunStatus,
 )
 from .prompt_editor import PromptConfigModel, PromptVersionModel
+from .template import TemplateModel
 from .tenant import TenantModel
 from .tool import ToolModel
 from .user_group import UserGroupModel
@@ -108,6 +109,7 @@ __all__ = [
     "AgentModel",
     "AgentSecuritySettingsModel",
     "WorkflowModel",
+    "TemplateModel",
     "MLModel",
     "MLModelPipelineConfig",
     "MLModelPipelineRun",
@@ -175,6 +177,7 @@ models = [
     AgentModel,
     AgentSecuritySettingsModel,
     WorkflowModel,
+    TemplateModel,
     MLModel,
     MLModelPipelineConfig,
     MLModelPipelineRun,

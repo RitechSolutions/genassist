@@ -24,6 +24,7 @@ from app.modules.workflow.audio.gemini_live import (
     history_to_live_turns,
 )
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
+from app.modules.workflow.engine.node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,12 @@ TURN_TIMEOUT_SECONDS = 180
 
 
 def _error(message: str, detail: str) -> Dict[str, Any]:
-    """Build the standard user-facing error result for the voice agent."""
-    return {"message": message, "error": detail}
+    """Build the standard user-facing error result for the voice agent.
+
+    Returns a failure envelope so the run records the failure, while keeping the
+    user-facing ``message`` as the flow output (every caller either returns this
+    directly from ``process`` or checks it truthily)."""
+    return node_failure(detail, output={"message": message, "error": detail})
 
 
 class VoiceAgentNode(AgentNode):

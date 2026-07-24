@@ -16,6 +16,28 @@ const parseJsonObject = (
   }
 };
 
+// One forbidden phrase per textarea line: trimmed, empties dropped, ASCII-case dedupe.
+// The backend re-dedupes with Unicode casefold, which is the authoritative pass.
+const splitForbiddenPhrases = (text: string): string[] => {
+  const phrases: string[] = [];
+  const seen = new Set<string>();
+  for (const line of text.split("\n")) {
+    const phrase = line.trim();
+    const key = phrase.toLowerCase();
+    if (!phrase || seen.has(key)) continue;
+    seen.add(key);
+    phrases.push(phrase);
+  }
+  return phrases;
+};
+
+// A stored not_contains config may hold the new phrases list or the legacy single text.
+const forbiddenPhrasesToText = (config: Record<string, unknown> | undefined): string => {
+  const phrases = config?.phrases;
+  if (Array.isArray(phrases)) return phrases.join("\n");
+  return (config?.text as string) ?? "";
+};
+
 // Parse the wizard's metadata textarea and fold in the "use memory" flag.
 export const wizardMetadata = (
   data: EvaluationWizardData,
@@ -33,6 +55,12 @@ export const buildTechniqueConfigs = (
   data: EvaluationWizardData,
 ): Record<string, Record<string, unknown>> => {
   const configs: Record<string, Record<string, unknown>> = {};
+
+  if (data.metrics.includes("not_contains")) {
+    configs.not_contains = {
+      phrases: splitForbiddenPhrases(data.notContainsText),
+    };
+  }
 
   if (data.metrics.includes("nli_eval")) {
     configs.nli_eval = {
@@ -111,6 +139,7 @@ export const getEditInitialData = (
   evaluation: TestEvaluationConfig,
   providers: LLMProviderMinimal[],
 ): Partial<EvaluationWizardData> => {
+  const notContainsCfg = evaluation.technique_configs?.["not_contains"] as Record<string, unknown> | undefined;
   const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
   const provCfg = evaluation.technique_configs?.["provenance_eval"] as Record<string, unknown> | undefined;
   const toolCfg = evaluation.technique_configs?.["tool_used"] as Record<string, unknown> | undefined;
@@ -147,6 +176,7 @@ export const getEditInitialData = (
     toolNode: (toolCfg?.node as string) ?? "",
     toolResultNotEmpty: Boolean(toolCfg?.result_not_empty),
     toolResultContains: (toolCfg?.result_contains as string) ?? "",
+    notContainsText: forbiddenPhrasesToText(notContainsCfg),
     routeExpected: (routeCfg?.expected as string) ?? "",
     routeNode: (routeCfg?.node as string) ?? "",
     actionNode: (actionCfg?.node as string) ?? "",

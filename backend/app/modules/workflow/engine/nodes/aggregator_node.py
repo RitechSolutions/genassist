@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 import logging
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class AggregatorNode(BaseNode):
         if not source_nodes:
             logger.warning(
                 f"No source nodes found for aggregator {self.node_id}")
-            return {"error": "No source nodes found", "aggregated_outputs": {}}
+            return node_failure("No source nodes found", output={"aggregated_outputs": {}})
 
         # If specific sources are required, validate they exist
         if required_sources:
@@ -84,7 +85,10 @@ class AggregatorNode(BaseNode):
             if missing_sources:
                 logger.error(
                     f"Required source nodes not found: {missing_sources}")
-                return {"error": f"Required source nodes not found: {missing_sources}", "aggregated_outputs": {}}
+                return node_failure(
+                    f"Required source nodes not found: {missing_sources}",
+                    output={"aggregated_outputs": {}},
+                )
 
         # Immediately aggregate available outputs
         aggregated_outputs = self._aggregate_immediately(source_nodes, require_all_inputs)

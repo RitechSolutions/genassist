@@ -16,6 +16,8 @@ import { ChevronLeft, ChevronDown, ChevronRight, Plus, ListOrdered, Pencil, Tras
 import JsonViewer from "@/components/JsonViewer";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConversationRecordGroup } from "../components/ConversationRecordGroup";
+import { groupCasesByConversation } from "../helpers/datasetConversations";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +42,8 @@ const DatasetDetailPage: React.FC = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set());
+  // Conversations start collapsed so a large dataset opens as a readable list.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [newestId, setNewestId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -174,6 +178,18 @@ const DatasetDetailPage: React.FC = () => {
     return inputText.includes(query) || expectedText.includes(query);
   });
 
+  const conversationGroups = groupCasesByConversation(filteredCases);
+  const importedCount = conversationGroups.filter((g) => g.conversationId).length;
+
+  const toggleGroupExpansion = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   return (
     <PageLayout>
       <div className="space-y-4">
@@ -221,7 +237,8 @@ const DatasetDetailPage: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Dataset Records</h2>
               <span className="inline-flex items-center text-xs rounded-full bg-muted px-3 py-1">
-                {cases.length} total
+                {importedCount} conversation{importedCount === 1 ? "" : "s"} ·{" "}
+                {cases.length} record{cases.length === 1 ? "" : "s"}
               </span>
             </div>
             <SearchInput
@@ -231,61 +248,21 @@ const DatasetDetailPage: React.FC = () => {
               className="mb-3"
             />
             <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
-              {filteredCases.map((entry) => {
-                const isExpanded = expandedRecords.has(entry.id ?? "");
-                return (
-                  <div key={entry.id} id={`record-${entry.id}`} className="border rounded p-3">
-                    <div
-                      className="flex items-center justify-between gap-2 cursor-pointer"
-                      onClick={() => entry.id && toggleRecordExpansion(entry.id)}
-                    >
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <button type="button" className="text-muted-foreground hover:text-muted-foreground">
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
-                        <ListOrdered className="h-3.5 w-3.5" />
-                        <span className="text-sm font-medium">#{entry.id?.slice(-4)}</span>
-                      </div>
-                      <div
-                        className="flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => openEditDialog(entry)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-500"
-                          onClick={() => {
-                            setCaseToDelete(entry);
-                            setIsDeleteDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                    {isExpanded && (
-                      <div className="mt-3 space-y-2">
-                        <div className="text-xs text-muted-foreground mb-1">Input</div>
-                        <JsonViewer data={(entry.input_data ?? {}) as unknown as never} />
-                        <div className="text-xs text-muted-foreground mt-2 mb-1">Expected Output</div>
-                        <JsonViewer data={(entry.expected_output ?? {}) as unknown as never} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {conversationGroups.map((group) => (
+                <ConversationRecordGroup
+                  key={group.key}
+                  group={group}
+                  isCollapsed={!expandedGroups.has(group.key)}
+                  onToggleCollapse={() => toggleGroupExpansion(group.key)}
+                  expandedRecords={expandedRecords}
+                  onToggleRecord={toggleRecordExpansion}
+                  onEdit={openEditDialog}
+                  onDelete={(entry) => {
+                    setCaseToDelete(entry);
+                    setIsDeleteDialogOpen(true);
+                  }}
+                />
+              ))}
               {filteredCases.length === 0 && (
                 <div className="text-sm text-muted-foreground">No records found.</div>
               )}

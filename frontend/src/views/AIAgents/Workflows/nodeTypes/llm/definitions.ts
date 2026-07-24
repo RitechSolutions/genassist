@@ -3,6 +3,7 @@ import {
   NodeData,
   NodeTypeDefinition,
   AgentNodeData,
+  SubAgentNodeData,
   ExternalAgentNodeData,
   LLMModelNodeData,
   ToolBuilderNodeData,
@@ -11,6 +12,7 @@ import {
   NlpNodeData,
 } from "../../types/nodes";
 import AgentNode from "./agentNode";
+import SubAgentNode from "./subAgentNode";
 import VoiceAgentNode from "./voiceAgentNode";
 import ExternalAgentNode from "./externalAgentNode";
 import LLMModelNode from "./modelNode";
@@ -19,6 +21,7 @@ import MCPNode from "./mcpNode";
 import NlpNode from "./nlpNode";
 import {
   AI_AGENT_HELP_CONTENT,
+  SUB_AGENT_HELP_CONTENT,
   LANGUAGE_MODEL_HELP_CONTENT,
   MCP_SERVER_HELP_CONTENT,
   TOOL_BUILDER_HELP_CONTENT,
@@ -58,6 +61,12 @@ export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
         position: "bottom",
       },
       {
+        id: "input_sub_agents",
+        type: "target",
+        compatibility: "sub_agents",
+        position: "bottom",
+      },
+      {
         id: "output",
         type: "source",
         compatibility: "any",
@@ -69,6 +78,64 @@ export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "agentNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const SUB_AGENT_NODE_DEFINITION: NodeTypeDefinition<SubAgentNodeData> = {
+  type: "subAgentNode",
+  label: "Sub-Agent",
+  description:
+    "Defines a focused AI agent that a parent AI agent can call for delegated tasks.",
+  shortDescription: "Define a sub-agent",
+  helpContent: SUB_AGENT_HELP_CONTENT,
+  configSubtitle:
+    "Configure the collaboration mode, description, provider, prompt, and memory of the sub-agent.",
+  category: "ai",
+  icon: "GitBranch",
+  defaultData: {
+    name: "Sub-Agent",
+    providerId: undefined,
+    type: "ToolSelector",
+    mode: "single_turn",
+    description: "",
+    memory: true,
+    piiMasking: false,
+    systemPrompt: "",
+    // Kept in data (hidden in the dialog): the child always runs on the delegated task
+    userPrompt: "{{session.message}}",
+    maxIterations: 7,
+    timeoutSeconds: 120,
+    memoryTrimmingMode: "message_count",
+    maxMessages: 20,
+    handlers: [
+      {
+        id: "output_sub_agent",
+        type: "source",
+        compatibility: "sub_agents",
+        position: "top",
+      },
+      {
+        id: "input_tools",
+        type: "target",
+        compatibility: "tools",
+        position: "bottom",
+      },
+      {
+        id: "input_sub_agents",
+        type: "target",
+        compatibility: "sub_agents",
+        position: "bottom",
+      },
+    ],
+  },
+  component: SubAgentNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "subAgentNode",
     position,
     data: {
       ...data,
