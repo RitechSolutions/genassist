@@ -25,6 +25,7 @@ from app.api.v1.routes import (
     llm_analysts,
     llm_cost_rates,
     llm_providers,
+    llm_usage,
     local_fine_tuning,
     mcp,
     mcp_servers,
@@ -144,6 +145,7 @@ router.include_router(
 )
 router.include_router(file_manager.router, prefix="/file-manager", tags=["FileManager"])
 router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+router.include_router(llm_usage.router, prefix="/analytics/llm-usage", tags=["LLM Usage"])
 
 router.include_router(prompt_editor.router, prefix="/genagent/prompt-editor", tags=["Prompt Editor"])
 router.include_router(test_suites.router, prefix="/genagent/eval", tags=["Test Suites"])

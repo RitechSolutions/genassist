@@ -165,6 +165,12 @@ class ErrorKey(Enum):
     SSO_MICROSOFT_USER_DENIED = "SSO_MICROSOFT_USER_DENIED"
     SSO_MICROSOFT_REDIRECT_NOT_ALLOWED = "SSO_MICROSOFT_REDIRECT_NOT_ALLOWED"
     SSO_MICROSOFT_NOT_CONFIGURED = "SSO_MICROSOFT_NOT_CONFIGURED"
+    LLM_USAGE_CONTROL_NOT_FOUND = "LLM_USAGE_CONTROL_NOT_FOUND"
+    LLM_USAGE_CAPTURE_NOT_ENABLED = "LLM_USAGE_CAPTURE_NOT_ENABLED"
+    LLM_USAGE_SHADOW_ALREADY_RUNNING = "LLM_USAGE_SHADOW_ALREADY_RUNNING"
+    LLM_USAGE_SHADOW_ALREADY_PASSED = "LLM_USAGE_SHADOW_ALREADY_PASSED"
+    LLM_USAGE_SHADOW_NOT_PASSED = "LLM_USAGE_SHADOW_NOT_PASSED"
+    LLM_USAGE_SHADOW_WINDOW_STALE = "LLM_USAGE_SHADOW_WINDOW_STALE"
 
 
 ERROR_MESSAGES = {
@@ -330,6 +336,12 @@ ERROR_MESSAGES = {
         ErrorKey.SSO_MICROSOFT_USER_DENIED: "Your account is not provisioned for GenAssist. Contact an administrator.",
         ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED: "SSO redirect target is not allowed by server configuration.",
         ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
+        ErrorKey.LLM_USAGE_CONTROL_NOT_FOUND: "LLM usage control state is not initialized.",
+        ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED: "LLM usage capture must be activated first.",
+        ErrorKey.LLM_USAGE_SHADOW_ALREADY_RUNNING: "Shadow reconciliation is already running.",
+        ErrorKey.LLM_USAGE_SHADOW_ALREADY_PASSED: "Shadow reconciliation has already passed.",
+        ErrorKey.LLM_USAGE_SHADOW_NOT_PASSED: "Shadow reconciliation has not passed yet.",
+        ErrorKey.LLM_USAGE_SHADOW_WINDOW_STALE: "The passing shadow window is no longer current.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
