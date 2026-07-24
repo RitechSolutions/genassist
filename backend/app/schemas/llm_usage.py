@@ -6,7 +6,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict
 
 # Breakdown dimensions the read APIs group by.
-BREAKDOWN_DIMENSIONS = ("provider", "model", "agent")
+BREAKDOWN_DIMENSIONS = ("provider", "model", "agent", "source")
 
 
 class LlmUsageQueryParams:

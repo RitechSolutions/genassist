@@ -294,6 +294,7 @@ def create_celery():
         "app.tasks.kb_batch_tasks",
         "app.tasks.analytics_aggregation_tasks",
         "app.tasks.backfill_llm_usage_tasks",
+        "app.tasks.llm_usage_reconciliation_tasks",
         "app.tasks.file_upload_session_tasks",
         "app.tasks.email_tasks",
         "app.tasks.support_ticket_tasks",
@@ -518,6 +519,15 @@ def create_celery():
         beat_schedule["backfill-custom-attributes"] = {
             "task": "app.tasks.backfill_custom_attributes.backfill_custom_attributes",
             "schedule": crontab(minute="0", hour="3"),
+            "options": {"expires": 7200},
+        }
+
+    # Once a day at 04:30 UTC, compare LLM usage ledger vs expected for the previous
+    # UTC day. Does nothing until a tenant turns on shadow mode.
+    if settings.CELERY_ENABLE_LLM_USAGE_RECONCILIATION:
+        beat_schedule["reconcile-llm-usage-shadow"] = {
+            "task": "app.tasks.llm_usage_reconciliation_tasks.reconcile_llm_usage_shadow",
+            "schedule": crontab(minute="30", hour="4"),
             "options": {"expires": 7200},
         }
 

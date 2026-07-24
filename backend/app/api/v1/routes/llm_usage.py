@@ -9,6 +9,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.cache_headers import no_store_headers
+from app.repositories.llm_usage_reconciliation import LlmUsageReconciliationRepository
 from app.schemas.llm_usage import (
     BREAKDOWN_DIMENSIONS,
     LlmUsageBreakdownResponse,
@@ -17,7 +18,12 @@ from app.schemas.llm_usage import (
     LlmUsageSummaryResponse,
     LlmUsageTimeseriesResponse,
 )
-from app.schemas.llm_usage_control import LlmUsageControlRead, LlmUsageCutoverRequest
+from app.schemas.llm_usage_control import (
+    LlmUsageControlRead,
+    LlmUsageCutoverRequest,
+    LlmUsageReconciliationListResponse,
+    LlmUsageReconciliationReportRead,
+)
 from app.services.llm_usage_control import LlmUsageControlService
 from app.services.llm_usage_export import EXTENSIONS, VALID_FORMATS, export_llm_usage
 from app.services.llm_usage_read import LlmUsageReadService
@@ -101,6 +107,37 @@ async def trigger_backfill(
     tenant_id = get_tenant_context()
     result = backfill_llm_usage_ledger.delay(tenant_id=tenant_id, force=force)
     return {"status": "queued", "task_id": result.id, "tenant_id": tenant_id, "force": force}
+
+
+@router.get(
+    "/reconciliation",
+    response_model=LlmUsageReconciliationListResponse,
+    dependencies=[Depends(auth), Depends(permissions(P.Dashboard.READ))],
+    summary="Recent shadow reconciliation reports",
+)
+async def get_reconciliation_reports(
+    days: int = Query(default=30, ge=1, le=180),
+    repo: LlmUsageReconciliationRepository = Injected(LlmUsageReconciliationRepository),
+) -> LlmUsageReconciliationListResponse:
+    reports = await repo.recent_reports(days)
+    return LlmUsageReconciliationListResponse(
+        reports=[LlmUsageReconciliationReportRead.model_validate(r) for r in reports]
+    )
+
+
+@router.post(
+    "/reconciliation/run",
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.WRITE))],
+    summary="Manually run shadow reconciliation for this tenant",
+)
+async def trigger_reconciliation():
+    """Enqueue a one-off reconciliation for the caller's tenant"""
+    from app.core.tenant_scope import get_tenant_context
+    from app.tasks.llm_usage_reconciliation_tasks import reconcile_llm_usage_shadow_for_tenant
+
+    tenant_id = get_tenant_context()
+    result = reconcile_llm_usage_shadow_for_tenant.delay(tenant_id=tenant_id)
+    return {"status": "queued", "task_id": result.id, "tenant_id": tenant_id}
 
 
 @router.get(

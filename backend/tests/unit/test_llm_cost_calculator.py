@@ -118,6 +118,37 @@ class TestFindPricingWithStatus:
         assert res.status is PricingStatus.CONFIGURED
         assert res.matched_model_key == "gpt-4o-mini-2024"
 
+    def test_bedrock_eu_region_matches_us_priced_variant(self):
+        res = find_pricing_with_status("bedrock", "eu.amazon.nova-2-lite-v1:0")
+        assert res.status is PricingStatus.FALLBACK
+        assert res.matched_model_key == "us.amazon.nova-2-lite-v1:0"
+        assert res.input_per_1k == Decimal("0.0001")
+        assert res.output_per_1k == Decimal("0.0004")
+
+    def test_bedrock_apac_region_matches(self):
+        res = find_pricing_with_status("bedrock", "apac.amazon.nova-2-pro-v1:0")
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0002")
+
+    def test_bedrock_region_less_id_matches(self):
+        res = find_pricing_with_status("bedrock", "amazon.nova-2-flash-v1:0")
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0004")
+
+    def test_bedrock_unknown_model_still_unpriced(self):
+        res = find_pricing_with_status("bedrock", "eu.amazon.titan-text-v1")
+        assert res.status is PricingStatus.UNPRICED
+
+    def test_bedrock_region_stripped_db_rate_is_configured(self, monkeypatch):
+        monkeypatch.setattr(
+            llm_pricing,
+            "get_db_pricing_nested",
+            lambda tenant: {"bedrock": {"us.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.009, "output_per_1k": 0.02}}},
+        )
+        res = find_pricing_with_status("bedrock", "eu.amazon.nova-2-lite-v1:0")
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.input_per_1k == Decimal("0.009")
+
 
 class TestFindPricingLegacyContract:
     @pytest.fixture(autouse=True)

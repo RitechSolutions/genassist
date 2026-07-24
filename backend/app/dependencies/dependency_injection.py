@@ -86,6 +86,7 @@ from app.services.llm_analysts import LlmAnalystService
 from app.services.llm_cost_rates import LlmCostRateService
 from app.services.llm_usage_backfill import LlmUsageBackfillService
 from app.services.llm_usage_control import LlmUsageControlService
+from app.services.llm_usage_reconciliation import LlmUsageReconciliationService
 from app.services.llm_usage_read import LlmUsageReadService
 from app.services.audio_providers import AudioProviderService
 from app.services.fallback_chains import FallbackChainService
@@ -290,6 +291,7 @@ class Dependencies(Module):
         binder.bind(LlmUsageReadRepository, scope=request_scope)
         binder.bind(LlmUsageBackfillService, scope=request_scope)
         binder.bind(LlmUsageBackfillRepository, scope=request_scope)
+        binder.bind(LlmUsageReconciliationService, scope=request_scope)
 
         binder.bind(LlmAnalystService, scope=request_scope)
         binder.bind(LlmAnalystRepository, scope=request_scope)

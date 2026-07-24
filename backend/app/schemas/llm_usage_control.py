@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Optional
+from datetime import date, datetime
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,3 +25,22 @@ class LlmUsageCutoverRequest(BaseModel):
     """Toggle the dashboard cost source between healed daily stats and the ledger"""
 
     enabled: bool
+
+
+class LlmUsageReconciliationReportRead(BaseModel):
+    """One shadow reconciliation report for a covered UTC day"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    report_date: date
+    interval_start: Optional[datetime] = None
+    interval_end: Optional[datetime] = None
+    passed: bool
+    reasons: Optional[dict[str, Any]] = None
+    metrics: Optional[dict[str, Any]] = None
+
+
+class LlmUsageReconciliationListResponse(BaseModel):
+    """Recent reconciliation reports, newest day first"""
+
+    reports: list[LlmUsageReconciliationReportRead]

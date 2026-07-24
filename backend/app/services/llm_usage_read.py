@@ -20,7 +20,10 @@ _DIMENSION_COLUMNS = {
     "provider": LlmUsageEventModel.provider_key,
     "model": LlmUsageEventModel.model_key,
     "agent": LlmUsageEventModel.agent_id,
+    "source": LlmUsageEventModel.source_type,
 }
+
+_SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Analyst"}
 
 
 @inject
@@ -124,6 +127,9 @@ class LlmUsageReadService:
         if dimension == "agent":
             label = agent_names.get(key, "Unattributed" if key is None else "Unknown")
             key_str = str(key) if key is not None else "unattributed"
+        elif dimension == "source":
+            key_str = key or "unknown"
+            label = _SOURCE_LABELS.get(key, key or "Unknown")
         else:
             key_str = key or "unknown"
             label = key or "Unknown"

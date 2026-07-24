@@ -128,3 +128,13 @@ async def test_breakdown_agent_resolves_names_and_unattributed():
     by = {i.key: i for i in resp.items}
     assert by[str(aid)].label == "Sales Bot"
     assert by["unattributed"].label == "Unattributed"
+
+
+@pytest.mark.asyncio
+async def test_breakdown_source_relabels_workflow_and_analyst():
+    rows = [("workflow", Decimal("0.80"), 0, 900, 5), ("llm_analyst", Decimal("0.20"), 0, 300, 4)]
+    resp = await _service(breakdown_rows=rows).get_breakdown(_params(), "source")
+    by = {i.key: i for i in resp.items}
+    assert by["workflow"].label == "Workflow"
+    assert by["llm_analyst"].label == "Analyst"
+    assert resp.dimension == "source"

@@ -4,6 +4,7 @@ LLM pricing: database-backed rates (llm_cost_rates) with static fallback (USD pe
 DB rows override static defaults for the same provider/model keys.
 """
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -11,6 +12,8 @@ from typing import Dict, Optional
 
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
+
+_BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|us-gov)\.")
 
 # Static fallback when DB is empty or missing a row (also used before first migration).
 STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
@@ -56,12 +59,10 @@ DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
 
 
 class PricingStatus(str, Enum):
-
     CONFIGURED = "configured"  # tenant-managed llm_cost_rates row
     FALLBACK = "fallback"  # bundled static rate table
     UNPRICED = "unpriced"  # no matching rate; cost must stay NULL
     LEGACY_ESTIMATE = "legacy_estimate"  # old cost copied during backfill; not calculated at runtime
-
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,21 @@ def _normalize_model_name(model: str) -> str:
     if not model:
         return ""
     return str(model).lower().strip()
+
+
+def _match_bedrock_region_agnostic(model_key: str, provider_pricing: Dict[str, dict]) -> Optional[str]:
+    """Match a region-prefixed Bedrock model against region-stripped rate keys"""
+    base = _BEDROCK_REGION_PREFIX.sub("", model_key)
+    if not base:
+        return None
+    stripped = {(_BEDROCK_REGION_PREFIX.sub("", k), k) for k in provider_pricing if not k.startswith("_")}
+    exact = [orig for s, orig in stripped if s == base]
+    if exact:
+        return exact[0]
+    prefixed = [(s, orig) for s, orig in stripped if s and base.startswith(s)]
+    if prefixed:
+        return max(prefixed, key=lambda pair: len(pair[0]))[1]
+    return None
 
 
 def find_pricing_with_status(provider: str, model: str) -> PricingResolution:
@@ -101,6 +117,9 @@ def find_pricing_with_status(provider: str, model: str) -> PricingResolution:
             matched_key = max(prefix_matches, key=len)
         elif "_default" in provider_pricing:
             matched_key = "_default"
+
+    if matched_key is None and provider_key == "bedrock":
+        matched_key = _match_bedrock_region_agnostic(model_key, provider_pricing)
 
     if matched_key is None:
         return PricingResolution(PricingStatus.UNPRICED, None, None, None)

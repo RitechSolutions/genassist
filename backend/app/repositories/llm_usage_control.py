@@ -42,6 +42,19 @@ class LlmUsageControlRepository(DbRepository[LlmUsageControlModel]):
         await self.db.commit()
         return await self.get_singleton()
 
+    async def mark_shadow_passed(self) -> LlmUsageControlModel | None:
+        """Stamp the pass once. Guarded so a later run can't move an existing stamp"""
+        await self.db.execute(
+            update(LlmUsageControlModel)
+            .where(
+                LlmUsageControlModel.singleton_key == CONTROL_SINGLETON_KEY,
+                LlmUsageControlModel.shadow_passed_at.is_(None),
+            )
+            .values(shadow_passed_at=func.now())
+        )
+        await self.db.commit()
+        return await self.get_singleton()
+
     async def set_cutover(self, enabled: bool) -> LlmUsageControlModel | None:
         await self.db.execute(
             update(LlmUsageControlModel)
