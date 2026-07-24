@@ -8,7 +8,7 @@ Nullable with no backfill: existing workflows have no stored preference and fall
 back to the default ("detailed") node rendering at the application layer.
 
 Revision ID: a3f9c1d7e204
-Revises: e7a4b0c95d61
+Revises: d4b1f2a3c5e6
 Create Date: 2026-07-23 12:00:00.000000
 
 """
@@ -21,7 +21,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "a3f9c1d7e204"
-down_revision: Union[str, None] = "e7a4b0c95d61"
+down_revision: Union[str, None] = "d4b1f2a3c5e6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
