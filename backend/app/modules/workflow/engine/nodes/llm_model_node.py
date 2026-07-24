@@ -14,6 +14,7 @@ from app.core.utils.token_utils import calculate_history_tokens
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
@@ -270,7 +271,9 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
         except Exception as e:
             logger.error(f"Error processing LLM node: {str(e)}")
             error_message = f"Error: {str(e)}"
-            return error_message
+            # Preserve the "Error: ..." string as the flow output so downstream
+            # text consumers still receive a string, but record the failure.
+            return node_failure(str(e), output=error_message)
 
     def _convert_attachment_to_base64(self, attachment_local_path: str) -> str:
         """Convert attachment local path to base64"""

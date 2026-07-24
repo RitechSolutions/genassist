@@ -51,6 +51,7 @@ from app.repositories.recordings import RecordingsRepository
 from app.repositories.role_permissions import RolePermissionsRepository
 from app.repositories.roles import RolesRepository
 from app.repositories.tenant import TenantRepository
+from app.repositories.template import TemplateRepository
 from app.repositories.tool import ToolRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.repositories.user_groups import UserGroupRepository
@@ -94,6 +95,7 @@ from app.services.support_ticket_sync import SupportTicketSyncService
 from app.services.permissions import PermissionsService
 from app.services.role_permissions import RolePermissionsService
 from app.services.roles import RolesService
+from app.services.template import TemplateService
 from app.services.tenant import TenantService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.user_groups import UserGroupService
@@ -221,6 +223,9 @@ class Dependencies(Module):
 
         binder.bind(AgentRepository, scope=request_scope)
         binder.bind(AgentConfigService, scope=request_scope)
+
+        binder.bind(TemplateRepository, scope=request_scope)
+        binder.bind(TemplateService, scope=request_scope)
 
         binder.bind(UserService, scope=request_scope)
         binder.bind(UserRepository, scope=request_scope)

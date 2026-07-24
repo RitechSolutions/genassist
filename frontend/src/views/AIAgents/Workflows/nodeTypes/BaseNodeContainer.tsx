@@ -150,7 +150,9 @@ const BaseNodeContainer = <T extends NodeData>({
     : !hasNodeBeenExecuted(id) || hasValidationError;
   const isSpecialNode =
     nodeType === "chatInputNode" || nodeType === "chatOutputNode";
-  const isAgentNode = nodeType === "agentNode";
+  // Sub-agents share the agent's gradient treatment
+  const isAgentNode =
+    nodeType === "agentNode" || nodeType === "subAgentNode";
   // The agent node's distinctive animated gradient border is dropped while
   // deactivated, so a bypassed agent looks like every other deactivated node.
   const showAgentStyle = isAgentNode && !isDeactivated;
@@ -534,7 +536,7 @@ const BaseNodeContainer = <T extends NodeData>({
     <>
       {renderCanvasNode()}
 
-      {/* Generic Test Dialog - automatically included */}
+      {/* Generic Test Dialog*/}
       <GenericTestDialog
         isOpen={isTestDialogOpen}
         onClose={() => setIsTestDialogOpen(false)}

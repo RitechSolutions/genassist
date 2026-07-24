@@ -1,11 +1,16 @@
 import logging
 from typing import List
 from uuid import UUID
-from fastapi import Depends
+
 from injector import inject
 from sqlalchemy import select
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.workflow_secrets import (
+    decrypt_hidden_defaults,
+    encrypt_hidden_defaults,
+)
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.operator import OperatorModel
@@ -13,10 +18,6 @@ from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowMinimal, WorkflowUpdate
-from app.core.utils.workflow_secrets import (
-    decrypt_hidden_defaults,
-    encrypt_hidden_defaults,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +89,48 @@ class WorkflowService:
             result.append(wf)
         return result
 
+    @staticmethod
+    def _validate_sub_agents(payload: dict) -> None:
+        """Save-time sub-agent check"""
+        from pydantic import ValidationError
+
+        from app.core.exceptions.error_messages import ErrorKey
+        from app.modules.workflow.agents.sub_agents.graph import (
+            SubAgentTopologyError,
+            validate_sub_agent_topology,
+        )
+        from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
+
+        try:
+            validate_sub_agent_topology(payload.get("nodes"), payload.get("edges"))
+        except SubAgentTopologyError as e:
+            raise AppException(
+                error_key=ErrorKey.SUB_AGENT_INVALID_TOPOLOGY,
+                status_code=400,
+                error_variables=[str(e)],
+                error_detail=str(e),
+            ) from e
+
+        for node in payload.get("nodes") or []:
+            if node.get("type") != "subAgentNode":
+                continue
+            try:
+                SubAgentConfig.model_validate(node.get("data") or {})
+            except ValidationError as e:
+                name = (node.get("data") or {}).get("name") or node.get("id")
+                detail = f"'{name}': {e.errors()[0].get('msg', 'invalid configuration')}"
+                raise AppException(
+                    error_key=ErrorKey.SUB_AGENT_INVALID_CONFIG,
+                    status_code=400,
+                    error_variables=[detail],
+                    error_detail=detail,
+                ) from e
+
     # ---------- WRITE ----------
     async def create(self, data: WorkflowCreate) -> WorkflowInDB:
         # convert schema ➜ ORM
         payload = data.model_dump()
+        self._validate_sub_agents(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         new_workflow = WorkflowModel(**payload)
@@ -107,6 +146,7 @@ class WorkflowService:
 
         # mutate ORM object in place
         payload = data.model_dump()
+        self._validate_sub_agents(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         for field, value in payload.items():

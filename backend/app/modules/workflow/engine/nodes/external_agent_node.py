@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 import aiohttp
 
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.node_result import is_node_failure, node_failure
 from app.modules.workflow.utils import execute_python_code
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class ExternalAgentNode(BaseNode):
         })
 
         if not endpoint:
-            return {"error": "No endpoint configured for external agent node"}
+            return node_failure("No endpoint configured for external agent node")
 
         headers = self._build_auth_headers(
             headers, auth_type, auth_token, auth_header, auth_username, auth_password
@@ -55,7 +56,7 @@ class ExternalAgentNode(BaseNode):
             api_response = await self._call_endpoint(method, endpoint, headers, request_body, timeout)
         except Exception as e:
             logger.error("External agent HTTP call failed: %s", e)
-            return {"error": f"HTTP call failed: {e}"}
+            return node_failure(f"HTTP call failed: {e}")
 
         if api_response.get("status", 200) >= 400:
             error_data = api_response.get("data", {})
@@ -64,10 +65,11 @@ class ExternalAgentNode(BaseNode):
                 or error_data.get("error")
                 or f"HTTP {api_response['status']}"
             )
-            return {
-                "error": error_msg,
-                "_raw_response": error_data,
-            }
+            return node_failure(
+                error_msg,
+                code=api_response.get("status"),
+                details={"raw_response": error_data},
+            )
 
         response_data = api_response.get("data", api_response)
 
@@ -75,6 +77,11 @@ class ExternalAgentNode(BaseNode):
             result = await self._apply_mapping_script(mapping_script, response_data)
         else:
             result = self._apply_field_mapping(response_data, message_field, steps_field)
+
+        # A mapping script can itself fail; propagate that failure as-is rather
+        # than decorating the failure envelope with _raw_response.
+        if is_node_failure(result):
+            return result
 
         result["_raw_response"] = response_data
         return result
@@ -157,7 +164,7 @@ class ExternalAgentNode(BaseNode):
             error_msg = execution.get("errors") or execution.get("error")
             if error_msg:
                 logger.error("Mapping script errors: %s", error_msg)
-                return {"error": f"Mapping script error: {error_msg}"}
+                return node_failure(f"Mapping script error: {error_msg}")
 
             mapped = execution.get("result")
             if not isinstance(mapped, dict) or "message" not in mapped:
@@ -171,7 +178,7 @@ class ExternalAgentNode(BaseNode):
             return mapped
         except Exception as e:
             logger.error("Mapping script error: %s", e)
-            return {"error": f"Mapping script error: {e}"}
+            return node_failure(f"Mapping script error: {e}")
 
     def _apply_field_mapping(
         self, data: Any, message_field: str, steps_field: str

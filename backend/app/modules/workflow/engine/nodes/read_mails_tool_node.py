@@ -6,6 +6,7 @@ from typing import Dict, Any
 import logging
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.integration.gmail_connector import GmailConnector
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,4 @@ class ReadMailsToolNode(BaseNode):
 
         except Exception as e:
             logger.error(f"Error processing ReadMailsToolProcessor: {e}")
-            return {
-                "status": 500,
-                "error": str(e)
-            }
+            return node_failure(str(e), code=500, output={"status": 500, "error": str(e)})
