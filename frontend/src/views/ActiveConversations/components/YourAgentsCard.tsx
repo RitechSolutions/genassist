@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import { PageListSkeleton } from "@/components/skeletons";
+import { formatUsd } from "@/helpers/formatCurrency";
 
 interface AgentStats {
   id: string;
@@ -15,7 +16,8 @@ interface AgentStats {
   conversationsToday: number;
   resolutionRate: number;
   avgResponseTime: string;
-  costPerConversation: number;
+  // null when there is no cost data today or no conversations to divide by
+  costPerConversation: number | null;
   // Extended fields for modal
   description?: string;
   isActive?: boolean;
@@ -44,7 +46,10 @@ const transformApiAgent = (agent: AgentStatsItem): AgentStats => ({
   conversationsToday: agent.conversations_today,
   resolutionRate: Number(agent.resolution_rate) || 0,
   avgResponseTime: formatResponseTime(agent.avg_response_time_ms),
-  costPerConversation: Number(agent.cost) || 0,
+  costPerConversation:
+    agent.cost != null && agent.conversations_today > 0
+      ? Number(agent.cost) / agent.conversations_today
+      : null,
   isActive: agent.is_active,
 });
 
@@ -161,11 +166,11 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
                     </span>
                   </div>
 
-                  {showCostPerConversation && (
+                  {showCostPerConversation && agent.costPerConversation != null && (
                     <div className="flex gap-1 items-center">
                       <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">
-                        ${agent.costPerConversation.toFixed(4)}
+                        {formatUsd(agent.costPerConversation)}
                       </span>
                     </div>
                   )}

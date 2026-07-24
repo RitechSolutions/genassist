@@ -7,10 +7,17 @@ from uuid import UUID
 
 from injector import inject
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
 from app.db.models.llm_cost_rate import LlmCostRateModel
 from app.repositories.llm_cost_rates import LlmCostRateRepository
-from app.schemas.llm_cost_rate import LlmCostRateImportResult
+from app.schemas.llm_cost_rate import (
+    LlmCostRateCreate,
+    LlmCostRateImportResult,
+    LlmCostRateRead,
+    LlmCostRateUpdate,
+)
 from app.services.llm_pricing_cache import invalidate_llm_cost_rates_cache
 
 logger = logging.getLogger(__name__)
@@ -44,6 +51,39 @@ class LlmCostRateService:
                 ]
             )
         return out.getvalue()
+
+    async def create_rate(self, dto: LlmCostRateCreate) -> LlmCostRateRead:
+        """Insert one rate. 409 if an active rate for the same provider+model exists"""
+        tenant = get_tenant_context()
+        provider = dto.provider.strip().lower()
+        model = dto.model.strip().lower()
+        existing = await self.repo.get_active_by_provider_model(provider, model)
+        if existing:
+            raise AppException(error_key=ErrorKey.LLM_COST_RATE_ALREADY_EXISTS, status_code=409)
+        created = await self.repo.create(
+            LlmCostRateModel(
+                provider_key=provider,
+                model_key=model,
+                input_per_1k=dto.input_per_1k,
+                output_per_1k=dto.output_per_1k,
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        invalidate_llm_cost_rates_cache(tenant)
+        return LlmCostRateRead.model_validate(created, from_attributes=True)
+
+    async def update_rate(self, rate_id: UUID, dto: LlmCostRateUpdate) -> LlmCostRateRead | None:
+        """Edit an active rate's prices. Returns None when the rate is missing"""
+        tenant = get_tenant_context()
+        row = await self.repo.get_active_by_id(rate_id)
+        if not row:
+            return None
+        row.input_per_1k = dto.input_per_1k
+        row.output_per_1k = dto.output_per_1k
+        row.updated_at = datetime.now(timezone.utc)
+        updated = await self.repo.update(row)
+        invalidate_llm_cost_rates_cache(tenant)
+        return LlmCostRateRead.model_validate(updated, from_attributes=True)
 
     async def delete_by_id(self, rate_id: UUID) -> bool:
         tenant = get_tenant_context()

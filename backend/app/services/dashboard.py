@@ -6,6 +6,7 @@ from typing import Optional
 from injector import inject
 
 from app.repositories.dashboard import DashboardRepository
+from app.repositories.llm_usage_control import LlmUsageControlRepository
 from app.schemas.dashboard import (
     ActiveConversationItem,
     ActiveConversationsResponse,
@@ -16,6 +17,7 @@ from app.schemas.dashboard import (
     IntegrationItem,
     IntegrationsResponse,
 )
+from app.schemas.llm_usage_control import COST_SOURCE_DAILY_STATS, COST_SOURCE_LEDGER
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,16 @@ INTEGRATION_DESCRIPTIONS = {
 @inject
 class DashboardService:
 
-    def __init__(self, dashboard_repo: DashboardRepository):
+    def __init__(self, dashboard_repo: DashboardRepository, control_repo: LlmUsageControlRepository):
         self.dashboard_repo = dashboard_repo
+        self.control_repo = control_repo
+
+    async def _cost_source(self) -> str:
+        """Return which system the dashboard should treat as the cost source"""
+        control = await self.control_repo.get_singleton()
+        if control is not None and control.ledger_cutover_enabled:
+            return COST_SOURCE_LEDGER
+        return COST_SOURCE_DAILY_STATS
 
     def _get_date_range(self, days: int = 30) -> tuple[datetime, datetime]:
         """Get date range from now going back specified days."""
@@ -82,7 +92,8 @@ class DashboardService:
             active_agents=active_agents,
             workflow_runs=workflow_runs,
             avg_response_time_ms=avg_response_time,
-            total_cost_usd=total_cost_usd
+            total_cost_usd=total_cost_usd,
+            cost_source=await self._cost_source(),
         )
 
     async def get_active_conversations(
@@ -165,6 +176,7 @@ class DashboardService:
             limit=limit
         )
 
+        cost_source = await self._cost_source()
         agent_items = [
             AgentStatsItem(
                 id=agent["id"],
@@ -172,7 +184,8 @@ class DashboardService:
                 conversations_today=agent["conversations_today"],
                 resolution_rate=Decimal(str(agent["resolution_rate"])) if agent["resolution_rate"] else Decimal("0.00"),
                 avg_response_time_ms=agent["avg_response_time_ms"],
-                cost=float(str(agent["cost"])) if agent["cost"] else 0.0,
+                cost=agent["cost"],
+                cost_source=cost_source,
                 is_active=agent["is_active"]
             )
             for agent in agent_stats

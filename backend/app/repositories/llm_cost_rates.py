@@ -23,6 +23,15 @@ class LlmCostRateRepository(DbRepository[LlmCostRateModel]):
         )
         return list(result.scalars().all())
 
+    async def get_active_by_id(self, rate_id: UUID) -> LlmCostRateModel | None:
+        result = await self.db.execute(
+            select(LlmCostRateModel).where(
+                LlmCostRateModel.id == rate_id,
+                LlmCostRateModel.is_deleted == 0,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_active_by_provider_model(
         self, provider_key: str, model_key: str
     ) -> LlmCostRateModel | None:

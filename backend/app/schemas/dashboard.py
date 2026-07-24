@@ -12,6 +12,8 @@ class DashboardSummaryStats(BaseModel):
     workflow_runs: int
     avg_response_time_ms: int
     total_cost_usd: float
+    # Which system ``total_cost_usd`` is read from: healed daily stats until cutover.
+    cost_source: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,7 +56,10 @@ class AgentStatsItem(BaseModel):
     conversations_today: int = 0
     resolution_rate: Decimal = Decimal("0.00")
     avg_response_time_ms: int = 0
-    cost: Decimal = Decimal("0.00")
+    # None when the agent has no cost data today (vs 0 for a real zero-cost day),
+    # so the frontend shows cost-per-conversation only when it exists.
+    cost: Optional[Decimal] = None
+    cost_source: str
     is_active: bool = False
 
     model_config = ConfigDict(from_attributes=True)

@@ -171,6 +171,7 @@ class ErrorKey(Enum):
     LLM_USAGE_SHADOW_ALREADY_PASSED = "LLM_USAGE_SHADOW_ALREADY_PASSED"
     LLM_USAGE_SHADOW_NOT_PASSED = "LLM_USAGE_SHADOW_NOT_PASSED"
     LLM_USAGE_SHADOW_WINDOW_STALE = "LLM_USAGE_SHADOW_WINDOW_STALE"
+    LLM_COST_RATE_ALREADY_EXISTS = "LLM_COST_RATE_ALREADY_EXISTS"
 
 
 ERROR_MESSAGES = {
@@ -342,6 +343,7 @@ ERROR_MESSAGES = {
         ErrorKey.LLM_USAGE_SHADOW_ALREADY_PASSED: "Shadow reconciliation has already passed.",
         ErrorKey.LLM_USAGE_SHADOW_NOT_PASSED: "Shadow reconciliation has not passed yet.",
         ErrorKey.LLM_USAGE_SHADOW_WINDOW_STALE: "The passing shadow window is no longer current.",
+        ErrorKey.LLM_COST_RATE_ALREADY_EXISTS: "A rate for this provider and model already exists.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

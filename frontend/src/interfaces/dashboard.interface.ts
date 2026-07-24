@@ -3,6 +3,7 @@ export interface DashboardSummaryStats {
   workflow_runs: number;
   avg_response_time_ms: number;
   total_cost_usd: number;
+  cost_source: string;
 }
 
 export interface ActiveConversationItem {
@@ -36,7 +37,8 @@ export interface AgentStatsItem {
   conversations_today: number;
   resolution_rate: number;
   avg_response_time_ms: number;
-  cost: number;
+  cost: number | null;
+  cost_source: string;
   is_active: boolean;
 }
 

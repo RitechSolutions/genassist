@@ -127,6 +127,12 @@ const navGroups: NavGroup[] = [
             url: "/analytics/node-analytics",
             permissionsRequired: ["read:dashboard"],
           },
+          {
+            title: "LLM Usage",
+            url: "/analytics/llm-usage",
+            permissionsRequired: ["read:dashboard"],
+            feature_flag: FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION,
+          },
         ],
       },
       {

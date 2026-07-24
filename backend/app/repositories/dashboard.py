@@ -247,7 +247,8 @@ class DashboardRepository:
                 "conversations_today": conv_count_by_operator.get(agent.operator_id, 0),
                 "resolution_rate": operator_stats.avg_resolution_rate if operator_stats else 0,
                 "avg_response_time_ms": avg_response_by_agent.get(agent.id, 0),
-                "cost": cost_by_agent.get(agent.id, 0.0),
+                # None when the agent has no daily-stats row today
+                "cost": cost_by_agent.get(agent.id),
             })
 
         return agent_stats
