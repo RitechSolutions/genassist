@@ -5,6 +5,8 @@ from fastapi.responses import StreamingResponse
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.cache_headers import no_store_headers
 from app.schemas.llm_usage import (
@@ -77,6 +79,28 @@ async def set_cutover(
     service: LlmUsageControlService = Injected(LlmUsageControlService),
 ) -> LlmUsageControlRead:
     return await service.set_cutover(body.enabled)
+
+
+@router.post(
+    "/backfill",
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.WRITE))],
+    summary="Backfill the ledger with pre-activation chat history",
+)
+async def trigger_backfill(
+    force: bool = Query(default=False, description="Re-copy existing legacy rows instead of skipping them"),
+    service: LlmUsageControlService = Injected(LlmUsageControlService),
+):
+    """Queue the one-time legacy usage backfill for this tenant"""
+    control = await service.get_control()
+    if not control.capture_enabled:
+        raise AppException(error_key=ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED, status_code=409)
+
+    from app.core.tenant_scope import get_tenant_context
+    from app.tasks.backfill_llm_usage_tasks import backfill_llm_usage_ledger
+
+    tenant_id = get_tenant_context()
+    result = backfill_llm_usage_ledger.delay(tenant_id=tenant_id, force=force)
+    return {"status": "queued", "task_id": result.id, "tenant_id": tenant_id, "force": force}
 
 
 @router.get(

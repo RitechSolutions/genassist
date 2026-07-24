@@ -293,6 +293,7 @@ def create_celery():
         "app.tasks.share_folder_tasks",
         "app.tasks.kb_batch_tasks",
         "app.tasks.analytics_aggregation_tasks",
+        "app.tasks.backfill_llm_usage_tasks",
         "app.tasks.file_upload_session_tasks",
         "app.tasks.email_tasks",
         "app.tasks.support_ticket_tasks",

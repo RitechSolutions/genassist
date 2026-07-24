@@ -147,7 +147,7 @@ function LlmUsagePage() {
   return (
     <div className="flex-1 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <AnalyticsPageHeader title="LLM Usage" subtitle="Token and cost usage per provider, model, and agent">
+        <AnalyticsPageHeader title="Cost Explorer" subtitle="Token and cost usage per provider, model, and agent">
           <AnalyticsFilters
             groups={showGroupFilter ? groups : undefined}
             groupFilter={groupFilter}
