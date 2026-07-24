@@ -36,6 +36,7 @@ import {
   TextSearch,
   ScanText,
   Image,
+  BotMessageSquare,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -94,6 +95,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   Volume2: { type: "lucide", source: Volume2 },
   Workflow: { type: "lucide", source: GitBranch },
   GitBranch: { type: "lucide", source: GitBranch },
+  BotMessageSquare: { type: "lucide", source: BotMessageSquare },
   ServerCog: { type: "lucide", source: ServerCog },
   MessageCircleX: { type: "lucide", source: MessageCircleX },
   UserCheck: { type: "lucide", source: UserCheck },

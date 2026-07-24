@@ -95,7 +95,7 @@ export const SUB_AGENT_NODE_DEFINITION: NodeTypeDefinition<SubAgentNodeData> = {
   configSubtitle:
     "Configure the collaboration mode, description, provider, prompt, and memory of the sub-agent.",
   category: "ai",
-  icon: "GitBranch",
+  icon: "BotMessageSquare",
   defaultData: {
     name: "Sub-Agent",
     providerId: undefined,

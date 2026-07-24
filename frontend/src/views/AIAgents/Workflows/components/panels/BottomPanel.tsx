@@ -1,13 +1,19 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/button";
-import { Download, Upload, PlayCircle, MoreVertical } from "lucide-react";
+import { Download, Upload, PlayCircle, MoreVertical, Settings } from "lucide-react";
 import { useBlocker } from "react-router-dom";
-import { Workflow } from "@/interfaces/workflow.interface";
+import {
+  DEFAULT_NODE_STYLE,
+  Workflow,
+  WorkflowNodeStyle,
+} from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   useWorkflowExecution,
   WorkflowExecutionState,
 } from "../../context/WorkflowExecutionContext";
+import { useWorkflow } from "../../context/WorkflowContext";
+import WorkflowSettingsDialog from "../WorkflowSettingsDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,12 +42,27 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [agentFormOpen, setAgentFormOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const {
     state: executionState,
     loadExecutionState,
     setWorkflowStructure,
   } = useWorkflowExecution();
+
+  // Live workflow + setter from context — used to read/update per-workflow
+  // settings (e.g. node rendering style) so the change is reflected on the
+  // canvas immediately and picked up by the workflow save.
+  const { workflow: contextWorkflow, setWorkflow } = useWorkflow();
+  const nodeStyle = contextWorkflow?.settings?.nodeStyle ?? DEFAULT_NODE_STYLE;
+
+  const handleNodeStyleChange = (style: WorkflowNodeStyle) => {
+    setWorkflow((prev) =>
+      prev
+        ? { ...prev, settings: { ...prev.settings, nodeStyle: style } }
+        : prev
+    );
+  };
 
   useEffect(() => {
     if (onExecutionStateChange) {
@@ -225,6 +246,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
               <Upload className="mr-2 h-4 w-4" />
               <span>Upload</span>
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <input
@@ -235,6 +260,13 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           className="hidden"
         />
       </div>
+
+      <WorkflowSettingsDialog
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        nodeStyle={nodeStyle}
+        onNodeStyleChange={handleNodeStyleChange}
+      />
 
       <ConfirmDialog
         isOpen={isDialogOpen}

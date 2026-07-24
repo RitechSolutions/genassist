@@ -11,6 +11,7 @@ class WorkflowBase(BaseModel):
     edges: Optional[List[dict]] = None
     testInput: Optional[dict] = None
     executionState: Optional[dict] = None
+    settings: Optional[dict] = None
 
     user_id: Optional[UUID] = None
     version: str
@@ -28,6 +29,7 @@ class WorkflowUpdate(BaseModel):
     edges: Optional[List[dict]] = None
     testInput: Optional[dict] = None
     executionState: Optional[dict] = None
+    settings: Optional[dict] = None
     user_id: Optional[UUID] = None
     version: Optional[str] = None
     agent_id: Optional[UUID] = None

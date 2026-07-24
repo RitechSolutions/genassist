@@ -80,6 +80,18 @@ class BaseNode(ABC):
         """Get the node type from configuration."""
         return self.node_config.get("type", "unknown")
 
+    def is_deactivated(self) -> bool:
+        """Whether the user has deactivated (bypassed) this node in the editor.
+
+        A deactivated node does not run its own logic at execution time. The
+        engine instead forwards the node's resolved input straight through as
+        its output, so the workflow behaves as if the node were not present and
+        data flows from the upstream node directly to the downstream node(s).
+        The flag is stored on the node's ``data`` in the workflow's ``nodes``
+        JSONB column, so it is persisted with the workflow.
+        """
+        return bool(self.node_data.get("deactivated", False))
+
     def get_node_config(self, node_id: str):
         """Get the node config and type."""
         workflow = self.state.workflow

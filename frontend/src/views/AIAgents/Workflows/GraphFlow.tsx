@@ -35,6 +35,7 @@ import { getWorkflowById, updateWorkflow } from "@/services/workflows";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
+import { NodeActionsContext } from "./context/NodeActionsContext";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import {
@@ -100,6 +101,25 @@ const LowDetailWatcher: React.FC<{ onChange: (lowDetail: boolean) => void }> = (
   return null;
 };
 
+// When replacing a node, pick which handle on the NEW node the old node's edges
+// should reconnect to. Prefer the standard "output"/"input" ids; otherwise fall
+// back to the first source/target handler the node defines (some nodes use
+// non-standard handle ids), and finally to the standard id as a last resort.
+const pickReplacementHandle = (
+  node: Node,
+  handleType: "source" | "target"
+): string | undefined => {
+  const handlers = (node.data?.handlers ?? []) as Array<{
+    id: string;
+    type: string;
+  }>;
+  const preferred = handleType === "source" ? "output" : "input";
+  if (handlers.some((h) => h.type === handleType && h.id === preferred)) {
+    return preferred;
+  }
+  return handlers.find((h) => h.type === handleType)?.id ?? preferred;
+};
+
 const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
@@ -113,6 +133,9 @@ const GraphFlowContent: React.FC = () => {
 
   const [showNodePanel, setShowNodePanel] = useState(false);
   const [showWorkflowPanel, setShowWorkflowPanel] = useState(false);
+  // When set, the Available Nodes sidebar is in "replace" mode: picking a node
+  // there swaps this node instead of adding a new one.
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   const [currentTestConfig, setCurrentTestConfig] = useState<Workflow | null>(
     null
   );
@@ -366,6 +389,14 @@ const GraphFlowContent: React.FC = () => {
   const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
 
+  // Always-current snapshot of nodes, so the per-node action callbacks below can
+  // read the latest node without listing `nodes` in their deps (which would
+  // change their identity on every drag and re-render every node).
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
   // Update node data (used for saving input values)
   const updateNodeData = useCallback(
     (nodeId: string, newData: Partial<NodeData>) => {
@@ -616,6 +647,8 @@ const GraphFlowContent: React.FC = () => {
   const toggleNodePanel = () => {
     setShowNodePanel(!showNodePanel);
     if (showWorkflowPanel) setShowWorkflowPanel(false);
+    // Leaving/reopening the panel manually exits replace mode.
+    if (replaceTargetId) setReplaceTargetId(null);
   };
 
   const toggleWorkflowPanel = () => {
@@ -796,6 +829,100 @@ const GraphFlowContent: React.FC = () => {
     clipboardRef.current = null;
   }, [setNodes, setEdges]);
 
+  // --- Per-node actions (exposed to nodes via NodeActionsContext) ------------
+
+  // Copy a single node to the clipboard; paste it with Cmd/Ctrl+V.
+  const copyNode = useCallback((id: string) => {
+    const node = nodesRef.current.find((n) => n.id === id);
+    if (!node) return;
+    clipboardRef.current = { nodes: [{ ...node }], edges: [] };
+  }, []);
+
+  // Duplicate a single node in place (offset, without its edges) and select it.
+  const duplicateNode = useCallback(
+    (id: string) => {
+      setNodes((nds) => {
+        const original = nds.find((n) => n.id === id);
+        if (!original) return nds;
+        const offset = 40;
+        const { position } = original;
+        const clone: Node = {
+          ...original,
+          id: uuidv4(),
+          position: {
+            x: (position?.x || 0) + offset,
+            y: (position?.y || 0) + offset,
+          },
+          data: { ...original.data, updateNodeData },
+          selected: true,
+        };
+        return [
+          ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
+          clone,
+        ];
+      });
+    },
+    [setNodes, updateNodeData]
+  );
+
+  // Replace an existing node with a fresh node of `newType`, in place: keep the
+  // same position and reconnect the replaced node's incoming/outgoing edges to
+  // the new node's input/output handles. Config is not carried across types.
+  const replaceNode = useCallback(
+    (targetId: string, newType: string) => {
+      const target = nodesRef.current.find((n) => n.id === targetId);
+      if (!target) return;
+      const newId = uuidv4();
+      const created = nodeRegistry.createNode(newType, newId, target.position);
+      if (!created) return;
+      const [restored] = restoreNodeFunctions([created]);
+
+      const newSourceHandle = pickReplacementHandle(restored, "source");
+      const newTargetHandle = pickReplacementHandle(restored, "target");
+
+      setNodes((nds) => nds.map((n) => (n.id === targetId ? restored : n)));
+      setEdges((eds) =>
+        eds.map((edge) => {
+          if (edge.source === targetId) {
+            return { ...edge, source: newId, sourceHandle: newSourceHandle };
+          }
+          if (edge.target === targetId) {
+            return { ...edge, target: newId, targetHandle: newTargetHandle };
+          }
+          return edge;
+        })
+      );
+    },
+    [setNodes, setEdges, restoreNodeFunctions]
+  );
+
+  // Open the Available Nodes sidebar in "replace" mode for a node.
+  const requestReplaceNode = useCallback((id: string) => {
+    setReplaceTargetId(id);
+    setShowWorkflowPanel(false);
+    setShowNodePanel(true);
+  }, []);
+
+  // The sidebar's add handler: in replace mode swap the target node; otherwise
+  // add a new node as usual.
+  const handlePanelAddNode = useCallback(
+    (nodeType: string) => {
+      if (replaceTargetId) {
+        replaceNode(replaceTargetId, nodeType);
+        setReplaceTargetId(null);
+        setShowNodePanel(false);
+      } else {
+        addNewNode(nodeType);
+      }
+    },
+    [replaceTargetId, replaceNode]
+  );
+
+  const nodeActionsValue = useMemo(
+    () => ({ duplicateNode, copyNode, requestReplaceNode }),
+    [duplicateNode, copyNode, requestReplaceNode]
+  );
+
   // Keyboard shortcuts for canvas interactions
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -816,18 +943,27 @@ const GraphFlowContent: React.FC = () => {
         return;
       }
 
-      // Copy/paste only on the canvas
+      // Never hijack copy/paste while typing in a field or inside a dialog.
+      if (isEditableEventTarget(target) || target.closest('[role="dialog"]'))
+        return;
+
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
         target.closest(".react-flow__pane") ||
         target.closest(".react-flow__renderer");
 
-      if (!isReactFlowCanvas) return;
-
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        // ⌘C copies the current selection — keep it scoped to the canvas so it
+        // doesn't swallow a normal text copy elsewhere on the page.
+        if (!isReactFlowCanvas) return;
         e.preventDefault();
         copySelectedNodes();
       } else if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        // ⌘V pastes clipboard nodes. Allow it from anywhere on the builder (not
+        // only when the canvas has focus) so a node copied via its 3-dots menu
+        // pastes even though the menu moved focus off the canvas. Only act when
+        // there is actually something to paste.
+        if (!clipboardRef.current) return;
         e.preventDefault();
         pasteFromClipboard();
       }
@@ -1117,6 +1253,7 @@ const GraphFlowContent: React.FC = () => {
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
+        <NodeActionsContext.Provider value={nodeActionsValue}>
         <div className="h-full w-full flex flex-col">
           <div className="flex-1 relative">
             <CanvasContextMenu
@@ -1241,7 +1378,16 @@ const GraphFlowContent: React.FC = () => {
             <NodePanel
               isOpen={showNodePanel}
               onClose={toggleNodePanel}
-              onAddNode={addNewNode}
+              onAddNode={handlePanelAddNode}
+              replaceMode={!!replaceTargetId}
+              replaceNodeName={
+                replaceTargetId
+                  ? (nodes.find((n) => n.id === replaceTargetId)?.data?.name as
+                      | string
+                      | undefined)
+                  : undefined
+              }
+              onCancelReplace={() => setReplaceTargetId(null)}
               messages={assistant.messages}
               isThinking={assistant.isThinking}
               activeConversationalTab={conversationalTabActive}
@@ -1303,6 +1449,7 @@ const GraphFlowContent: React.FC = () => {
             )}
           </div>
         </div>
+        </NodeActionsContext.Provider>
       </WorkflowExecutionProvider>
     </WorkflowProvider>
   );

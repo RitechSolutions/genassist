@@ -27,6 +27,10 @@ export interface BaseNodeData {
   name: string;
   handlers?: NodeHandler[];
   unwrap?: boolean;
+  // When true, the node is bypassed at execution time: the engine forwards the
+  // upstream node's output straight to the downstream node(s), as if this node
+  // were not present. Persisted inside the node's `data` (workflows.nodes JSONB).
+  deactivated?: boolean;
   updateNodeData?: <T extends BaseNodeData>(
     nodeId: string,
     data: Partial<T>,
