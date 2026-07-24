@@ -29,6 +29,7 @@ class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
         output_tokens: int | None = None,
         total_tokens: int | None = None,
         cost_usd: float | None = None,
+        workflow_execution_id: str | None = None,
     ) -> AgentResponseLogModel:
         """
         Create a log entry for a given transcript message with the full agent response.
@@ -41,6 +42,7 @@ class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cost_usd=cost_usd,
+            workflow_execution_id=workflow_execution_id,
         )
         self.db.add(entry)
         await self.db.commit()

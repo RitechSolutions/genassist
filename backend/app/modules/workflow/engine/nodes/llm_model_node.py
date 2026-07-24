@@ -163,6 +163,15 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             existing_summary = await memory.get_compacted_summary()
             new_summary = await compactor.compact_messages(to_compact, existing_summary, important_entities)
 
+            # Record the compaction LLM call, then drop the raw message before storing
+            compaction_response = new_summary.pop("_llm_response", None) if isinstance(new_summary, dict) else None
+            if compaction_response is not None:
+                from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+                await record_node_llm_usage(
+                    self.get_state(), compaction_response, self.node_id, compacting_model_id, "compaction"
+                )
+
             # Store compacted summary
             await memory.set_compacted_summary(new_summary)
 
@@ -263,6 +272,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                     provider=provider,
                     model=model,
                     node_id=self.node_id,
+                    llm_provider_id=responding_id,
                 )
 
             return result

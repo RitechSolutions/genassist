@@ -25,10 +25,14 @@ logger = logging.getLogger(__name__)
 class GptKpiAnalyzer:
 
     async def analyze_transcript(self, transcript: str, llm_analyst: LlmAnalyst, max_attempts=3,
-            conversation_id: Optional[UUID] = None, ) -> AnalysisResult:
+            conversation_id: Optional[UUID] = None, agent_id: Optional[UUID] = None, ) -> AnalysisResult:
         """Analyze transcript using ChatGPT (LangChain) with retry on failure."""
 
+        import uuid
+
+        from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
         from app.dependencies.injector import injector
+        from app.services.llm_usage_recorder import LlmUsageRecorder
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
@@ -38,6 +42,10 @@ class GptKpiAnalyzer:
             raise AppException(ErrorKey.TRANSCRIPT_NOT_FOUND)
         else:
             logger.debug("Analyzing transcript [%d chars]", len(transcript))
+
+        recorder = LlmUsageRecorder()
+        analysis_execution_id = f"analyst:{uuid.uuid4()}"
+        analyst_provider, analyst_model = await self._resolve_analyst_provider_model(llm_analyst)
 
         last_error_msg = ""
         last_response = ""
@@ -61,6 +69,24 @@ class GptKpiAnalyzer:
                 user_msg = HumanMessage(content=user_prompt)
 
                 response = await llm.ainvoke([system_msg, user_msg])
+
+                # Record this attempt's usage before parsing, so a parse failure that
+                # triggers a retry still bills the tokens the attempt actually spent
+                usage = extract_usage_from_aimessage(response) or {}
+                await recorder.record_analyst_call(
+                    analysis_execution_id=analysis_execution_id,
+                    call_index=attempt - 1,
+                    provider=analyst_provider,
+                    model=analyst_model,
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    conversation_id=conversation_id,
+                    agent_id=agent_id,
+                    llm_analyst_id=getattr(llm_analyst, "id", None),
+                    llm_provider_id=llm_analyst.llm_provider_id,
+                    purpose="conversation_analysis",
+                )
+
                 response_text = response.content.strip()
                 last_response = response_text
 
@@ -89,6 +115,18 @@ class GptKpiAnalyzer:
         raise AppException(error_key=ErrorKey.GPT_FAILED_JSON_PARSING, status_code=500,
                            )
 
+
+    async def _resolve_analyst_provider_model(self, llm_analyst: LlmAnalyst) -> tuple[str, str]:
+        """Best-effort provider/model names for pricing. Never raises into analysis"""
+        try:
+            from app.dependencies.injector import injector
+            from app.services.llm_providers import LlmProviderService
+
+            info = await injector.get(LlmProviderService).get_by_id(llm_analyst.llm_provider_id)
+            return (info.llm_model_provider or "").lower(), info.llm_model or ""
+        except Exception:
+            logger.debug("Could not resolve analyst provider/model for pricing", exc_info=True)
+            return "", ""
 
     def _format_transcript(self, segments: List[TranscriptSegment]) -> str:
         """Format transcript segments into a readable string."""
@@ -164,13 +202,21 @@ Please make sure your response strictly follows the requested format and especia
 
 
     async def partial_hostility_analysis(self, transcript_segments: str, llm_analyst: LlmAnalyst,
-            conversation_id: Optional[UUID] = None, ) -> dict:
+            conversation_id: Optional[UUID] = None, agent_id: Optional[UUID] = None, ) -> dict:
 
+        import uuid
+
+        from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
         from app.dependencies.injector import injector
+        from app.services.llm_usage_recorder import LlmUsageRecorder
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
         agent_logs_service = injector.get(AgentResponseLogService)
+
+        recorder = LlmUsageRecorder()
+        analysis_execution_id = f"analyst:{uuid.uuid4()}"
+        analyst_provider, analyst_model = await self._resolve_analyst_provider_model(llm_analyst)
 
         system_msg = SystemMessage(content=llm_analyst.prompt)
 
@@ -235,6 +281,23 @@ Please make sure your response strictly follows the requested format and especia
         try:
             # Call the LLM synchronously in a background thread
             response = await llm.ainvoke([system_msg, user_msg])
+
+            # Record usage for this hostility call before parsing
+            usage = extract_usage_from_aimessage(response) or {}
+            await recorder.record_analyst_call(
+                analysis_execution_id=analysis_execution_id,
+                call_index=0,
+                provider=analyst_provider,
+                model=analyst_model,
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                conversation_id=conversation_id,
+                agent_id=agent_id,
+                llm_analyst_id=getattr(llm_analyst, "id", None),
+                llm_provider_id=llm_analyst.llm_provider_id,
+                purpose="hostility_analysis",
+            )
+
             response_text = response.content.strip()
 
             # Remove json ticks

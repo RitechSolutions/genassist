@@ -134,8 +134,16 @@ async def execute_workflow_run_async(run_id: UUID):
                 }
                 workflow_engine = WorkflowEngine(workflow_config)
 
+                from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
                 state = await workflow_engine.execute_from_node(
-                    input_data=input_data, thread_id=thread_id
+                    input_data=input_data,
+                    thread_id=thread_id,
+                    usage_context=WorkflowUsageContext(
+                        source="schedule",
+                        agent_id=_coerce_uuid(schedule.agent_id),
+                        workflow_id=_coerce_uuid(workflow.id),
+                    ),
                 )
                 # Redact cardholder data from the output before persisting it to
                 # the run history (it is stored raw/JSONB otherwise).

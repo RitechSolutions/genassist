@@ -157,6 +157,9 @@ class RouterNode(BaseNode):
                 ]
             )
             normalized = str(response.content).strip().lower()
+            from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "smart_route")
         except Exception as e:
             logger.error(
                 "RouterNode %s Smart Mode execution failed: %s; using fallbackRoute=%s",

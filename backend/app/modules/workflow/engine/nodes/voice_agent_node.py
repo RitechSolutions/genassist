@@ -210,6 +210,23 @@ class VoiceAgentNode(AgentNode):
         )
         result = await agent.invoke(pcm_input=pcm_input, text_input=user_prompt)
 
+        # Record this turn's usage
+        usage = result.get("usage")
+        if usage:
+            try:
+                self.get_state().add_llm_usage(
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    provider="google_genai",
+                    model=config.get("model") or "",
+                    node_id=self.node_id,
+                    purpose="voice_live",
+                    token_details=usage.get("token_details"),
+                    llm_provider_id=None,
+                )
+            except Exception:
+                logger.debug("Failed recording voice turn usage", exc_info=True)
+
         output: Dict[str, Any] = {
             "message": result["message"] or "[Audio response]",
             "steps": result["steps"],

@@ -7,9 +7,12 @@ would require provider/model resolution inside the decorator. The explicit
 merge in each node is clearer and keeps provider resolution at the call site.
 """
 
+import logging
 from typing import Any, Dict
 
 from app.services.llm_providers import LlmProviderService
+
+logger = logging.getLogger(__name__)
 
 
 async def merge_llm_usage_from_result(
@@ -58,4 +61,27 @@ async def merge_llm_usage_from_result(
             provider=provider,
             model=model,
             node_id=node_id,
+            purpose=u.get("purpose"),
+            token_details=u.get("token_details"),
+            llm_provider_id=pid,
         )
+
+
+async def record_node_llm_usage(
+    state,
+    response: Any,
+    node_id: str,
+    provider_id: str,
+    purpose: str = None,
+) -> None:
+    """Record token usage from one LangChain message onto ``state``"""
+    try:
+        from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
+
+        usage = extract_usage_from_aimessage(response)
+        if not usage:
+            return
+        usage["purpose"] = purpose
+        await merge_llm_usage_from_result(state, {"llm_usage": [usage]}, node_id, provider_id)
+    except Exception:
+        logger.debug("Failed recording node LLM usage for node %s", node_id, exc_info=True)

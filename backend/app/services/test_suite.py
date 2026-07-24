@@ -1158,12 +1158,17 @@ class TestSuiteService:
                 merged_input.pop("thread_id", None)
             # Execution and scoring fail differently: a turn that never ran or never
             # reached memory breaks the thread, while a scoring error does not.
+            from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
             try:
                 state = await engine.execute_from_node(
                     input_data=merged_input,
                     thread_id=thread_id,
                     persist=bool(thread_id),
                     await_persist=bool(thread_id),
+                    usage_context=WorkflowUsageContext(
+                        source="test_suite", workflow_id=_coerce_uuid(engine.workflow_id)
+                    ),
                 )
             except MemoryPersistenceError as exc:
                 logger.error("Memory write failed for test case %s: %s", case.id, exc)

@@ -144,8 +144,14 @@ async def execute_pipeline_run_async(run_id: UUID):
 
                 # Execute workflow
                 thread_id = f"pipeline_run_{run_id}"
+                from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
                 state = await workflow_engine.execute_from_node(
-                    input_data=input_data, thread_id=thread_id
+                    input_data=input_data,
+                    thread_id=thread_id,
+                    usage_context=WorkflowUsageContext(
+                        source="ml", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+                    ),
                 )
 
                 # Extract execution results

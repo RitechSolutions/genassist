@@ -251,8 +251,14 @@ async def execute_workflow(
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         workflow_engine = WorkflowEngine(workflow_config)
 
+        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
         state = await workflow_engine.execute_from_node(
-            input_data=input_data, thread_id=thread_id
+            input_data=input_data,
+            thread_id=thread_id,
+            usage_context=WorkflowUsageContext(
+                source="workflow_api", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+            ),
         )
 
         return state.format_state_as_response()
@@ -329,10 +335,15 @@ async def test_workflow(
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         start_node_id = input_data.get("human_in_the_loop_node_id")
 
+        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
         state = await workflow_engine.execute_from_node(
             start_node_id=start_node_id,
             input_data=input_data,
             thread_id=thread_id,
+            usage_context=WorkflowUsageContext(
+                source="workflow_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+            ),
         )
 
         return state.format_state_as_response()
@@ -405,8 +416,15 @@ async def test_individual_node(test_data: Dict[str, Any]):
         }
         workflow_engine = WorkflowEngine(workflow_config)
 
+        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
         # Execute the workflow
-        state = await workflow_engine.execute_from_node(input_data=input_data)
+        state = await workflow_engine.execute_from_node(
+            input_data=input_data,
+            usage_context=WorkflowUsageContext(
+                source="node_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+            ),
+        )
 
         return state.format_state_as_response()
 

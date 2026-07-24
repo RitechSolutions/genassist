@@ -124,9 +124,14 @@ class WorkflowMCPServerAdapter:
 
             # Execute workflow
             thread_id = f"mcp_tool_{uuid.uuid4()}"
+            from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
             state = await workflow_engine.execute_from_node(
                 input_data=arguments,
                 thread_id=thread_id,
+                usage_context=WorkflowUsageContext(
+                    source="mcp", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+                ),
             )
 
             # Format response

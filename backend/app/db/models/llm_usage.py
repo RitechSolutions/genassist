@@ -1,0 +1,175 @@
+"""Tables that store LLM token and cost usage"""
+
+from datetime import date, datetime
+from typing import Any, Optional
+from uuid import UUID
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
+
+SOURCE_TYPES = ("workflow", "llm_analyst")
+PRICING_STATUSES = ("configured", "fallback", "unpriced", "legacy_estimate")
+EXECUTION_OUTCOMES = ("returned", "raised")
+RUN_STATUSES = ("completed", "failed", "paused", "idle", "running")
+
+CONTROL_SINGLETON_KEY = "singleton"
+
+
+class LlmUsageEventModel(Base):
+    """One LLM call. ``cost_usd`` stays NULL for unpriced calls"""
+
+    __tablename__ = "llm_usage_events"
+    __table_args__ = (
+        UniqueConstraint("execution_id", "call_index", name="uq_llm_usage_events_execution_call"),
+        Index(
+            "uq_llm_usage_events_legacy_log",
+            "legacy_response_log_id",
+            unique=True,
+            postgresql_where="legacy_response_log_id IS NOT NULL",
+        ),
+        Index("ix_llm_usage_events_occurred_at", "occurred_at"),
+        Index("ix_llm_usage_events_agent_occurred", "agent_id", "occurred_at"),
+        Index("ix_llm_usage_events_provider_model_occurred", "provider_key", "model_key", "occurred_at"),
+        Index("ix_llm_usage_events_source_type_occurred", "source_type", "occurred_at"),
+        Index("ix_llm_usage_events_conversation", "conversation_id"),
+        CheckConstraint("source_type IN ('workflow', 'llm_analyst')", name="ck_llm_usage_events_source_type"),
+        CheckConstraint(
+            "pricing_status IN ('configured', 'fallback', 'unpriced', 'legacy_estimate')",
+            name="ck_llm_usage_events_pricing_status",
+        ),
+        CheckConstraint(
+            "input_tokens >= 0 AND output_tokens >= 0 AND total_tokens >= 0 AND call_index >= 0",
+            name="ck_llm_usage_events_non_negative",
+        ),
+        CheckConstraint("total_tokens >= input_tokens + output_tokens", name="ck_llm_usage_events_total_ge_parts"),
+    )
+
+    execution_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    call_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    agent_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True
+    )
+    workflow_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True
+    )
+    llm_provider_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True
+    )
+    llm_analyst_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("llm_analyst.id", ondelete="SET NULL"), nullable=True
+    )
+    conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+    )
+    node_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    legacy_response_log_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agent_response_logs.id", ondelete="SET NULL"), nullable=True
+    )
+
+    provider_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    model_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    token_details: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+    input_per_1k: Mapped[Optional[float]] = mapped_column(Numeric(18, 10), nullable=True)
+    output_per_1k: Mapped[Optional[float]] = mapped_column(Numeric(18, 10), nullable=True)
+    cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(18, 10), nullable=True)
+    pricing_status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LlmUsageCaptureRunModel(Base):
+    """One receipt per workflow or analyst run"""
+
+    __tablename__ = "llm_usage_capture_runs"
+    __table_args__ = (
+        UniqueConstraint("execution_id", name="uq_llm_usage_capture_runs_execution"),
+        Index("ix_llm_usage_capture_runs_occurred_at", "occurred_at"),
+        Index("ix_llm_usage_capture_runs_source_occurred", "source", "occurred_at"),
+        CheckConstraint("source_type IN ('workflow', 'llm_analyst')", name="ck_llm_usage_capture_runs_source_type"),
+        CheckConstraint("execution_outcome IN ('returned', 'raised')", name="ck_llm_usage_capture_runs_outcome"),
+        CheckConstraint(
+            "run_status IN ('completed', 'failed', 'paused', 'idle', 'running')",
+            name="ck_llm_usage_capture_runs_run_status",
+        ),
+        CheckConstraint(
+            "expected_entries >= 0 AND persisted_events >= 0", name="ck_llm_usage_capture_runs_non_negative"
+        ),
+    )
+
+    execution_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    execution_outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    run_status: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    expected_entries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    persisted_events: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    agent_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True
+    )
+    workflow_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True
+    )
+    conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+    )
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LlmUsageControlModel(Base):
+    """Single shared control row for capture, shadow, and cutover flags (keyed by ``singleton_key``)"""
+
+    __tablename__ = "llm_usage_control"
+    __table_args__ = (UniqueConstraint("singleton_key", name="uq_llm_usage_control_singleton"),)
+
+    singleton_key: Mapped[str] = mapped_column(String(32), nullable=False, default=CONTROL_SINGLETON_KEY)
+
+    capture_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    capture_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ledger_cutover_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    shadow_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    shadow_passed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reconciliation: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+
+class LlmUsageReconciliationReportModel(Base):
+    """One reconciliation report per covered UTC day. Re-runs replace via ON CONFLICT DO UPDATE"""
+
+    __tablename__ = "llm_usage_reconciliation_reports"
+    __table_args__ = (UniqueConstraint("report_date", name="uq_llm_usage_reconciliation_reports_date"),)
+
+    report_date: Mapped[date] = mapped_column(Date, nullable=False)
+    interval_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    interval_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reasons: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)

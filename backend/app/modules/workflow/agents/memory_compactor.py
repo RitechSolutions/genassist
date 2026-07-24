@@ -129,6 +129,8 @@ Provide the JSON response:"""
             result["compacted_until_timestamp"] = messages[-1].get("timestamp", datetime.now().isoformat())
             result["last_compaction_timestamp"] = datetime.now().isoformat()
 
+            result["_llm_response"] = response
+
             logger.info(f"Compacted {len(messages)} messages into summary with {len(result.get('entities', []))} entities")
 
             return result

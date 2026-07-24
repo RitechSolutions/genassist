@@ -41,11 +41,14 @@ class RegistryItem:
             self.workflow_engine = None
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
-    async def execute(self, session_message: str, metadata: dict, persist: bool = True) -> dict:
+    async def execute(
+        self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat"
+    ) -> dict:
         """Execute a workflow, optionally resuming from a specific node.
 
         persist=False skips writing this turn to conversation memory (used by the
         start greeting trigger so its synthetic instruction isn't kept in history).
+        ``source`` attributes recorded LLM usage.
         """
         if self.workflow_engine is None:
             raise ValueError(
@@ -66,6 +69,18 @@ class RegistryItem:
             input_data=input_data,
             thread_id=thread_id,
             persist=persist,
+            usage_context=self._build_usage_context(source, thread_id),
         )
 
         return state.format_state_as_response()
+
+    def _build_usage_context(self, source: str, thread_id):
+        """Attribution for the usage ledger. Ids are validated (and NULLed) at record time"""
+        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
+
+        return WorkflowUsageContext(
+            source=source,
+            agent_id=_coerce_uuid(self.agent_id),
+            workflow_id=_coerce_uuid(getattr(self.workflow_engine, "workflow_id", None)),
+            conversation_id=_coerce_uuid(thread_id),
+        )

@@ -4,10 +4,14 @@ Workflow engine for building and executing workflows with state management.
 
 import asyncio
 import logging
+import sys
 import uuid
 from collections import defaultdict
 from contextlib import nullcontext
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+
+if TYPE_CHECKING:
+    from app.services.llm_usage_recorder import WorkflowUsageContext
 
 from fastapi_injector import RequestScopeFactory
 from opentelemetry import trace
@@ -19,17 +23,17 @@ from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes import (
     AgentNode,
-    ExternalAgentNode,
     AggregatorNode,
     ApiToolNode,
     CalendarEventsNode,
     ChatInputNode,
     ChatOutputNode,
+    CreateWorkflowScheduleNode,
     DataMapperNode,
+    ExternalAgentNode,
     FileReaderNode,
     FinalizeConversationNode,
     GmailToolNode,
-    CreateWorkflowScheduleNode,
     GuardrailNliNode,
     GuardrailProvenanceNode,
     HtmlToImageNode,
@@ -53,9 +57,9 @@ from app.modules.workflow.engine.nodes import (
     ThreadRAGNode,
     ToolBuilderNode,
     TrainDataSourceNode,
-    TTSNode,
     TrainModelNode,
     TrainPreprocessNode,
+    TTSNode,
     VoiceAgentNode,
     WebScraperNode,
     WebSearchNode,
@@ -271,6 +275,8 @@ class WorkflowEngine:
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
         await_persist: bool = False,
+        usage_context: Optional["WorkflowUsageContext"] = None,
+        usage_sink: Optional[list] = None,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -283,6 +289,10 @@ class WorkflowEngine:
             await_persist: Wait for the memory write instead of scheduling it in
                 the background. Required when replaying ordered turns so a turn is
                 stored before the next one reads it.
+            usage_context: Top-level runs pass this to record LLM usage to the ledger.
+            usage_sink: Nested runs pass a parent list to append their usage into, so
+                a child's usage survives even when the child raises. Mutually exclusive
+                with usage_context; when neither is set, behavior is unchanged.
 
         Returns:
             WorkflowState with execution results
@@ -327,50 +337,73 @@ class WorkflowEngine:
             )
 
             try:
-                state.start_execution()
-                state.total_steps = len(self.workflow["nodes"])
-
-                # Execute from the specified node
                 try:
-                    await self._execute_from_node_recursive(
-                        start_node_id, state, set(),
-                        skip_requirement_check=True,
-                    )
+                    state.start_execution()
+                    state.total_steps = len(self.workflow["nodes"])
 
-                    state.complete_execution()
+                    # Execute from the specified node
+                    try:
+                        await self._execute_from_node_recursive(
+                            start_node_id, state, set(),
+                            skip_requirement_check=True,
+                        )
 
-                except WorkflowPausedException as e:
-                    # Workflow paused (e.g. HumanInTheLoop needs user input)
-                    state.output = e.pause_data
-                    state.status = "completed"
-                    state.is_executing = False
+                        state.complete_execution()
 
-                except ValueError as e:
+                    except WorkflowPausedException as e:
+                        # Workflow paused
+                        state.output = e.pause_data
+                        state.status = "completed"
+                        state.is_executing = False
+
+                    except ValueError as e:
+                        state.fail_execution(str(e))
+
+                except WorkflowPausedException:
+                    pass
+                except Exception as e:
                     state.fail_execution(str(e))
+                    raise
 
-            except WorkflowPausedException:
-                pass  # Already handled above
-            except Exception as e:
-                state.fail_execution(str(e))
-                raise
-
-            try:
-                if should_persist_to_memory(initial_values, bool(persist), state.status):
-                    persistence = state.get_memory().add_input_output(
-                        initial_values.get("message", ""),
-                        _sanitize_output_for_memory(state.output)
-                    )
+                try:
+                    if should_persist_to_memory(initial_values, bool(persist), state.status):
+                        persistence = state.get_memory().add_input_output(
+                            initial_values.get("message", ""),
+                            _sanitize_output_for_memory(state.output)
+                        )
+                        if await_persist:
+                            await persistence
+                        else:
+                            asyncio.create_task(persistence)
+                except Exception as e:
+                    logger.error(f"Error adding message to memory: {e}")
                     if await_persist:
-                        await persistence
-                    else:
-                        asyncio.create_task(persistence)
-            except Exception as e:
-                logger.error(f"Error adding message to memory: {e}")
-                # Callers replaying ordered turns depend on this write; the next
-                # turn would otherwise run with incomplete context.
-                if await_persist:
-                    raise MemoryPersistenceError(str(e)) from e
-            return state
+                        raise MemoryPersistenceError(str(e)) from e
+                return state
+            finally:
+                exc = sys.exc_info()[1]
+                if usage_sink is not None:
+                    usage_sink.extend(state.llm_usage)
+                elif usage_context is not None:
+                    await self._record_llm_usage_safe(
+                        state,
+                        usage_context,
+                        execution_outcome="raised" if exc else "returned",
+                    )
+
+    async def _record_llm_usage_safe(
+        self,
+        state: WorkflowState,
+        usage_context: "WorkflowUsageContext",
+        execution_outcome: str,
+    ) -> None:
+        """Pass usage to the recorder"""
+        try:
+            from app.services.llm_usage_recorder import LlmUsageRecorder
+
+            await LlmUsageRecorder().record_workflow_state(state, usage_context, execution_outcome)
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("LLM usage recording failed", exc_info=True)
 
     def _find_starting_nodes(self) -> List[str]:
         """Find nodes with no incoming edges (starting nodes)."""

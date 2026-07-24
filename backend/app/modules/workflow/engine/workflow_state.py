@@ -234,14 +234,20 @@ class WorkflowState:
         provider: str = "",
         model: str = "",
         node_id: str = "",
+        purpose: str = None,
+        token_details: dict = None,
+        llm_provider_id: str = None,
     ) -> None:
-        """Append LLM token usage for this workflow execution."""
+        """Append LLM token usage for this workflow execution"""
         self.llm_usage.append({
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "provider": provider,
             "model": model,
             "node_id": node_id,
+            "purpose": purpose,
+            "token_details": token_details,
+            "llm_provider_id": llm_provider_id,
         })
 
     def get_total_llm_usage(self) -> dict:
@@ -565,7 +571,6 @@ class WorkflowState:
         }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
-        self.llm_usage = [*self.llm_usage, *state.llm_usage]
 
         # Merge stateful values from sub-workflow session into parent session
         # This ensures stateful values updated in sub-workflows propagate to parent
@@ -640,6 +645,7 @@ class WorkflowState:
             "state": state,
             "token_usage": token_usage,
             "cost_usd": token_usage.get("cost_usd", 0.0),
+            "execution_id": self.execution_id,
         }
 
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)

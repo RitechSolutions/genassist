@@ -56,3 +56,39 @@ async def test_no_llm_usage_key_when_no_usage_reported():
 
     assert result["status"] == "success"
     assert "llm_usage" not in result
+
+
+@pytest.mark.asyncio
+async def test_stream_builds_final_from_model_node_without_reinvoke():
+    final_msg = AIMessage(
+        content="streamed answer",
+        usage_metadata={"input_tokens": 12, "output_tokens": 3, "total_tokens": 15},
+    )
+
+    async def fake_astream(_input, _config):
+        yield {"model": {"messages": [final_msg]}}
+
+    agent = _build_agent({"messages": []})
+    agent.agent_executor.astream = fake_astream
+    agent.invoke = AsyncMock(side_effect=AssertionError("stream() must not re-invoke"))
+
+    events = [ev async for ev in agent.stream("hi")]
+    final = next(ev for ev in events if ev["type"] == "final_result")
+
+    assert final["data"]["status"] == "success"
+    assert final["data"]["llm_usage"] == [{"input_tokens": 12, "output_tokens": 3, "total_tokens": 15}]
+
+
+@pytest.mark.asyncio
+async def test_stream_empty_run_yields_error_result():
+    async def fake_astream(_input, _config):
+        if False:
+            yield
+
+    agent = _build_agent({"messages": []})
+    agent.agent_executor.astream = fake_astream
+    agent.invoke = AsyncMock(side_effect=AssertionError("stream() must not re-invoke"))
+
+    events = [ev async for ev in agent.stream("hi")]
+    final = next(ev for ev in events if ev["type"] == "final_result")
+    assert final["data"]["status"] == "error"
