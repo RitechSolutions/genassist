@@ -47,9 +47,7 @@ const transformApiAgent = (agent: AgentStatsItem): AgentStats => ({
   resolutionRate: Number(agent.resolution_rate) || 0,
   avgResponseTime: formatResponseTime(agent.avg_response_time_ms),
   costPerConversation:
-    agent.cost != null && agent.conversations_today > 0
-      ? Number(agent.cost) / agent.conversations_today
-      : null,
+    agent.cost_per_conversation != null ? Number(agent.cost_per_conversation) : null,
   isActive: agent.is_active,
 });
 

@@ -59,6 +59,10 @@ class AgentStatsItem(BaseModel):
     # None when the agent has no cost data today (vs 0 for a real zero-cost day),
     # so the frontend shows cost-per-conversation only when it exists.
     cost: Optional[Decimal] = None
+    # Canonical priced conversation cost / distinct conversations. Null until cutover
+    # (daily stats cannot attribute cost to a conversation) and null for an agent with
+    # no conversation today; the frontend shows it only when non-null.
+    cost_per_conversation: Optional[Decimal] = None
     cost_source: str
     is_active: bool = False
 

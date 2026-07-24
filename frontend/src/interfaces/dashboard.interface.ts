@@ -38,6 +38,7 @@ export interface AgentStatsItem {
   resolution_rate: number;
   avg_response_time_ms: number;
   cost: number | null;
+  cost_per_conversation: number | null;
   cost_source: string;
   is_active: boolean;
 }
