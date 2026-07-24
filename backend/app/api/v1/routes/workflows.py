@@ -95,6 +95,7 @@ async def create_workflow(
         nodes=workflow_data.nodes,
         edges=workflow_data.edges,
         executionState=workflow_data.executionState,
+        settings=workflow_data.settings,
         version=workflow_data.version,
         user_id=current_user.id,
         agent_id=workflow_data.agent_id,
@@ -165,6 +166,8 @@ async def update_workflow(
         workflow.testInput = workflow_data.testInput
     if workflow_data.executionState:
         workflow.executionState = workflow_data.executionState
+    if workflow_data.settings is not None:
+        workflow.settings = workflow_data.settings
     workflow.version = workflow_data.version
 
     updated_workflow = await service.update(workflow_id, workflow)
