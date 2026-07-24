@@ -91,7 +91,9 @@ const BaseNodeContainer = <T extends NodeData>({
   const hasError = !hasNodeBeenExecuted(id) || hasValidationError;
   const isSpecialNode =
     nodeType === "chatInputNode" || nodeType === "chatOutputNode";
-  const isAgentNode = nodeType === "agentNode";
+  // Sub-agents share the agent's gradient treatment
+  const isAgentNode =
+    nodeType === "agentNode" || nodeType === "subAgentNode";
 
   const nodeCategory = nodeDefinition?.category ?? "utils";
   // Header/frame background. Light mode keeps the soft pastel; dark mode uses a
@@ -206,7 +208,7 @@ const BaseNodeContainer = <T extends NodeData>({
         card
       )}
 
-      {/* Generic Test Dialog - automatically included */}
+      {/* Generic Test Dialog*/}
       <GenericTestDialog
         isOpen={isTestDialogOpen}
         onClose={() => setIsTestDialogOpen(false)}

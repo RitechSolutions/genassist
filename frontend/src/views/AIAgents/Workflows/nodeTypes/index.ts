@@ -7,6 +7,7 @@ import WebSearchNode from "./tools/webSearchNode";
 import HtmlToImageNode from "./tools/htmlToImageNode";
 import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
+import SubAgentNode from "./llm/subAgentNode";
 import ExternalAgentNode from "./llm/externalAgentNode";
 import PythonCodeNode from "./tools/pythonCodeNode";
 import {
@@ -42,6 +43,7 @@ import ChatOutputNode from "./chat/chatOutputNode";
 import FinalizeConversationNode from "./chat/finalizeConversationNode";
 import {
   AGENT_NODE_DEFINITION,
+  SUB_AGENT_NODE_DEFINITION,
   EXTERNAL_AGENT_NODE_DEFINITION,
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
@@ -137,6 +139,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(SUB_AGENT_NODE_DEFINITION);
   nodeRegistry.registerNodeType(VOICE_AGENT_NODE_DEFINITION);
   nodeRegistry.registerNodeType(EXTERNAL_AGENT_NODE_DEFINITION);
 
@@ -189,6 +192,7 @@ export const getNodeTypes = () => {
     htmlToImageNode: HtmlToImageNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
+    subAgentNode: SubAgentNode,
     voiceAgentNode: VoiceAgentNode,
     externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,

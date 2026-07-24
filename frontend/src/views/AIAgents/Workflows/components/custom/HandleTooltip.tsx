@@ -1,12 +1,12 @@
 import { Badge } from "@/components/badge";
 import React, { useState, useRef, useMemo } from "react";
 import { Handle, HandleProps, Position } from "reactflow";
-import { NodeData } from "../../types/nodes";
+import { NodeCompatibility, NodeData } from "../../types/nodes";
 import { getHandlerPosition } from "../../utils/helpers";
 
 interface HandleTooltipProps extends HandleProps {
   nodeId: string;
-  compatibility?: "text" | "tools" | "llm" | "json" | "any";
+  compatibility?: NodeCompatibility;
   style?: React.CSSProperties;
 }
 

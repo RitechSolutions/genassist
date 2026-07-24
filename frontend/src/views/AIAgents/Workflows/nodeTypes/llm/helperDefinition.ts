@@ -51,6 +51,39 @@ export const AI_AGENT_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const SUB_AGENT_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Sub-Agent node is a specialist child that a parent AI Agent delegates to. It never sits in the main flow, attach its top port to an agent's sub-agent port and the parent gains a delegation tool for it.",
+  sections: [
+    {
+      title: "Collaboration modes",
+      bullets: [
+        "Single Turn: answers once and returns to the parent.",
+        "Task: does a bounded job, may ask one clarifying question, then finishes.",
+        "Chat: takes over the conversation until it hands control back.",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Pick a Collaboration Mode and write a Description of what this sub-agent handles.",
+        "Select the Provider and adjust the agent type, prompt, timeout, and memory.",
+        "Connect the sub-agent's top port to the parent agent's sub-agent port.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Testing",
+      bullets: [
+        "Node test button: a one-shot smoke run against a sample message with the sub-agent's own model, prompt, and tools. Task and Chat modes show either the result or the first clarifying question.",
+        "Full delegation (Task/Chat pause and resume) is exercised from the workflow test chat: the parent delegates, the sub-agent's question arrives as a normal reply, and your next message routes back to it.",
+        "Editing the workflow while a delegation is active invalidates that conversation; start a new one after saving changes.",
+      ],
+    },
+  ],
+};
+
 export const LANGUAGE_MODEL_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The Language Model node sends input to a configured language model and returns the generated result. It is commonly used for prompting, summarization, rewriting, extraction, and conversational responses.",

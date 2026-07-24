@@ -142,7 +142,7 @@ class BaseNode(ABC):
             source_id = edge.get("source")
             if source_id:
                 _, node_type = self.get_node_config(source_id)
-                if "toolBuilderNode" in node_type or "mcpNode" in node_type:
+                if "toolBuilderNode" in node_type or "mcpNode" in node_type or "subAgentNode" in node_type:
                     continue
                 source_nodes.append(source_id)
 
