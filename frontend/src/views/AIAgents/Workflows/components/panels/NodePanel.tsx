@@ -47,6 +47,12 @@ interface NodePanelProps {
   isOpen: boolean;
   onClose: () => void;
   onAddNode: (nodeType: string) => void;
+  /** When true, picking a node replaces an existing node instead of adding one. */
+  replaceMode?: boolean;
+  /** Name of the node being replaced (shown in the replace-mode banner). */
+  replaceNodeName?: string;
+  /** Exit replace mode without replacing. */
+  onCancelReplace?: () => void;
   messages?: AssistantMessage[];
   isThinking?: boolean;
   activeConversationalTab?: boolean;
@@ -66,6 +72,9 @@ const NodePanel: React.FC<NodePanelProps> = ({
   isOpen,
   onClose,
   onAddNode,
+  replaceMode = false,
+  replaceNodeName,
+  onCancelReplace,
   messages = [],
   isThinking = false,
   activeConversationalTab = false,
@@ -412,6 +421,30 @@ const NodePanel: React.FC<NodePanelProps> = ({
         }`}
       >
         <div className="flex flex-col h-full">
+          {/* Replace-mode banner */}
+          {replaceMode && (
+            <div className="mx-4 mt-4 flex items-start justify-between gap-3 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-2">
+              <div className="min-w-0 text-xs text-foreground">
+                <p className="font-semibold">Replace node</p>
+                <p className="text-muted-foreground">
+                  Pick a node to replace
+                  {replaceNodeName ? ` “${replaceNodeName}”` : " this node"}. Its
+                  connections are kept.
+                </p>
+              </div>
+              {onCancelReplace && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  onClick={onCancelReplace}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Tabs Header */}
           <div className="p-4">
             {showConversationalTab ? (
