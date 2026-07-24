@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.core.utils.encryption_utils import encrypt_key
+from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes.salesforce_tool_node import SalesforceToolNode
 from app.schemas.dynamic_form_schemas.app_settings_schemas import (
     get_encrypted_fields_for_type,
@@ -154,7 +155,8 @@ async def test_missing_subject_returns_400_without_api_call():
             {"description": "x", "app_settings_id": str(uuid.uuid4())}
         )
 
-    assert result["status"] == 400
+    failure = is_node_failure(result)
+    assert failure is not None and failure["code"] == 400
     create_case.assert_not_called()
     service.get_by_id.assert_not_called()
 
@@ -172,7 +174,8 @@ async def test_missing_description_returns_400_without_api_call():
             {"subject": "x", "app_settings_id": str(uuid.uuid4())}
         )
 
-    assert result["status"] == 400
+    failure = is_node_failure(result)
+    assert failure is not None and failure["code"] == 400
     create_case.assert_not_called()
 
 
@@ -193,8 +196,9 @@ async def test_connector_none_result_returns_500():
             }
         )
 
-    assert result["status"] == 500
-    assert "error" in result["data"]
+    failure = is_node_failure(result)
+    assert failure is not None and failure["code"] == 500
+    assert "error" in failure["output"]["data"]
 
 
 @pytest.mark.asyncio
@@ -214,5 +218,6 @@ async def test_connector_exception_returns_500():
             }
         )
 
-    assert result["status"] == 500
-    assert "error" in result["data"]
+    failure = is_node_failure(result)
+    assert failure is not None and failure["code"] == 500
+    assert "error" in failure["output"]["data"]

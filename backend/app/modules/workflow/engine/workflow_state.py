@@ -38,6 +38,7 @@ class WorkflowState:
         workflow: dict,
         initial_values: dict = None,
         thread_id: str = str(uuid.uuid4()),
+        registry_managed: bool = False,
     ):
         """Initialize the workflow state
 
@@ -45,8 +46,13 @@ class WorkflowState:
             thread_id: Unique identifier for the thread
             workflow: Workflow dictionary
             initial_values: Dictionary with dot notation for nested initialization
+            registry_managed: True only on the interactive registry path that can
+                persist and resume sub-agent frames; other entry points may run
+                single_turn delegations but not the persistent (task/chat) ones
         """
         self.thread_id = thread_id
+        self.registry_managed = registry_managed
+        self.sub_agent_persistent_claimed = False
         if initial_values is None:
             initial_values = {}
         self.initial_values = initial_values
@@ -464,12 +470,18 @@ class WorkflowState:
         any metadata the pre-pause nodes saw) would be lost. node_outputs is captured
         separately by the pausing node.
         """
+        from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+        # The sub-agent resume marker is re-supplied on every resume; capturing it would
+        # nest each prior payload into the next frame until the size guard trips.
+        initial = {k: v for k, v in (self.initial_values or {}).items() if k != SUB_AGENT_RESUME_KEY}
+        session = {k: v for k, v in (self.get_session() or {}).items() if k != SUB_AGENT_RESUME_KEY}
         # Deep copy so a later resume (which restores this) can't alias and mutate the
         # values this execution is still using; also matches the JSON round-trip the Redis
         # memory backend performs, keeping behaviour identical across backends.
         return copy.deepcopy({
-            "initial_values": self.initial_values,
-            "session": self.get_session(),
+            "initial_values": initial,
+            "session": session,
         })
 
     def restore_resume_context(
@@ -601,6 +613,33 @@ class WorkflowState:
             "execution_end_time": self.execution_end_time,
         }
 
+    def _collect_failed_nodes(self) -> list[dict]:
+        """Collect the nodes that failed in this run, latest run per node only.
+
+        Re-run nodes are archived under prefixed keys (e.g. ``node_id_0``); only
+        the latest run keeps the un-suffixed ``node_id`` key. We ignore archived
+        keys so a node that failed once and later succeeded is not reported as
+        failed (mirrors the frontend's `stripArchivedKeys`).
+        """
+        import re
+
+        keys = set(self.node_execution_status.keys())
+        failed: list[dict] = []
+        for node_id, entry in self.node_execution_status.items():
+            # Skip archived earlier runs: "<base>_<n>" where <base> is also a key.
+            match = re.match(r"^(.+)_(\d+)$", node_id)
+            if match and match.group(1) in keys:
+                continue
+            if not isinstance(entry, dict) or entry.get("status") != "failed":
+                continue
+            failed.append({
+                "node_id": node_id,
+                "name": entry.get("name") or "",
+                "type": entry.get("type") or "",
+                "error": entry.get("error") or "",
+            })
+        return failed
+
     def format_state_as_response(self):
         """
         Format the workflow state as a response and sanitize for JSON compliance.
@@ -631,9 +670,18 @@ class WorkflowState:
         else:
             status = "success"
 
+        # Surface node-level failures at the run level. This is ADDITIVE: the
+        # top-level `status` stays "success" (the workflow still completed and
+        # produced a response), but `has_failures`/`failed_nodes` let callers and
+        # the UI know a node did not do its job (e.g. a Zendesk ticket that was
+        # never created despite a 200-style flow). See node_result.is_node_failure.
+        failed_nodes = self._collect_failed_nodes()
+
         token_usage = self.get_total_llm_usage()
         response = {
             "status": status,
+            "has_failures": len(failed_nodes) > 0,
+            "failed_nodes": failed_nodes,
             "input": _input,
             "output": output,
             "performance_metrics": performance_metrics,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/PageLayout";
 import JsonViewer from "@/components/JsonViewer";
@@ -31,7 +31,19 @@ import { Skeleton } from "@/components/skeleton";
 import { Progress } from "@/components/progress";
 import { cn } from "@/helpers/utils";
 
-type ResultFilter = "all" | "passed" | "failed";
+type ResultFilter = "all" | "passed" | "failed" | "not_scored";
+
+/** Execution counts the backend stores alongside the per-technique metrics. */
+const RUN_TOTALS_KEY = "_totals";
+
+interface RunTotals {
+  cases: number;
+  executed: number;
+  scored: number;
+  scoring_failed: number;
+  execution_failed: number;
+  skipped: number;
+}
 
 const getMetricSourceLabel = (
   technique: string,
@@ -42,6 +54,10 @@ const getMetricSourceLabel = (
     case "contains":
     case "json_match":
       return "Expected Output";
+    case "not_contains": {
+      const hasPhrases = Array.isArray(config?.phrases) ? (config.phrases as unknown[]).length > 0 : Boolean(config?.text);
+      return hasPhrases ? "Configured forbidden phrases" : "Forbidden phrases";
+    }
     case "field_equals":
       return config?.expected !== undefined ? "Configured expected value" : "Expected Output";
     case "nli_eval": {
@@ -82,6 +98,28 @@ const usesExpectedOutput = (
     default:
       return false;
   }
+};
+
+const hasMetrics = (result: TestResult): boolean =>
+  !!result.metrics && Object.keys(result.metrics).length > 0;
+
+// No metrics means no score, whatever the stored status claims.
+const isResultNotScored = (result: TestResult): boolean =>
+  !hasMetrics(result) || (!!result.status && result.status !== "scored");
+
+const isResultPassed = (result: TestResult): boolean =>
+  hasMetrics(result) &&
+  !isResultNotScored(result) &&
+  Object.values(result.metrics!).every((m) => m.passed);
+
+const isResultFailed = (result: TestResult): boolean =>
+  !isResultPassed(result) && !isResultNotScored(result);
+
+const notScoredLabel = (result: TestResult): string => {
+  if (result.status === "skipped") return "Skipped";
+  if (result.status === "scoring_failed") return "Scoring failed";
+  if (result.status === "execution_failed") return "Execution failed";
+  return "Not scored";
 };
 
 const RunStatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -205,10 +243,8 @@ const EvaluationDetailPage: React.FC = () => {
     if (!evaluation || !evaluationId) return;
     setIsRunning(true);
     try {
-      let runMetadata = evaluation.input_metadata ?? undefined;
-      if (runMetadata?.use_memory) {
-        runMetadata = { ...runMetadata, thread_id: crypto.randomUUID() };
-      }
+      // Memory threads are generated per conversation by the backend at run time.
+      const runMetadata = evaluation.input_metadata ?? undefined;
       const created = await startTestRun(evaluation.suite_id, {
         techniques: evaluation.techniques,
         technique_configs: evaluation.technique_configs,
@@ -246,22 +282,22 @@ const EvaluationDetailPage: React.FC = () => {
   const selectedRun = runs.find((run) => run.id === selectedRunId);
   const selectedRunResults = selectedRunId ? resultsByRun[selectedRunId] ?? [] : [];
 
-  // Helper to determine if a result passed (all metrics passed) or failed
-  const isResultPassed = (result: TestResult): boolean => {
-    if (!result.metrics) return true; // No metrics means no failure
-    return Object.values(result.metrics).every((m) => m.passed);
+  const filterResults = () => {
+    if (resultFilter === "passed") return selectedRunResults.filter(isResultPassed);
+    if (resultFilter === "not_scored") return selectedRunResults.filter(isResultNotScored);
+    if (resultFilter === "failed") return selectedRunResults.filter(isResultFailed);
+    return selectedRunResults;
   };
 
-  // Filter results based on selected filter
-  const filteredResults = useMemo(() => {
-    if (resultFilter === "all") return selectedRunResults;
-    if (resultFilter === "passed") return selectedRunResults.filter(isResultPassed);
-    return selectedRunResults.filter((r) => !isResultPassed(r));
-  }, [selectedRunResults, resultFilter]);
+  const filteredResults = filterResults();
 
-  // Count passed and failed
   const passedCount = selectedRunResults.filter(isResultPassed).length;
-  const failedCount = selectedRunResults.length - passedCount;
+  const failedCount = selectedRunResults.filter(isResultFailed).length;
+  const notScoredCount = selectedRunResults.filter(isResultNotScored).length;
+
+  const runTotals = (selectedRun?.summary_metrics as Record<string, unknown> | undefined)?.[
+    RUN_TOTALS_KEY
+  ] as RunTotals | undefined;
 
   if (!evaluation) {
     return (
@@ -364,10 +400,15 @@ const EvaluationDetailPage: React.FC = () => {
                   string,
                   { accuracy?: number; avg_score?: number; cases?: number }
                 > | undefined;
-                const avgAccuracy = summaryMetrics
-                  ? Object.values(summaryMetrics)
-                      .filter((m) => typeof m.accuracy === "number")
-                      .reduce((sum, m, _, arr) => sum + (m.accuracy ?? 0) / arr.length, 0)
+                // No scored technique means no score at all, which must not read as 0%.
+                const scoredTechniques = Object.values(summaryMetrics ?? {}).filter(
+                  (m) => typeof m.accuracy === "number"
+                );
+                const avgAccuracy = scoredTechniques.length
+                  ? scoredTechniques.reduce(
+                      (sum, m, _, arr) => sum + (m.accuracy ?? 0) / arr.length,
+                      0
+                    )
                   : null;
 
                 return (
@@ -400,6 +441,9 @@ const EvaluationDetailPage: React.FC = () => {
                             </span>
                           </div>
                         )}
+                        {avgAccuracy === null && run.status === "completed" && (
+                          <span className="text-xs text-gray-500">No score</span>
+                        )}
                       </div>
                       <RunStatusBadge status={run.status} />
                     </div>
@@ -408,7 +452,9 @@ const EvaluationDetailPage: React.FC = () => {
                     </div>
                     {summaryMetrics && (
                       <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-                        {Object.entries(summaryMetrics).map(([tech, summary]) => {
+                        {Object.entries(summaryMetrics)
+                          .filter(([tech]) => tech !== RUN_TOTALS_KEY)
+                          .map(([tech, summary]) => {
                           const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
                           let colorClasses = "bg-muted text-muted-foreground border border-border";
                           if (acc !== null) {
@@ -463,6 +509,16 @@ const EvaluationDetailPage: React.FC = () => {
                   {/* Summary metrics with progress bars */}
                   <div className="bg-muted rounded-lg p-4">
                     <div className="text-sm font-medium mb-3">Evaluation Summary</div>
+                    {runTotals && runTotals.scored < runTotals.cases && (
+                      <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+                        Scores below cover {runTotals.scored} of {runTotals.cases} records
+                        {runTotals.execution_failed > 0 &&
+                          ` · ${runTotals.execution_failed} failed to execute`}
+                        {runTotals.scoring_failed > 0 &&
+                          ` · ${runTotals.scoring_failed} ran but failed scoring`}
+                        {runTotals.skipped > 0 && ` · ${runTotals.skipped} skipped`}
+                      </div>
+                    )}
                     {selectedRun.summary_metrics ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {Object.entries(
@@ -470,7 +526,9 @@ const EvaluationDetailPage: React.FC = () => {
                             string,
                             { accuracy?: number; avg_score?: number; cases?: number }
                           >,
-                        ).map(([tech, summary]) => {
+                        )
+                          .filter(([tech]) => tech !== RUN_TOTALS_KEY)
+                          .map(([tech, summary]) => {
                           const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
                           return (
                             <div
@@ -531,6 +589,10 @@ const EvaluationDetailPage: React.FC = () => {
                             <XCircle className="h-3 w-3 mr-1 text-red-600 dark:text-red-400" />
                             Failed ({failedCount})
                           </TabsTrigger>
+                          <TabsTrigger value="not_scored" className="text-xs px-3 py-1">
+                            <AlertCircle className="h-3 w-3 mr-1 text-amber-600" />
+                            Not scored ({notScoredCount})
+                          </TabsTrigger>
                         </TabsList>
                       </Tabs>
                     </div>
@@ -559,6 +621,8 @@ const EvaluationDetailPage: React.FC = () => {
                             ? "No test results available yet."
                             : resultFilter === "passed"
                             ? "No passed test cases."
+                            : resultFilter === "not_scored"
+                            ? "No unscored test cases."
                             : "No failed test cases."}
                         </p>
                       </div>
@@ -566,6 +630,7 @@ const EvaluationDetailPage: React.FC = () => {
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                         {filteredResults.map((result) => {
                           const passed = isResultPassed(result);
+                          const notScored = isResultNotScored(result);
                           const isExpanded = expandedResultId === result.id;
                           const gradedTechniques = Object.keys(result.metrics ?? {});
                           const caseExpectedOutput = result.case_id
@@ -588,8 +653,12 @@ const EvaluationDetailPage: React.FC = () => {
                             <div
                               key={result.id}
                               className={cn(
-                                "border rounded-lg overflow-hidden transition-colors",
-                                passed ? "border-l-2 border-l-green-500" : "border-l-2 border-l-red-500"
+                                "border rounded-lg overflow-hidden transition-colors border-l-2",
+                                notScored
+                                  ? "border-l-amber-500"
+                                  : passed
+                                  ? "border-l-green-500"
+                                  : "border-l-red-500"
                               )}
                             >
                               {/* Result header - always visible */}
@@ -600,7 +669,9 @@ const EvaluationDetailPage: React.FC = () => {
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    {passed ? (
+                                    {notScored ? (
+                                      <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    ) : passed ? (
                                       <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
                                     ) : (
                                       <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
@@ -608,6 +679,11 @@ const EvaluationDetailPage: React.FC = () => {
                                     <span className="font-medium text-sm">
                                       Case #{result.case_id?.slice(-4)}
                                     </span>
+                                    {notScored && (
+                                      <span className="text-[11px] rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5">
+                                        {notScoredLabel(result)}
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {result.metrics && (

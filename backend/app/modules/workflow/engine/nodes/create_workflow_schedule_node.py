@@ -11,6 +11,7 @@ from typing import Any, Dict
 from uuid import UUID
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.core.utils.enums.workflow_schedule_enum import ThreadIdMode
 from app.schemas.workflow_schedule import WorkflowScheduleCreate
 from app.services.workflow_schedule import WorkflowScheduleService
@@ -51,9 +52,9 @@ class CreateWorkflowScheduleNode(BaseNode):
         message = config.get("message")
 
         if not agent_id:
-            return {"error": "agentId is required to create a workflow schedule"}
+            return node_failure("agentId is required to create a workflow schedule")
         if not cron_schedule:
-            return {"error": "cronSchedule is required to create a workflow schedule"}
+            return node_failure("cronSchedule is required to create a workflow schedule")
 
         # Build the input payload from message + any extra fields. The extra
         # fields may arrive as a dict or a JSON string (e.g. from a templated
@@ -102,4 +103,4 @@ class CreateWorkflowScheduleNode(BaseNode):
         except Exception as e:
             error_msg = f"Error creating workflow schedule: {str(e)}"
             logger.error(error_msg)
-            return {"error": error_msg}
+            return node_failure(error_msg)

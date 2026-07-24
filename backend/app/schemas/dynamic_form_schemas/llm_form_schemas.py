@@ -438,7 +438,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Region",
                 required=False,
-                default="ca-central-1",
+                default="eu-central-1",
                 description="AWS region name",
             ),
             FieldSchema(
@@ -446,7 +446,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Model",
                 required=True,
-                default="us.amazon.nova-2-lite-v1:0",
+                default="eu.amazon.nova-2-lite-v1:0",
                 description="AWS model name",
             ),
             FieldSchema(

@@ -49,6 +49,7 @@ from app.modules.workflow.engine.nodes import (
     SlackToolNode,
     SQLNode,
     STTNode,
+    SubAgentNode,
     TemplateNode,
     ThreadRAGNode,
     ToolBuilderNode,
@@ -69,10 +70,30 @@ from app.modules.workflow.utils import process_path_based_input_data
 logger = logging.getLogger(__name__)
 
 
+class MemoryPersistenceError(Exception):
+    """Raised when an awaited memory write fails, leaving the thread incomplete."""
+
+
+def should_persist_to_memory(
+    initial_values: Dict[str, Any], persist: bool, status: str
+) -> bool:
+    """Persist a completed turn on presence of a message field, so an intentionally
+    empty turn and its response still enter memory while a failed run never does."""
+    return bool(persist) and status == "completed" and "message" in initial_values
+
+
 def _sanitize_output_for_memory(output: Any) -> Any:
     """Strip nested audio payloads (base64 blobs) from an output before it is
     persisted to conversation memory. A bare audio dict (e.g. a TTS node's
     output, where the dict itself IS the audio) is kept as-is."""
+    # A sub-agent pause stores a control envelope as the output; persist only the
+    # child's plain question to the root history, not the control JSON
+    if (
+        isinstance(output, dict)
+        and output.get("status") == "awaiting_input"
+        and isinstance(output.get("sub_agent"), dict)
+    ):
+        return output["sub_agent"].get("message", "")
     if (
         isinstance(output, dict)
         and isinstance(output.get("audio"), dict)
@@ -148,6 +169,7 @@ class WorkflowEngine:
         cls._node_registry["htmlToImageNode"] = HtmlToImageNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
+        cls._node_registry["subAgentNode"] = SubAgentNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -258,6 +280,8 @@ class WorkflowEngine:
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
+        registry_managed: bool = False,
+        await_persist: bool = False,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -267,6 +291,11 @@ class WorkflowEngine:
             input_data: Input data for the workflow
             thread_id: Thread ID for this execution
             persist: Whether to persist conversation to memory
+            registry_managed: True only on the interactive registry path; gates
+                persistent (task/chat) sub-agent delegations
+            await_persist: Wait for the memory write instead of scheduling it in
+                the background. Required when replaying ordered turns so a turn is
+                stored before the next one reads it
 
         Returns:
             WorkflowState with execution results
@@ -308,6 +337,7 @@ class WorkflowEngine:
                 workflow=self.workflow,
                 thread_id=thread_id or str(uuid.uuid4()),
                 initial_values=initial_values,
+                registry_managed=registry_managed,
             )
 
             try:
@@ -339,15 +369,21 @@ class WorkflowEngine:
                 raise
 
             try:
-                if initial_values.get("message") and persist:
-                    asyncio.create_task(
-                        state.get_memory().add_input_output(
-                            initial_values.get("message", ""),
-                            _sanitize_output_for_memory(state.output)
-                        )
+                if should_persist_to_memory(initial_values, bool(persist), state.status):
+                    persistence = state.get_memory().add_input_output(
+                        initial_values.get("message", ""),
+                        _sanitize_output_for_memory(state.output)
                     )
+                    if await_persist:
+                        await persistence
+                    else:
+                        asyncio.create_task(persistence)
             except Exception as e:
                 logger.error(f"Error adding message to memory: {e}")
+                # Callers replaying ordered turns depend on this write; the next
+                # turn would otherwise run with incomplete context
+                if await_persist:
+                    raise MemoryPersistenceError(str(e)) from e
             return state
 
     def _find_starting_nodes(self) -> List[str]:
@@ -366,6 +402,10 @@ class WorkflowEngine:
         starting_nodes = []
         for node in self.workflow["nodes"]:
             node_id = node["id"]
+            # subAgentNode only runs as a child engine's explicit start node, never
+            # as an inferred entry point of the main flow
+            if node.get("type") == "subAgentNode":
+                continue
             if node_id not in target_edges or not target_edges[node_id]:
                 starting_nodes.append(node_id)
 
@@ -485,6 +525,8 @@ class WorkflowEngine:
 
         next_nodes = []
         for edge in source_edges.get(node_id, []):
+            if edge.get("sourceHandle") == "output_sub_agent":
+                continue
             next_nodes.append(edge["target"])
 
         return next_nodes

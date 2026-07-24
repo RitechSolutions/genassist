@@ -5,6 +5,7 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   Connection,
+  Edge,
   Node,
   Panel,
   ReactFlowInstance,
@@ -50,6 +51,8 @@ import { History, ChevronLeft, X, Plus } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
+import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import toast from "react-hot-toast";
 import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
 import { getAllAppSettings } from "@/services/appSettings";
@@ -399,13 +402,16 @@ const GraphFlowContent: React.FC = () => {
   // Restore functions to nodes after loading
   const restoreNodeFunctions = useCallback(
     (loadedNodes: Node[]): Node[] => {
-      return loadedNodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          updateNodeData,
-        },
-      }));
+      return loadedNodes.map((node) => {
+        const hydrated = nodeRegistry.hydrateNode(node);
+        return {
+          ...hydrated,
+          data: {
+            ...hydrated.data,
+            updateNodeData,
+          },
+        };
+      });
     },
     [updateNodeData]
   );
@@ -509,11 +515,24 @@ const GraphFlowContent: React.FC = () => {
     }
   }, [agentId, loadAgent]);
 
+  // One gate for connect, reconnect, and assistant edges
+  const checkConnection = useCallback(
+    (params: Connection, ignoreEdgeId?: string): { ok: boolean; reason?: string } => {
+      if (!validateConnection(params)) {
+        return { ok: false };
+      }
+      const scopedEdges = ignoreEdgeId ? edges.filter((e) => e.id !== ignoreEdgeId) : edges;
+      return validateSubAgentConnection(params, nodes, scopedEdges);
+    },
+    [validateConnection, nodes, edges]
+  );
+
   // Connection handler with special handling for connections
   const onConnect = useCallback(
     (params: Connection) => {
-      // Validate schema compatibility before allowing connection
-      if (!validateConnection(params)) {
+      const check = checkConnection(params);
+      if (!check.ok) {
+        if (check.reason) toast.error(check.reason);
         return;
       }
 
@@ -536,18 +555,27 @@ const GraphFlowContent: React.FC = () => {
 
       setEdges((eds) => addEdge(edgeWithMarker, eds));
     },
-    [setEdges, validateConnection]
+    [setEdges, checkConnection]
   );
 
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
   }, []);
- 
-  const onReconnect = useCallback((oldEdge, newConnection) => {
-    edgeReconnectSuccessful.current = true;
-    setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
-  }, []);
- 
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      const check = checkConnection(newConnection, oldEdge.id);
+      if (!check.ok) {
+        if (check.reason) toast.error(check.reason);
+        edgeReconnectSuccessful.current = true;
+        return;
+      }
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [setEdges, checkConnection]
+  );
+
   const onReconnectEnd = useCallback((_, edge) => {
     if (!edgeReconnectSuccessful.current) {
       setEdges((eds) => eds.filter((e) => e.id !== edge.id));
