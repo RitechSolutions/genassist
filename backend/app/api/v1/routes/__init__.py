@@ -47,6 +47,7 @@ from app.api.v1.routes import (
     tenants,
     test_cases,
     test_evaluations,
+    templates,
     test_runs,
     test_suites,
     translations,
@@ -116,6 +117,7 @@ router.include_router(
     agent_knowledge.router, prefix="/genagent/knowledge", tags=["Knowledge Base"]
 )
 router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Workflows"])
+router.include_router(templates.router, prefix="/genagent/templates", tags=["Templates"])
 router.include_router(
     workflow_schedule.router,
     prefix="/genagent/workflow-schedules",

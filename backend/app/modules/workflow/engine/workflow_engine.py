@@ -53,6 +53,7 @@ from app.modules.workflow.engine.nodes import (
     SlackToolNode,
     SQLNode,
     STTNode,
+    SubAgentNode,
     TemplateNode,
     ThreadRAGNode,
     ToolBuilderNode,
@@ -89,6 +90,14 @@ def _sanitize_output_for_memory(output: Any) -> Any:
     """Strip nested audio payloads (base64 blobs) from an output before it is
     persisted to conversation memory. A bare audio dict (e.g. a TTS node's
     output, where the dict itself IS the audio) is kept as-is."""
+    # A sub-agent pause stores a control envelope as the output; persist only the
+    # child's plain question to the root history, not the control JSON
+    if (
+        isinstance(output, dict)
+        and output.get("status") == "awaiting_input"
+        and isinstance(output.get("sub_agent"), dict)
+    ):
+        return output["sub_agent"].get("message", "")
     if (
         isinstance(output, dict)
         and isinstance(output.get("audio"), dict)
@@ -164,6 +173,7 @@ class WorkflowEngine:
         cls._node_registry["htmlToImageNode"] = HtmlToImageNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
+        cls._node_registry["subAgentNode"] = SubAgentNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -274,6 +284,7 @@ class WorkflowEngine:
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
+        registry_managed: bool = False,
         await_persist: bool = False,
         usage_context: Optional["WorkflowUsageContext"] = None,
         usage_sink: Optional[list] = None,
@@ -286,9 +297,11 @@ class WorkflowEngine:
             input_data: Input data for the workflow
             thread_id: Thread ID for this execution
             persist: Whether to persist conversation to memory
+            registry_managed: True only on the interactive registry path; gates
+                persistent (task/chat) sub-agent delegations
             await_persist: Wait for the memory write instead of scheduling it in
                 the background. Required when replaying ordered turns so a turn is
-                stored before the next one reads it.
+                stored before the next one reads it
             usage_context: Top-level runs pass this to record LLM usage to the ledger.
             usage_sink: Nested runs pass a parent list to append their usage into, so
                 a child's usage survives even when the child raises. Mutually exclusive
@@ -334,6 +347,7 @@ class WorkflowEngine:
                 workflow=self.workflow,
                 thread_id=thread_id or str(uuid.uuid4()),
                 initial_values=initial_values,
+                registry_managed=registry_managed,
             )
 
             try:
@@ -351,7 +365,7 @@ class WorkflowEngine:
                         state.complete_execution()
 
                     except WorkflowPausedException as e:
-                        # Workflow paused
+                        # Workflow paused (e.g. HumanInTheLoop needs user input)
                         state.output = e.pause_data
                         state.status = "completed"
                         state.is_executing = False
@@ -360,7 +374,7 @@ class WorkflowEngine:
                         state.fail_execution(str(e))
 
                 except WorkflowPausedException:
-                    pass
+                    pass  # Already handled above
                 except Exception as e:
                     state.fail_execution(str(e))
                     raise
@@ -377,6 +391,8 @@ class WorkflowEngine:
                             asyncio.create_task(persistence)
                 except Exception as e:
                     logger.error(f"Error adding message to memory: {e}")
+                    # Callers replaying ordered turns depend on this write; the next
+                    # turn would otherwise run with incomplete context
                     if await_persist:
                         raise MemoryPersistenceError(str(e)) from e
                 return state
@@ -421,6 +437,10 @@ class WorkflowEngine:
         starting_nodes = []
         for node in self.workflow["nodes"]:
             node_id = node["id"]
+            # subAgentNode only runs as a child engine's explicit start node, never
+            # as an inferred entry point of the main flow
+            if node.get("type") == "subAgentNode":
+                continue
             if node_id not in target_edges or not target_edges[node_id]:
                 starting_nodes.append(node_id)
 
@@ -441,7 +461,29 @@ class WorkflowEngine:
         # Check if aggregator requirements are satisfied
         # (skip for the starting node — its upstream nodes may not have run)
         node = self.executable_node(node_id, state)
-        if skip_requirement_check:
+
+        if node.is_deactivated():
+            # The user has deactivated (bypassed) this node in the editor. We do
+            # NOT run its logic. Instead we forward its resolved input straight
+            # through as its output, so downstream nodes — which pull their input
+            # from state.node_outputs — receive the upstream data unchanged, as
+            # if this node were not present. Chains of deactivated nodes compose
+            # because each one's forwarded output feeds the next.
+            if not skip_requirement_check and not node.check_if_requirement_satisfied():
+                # Wait for upstream inputs (e.g. an unfinished parallel branch)
+                # before passing through, mirroring normal-node behavior.
+                logger.debug(
+                    f"Deactivated node {node_id} requirements not satisfied, "
+                    "skipping for now"
+                )
+                return
+            logger.info(
+                f"Node {node_id} is deactivated — forwarding input to next nodes"
+            )
+            node.start_execution()
+            node.set_node_output(node.get_input_from_source())
+            node.complete_execution()
+        elif skip_requirement_check:
             node_output = await self._execute_single_node(node_id, state)
         elif node.check_if_requirement_satisfied():
             node_output = await self._execute_single_node(node_id, state)
@@ -540,6 +582,8 @@ class WorkflowEngine:
 
         next_nodes = []
         for edge in source_edges.get(node_id, []):
+            if edge.get("sourceHandle") == "output_sub_agent":
+                continue
             next_nodes.append(edge["target"])
 
         return next_nodes

@@ -36,6 +36,7 @@ import {
   MessageSquareText,
   Bug,
   Network,
+  AlertTriangle,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
@@ -832,12 +833,18 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     {response && (
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          response.status === "success"
+                          response.has_failures
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : response.status === "success"
                             ? "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400"
                             : "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400"
                         }`}
                       >
-                        {response.status === "success" ? "Success" : "Failed"}
+                        {response.has_failures
+                          ? "Completed with errors"
+                          : response.status === "success"
+                          ? "Success"
+                          : "Failed"}
                       </span>
                     )}
                   </div>
@@ -888,6 +895,37 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     </div>
                   ) : response ? (
                     <div className="space-y-3">
+                      {/* One or more nodes failed even though the run completed
+                          (e.g. a ticket that was never created). The workflow still
+                          returned a response; this surfaces what went wrong. */}
+                      {response.has_failures &&
+                        Array.isArray(response.failed_nodes) &&
+                        response.failed_nodes.length > 0 && (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                            <div className="flex items-center gap-2 font-medium">
+                              <AlertTriangle className="h-4 w-4" />
+                              {response.failed_nodes.length === 1
+                                ? "1 node failed during this run"
+                                : `${response.failed_nodes.length} nodes failed during this run`}
+                            </div>
+                            <ul className="mt-1.5 list-disc space-y-1 pl-6">
+                              {response.failed_nodes.map((n) => (
+                                <li key={n.node_id}>
+                                  <span className="font-medium">
+                                    {n.name || n.type || n.node_id}
+                                  </span>
+                                  {n.error ? (
+                                    <span className="text-amber-700">: {n.error}</span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="mt-1.5 text-xs text-amber-700">
+                              The workflow still returned a response. Open the Execution
+                              tab to inspect each node.
+                            </div>
+                          </div>
+                        )}
                       {response?.status === "success" ? (
                         <>
                           {/* The user's test message */}

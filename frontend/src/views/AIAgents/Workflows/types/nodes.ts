@@ -4,7 +4,14 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 // Define compatibility types
-export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "audio" | "any";
+export type NodeCompatibility =
+  | "text"
+  | "tools"
+  | "llm"
+  | "json"
+  | "audio"
+  | "sub_agents"
+  | "any";
 
 // Define handler types
 export interface NodeHandler {
@@ -20,6 +27,10 @@ export interface BaseNodeData {
   name: string;
   handlers?: NodeHandler[];
   unwrap?: boolean;
+  // When true, the node is bypassed at execution time: the engine forwards the
+  // upstream node's output straight to the downstream node(s), as if this node
+  // were not present. Persisted inside the node's `data` (workflows.nodes JSONB).
+  deactivated?: boolean;
   updateNodeData?: <T extends BaseNodeData>(
     nodeId: string,
     data: Partial<T>,
@@ -285,6 +296,18 @@ export interface BaseLLMNodeData extends BaseNodeData {
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "Chain-of-Thought" | "ReActAgentLC";
+}
+/** Collaboration mode controlling how control returns to the parent */
+export type SubAgentMode = "single_turn" | "task" | "chat";
+
+// Sub-Agent Node Data (a specialist child a parent agent delegates to)
+export interface SubAgentNodeData extends BaseLLMNodeData {
+  type: "ReActAgent" | "ToolSelector" | "ReActAgentLC";
+  mode: SubAgentMode;
+  /** Shown to the parent agent so it knows when to delegate */
+  description: string;
+  /** Seconds the parent waits for one delegated turn (5–300) */
+  timeoutSeconds?: number;
 }
 // Voice Agent Node Data (native speech-to-speech via Gemini Live API)
 export interface VoiceAgentNodeData extends BaseNodeData {
@@ -585,6 +608,7 @@ export type NodeData =
   | FinalizeConversationNodeData
   | APIToolNodeData
   | AgentNodeData
+  | SubAgentNodeData
   | KnowledgeBaseNodeData
   | SQLNodeData
   | PythonCodeNodeData

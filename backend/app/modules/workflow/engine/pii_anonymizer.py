@@ -6,14 +6,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Realistic fake value generators per entity type.
-# These produce values that look natural to an LLM while being clearly fake
-# (using reserved/fictional ranges where possible).
 _FAKE_VALUE_TEMPLATES: dict[str, Any] = {
     "EMAIL_ADDRESS": lambda n: f"johndoe{n}@example.com",
-    "PHONE_NUMBER": lambda n: f"(555) 010-{n:04d}",  # 555 is reserved for fiction
+    "PHONE_NUMBER": lambda n: f"(555) 010-{n:04d}",
     "CREDIT_CARD": lambda n: f"4111-1111-1111-{n:04d}",
-    "IP_ADDRESS": lambda n: f"192.0.2.{n}",  # TEST-NET-1, reserved for docs
+    "IP_ADDRESS": lambda n: f"192.0.2.{n}",
     "IBAN_CODE": lambda n: f"DE00000000000000000{n:03d}",
     "US_SSN": lambda n: f"000-00-{n:04d}",
     "US_ITIN": lambda n: f"900-00-{n:04d}",
@@ -23,12 +20,6 @@ _FAKE_VALUE_TEMPLATES: dict[str, Any] = {
     "MEDICAL_LICENSE": lambda n: f"MED-{n:04d}",
 }
 
-# Only entities with built-in regex recognizers in Presidio's default "en"
-# registry are listed. Language-specific IDs (IT/ES/PL) and identifiers
-# without built-in recognizers (CA_SIN, AU_*, IN_*, SG_*) are excluded —
-# they produce no detections without spaCy NER or custom recognizers.
-# US_BANK_NUMBER is also excluded: its loose 8-17 digit regex causes false
-# positives on phone numbers and other numeric strings.
 DEFAULT_ENTITIES = [
     "EMAIL_ADDRESS",
     "PHONE_NUMBER",
@@ -46,12 +37,10 @@ DEFAULT_ENTITIES = [
 
 @lru_cache(maxsize=1)
 def _get_engines():
-    """Lazy-init Presidio analyzer — cached per process, no spaCy model required."""
     from presidio_analyzer import AnalyzerEngine
     from presidio_analyzer.nlp_engine import NlpArtifacts, NlpEngine
 
     class _PatternOnlyNlpEngine(NlpEngine):
-        """Stub NLP engine that satisfies Presidio's interface without loading any model."""
 
         engine_name = "pattern_only"
 
@@ -91,26 +80,15 @@ def _get_engines():
 
 class PIIAnonymizer:
     """
-    Masks PII in text before it reaches the LLM and restores it afterwards.
-
-    Usage
-    -----
-    service = PIIAnonymizer()
-    masked_text, token_map = service.mask(user_text)
-    # ... LLM call with masked_text ...
-    restored = service.unmask(llm_response, token_map)
-    """
+    Masks PII in text before it reaches the LLM and restores it afterwards"""
 
     def __init__(self, entities: list[str] | None = None, language: str = "en") -> None:
         self._entities = entities or DEFAULT_ENTITIES
         self._language = language
 
-    def mask(self, text: str) -> tuple[str, dict[str, Any]]:
+    def mask(self, text: str, existing_items: list[dict[str, Any]] | None = None) -> tuple[str, dict[str, Any]]:
         """
-        Replace PII spans with unique anonymization tokens.
-        Returns (masked_text, token_map). Pass token_map unchanged to unmask().
-        Returns (text, {}) when no PII is detected.
-        """
+        Replace PII spans with unique anonymization tokens"""
         if not text:
             return text, {}
 
@@ -120,10 +98,6 @@ class PIIAnonymizer:
         if not results:
             return text, {}
 
-        # Presidio may return multiple detections for overlapping spans
-        # (e.g., a phone number also matching US_DRIVER_LICENSE).  Keep only
-        # the highest-score result for each span region so we never substitute
-        # the same characters twice, which would corrupt the output.
         results = sorted(results, key=lambda r: (-r.score, r.start))
         deduplicated: list = []
         for result in results:
@@ -134,10 +108,11 @@ class PIIAnonymizer:
                 continue
             deduplicated.append(result)
 
-        # Process right-to-left so earlier offsets stay valid after each substitution.
-        # Each entity type gets its own counter so two different emails become
-        # <EMAIL_ADDRESS_1> and <EMAIL_ADDRESS_2> and can be independently restored.
         entity_counters: dict[str, int] = {}
+        for item in existing_items or []:
+            entity_type = item.get("entity_type")
+            if entity_type:
+                entity_counters[entity_type] = entity_counters.get(entity_type, 0) + 1
         items: list[dict[str, Any]] = []
         masked = text
 
@@ -155,12 +130,7 @@ class PIIAnonymizer:
         return masked, {"items": items}
 
     def redact(self, text: str, entities: list[str] | None = None) -> str:
-        """
-        Permanently remove PII spans, replacing them with '[REDACTED]'.
-        Unlike mask(), this is a one-way operation — original values are discarded.
-        Use this at system boundaries to strip sensitive data before it reaches
-        any downstream consumer (DB, LLM, logs, WebSocket).
-        """
+        """Permanently remove PII spans, replacing them with '[REDACTED]'"""
         if not text:
             return text
 
@@ -189,10 +159,7 @@ class PIIAnonymizer:
         return redacted
 
     def unmask(self, text: str, token_map: dict[str, Any]) -> str:
-        """
-        Restore original PII values using the token_map produced by mask().
-        Tokens the LLM dropped or altered are left as-is.
-        """
+        """Restore original PII values using the token_map produced by mask()"""
         if not text or not token_map:
             return text
 

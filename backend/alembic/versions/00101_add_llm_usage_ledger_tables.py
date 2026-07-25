@@ -4,7 +4,7 @@ Creates the ledger tables (events, receipts, control flag, reconciliation
 reports) and adds optional ``workflow_execution_id`` on ``agent_response_logs``.
 
 Revision ID: c6974c08b567
-Revises: e7a4b0c95d61
+Revises: a3f9c1d7e204
 Create Date: 2026-07-23 00:00:00.000000
 
 """

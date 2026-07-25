@@ -1,4 +1,8 @@
-from typing import Callable, Protocol
+import inspect
+import logging
+from typing import Any, Callable, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 def to_snake_case(not_snake_case):
@@ -44,6 +48,30 @@ class BaseTool(Tool):
         self.function = function
         self.return_direct = return_direct
 
-    def invoke(self, **kwargs) -> str:
-        """Execute the tool with given arguments"""
-        return self.function({"parameters": kwargs})
+    async def invoke(self, **kwargs) -> Any:
+        """Execute the tool with the given arguments.
+
+        A tool's underlying function is a node's ``execute`` method. When that node
+        fails it no longer raises — it returns a failure envelope (or an HTTP-error
+        body / None). Detect that here and hand the agent an explicit error
+        observation instead of the raw ``None``/error dict, so the agent does not
+        silently treat the failure as success (e.g. claim a Zendesk ticket was
+        created when it never was). Successful results pass through unchanged.
+        """
+        # Imported lazily to avoid any import-time coupling with the engine package.
+        from app.modules.workflow.engine.node_result import is_node_failure
+
+        result = self.function({"parameters": kwargs})
+        if inspect.isawaitable(result):
+            result = await result
+
+        failure = is_node_failure(result)
+        if failure is not None:
+            reason = failure.get("error") or "the tool did not complete its action"
+            logger.warning("Tool '%s' (node %s) failed: %s", self.name, self.node_id, reason)
+            return (
+                f"ERROR: the '{self.name}' tool did not complete successfully and no "
+                f"action was taken. Reason: {reason}. Do not tell the user this "
+                f"succeeded — report that it could not be completed."
+            )
+        return result

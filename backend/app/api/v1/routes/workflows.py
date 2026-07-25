@@ -8,16 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
+from app.core.utils.string_utils import truncate_for_log
 from app.dependencies.injector import injector
+from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
+from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
 from app.services.llm_providers import LlmProviderService
-from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
-from app.core.utils.string_utils import truncate_for_log
 from app.services.workflow import WorkflowService
 
 router = APIRouter()
@@ -31,6 +33,7 @@ SUPPORTED_NODE_TYPES = [
     "chatOutputNode",
     "routerNode",
     "agentNode",
+    "subAgentNode",
     "apiToolNode",
     "openApiNode",
     "templateNode",
@@ -95,6 +98,7 @@ async def create_workflow(
         nodes=workflow_data.nodes,
         edges=workflow_data.edges,
         executionState=workflow_data.executionState,
+        settings=workflow_data.settings,
         version=workflow_data.version,
         user_id=current_user.id,
         agent_id=workflow_data.agent_id,
@@ -165,6 +169,8 @@ async def update_workflow(
         workflow.testInput = workflow_data.testInput
     if workflow_data.executionState:
         workflow.executionState = workflow_data.executionState
+    if workflow_data.settings is not None:
+        workflow.settings = workflow_data.settings
     workflow.version = workflow_data.version
 
     updated_workflow = await service.update(workflow_id, workflow)
@@ -337,19 +343,35 @@ async def test_workflow(
 
         from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
 
+        usage_context = WorkflowUsageContext(
+            source="workflow_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+        )
+        turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
+        supplied_thread = bool(input_data.get("thread_id"))
+        if turn_router.has_sub_agents():
+            input_data.setdefault("agent_id", workflow_config["id"])
+            if supplied_thread and not start_node_id:
+                routed = await turn_router.route_turn(
+                    input_data.get("message", ""), thread_id, input_data, persist=True, usage_context=usage_context
+                )
+                if routed is not None:
+                    return routed
+
         state = await workflow_engine.execute_from_node(
             start_node_id=start_node_id,
             input_data=input_data,
             thread_id=thread_id,
-            usage_context=WorkflowUsageContext(
-                source="workflow_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
-            ),
+            registry_managed=supplied_thread,
+            usage_context=usage_context,
         )
 
-        return state.format_state_as_response()
+        return turn_router.finalize(state.format_state_as_response())
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
+        raise
+    except AppException:
+        # Sub-agent session errors carry their own status/key
         raise
     except Exception as e:
         logger.error(f"Error testing workflow with new engine: {e}")
@@ -418,8 +440,8 @@ async def test_individual_node(test_data: Dict[str, Any]):
 
         from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
 
-        # Execute the workflow
         state = await workflow_engine.execute_from_node(
+            start_node_id=test_id,
             input_data=input_data,
             usage_context=WorkflowUsageContext(
                 source="node_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)

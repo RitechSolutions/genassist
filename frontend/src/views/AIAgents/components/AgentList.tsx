@@ -14,6 +14,8 @@ import {
   Loader2,
   Workflow,
   CalendarClock,
+  LayoutGrid,
+  BookmarkPlus,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -24,6 +26,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/dropdown-menu";
 import { AgentFormDialog } from "./AgentForm";
+import { SaveAsTemplateDialog } from "./SaveAsTemplateDialog";
 import { SearchInput } from "@/components/SearchInput";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { getAgentConfig } from "@/services/api";
@@ -31,6 +34,8 @@ import { getWorkflowSchedules } from "@/services/workflowSchedules";
 import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { PageListSkeleton } from "@/components/skeletons";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface AgentListProps {
   agents: AgentListItem[];
@@ -65,6 +70,9 @@ const AgentList: React.FC<AgentListProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
+  const showTemplates = useFeatureFlagVisible(
+    FeatureFlags.FEATURE.TEMPLATE_MARKETPLACE
+  );
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useMemo(() => currentUserIsAdmin(), []);
 
@@ -126,6 +134,10 @@ const AgentList: React.FC<AgentListProps> = ({
   );
 
   const [openAgentForm, setOpenAgentForm] = useState(false);
+  const [templateAgent, setTemplateAgent] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [settingsFormData, setSettingsFormData] = useState<{
     id: string;
@@ -269,7 +281,7 @@ const AgentList: React.FC<AgentListProps> = ({
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="shadow-lg">
                   {(!agent.is_system || isAdmin) && (
                     <DropdownMenuItem asChild>
                       <Link to={`/ai-agents/workflow/${agent.id}`}>
@@ -305,6 +317,17 @@ const AgentList: React.FC<AgentListProps> = ({
                       <span>Scheduling</span>
                     </Link>
                   </DropdownMenuItem>
+                  {showTemplates && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTemplateAgent({ id: agent.id, name: agent.name });
+                      }}
+                    >
+                      <BookmarkPlus className="mr-2 h-4 w-4" />
+                      <span>Save as template</span>
+                    </DropdownMenuItem>
+                  )}
                   {(!agent.is_system || isAdmin) && (
                     <>
                       <DropdownMenuSeparator />
@@ -368,6 +391,16 @@ const AgentList: React.FC<AgentListProps> = ({
             placeholder="Search agents..."
             className="w-full sm:w-[200px]"
           />
+          {showTemplates && (
+            <Button
+              variant="outline"
+              className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
+              onClick={() => navigate("/templates")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Start from template
+            </Button>
+          )}
           <Button
             className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
             onClick={() => setOpenAgentForm(true)}
@@ -449,6 +482,11 @@ const AgentList: React.FC<AgentListProps> = ({
         redirectOnCreate={false}
         onCreated={() => handleSettingsDialogClose()}
         onSaved={() => onRefresh()}
+      />
+      <SaveAsTemplateDialog
+        agent={templateAgent}
+        onClose={() => setTemplateAgent(null)}
+        onSaved={onRefresh}
       />
     </div>
   );

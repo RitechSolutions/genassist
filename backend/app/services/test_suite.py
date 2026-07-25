@@ -293,6 +293,32 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
     }
 
 
+def _clean_forbidden_phrases(config: Dict[str, Any]) -> List[str]:
+    """Forbidden phrases from config: trimmed, de-duplicated (casefold), legacy ``text`` accepted.
+
+    Only a string or a list of strings is accepted; any other shape yields no phrases.
+    """
+    raw = config.get("phrases")
+    if raw is None:
+        raw = config.get("text")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    phrases: List[str] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, str):
+            continue
+        cleaned = entry.strip()
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        phrases.append(cleaned)
+    return phrases
+
+
 class SimpleEvaluatorRegistry:
     """
     Lightweight evaluator registry inspired by OpenEvals.
@@ -309,6 +335,7 @@ class SimpleEvaluatorRegistry:
         self._evaluators = {
             "exact_match": self._exact_match,
             "contains": self._contains,
+            "not_contains": self._not_contains,
             "json_match": self._json_match,
             "field_equals": self._field_equals,
             "no_errors": self._no_errors,
@@ -403,12 +430,40 @@ class SimpleEvaluatorRegistry:
     ) -> Dict[str, Any]:
         actual = _normalize_text(outputs)
         expected = _normalize_text(reference_outputs)
-        passed = bool(actual and expected and expected in actual)
+        passed = bool(actual and expected and expected.casefold() in actual.casefold())
         return {
             "key": "contains",
             "score": passed,
             "passed": passed,
             "comment": None if passed else "Expected text not found in output.",
+        }
+
+    async def _not_contains(
+        self,
+        *,
+        inputs: Dict[str, Any],  # noqa: ARG002 - not used by this evaluator
+        outputs: Any,
+        reference_outputs: Any,  # noqa: ARG002 - forbidden phrases come from config
+        payload: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Pass when none of the configured forbidden phrases appear in the output."""
+        phrases = _clean_forbidden_phrases(config)
+        if not phrases:
+            return {
+                "key": "not_contains",
+                "score": False,
+                "passed": False,
+                "comment": "No forbidden phrases configured.",
+            }
+        actual = _normalize_text(outputs).casefold()
+        found = [phrase for phrase in phrases if phrase.casefold() in actual]
+        passed = not found
+        return {
+            "key": "not_contains",
+            "score": passed,
+            "passed": passed,
+            "comment": None if passed else f"Forbidden phrases found in output: {', '.join(found)}.",
         }
 
     async def _json_match(
