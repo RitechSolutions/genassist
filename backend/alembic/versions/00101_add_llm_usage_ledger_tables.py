@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "c6974c08b567"
-down_revision: Union[str, None] = "e7a4b0c95d61"
+down_revision: Union[str, None] = "a3f9c1d7e204"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -96,7 +96,6 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("legacy_response_log_id IS NOT NULL"),
     )
-    # Not added yet: a possible index on (occurred_at, provider_key, model_key)
 
     op.create_table(
         "llm_usage_capture_runs",
@@ -137,12 +136,10 @@ def upgrade() -> None:
         sa.Column("ledger_cutover_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("shadow_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("shadow_passed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("reconciliation", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         *_audit_timestamp_softdelete_columns(),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("singleton_key", name="uq_llm_usage_control_singleton"),
     )
-    # Insert the one control row with capture and cutover both off
     op.execute(
         sa.text(
             "INSERT INTO llm_usage_control "

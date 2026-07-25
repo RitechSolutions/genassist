@@ -31,8 +31,8 @@ async def control_db():
             await session.execute(
                 text(
                     "UPDATE llm_usage_control SET capture_enabled=false, capture_started_at=NULL, "
-                    "ledger_cutover_enabled=false, shadow_started_at=NULL, shadow_passed_at=NULL, "
-                    "reconciliation=NULL WHERE singleton_key=:k"
+                    "ledger_cutover_enabled=false, shadow_started_at=NULL, shadow_passed_at=NULL "
+                    "WHERE singleton_key=:k"
                 ),
                 {"k": CONTROL_SINGLETON_KEY},
             )

@@ -158,7 +158,6 @@ class LlmUsageControlModel(Base):
     ledger_cutover_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     shadow_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     shadow_passed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    reconciliation: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
 
 class LlmUsageReconciliationReportModel(Base):
