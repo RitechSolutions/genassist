@@ -35,9 +35,7 @@ class RegistryItem:
             self._router = None
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
-    async def execute(
-        self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat"
-    ) -> dict:
+    async def execute(self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat") -> dict:
         """Execute a workflow, optionally resuming from a specific node.
 
         persist=False skips writing this turn to conversation memory (used by the
