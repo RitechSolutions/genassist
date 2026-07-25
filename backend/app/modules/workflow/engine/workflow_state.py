@@ -7,7 +7,7 @@ import logging
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
@@ -240,14 +240,16 @@ class WorkflowState:
         provider: str = "",
         model: str = "",
         node_id: str = "",
-        purpose: str = None,
-        token_details: dict = None,
-        llm_provider_id: str = None,
+        purpose: Optional[str] = None,
+        token_details: Optional[dict] = None,
+        llm_provider_id: Optional[str] = None,
+        total_tokens: Optional[int] = None,
     ) -> None:
         """Append LLM token usage for this workflow execution"""
         self.llm_usage.append({
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "total_tokens": max(int(total_tokens or 0), input_tokens + output_tokens),
             "provider": provider,
             "model": model,
             "node_id": node_id,
@@ -260,6 +262,10 @@ class WorkflowState:
         """Sum token usage and compute total cost in USD."""
         total_input = sum(u.get("input_tokens", 0) for u in self.llm_usage)
         total_output = sum(u.get("output_tokens", 0) for u in self.llm_usage)
+        total_tokens = sum(
+            max(u.get("total_tokens") or 0, u.get("input_tokens", 0) + u.get("output_tokens", 0))
+            for u in self.llm_usage
+        )
         total_cost_usd = 0.0
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
@@ -273,7 +279,7 @@ class WorkflowState:
         return {
             "input_tokens": total_input,
             "output_tokens": total_output,
-            "total_tokens": total_input + total_output,
+            "total_tokens": total_tokens,
             "cost_usd": round(total_cost_usd, 6),
             "calls": len(self.llm_usage),
         }

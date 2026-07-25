@@ -239,3 +239,63 @@ def test_child_completion_and_message_helpers():
     assert orchestrator.child_completion(delattr_state) is None
     setattr(state, orchestrator.SUB_AGENT_CONTROL_ATTR, {"result": "final"})
     assert orchestrator.child_completion(state) == {"result": "final"}
+
+
+@pytest.mark.asyncio
+async def test_run_child_turn_forwards_the_parent_usage_sink():
+    child_state = _fake_child_state()
+    sink = []
+    stack, engine, _, _, _ = _patch_env(child_state)
+    with stack:
+        await orchestrator.run_child_turn(
+            workflow=_WORKFLOW,
+            root_thread_id="root",
+            child_node_id="child",
+            invocation_id="inv",
+            message="do it",
+            timeout_seconds=120,
+            usage_sink=sink,
+        )
+
+    _, kwargs = engine.execute_from_node.call_args
+    assert kwargs["usage_sink"] is sink
+    assert kwargs["usage_context"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_child_turn_forwards_the_resume_usage_context():
+    child_state = _fake_child_state()
+    context = MagicMock()
+    stack, engine, _, _, _ = _patch_env(child_state)
+    with stack:
+        await orchestrator.run_child_turn(
+            workflow=_WORKFLOW,
+            root_thread_id="root",
+            child_node_id="child",
+            invocation_id="inv",
+            message="do it",
+            timeout_seconds=120,
+            usage_context=context,
+        )
+
+    _, kwargs = engine.execute_from_node.call_args
+    assert kwargs["usage_context"] is context
+    assert kwargs["usage_sink"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_child_turn_without_usage_threading_stays_uncaptured():
+    child_state = _fake_child_state()
+    stack, engine, _, _, _ = _patch_env(child_state)
+    with stack:
+        await orchestrator.run_child_turn(
+            workflow=_WORKFLOW,
+            root_thread_id="root",
+            child_node_id="child",
+            invocation_id="inv",
+            message="do it",
+            timeout_seconds=120,
+        )
+
+    _, kwargs = engine.execute_from_node.call_args
+    assert kwargs["usage_sink"] is None and kwargs["usage_context"] is None

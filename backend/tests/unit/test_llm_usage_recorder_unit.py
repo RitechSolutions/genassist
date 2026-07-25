@@ -11,9 +11,12 @@ import app.services.llm_usage_recorder as recorder_module
 from app.services.llm_usage_recorder import (
     LlmUsageRecorder,
     WorkflowUsageContext,
+    _clamp,
+    _clamp_run_status,
     _coerce_uuid,
     _normalize,
     _resolve_cost,
+    _total_tokens,
 )
 
 
@@ -68,6 +71,45 @@ class TestNormalize:
         assert _normalize("x" * 100, 10) == "x" * 10
 
 
+class TestClamp:
+    def test_preserves_case_unlike_normalize(self):
+        assert _clamp("Smart_Route", 64) == "Smart_Route"
+
+    def test_truncates_instead_of_failing_the_insert(self):
+        assert _clamp("n" * 300, 128) == "n" * 128
+
+    def test_empty_is_none(self):
+        assert _clamp("", 64) is None
+        assert _clamp(None, 64) is None
+
+
+class TestClampRunStatus:
+    @pytest.mark.parametrize("status", ["completed", "failed", "paused", "idle", "running"])
+    def test_known_statuses_pass_through(self, status):
+        assert _clamp_run_status(status) == status
+
+    def test_case_is_normalized(self):
+        assert _clamp_run_status(" Paused ") == "paused"
+
+    def test_unknown_status_falls_back_to_completed(self):
+        assert _clamp_run_status("exploded") == "completed"
+        assert _clamp_run_status(None) == "completed"
+        assert _clamp_run_status(42) == "completed"
+
+
+class TestTotalTokens:
+    def test_provider_total_above_parts_wins(self):
+        assert _total_tokens({"total_tokens": 500}, 100, 50) == 500
+
+    def test_parts_win_when_total_is_missing_or_low(self):
+        assert _total_tokens({}, 100, 50) == 150
+        assert _total_tokens({"total_tokens": 1}, 100, 50) == 150
+
+    def test_junk_total_is_ignored(self):
+        assert _total_tokens({"total_tokens": "many"}, 3, 4) == 7
+        assert _total_tokens({"total_tokens": True}, 3, 4) == 7
+
+
 class TestResolveCost:
     def test_priced_returns_decimal_cost(self):
         out = _resolve_cost("openai", "gpt-4o", 1000, 500)
@@ -106,6 +148,24 @@ class TestResolveCost:
 
     def test_bundled_default_provider_stays_unpriced(self):
         out = _resolve_cost("openrouter", "some/model", 10, 10, {})
+        assert out["pricing_status"] == "unpriced"
+        assert out["cost_usd"] is None
+
+    def test_missing_usage_stays_unpriced_even_with_a_configured_rate(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": Decimal("0.01"), "output_per_1k": Decimal("0.02")}}}
+        out = _resolve_cost("openai", "gpt-4o", 0, 0, configured, usage_missing=True)
+        assert out["pricing_status"] == "unpriced"
+        assert out["cost_usd"] is None
+        assert out["input_per_1k"] is None and out["output_per_1k"] is None
+
+    def test_configured_zero_token_call_is_priced_zero_not_unpriced(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": Decimal("0.01"), "output_per_1k": Decimal("0.02")}}}
+        out = _resolve_cost("openai", "gpt-4o", 0, 0, configured)
+        assert out["pricing_status"] == "configured"
+        assert out["cost_usd"] == Decimal("0")
+
+    def test_blank_provider_and_model_is_unpriced(self):
+        out = _resolve_cost("", "", 100, 100, {})
         assert out["pricing_status"] == "unpriced"
         assert out["cost_usd"] is None
 
@@ -158,7 +218,6 @@ class TestWorkflowUsageContext:
         assert ctx.source == "chat"
         assert ctx.source_type == "workflow"
         assert ctx.agent_id is None and ctx.workflow_id is None and ctx.conversation_id is None
-        assert ctx.extra == {}
 
     def test_fields(self):
         aid = uuid4()

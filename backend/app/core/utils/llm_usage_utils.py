@@ -7,22 +7,60 @@ fallback for provider-specific structures (OpenAI, Anthropic, etc.).
 """
 
 import logging
+import math
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# Marks a call the provider reported no usage for. Pricing must leave it unpriced
+USAGE_METADATA_MISSING = "usage_metadata_missing"
 
-def _first_present(data: Dict[str, Any], *keys: str) -> Optional[int]:
-    """Return the first numeric value found among ``keys``. Zero is valid.
 
-    Skip non-numbers (``""``, ``[]``, ``None``, etc.) so a bad provider payload
-    can't break token math
-    """
+def _coerce_count(value: Any) -> Optional[int]:
+    """Return ``value`` as a token count, or None when it isn't one"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return max(int(value), 0)
+
+
+def _first_present(data: Any, *keys: str) -> Optional[int]:
+    """Return the first usable count found among ``keys``. Zero is valid"""
+    if not isinstance(data, dict):
+        return None
     for key in keys:
-        value = data.get(key)
-        if isinstance(value, (int, float)):
-            return value
+        count = _coerce_count(data.get(key))
+        if count is not None:
+            return count
     return None
+
+
+def _provider_total(metadata: Dict[str, Any]) -> Optional[int]:
+    """Provider-reported total"""
+    for source in (
+        metadata.get("token_usage"),
+        metadata.get("usage"),
+        metadata.get("usage_metadata"),
+        metadata,
+    ):
+        total = _first_present(source, "total_tokens", "total_token_count")
+        if total is not None:
+            return total
+    return None
+
+
+def _standard_token_details(usage_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep LangChain's standardized breakdowns (cache reads, reasoning tokens).
+
+    They are not priced today but are preserved on the event for later refinement
+    """
+    details: Dict[str, Any] = {}
+    for key in ("input_token_details", "output_token_details"):
+        value = usage_metadata.get(key)
+        if isinstance(value, dict) and value:
+            details[key] = value
+    return details
 
 
 def extract_usage_from_response_metadata(metadata: Dict[str, Any]) -> Optional[Dict[str, int]]:
@@ -77,16 +115,15 @@ def extract_usage_from_response_metadata(metadata: Dict[str, Any]) -> Optional[D
 
     input_tokens = input_tokens if input_tokens is not None else 0
     output_tokens = output_tokens if output_tokens is not None else 0
-    total_tokens = input_tokens + output_tokens
 
     return {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
+        "total_tokens": max(_provider_total(metadata) or 0, input_tokens + output_tokens),
     }
 
 
-def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, int]]:
+def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, Any]]:
     """
     Extract token usage from a LangChain AIMessage. Prefer ``usage_metadata`` first.
 
@@ -101,19 +138,20 @@ def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, int]]:
     usage = None
     usage_metadata = getattr(message, "usage_metadata", None)
     if isinstance(usage_metadata, dict):
-        input_tokens = usage_metadata.get("input_tokens")
-        output_tokens = usage_metadata.get("output_tokens")
+        input_tokens = _first_present(usage_metadata, "input_tokens")
+        output_tokens = _first_present(usage_metadata, "output_tokens")
         if input_tokens is not None or output_tokens is not None:
             input_tokens = input_tokens if input_tokens is not None else 0
             output_tokens = output_tokens if output_tokens is not None else 0
-            total_tokens = usage_metadata.get("total_tokens")
-            if total_tokens is None:
-                total_tokens = input_tokens + output_tokens
+            provider_total = _first_present(usage_metadata, "total_tokens") or 0
             usage = {
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
+                "total_tokens": max(provider_total, input_tokens + output_tokens),
             }
+            details = _standard_token_details(usage_metadata)
+            if details:
+                usage["token_details"] = details
 
     if usage is None and response_metadata:
         usage = extract_usage_from_response_metadata(response_metadata)
@@ -131,3 +169,19 @@ def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, int]]:
             usage["provider_id"] = responding_provider_id
 
     return usage
+
+
+def usage_or_placeholder(usage: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Every observed invocation counts as a call"""
+    if usage:
+        return dict(usage)
+    return {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "token_details": {USAGE_METADATA_MISSING: True},
+    }
+
+
+def is_usage_metadata_missing(token_details: Any) -> bool:
+    return isinstance(token_details, dict) and bool(token_details.get(USAGE_METADATA_MISSING))

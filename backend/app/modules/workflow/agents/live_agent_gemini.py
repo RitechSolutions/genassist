@@ -124,11 +124,8 @@ class GeminiLiveAgent:
             "usage": self._extract_live_usage(),
         }
 
-    def _extract_live_usage(self) -> Optional[Dict[str, int]]:
-        """Convert Gemini Live usage_metadata to the ledger's token shape.
-
-        input = prompt + tool-use-prompt; output = response + thoughts
-        """
+    def _extract_live_usage(self) -> Optional[Dict[str, Any]]:
+        """Convert Gemini Live usage_metadata to the ledger's token shape"""
         u = self._last_usage
         if u is None:
             return None
@@ -136,12 +133,14 @@ class GeminiLiveAgent:
         def _n(attr: str) -> int:
             return int(getattr(u, attr, None) or 0)
 
+        reply_tokens = _n("response_token_count") or _n("candidates_token_count")
         input_tokens = _n("prompt_token_count") + _n("tool_use_prompt_token_count")
-        output_tokens = _n("response_token_count") + _n("thoughts_token_count")
-        total = int(getattr(u, "total_token_count", None) or (input_tokens + output_tokens))
+        output_tokens = reply_tokens + _n("thoughts_token_count")
+        total = _n("total_token_count")
         if input_tokens == 0 and output_tokens == 0 and total == 0:
             return None
         return {
+            "model": self._model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": max(total, input_tokens + output_tokens),
@@ -149,6 +148,7 @@ class GeminiLiveAgent:
                 "prompt_token_count": _n("prompt_token_count"),
                 "tool_use_prompt_token_count": _n("tool_use_prompt_token_count"),
                 "response_token_count": _n("response_token_count"),
+                "candidates_token_count": _n("candidates_token_count"),
                 "thoughts_token_count": _n("thoughts_token_count"),
                 "cached_content_token_count": _n("cached_content_token_count"),
             },
@@ -300,6 +300,7 @@ class GeminiLiveAgent:
         self._user_tx = []
         self._agent_tx = []
         self._tool_steps = []
+        self._last_usage = None
 
     async def _safe_persist(self, user_text: str, agent_text: str, steps: List[Dict[str, Any]]) -> None:
         try:

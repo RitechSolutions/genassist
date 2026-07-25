@@ -30,7 +30,6 @@ class GptKpiAnalyzer:
 
         import uuid
 
-        from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
         from app.dependencies.injector import injector
         from app.services.llm_usage_recorder import LlmUsageRecorder
 
@@ -72,18 +71,16 @@ class GptKpiAnalyzer:
 
                 # Record this attempt's usage before parsing, so a parse failure that
                 # triggers a retry still bills the tokens the attempt actually spent
-                usage = extract_usage_from_aimessage(response) or {}
-                await recorder.record_analyst_call(
+                await self._record_attempt_usage(
+                    recorder,
+                    response,
                     analysis_execution_id=analysis_execution_id,
                     call_index=attempt - 1,
                     provider=analyst_provider,
                     model=analyst_model,
-                    input_tokens=usage.get("input_tokens", 0),
-                    output_tokens=usage.get("output_tokens", 0),
                     conversation_id=conversation_id,
                     agent_id=agent_id,
-                    llm_analyst_id=getattr(llm_analyst, "id", None),
-                    llm_provider_id=llm_analyst.llm_provider_id,
+                    llm_analyst=llm_analyst,
                     purpose="conversation_analysis",
                 )
 
@@ -118,15 +115,46 @@ class GptKpiAnalyzer:
 
     async def _resolve_analyst_provider_model(self, llm_analyst: LlmAnalyst) -> tuple[str, str]:
         """Best-effort provider/model names for pricing. Never raises into analysis"""
-        try:
-            from app.dependencies.injector import injector
-            from app.services.llm_providers import LlmProviderService
+        provider = getattr(llm_analyst, "llm_provider", None)
+        if provider is not None:
+            return (provider.llm_model_provider or "").lower(), provider.llm_model or ""
 
-            info = await injector.get(LlmProviderService).get_by_id(llm_analyst.llm_provider_id)
-            return (info.llm_model_provider or "").lower(), info.llm_model or ""
+        from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
+
+        return await resolve_provider_model(llm_analyst.llm_provider_id)
+
+    async def _record_attempt_usage(
+        self,
+        recorder,
+        response,
+        *,
+        analysis_execution_id: str,
+        call_index: int,
+        provider: str,
+        model: str,
+        conversation_id: Optional[UUID],
+        agent_id: Optional[UUID],
+        llm_analyst: LlmAnalyst,
+        purpose: str,
+    ) -> None:
+        """Record one provider response"""
+        try:
+            from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
+
+            await recorder.record_analyst_call(
+                analysis_execution_id=analysis_execution_id,
+                call_index=call_index,
+                provider=provider,
+                model=model,
+                usage=extract_usage_from_aimessage(response),
+                conversation_id=conversation_id,
+                agent_id=agent_id,
+                llm_analyst_id=getattr(llm_analyst, "id", None),
+                llm_provider_id=llm_analyst.llm_provider_id,
+                purpose=purpose,
+            )
         except Exception:
-            logger.debug("Could not resolve analyst provider/model for pricing", exc_info=True)
-            return "", ""
+            logger.warning("Recording analyst LLM usage failed", exc_info=True)
 
     def _format_transcript(self, segments: List[TranscriptSegment]) -> str:
         """Format transcript segments into a readable string."""
@@ -206,7 +234,6 @@ Please make sure your response strictly follows the requested format and especia
 
         import uuid
 
-        from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
         from app.dependencies.injector import injector
         from app.services.llm_usage_recorder import LlmUsageRecorder
 
@@ -283,18 +310,16 @@ Please make sure your response strictly follows the requested format and especia
             response = await llm.ainvoke([system_msg, user_msg])
 
             # Record usage for this hostility call before parsing
-            usage = extract_usage_from_aimessage(response) or {}
-            await recorder.record_analyst_call(
+            await self._record_attempt_usage(
+                recorder,
+                response,
                 analysis_execution_id=analysis_execution_id,
                 call_index=0,
                 provider=analyst_provider,
                 model=analyst_model,
-                input_tokens=usage.get("input_tokens", 0),
-                output_tokens=usage.get("output_tokens", 0),
                 conversation_id=conversation_id,
                 agent_id=agent_id,
-                llm_analyst_id=getattr(llm_analyst, "id", None),
-                llm_provider_id=llm_analyst.llm_provider_id,
+                llm_analyst=llm_analyst,
                 purpose="hostility_analysis",
             )
 

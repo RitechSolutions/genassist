@@ -1,8 +1,11 @@
 """Unit tests for LLM usage extraction utilities."""
 
 from app.core.utils.llm_usage_utils import (
+    USAGE_METADATA_MISSING,
     extract_usage_from_aimessage,
     extract_usage_from_response_metadata,
+    is_usage_metadata_missing,
+    usage_or_placeholder,
 )
 
 
@@ -90,6 +93,30 @@ class TestExtractUsageFromResponseMetadata:
         metadata = {"token_usage": {"prompt_tokens": "", "completion_tokens": {}}}
         assert extract_usage_from_response_metadata(metadata) is None
 
+    def test_booleans_are_not_token_counts(self):
+        metadata = {"token_usage": {"prompt_tokens": True, "completion_tokens": 9}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 9, "total_tokens": 9}
+
+    def test_negative_counts_clamp_to_zero(self):
+        metadata = {"usage": {"input_tokens": -5, "output_tokens": 4}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result == {"input_tokens": 0, "output_tokens": 4, "total_tokens": 4}
+
+    def test_non_finite_counts_are_skipped(self):
+        metadata = {"usage": {"input_tokens": float("nan"), "output_tokens": float("inf")}}
+        assert extract_usage_from_response_metadata(metadata) is None
+
+    def test_provider_total_above_parts_is_kept(self):
+        metadata = {"token_usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 40}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result["total_tokens"] == 40
+
+    def test_provider_total_below_parts_is_raised_to_the_sum(self):
+        metadata = {"token_usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 1}}
+        result = extract_usage_from_response_metadata(metadata)
+        assert result["total_tokens"] == 15
+
 
 class TestExtractUsageFromAIMessage:
     def test_with_response_metadata(self):
@@ -139,7 +166,12 @@ class TestExtractUsageFromAIMessage:
             }
 
         result = extract_usage_from_aimessage(MockMessage())
-        assert result == {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
+        assert result == {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "total_tokens": 18,
+            "token_details": {"input_token_details": {"cache_read": 0, "cache_creation": 0}},
+        }
 
     def test_bedrock_claude_both_sources_agree(self):
         class MockMessage:
@@ -183,3 +215,56 @@ class TestExtractUsageFromAIMessage:
 
         result = extract_usage_from_aimessage(MockMessage())
         assert result == {"input_tokens": 4, "output_tokens": 6, "total_tokens": 10}
+
+    def test_provider_total_above_parts_is_kept(self):
+        class MockMessage:
+            usage_metadata = {"input_tokens": 4, "output_tokens": 6, "total_tokens": 30}
+            response_metadata = {}
+
+        assert extract_usage_from_aimessage(MockMessage())["total_tokens"] == 30
+
+    def test_output_token_details_are_preserved(self):
+        class MockMessage:
+            usage_metadata = {
+                "input_tokens": 4,
+                "output_tokens": 6,
+                "output_token_details": {"reasoning": 2},
+            }
+            response_metadata = {}
+
+        result = extract_usage_from_aimessage(MockMessage())
+        assert result["token_details"] == {"output_token_details": {"reasoning": 2}}
+
+    def test_empty_token_details_are_not_attached(self):
+        class MockMessage:
+            usage_metadata = {"input_tokens": 4, "output_tokens": 6, "input_token_details": {}}
+            response_metadata = {}
+
+        assert "token_details" not in extract_usage_from_aimessage(MockMessage())
+
+    def test_message_without_any_usage_returns_none(self):
+        class MockMessage:
+            usage_metadata = None
+            response_metadata = {"finish_reason": "stop"}
+
+        assert extract_usage_from_aimessage(MockMessage()) is None
+
+
+class TestUsagePlaceholder:
+    def test_missing_usage_becomes_zero_token_marked_entry(self):
+        entry = usage_or_placeholder(None)
+        assert entry["input_tokens"] == 0 and entry["output_tokens"] == 0 and entry["total_tokens"] == 0
+        assert entry["token_details"] == {USAGE_METADATA_MISSING: True}
+        assert is_usage_metadata_missing(entry["token_details"])
+
+    def test_present_usage_is_copied_not_marked(self):
+        usage = {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7}
+        entry = usage_or_placeholder(usage)
+        assert entry == usage
+        assert entry is not usage
+        assert not is_usage_metadata_missing(entry.get("token_details"))
+
+    def test_marker_check_tolerates_non_dicts(self):
+        assert is_usage_metadata_missing(None) is False
+        assert is_usage_metadata_missing("junk") is False
+        assert is_usage_metadata_missing({"cache_read": 1}) is False

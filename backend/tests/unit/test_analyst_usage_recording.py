@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from langchain_core.messages import AIMessage
 
+from app.core.exceptions.exception_classes import AppException
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 
 
@@ -18,10 +19,11 @@ def _llm_returning(content: str, usage: dict | None = None):
     return provider
 
 
-def _analyst():
+def _analyst(llm_provider=None):
     a = MagicMock()
     a.id = uuid4()
     a.llm_provider_id = uuid4()
+    a.llm_provider = llm_provider
     a.prompt = "you are an analyst"
     a.context_enrichments = []
     return a
@@ -73,7 +75,7 @@ class TestHostilityRecording:
         assert kwargs["conversation_id"] == cid
         assert kwargs["purpose"] == "hostility_analysis"
         assert kwargs["call_index"] == 0
-        assert kwargs["input_tokens"] == 40 and kwargs["output_tokens"] == 6
+        assert kwargs["usage"]["input_tokens"] == 40 and kwargs["usage"]["output_tokens"] == 6
 
     @pytest.mark.asyncio
     async def test_bad_json_still_records_and_returns_safe_default(self, recorder_calls):
@@ -88,7 +90,7 @@ class TestHostilityRecording:
 
         assert result == {"topic": "Other", "hostile_score": 0, "negative_reason": "Other"}
         recorder_calls.assert_awaited_once()
-        assert recorder_calls.await_args.kwargs["input_tokens"] == 10
+        assert recorder_calls.await_args.kwargs["usage"]["input_tokens"] == 10
 
 
 class TestAnalyzeTranscriptRecording:
@@ -114,3 +116,82 @@ class TestAnalyzeTranscriptRecording:
         assert kwargs["agent_id"] == aid
         assert kwargs["purpose"] == "conversation_analysis"
         assert kwargs["call_index"] == 0
+
+    @pytest.mark.asyncio
+    async def test_every_parse_retry_is_recorded_as_its_own_call(self, recorder_calls):
+        provider = _llm_returning("unparseable", {"input_tokens": 30, "output_tokens": 5, "total_tokens": 35})
+        analyst = _analyst()
+        svc = GptKpiAnalyzer()
+
+        with _patch_injector(provider), patch.object(
+            GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
+        ), patch.object(GptKpiAnalyzer, "_extract_summary_and_title", return_value={}), patch.object(
+            GptKpiAnalyzer, "_extract_metrics", return_value={}
+        ):
+            with pytest.raises(AppException):
+                await svc.analyze_transcript("some transcript", llm_analyst=analyst, max_attempts=3)
+
+        assert provider.get_model.return_value.ainvoke.await_count == 3
+        assert [c.kwargs["call_index"] for c in recorder_calls.await_args_list] == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_recorder_failure_does_not_consume_an_llm_retry(self, recorder_calls):
+        recorder_calls.side_effect = RuntimeError("ledger unavailable")
+        provider = _llm_returning(
+            'A) Title: T\nB) Summary: S\n{"metric": 5}',
+            {"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+        )
+        analyst = _analyst()
+        svc = GptKpiAnalyzer()
+
+        with _patch_injector(provider), patch.object(
+            GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
+        ), patch.object(
+            GptKpiAnalyzer, "_extract_summary_and_title", return_value={"summary": "S", "title": "T"}
+        ), patch.object(GptKpiAnalyzer, "_extract_metrics", return_value={"m": 5}):
+            result = await svc.analyze_transcript("some transcript", llm_analyst=analyst)
+
+        assert result.title == "T"
+        assert provider.get_model.return_value.ainvoke.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_provider_metadata_is_recorded_as_a_call(self, recorder_calls):
+        provider = _llm_returning('A) Title: T\nB) Summary: S\n{"metric": 5}')
+        analyst = _analyst()
+        svc = GptKpiAnalyzer()
+
+        with _patch_injector(provider), patch.object(
+            GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
+        ), patch.object(
+            GptKpiAnalyzer, "_extract_summary_and_title", return_value={"summary": "S", "title": "T"}
+        ), patch.object(GptKpiAnalyzer, "_extract_metrics", return_value={"m": 5}):
+            await svc.analyze_transcript("some transcript", llm_analyst=analyst)
+
+        recorder_calls.assert_awaited_once()
+        assert recorder_calls.await_args.kwargs["usage"] is None
+
+
+class TestAnalystAttribution:
+    @pytest.mark.asyncio
+    async def test_prefers_the_loaded_provider_relation(self):
+        analyst = _analyst(llm_provider=MagicMock(llm_model_provider="OpenAI", llm_model="gpt-4o"))
+        assert await GptKpiAnalyzer()._resolve_analyst_provider_model(analyst) == ("openai", "gpt-4o")
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_a_lookup_when_the_relation_is_absent(self):
+        analyst = _analyst()
+        with patch(
+            "app.modules.workflow.engine.llm_usage_tracking.resolve_provider_model",
+            AsyncMock(return_value=("anthropic", "claude-3-opus")),
+        ) as lookup:
+            assert await GptKpiAnalyzer()._resolve_analyst_provider_model(analyst) == ("anthropic", "claude-3-opus")
+        lookup.assert_awaited_once_with(analyst.llm_provider_id)
+
+    @pytest.mark.asyncio
+    async def test_lookup_failure_leaves_blank_keys(self):
+        analyst = _analyst()
+        with patch(
+            "app.services.llm_providers.LlmProviderService.get_by_id",
+            AsyncMock(side_effect=RuntimeError("provider gone")),
+        ):
+            assert await GptKpiAnalyzer()._resolve_analyst_provider_model(analyst) == ("", "")

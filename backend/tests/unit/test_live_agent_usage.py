@@ -1,6 +1,9 @@
 """Unit tests for Gemini Live per-turn usage extraction"""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 from app.modules.workflow.agents.live_agent_gemini import GeminiLiveAgent
 
@@ -53,3 +56,53 @@ class TestExtractLiveUsage:
         )
         usage = a._extract_live_usage()
         assert usage["total_tokens"] == 200
+
+    def test_candidates_count_is_used_when_response_count_is_absent(self):
+        a = _agent()
+        a._last_usage = SimpleNamespace(prompt_token_count=10, candidates_token_count=7)
+        usage = a._extract_live_usage()
+        assert usage["output_tokens"] == 7
+        assert usage["total_tokens"] == 17
+
+    def test_response_and_candidates_are_never_summed(self):
+        a = _agent()
+        a._last_usage = SimpleNamespace(
+            prompt_token_count=10, response_token_count=7, candidates_token_count=7
+        )
+        usage = a._extract_live_usage()
+        assert usage["output_tokens"] == 7
+        assert usage["token_details"]["candidates_token_count"] == 7
+
+    def test_thought_tokens_add_to_the_reply(self):
+        a = _agent()
+        a._last_usage = SimpleNamespace(
+            prompt_token_count=10, candidates_token_count=7, thoughts_token_count=3
+        )
+        assert a._extract_live_usage()["output_tokens"] == 10
+
+    def test_resolved_model_travels_with_the_usage(self):
+        a = _agent()
+        a._last_usage = SimpleNamespace(prompt_token_count=1, response_token_count=1)
+        assert a._extract_live_usage()["model"] == "gemini-live"
+
+
+class TestPerTurnReset:
+    @pytest.mark.asyncio
+    async def test_finalize_clears_usage_for_the_next_turn(self):
+        a = _agent()
+        a._agent_tx = ["hello"]
+        a._last_usage = SimpleNamespace(prompt_token_count=10, response_token_count=5)
+
+        await a._finalize_turn(AsyncMock())
+
+        assert a._last_usage is None
+        assert a._extract_live_usage() is None
+
+    @pytest.mark.asyncio
+    async def test_reset_happens_even_when_the_turn_is_not_persisted(self):
+        a = _agent()
+        a._last_usage = SimpleNamespace(prompt_token_count=10, response_token_count=5)
+
+        await a._finalize_turn(AsyncMock())
+
+        assert a._last_usage is None

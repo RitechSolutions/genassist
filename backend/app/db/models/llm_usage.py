@@ -23,9 +23,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
-SOURCE_TYPES = ("workflow", "llm_analyst")
-PRICING_STATUSES = ("configured", "fallback", "unpriced", "legacy_estimate")
-EXECUTION_OUTCOMES = ("returned", "raised")
 RUN_STATUSES = ("completed", "failed", "paused", "idle", "running")
 
 CONTROL_SINGLETON_KEY = "singleton"

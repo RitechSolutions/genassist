@@ -1,21 +1,23 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.llm_pricing import PricingStatus, resolve_pricing
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.db_connection_utils import create_tenant_request_scope
+from app.core.utils.llm_usage_utils import is_usage_metadata_missing, usage_or_placeholder
 from app.db.models.agent import AgentModel
 from app.db.models.conversation import ConversationModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
 from app.db.models.llm_usage import (
     CONTROL_SINGLETON_KEY,
+    RUN_STATUSES,
     LlmUsageCaptureRunModel,
     LlmUsageControlModel,
     LlmUsageEventModel,
@@ -24,6 +26,13 @@ from app.db.models.workflow import WorkflowModel
 from app.dependencies.injector import injector
 
 logger = logging.getLogger(__name__)
+
+_UNPRICED = {
+    "input_per_1k": None,
+    "output_per_1k": None,
+    "cost_usd": None,
+    "pricing_status": PricingStatus.UNPRICED.value,
+}
 
 
 @dataclass
@@ -35,13 +44,25 @@ class WorkflowUsageContext:
     workflow_id: Optional[UUID] = None
     conversation_id: Optional[UUID] = None
     source_type: str = "workflow"
-    extra: dict[str, Any] = field(default_factory=dict)
 
 
 def _normalize(value: Optional[str], limit: int) -> Optional[str]:
+    """Lowercased lookup keys (provider, model)"""
     if not value:
         return None
     return str(value).lower().strip()[:limit] or None
+
+
+def _clamp(value: Optional[str], limit: int) -> Optional[str]:
+    """Truncate a free-form label to its column width, preserving case"""
+    if not value:
+        return None
+    return str(value)[:limit] or None
+
+
+def _clamp_run_status(value: Any) -> str:
+    status = str(value or "").strip().lower()
+    return status if status in RUN_STATUSES else "completed"
 
 
 def _coerce_uuid(value: Any) -> Optional[UUID]:
@@ -53,22 +74,31 @@ def _coerce_uuid(value: Any) -> Optional[UUID]:
         return None
 
 
+def _total_tokens(entry: dict[str, Any], input_tokens: int, output_tokens: int) -> int:
+    """Use the larger of the provider's total and input+output.
+
+    Providers sometimes report a total bigger than the parts (e.g. reasoning or
+    cached prompt). The ledger CHECK needs that larger value.
+    """
+    raw = entry.get("total_tokens")
+    reported = int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 0
+    return max(reported, input_tokens + output_tokens)
+
+
 def _resolve_cost(
     provider: str,
     model: str,
     input_tokens: int,
     output_tokens: int,
     configured_rates: Optional[dict[str, Any]] = None,
+    usage_missing: bool = False,
 ) -> dict[str, Any]:
-    """Snapshot the rate + cost for one call. Unpriced → NULL cost"""
+    """Snapshot the rate + cost for one call. No rate, or no reported usage → NULL cost"""
+    if usage_missing:
+        return dict(_UNPRICED)
     resolution = resolve_pricing(provider, model, configured_rates)
     if resolution.status is PricingStatus.UNPRICED:
-        return {
-            "input_per_1k": None,
-            "output_per_1k": None,
-            "cost_usd": None,
-            "pricing_status": PricingStatus.UNPRICED.value,
-        }
+        return dict(_UNPRICED)
     thousand = Decimal(1000)
     cost = (Decimal(int(input_tokens)) / thousand) * resolution.input_per_1k + (
         Decimal(int(output_tokens)) / thousand
@@ -117,6 +147,17 @@ class LlmUsageRecorder:
             }
         return nested
 
+    async def _persisted_event_count(self, session: AsyncSession, execution_id: str) -> int:
+        result = await session.execute(
+            select(func.count())
+            .select_from(LlmUsageEventModel)
+            .where(
+                LlmUsageEventModel.execution_id == execution_id,
+                LlmUsageEventModel.is_deleted == 0,
+            )
+        )
+        return int(result.scalar() or 0)
+
     async def _existing_ids(self, session: AsyncSession, model, ids: set[UUID]) -> set[UUID]:
         """One SELECT per FK type; ids not present come back absent so callers NULL them."""
         ids = {i for i in ids if i is not None}
@@ -161,49 +202,56 @@ class LlmUsageRecorder:
                         input_tokens = int(entry.get("input_tokens", 0) or 0)
                         output_tokens = int(entry.get("output_tokens", 0) or 0)
                         provider_id = _coerce_uuid(entry.get("llm_provider_id"))
-                        pricing = _resolve_cost(provider, model, input_tokens, output_tokens, configured_rates)
+                        token_details = entry.get("token_details")
+                        pricing = _resolve_cost(
+                            provider,
+                            model,
+                            input_tokens,
+                            output_tokens,
+                            configured_rates,
+                            usage_missing=is_usage_metadata_missing(token_details),
+                        )
                         event_rows.append(
                             {
                                 "execution_id": str(state.execution_id),
                                 "call_index": idx,
-                                "source_type": usage_context.source_type,
-                                "source": usage_context.source,
-                                "purpose": entry.get("purpose"),
+                                "source_type": _clamp(usage_context.source_type, 32),
+                                "source": _clamp(usage_context.source, 64),
+                                "purpose": _clamp(entry.get("purpose"), 64),
                                 "agent_id": agent_id,
                                 "workflow_id": workflow_id,
                                 "llm_provider_id": provider_id if provider_id in valid_providers else None,
                                 "llm_analyst_id": None,
                                 "conversation_id": conversation_id,
-                                "node_id": entry.get("node_id"),
+                                "node_id": _clamp(entry.get("node_id"), 128),
                                 "provider_key": _normalize(provider, 64),
                                 "model_key": _normalize(model, 512),
                                 "input_tokens": input_tokens,
                                 "output_tokens": output_tokens,
-                                "total_tokens": input_tokens + output_tokens,
-                                "token_details": entry.get("token_details"),
+                                "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
+                                "token_details": token_details,
                                 "occurred_at": occurred_at,
                                 **pricing,
                             }
                         )
 
-                    persisted = 0
                     if event_rows:
                         insert_events = insert(LlmUsageEventModel).values(event_rows)
                         insert_events = insert_events.on_conflict_do_nothing(
                             constraint="uq_llm_usage_events_execution_call"
                         )
-                        result = await session.execute(insert_events)
-                        persisted = result.rowcount or 0
+                        await session.execute(insert_events)
+                    persisted = await self._persisted_event_count(session, str(state.execution_id))
 
                     receipt = (
                         insert(LlmUsageCaptureRunModel)
                         .values(
                             {
                                 "execution_id": str(state.execution_id),
-                                "source_type": usage_context.source_type,
-                                "source": usage_context.source,
+                                "source_type": _clamp(usage_context.source_type, 32),
+                                "source": _clamp(usage_context.source, 64),
                                 "execution_outcome": execution_outcome,
-                                "run_status": getattr(state, "status", "idle") or "idle",
+                                "run_status": _clamp_run_status(getattr(state, "status", None)),
                                 "expected_entries": len(entries),
                                 "persisted_events": persisted,
                                 "agent_id": agent_id,
@@ -231,8 +279,7 @@ class LlmUsageRecorder:
         call_index: int,
         provider: str,
         model: str,
-        input_tokens: int,
-        output_tokens: int,
+        usage: Optional[dict[str, Any]] = None,
         *,
         source: str = "conversation_analysis",
         conversation_id: Optional[UUID] = None,
@@ -240,7 +287,6 @@ class LlmUsageRecorder:
         llm_analyst_id: Optional[UUID] = None,
         llm_provider_id: Optional[UUID] = None,
         purpose: Optional[str] = None,
-        token_details: Optional[dict[str, Any]] = None,
         run_status: str = "completed",
     ) -> None:
         """
@@ -256,7 +302,6 @@ class LlmUsageRecorder:
                         return
 
                     occurred_at = utc_now()
-                    conversation_id = conversation_id if conversation_id is not None else None
                     valid_conv = await self._existing_ids(session, ConversationModel, {conversation_id})
                     valid_agent = await self._existing_ids(session, AgentModel, {agent_id})
                     valid_analyst = await self._existing_ids(session, LlmAnalystModel, {llm_analyst_id})
@@ -274,9 +319,9 @@ class LlmUsageRecorder:
                             {
                                 "execution_id": receipt_execution_id,
                                 "source_type": "llm_analyst",
-                                "source": source,
+                                "source": _clamp(source, 64),
                                 "execution_outcome": "returned",
-                                "run_status": run_status,
+                                "run_status": _clamp_run_status(run_status),
                                 "expected_entries": 1,
                                 "persisted_events": 0,
                                 "agent_id": agent_id,
@@ -289,10 +334,19 @@ class LlmUsageRecorder:
                     await session.execute(receipt)
                     await session.commit()
 
-                    input_tokens = int(input_tokens or 0)
-                    output_tokens = int(output_tokens or 0)
+                    entry = usage_or_placeholder(usage)
+                    input_tokens = int(entry.get("input_tokens") or 0)
+                    output_tokens = int(entry.get("output_tokens") or 0)
+                    token_details = entry.get("token_details")
                     configured_rates = await self._configured_rates(session)
-                    pricing = _resolve_cost(provider, model, input_tokens, output_tokens, configured_rates)
+                    pricing = _resolve_cost(
+                        provider,
+                        model,
+                        input_tokens,
+                        output_tokens,
+                        configured_rates,
+                        usage_missing=is_usage_metadata_missing(token_details),
+                    )
                     event = (
                         insert(LlmUsageEventModel)
                         .values(
@@ -300,8 +354,8 @@ class LlmUsageRecorder:
                                 "execution_id": analysis_execution_id,
                                 "call_index": call_index,
                                 "source_type": "llm_analyst",
-                                "source": source,
-                                "purpose": purpose,
+                                "source": _clamp(source, 64),
+                                "purpose": _clamp(purpose, 64),
                                 "agent_id": agent_id,
                                 "llm_analyst_id": llm_analyst_id,
                                 "llm_provider_id": llm_provider_id,
@@ -310,7 +364,7 @@ class LlmUsageRecorder:
                                 "model_key": _normalize(model, 512),
                                 "input_tokens": input_tokens,
                                 "output_tokens": output_tokens,
-                                "total_tokens": input_tokens + output_tokens,
+                                "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
                                 "token_details": token_details,
                                 "occurred_at": occurred_at,
                                 **pricing,

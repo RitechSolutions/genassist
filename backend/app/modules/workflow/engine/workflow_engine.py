@@ -4,7 +4,6 @@ Workflow engine for building and executing workflows with state management.
 
 import asyncio
 import logging
-import sys
 import uuid
 from collections import defaultdict
 from contextlib import nullcontext
@@ -341,8 +340,12 @@ class WorkflowEngine:
             else nullcontext()
         )
 
+        if usage_sink is not None and usage_context is not None:
+            logger.warning("Both usage_sink and usage_context passed; the sink wins")
+
         with span_cm:
             # Create execution state
+            raised = False
             state = WorkflowState(
                 workflow=self.workflow,
                 thread_id=thread_id or str(uuid.uuid4()),
@@ -396,15 +399,17 @@ class WorkflowEngine:
                     if await_persist:
                         raise MemoryPersistenceError(str(e)) from e
                 return state
+            except BaseException:
+                raised = True
+                raise
             finally:
-                exc = sys.exc_info()[1]
                 if usage_sink is not None:
                     usage_sink.extend(state.llm_usage)
                 elif usage_context is not None:
                     await self._record_llm_usage_safe(
                         state,
                         usage_context,
-                        execution_outcome="raised" if exc else "returned",
+                        execution_outcome="raised" if raised else "returned",
                     )
 
     async def _record_llm_usage_safe(
