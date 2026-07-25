@@ -1,12 +1,31 @@
 import { getApiUrl, apiRequest } from "@/config/api";
 import type {
   LlmCostRate,
+  LlmCostRateCreatePayload,
   LlmCostRateImportResult,
+  LlmCostRateUpdatePayload,
 } from "@/interfaces/llmCostRate.interface";
 
 export async function getLlmCostRates(): Promise<LlmCostRate[]> {
   const data = await apiRequest<LlmCostRate[]>("GET", "llm-cost-rates/");
   return data ?? [];
+}
+
+export async function createLlmCostRate(
+  payload: LlmCostRateCreatePayload
+): Promise<LlmCostRate | null> {
+  return await apiRequest<LlmCostRate>("POST", "llm-cost-rates/", {
+    ...payload,
+  });
+}
+
+export async function updateLlmCostRate(
+  id: string,
+  payload: LlmCostRateUpdatePayload
+): Promise<LlmCostRate | null> {
+  return await apiRequest<LlmCostRate>("PUT", `llm-cost-rates/${id}`, {
+    ...payload,
+  });
 }
 
 export async function importLlmCostRatesCsv(

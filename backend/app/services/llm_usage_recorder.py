@@ -8,7 +8,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.llm_pricing import PricingStatus, find_pricing_with_status
+from app.core.config.llm_pricing import PricingStatus, resolve_pricing
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.db_connection_utils import create_tenant_request_scope
 from app.db.models.agent import AgentModel
@@ -53,9 +53,15 @@ def _coerce_uuid(value: Any) -> Optional[UUID]:
         return None
 
 
-def _resolve_cost(provider: str, model: str, input_tokens: int, output_tokens: int) -> dict[str, Any]:
+def _resolve_cost(
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    configured_rates: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
     """Snapshot the rate + cost for one call. Unpriced → NULL cost"""
-    resolution = find_pricing_with_status(provider, model)
+    resolution = resolve_pricing(provider, model, configured_rates)
     if resolution.status is PricingStatus.UNPRICED:
         return {
             "input_per_1k": None,
@@ -87,6 +93,30 @@ class LlmUsageRecorder:
         )
         return bool(result.scalar_one_or_none())
 
+    async def _configured_rates(self, session: AsyncSession) -> dict[str, dict[str, dict[str, Any]]]:
+        """Load this tenant's rate rows once for the batch,
+        via the recorder's own request scope"""
+        try:
+            from app.repositories.llm_cost_rates import LlmCostRateRepository
+
+            rows = await injector.get(LlmCostRateRepository).list_active()
+        except Exception:
+            await session.rollback()
+            logger.warning("Loading LLM cost rates failed; pricing from bundled rates only", exc_info=True)
+            return {}
+
+        nested: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in rows:
+            provider_key = _normalize(row.provider_key, 64)
+            model_key = _normalize(row.model_key, 512)
+            if not provider_key or not model_key:
+                continue
+            nested.setdefault(provider_key, {})[model_key] = {
+                "input_per_1k": row.input_per_1k,
+                "output_per_1k": row.output_per_1k,
+            }
+        return nested
+
     async def _existing_ids(self, session: AsyncSession, model, ids: set[UUID]) -> set[UUID]:
         """One SELECT per FK type; ids not present come back absent so callers NULL them."""
         ids = {i for i in ids if i is not None}
@@ -109,6 +139,7 @@ class LlmUsageRecorder:
                         return
 
                     entries = list(getattr(state, "llm_usage", []) or [])
+                    configured_rates = await self._configured_rates(session) if entries else {}
                     occurred_at = utc_now()
                     conversation_id = usage_context.conversation_id or _coerce_uuid(getattr(state, "thread_id", None))
 
@@ -130,7 +161,7 @@ class LlmUsageRecorder:
                         input_tokens = int(entry.get("input_tokens", 0) or 0)
                         output_tokens = int(entry.get("output_tokens", 0) or 0)
                         provider_id = _coerce_uuid(entry.get("llm_provider_id"))
-                        pricing = _resolve_cost(provider, model, input_tokens, output_tokens)
+                        pricing = _resolve_cost(provider, model, input_tokens, output_tokens, configured_rates)
                         event_rows.append(
                             {
                                 "execution_id": str(state.execution_id),
@@ -260,7 +291,8 @@ class LlmUsageRecorder:
 
                     input_tokens = int(input_tokens or 0)
                     output_tokens = int(output_tokens or 0)
-                    pricing = _resolve_cost(provider, model, input_tokens, output_tokens)
+                    configured_rates = await self._configured_rates(session)
+                    pricing = _resolve_cost(provider, model, input_tokens, output_tokens, configured_rates)
                     event = (
                         insert(LlmUsageEventModel)
                         .values(

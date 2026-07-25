@@ -1,12 +1,15 @@
 """Unit tests for the LLM usage recorder's pure helpers"""
 
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 
 import app.core.config.llm_pricing as llm_pricing
+import app.services.llm_usage_recorder as recorder_module
 from app.services.llm_usage_recorder import (
+    LlmUsageRecorder,
     WorkflowUsageContext,
     _coerce_uuid,
     _normalize,
@@ -17,6 +20,22 @@ from app.services.llm_usage_recorder import (
 @pytest.fixture(autouse=True)
 def _no_db_rates(monkeypatch):
     monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+
+
+class FakeRateRepo:
+    def __init__(self, rows):
+        self._rows = rows
+
+    async def list_active(self):
+        return self._rows
+
+
+class FakeSession:
+    def __init__(self):
+        self.rolled_back = False
+
+    async def rollback(self):
+        self.rolled_back = True
 
 
 class TestCoerceUuid:
@@ -71,6 +90,66 @@ class TestResolveCost:
         out = _resolve_cost("openai", "gpt-4o", 0, 0)
         assert out["cost_usd"] == Decimal("0")
         assert out["pricing_status"] == "fallback"
+
+    def test_configured_rates_win_and_are_snapshotted(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": Decimal("0.01"), "output_per_1k": Decimal("0.02")}}}
+        out = _resolve_cost("openai", "gpt-4o", 1000, 1000, configured)
+        assert out["pricing_status"] == "configured"
+        assert out["input_per_1k"] == Decimal("0.01")
+        assert out["output_per_1k"] == Decimal("0.02")
+        assert out["cost_usd"] == Decimal("0.03")
+
+    def test_tiny_configured_rate_costs_exactly(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": Decimal("0.00015"), "output_per_1k": Decimal("0")}}}
+        out = _resolve_cost("openai", "gpt-4o", 1_000_000, 500, configured)
+        assert out["cost_usd"] == Decimal("0.150")
+
+    def test_bundled_default_provider_stays_unpriced(self):
+        out = _resolve_cost("openrouter", "some/model", 10, 10, {})
+        assert out["pricing_status"] == "unpriced"
+        assert out["cost_usd"] is None
+
+
+class TestConfiguredRatesLoad:
+
+    @staticmethod
+    def _rate(provider, model, inp, outp):
+        return SimpleNamespace(provider_key=provider, model_key=model, input_per_1k=inp, output_per_1k=outp)
+
+    @pytest.mark.asyncio
+    async def test_builds_nested_map_and_normalizes_keys(self, monkeypatch):
+        rows = [
+            self._rate("  OpenAI ", " GPT-4o ", Decimal("0.01"), Decimal("0.02")),
+            self._rate("bedrock", "us.amazon.nova-2-lite-v1:0", Decimal("0.1"), Decimal("0.2")),
+            self._rate("", "gpt-4o", Decimal("1"), Decimal("1")),
+            self._rate("openai", "", Decimal("1"), Decimal("1")),
+        ]
+        monkeypatch.setattr(recorder_module.injector, "get", lambda _cls: FakeRateRepo(rows))
+        session = FakeSession()
+
+        loaded = await LlmUsageRecorder()._configured_rates(session)
+
+        assert loaded == {
+            "openai": {"gpt-4o": {"input_per_1k": Decimal("0.01"), "output_per_1k": Decimal("0.02")}},
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {"input_per_1k": Decimal("0.1"), "output_per_1k": Decimal("0.2")}
+            },
+        }
+        assert session.rolled_back is False
+
+    @pytest.mark.asyncio
+    async def test_load_failure_degrades_to_bundled_and_rolls_back(self, monkeypatch):
+        def boom(_cls):
+            raise RuntimeError("rates table unavailable")
+
+        monkeypatch.setattr(recorder_module.injector, "get", boom)
+        session = FakeSession()
+
+        loaded = await LlmUsageRecorder()._configured_rates(session)
+
+        assert loaded == {}
+        assert session.rolled_back is True
+        assert _resolve_cost("openai", "gpt-4o", 1000, 0, loaded)["pricing_status"] == "fallback"
 
 
 class TestWorkflowUsageContext:
