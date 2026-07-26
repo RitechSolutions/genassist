@@ -416,8 +416,8 @@ export default function HelpCenterManager() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 shrink-0">
-            <h2 className="text-2xl sm:text-3xl font-bold whitespace-nowrap">Help Center</h2>
-            <p className="text-muted-foreground font-normal text-sm mt-0.5 hidden sm:block">
+            <h2 className="text-2xl sm:text-3xl font-bold whitespace-nowrap animate-fade-down">Help Center</h2>
+            <p className="text-muted-foreground font-normal text-sm mt-0.5 hidden sm:block animate-fade-up">
               Report bugs and feature requests and track their status
             </p>
           </div>
