@@ -1,6 +1,7 @@
 """Tables that store LLM token and cost usage"""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
@@ -92,9 +93,9 @@ class LlmUsageEventModel(Base):
     total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     token_details: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
-    input_per_1k: Mapped[Optional[float]] = mapped_column(Numeric(18, 10), nullable=True)
-    output_per_1k: Mapped[Optional[float]] = mapped_column(Numeric(18, 10), nullable=True)
-    cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(18, 10), nullable=True)
+    input_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    output_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    cost_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     pricing_status: Mapped[str] = mapped_column(String(20), nullable=False)
 
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

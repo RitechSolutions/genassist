@@ -9,8 +9,10 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def reconcile_llm_usage_shadow():
-    """Daily shadow reconciliation for every tenant. Inert until a tenant starts shadow;
-    skips tenants already passed."""
+    """Daily shadow reconciliation for every tenant. Inert until a tenant starts shadow.
+
+    Monitoring continues after a tenant passes — only the pass stamp is once-only —
+    so the job keeps re-evaluating missing, failed and re-gated days."""
     return run_async_in_celery(
         reconcile_llm_usage_shadow_with_scope(),
         timeout=110 * 60,

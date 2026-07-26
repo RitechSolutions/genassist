@@ -1,12 +1,13 @@
+"""Per-day shadow reconciliation queries"""
+
 from datetime import date, datetime
 from decimal import Decimal
 
 from injector import inject
-from sqlalchemy import func, select
+from sqlalchemy import String, and_, cast, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.llm_usage import (
@@ -17,8 +18,10 @@ from app.db.models.llm_usage import (
 from app.repositories.db_repository import DbRepository
 
 CHAT_SOURCE = "chat"
+WORKFLOW_SOURCE_TYPE = "workflow"
 ANALYST_SOURCE_TYPE = "llm_analyst"
 RETURNED = "returned"
+UNPRICED = "unpriced"
 
 _LOG = AgentResponseLogModel
 _RUN = LlmUsageCaptureRunModel
@@ -53,6 +56,7 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
         return list(result.scalars().all())
 
     async def reports_between(self, from_date: date, to_date: date) -> list[LlmUsageReconciliationReportModel]:
+        """Reports for an exact date range"""
         result = await self.db.execute(
             select(LlmUsageReconciliationReportModel)
             .where(
@@ -61,6 +65,7 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
                 LlmUsageReconciliationReportModel.report_date <= to_date,
             )
             .order_by(LlmUsageReconciliationReportModel.report_date)
+            .execution_options(populate_existing=True)
         )
         return list(result.scalars().all())
 
@@ -91,6 +96,7 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
                 "passed": passed,
                 "reasons": reasons,
                 "metrics": metrics,
+                "is_deleted": 0,
             },
         )
         await self.db.execute(stmt)
@@ -98,19 +104,22 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
 
 
     async def logs_without_receipts(self, start: datetime, end: datetime) -> list[str]:
+        """Chat logs the recorder never wrote a receipt for"""
         stmt = (
             select(_LOG.workflow_execution_id)
-            .outerjoin(_RUN, _RUN.execution_id == _LOG.workflow_execution_id)
+            .outerjoin(
+                _RUN,
+                and_(_RUN.execution_id == _LOG.workflow_execution_id, _RUN.is_deleted == 0),
+            )
             .where(*_chat_logs(start, end), _RUN.execution_id.is_(None))
-            .execution_options(**{SOFT_DELETE_FLAG: True})
         )
         return [row[0] for row in (await self.db.execute(stmt)).all()]
 
     async def recorder_integrity(self, start: datetime, end: datetime) -> tuple[int, list[dict]]:
-        """Per chat receipt"""
+        """Every workflow receipt against the events that actually landed"""
         event_counts = (
             select(_EVENT.execution_id, func.count().label("cnt"))
-            .where(_EVENT.source == CHAT_SOURCE)
+            .where(_EVENT.source_type == WORKFLOW_SOURCE_TYPE, _EVENT.is_deleted == 0)
             .group_by(_EVENT.execution_id)
             .subquery()
         )
@@ -122,7 +131,12 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
                 func.coalesce(event_counts.c.cnt, 0),
             )
             .outerjoin(event_counts, event_counts.c.execution_id == _RUN.execution_id)
-            .where(_RUN.source == CHAT_SOURCE, _RUN.occurred_at >= start, _RUN.occurred_at < end)
+            .where(
+                _RUN.source_type == WORKFLOW_SOURCE_TYPE,
+                _RUN.occurred_at >= start,
+                _RUN.occurred_at < end,
+                _RUN.is_deleted == 0,
+            )
         )
         rows = (await self.db.execute(stmt)).all()
         discrepancies = [
@@ -140,7 +154,7 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
                 func.sum(_EVENT.output_tokens).label("o"),
                 func.sum(_EVENT.total_tokens).label("t"),
             )
-            .where(_EVENT.source == CHAT_SOURCE)
+            .where(_EVENT.source == CHAT_SOURCE, _EVENT.is_deleted == 0)
             .group_by(_EVENT.execution_id)
             .subquery()
         )
@@ -166,7 +180,7 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
         return mismatches
 
     async def priced_events(self, start: datetime, end: datetime) -> list:
-        """Priced chat events for the cost self-check"""
+        """All priced events for the cost self-check, from any source"""
         stmt = select(
             _EVENT.execution_id,
             _EVENT.input_tokens,
@@ -175,19 +189,45 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
             _EVENT.output_per_1k,
             _EVENT.cost_usd,
         ).where(
-            _EVENT.source == CHAT_SOURCE,
             _EVENT.occurred_at >= start,
             _EVENT.occurred_at < end,
             _EVENT.input_per_1k.isnot(None),
+            _EVENT.is_deleted == 0,
         )
         return (await self.db.execute(stmt)).all()
 
+    async def unpriced_events(self, start: datetime, end: datetime) -> list[dict]:
+        """Events the ledger could not price, placeholders for unreported usage included"""
+        stmt = select(_EVENT.execution_id, _EVENT.call_index, _EVENT.provider_key, _EVENT.model_key).where(
+            _EVENT.pricing_status == UNPRICED,
+            _EVENT.occurred_at >= start,
+            _EVENT.occurred_at < end,
+            _EVENT.is_deleted == 0,
+        )
+        return [
+            {"execution_id": r[0], "call_index": r[1], "provider": r[2], "model": r[3]}
+            for r in (await self.db.execute(stmt)).all()
+        ]
+
     async def joined_execution_count(self, start: datetime, end: datetime) -> int:
+        """Chat logs correlated to a receipt"""
         stmt = (
             select(func.count())
             .select_from(_LOG)
-            .join(_RUN, _RUN.execution_id == _LOG.workflow_execution_id)
+            .join(
+                _RUN,
+                and_(_RUN.execution_id == _LOG.workflow_execution_id, _RUN.is_deleted == 0),
+            )
             .where(*_chat_logs(start, end))
+        )
+        return int((await self.db.execute(stmt)).scalar() or 0)
+
+    async def capture_run_count(self, start: datetime, end: datetime) -> int:
+        """Count all capture receipts for the day (workflows and analyst runs)"""
+        stmt = (
+            select(func.count())
+            .select_from(_RUN)
+            .where(_RUN.occurred_at >= start, _RUN.occurred_at < end, _RUN.is_deleted == 0)
         )
         return int((await self.db.execute(stmt)).scalar() or 0)
 
@@ -195,29 +235,38 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
         """Returned chat receipts with no transcript log"""
         stmt = (
             select(_RUN.execution_id, _RUN.run_status)
-            .outerjoin(_LOG, _LOG.workflow_execution_id == _RUN.execution_id)
+            .outerjoin(
+                _LOG,
+                and_(_LOG.workflow_execution_id == _RUN.execution_id, _LOG.is_deleted == 0),
+            )
             .where(
                 _RUN.source == CHAT_SOURCE,
                 _RUN.execution_outcome == RETURNED,
                 _RUN.occurred_at >= start,
                 _RUN.occurred_at < end,
+                _RUN.is_deleted == 0,
                 _LOG.id.is_(None),
             )
-            .execution_options(**{SOFT_DELETE_FLAG: True})
         )
         return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
 
     async def ledger_cost_by_status(self, start: datetime, end: datetime) -> dict[str, Decimal]:
         stmt = (
             select(_EVENT.pricing_status, func.coalesce(func.sum(_EVENT.cost_usd), 0))
-            .where(_EVENT.source == CHAT_SOURCE, _EVENT.occurred_at >= start, _EVENT.occurred_at < end)
+            .where(
+                _EVENT.source == CHAT_SOURCE,
+                _EVENT.occurred_at >= start,
+                _EVENT.occurred_at < end,
+                _EVENT.is_deleted == 0,
+            )
             .group_by(_EVENT.pricing_status)
         )
         return {row[0]: Decimal(row[1]) for row in (await self.db.execute(stmt)).all()}
 
     async def daily_stats_cost(self, day: date) -> Decimal:
         stmt = select(func.coalesce(func.sum(AgentExecutionDailyStatsModel.total_cost_usd), 0)).where(
-            AgentExecutionDailyStatsModel.stat_date == day
+            AgentExecutionDailyStatsModel.stat_date == day,
+            AgentExecutionDailyStatsModel.is_deleted == 0,
         )
         return Decimal(str((await self.db.execute(stmt)).scalar() or 0))
 
@@ -225,13 +274,55 @@ class LlmUsageReconciliationRepository(DbRepository[LlmUsageReconciliationReport
         receipts = (
             select(func.count())
             .select_from(_RUN)
-            .where(_RUN.source_type == ANALYST_SOURCE_TYPE, _RUN.occurred_at >= start, _RUN.occurred_at < end)
+            .where(
+                _RUN.source_type == ANALYST_SOURCE_TYPE,
+                _RUN.occurred_at >= start,
+                _RUN.occurred_at < end,
+                _RUN.is_deleted == 0,
+            )
         )
         events = (
             select(func.count())
             .select_from(_EVENT)
-            .where(_EVENT.source_type == ANALYST_SOURCE_TYPE, _EVENT.occurred_at >= start, _EVENT.occurred_at < end)
+            .where(
+                _EVENT.source_type == ANALYST_SOURCE_TYPE,
+                _EVENT.occurred_at >= start,
+                _EVENT.occurred_at < end,
+                _EVENT.is_deleted == 0,
+            )
         )
         r = int((await self.db.execute(receipts)).scalar() or 0)
         e = int((await self.db.execute(events)).scalar() or 0)
         return r, e
+
+    async def analyst_receipt_discrepancies(self, start: datetime, end: datetime) -> list[dict]:
+        """Find analyst receipts that claim an entry but have no matching event row"""
+        event_counts = (
+            select(
+                func.concat(_EVENT.execution_id, ":", cast(_EVENT.call_index, String)).label("receipt_id"),
+                func.count().label("cnt"),
+            )
+            .where(_EVENT.source_type == ANALYST_SOURCE_TYPE, _EVENT.is_deleted == 0)
+            .group_by("receipt_id")
+            .subquery()
+        )
+        stmt = (
+            select(
+                _RUN.execution_id,
+                _RUN.expected_entries,
+                _RUN.persisted_events,
+                func.coalesce(event_counts.c.cnt, 0),
+            )
+            .outerjoin(event_counts, event_counts.c.receipt_id == _RUN.execution_id)
+            .where(
+                _RUN.source_type == ANALYST_SOURCE_TYPE,
+                _RUN.occurred_at >= start,
+                _RUN.occurred_at < end,
+                _RUN.is_deleted == 0,
+            )
+        )
+        return [
+            {"execution_id": r[0], "expected": r[1], "persisted": r[2], "events": int(r[3])}
+            for r in (await self.db.execute(stmt)).all()
+            if r[1] != r[2] or int(r[3]) != r[2]
+        ]

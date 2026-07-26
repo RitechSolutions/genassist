@@ -4,6 +4,7 @@ from injector import inject
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.date_time_utils import utc_now
 from app.db.models.llm_usage import LlmUsageControlModel
 from app.repositories.llm_usage_control import LlmUsageControlRepository
 from app.repositories.llm_usage_reconciliation import LlmUsageReconciliationRepository
@@ -12,11 +13,11 @@ from app.schemas.llm_usage_control import (
     COST_SOURCE_LEDGER,
     LlmUsageControlRead,
 )
+from app.services.llm_usage_shadow_window import SHADOW_QUALIFYING_WINDOW_DAYS, evaluate_window
 
 logger = logging.getLogger(__name__)
 
-# Shadow mode must stay healthy for this many days in a row before cutover can turn on
-SHADOW_QUALIFYING_WINDOW_DAYS = 7
+__all__ = ["LlmUsageControlService", "SHADOW_QUALIFYING_WINDOW_DAYS"]
 
 
 @inject
@@ -51,8 +52,10 @@ class LlmUsageControlService:
             raise AppException(error_key=ErrorKey.LLM_USAGE_SHADOW_ALREADY_PASSED, status_code=409)
         if control.shadow_started_at is not None:
             raise AppException(error_key=ErrorKey.LLM_USAGE_SHADOW_ALREADY_RUNNING, status_code=409)
-        control = await self.repo.start_shadow()
-        return self._to_read(control)
+        # The stamp is claimed by UPDATE, so two concurrent starts can't both win
+        if not await self.repo.start_shadow():
+            raise AppException(error_key=ErrorKey.LLM_USAGE_SHADOW_ALREADY_RUNNING, status_code=409)
+        return self._to_read(await self._require_singleton())
 
     async def set_cutover(self, enabled: bool) -> LlmUsageControlRead:
         control = await self._require_singleton()
@@ -62,22 +65,19 @@ class LlmUsageControlService:
         return self._to_read(control)
 
     async def _guard_cutover_enable(self, control: LlmUsageControlModel) -> None:
-        """Cutover may flip on only with capture active, shadow passed, and the passing
-        window still green"""
+        """Cutover may flip on only with capture active, shadow passed, and the exact
+        today-7 … yesterday window still green. A historical pass is not current health"""
         if not control.capture_enabled:
             raise AppException(error_key=ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED, status_code=409)
         if control.shadow_passed_at is None:
             raise AppException(error_key=ErrorKey.LLM_USAGE_SHADOW_NOT_PASSED, status_code=409)
 
-        reports = await self.reconciliation_repo.recent_reports(SHADOW_QUALIFYING_WINDOW_DAYS)
-        window_current = len(reports) >= SHADOW_QUALIFYING_WINDOW_DAYS and all(r.passed for r in reports)
-        if not window_current:
-            failing = [r.report_date.isoformat() for r in reports if not r.passed]
-            detail = f"Qualifying window broken; failing days: {failing}" if failing else "Qualifying window incomplete"
+        window = await evaluate_window(self.reconciliation_repo, utc_now().date())
+        if not window.passed:
             raise AppException(
                 error_key=ErrorKey.LLM_USAGE_SHADOW_WINDOW_STALE,
                 status_code=409,
-                error_detail=detail,
+                error_detail=f"Qualifying window not current; {window.describe()}",
             )
 
     async def _require_singleton(self) -> LlmUsageControlModel:

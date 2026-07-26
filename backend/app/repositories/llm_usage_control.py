@@ -14,8 +14,11 @@ class LlmUsageControlRepository(DbRepository[LlmUsageControlModel]):
         super().__init__(LlmUsageControlModel, db)
 
     async def get_singleton(self) -> LlmUsageControlModel | None:
+        """Always read the row as the database has it"""
         result = await self.db.execute(
-            select(LlmUsageControlModel).where(LlmUsageControlModel.singleton_key == CONTROL_SINGLETON_KEY)
+            select(LlmUsageControlModel)
+            .where(LlmUsageControlModel.singleton_key == CONTROL_SINGLETON_KEY)
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -33,14 +36,22 @@ class LlmUsageControlRepository(DbRepository[LlmUsageControlModel]):
         await self.db.commit()
         return await self.get_singleton()
 
-    async def start_shadow(self) -> LlmUsageControlModel | None:
-        await self.db.execute(
+    async def start_shadow(self) -> bool:
+        """Set shadow_started_at only if it is still unset.
+
+        Prevents two concurrent callers from both starting shadow: only one update
+        wins; the other sees no change and the service returns 409.
+        """
+        result = await self.db.execute(
             update(LlmUsageControlModel)
-            .where(LlmUsageControlModel.singleton_key == CONTROL_SINGLETON_KEY)
+            .where(
+                LlmUsageControlModel.singleton_key == CONTROL_SINGLETON_KEY,
+                LlmUsageControlModel.shadow_started_at.is_(None),
+            )
             .values(shadow_started_at=func.now())
         )
         await self.db.commit()
-        return await self.get_singleton()
+        return (result.rowcount or 0) > 0
 
     async def mark_shadow_passed(self) -> LlmUsageControlModel | None:
         """Stamp the pass once. Guarded so a later run can't move an existing stamp"""
