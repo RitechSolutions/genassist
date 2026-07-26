@@ -5,15 +5,19 @@ export interface LlmUsageSummaryResponse {
   to_date?: string | null;
   total_cost_usd: number;
   cost_is_partial: boolean;
-  cost_per_conversation_usd: number;
+  cost_per_conversation_usd: number | null;
   non_conversation_cost_usd: number;
   total_input_tokens: number;
   total_output_tokens: number;
   total_tokens: number;
   total_calls: number;
+  configured_calls: number;
+  fallback_calls: number;
+  legacy_estimate_calls: number;
   unpriced_calls: number;
   priced_token_coverage_pct: number;
   cost_source: string;
+  dashboard_cost_source: string;
 }
 
 export interface LlmUsageBreakdownItem {

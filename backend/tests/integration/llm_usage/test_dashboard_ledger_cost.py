@@ -55,10 +55,15 @@ def _today_window() -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
+def _today_range() -> tuple[datetime, datetime]:
+    start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start
+
+
 @pytest.mark.asyncio
 async def test_ledger_total_sums_priced_cost(db):
     repo = DashboardRepository(db)
-    start, end = _today_window()
+    start, end = _today_range()
     before = await repo.get_total_cost_usd_from_ledger(start, end)
 
     db.add(_event(cost_usd=Decimal("0.25")))
@@ -71,7 +76,7 @@ async def test_ledger_total_sums_priced_cost(db):
 @pytest.mark.asyncio
 async def test_ledger_total_excludes_unpriced(db):
     repo = DashboardRepository(db)
-    start, end = _today_window()
+    start, end = _today_range()
     before = await repo.get_total_cost_usd_from_ledger(start, end)
 
     db.add(_event(cost_usd=None, input_per_1k=None, output_per_1k=None, pricing_status="unpriced"))
@@ -84,10 +89,50 @@ async def test_ledger_total_excludes_unpriced(db):
 @pytest.mark.asyncio
 async def test_ledger_total_excludes_events_outside_window(db):
     repo = DashboardRepository(db)
-    start, end = _today_window()
+    start, end = _today_range()
     before = await repo.get_total_cost_usd_from_ledger(start, end)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start - timedelta(hours=1)))
+    await db.flush()
+
+    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    assert after == pytest.approx(before)
+
+
+@pytest.mark.asyncio
+async def test_ledger_total_upper_bound_is_exclusive_of_the_next_day(db):
+    repo = DashboardRepository(db)
+    start, end = _today_range()
+    before = await repo.get_total_cost_usd_from_ledger(start, end)
+
+    db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start + timedelta(days=1)))
+    await db.flush()
+
+    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    assert after == pytest.approx(before)
+
+
+@pytest.mark.asyncio
+async def test_ledger_total_drops_the_day_of_a_mid_day_lower_bound(db):
+    repo = DashboardRepository(db)
+    start, end = _today_range()
+    mid_day = start + timedelta(hours=13)
+    before = await repo.get_total_cost_usd_from_ledger(mid_day, end)
+
+    db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start + timedelta(hours=20)))
+    await db.flush()
+
+    after = await repo.get_total_cost_usd_from_ledger(mid_day, end)
+    assert after == pytest.approx(before)
+
+
+@pytest.mark.asyncio
+async def test_ledger_total_excludes_soft_deleted_events(db):
+    repo = DashboardRepository(db)
+    start, end = _today_range()
+    before = await repo.get_total_cost_usd_from_ledger(start, end)
+
+    db.add(_event(cost_usd=Decimal("0.77"), is_deleted=1))
     await db.flush()
 
     after = await repo.get_total_cost_usd_from_ledger(start, end)
@@ -229,9 +274,26 @@ async def test_agent_cost_today_daily_stats_never_attributes_per_conversation(db
 
 
 @pytest.mark.asyncio
-async def test_ledger_total_includes_analyst_source(db):
+async def test_agent_cost_today_ledger_excludes_soft_deleted_events(db):
+    agent_id = (await db.execute(select(AgentModel.id).where(AgentModel.is_deleted == 0).limit(1))).scalar()
+    if agent_id is None:
+        pytest.skip("no agent available to attribute ledger cost to")
+
     repo = DashboardRepository(db)
     start, end = _today_window()
+    before = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+
+    db.add(_event(agent_id=agent_id, cost_usd=Decimal("0.77"), is_deleted=1))
+    await db.flush()
+
+    after = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    assert after == pytest.approx(before)
+
+
+@pytest.mark.asyncio
+async def test_ledger_total_includes_analyst_source(db):
+    repo = DashboardRepository(db)
+    start, end = _today_range()
     before = await repo.get_total_cost_usd_from_ledger(start, end)
 
     db.add(_event(source_type="llm_analyst", source="conversation_analysis", cost_usd=Decimal("0.30")))

@@ -84,6 +84,11 @@ export function KPISection({ days }: KPISectionProps) {
             value: formatUsd(summaryStats?.total_cost_usd),
             change: 0,
             changeType: "neutral" as const,
+            description: summaryStats
+              ? summaryStats.cost_source === "llm_usage_ledger"
+                ? "Usage ledger"
+                : "Daily stats"
+              : undefined,
           },
         ]
       : []),

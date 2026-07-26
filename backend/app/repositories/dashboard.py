@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from app.core.utils.date_time_utils import utc_day_start
 from app.db.events.group_scope import get_group_scope_clause
 from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
@@ -15,6 +16,13 @@ from app.db.models.app_settings import AppSettingsModel
 from app.db.models.conversation import ConversationModel
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.db.models.operator import OperatorModel
+
+
+def _ledger_window(from_date: datetime, to_date: datetime) -> tuple[datetime, datetime]:
+    start = utc_day_start(from_date)
+    if from_date > start:
+        start += timedelta(days=1)
+    return start, utc_day_start(to_date) + timedelta(days=1)
 
 
 @inject
@@ -286,6 +294,7 @@ class DashboardRepository:
                 func.count(distinct(LlmUsageEventModel.conversation_id)).label("distinct_conversations"),
             )
             .where(
+                LlmUsageEventModel.is_deleted == 0,
                 LlmUsageEventModel.agent_id.in_(agent_ids),
                 LlmUsageEventModel.occurred_at >= day_start,
                 LlmUsageEventModel.occurred_at < day_end,
@@ -373,13 +382,13 @@ class DashboardRepository:
         result = await self.db.execute(query)
         return float(result.scalar() or 0.00)
 
-    async def get_total_cost_usd_from_ledger(
-        self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None
-    ) -> float:
+    async def get_total_cost_usd_from_ledger(self, from_date: datetime, to_date: datetime) -> float:
         """Total priced LLM cost over the range from the usage ledger"""
+        window_start, window_end = _ledger_window(from_date, to_date)
         query = select(func.coalesce(func.sum(LlmUsageEventModel.cost_usd), 0)).where(
-            LlmUsageEventModel.occurred_at >= from_date,
-            LlmUsageEventModel.occurred_at <= to_date,
+            LlmUsageEventModel.is_deleted == 0,
+            LlmUsageEventModel.occurred_at >= window_start,
+            LlmUsageEventModel.occurred_at < window_end,
         )
         result = await self.db.execute(query)
         return float(result.scalar() or 0.00)

@@ -1,11 +1,19 @@
 from datetime import date, datetime
+from enum import StrEnum
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-# Which system the dashboard reads cost from. Flips to the ledger only at cutover
-COST_SOURCE_DAILY_STATS = "daily_stats"
-COST_SOURCE_LEDGER = "llm_usage_ledger"
+
+class CostSource(StrEnum):
+    """Which system a cost figure was read from"""
+
+    DAILY_STATS = "daily_stats"
+    LEDGER = "llm_usage_ledger"
+
+
+COST_SOURCE_DAILY_STATS = CostSource.DAILY_STATS
+COST_SOURCE_LEDGER = CostSource.LEDGER
 
 
 class LlmUsageControlRead(BaseModel):
@@ -18,7 +26,7 @@ class LlmUsageControlRead(BaseModel):
     shadow_started_at: Optional[datetime] = None
     shadow_passed_at: Optional[datetime] = None
     ledger_cutover_enabled: bool
-    cost_source: str
+    cost_source: CostSource
 
 
 class LlmUsageCutoverRequest(BaseModel):

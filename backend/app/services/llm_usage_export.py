@@ -5,10 +5,14 @@ import io
 from datetime import date
 from typing import Optional
 
-from app.schemas.llm_usage import LlmUsageBreakdownResponse, LlmUsageSummaryResponse
+from app.schemas.llm_usage import BREAKDOWN_DIMENSIONS, LlmUsageBreakdownResponse, LlmUsageSummaryResponse
 from app.services.analytics_export import EXTENSIONS, MEDIA_TYPES, VALID_FORMATS  # noqa: F401
 
-_DIMENSION_HEADER = {"provider": "Provider", "model": "Model", "agent": "Agent"}
+_DIMENSION_HEADER = {d: d.capitalize() for d in BREAKDOWN_DIMENSIONS} | {"source": "Usage type"}
+
+METHODOLOGY_NOTE = (
+    "Costs are calculated from reported tokens and the configured rates; they may differ from provider invoices."
+)
 
 
 def _period(from_date: Optional[date], to_date: Optional[date]) -> str:
@@ -21,17 +25,25 @@ def _period(from_date: Optional[date], to_date: Optional[date]) -> str:
     return "all time"
 
 
+def _usd(value: Optional[float]) -> str:
+    return "N/A" if value is None else f"{value:.4f}"
+
+
 def _summary_rows(summary: LlmUsageSummaryResponse) -> list[tuple[str, str]]:
     return [
-        ("Total LLM cost (USD)", f"{summary.total_cost_usd:.4f}"),
+        ("Total LLM cost (USD)", _usd(summary.total_cost_usd)),
         ("Cost is partial (unpriced calls present)", "yes" if summary.cost_is_partial else "no"),
-        ("Cost per conversation (USD)", f"{summary.cost_per_conversation_usd:.4f}"),
-        ("Non-conversation cost (USD)", f"{summary.non_conversation_cost_usd:.4f}"),
+        ("Cost per conversation (USD)", _usd(summary.cost_per_conversation_usd)),
+        ("Non-conversation cost (USD)", _usd(summary.non_conversation_cost_usd)),
         ("Total tokens", str(summary.total_tokens)),
         ("Total calls", str(summary.total_calls)),
+        ("Calls priced at configured rates", str(summary.configured_calls)),
+        ("Calls priced at bundled fallback rates", str(summary.fallback_calls)),
+        ("Calls carrying legacy estimated cost", str(summary.legacy_estimate_calls)),
         ("Unpriced calls", str(summary.unpriced_calls)),
         ("Priced token coverage (%)", f"{summary.priced_token_coverage_pct:.2f}"),
-        ("Cost source", summary.cost_source),
+        ("Report cost source", str(summary.cost_source)),
+        ("Dashboard cost source", str(summary.dashboard_cost_source)),
     ]
 
 
@@ -69,6 +81,7 @@ def _csv(summary, breakdown, from_date, to_date) -> bytes:
     w = csv.writer(buf)
     w.writerow(["LLM Usage Report"])
     w.writerow([f"Period: {_period(from_date, to_date)}"])
+    w.writerow([METHODOLOGY_NOTE])
     w.writerow([])
     w.writerow(["Metric", "Value"])
     w.writerows(_summary_rows(summary))
@@ -88,9 +101,10 @@ def _xlsx(summary, breakdown, from_date, to_date) -> bytes:
     ws = wb.add_worksheet("Summary")
     ws.write(0, 0, "LLM Usage Report", bold)
     ws.write(1, 0, f"Period: {_period(from_date, to_date)}")
-    ws.write(3, 0, "Metric", bold)
-    ws.write(3, 1, "Value", bold)
-    for r, (label, value) in enumerate(_summary_rows(summary), start=4):
+    ws.write(2, 0, METHODOLOGY_NOTE)
+    ws.write(4, 0, "Metric", bold)
+    ws.write(4, 1, "Value", bold)
+    for r, (label, value) in enumerate(_summary_rows(summary), start=5):
         ws.write(r, 0, label)
         ws.write(r, 1, value)
     ws.set_column(0, 0, 42)
@@ -118,6 +132,7 @@ def _pdf(summary, breakdown, from_date, to_date) -> bytes:
     pdf.cell(0, 10, "LLM Usage Report", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", size=10)
     pdf.cell(0, 6, f"Period: {_period(from_date, to_date)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, METHODOLOGY_NOTE, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
     pdf.set_font("Helvetica", "B", 11)

@@ -256,7 +256,7 @@ function LlmUsagePage() {
                 <AnalyticsKpiStat key={k.label} label={k.label} value={k.value} icon={k.icon} sub={k.sub} />
               ))}
             </div>
-            {summary?.cost_source === "daily_stats" && (
+            {summary?.dashboard_cost_source === "daily_stats" && (
               <p className="mt-4 text-xs text-muted-foreground">
                 These figures read the usage ledger. The main dashboard keeps healed daily stats until ledger cutover.
               </p>

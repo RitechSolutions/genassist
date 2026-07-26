@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.repositories.dashboard import DashboardRepository
+from app.repositories.dashboard import DashboardRepository, _ledger_window
 from app.schemas.llm_usage_control import COST_SOURCE_DAILY_STATS, COST_SOURCE_LEDGER
 from app.services.dashboard import DashboardService
 
@@ -147,3 +147,30 @@ async def test_agent_cost_today_routes_by_use_ledger():
     calls.clear()
     await repo._agent_cost_today([], day_start, day_end, use_ledger=False)
     assert calls == ["daily_stats"]
+
+
+def test_ledger_window_is_half_open_on_whole_utc_days():
+    start, end = _ledger_window(
+        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc)
+    )
+    assert start == datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert end == datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+
+def test_ledger_window_rounds_a_mid_day_lower_bound_up():
+    start, _ = _ledger_window(
+        datetime(2026, 1, 1, 13, 30, tzinfo=timezone.utc), datetime(2026, 1, 31, 13, 30, tzinfo=timezone.utc)
+    )
+    assert start == datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+
+def test_ledger_window_includes_the_whole_upper_bound_day():
+    _, end = _ledger_window(
+        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, 13, 30, tzinfo=timezone.utc)
+    )
+    assert end == datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+
+def test_ledger_window_of_a_single_day_covers_that_day():
+    day = datetime(2026, 1, 15, tzinfo=timezone.utc)
+    assert _ledger_window(day, day) == (day, day + timedelta(days=1))

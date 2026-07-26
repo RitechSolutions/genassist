@@ -1,6 +1,6 @@
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from fastapi_injector import Injected
 
@@ -11,7 +11,8 @@ from app.core.permissions.constants import Permissions as P
 from app.core.utils.cache_headers import no_store_headers
 from app.repositories.llm_usage_reconciliation import LlmUsageReconciliationRepository
 from app.schemas.llm_usage import (
-    BREAKDOWN_DIMENSIONS,
+    BreakdownDimension,
+    ExportFormat,
     LlmUsageBreakdownResponse,
     LlmUsageFilterOptionsResponse,
     LlmUsageQueryParams,
@@ -25,16 +26,10 @@ from app.schemas.llm_usage_control import (
     LlmUsageReconciliationReportRead,
 )
 from app.services.llm_usage_control import LlmUsageControlService
-from app.services.llm_usage_export import EXTENSIONS, VALID_FORMATS, export_llm_usage
+from app.services.llm_usage_export import EXTENSIONS, export_llm_usage
 from app.services.llm_usage_read import LlmUsageReadService
 
 router = APIRouter()
-
-
-def _validate_dimension(dimension: str) -> str:
-    if dimension not in BREAKDOWN_DIMENSIONS:
-        raise HTTPException(status_code=400, detail=f"dimension must be one of: {', '.join(BREAKDOWN_DIMENSIONS)}")
-    return dimension
 
 
 @router.get(
@@ -174,10 +169,10 @@ async def get_timeseries(
 )
 async def get_breakdown(
     params: LlmUsageQueryParams = Depends(),
-    dimension: str = Query(default="provider"),
+    dimension: BreakdownDimension = Query(default="provider"),
     service: LlmUsageReadService = Injected(LlmUsageReadService),
 ) -> LlmUsageBreakdownResponse:
-    return await service.get_breakdown(params, _validate_dimension(dimension))
+    return await service.get_breakdown(params, dimension)
 
 
 @router.get(
@@ -200,15 +195,11 @@ async def get_filter_options(
 )
 async def export_usage(
     params: LlmUsageQueryParams = Depends(),
-    dimension: str = Query(default="provider"),
-    fmt: str = Query(default="csv", alias="format"),
+    dimension: BreakdownDimension = Query(default="provider"),
+    fmt: ExportFormat = Query(default="csv", alias="format"),
     service: LlmUsageReadService = Injected(LlmUsageReadService),
 ) -> StreamingResponse:
-    if fmt not in VALID_FORMATS:
-        raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(VALID_FORMATS))}")
-    dimension = _validate_dimension(dimension)
-    summary = await service.get_summary(params)
-    breakdown = await service.get_breakdown(params, dimension)
+    summary, breakdown = await service.get_export_report(params, dimension)
     content, media_type = export_llm_usage(fmt, summary, breakdown, params.from_date, params.to_date)
     return StreamingResponse(
         io.BytesIO(content),

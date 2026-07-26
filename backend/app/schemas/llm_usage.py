@@ -1,12 +1,16 @@
 from datetime import date
-from typing import Optional
+from typing import Annotated, Literal, Optional, get_args
 from uuid import UUID
 
-from fastapi import Query
+from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-# Breakdown dimensions the read APIs group by.
-BREAKDOWN_DIMENSIONS = ("provider", "model", "agent", "source")
+from app.schemas.llm_usage_control import CostSource
+
+BreakdownDimension = Literal["provider", "model", "agent", "source"]
+BREAKDOWN_DIMENSIONS: tuple[str, ...] = get_args(BreakdownDimension)
+
+ExportFormat = Literal["csv", "xlsx", "pdf"]
 
 
 class LlmUsageQueryParams:
@@ -14,13 +18,15 @@ class LlmUsageQueryParams:
 
     def __init__(
         self,
-        from_date: Optional[date] = Query(default=None),
-        to_date: Optional[date] = Query(default=None),
-        agent_id: Optional[UUID] = Query(default=None),
-        group_id: Optional[UUID] = Query(default=None),
-        provider: Optional[str] = Query(default=None),
-        model: Optional[str] = Query(default=None),
+        from_date: Annotated[Optional[date], Query()] = None,
+        to_date: Annotated[Optional[date], Query()] = None,
+        agent_id: Annotated[Optional[UUID], Query()] = None,
+        group_id: Annotated[Optional[UUID], Query()] = None,
+        provider: Annotated[Optional[str], Query()] = None,
+        model: Annotated[Optional[str], Query()] = None,
     ):
+        if from_date is not None and to_date is not None and from_date > to_date:
+            raise HTTPException(status_code=400, detail="from_date must be on or before to_date")
         self.from_date = from_date
         self.to_date = to_date
         self.agent_id = agent_id
@@ -31,7 +37,10 @@ class LlmUsageQueryParams:
 
 class LlmUsageSummaryResponse(BaseModel):
     """LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced
-    rows; ``cost_is_partial`` is true when some rows had no price and were left out"""
+    rows; ``cost_is_partial`` is true when some rows had no price and were left out.
+
+    ``cost_source`` is always the ledger — these endpoints read it regardless of cutover.
+    ``dashboard_cost_source`` reports what the dashboard is currently reading instead"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,15 +48,19 @@ class LlmUsageSummaryResponse(BaseModel):
     to_date: Optional[date] = None
     total_cost_usd: float
     cost_is_partial: bool
-    cost_per_conversation_usd: float
+    cost_per_conversation_usd: Optional[float] = None
     non_conversation_cost_usd: float
     total_input_tokens: int
     total_output_tokens: int
     total_tokens: int
     total_calls: int
+    configured_calls: int
+    fallback_calls: int
+    legacy_estimate_calls: int
     unpriced_calls: int
     priced_token_coverage_pct: float
-    cost_source: str
+    cost_source: CostSource
+    dashboard_cost_source: CostSource
 
 
 class LlmUsageTimeseriesItem(BaseModel):
@@ -65,7 +78,7 @@ class LlmUsageTimeseriesResponse(BaseModel):
 
     items: list[LlmUsageTimeseriesItem]
     total: int
-    cost_source: str
+    cost_source: CostSource
 
 
 class LlmUsageBreakdownItem(BaseModel):
@@ -83,10 +96,10 @@ class LlmUsageBreakdownItem(BaseModel):
 class LlmUsageBreakdownResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    dimension: str
+    dimension: BreakdownDimension
     items: list[LlmUsageBreakdownItem]
     total: int
-    cost_source: str
+    cost_source: CostSource
 
 
 class LlmUsageAgentOption(BaseModel):
