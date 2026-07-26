@@ -17,53 +17,20 @@ function buildQueryString(params: Record<string, string | undefined>): string {
   return parts.length > 0 ? `?${parts.join("&")}` : "";
 }
 
-export const fetchLlmUsageSummary = async (
-  params?: LlmUsageQueryFilters
-): Promise<LlmUsageSummaryResponse | null> => {
-  try {
-    return await apiRequest<LlmUsageSummaryResponse>("get", `${BASE}/summary${buildQueryString({ ...params })}`);
-  } catch (error) {
-    console.error("Error fetching LLM usage summary:", error);
-    return null;
-  }
-};
+// Fetchers propagate failures so callers can show an error instead of an empty report
+export const fetchLlmUsageSummary = (params?: LlmUsageQueryFilters): Promise<LlmUsageSummaryResponse> =>
+  apiRequest<LlmUsageSummaryResponse>("get", `${BASE}/summary${buildQueryString({ ...params })}`);
 
-export const fetchLlmUsageBreakdown = async (
+export const fetchLlmUsageBreakdown = (
   dimension: LlmUsageDimension,
   params?: LlmUsageQueryFilters
-): Promise<LlmUsageBreakdownResponse | null> => {
-  try {
-    return await apiRequest<LlmUsageBreakdownResponse>(
-      "get",
-      `${BASE}/breakdown${buildQueryString({ dimension, ...params })}`
-    );
-  } catch (error) {
-    console.error("Error fetching LLM usage breakdown:", error);
-    return null;
-  }
-};
+): Promise<LlmUsageBreakdownResponse> =>
+  apiRequest<LlmUsageBreakdownResponse>("get", `${BASE}/breakdown${buildQueryString({ dimension, ...params })}`);
 
-export const fetchLlmUsageTimeseries = async (
-  params?: LlmUsageQueryFilters
-): Promise<LlmUsageTimeseriesResponse | null> => {
-  try {
-    return await apiRequest<LlmUsageTimeseriesResponse>("get", `${BASE}/timeseries${buildQueryString({ ...params })}`);
-  } catch (error) {
-    console.error("Error fetching LLM usage timeseries:", error);
-    return null;
-  }
-};
+export const fetchLlmUsageTimeseries = (params?: LlmUsageQueryFilters): Promise<LlmUsageTimeseriesResponse> =>
+  apiRequest<LlmUsageTimeseriesResponse>("get", `${BASE}/timeseries${buildQueryString({ ...params })}`);
 
-export const fetchLlmUsageFilterOptions = async (
+export const fetchLlmUsageFilterOptions = (
   params?: LlmUsageQueryFilters
-): Promise<LlmUsageFilterOptionsResponse | null> => {
-  try {
-    return await apiRequest<LlmUsageFilterOptionsResponse>(
-      "get",
-      `${BASE}/filter-options${buildQueryString({ ...params })}`
-    );
-  } catch (error) {
-    console.error("Error fetching LLM usage filter options:", error);
-    return null;
-  }
-};
+): Promise<LlmUsageFilterOptionsResponse> =>
+  apiRequest<LlmUsageFilterOptionsResponse>("get", `${BASE}/filter-options${buildQueryString({ ...params })}`);

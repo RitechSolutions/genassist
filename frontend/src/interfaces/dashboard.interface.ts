@@ -1,9 +1,11 @@
+import type { LlmUsageCostSource } from "./llmUsage.interface";
+
 export interface DashboardSummaryStats {
   active_agents: number;
   workflow_runs: number;
   avg_response_time_ms: number;
   total_cost_usd: number;
-  cost_source: string;
+  cost_source: LlmUsageCostSource;
 }
 
 export interface ActiveConversationItem {
@@ -39,7 +41,7 @@ export interface AgentStatsItem {
   avg_response_time_ms: number;
   cost: number | null;
   cost_per_conversation: number | null;
-  cost_source: string;
+  cost_source: LlmUsageCostSource;
   is_active: boolean;
 }
 

@@ -30,7 +30,7 @@ const METRICS: Array<{ value: SpendMetric; label: string }> = [
 ];
 
 const compactTokens = (v: number) =>
-  v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(0)}K` : `${v}`;
+  v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(1)}K` : `${v}`;
 
 /** Daily LLM spend over time, toggled between cost and tokens */
 export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange }: LlmUsageTimeseriesChartProps) {

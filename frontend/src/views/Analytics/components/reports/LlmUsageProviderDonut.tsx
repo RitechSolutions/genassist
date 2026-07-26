@@ -1,6 +1,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent } from "@/components/card";
-import { CHART_SERIES_COLORS, chartTooltipStyle } from "@/constants/chartColors";
+import { CHART_NEUTRALS, CHART_SERIES_COLORS, chartTooltipStyle } from "@/constants/chartColors";
 import { formatUsd } from "@/helpers/formatCurrency";
 import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 
@@ -9,13 +9,11 @@ interface LlmUsageProviderDonutProps {
   loading?: boolean;
 }
 
-const UNPRICED_COLOR = "#f59e0b";
+const UNKNOWN_COLOR = CHART_NEUTRALS.axis;
 const TOP_N = 8;
 
 const colorOf = (item: { key: string }, i: number) =>
-  item.key === "unknown" || item.key === "unattributed"
-    ? UNPRICED_COLOR
-    : CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length];
+  item.key === "unknown" ? UNKNOWN_COLOR : CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length];
 
 /** Donut of LLM cost split by provider, with a share/cost legend list */
 export function LlmUsageProviderDonut({ items, loading }: LlmUsageProviderDonutProps) {

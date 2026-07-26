@@ -80,7 +80,7 @@ export function KPISection({ days }: KPISectionProps) {
     ...(showCostPerConversation
       ? [
           {
-            label: "LLM Cost",
+            label: "LLM Costs",
             value: formatUsd(summaryStats?.total_cost_usd),
             change: 0,
             changeType: "neutral" as const,

@@ -138,7 +138,7 @@ const navGroups: NavGroup[] = [
             permissionsRequired: ["read:dashboard"],
           },
           {
-            title: "LLM Usage",
+            title: "Cost Explorer",
             url: "/analytics/llm-usage",
             permissionsRequired: ["read:dashboard"],
             feature_flag: FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION,
