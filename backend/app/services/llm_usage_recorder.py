@@ -12,6 +12,7 @@ from app.core.config.llm_pricing import PricingStatus, resolve_pricing
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.db_connection_utils import create_tenant_request_scope
 from app.core.utils.llm_usage_utils import is_usage_metadata_missing, usage_or_placeholder
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.conversation import ConversationModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
@@ -159,11 +160,12 @@ class LlmUsageRecorder:
         return int(result.scalar() or 0)
 
     async def _existing_ids(self, session: AsyncSession, model, ids: set[UUID]) -> set[UUID]:
-        """One SELECT per FK type; ids not present come back absent so callers NULL them."""
+        """One SELECT per FK type; ids not present come back absent so callers NULL them"""
         ids = {i for i in ids if i is not None}
         if not ids:
             return set()
-        result = await session.execute(select(model.id).where(model.id.in_(ids)))
+        stmt = select(model.id).where(model.id.in_(ids)).execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        result = await session.execute(stmt)
         return {row[0] for row in result.all()}
 
     async def record_workflow_state(

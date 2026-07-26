@@ -298,11 +298,7 @@ export function LlmCostRatesDialog({
         <DialogHeader>
           <DialogTitle>LLM cost rates</DialogTitle>
           <DialogDescription>
-            USD per 1K tokens. Costs are calculated from reported token counts at
-            these rates, so they are an estimate rather than a provider invoice.
-            Use <code className="text-xs bg-muted px-1 rounded">_default</code> as
-            the model for a provider-wide fallback. Open{" "}
-            <strong>CSV template</strong> for the exact column layout.
+            USD per 1K tokens. Open{" "} <strong>CSV template</strong> for the exact column layout and a ready-to-edit example.
           </DialogDescription>
         </DialogHeader>
 

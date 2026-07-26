@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.conversation import ConversationModel
@@ -71,7 +72,12 @@ class LlmUsageBackfillRepository(DbRepository[LlmUsageEventModel]):
         ids = {i for i in ids if i is not None}
         if not ids:
             return set()
-        result = await self.db.execute(select(ConversationModel.id).where(ConversationModel.id.in_(ids)))
+        stmt = (
+            select(ConversationModel.id)
+            .where(ConversationModel.id.in_(ids))
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        result = await self.db.execute(stmt)
         return {row[0] for row in result.all()}
 
     async def resolve_agent_workflow(
@@ -86,6 +92,7 @@ class LlmUsageBackfillRepository(DbRepository[LlmUsageEventModel]):
             .join(OperatorModel, ConversationModel.operator_id == OperatorModel.id)
             .join(AgentModel, AgentModel.operator_id == OperatorModel.id)
             .where(ConversationModel.id.in_(conversation_ids))
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         )
         return {row[0]: (row[1], row[2]) for row in result.all()}
 

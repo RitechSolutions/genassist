@@ -8,6 +8,8 @@ import pytest
 
 import app.core.config.llm_pricing as llm_pricing
 import app.services.llm_usage_recorder as recorder_module
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
+from app.db.models.agent import AgentModel
 from app.services.llm_usage_recorder import (
     LlmUsageRecorder,
     WorkflowUsageContext,
@@ -39,6 +41,18 @@ class FakeSession:
 
     async def rollback(self):
         self.rolled_back = True
+
+
+class CapturingSession(FakeSession):
+
+    def __init__(self, returned_ids=()):
+        super().__init__()
+        self.statements = []
+        self._returned = list(returned_ids)
+
+    async def execute(self, stmt):
+        self.statements.append(stmt)
+        return SimpleNamespace(all=lambda: [(i,) for i in self._returned])
 
 
 class TestCoerceUuid:
@@ -210,6 +224,34 @@ class TestConfiguredRatesLoad:
         assert loaded == {}
         assert session.rolled_back is True
         assert _resolve_cost("openai", "gpt-4o", 1000, 0, loaded)["pricing_status"] == "fallback"
+
+
+class TestExistingIds:
+    @pytest.mark.asyncio
+    async def test_bypasses_group_scope_so_attribution_survives(self):
+        agent_id = uuid4()
+        session = CapturingSession([agent_id])
+
+        found = await LlmUsageRecorder()._existing_ids(session, AgentModel, {agent_id})
+
+        assert found == {agent_id}
+        assert session.statements[0].get_execution_options().get(GROUP_SCOPE_BYPASS_FLAG) is True
+
+    @pytest.mark.asyncio
+    async def test_absent_ids_are_still_dropped(self):
+        present, absent = uuid4(), uuid4()
+        session = CapturingSession([present])
+
+        found = await LlmUsageRecorder()._existing_ids(session, AgentModel, {present, absent})
+
+        assert found == {present}
+
+    @pytest.mark.asyncio
+    async def test_no_query_when_every_id_is_none(self):
+        session = CapturingSession()
+
+        assert await LlmUsageRecorder()._existing_ids(session, AgentModel, {None}) == set()
+        assert session.statements == []
 
 
 class TestWorkflowUsageContext:
