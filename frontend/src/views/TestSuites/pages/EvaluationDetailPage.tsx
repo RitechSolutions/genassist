@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/PageLayout";
 import JsonViewer from "@/components/JsonViewer";
@@ -17,8 +17,10 @@ import { getWorkflowsMinimal } from "@/services/workflows";
 import {
   getTestEvaluationById,
   appendRunToEvaluation,
+  getToolRuleResults,
 } from "@/services/testEvaluations";
 import { TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
+import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import {
   Dialog,
@@ -30,11 +32,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/skeleton";
 import { Progress } from "@/components/progress";
 import { cn } from "@/helpers/utils";
+import { ToolUsageResults } from "../components/ToolUsageResults";
+import { ToolUsageResultCard } from "../components/ToolUsageResultCard";
 
 type ResultFilter = "all" | "passed" | "failed" | "not_scored";
 
 /** Execution counts the backend stores alongside the per-technique metrics. */
 const RUN_TOTALS_KEY = "_totals";
+// Tool Usage has its own dedicated, readable section, so it is left out of the
+// generic per-technique summary grid to avoid a confusing "Avg Score" card.
+const TOOL_USED_TECHNIQUE = "tool_used";
 
 interface RunTotals {
   cases: number;
@@ -140,6 +147,7 @@ const EvaluationDetailPage: React.FC = () => {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [resultsByRun, setResultsByRun] = useState<Record<string, TestResult[]>>({});
+  const [toolResultsByRun, setToolResultsByRun] = useState<Record<string, TestToolRuleResult[]>>({});
   const [expandedResultId, setExpandedResultId] = useState<string | null>(null);
   const [suite, setSuite] = useState<TestSuite | null>(null);
   const [workflowName, setWorkflowName] = useState<string>("Dataset default");
@@ -230,8 +238,12 @@ const EvaluationDetailPage: React.FC = () => {
       if (!selectedRunId) return;
       setIsLoadingResults(true);
       try {
-        const data = await listResultsForRun(selectedRunId);
+        const [data, toolRows] = await Promise.all([
+          listResultsForRun(selectedRunId),
+          getToolRuleResults(selectedRunId).catch(() => []),
+        ]);
         setResultsByRun((prev) => ({ ...prev, [selectedRunId]: data ?? [] }));
+        setToolResultsByRun((prev) => ({ ...prev, [selectedRunId]: toolRows ?? [] }));
       } finally {
         setIsLoadingResults(false);
       }
@@ -266,8 +278,12 @@ const EvaluationDetailPage: React.FC = () => {
           if (updated.status === "completed" || updated.status === "failed") {
             clearInterval(pollInterval);
             setIsRunning(false);
-            const results = await listResultsForRun(created.id);
+            const [results, toolRows] = await Promise.all([
+              listResultsForRun(created.id),
+              getToolRuleResults(created.id).catch(() => []),
+            ]);
             setResultsByRun((prev) => ({ ...prev, [created.id]: results ?? [] }));
+            setToolResultsByRun((prev) => ({ ...prev, [created.id]: toolRows ?? [] }));
           }
         }, 10_000);
         // Return early — setIsRunning(false) is handled by the interval above.
@@ -281,19 +297,58 @@ const EvaluationDetailPage: React.FC = () => {
 
   const selectedRun = runs.find((run) => run.id === selectedRunId);
   const selectedRunResults = selectedRunId ? resultsByRun[selectedRunId] ?? [] : [];
+  const selectedRunToolResults = selectedRunId ? toolResultsByRun[selectedRunId] ?? [] : [];
+
+  // Turn-level tool results are shown inside the matching test-case row; conversation
+  // results stay in the run-level Tool Usage section.
+  const toolResultsByCaseId = useMemo(() => {
+    const rows = selectedRunId ? toolResultsByRun[selectedRunId] ?? [] : [];
+    const map = new Map<string, TestToolRuleResult[]>();
+    for (const toolResult of rows) {
+      const isTurnScope =
+        toolResult.scope === "every_turn" || toolResult.scope === "specific_turn";
+      if (isTurnScope && toolResult.case_id) {
+        const existing = map.get(toolResult.case_id) ?? [];
+        existing.push(toolResult);
+        map.set(toolResult.case_id, existing);
+      }
+    }
+    return map;
+  }, [selectedRunId, toolResultsByRun]);
+
+  // A case's displayed status must reflect its turn-level Tool Usage results too: a
+  // tool failure fails the case, and a tool pass can score an otherwise-unscored case.
+  const caseTools = (result: TestResult): TestToolRuleResult[] =>
+    result.case_id ? toolResultsByCaseId.get(result.case_id) ?? [] : [];
+
+  const casePassed = (result: TestResult): boolean => {
+    const tools = caseTools(result);
+    const toolFailed = tools.some((t) => t.status === "failed");
+    const toolPassed = tools.some((t) => t.status === "passed");
+    if (toolFailed) return false;
+    return isResultPassed(result) || (isResultNotScored(result) && toolPassed);
+  };
+
+  const caseFailed = (result: TestResult): boolean => {
+    const toolFailed = caseTools(result).some((t) => t.status === "failed");
+    return toolFailed || (!casePassed(result) && isResultFailed(result));
+  };
+
+  const caseNotScored = (result: TestResult): boolean =>
+    !casePassed(result) && !caseFailed(result);
 
   const filterResults = () => {
-    if (resultFilter === "passed") return selectedRunResults.filter(isResultPassed);
-    if (resultFilter === "not_scored") return selectedRunResults.filter(isResultNotScored);
-    if (resultFilter === "failed") return selectedRunResults.filter(isResultFailed);
+    if (resultFilter === "passed") return selectedRunResults.filter(casePassed);
+    if (resultFilter === "not_scored") return selectedRunResults.filter(caseNotScored);
+    if (resultFilter === "failed") return selectedRunResults.filter(caseFailed);
     return selectedRunResults;
   };
 
   const filteredResults = filterResults();
 
-  const passedCount = selectedRunResults.filter(isResultPassed).length;
-  const failedCount = selectedRunResults.filter(isResultFailed).length;
-  const notScoredCount = selectedRunResults.filter(isResultNotScored).length;
+  const passedCount = selectedRunResults.filter(casePassed).length;
+  const failedCount = selectedRunResults.filter(caseFailed).length;
+  const notScoredCount = selectedRunResults.filter(caseNotScored).length;
 
   const runTotals = (selectedRun?.summary_metrics as Record<string, unknown> | undefined)?.[
     RUN_TOTALS_KEY
@@ -527,7 +582,7 @@ const EvaluationDetailPage: React.FC = () => {
                             { accuracy?: number; avg_score?: number; cases?: number }
                           >,
                         )
-                          .filter(([tech]) => tech !== RUN_TOTALS_KEY)
+                          .filter(([tech]) => tech !== RUN_TOTALS_KEY && tech !== TOOL_USED_TECHNIQUE)
                           .map(([tech, summary]) => {
                           const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
                           return (
@@ -571,6 +626,9 @@ const EvaluationDetailPage: React.FC = () => {
                       <div className="text-sm text-muted-foreground">No metrics available</div>
                     )}
                   </div>
+
+                  {/* Tool Usage: run-level summary + conversation-scoped results */}
+                  <ToolUsageResults results={selectedRunToolResults} />
 
                   {/* Results with filter tabs */}
                   <div>
@@ -629,8 +687,8 @@ const EvaluationDetailPage: React.FC = () => {
                     ) : (
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                         {filteredResults.map((result) => {
-                          const passed = isResultPassed(result);
-                          const notScored = isResultNotScored(result);
+                          const passed = casePassed(result);
+                          const notScored = caseNotScored(result);
                           const isExpanded = expandedResultId === result.id;
                           const gradedTechniques = Object.keys(result.metrics ?? {});
                           const caseExpectedOutput = result.case_id
@@ -759,6 +817,26 @@ const EvaluationDetailPage: React.FC = () => {
                                       })}
                                     </div>
                                   )}
+
+                                  {/* Turn-level Tool Usage for this case */}
+                                  {result.case_id &&
+                                    (toolResultsByCaseId.get(result.case_id)?.length ?? 0) > 0 && (
+                                      <div>
+                                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                                          Tool Usage
+                                        </div>
+                                        <div className="space-y-2">
+                                          {toolResultsByCaseId
+                                            .get(result.case_id)!
+                                            .map((toolResult) => (
+                                              <ToolUsageResultCard
+                                                key={toolResult.id}
+                                                result={toolResult}
+                                              />
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
 
                                   {/* Input/Output comparison */}
                                   <div
