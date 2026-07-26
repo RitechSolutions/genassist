@@ -11,6 +11,7 @@ from app.core.tenant_scope import get_tenant_context
 from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
 from app.schemas.test_suite import (
+    EvaluationToolCatalog,
     PaginatedEvaluations,
     StartedEvaluationRun,
     TestEvaluation,
@@ -35,6 +36,19 @@ _RELEASE_LOCK_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] "
     "then return redis.call('del', KEYS[1]) else return 0 end"
 )
+
+
+@router.get(
+    "/workflows/{workflow_id}/evaluation-tool-catalog",
+    response_model=EvaluationToolCatalog,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def get_evaluation_tool_catalog(
+    workflow_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Agents and their tools for a workflow, so the rule builder never needs free text."""
+    return await service.get_evaluation_tool_catalog(workflow_id)
 
 
 @router.get(

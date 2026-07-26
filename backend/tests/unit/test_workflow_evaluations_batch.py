@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.test_suite import TestSuiteService as EvalService
+from app.services.test_suite import resolvers_from_agents
 
 
 def _service() -> EvalService:
@@ -16,6 +17,7 @@ def _service() -> EvalService:
         run_repo=AsyncMock(),
         result_repo=AsyncMock(),
         evaluation_repo=AsyncMock(),
+        tool_rule_result_repo=AsyncMock(),
         workflow_service=AsyncMock(),
         conversation_repo=AsyncMock(),
     )
@@ -64,6 +66,175 @@ class TestEvaluationsForWorkflow:
 
         assert result == rows
         service.evaluation_repo.get_all_for_workflow.assert_awaited_once_with(wf)
+
+
+class TestFullNestedToolCatalog:
+    """#1: the catalogue, canonicalization and run-time all expand nested workflows,
+    so a nested/MCP tool resolves everywhere — never rejected as unknown."""
+
+    @staticmethod
+    def _nested_workflows():
+        parent_id, child_id = uuid4(), uuid4()
+        parent = SimpleNamespace(
+            id=parent_id,
+            nodes=[{
+                "id": "exec-1", "type": "workflowExecutorNode",
+                "data": {"name": "Child", "workflowId": str(child_id)},
+            }],
+            edges=[],
+        )
+        child = SimpleNamespace(
+            id=child_id,
+            nodes=[
+                {"id": "a1", "type": "agentNode", "data": {"name": "Child Agent"}},
+                {"id": "t1", "type": "knowledgeBaseNode", "data": {"name": "Nested Search"}},
+            ],
+            edges=[{"source": "t1", "target": "a1", "targetHandle": "tools"}],
+        )
+        by_id = {str(parent_id): parent, str(child_id): child}
+        return parent_id, child_id, by_id
+
+    def _service_with(self, by_id):
+        service = _service()
+        service.workflow_service.get_by_id = AsyncMock(
+            side_effect=lambda wid: by_id[str(wid)]
+        )
+        return service
+
+    @pytest.mark.asyncio
+    async def test_catalog_includes_nested_agent_and_tool(self):
+        parent_id, _, by_id = self._nested_workflows()
+        service = self._service_with(by_id)
+
+        agents = await service._full_agent_catalog(parent_id)
+        resolve_tool_id, _, agent_ids, all_tool_ids = resolvers_from_agents(agents)
+
+        assert "a1" in agent_ids                       # nested agent counts as an agent
+        assert "t1" in all_tool_ids
+        assert resolve_tool_id("Nested Search") == "t1"  # nested tool resolves by name
+
+    @pytest.mark.asyncio
+    async def test_canonicalize_resolves_nested_tool_name(self):
+        parent_id, _, by_id = self._nested_workflows()
+        service = self._service_with(by_id)
+
+        out = await service._canonicalize_tool_used_configs(
+            parent_id,
+            {"tool_used": {"rules": [
+                {"id": "r", "tool_ids": ["Nested Search"], "operator": "all"},
+            ]}},
+        )
+        assert out["tool_used"]["rules"][0]["tool_ids"] == ["t1"]
+
+    @pytest.mark.asyncio
+    async def test_update_uses_new_dataset_workflow_for_canonicalization(self):
+        # Moving the evaluation to a new dataset must validate against the NEW
+        # dataset's workflow, not the row's old one.
+        from datetime import datetime as _dt
+        from app.schemas.test_suite import TestEvaluationUpdate
+
+        _, child_id, by_id = self._nested_workflows()
+        service = self._service_with(by_id)
+        old_suite, new_suite = uuid4(), uuid4()
+
+        row = SimpleNamespace(
+            id=uuid4(), name="eval", description=None, suite_id=old_suite, workflow_id=None,
+            techniques=["tool_used"], technique_configs=None, input_metadata=None,
+            run_ids=[], created_at=_dt(2026, 1, 1), updated_at=_dt(2026, 1, 1),
+        )
+        service.evaluation_repo.get_by_id = AsyncMock(return_value=row)
+        service.evaluation_repo.update = AsyncMock(side_effect=lambda r: r)
+        # New dataset -> the workflow that actually has the tool; old -> none.
+        service.suite_repo.get_by_id = AsyncMock(
+            side_effect=lambda sid: SimpleNamespace(workflow_id=child_id if sid == new_suite else None)
+        )
+
+        data = TestEvaluationUpdate(
+            suite_id=new_suite,
+            technique_configs={"tool_used": {"rules": [
+                {"id": "r", "tool_ids": ["Nested Search"], "operator": "all"},
+            ]}},
+        )
+        updated = await service.update_evaluation(row.id, data)
+        assert updated.technique_configs["tool_used"]["rules"][0]["tool_ids"] == ["t1"]
+
+    @pytest.mark.asyncio
+    async def test_canonicalize_falls_back_to_dataset_default_workflow(self):
+        # The evaluation has no workflow_id of its own; canonicalization must use the
+        # dataset's default workflow instead of skipping validation.
+        _, child_id, by_id = self._nested_workflows()
+        service = self._service_with(by_id)
+        suite_id = uuid4()
+        service.suite_repo.get_by_id = AsyncMock(
+            return_value=SimpleNamespace(workflow_id=child_id)
+        )
+
+        workflow_id = await service._effective_workflow_id(None, suite_id)
+        assert workflow_id == child_id
+
+        out = await service._canonicalize_tool_used_configs(
+            workflow_id,
+            {"tool_used": {"rules": [
+                {"id": "r", "tool_ids": ["Nested Search"], "operator": "all"},
+            ]}},
+        )
+        assert out["tool_used"]["rules"][0]["tool_ids"] == ["t1"]
+
+
+class TestToolResultSnapshot:
+    """Item 1: each result carries a readable, rename-proof snapshot."""
+
+    def test_rule_snapshot_captures_labels_number_and_summary(self):
+        from app.services.tool_usage_rules import ToolUsageRule, describe_tool_rule
+        rule = ToolUsageRule(id="r", tool_ids=["t1"], operator="all", agent_id="a1")
+        snap = EvalService._rule_snapshot(
+            rule, 0, {"a1": "Support Agent"}, {"t1": "Knowledge Search"}, describe_tool_rule
+        )
+        assert snap["rule_number"] == 1
+        assert snap["agent"] == {"id": "a1", "label": "Support Agent"}
+        assert "Knowledge Search" in snap["rule_summary"]
+        # Tool labels are attached per-result by _entry_tool_labels, not here.
+        assert "tools" not in snap
+
+    def test_target_snapshot_conversation_and_turn(self):
+        turn_snap = EvalService._target_snapshot(
+            {"scope": "every_turn", "source_conversation_id": None, "case_id": "case-1"},
+            {"case-1": 1}, {}, {},
+        )
+        conv_snap = EvalService._target_snapshot(
+            {"scope": "conversation", "source_conversation_id": "c1", "case_id": None},
+            {}, {"c1": 6}, {"c1": 1},
+        )
+        assert turn_snap == {"type": "turn", "label": "Turn 2"}
+        assert conv_snap == {"type": "conversation", "label": "Conversation 1", "turn_count": 6}
+
+    def test_entry_tool_labels_cover_forbidden_and_counts(self):
+        # Every tool the result mentions gets a label, not just the rule's targets.
+        result = {
+            "observed_tools": ["t1"],
+            "forbidden_tools": ["t2"],
+            "missing_tools": [],
+            "failed_tools": [],
+            "call_counts": {"t3": 1},
+        }
+        labels = EvalService._entry_tool_labels(
+            result, ["t1"], {"t1": "Search", "t2": "Delete", "t3": "Web"}
+        )
+        assert labels == {
+            "t1": {"label": "Search"},
+            "t2": {"label": "Delete"},
+            "t3": {"label": "Web"},
+        }
+
+    def test_conversation_index_numbers_multi_turn_groups(self):
+        group = [
+            SimpleNamespace(source_conversation_id="c1"),
+            SimpleNamespace(source_conversation_id="c1"),
+        ]
+        manual = [SimpleNamespace(source_conversation_id=None)]
+        counts, numbers = EvalService._conversation_index([group, manual])
+        assert counts == {"c1": 2}
+        assert numbers == {"c1": 1}
 
 
 class TestStartWorkflowEvaluations:
