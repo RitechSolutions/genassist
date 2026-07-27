@@ -17,8 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import {
   ChevronLeft,
-  ChevronDown,
-  ChevronRight,
   CheckCircle2,
   Trash2,
   Plus,
@@ -27,6 +25,9 @@ import {
   X,
   Languages,
   Bot,
+  FileText,
+  SlidersHorizontal,
+  SquareDashedTopSolid,
 } from "lucide-react";
 import {
   Sheet,
@@ -36,8 +37,14 @@ import {
   SheetDescription,
   SheetClose,
 } from "@/components/sheet";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
+import NodeStyleSelector from "@/views/AIAgents/components/NodeStyleSelector";
+import {
+  DEFAULT_NODE_STYLE,
+  WorkflowNodeStyle,
+} from "@/interfaces/workflow.interface";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
 import { normalizeDisclaimerHtml } from "@/helpers/disclaimerHtml";
@@ -72,6 +79,8 @@ function omitEmptyStrings(items: string[] | undefined): string[] {
   return (items ?? []).map((s) => s.trim()).filter((s) => s !== "");
 }
 
+type AgentFormTab = "general" | "advanced";
+
 interface AgentFormProps {
   data?: AgentFormData;
   plain?: boolean;
@@ -89,6 +98,22 @@ interface AgentFormProps {
   prepareSubmitData?: (
     data: Omit<AgentFormData, "id">,
   ) => Omit<AgentFormData, "id">;
+  /**
+   * Current workflow node style. When provided together with `onNodeStyleChange`,
+   * the "Advanced" tab shows the Workflow Settings (node style) section. Only the
+   * workflow editor supplies these (via the workflow context); elsewhere the
+   * section is hidden.
+   */
+  nodeStyle?: WorkflowNodeStyle;
+  /** Called when the workflow node style changes. Applied live (persisted with the workflow). */
+  onNodeStyleChange?: (style: WorkflowNodeStyle) => void;
+  /**
+   * Controlled active tab. When provided together with `onTabChange`, the parent
+   * owns the tab state and renders the switcher (e.g. in the sheet header); the
+   * form then renders only the tab bodies. Omit for standalone/uncontrolled use.
+   */
+  activeTab?: AgentFormTab;
+  onTabChange?: (tab: AgentFormTab) => void;
 }
 
 interface TranslationTriggerProps {
@@ -193,6 +218,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
   hideButtons = false,
   formId,
   prepareSubmitData,
+  nodeStyle,
+  onNodeStyleChange,
+  activeTab: activeTabProp,
+  onTabChange,
 }: AgentFormProps) => {
   const id = data?.id;
   const navigate = useNavigate();
@@ -245,11 +274,15 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const [imageLoading, setImageLoading] = useState<boolean>(false);
   const [imageDeleting, setImageDeleting] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(data?.llm_analyst_id ? true : false);
-
-  useEffect(() => {
-    if (formData.llm_analyst_id) setShowAdvanced(true);
-  }, [formData.llm_analyst_id]);
+  // Tabs can be controlled by a parent (e.g. the sheet renders the switcher in
+  // its sticky header) or managed internally for standalone/page use.
+  const [internalTab, setInternalTab] = useState<AgentFormTab>("general");
+  const isTabControlled = onTabChange !== undefined;
+  const activeTab = isTabControlled ? activeTabProp ?? "general" : internalTab;
+  const setActiveTab = (tab: AgentFormTab) => {
+    if (isTabControlled) onTabChange?.(tab);
+    else setInternalTab(tab);
+  };
 
   /** Avoids a slow GET welcome-image finishing after the user picked a replacement and overwriting preview/state. */
   const imageFileRef = useRef<File | null>(null);
@@ -294,13 +327,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
       }
     };
   }, [isEditMode, id]);
-
-  // Auto-expand advanced section when editing agents that already use an analyst.
-  useEffect(() => {
-    if (isEditMode && !!formData.llm_analyst_id) {
-      setShowAdvanced(true);
-    }
-  }, [isEditMode, formData.llm_analyst_id]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -454,6 +480,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
       .map((field) => field.label);
 
     if (missingFields.length > 0) {
+      // Required fields live on the General tab — surface them if the user is elsewhere.
+      setActiveTab("general");
       if (missingFields.length === 1) {
         toast.error(`${missingFields[0]} is required.`);
       } else {
@@ -463,10 +491,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
     }
 
     if (formData.name.length > AGENT_NAME_MAX_LENGTH) {
+      setActiveTab("general");
       toast.error(`Name must be ${AGENT_NAME_MAX_LENGTH} characters or less.`);
       return;
     }
     if (formData.description.length > AGENT_DESCRIPTION_MAX_LENGTH) {
+      setActiveTab("general");
       toast.error(
         `Description must be ${AGENT_DESCRIPTION_MAX_LENGTH} characters or less.`,
       );
@@ -588,8 +618,35 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
       <form onSubmit={handleSubmit} id={formId}>
         <div className="space-y-6">
+          {!isTabControlled && (
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as AgentFormTab)}
+            >
+              <TabsList className="h-9">
+                <TabsTrigger
+                  value="general"
+                  aria-label="General"
+                  className="gap-1.5 px-3 text-xs"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  General
+                </TabsTrigger>
+                <TabsTrigger
+                  value="advanced"
+                  aria-label="Advanced"
+                  className="gap-1.5 px-3 text-xs"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  Advanced
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+
           <div className={`${plain ? "" : "rounded-lg border bg-card p-6 "}`}>
             <div className="space-y-6">
+              <div className={activeTab === "general" ? "space-y-6" : "hidden"}>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="name">Workflow Name</Label>
@@ -1113,56 +1170,55 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   </div>
                 )}
               </div>
-
-              <div className="border-t pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced((prev) => !prev)}
-                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/40"
-                  aria-expanded={showAdvanced}
-                  aria-controls="advanced-section"
-                >
-                  <span className="text-sm font-medium">Advanced</span>
-                  {showAdvanced ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </button>
               </div>
 
-              <div className="space-y-3">
-                {showAdvanced && (
-                  <div
-                    id="advanced-section"
-                    className="space-y-2 rounded-lg border bg-muted/30 p-4"
+              <div className={activeTab === "advanced" ? "space-y-6" : "hidden"}>
+                <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                  <div className="flex items-center gap-2">
+                    <Bot className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
+                  </div>
+                  <select
+                    id="llm_analyst_id"
+                    name="llm_analyst_id"
+                    value={formData.llm_analyst_id ?? ""}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        llm_analyst_id: e.target.value || null,
+                      }))
+                    }
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
+                    <option value="">Default analyst</option>
+                    {llmAnalysts.map((analyst) => (
+                      <option key={analyst.id} value={analyst.id}>
+                        {analyst.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    The LLM analyst used to analyze conversations from this agent. Defaults to the system analyst if not set.
+                  </p>
+                </div>
+
+                {onNodeStyleChange && (
+                  <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
                     <div className="flex items-center gap-2">
-                      <Bot className="h-4 w-4 text-muted-foreground" />
-                      <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
+                      <SquareDashedTopSolid className="h-4 w-4 text-muted-foreground" />
+                      <Label>Style</Label>
                     </div>
-                    <select
-                      id="llm_analyst_id"
-                      name="llm_analyst_id"
-                      value={formData.llm_analyst_id ?? ""}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          llm_analyst_id: e.target.value || null,
-                        }))
-                      }
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="">Default analyst</option>
-                      {llmAnalysts.map((analyst) => (
-                        <option key={analyst.id} value={analyst.id}>
-                          {analyst.name}
-                        </option>
-                      ))}
-                    </select>
                     <p className="text-xs text-muted-foreground">
-                      The LLM analyst used to analyze conversations from this agent. Defaults to the system analyst if not set.
+                      Preferences for how this workflow is displayed. Saved with
+                      the workflow.
                     </p>
+                    <div className="pt-1 text-sm font-medium text-foreground">
+                      Node style
+                    </div>
+                    <NodeStyleSelector
+                      value={nodeStyle ?? DEFAULT_NODE_STYLE}
+                      onChange={onNodeStyleChange}
+                    />
                   </div>
                 )}
               </div>
@@ -1282,6 +1338,12 @@ interface AgentDialogProps {
   redirectOnCreate?: boolean;
   onCreated?: (agentId: string) => void;
   onSaved?: () => void;
+  /**
+   * Current workflow node style. Provided (with `onNodeStyleChange`) by the workflow
+   * editor so the sheet's "Advanced" tab can host the Workflow Settings section.
+   */
+  nodeStyle?: WorkflowNodeStyle;
+  onNodeStyleChange?: (style: WorkflowNodeStyle) => void;
 }
 
 const prepareAgentSheetSubmitData = (
@@ -1298,13 +1360,19 @@ export const AgentFormDialog = ({
   redirectOnCreate,
   onCreated,
   onSaved,
+  nodeStyle,
+  onNodeStyleChange,
 }: AgentDialogProps) => {
   const formId = "agent-form-dialog";
   const isEditMode = !!data?.id;
+  // Tab state lives here so the switcher can sit in the sticky header (staying
+  // visible while the form body scrolls) while AgentForm renders the tab bodies.
+  const [activeTab, setActiveTab] = React.useState<AgentFormTab>("general");
 
-  // Prevent body scroll when dialog is open
+  // Prevent body scroll when dialog is open; reset to the General tab on open.
   React.useEffect(() => {
     if (isOpen) {
+      setActiveTab("general");
       // Save the current overflow state
       const previousOverflow = document.body.style.overflow;
       document.body.style.overflow = "hidden";
@@ -1319,19 +1387,44 @@ export const AgentFormDialog = ({
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent hideOverlay={false} hideDefaultClose={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
-        <SheetHeader className="p-6 pb-4 border-b shrink-0 flex flex-row">
-          <SheetTitle className="text-xl font-semibold truncate">
-            {data?.id ? `Edit (${data?.name})` : "Create New Agent"}
+        <SheetHeader className="p-6 pb-4 border-b shrink-0 space-y-4">
+          <div className="flex flex-row">
+            <SheetTitle className="text-xl font-semibold truncate">
+              {data?.id ? `Edit (${data?.name})` : "Create New Agent"}
 
-            <SheetDescription>
-              {data?.id
-                ? "Update your agent's configuration and settings."
-                : "Configure your new AI agent with a name, description, and welcome settings."}
-            </SheetDescription>
-          </SheetTitle>
-          <SheetClose className="ml-auto self-start" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </SheetClose>
+              <SheetDescription>
+                {data?.id
+                  ? "Update your agent's configuration and settings."
+                  : "Configure your new AI agent with a name, description, and welcome settings."}
+              </SheetDescription>
+            </SheetTitle>
+            <SheetClose className="ml-auto self-start" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </SheetClose>
+          </div>
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as AgentFormTab)}
+          >
+            <TabsList className="h-9">
+              <TabsTrigger
+                value="general"
+                aria-label="General"
+                className="gap-1.5 px-3 text-xs"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                General
+              </TabsTrigger>
+              <TabsTrigger
+                value="advanced"
+                aria-label="Advanced"
+                className="gap-1.5 px-3 text-xs"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Advanced
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-4 pb-6">
           <AgentForm
@@ -1344,6 +1437,10 @@ export const AgentFormDialog = ({
             hideButtons={true}
             formId={formId}
             prepareSubmitData={prepareAgentSheetSubmitData}
+            nodeStyle={nodeStyle}
+            onNodeStyleChange={onNodeStyleChange}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
           />
         </div>
         {/* Sticky Footer with Action Buttons */}
