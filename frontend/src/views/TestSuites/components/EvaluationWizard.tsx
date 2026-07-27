@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +25,85 @@ import { cn } from "@/helpers/utils";
 import type { TestSuite } from "@/interfaces/testSuite.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+import type {
+  EvaluationAgentInfo,
+  ToolUsagePerToolCheck,
+  ToolUsageRule,
+} from "@/interfaces/testEvaluation.interface";
+import { getEvaluationToolCatalog } from "@/services/testEvaluations";
+import { listTestCases } from "@/services/testSuites";
+import type { TestCase } from "@/interfaces/testSuite.interface";
+import { ToolUsageRuleBuilder, type RuleConversation } from "./ToolUsageRuleBuilder";
+
+// Group imported multi-turn cases into conversations for specific-turn targeting.
+const deriveConversations = (cases: TestCase[]): RuleConversation[] => {
+  const groups = new Map<string, TestCase[]>();
+  for (const testCase of cases) {
+    if (!testCase.source_conversation_id) continue;
+    const group = groups.get(testCase.source_conversation_id) ?? [];
+    group.push(testCase);
+    groups.set(testCase.source_conversation_id, group);
+  }
+  return Array.from(groups.entries()).map(([id, turns]) => {
+    const sorted = [...turns].sort((a, b) => (a.turn_index ?? 0) - (b.turn_index ?? 0));
+    return {
+      id,
+      label: `Conversation ${id.slice(0, 8)} (${sorted.length} turns)`,
+      turns: sorted.map((turn) => ({
+        caseId: turn.id,
+        turnIndex: turn.turn_index ?? 0,
+        label: `Turn ${(turn.turn_index ?? 0) + 1}`,
+      })),
+    };
+  });
+};
+
+// Case-insensitive name/label/id -> id map, keeping only unambiguous keys (a name
+// shared by two tools is left unmapped, mirroring the backend, so it can't silently
+// resolve to the wrong tool).
+const uniqueNameToId = (entries: { id: string; keys: (string | undefined)[] }[]): Map<string, string> => {
+  const idsByKey = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    for (const key of entry.keys) {
+      if (!key) continue;
+      const normalized = key.toLowerCase();
+      const ids = idsByKey.get(normalized) ?? new Set<string>();
+      ids.add(entry.id);
+      idsByKey.set(normalized, ids);
+    }
+  }
+  const map = new Map<string, string>();
+  for (const [key, ids] of idsByKey) {
+    if (ids.size === 1) map.set(key, [...ids][0]);
+  }
+  return map;
+};
+
+const buildToolNameToId = (catalog: EvaluationAgentInfo[]): Map<string, string> =>
+  uniqueNameToId(
+    catalog.flatMap((agent) =>
+      agent.tools.map((tool) => ({ id: tool.id, keys: [tool.id, tool.name, tool.label] })),
+    ),
+  );
+
+const buildAgentNameToId = (catalog: EvaluationAgentInfo[]): Map<string, string> =>
+  uniqueNameToId(catalog.map((agent) => ({ id: agent.id, keys: [agent.id, agent.label] })));
+
+// Rewrite per_tool keys (legacy tool names) to canonical ids, matching tool_ids.
+const remapPerToolKeys = (
+  perTool: Record<string, ToolUsagePerToolCheck> | undefined,
+  toolMap: Map<string, string>,
+): Record<string, ToolUsagePerToolCheck> | undefined => {
+  if (!perTool || Object.keys(perTool).length === 0) return perTool;
+  let changed = false;
+  const remapped: Record<string, ToolUsagePerToolCheck> = {};
+  for (const [key, value] of Object.entries(perTool)) {
+    const mapped = toolMap.get(key.toLowerCase()) ?? key;
+    if (mapped !== key) changed = true;
+    remapped[mapped] = value;
+  }
+  return changed ? remapped : perTool;
+};
 
 interface MetricDef {
   value: string;
@@ -70,15 +149,6 @@ const CONFIG_METRICS = [
   "action_taken",
   "llm_judge",
 ];
-
-const isJsonObject = (text: string): boolean => {
-  try {
-    const parsed = JSON.parse(text);
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
-  } catch {
-    return false;
-  }
-};
 
 // A score field is valid when empty (a default applies) or a number in [0, 1].
 const isValidScore = (text: string): boolean => {
@@ -147,12 +217,7 @@ export interface EvaluationWizardData {
   provFailOnViolation: boolean;
   provLlmProviderId: string;
   provLlmJudgeSystemPromptSuffix: string;
-  toolName: string;
-  toolShouldCall: boolean;
-  toolExpectedArgsText: string;
-  toolNode: string;
-  toolResultNotEmpty: boolean;
-  toolResultContains: string;
+  toolRules: ToolUsageRule[];
   notContainsText: string;
   routeExpected: string;
   routeNode: string;
@@ -227,28 +292,94 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     initialData?.provLlmJudgeSystemPromptSuffix ?? ""
   );
 
-  // Tool Used config
-  const [toolName, setToolName] = useState(initialData?.toolName ?? "");
-  const [toolShouldCall, setToolShouldCall] = useState(initialData?.toolShouldCall ?? true);
-  const [toolExpectedArgsText, setToolExpectedArgsText] = useState(initialData?.toolExpectedArgsText ?? "");
-  const [toolNode, setToolNode] = useState(initialData?.toolNode ?? "");
-  const [toolResultNotEmpty, setToolResultNotEmpty] = useState(initialData?.toolResultNotEmpty ?? false);
-  const [toolResultContains, setToolResultContains] = useState(initialData?.toolResultContains ?? "");
-  const [toolAdvancedOpen, setToolAdvancedOpen] = useState(false);
+  // Tool Usage rules + workflow tool catalogue
+  const [toolRules, setToolRules] = useState<ToolUsageRule[]>(initialData?.toolRules ?? []);
+  const [toolCatalog, setToolCatalog] = useState<EvaluationAgentInfo[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  const toolRuleSummary = (): string => {
-    const agentPart = toolNode.trim() ? `the "${toolNode.trim()}" agent` : "any agent";
-    const toolPart = toolName.trim() ? `"${toolName.trim()}"` : "any tool";
-    if (!toolShouldCall) {
-      return `Passes when ${agentPart} does NOT call ${toolPart}.`;
+  const toolUsageSelected = metrics.includes("tool_used");
+
+  // Fall back to the dataset's default workflow when none is explicitly chosen,
+  // so the tool catalogue still loads.
+  const selectedSuite = suites.find((s) => s.id === suiteId);
+  const effectiveWorkflowId =
+    workflowId && workflowId !== "none" ? workflowId : selectedSuite?.workflow_id;
+
+  useEffect(() => {
+    if (!toolUsageSelected || !effectiveWorkflowId) {
+      setToolCatalog([]);
+      return;
     }
-    const extraClauses: string[] = [];
-    if (toolExpectedArgsText.trim()) extraClauses.push("the arguments match your JSON");
-    if (toolResultNotEmpty) extraClauses.push("the result is not empty");
-    if (toolResultContains.trim()) extraClauses.push(`the result contains "${toolResultContains.trim()}"`);
-    const extras = extraClauses.length ? `, and ${extraClauses.join(", and ")}` : "";
-    return `Passes when ${agentPart} calls ${toolPart}${extras}.`;
-  };
+    let cancelled = false;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    getEvaluationToolCatalog(effectiveWorkflowId)
+      .then((catalog) => {
+        if (!cancelled) setToolCatalog(catalog.agents ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogError("Failed to load tools");
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [toolUsageSelected, effectiveWorkflowId]);
+
+  // Imported conversations for specific-turn targeting, derived from the suite's cases.
+  const [conversations, setConversations] = useState<RuleConversation[]>([]);
+  useEffect(() => {
+    if (!toolUsageSelected || !suiteId) {
+      setConversations([]);
+      return;
+    }
+    let cancelled = false;
+    listTestCases(suiteId)
+      .then((cases) => {
+        if (!cancelled) setConversations(deriveConversations(cases));
+      })
+      .catch(() => {
+        if (!cancelled) setConversations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [toolUsageSelected, suiteId]);
+
+  // When the catalogue loads, rewrite any legacy tool/agent NAMES (from an old
+  // evaluation) to canonical ids so they aren't later saved as if they were ids.
+  useEffect(() => {
+    if (toolCatalog.length === 0 || toolRules.length === 0) return;
+    const toolMap = buildToolNameToId(toolCatalog);
+    const agentMap = buildAgentNameToId(toolCatalog);
+    const allToolIds = [...new Set(toolCatalog.flatMap((a) => a.tools.map((t) => t.id)))];
+    let changed = false;
+    const remapped = toolRules.map((rule) => {
+      // A legacy "any tool" rule (any + no tools) expands to every workflow tool.
+      const isAnyToolMarker = rule.operator === "any" && rule.tool_ids.length === 0;
+      const tool_ids = isAnyToolMarker
+        ? allToolIds
+        : rule.tool_ids.map((id) => toolMap.get(id.toLowerCase()) ?? id);
+      const agent_id = rule.agent_id
+        ? agentMap.get(rule.agent_id.toLowerCase()) ?? rule.agent_id
+        : rule.agent_id;
+      const per_tool = remapPerToolKeys(rule.per_tool, toolMap);
+      if (
+        tool_ids.some((id, i) => id !== rule.tool_ids[i]) ||
+        agent_id !== rule.agent_id ||
+        per_tool !== rule.per_tool
+      ) {
+        changed = true;
+        return { ...rule, tool_ids, agent_id, per_tool };
+      }
+      return rule;
+    });
+    if (changed) setToolRules(remapped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toolCatalog]);
 
   // Does Not Contain config
   const [notContainsText, setNotContainsText] = useState(initialData?.notContainsText ?? "");
@@ -272,11 +403,31 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
 
-  const toolArgsInvalid =
-    metrics.includes("tool_used") &&
-    toolShouldCall &&
-    toolExpectedArgsText.trim() !== "" &&
-    !isJsonObject(toolExpectedArgsText);
+  // Canonical id sets to catch legacy names that never resolved (block save on them).
+  const catalogLoaded = toolCatalog.length > 0;
+  const catalogToolIds = new Set(toolCatalog.flatMap((a) => a.tools.map((t) => t.id)));
+  const catalogAgentIds = new Set(toolCatalog.map((a) => a.id));
+
+  const ruleHasUnresolvedRef = (rule: ToolUsageRule): boolean => {
+    if (!catalogLoaded) return false;
+    const toolUnresolved = rule.tool_ids.some((id) => !catalogToolIds.has(id));
+    const agentUnresolved = Boolean(rule.agent_id) && !catalogAgentIds.has(rule.agent_id as string);
+    return toolUnresolved || agentUnresolved;
+  };
+
+  const ruleSpecificTurnIncomplete = (rule: ToolUsageRule): boolean =>
+    rule.scope === "specific_turn" &&
+    (!rule.target_source_conversation_id || rule.target_turn_index == null);
+
+  const toolRulesInvalid =
+    toolUsageSelected &&
+    (toolRules.length === 0 ||
+      toolRules.some(
+        (rule) =>
+          (rule.operator !== "only" && rule.tool_ids.length === 0) ||
+          ruleHasUnresolvedRef(rule) ||
+          ruleSpecificTurnIncomplete(rule),
+      ));
   const nliScoreInvalid = metrics.includes("nli_eval") && !isValidScore(nliMinEntailScore);
   const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
   const judgeScoreInvalid = metrics.includes("llm_judge") && !isValidScore(judgeMinScore);
@@ -286,7 +437,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
     if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
     if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
-    if (toolArgsInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
+    if (toolRulesInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
     return true;
   };
 
@@ -338,12 +489,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         provFailOnViolation,
         provLlmProviderId,
         provLlmJudgeSystemPromptSuffix,
-        toolName,
-        toolShouldCall,
-        toolExpectedArgsText,
-        toolNode,
-        toolResultNotEmpty,
-        toolResultContains,
+        toolRules,
         notContainsText,
         routeExpected,
         routeNode,
@@ -384,13 +530,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setProvFailOnViolation(false);
     setProvLlmProviderId(providers[0]?.id ?? "");
     setProvLlmJudgeSystemPromptSuffix("");
-    setToolName("");
-    setToolShouldCall(true);
-    setToolExpectedArgsText("");
-    setToolNode("");
-    setToolResultNotEmpty(false);
-    setToolResultContains("");
-    setToolAdvancedOpen(false);
+    setToolRules([]);
     setNotContainsText("");
     setRouteExpected("");
     setRouteNode("");
@@ -695,103 +835,26 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="text-sm font-semibold flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                  Tool Usage Config
+                  Tool Usage
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks whether an agent called a specific tool during the run.
+                  Add rules about which tools an agent should or should not use. Agents and
+                  tools come from the selected workflow.
                 </p>
-                <div>
-                  <Label className="text-xs">Tool Name</Label>
-                  <Input
-                    value={toolName}
-                    onChange={(e) => setToolName(e.target.value)}
-                    placeholder="e.g. search_handbook"
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Leave empty to check whether any tool was called.
+                {!effectiveWorkflowId ? (
+                  <p className="text-sm text-muted-foreground">
+                    Select a workflow in the Data Source step to load its agents and tools.
                   </p>
-                </div>
-                <div>
-                  <Label className="text-xs">Agent (optional)</Label>
-                  <Input
-                    value={toolNode}
-                    onChange={(e) => setToolNode(e.target.value)}
-                    placeholder="Any agent"
-                    className="mt-1"
+                ) : (
+                  <ToolUsageRuleBuilder
+                    rules={toolRules}
+                    onChange={setToolRules}
+                    catalog={toolCatalog}
+                    conversations={conversations}
+                    loading={catalogLoading}
+                    error={catalogError}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Defaults to any agent. Name one (id or label) to only count its calls — useful
-                    when several agents share tool names.
-                  </p>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <div>
-                    <div className="text-xs font-medium">
-                      {toolShouldCall ? "Must be called" : "Should not be used"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Turn off to assert the tool was NOT called
-                    </div>
-                  </div>
-                  <Switch checked={toolShouldCall} onCheckedChange={setToolShouldCall} />
-                </div>
-
-                {toolShouldCall && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setToolAdvancedOpen((open) => !open)}
-                      className="text-xs font-medium text-muted-foreground hover:text-muted-foreground"
-                    >
-                      {toolAdvancedOpen ? "▾" : "▸"} Advanced validation
-                    </button>
-                    {toolAdvancedOpen && (
-                      <div className="space-y-3 mt-3">
-                        <div>
-                          <Label className="text-xs">Expected Arguments (JSON, optional)</Label>
-                          <Textarea
-                            value={toolExpectedArgsText}
-                            onChange={(e) => setToolExpectedArgsText(e.target.value)}
-                            placeholder='{"query": "vacation policy"}'
-                            rows={2}
-                            className="mt-1 font-mono text-xs"
-                          />
-                          {toolArgsInvalid && (
-                            <p className="text-xs text-red-500 mt-1">
-                              Enter a valid JSON object, e.g. {'{"query": "vacation policy"}'}.
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                          <div>
-                            <div className="text-xs font-medium">Result must not be empty</div>
-                            <div className="text-xs text-muted-foreground">
-                              Fail if the call returned nothing (e.g. an empty retrieval)
-                            </div>
-                          </div>
-                          <Switch checked={toolResultNotEmpty} onCheckedChange={setToolResultNotEmpty} />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Result must contain (optional)</Label>
-                          <Input
-                            value={toolResultContains}
-                            onChange={(e) => setToolResultContains(e.target.value)}
-                            placeholder="Text the tool's result must include"
-                            className="mt-1"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 )}
-
-                <div className="rounded-lg bg-muted border border-border px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">
-                    Rule
-                  </div>
-                  <p className="text-xs text-muted-foreground">{toolRuleSummary()}</p>
-                </div>
               </div>
             )}
 

@@ -1,8 +1,10 @@
 import { apiRequest } from "@/config/api";
 import {
+  EvaluationToolCatalog,
   PaginatedEvaluations,
   StartedEvaluationRun,
   TestEvaluationConfig,
+  TestToolRuleResult,
   WorkflowEvaluationSummary,
 } from "@/interfaces/testEvaluation.interface";
 
@@ -81,3 +83,15 @@ export const getWorkflowEvaluationsPage = (
     `${BASE}/workflows/${workflowId}/evaluations?${query.toString()}`,
   );
 };
+
+export const getEvaluationToolCatalog = (workflowId: string) =>
+  apiRequest<EvaluationToolCatalog>(
+    "GET",
+    `${BASE}/workflows/${workflowId}/evaluation-tool-catalog`,
+  );
+
+export const getToolRuleResults = (runId: string) =>
+  apiRequest<TestToolRuleResult[]>(
+    "GET",
+    `${BASE}/runs/${runId}/tool-rule-results`,
+  );

@@ -1,6 +1,108 @@
 import { EvaluationWizardData } from "../components/EvaluationWizard";
-import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
+import {
+  TestEvaluationConfig,
+  ToolUsageOperator,
+  ToolUsagePerToolCheck,
+  ToolUsageRule,
+  ToolUsageScope,
+} from "@/interfaces/testEvaluation.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+
+// Read back a stored per_tool map, keeping only the recognized check fields.
+const parsePerTool = (
+  raw: unknown,
+): Record<string, ToolUsagePerToolCheck> => {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, ToolUsagePerToolCheck> = {};
+  for (const [toolId, value] of Object.entries(raw as Record<string, unknown>)) {
+    const check = (value ?? {}) as Record<string, unknown>;
+    out[toolId] = {
+      result_not_empty: Boolean(check.result_not_empty),
+      result_contains: (check.result_contains as string) ?? null,
+      expected_args: (check.expected_args as Record<string, unknown>) ?? null,
+    };
+  }
+  return out;
+};
+
+// Fold a legacy config's top-level result/argument checks into the tool's per_tool entry.
+const legacyPerTool = (cfg: Record<string, unknown>): Record<string, ToolUsagePerToolCheck> => {
+  const tool = cfg.tool as string | undefined;
+  const hasChecks = cfg.result_not_empty || cfg.result_contains || cfg.expected_args;
+  if (!tool || cfg.should_call === false || !hasChecks) return {};
+  return {
+    [tool]: {
+      result_not_empty: Boolean(cfg.result_not_empty),
+      result_contains: (cfg.result_contains as string) ?? null,
+      expected_args: (cfg.expected_args as Record<string, unknown>) ?? null,
+    },
+  };
+};
+
+// Parse a stored tool_used config into builder rules, converting the legacy shape.
+const parseToolRules = (
+  cfg: Record<string, unknown> | undefined,
+): ToolUsageRule[] => {
+  if (!cfg) return [];
+  if (Array.isArray(cfg.rules)) {
+    return (cfg.rules as Record<string, unknown>[]).map((rule, index) => ({
+      id: (rule.id as string) ?? `rule-${index}`,
+      agent_id: (rule.agent_id as string) ?? null,
+      tool_ids: Array.isArray(rule.tool_ids) ? (rule.tool_ids as string[]) : [],
+      operator: (rule.operator as ToolUsageOperator) ?? "all",
+      require_success: Boolean(rule.require_success),
+      scope: (rule.scope as ToolUsageScope) ?? "every_turn",
+      target_case_id: (rule.target_case_id as string) ?? null,
+      target_source_conversation_id: (rule.target_source_conversation_id as string) ?? null,
+      target_turn_index: (rule.target_turn_index as number) ?? null,
+      min_calls: (rule.min_calls as number) ?? null,
+      max_calls: (rule.max_calls as number) ?? null,
+      per_tool: parsePerTool(rule.per_tool),
+    }));
+  }
+  // Legacy shape: a named tool/agent, or a bare should_call ("any"/"no" tool). The
+  // catalogue-load effect later expands an "any tool" rule to the workflow's tools.
+  if (cfg.tool || cfg.node || "should_call" in cfg) {
+    const shouldCall = cfg.should_call !== false;
+    const operator: ToolUsageOperator = cfg.tool
+      ? shouldCall
+        ? "all"
+        : "none"
+      : shouldCall
+        ? "any"
+        : "only";
+    return [
+      {
+        id: "legacy-tool-rule",
+        agent_id: (cfg.node as string) ?? null,
+        tool_ids: cfg.tool ? [cfg.tool as string] : [],
+        operator,
+        require_success: false,
+        scope: "every_turn",
+        per_tool: legacyPerTool(cfg),
+      },
+    ];
+  }
+  return [];
+};
+
+// Serialize a builder rule to the backend config, dropping empty optional fields.
+const serializeToolRule = (rule: ToolUsageRule): Record<string, unknown> => ({
+  id: rule.id,
+  tool_ids: rule.tool_ids,
+  operator: rule.operator,
+  scope: rule.scope,
+  ...(rule.agent_id ? { agent_id: rule.agent_id } : {}),
+  ...(rule.require_success ? { require_success: true } : {}),
+  ...(rule.target_case_id ? { target_case_id: rule.target_case_id } : {}),
+  ...(rule.target_source_conversation_id
+    ? { target_source_conversation_id: rule.target_source_conversation_id }
+    : {}),
+  ...(rule.target_turn_index != null ? { target_turn_index: rule.target_turn_index } : {}),
+  ...(rule.min_calls != null ? { min_calls: rule.min_calls } : {}),
+  ...(rule.max_calls != null ? { max_calls: rule.max_calls } : {}),
+  ...(rule.per_tool && Object.keys(rule.per_tool).length ? { per_tool: rule.per_tool } : {}),
+});
 
 const parseJsonObject = (
   text: string,
@@ -93,18 +195,8 @@ export const buildTechniqueConfigs = (
   }
 
   if (data.metrics.includes("tool_used")) {
-    // Advanced validation only applies when the tool must be called; drop it otherwise.
-    const includeAdvanced = data.toolShouldCall;
-    const expectedArgs = includeAdvanced ? parseJsonObject(data.toolExpectedArgsText) : undefined;
     configs.tool_used = {
-      should_call: data.toolShouldCall,
-      ...(data.toolName.trim() ? { tool: data.toolName.trim() } : {}),
-      ...(data.toolNode.trim() ? { node: data.toolNode.trim() } : {}),
-      ...(expectedArgs ? { expected_args: expectedArgs } : {}),
-      ...(includeAdvanced && data.toolResultNotEmpty ? { result_not_empty: true } : {}),
-      ...(includeAdvanced && data.toolResultContains.trim()
-        ? { result_contains: data.toolResultContains.trim() }
-        : {}),
+      rules: data.toolRules.map(serializeToolRule),
     };
   }
 
@@ -168,14 +260,7 @@ export const getEditInitialData = (
     provFailOnViolation: Boolean(provCfg?.fail_on_violation),
     provLlmProviderId: (provCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
     provLlmJudgeSystemPromptSuffix: (provCfg?.llm_judge_system_prompt_suffix as string) ?? "",
-    toolName: (toolCfg?.tool as string) ?? "",
-    toolShouldCall: toolCfg?.should_call === undefined ? true : Boolean(toolCfg.should_call),
-    toolExpectedArgsText: toolCfg?.expected_args
-      ? JSON.stringify(toolCfg.expected_args, null, 2)
-      : "",
-    toolNode: (toolCfg?.node as string) ?? "",
-    toolResultNotEmpty: Boolean(toolCfg?.result_not_empty),
-    toolResultContains: (toolCfg?.result_contains as string) ?? "",
+    toolRules: parseToolRules(toolCfg),
     notContainsText: forbiddenPhrasesToText(notContainsCfg),
     routeExpected: (routeCfg?.expected as string) ?? "",
     routeNode: (routeCfg?.node as string) ?? "",
