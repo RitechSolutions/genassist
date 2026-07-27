@@ -26,6 +26,7 @@ def _service() -> EvalService:
         run_repo=AsyncMock(),
         result_repo=AsyncMock(),
         evaluation_repo=AsyncMock(),
+        tool_rule_result_repo=AsyncMock(),
         workflow_service=AsyncMock(),
         conversation_repo=AsyncMock(),
     )

@@ -19,12 +19,22 @@ from app.core.project_path import DATA_VOLUME
 
 logger = logging.getLogger(__name__)
 
+# Backstops so the recursive walk can never wedge the worker: a cap on nesting
+# depth, and a cap on total nodes visited (size). Cycles are caught separately.
+_MAX_SANITIZE_DEPTH = 200
+_MAX_SANITIZE_NODES = 1_000_000
 
-def sanitize_for_json(obj: Any) -> Any:
+
+def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budget: list | None = None) -> Any:
     """
     Recursively sanitize data to make it JSON-compliant.
     Converts inf, -inf, and nan float values to None or string representations.
     Also handles custom objects by converting them to strings or dictionaries.
+
+    Guards against reference cycles (an object reachable from itself, e.g. a tool
+    holding a back-reference to the workflow state it lives in), pathological
+    depth, and unbounded size — any of which would otherwise recurse forever or
+    stall the worker. ``_seen``/``_depth``/``_budget`` are internal.
 
     Args:
         obj: Any object to sanitize
@@ -32,13 +42,23 @@ def sanitize_for_json(obj: Any) -> Any:
     Returns:
         JSON-compliant version of the object
     """
+    if _seen is None:
+        _seen = set()
+    if _budget is None:
+        _budget = [_MAX_SANITIZE_NODES]
+    if _depth > _MAX_SANITIZE_DEPTH:
+        return f"<max-depth:{type(obj).__name__}>"
+    _budget[0] -= 1
+    if _budget[0] < 0:
+        return "<truncated:size>"
+
     # Handle numpy types (pandas uses numpy internally)
     try:
         import numpy as np
         if isinstance(obj, (np.floating, np.integer)):
             obj = float(obj) if isinstance(obj, np.floating) else int(obj)
         elif isinstance(obj, np.ndarray):
-            return sanitize_for_json(obj.tolist())
+            return sanitize_for_json(obj.tolist(), _seen, _depth + 1, _budget)
     except ImportError:
         pass  # numpy not available, skip
 
@@ -50,12 +70,26 @@ def sanitize_for_json(obj: Any) -> Any:
             return None
         return obj
     elif isinstance(obj, dict):
-        return {key: sanitize_for_json(value) for key, value in obj.items()}
+        obj_id = id(obj)
+        if obj_id in _seen:
+            return "<cycle>"
+        _seen.add(obj_id)
+        try:
+            return {key: sanitize_for_json(value, _seen, _depth + 1, _budget) for key, value in obj.items()}
+        finally:
+            _seen.discard(obj_id)
     elif isinstance(obj, list):
-        return [sanitize_for_json(item) for item in obj]
+        obj_id = id(obj)
+        if obj_id in _seen:
+            return "<cycle>"
+        _seen.add(obj_id)
+        try:
+            return [sanitize_for_json(item, _seen, _depth + 1, _budget) for item in obj]
+        finally:
+            _seen.discard(obj_id)
     elif isinstance(obj, pd.DataFrame):
         # Convert DataFrame to dict and sanitize
-        return sanitize_for_json(obj.to_dict("records"))
+        return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
     elif isinstance(obj, (str, int, bool, type(None))):
@@ -66,7 +100,14 @@ def sanitize_for_json(obj: Any) -> Any:
         try:
             # Try to get a dict representation if it has __dict__
             if hasattr(obj, '__dict__'):
-                return sanitize_for_json(obj.__dict__)
+                obj_id = id(obj)
+                if obj_id in _seen:
+                    return "<cycle>"
+                _seen.add(obj_id)
+                try:
+                    return sanitize_for_json(vars(obj), _seen, _depth + 1, _budget)
+                finally:
+                    _seen.discard(obj_id)
             # Try to get a string representation
             elif hasattr(obj, '__str__'):
                 return str(obj)

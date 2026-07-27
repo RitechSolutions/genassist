@@ -113,6 +113,8 @@ class TestResultMetrics(BaseModel):
     score: float | bool
     passed: bool
     comment: Optional[str] = None
+    # Per-rule breakdown for tool_used (and future multi-rule techniques).
+    details: Optional[List[Dict[str, Any]]] = None
 
 
 class TestResultBase(BaseModel):
@@ -147,6 +149,23 @@ class TestResultInDB(TestResultBase):
 
 class TestResult(TestResultInDB):
     pass
+
+
+class TestToolRuleResult(BaseModel):
+    """One Tool Usage rule outcome for a scope unit (turn or conversation)."""
+
+    id: UUID
+    run_id: UUID
+    rule_id: str
+    scope: str
+    case_id: Optional[UUID] = None
+    source_conversation_id: Optional[UUID] = None
+    status: str = Field(description="passed | failed | not_evaluated")
+    score: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TestRunBase(BaseModel):
@@ -258,6 +277,30 @@ class TestEvaluationInDB(TestEvaluationBase):
 
 class TestEvaluation(TestEvaluationInDB):
     pass
+
+
+class EvaluationToolInfo(BaseModel):
+    """A tool an agent can call, from the workflow graph. ``id`` matches tool events."""
+
+    id: str
+    name: str
+    label: str
+    type: str
+
+
+class EvaluationAgentInfo(BaseModel):
+    id: str
+    label: str
+    type: str
+    workflow_path: List[str] = Field(default_factory=list)
+    tools: List[EvaluationToolInfo] = Field(default_factory=list)
+
+
+class EvaluationToolCatalog(BaseModel):
+    """Agents and their tools for a workflow (incl. nested workflows), for the UI."""
+
+    workflow_id: UUID
+    agents: List[EvaluationAgentInfo] = Field(default_factory=list)
 
 
 class WorkflowEvaluationSummary(BaseModel):
