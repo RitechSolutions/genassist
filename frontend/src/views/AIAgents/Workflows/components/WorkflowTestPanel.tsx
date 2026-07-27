@@ -1,12 +1,4 @@
 import React, { useState, useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/dialog";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -37,6 +29,8 @@ import {
   Bug,
   Network,
   AlertTriangle,
+  History,
+  Trash2,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
@@ -56,25 +50,65 @@ type TestViewMode = "response" | "debug" | "execution";
 // Node types that consume audio input from the workflow's session state.
 const AUDIO_INPUT_NODE_TYPES = ["voiceAgentNode", "sttNode"];
 
+export type TestRunStatus = "success" | "warning" | "failed" | "error";
+
+// A single in-memory record of a past test run. Kept in the parent (GraphFlow)
+// so the list survives switching between the Workflow/Executions tabs, and is
+// discarded on page leave/refresh — there is no persistence layer for these.
+export interface TestRunRecord {
+  id: string;
+  createdAt: number;
+  label: string;
+  inputs: Record<string, string>;
+  response: WorkflowTestResponse | null;
+  error: string | null;
+  status: TestRunStatus;
+}
+
+const STATUS_DOT: Record<TestRunStatus, string> = {
+  success: "bg-green-500",
+  warning: "bg-amber-500",
+  failed: "bg-red-500",
+  error: "bg-red-500",
+};
+
+const STATUS_LABEL: Record<TestRunStatus, string> = {
+  success: "Success",
+  warning: "Completed with errors",
+  failed: "Failed",
+  error: "Error",
+};
+
+const formatRunTime = (ts: number): string =>
+  new Date(ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
 interface PausedFormSchema {
   message: string;
   fields: HumanInTheLoopFormField[];
   node_id: string;
 }
 
-interface WorkflowTestDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  workflowName: string;
+interface WorkflowTestPanelProps {
+  /** Whether the Executions tab is currently active; drives input initialization. */
+  active: boolean;
   workflow: Workflow | null;
+  /** Previous test runs (newest first), owned by the parent so they persist across tab switches. */
+  history: TestRunRecord[];
+  onAddTestRun?: (record: TestRunRecord) => void;
+  onClearHistory?: () => void;
   onUpdateWorkflowTestInputs?: (inputs: Record<string, string>) => void;
 }
 
-const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
-  isOpen,
-  onClose,
-  workflowName,
+const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
+  active,
   workflow,
+  history,
+  onAddTestRun,
+  onClearHistory,
   onUpdateWorkflowTestInputs,
 }) => {
   const [testInput, setTestInputs] = useState<Record<string, string>>({});
@@ -88,6 +122,8 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const [prefilledFields, setPrefilledFields] = useState<Set<string>>(
     new Set()
   );
+  // Which history entry is currently shown in the results panel (highlights the list item).
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   // Dynamic pause/resume state
   const [pausedFormSchema, setPausedFormSchema] = useState<PausedFormSchema | null>(null);
@@ -125,7 +161,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
   // Find chatInputNode and get its inputSchema
   useEffect(() => {
-    if (workflow && isOpen) {
+    if (workflow && active) {
       const chatInputNode = workflow.nodes.find((node) =>
         node.type.includes("InputNode")
       );
@@ -179,15 +215,15 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         setPrefilledFields(prefilled);
       }
     }
-  }, [workflow, executionState?.session, isOpen]);
+  }, [workflow, executionState?.session, active]);
 
-  // Start on the Response view each time the dialog opens, so the input pane
-  // (which is hidden on Debug/Execution) is always available on open.
+  // Start on the Response view each time the Executions tab is opened, so the
+  // input pane (which is hidden on Debug/Execution) is always available on open.
   useEffect(() => {
-    if (isOpen) {
+    if (active) {
       setViewMode("response");
     }
-  }, [isOpen]);
+  }, [active]);
 
   // Check if a response indicates a paused workflow
   const isPausedResponse = (res: WorkflowTestResponse): boolean => {
@@ -227,6 +263,47 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     setHumanInTheLoopFormData(initialData);
   };
 
+  const deriveRunStatus = (
+    res: WorkflowTestResponse | null,
+    err: string | null
+  ): TestRunStatus => {
+    if (err) return "error";
+    if (res?.has_failures) return "warning";
+    if (res?.status === "success") return "success";
+    return "failed";
+  };
+
+  // Append a run to the in-memory history (owned by the parent) and select it.
+  const recordRun = (res: WorkflowTestResponse | null, err: string | null) => {
+    const rawLabel =
+      (testInput.message || "").trim() ||
+      (audioData ? "[Voice message]" : "Test run");
+    const label = rawLabel.length > 80 ? `${rawLabel.slice(0, 80)}…` : rawLabel;
+    const record: TestRunRecord = {
+      id: uuidv4(),
+      createdAt: Date.now(),
+      label,
+      inputs: { ...testInput },
+      response: res,
+      error: err,
+      status: deriveRunStatus(res, err),
+    };
+    onAddTestRun?.(record);
+    setSelectedRunId(record.id);
+  };
+
+  // Load a previous run back into the results/inputs view.
+  const handleSelectRun = (run: TestRunRecord) => {
+    setSelectedRunId(run.id);
+    setResponse(run.response);
+    setError(run.error);
+    setTestInputs(run.inputs);
+    setPausedFormSchema(null);
+    setPausedThreadId(null);
+    setPausedNodeId(null);
+    setViewMode("response");
+  };
+
   // Handle completed response from test or resume
   const handleCompletedResponse = (res: WorkflowTestResponse) => {
     setPausedFormSchema(null);
@@ -237,6 +314,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       output: truncateNodeOutput(res.output),
     };
     setResponse(truncatedResponse as WorkflowTestResponse);
+    recordRun(truncatedResponse as WorkflowTestResponse, null);
     if (onUpdateWorkflowTestInputs) {
       onUpdateWorkflowTestInputs(testInput);
     }
@@ -336,6 +414,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
       if (!res) {
         setError("No response received from server");
+        recordRun(null, "No response received from server");
         return;
       }
 
@@ -346,7 +425,9 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`Failed to test workflow: ${msg}`);
+      const errorMsg = `Failed to test workflow: ${msg}`;
+      setError(errorMsg);
+      recordRun(null, errorMsg);
     } finally {
       setTesting(false);
     }
@@ -384,6 +465,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
       if (!res) {
         setError("No response received from server");
+        recordRun(null, "No response received from server");
         return;
       }
 
@@ -394,7 +476,9 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`Failed to resume workflow: ${msg}`);
+      const errorMsg = `Failed to resume workflow: ${msg}`;
+      setError(errorMsg);
+      recordRun(null, errorMsg);
     } finally {
       setTesting(false);
     }
@@ -441,29 +525,106 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="flex h-[88vh] max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Test Workflow: {workflowName}</DialogTitle>
-          <DialogDescription>
-            Test your workflow configuration with sample inputs
-          </DialogDescription>
-        </DialogHeader>
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      {/* Three-column layout: history | inputs | results. The page title lives
+          in the Executions header row (rendered by GraphFlow), not here. */}
+      <div className="min-h-0 flex-1">
+        <ResizablePanelGroup
+          direction="horizontal"
+          autoSaveId="workflow-test-panel-v2"
+          className="rounded-md border border-border"
+        >
+            {/* FAR LEFT — in-memory list of previous test runs for this session. */}
+            <ResizablePanel
+              id="history"
+              order={1}
+              defaultSize={20}
+              minSize={15}
+              maxSize={32}
+            >
+              <div className="flex h-full flex-col overflow-hidden">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-sm font-semibold text-muted-foreground">
+                      History
+                    </Label>
+                    {history.length > 0 && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {history.length}
+                      </span>
+                    )}
+                  </div>
+                  {history.length > 0 && onClearHistory && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+                      onClick={() => {
+                        onClearHistory();
+                        setSelectedRunId(null);
+                      }}
+                      title="Clear test history"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  {history.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-1.5 px-3 text-center text-muted-foreground">
+                      <History className="h-5 w-5" aria-hidden="true" />
+                      <div className="text-xs">
+                        No tests yet. Run a test to see it here.
+                      </div>
+                    </div>
+                  ) : (
+                    <ul className="space-y-1">
+                      {history.map((run) => (
+                        <li key={run.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectRun(run)}
+                            className={`flex w-full flex-col gap-1 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                              selectedRunId === run.id
+                                ? "border-primary/40 bg-primary/5"
+                                : "border-transparent hover:bg-muted"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[run.status]}`}
+                              />
+                              <span className="truncate text-xs font-medium text-foreground">
+                                {run.label}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 pl-3.5">
+                              <span className="truncate text-[11px] text-muted-foreground">
+                                {STATUS_LABEL[run.status]}
+                              </span>
+                              <span className="shrink-0 text-[11px] text-muted-foreground">
+                                {formatRunTime(run.createdAt)}
+                              </span>
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </ResizablePanel>
 
-        {/* Two-column layout: inputs on the left (resizable), results on the right. */}
-        <div className="min-h-0 flex-1">
-          <ResizablePanelGroup
-            direction="horizontal"
-            autoSaveId="workflow-test-dialog"
-            className="rounded-md border border-border"
-          >
-            {/* LEFT — inputs: message, metadata, run action / paused form. */}
+            <ResizableHandle withHandle />
+
+            {/* MIDDLE — inputs: message, metadata, run action / paused form. */}
             <ResizablePanel
               id="inputs"
-              order={1}
-              defaultSize={33}
-              minSize={24}
-              maxSize={55}
+              order={2}
+              defaultSize={30}
+              minSize={22}
+              maxSize={45}
             >
               <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
                 <div className="space-y-2">
@@ -822,7 +983,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
             <ResizableHandle withHandle />
 
             {/* RIGHT — results: view switcher + response / debug / execution. */}
-            <ResizablePanel id="results" order={2} defaultSize={67} minSize={45}>
+            <ResizablePanel id="results" order={3} defaultSize={50} minSize={35}>
               <div className="flex h-full flex-col overflow-hidden">
                 {/* Header: result label + status badge + view switcher */}
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
@@ -1055,17 +1216,10 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                 </div>
               </div>
             </ResizablePanel>
-          </ResizablePanelGroup>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResizablePanelGroup>
+      </div>
+    </div>
   );
 };
 
-export default WorkflowTestDialog;
+export default WorkflowTestPanel;
