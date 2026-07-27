@@ -2,18 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { Activity, AlertTriangle, Coins, DollarSign, Info, Percent, PhoneCall, SlidersHorizontal } from "lucide-react";
+import { format } from "date-fns";
+import {
+  Activity,
+  AlertTriangle,
+  Coins,
+  DollarSign,
+  Info,
+  Percent,
+  PhoneCall,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 
 import { Card, CardContent } from "@/components/card";
-import { Button } from "@/components/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ExportButton } from "@/components/ui/ExportButton";
-import { usePermissions } from "@/context/PermissionContext";
 import { formatUsd } from "@/helpers/formatCurrency";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { cn } from "@/helpers/utils";
-import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { COMPARE_DATE_RANGE_STORAGE_KEY, usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import {
   fetchLlmUsageBreakdown,
   fetchLlmUsageFilterOptions,
@@ -24,12 +32,13 @@ import type {
   LlmUsageBreakdownItem,
   LlmUsageDimension,
   LlmUsageQueryFilters,
+  LlmUsageSummaryResponse,
 } from "@/interfaces/llmUsage.interface";
-import { LlmCostRatesDialog } from "@/views/LlmProviders/components/LlmCostRatesDialog";
 
-import { AnalyticsFilters, analyticsFilterSelectTriggerClassName } from "../components/AnalyticsFilters";
+import { AnalyticsFilters } from "../components/AnalyticsFilters";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { AnalyticsKpiStat, analyticsKpiGridClass } from "../components/AnalyticsKpiStat";
+import { ALL_FILTER_VALUE, LlmUsageFilterMenu } from "../components/LlmUsageFilterMenu";
 import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
@@ -43,17 +52,56 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
   { value: "source", label: "Usage type", heading: "Type" },
 ];
 
-const ALL = "all";
-const RATE_PERMISSION = "update:llm_provider";
+const ALL = ALL_FILTER_VALUE;
+const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
 
 const compact = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : `${n}`;
+
+/** Percentage change against the comparison period */
+const pctChange = (current: number, previous: number): number | null => {
+  if (previous === 0) return current > 0 ? 100 : null;
+  return Math.round(((current - previous) / previous) * 100 * 10) / 10;
+};
+
+/** Percentage-point difference, for metrics already expressed as a rate */
+const ppDiff = (current: number, previous: number): number | null => {
+  const diff = Math.round((current - previous) * 10) / 10;
+  return diff === 0 ? null : diff;
+};
+
+interface KpiDeltaProps {
+  delta: number | null | undefined;
+  unit?: "%" | "pp";
+  tone?: "neutral" | "semantic";
+}
+
+function KpiDelta({ delta, unit = "%", tone = "neutral" }: KpiDeltaProps) {
+  if (delta === undefined || delta === null || delta === 0) return null;
+  const rising = delta > 0;
+  const Icon = rising ? TrendingUp : TrendingDown;
+  const color =
+    tone === "neutral"
+      ? "text-muted-foreground"
+      : rising
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-rose-500";
+  return (
+    <span className={cn("inline-flex items-center gap-0.5 text-xs font-medium", color)}>
+      <Icon className="h-3 w-3" aria-hidden />
+      {rising ? "+" : ""}
+      {delta.toFixed(1)}
+      {unit === "pp" ? " pp" : "%"}
+    </span>
+  );
+}
 
 function LlmUsagePage() {
   const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
     to: new Date(),
   } as DateRange);
+  const [compareDateRange, setCompareDateRange] = usePersistedDateRange(undefined, COMPARE_DATE_RANGE_STORAGE_KEY);
   const { groups, showGroupFilter, groupFilter, setGroupFilter, agentFilter, setAgentFilter, agents, filterParams } =
     useAnalyticsFilters();
 
@@ -61,10 +109,6 @@ function LlmUsagePage() {
   const [model, setModel] = useState(ALL);
   const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
-  const [ratesOpen, setRatesOpen] = useState(false);
-
-  const permissions = usePermissions();
-  const canManageRates = permissions.includes("*") || permissions.includes(RATE_PERMISSION);
 
   const dateParams = useMemo(() => toExpandedUTCDateRange(dateRange), [dateRange]);
   const queryFilters = useMemo<LlmUsageQueryFilters>(
@@ -116,6 +160,27 @@ function LlmUsagePage() {
     placeholderData: keepPreviousData,
   });
 
+  const hasCompare = Boolean(compareDateRange?.from && compareDateRange?.to);
+  const compareParams = useMemo<LlmUsageQueryFilters>(
+    () => ({ ...queryFilters, ...toExpandedUTCDateRange(compareDateRange) }),
+    [queryFilters, compareDateRange]
+  );
+
+  const compare = useQuery<LlmUsageSummaryResponse>({
+    queryKey: [
+      "llm-usage",
+      "compare",
+      compareParams.from_date,
+      compareParams.to_date,
+      filterParams.group_id,
+      filterParams.agent_id,
+      provider,
+      model,
+    ],
+    queryFn: () => fetchLlmUsageSummary(compareParams),
+    enabled: hasCompare,
+  });
+
   const summary = overview.data?.summary;
   const timeseries = overview.data?.timeseries ?? [];
   const providerItems = overview.data?.providerItems ?? [];
@@ -147,6 +212,7 @@ function LlmUsagePage() {
   const costFor = (key: string) => sourceItems.find((i) => i.key === key)?.cost_usd ?? 0;
   const unpricedTokenPct = 100 - (summary?.priced_token_coverage_pct ?? 100);
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
+  const previous = hasCompare ? compare.data : undefined;
 
   const columns: Column<LlmUsageBreakdownItem>[] = [
     { header: dimensionLabel, key: "label", cell: (i) => <span className="font-medium">{i.label}</span> },
@@ -206,32 +272,49 @@ function LlmUsagePage() {
       value: formatUsd(summary?.total_cost_usd),
       icon: DollarSign,
       sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)}`,
+      delta:
+        summary && previous ? <KpiDelta delta={pctChange(summary.total_cost_usd, previous.total_cost_usd)} /> : null,
     },
     {
       label: "Total Tokens",
       value: compact(summary?.total_tokens ?? 0),
       icon: Coins,
       sub: `${compact(summary?.total_input_tokens ?? 0)} input · ${compact(summary?.total_output_tokens ?? 0)} output`,
+      delta: summary && previous ? <KpiDelta delta={pctChange(summary.total_tokens, previous.total_tokens)} /> : null,
     },
     {
       label: "LLM Calls",
       value: (summary?.total_calls ?? 0).toLocaleString(),
       icon: Activity,
       sub: `${((summary?.total_calls ?? 0) - (summary?.unpriced_calls ?? 0)).toLocaleString()} priced · ${(summary?.unpriced_calls ?? 0).toLocaleString()} unpriced`,
+      delta: summary && previous ? <KpiDelta delta={pctChange(summary.total_calls, previous.total_calls)} /> : null,
     },
     {
       label: "Cost / Conversation",
       value: formatUsd(summary?.cost_per_conversation_usd),
       icon: PhoneCall,
-      sub: summary?.non_conversation_cost_usd
-        ? `${formatUsd(summary.non_conversation_cost_usd, 2)} non-conversation`
+      sub: summary?.agent_studio_test_cost_usd
+        ? `${formatUsd(summary.agent_studio_test_cost_usd, 2)} agent studio tests`
         : undefined,
+      delta:
+        summary?.cost_per_conversation_usd != null && previous?.cost_per_conversation_usd != null ? (
+          <KpiDelta delta={pctChange(summary.cost_per_conversation_usd, previous.cost_per_conversation_usd)} />
+        ) : null,
     },
     {
       label: "Pricing Coverage",
       value: summary ? `${summary.priced_token_coverage_pct.toFixed(1)}%` : "—",
       icon: Percent,
       sub: `${(summary?.unpriced_calls ?? 0).toLocaleString()} unpriced calls`,
+      // Coverage is a rate, so it compares in points
+      delta:
+        summary && previous ? (
+          <KpiDelta
+            delta={ppDiff(summary.priced_token_coverage_pct, previous.priced_token_coverage_pct)}
+            unit="pp"
+            tone="semantic"
+          />
+        ) : null,
     },
   ];
 
@@ -246,46 +329,22 @@ function LlmUsagePage() {
             groups={showGroupFilter ? groups : undefined}
             groupFilter={groupFilter}
             onGroupFilterChange={setGroupFilter}
-            agents={agents}
-            agentFilter={agentFilter}
-            onAgentFilterChange={setAgentFilter}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
+            compareDateRange={compareDateRange}
+            onCompareDateRangeChange={setCompareDateRange}
           >
-            <Select value={provider} onValueChange={onProviderChange}>
-              <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
-                <SelectValue placeholder="All providers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All providers</SelectItem>
-                {(options?.providers ?? []).map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
-                <SelectValue placeholder="All models" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All models</SelectItem>
-                {(options?.models ?? []).map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {canManageRates && (
-              <Button variant="outline" size="sm" onClick={() => setRatesOpen(true)}>
-                <SlidersHorizontal className="h-4 w-4" />
-                Manage costs
-              </Button>
-            )}
+            <LlmUsageFilterMenu
+              agents={agents}
+              agentFilter={agentFilter}
+              onAgentFilterChange={setAgentFilter}
+              providers={options?.providers ?? []}
+              provider={provider}
+              onProviderChange={onProviderChange}
+              models={options?.models ?? []}
+              model={model}
+              onModelChange={setModel}
+            />
             <ExportButton
               endpoint="/analytics/llm-usage/export"
               params={exportParams}
@@ -302,16 +361,9 @@ function LlmUsagePage() {
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
               <span className="font-semibold">{unpricedTokenPct.toFixed(1)}% of tokens have no configured rate.</span>{" "}
-              Totals below are the priced subtotal — add rates to complete cost coverage.
+              Totals below are the priced subtotal — add rates under LLM Settings › LLM Providers to complete cost
+              coverage.
             </span>
-            {canManageRates && (
-              <button
-                onClick={() => setRatesOpen(true)}
-                className="ml-auto whitespace-nowrap font-semibold underline underline-offset-2"
-              >
-                Manage costs
-              </button>
-            )}
           </div>
         )}
 
@@ -327,14 +379,26 @@ function LlmUsagePage() {
           </div>
         )}
 
-        <Card className={analyticsFadeUpClass}>
-          <CardContent className="pt-6">
-            <div className={analyticsKpiGridClass(kpis.length)}>
-              {kpis.map((k) => (
-                <AnalyticsKpiStat key={k.label} label={k.label} value={k.value} icon={k.icon} sub={k.sub} />
-              ))}
-            </div>
-          </CardContent>
+        {/* Padding lives on the Card here, matching the sibling Analytics stat cards */}
+        <Card className={cn("w-full bg-card dark:bg-zinc-900 px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
+          {previous && compareDateRange?.from && compareDateRange?.to && (
+            <p className="mb-4 text-xs text-muted-foreground/60">
+              vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}
+            </p>
+          )}
+          <div className={analyticsKpiGridClass(kpis.length)}>
+            {kpis.map((k) => (
+              <AnalyticsKpiStat
+                key={k.label}
+                label={k.label}
+                value={k.value}
+                icon={k.icon}
+                sub={k.sub}
+                subClassName={KPI_SUB_CLASS}
+                delta={k.delta}
+              />
+            ))}
+          </div>
         </Card>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -349,9 +413,7 @@ function LlmUsagePage() {
           <LlmUsageProviderDonut items={providerItems} loading={overviewLoading} />
         </div>
 
-        <LlmUsageBreakdownChart items={items} dimensionLabel={dimensionHeading} loading={tableLoading} />
-
-        <Card className={analyticsFadeUpClass}>
+        <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
           <CardContent className="pt-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-foreground">Usage by {dimensionHeading}</h3>
@@ -382,9 +444,9 @@ function LlmUsagePage() {
             />
           </CardContent>
         </Card>
-      </div>
 
-      <LlmCostRatesDialog open={ratesOpen} onOpenChange={setRatesOpen} />
+        <LlmUsageBreakdownChart items={items} dimensionLabel={dimensionHeading} loading={tableLoading} />
+      </div>
     </div>
   );
 }

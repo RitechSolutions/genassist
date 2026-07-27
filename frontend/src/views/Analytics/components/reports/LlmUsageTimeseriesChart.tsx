@@ -66,7 +66,7 @@ export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange
   const showStats = !loading && data.length > 0;
 
   return (
-    <Card className={analyticsFadeUpClass}>
+    <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
       <CardContent className="pt-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>

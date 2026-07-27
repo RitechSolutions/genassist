@@ -40,7 +40,8 @@ class LlmUsageSummaryResponse(BaseModel):
     rows; ``cost_is_partial`` is true when some rows had no price and were left out.
 
     ``cost_source`` is always the ledger — these endpoints read it regardless of cutover.
-    ``dashboard_cost_source`` reports what the dashboard is currently reading instead"""
+    ``dashboard_cost_source`` reports what the dashboard is currently reading instead.
+    ``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,7 +50,7 @@ class LlmUsageSummaryResponse(BaseModel):
     total_cost_usd: float
     cost_is_partial: bool
     cost_per_conversation_usd: Optional[float] = None
-    non_conversation_cost_usd: float
+    agent_studio_test_cost_usd: float
     total_input_tokens: int
     total_output_tokens: int
     total_tokens: int

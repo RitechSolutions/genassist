@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/card";
 import { Skeleton } from "@/components/skeleton";
 import { formatUsd } from "@/helpers/formatCurrency";
+import { cn } from "@/helpers/utils";
 import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 import { analyticsFadeUpClass } from "../../constants/animations";
 
@@ -25,7 +26,7 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
   const digits = peak >= 1 ? 2 : 4;
 
   return (
-    <Card className={analyticsFadeUpClass}>
+    <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
       <CardContent className="pt-6">
         <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">Cost by {dimensionLabel}</h3>

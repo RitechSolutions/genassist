@@ -127,7 +127,7 @@ class LlmUsageReadService:
             legacy_estimate_calls,
             priced_tokens,
             conversation_cost,
-            non_conversation_cost,
+            agent_studio_test_cost,
             distinct_conversations,
         ) = row
         return LlmUsageSummaryResponse(
@@ -138,7 +138,7 @@ class LlmUsageReadService:
             cost_per_conversation_usd=(
                 float(conversation_cost) / distinct_conversations if distinct_conversations else None
             ),
-            non_conversation_cost_usd=float(non_conversation_cost),
+            agent_studio_test_cost_usd=float(agent_studio_test_cost),
             total_input_tokens=int(input_tokens),
             total_output_tokens=int(output_tokens),
             total_tokens=int(total_tokens),
@@ -199,7 +199,7 @@ class LlmUsageReadService:
             total_cost_usd=0.0,
             cost_is_partial=False,
             cost_per_conversation_usd=None,
-            non_conversation_cost_usd=0.0,
+            agent_studio_test_cost_usd=0.0,
             total_input_tokens=0,
             total_output_tokens=0,
             total_tokens=0,

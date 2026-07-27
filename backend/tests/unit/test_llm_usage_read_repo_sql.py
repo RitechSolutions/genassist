@@ -90,6 +90,17 @@ async def test_summary_counts_each_pricing_status():
 
 
 @pytest.mark.asyncio
+async def test_summary_scopes_agent_studio_cost_to_the_two_studio_test_sources():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
+    sql = _sql(db.statements[0])
+    assert "source IN ('workflow_test', 'node_test')" in sql
+    # Suites, schedules and API/MCP runs are non-conversation too, but they are not studio tests.
+    for other in ("test_suite", "schedule", "workflow_api", "mcp", "chat"):
+        assert f"'{other}'" not in sql
+
+
+@pytest.mark.asyncio
 async def test_dashboard_ledger_total_is_half_open_and_skips_deleted():
     db = CapturingDb()
     await DashboardRepository(db).get_total_cost_usd_from_ledger(

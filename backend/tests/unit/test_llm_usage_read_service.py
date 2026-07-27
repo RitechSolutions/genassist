@@ -94,7 +94,7 @@ def _row(
     legacy=0,
     priced_tokens=200,
     conv_cost="0.80",
-    non_conv_cost="0.20",
+    studio_cost="0.20",
     conversations=4,
 ):
     return (
@@ -109,7 +109,7 @@ def _row(
         legacy,
         priced_tokens,
         Decimal(conv_cost),
-        Decimal(non_conv_cost),
+        Decimal(studio_cost),
         conversations,
     )
 
@@ -120,7 +120,7 @@ async def test_cost_per_conversation_divides_by_distinct():
     summ = await service.get_summary(_params())
     assert summ.total_cost_usd == 1.0
     assert summ.cost_per_conversation_usd == 0.20
-    assert summ.non_conversation_cost_usd == 0.20
+    assert summ.agent_studio_test_cost_usd == 0.20
     assert summ.cost_is_partial is False
     assert summ.priced_token_coverage_pct == 100.0
 
@@ -135,7 +135,7 @@ async def test_partial_cost_and_token_coverage():
         configured=2,
         priced_tokens=60,
         conv_cost="0.50",
-        non_conv_cost="0",
+        studio_cost="0",
         conversations=2,
     )
     service, *_ = _service(summary_row=row)
@@ -157,16 +157,16 @@ async def test_summary_reports_rate_provenance_counts():
 
 @pytest.mark.asyncio
 async def test_no_conversations_leaves_cost_per_conversation_null():
-    row = _row(cost="0.10", conv_cost="0", non_conv_cost="0.10", conversations=0)
+    row = _row(cost="0.10", conv_cost="0", studio_cost="0.10", conversations=0)
     service, *_ = _service(summary_row=row)
     summ = await service.get_summary(_params())
     assert summ.cost_per_conversation_usd is None
-    assert summ.non_conversation_cost_usd == 0.10
+    assert summ.agent_studio_test_cost_usd == 0.10
 
 
 @pytest.mark.asyncio
 async def test_zero_cost_conversation_still_reports_real_zero():
-    row = _row(cost="0", conv_cost="0", non_conv_cost="0", conversations=2)
+    row = _row(cost="0", conv_cost="0", studio_cost="0", conversations=2)
     service, *_ = _service(summary_row=row)
     summ = await service.get_summary(_params())
     assert summ.cost_per_conversation_usd == 0.0

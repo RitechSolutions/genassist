@@ -8,7 +8,7 @@ export interface LlmUsageSummaryResponse {
   total_cost_usd: number;
   cost_is_partial: boolean;
   cost_per_conversation_usd: number | null;
-  non_conversation_cost_usd: number;
+  agent_studio_test_cost_usd: number;
   total_input_tokens: number;
   total_output_tokens: number;
   total_tokens: number;

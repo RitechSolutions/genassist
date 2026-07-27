@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/card";
 import { Skeleton } from "@/components/skeleton";
 import { formatUsd } from "@/helpers/formatCurrency";
+import { cn } from "@/helpers/utils";
 import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 import { analyticsFadeUpClass } from "../../constants/animations";
 
@@ -64,7 +65,7 @@ export function LlmUsageProviderDonut({ items, loading }: LlmUsageProviderDonutP
   const only = rows.length === 1 ? rows[0] : undefined;
 
   return (
-    <Card className={analyticsFadeUpClass}>
+    <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
       <CardContent className="pt-6">
         <div className="mb-4 flex items-baseline justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">Cost by Provider</h3>

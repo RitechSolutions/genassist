@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 import app.core.config.llm_pricing as llm_pricing
 import app.services.llm_usage_recorder as recorder_module
@@ -252,6 +253,47 @@ class TestExistingIds:
 
         assert await LlmUsageRecorder()._existing_ids(session, AgentModel, {None}) == set()
         assert session.statements == []
+
+
+class TestAgentForWorkflow:
+    @pytest.mark.asyncio
+    async def test_single_owner_is_derived(self):
+        agent_id = uuid4()
+        session = CapturingSession([agent_id])
+
+        assert await LlmUsageRecorder()._agent_for_workflow(session, uuid4()) == agent_id
+
+    @pytest.mark.asyncio
+    async def test_unowned_workflow_stays_unattributed(self):
+        session = CapturingSession()
+
+        assert await LlmUsageRecorder()._agent_for_workflow(session, uuid4()) is None
+
+    @pytest.mark.asyncio
+    async def test_shared_workflow_is_too_ambiguous_to_attribute(self):
+        session = CapturingSession([uuid4(), uuid4()])
+
+        assert await LlmUsageRecorder()._agent_for_workflow(session, uuid4()) is None
+
+    @pytest.mark.asyncio
+    async def test_no_query_without_a_workflow(self):
+        session = CapturingSession([uuid4()])
+
+        assert await LlmUsageRecorder()._agent_for_workflow(session, None) is None
+        assert session.statements == []
+
+    @pytest.mark.asyncio
+    async def test_lookup_bypasses_group_scope_and_skips_deleted_owners(self):
+        workflow_id = uuid4()
+        session = CapturingSession([uuid4()])
+
+        await LlmUsageRecorder()._agent_for_workflow(session, workflow_id)
+
+        stmt = session.statements[0]
+        assert stmt.get_execution_options().get(GROUP_SCOPE_BYPASS_FLAG) is True
+        sql = str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        assert f"agents.workflow_id = '{workflow_id}'" in sql
+        assert "agents.is_deleted = 0" in sql
 
 
 class TestWorkflowUsageContext:

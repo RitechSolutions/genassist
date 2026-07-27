@@ -34,7 +34,7 @@ def _summary_rows(summary: LlmUsageSummaryResponse) -> list[tuple[str, str]]:
         ("Total LLM cost (USD)", _usd(summary.total_cost_usd)),
         ("Cost is partial (unpriced calls present)", "yes" if summary.cost_is_partial else "no"),
         ("Cost per conversation (USD)", _usd(summary.cost_per_conversation_usd)),
-        ("Non-conversation cost (USD)", _usd(summary.non_conversation_cost_usd)),
+        ("Agent Studio test cost (USD)", _usd(summary.agent_studio_test_cost_usd)),
         ("Total tokens", str(summary.total_tokens)),
         ("Total calls", str(summary.total_calls)),
         ("Calls priced at configured rates", str(summary.configured_calls)),

@@ -168,6 +168,19 @@ class LlmUsageRecorder:
         result = await session.execute(stmt)
         return {row[0] for row in result.all()}
 
+    async def _agent_for_workflow(self, session: AsyncSession, workflow_id: Optional[UUID]) -> Optional[UUID]:
+        """Return the live agent that owns ``workflow_id``, or None if it's not provable"""
+        if workflow_id is None:
+            return None
+        stmt = (
+            select(AgentModel.id)
+            .where(AgentModel.workflow_id == workflow_id, AgentModel.is_deleted == 0)
+            .limit(2)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        rows = (await session.execute(stmt)).all()
+        return rows[0][0] if len(rows) == 1 else None
+
     async def record_workflow_state(
         self,
         state,
@@ -196,6 +209,8 @@ class LlmUsageRecorder:
                     agent_id = usage_context.agent_id if usage_context.agent_id in valid_agents else None
                     workflow_id = usage_context.workflow_id if usage_context.workflow_id in valid_workflows else None
                     conversation_id = conversation_id if conversation_id in valid_conversations else None
+                    if agent_id is None:
+                        agent_id = await self._agent_for_workflow(session, workflow_id)
 
                     event_rows = []
                     for idx, entry in enumerate(entries):

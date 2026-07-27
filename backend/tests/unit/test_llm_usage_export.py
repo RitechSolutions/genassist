@@ -16,7 +16,7 @@ def _summary(**overrides) -> LlmUsageSummaryResponse:
         "total_cost_usd": 1.5,
         "cost_is_partial": True,
         "cost_per_conversation_usd": 0.25,
-        "non_conversation_cost_usd": 0.5,
+        "agent_studio_test_cost_usd": 0.5,
         "total_input_tokens": 600,
         "total_output_tokens": 400,
         "total_tokens": 1000,
@@ -79,6 +79,10 @@ def test_csv_includes_provenance_counts_and_both_sources():
     assert "Unpriced calls,1" in text
     assert "Report cost source,llm_usage_ledger" in text
     assert "Dashboard cost source,daily_stats" in text
+
+
+def test_csv_labels_agent_studio_test_cost():
+    assert "Agent Studio test cost (USD),0.5000" in _csv_text()
 
 
 def test_csv_states_the_calculated_cost_limitation():

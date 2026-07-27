@@ -313,6 +313,7 @@ async def test_workflow(
                     status_code=404, detail=f"Workflow with id {workflow_id} not found"
                 )
 
+            saved_workflow_id = str(workflow_id)
             workflow_config = {
                 "id": str(workflow_id),
                 "nodes": db_workflow.nodes,
@@ -329,6 +330,7 @@ async def test_workflow(
                 )
 
             workflow = WorkflowUpdate(**input_workflow)
+            saved_workflow_id = input_workflow.get("id")
             workflow_config = {
                 "id": "test-workflow",
                 "nodes": workflow.nodes,
@@ -343,9 +345,7 @@ async def test_workflow(
 
         from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
 
-        usage_context = WorkflowUsageContext(
-            source="workflow_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
-        )
+        usage_context = WorkflowUsageContext(source="workflow_test", workflow_id=_coerce_uuid(saved_workflow_id))
         turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
         supplied_thread = bool(input_data.get("thread_id"))
         if turn_router.has_sub_agents():

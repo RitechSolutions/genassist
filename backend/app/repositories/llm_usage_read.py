@@ -14,6 +14,9 @@ _COST = LlmUsageEventModel.cost_usd
 _CONV = LlmUsageEventModel.conversation_id
 _TOKENS = LlmUsageEventModel.total_tokens
 _STATUS = LlmUsageEventModel.pricing_status
+_SOURCE = LlmUsageEventModel.source
+
+AGENT_STUDIO_TEST_SOURCES = ("workflow_test", "node_test")
 
 
 def _day_start(d: date) -> datetime:
@@ -70,7 +73,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
             _calls_with_status(PricingStatus.LEGACY_ESTIMATE),
             func.coalesce(func.sum(_TOKENS).filter(_COST.isnot(None)), 0),
             func.coalesce(func.sum(_COST).filter(_CONV.isnot(None)), 0),
-            func.coalesce(func.sum(_COST).filter(_CONV.is_(None)), 0),
+            func.coalesce(func.sum(_COST).filter(_SOURCE.in_(AGENT_STUDIO_TEST_SOURCES)), 0),
             func.count(distinct(_CONV)),
         ).where(*self._conditions(params, scope))
         return (await self.db.execute(stmt)).one()
