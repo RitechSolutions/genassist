@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
+    TOOL_USAGE_CONFIG_INVALID = "tool_usage_config_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
@@ -175,6 +176,7 @@ class ErrorKey(Enum):
 ERROR_MESSAGES = {
     "en": {
         ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
+        ErrorKey.TOOL_USAGE_CONFIG_INVALID: "The tool usage configuration could not be resolved to canonical tool ids.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",

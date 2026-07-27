@@ -11,6 +11,7 @@ from app.db.models.test_suite import (
     TestRunModel,
     TestResultModel,
     TestEvaluationModel,
+    TestToolRuleResultModel,
 )
 from app.repositories.db_repository import DbRepository
 
@@ -124,6 +125,33 @@ class TestResultRepository(DbRepository[TestResultModel]):
 
     async def get_all_for_run(self, run_id: UUID) -> List[TestResultModel]:
         stmt = select(TestResultModel).where(TestResultModel.run_id == str(run_id))
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+
+@inject
+class TestToolRuleResultRepository(DbRepository[TestToolRuleResultModel]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(TestToolRuleResultModel, db)
+
+    async def create_many(
+        self, results: List[TestToolRuleResultModel]
+    ) -> List[TestToolRuleResultModel]:
+        if not results:
+            return []
+        self.db.add_all(results)
+        await self.db.commit()
+        return results
+
+    async def get_all_for_run(self, run_id: UUID) -> List[TestToolRuleResultModel]:
+        stmt = (
+            select(TestToolRuleResultModel)
+            .where(
+                TestToolRuleResultModel.run_id == str(run_id),
+                TestToolRuleResultModel.is_deleted == 0,
+            )
+            .order_by(TestToolRuleResultModel.created_at)
+        )
         result = await self.db.execute(stmt)
         return result.scalars().all()
 

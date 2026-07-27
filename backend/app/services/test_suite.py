@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import json
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -15,6 +16,7 @@ from app.db.models.test_suite import (
     TestRunModel,
     TestResultModel,
     TestEvaluationModel,
+    TestToolRuleResultModel,
 )
 from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
 from app.modules.workflow.engine.workflow_engine import (
@@ -30,6 +32,7 @@ from app.repositories.test_suite import (
     TestRunRepository,
     TestResultRepository,
     TestEvaluationRepository,
+    TestToolRuleResultRepository,
 )
 from app.schemas.test_suite import (
     ImportCasesFromConversationRequest,
@@ -46,9 +49,11 @@ from app.schemas.test_suite import (
     TestRunCreate,
     TestRunInDB,
     TestResultInDB,
+    TestToolRuleResult,
     TestSuiteCreate,
     TestSuiteUpdate,
     TestSuiteInDB,
+    EvaluationToolCatalog,
     WorkflowEvaluationSummary,
 )
 from app.schemas.workflow import WorkflowInDB
@@ -88,6 +93,9 @@ def _truncate_output(output: Any, max_length: int = 64000) -> Any:
 
 # Reserved key holding run-level counts alongside the per-technique metrics.
 RUN_TOTALS_KEY = "_totals"
+
+# Tool Usage is graded per scope from collected tool events, not per case.
+TOOL_USED_TECHNIQUE = "tool_used"
 
 
 class ResultStatus:
@@ -290,6 +298,8 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
         "errors": errors,
         "tokens": trace.get("token_usage") or {},
         "cost": trace.get("cost_usd"),
+        # Normalized tool-execution events for the rule-based tool_used evaluator.
+        "tool_events": trace.get("tool_events") or [],
     }
 
 
@@ -317,6 +327,49 @@ def _clean_forbidden_phrases(config: Dict[str, Any]) -> List[str]:
         seen.add(key)
         phrases.append(cleaned)
     return phrases
+
+
+def resolvers_from_agents(agents: List[Dict[str, Any]]):
+    """Build ``(resolve_tool_id, resolve_agent_id, agent_ids, all_tool_ids)`` from a
+    resolved agent catalogue.
+
+    The catalogue is the single source shared by the catalogue UI, config
+    canonicalization and run-time grading, so every tool it lists — including nested
+    and MCP tools, and tools never called — resolves the same way everywhere. The
+    agent-id set lets callers count only real agents as "executed"; ``all_tool_ids``
+    expands a legacy "any tool" config.
+    """
+    from app.services.tool_catalog import (
+        build_agent_index,
+        build_tool_index,
+        resolve_in_index,
+    )
+
+    tool_index = build_tool_index(agents)
+    agent_index = build_agent_index(agents)
+    agent_ids = {agent["id"] for agent in agents}
+    all_tool_ids = sorted({tool["id"] for agent in agents for tool in agent["tools"]})
+    return (
+        lambda name: resolve_in_index(tool_index, name, "tool"),
+        lambda label: resolve_in_index(agent_index, label, "agent"),
+        agent_ids,
+        all_tool_ids,
+    )
+
+
+def build_tool_usage_resolvers(workflow: Any):
+    """Resolvers over a single workflow graph (no nested-workflow expansion).
+
+    Used only by the direct registry evaluator, which has just the graph and no DB
+    access. Returns ``(None, None, None, None)`` when no workflow is available; the
+    parser then keeps ids/names as given. Nested/MCP-aware paths use the service's
+    full catalogue via :func:`resolvers_from_agents` instead.
+    """
+    from app.services.tool_catalog import resolve_agents
+
+    if workflow is None:
+        return None, None, None, None
+    return resolvers_from_agents(resolve_agents(workflow))
 
 
 class SimpleEvaluatorRegistry:
@@ -363,6 +416,7 @@ class SimpleEvaluatorRegistry:
         reference_outputs: Any,
         execution_trace: Any = None,
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
+        workflow: Any = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -370,6 +424,8 @@ class SimpleEvaluatorRegistry:
             "outputs": outputs,
             "reference_outputs": reference_outputs,
             "trace": _build_grading_context(execution_trace),
+            # Workflow graph for legacy name→id resolution via the full tool catalogue.
+            "workflow": workflow,
         }
         for key in techniques:
             fn = self._evaluators.get(key)
@@ -549,65 +605,58 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pass when the agent called the expected tool, optionally with matching args.
-        Set should_call=False to assert the tool (or any tool, if unset) was NOT called.
-        Set node (id or label) to only consider calls made by that agent node.
-        Set result_not_empty / result_contains to also assert on what the call returned."""
+        """Grade tool usage against a set of rules (all/any/none/only), reading the
+        normalized tool events on the trace. The legacy single-tool config is
+        converted automatically. Scope slicing across turns is applied by the run
+        loop; here every event in the trace is one slice."""
+        from app.services.tool_usage_rules import (
+            evaluate_rules,
+            parse_tool_usage_config,
+        )
+
         trace = payload.get("trace") or {}
-        tools = trace.get("tools") or []
-        expected = config.get("tool")
-        expected_args = config.get("expected_args") or {}
-        should_call = bool(config.get("should_call", True))
-        node_selector = config.get("node")
+        events = trace.get("tool_events") or []
 
-        if node_selector:
-            trace_nodes = (trace.get("nodes") or {}).values()
-            matching_node_ids = {
-                node.get("id") for node in trace_nodes if _node_matches_selector(node, node_selector)
-            }
-            tools = [t for t in tools if t.get("node") in matching_node_ids]
-
-        called_names = [tool.get("name") for tool in tools if tool.get("name")]
-        scope = f" by node {node_selector!r}" if node_selector else ""
-
-        matches = [t for t in tools if not expected or _names_equal(t.get("name"), expected)]
-
-        if not should_call:
-            passed = not matches
-            target = expected or "any tool"
-            comment = None if passed else f"Expected {target!r} not to be called{scope}, but it was (called: {called_names})."
-            return {"key": "tool_used", "score": passed, "passed": passed, "comment": comment}
-
-        if not matches:
-            comment = (
-                f"Tool {expected!r} not called{scope} (called: {called_names or 'none'})."
-                if expected else f"No tool was called{scope}."
+        resolve_tool_id, resolve_agent_id, agent_ids, all_tool_ids = build_tool_usage_resolvers(
+            payload.get("workflow")
+        )
+        executed_nodes = set((trace.get("nodes") or {}).keys())
+        # Only real agents count as "executed"; other node types can't use tools.
+        executed_agent_ids = executed_nodes & agent_ids if agent_ids is not None else executed_nodes
+        try:
+            parsed = parse_tool_usage_config(
+                config,
+                resolve_tool_id=resolve_tool_id,
+                resolve_agent_id=resolve_agent_id,
+                all_tool_ids=all_tool_ids,
             )
-            return {"key": "tool_used", "score": False, "passed": False, "comment": comment}
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"key": "tool_used", "score": 0.0, "passed": False,
+                    "comment": f"Invalid tool usage config: {exc}"}
 
-        if expected_args:
-            matches = [c for c in matches if _args_superset_match(c.get("args"), expected_args)]
-            if not matches:
-                comment = f"No matching call had expected args {expected_args!r}."
-                return {"key": "tool_used", "score": False, "passed": False, "comment": comment}
+        if not parsed.rules:
+            return {"key": "tool_used", "score": 0.0, "passed": False,
+                    "comment": "No tool usage rules configured."}
 
-        result_not_empty = bool(config.get("result_not_empty", False))
-        result_contains = _normalize_text(config.get("result_contains"))
-        if result_not_empty or result_contains:
-            no_result_recorded = all(c.get("result") is None for c in matches)
-            if no_result_recorded:
-                comment = (
-                    "Result assertion configured, but this workflow's agent does not record "
-                    "tool results in the trace; cannot verify."
-                )
-                return {"key": "tool_used", "score": False, "passed": False, "comment": comment}
-            matches = [c for c in matches if _tool_result_satisfies(c, result_not_empty, result_contains)]
-            if not matches:
-                requirement = f"contain {result_contains!r}" if result_contains else "be non-empty"
-                comment = f"Tool was called but no call's result satisfied: must {requirement}."
-                return {"key": "tool_used", "score": False, "passed": False, "comment": comment}
-
-        return {"key": "tool_used", "score": True, "passed": True, "comment": None}
+        summary = evaluate_rules(parsed.rules, events, executed_agent_ids)
+        coverage = summary["coverage"]
+        score = summary["score"]
+        results = summary["results"]
+        # A single rule reports its own reason; multiple rules get the roll-up.
+        if len(results) == 1 and results[0].get("comment"):
+            comment = results[0]["comment"]
+        else:
+            comment = (
+                f"{coverage['passed']} of {coverage['total']} rule(s) passed; "
+                f"{coverage['not_evaluated']} not evaluated."
+            )
+        return {
+            "key": "tool_used",
+            "score": score if score is not None else 0.0,
+            "passed": summary["passed"],
+            "comment": comment,
+            "details": results,
+        }
 
     async def _route_taken(
         self,
@@ -950,6 +999,7 @@ class TestSuiteService:
         run_repo: TestRunRepository,
         result_repo: TestResultRepository,
         evaluation_repo: TestEvaluationRepository,
+        tool_rule_result_repo: TestToolRuleResultRepository,
         workflow_service: WorkflowService,
         conversation_repo: ConversationRepository,
     ) -> None:
@@ -958,6 +1008,7 @@ class TestSuiteService:
         self.run_repo = run_repo
         self.result_repo = result_repo
         self.evaluation_repo = evaluation_repo
+        self.tool_rule_result_repo = tool_rule_result_repo
         self.workflow_service = workflow_service
         self.conversation_repo = conversation_repo
         self.evaluators = SimpleEvaluatorRegistry()
@@ -1177,9 +1228,15 @@ class TestSuiteService:
         engine = WorkflowEngine(workflow_config)
 
         evaluator_keys = run.techniques or self.evaluators.default_techniques()
+        # tool_used is graded once per scope from collected events (not per case),
+        # so it is pulled out of the per-case techniques to avoid double counting.
+        tool_usage_requested = TOOL_USED_TECHNIQUE in evaluator_keys
+        per_case_keys = [k for k in evaluator_keys if k != TOOL_USED_TECHNIQUE]
 
         per_case_metrics: List[Dict[str, Any]] = []
         status_counts: Dict[str, int] = {}
+        case_events: Dict[str, List[Dict[str, Any]]] = {}
+        case_executed_agents: Dict[str, set] = {}
 
         async def record_case_error(
             case: TestCaseInDB, error: str, status: str
@@ -1251,8 +1308,12 @@ class TestSuiteService:
                 # Capture full workflow execution response in the same shape used
                 # elsewhere in the app.
                 execution_trace = state.format_state_as_response()
+                if tool_usage_requested:
+                    node_status = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
+                    case_events[str(case.id)] = execution_trace.get("tool_events") or []
+                    case_executed_agents[str(case.id)] = set(node_status.keys())
                 metrics = await self.evaluators.evaluate(
-                    evaluator_keys,
+                    per_case_keys,
                     inputs=merged_input,
                     outputs=output,
                     reference_outputs=case.expected_output,
@@ -1348,6 +1409,33 @@ class TestSuiteService:
                 "cases": count,
             }
 
+        # Tool Usage: grade rules across their scope from the collected events and
+        # persist per-rule results; the summary is computed from those, not per case.
+        # Bounded and isolated from the rest of the run — a bug or a stuck DB call
+        # here must not leave the whole run stuck in "running" forever.
+        if tool_usage_requested:
+            try:
+                tool_summary = await asyncio.wait_for(
+                    self._evaluate_tool_usage(
+                        run=run,
+                        cases=cases,
+                        conversations=conversations,
+                        technique_configs=technique_configs,
+                        workflow=workflow,
+                        case_events=case_events,
+                        case_executed_agents=case_executed_agents,
+                    ),
+                    timeout=60,
+                )
+                if tool_summary is not None:
+                    summary[TOOL_USED_TECHNIQUE] = tool_summary
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Tool usage evaluation failed for run %s: %s", run.id, exc)
+                summary[TOOL_USED_TECHNIQUE] = {
+                    "avg_score": 0.0, "accuracy": 0.0, "cases": 0,
+                    "error": "Tool usage evaluation failed or timed out.",
+                }
+
         # Metrics above cover scored cases only. A case can run yet fail scoring, so
         # "executed" and "scored" are counted separately rather than merged.
         scored = status_counts.get(ResultStatus.SCORED, 0)
@@ -1364,6 +1452,185 @@ class TestSuiteService:
         run.status = "completed"
         run.summary_metrics = summary
         await self.run_repo.update(run)
+
+    async def _evaluate_tool_usage(
+        self,
+        *,
+        run: TestRunModel,
+        cases: List[TestCaseInDB],
+        conversations: List[List[TestCaseInDB]],
+        technique_configs: Dict[str, Dict[str, Any]] | None,
+        workflow: WorkflowInDB,
+        case_events: Dict[str, List[Dict[str, Any]]],
+        case_executed_agents: Dict[str, set],
+    ) -> Dict[str, Any] | None:
+        """Grade tool-usage rules per scope, persist one result per rule/scope unit,
+        and return a summary computed from those results (the canonical source)."""
+        from app.services.tool_usage_rules import (
+            describe_tool_rule,
+            parse_tool_usage_config,
+            plan_tool_rule_results,
+            summarize_planned_results,
+        )
+
+        config = (technique_configs or {}).get(TOOL_USED_TECHNIQUE)
+        if not config:
+            return None
+
+        # Resolve any legacy display names to graph ids via the full (nested/MCP) catalogue.
+        agents = await self._full_agent_catalog(workflow.id)
+        resolve_tool_id, resolve_agent_id, agent_ids, all_tool_ids = resolvers_from_agents(agents)
+        try:
+            parsed = parse_tool_usage_config(
+                config,
+                resolve_tool_id=resolve_tool_id,
+                resolve_agent_id=resolve_agent_id,
+                all_tool_ids=all_tool_ids,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception("Invalid tool_used config for run %s: %s", run.id, exc)
+            return {
+                "avg_score": 0.0, "accuracy": 0.0, "cases": 0, "error": str(exc),
+                "coverage": {"passed": 0, "failed": 0, "not_evaluated": 0, "evaluated": 0, "total": 0},
+            }
+
+        if not parsed.rules:
+            return None
+
+        # Only real agents count as "executed"; a required-tool rule then becomes
+        # not_evaluated (rather than failing) when no agent actually ran.
+        if agent_ids is not None:
+            case_executed_agents = {
+                case_id: (executed & agent_ids)
+                for case_id, executed in case_executed_agents.items()
+            }
+
+        # Describe turns/conversations by id so the scope planner stays ORM-free.
+        turns = [
+            {
+                "id": str(case.id),
+                "source_conversation_id": (
+                    str(case.source_conversation_id) if case.source_conversation_id else None
+                ),
+                "turn_index": case.turn_index,
+            }
+            for case in cases
+        ]
+        conversation_groups = [[str(case.id) for case in group] for group in conversations]
+
+        planned = plan_tool_rule_results(
+            parsed.rules, turns, conversation_groups, case_events, case_executed_agents
+        )
+
+        rule_by_id = {rule.id: rule for rule in parsed.rules}
+        # Turn index per case so a per-turn result can name the turn it graded.
+        turn_index_by_case = {turn["id"]: turn["turn_index"] for turn in turns}
+
+        # Human-readable snapshot captured at run time, so results stay legible even
+        # if a tool or agent is later renamed. Labels come from the resolved catalogue.
+        agent_labels = {agent["id"]: agent["label"] for agent in agents}
+        tool_labels = {
+            tool["id"]: tool["label"] for agent in agents for tool in agent["tools"]
+        }
+        rule_snapshot_by_id = {
+            rule.id: self._rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule)
+            for index, rule in enumerate(parsed.rules)
+        }
+        turn_count_by_conv, conv_number_by_id = self._conversation_index(conversations)
+
+        rows = [
+            TestToolRuleResultModel(
+                run_id=run.id,
+                rule_id=entry["rule_id"],
+                scope=entry["scope"],
+                case_id=entry["case_id"],
+                source_conversation_id=entry["source_conversation_id"],
+                status=entry["result"]["status"],
+                score=self._rule_score(entry["result"]["status"]),
+                details={
+                    **entry["result"],
+                    "rule": rule_by_id[entry["rule_id"]].model_dump(mode="json"),
+                    "turn_index": turn_index_by_case.get(entry["case_id"]),
+                    **rule_snapshot_by_id[entry["rule_id"]],
+                    "target": self._target_snapshot(
+                        entry, turn_index_by_case, turn_count_by_conv, conv_number_by_id
+                    ),
+                    # Label every tool the result mentions (including forbidden/outside
+                    # tools) so the UI never has to fall back to a raw id.
+                    "tools": self._entry_tool_labels(
+                        entry["result"], rule_by_id[entry["rule_id"]].tool_ids, tool_labels
+                    ),
+                },
+            )
+            for entry in planned
+        ]
+        await self.tool_rule_result_repo.create_many(rows)
+        return summarize_planned_results(planned)
+
+    @staticmethod
+    def _rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule) -> Dict[str, Any]:
+        """Readable, rename-proof snapshot of a rule stored with every result.
+
+        Tool labels are attached per-result by ``_entry_tool_labels`` (which also
+        covers forbidden/outside tools), so they are not duplicated here.
+        """
+        agent = (
+            {"id": rule.agent_id, "label": agent_labels.get(rule.agent_id, "Unknown agent")}
+            if rule.agent_id
+            else {"id": None, "label": "Any agent"}
+        )
+        return {
+            "rule_number": index + 1,
+            "rule_summary": describe_tool_rule(rule, agent_labels, tool_labels),
+            "agent": agent,
+        }
+
+    @staticmethod
+    def _entry_tool_labels(result: Dict[str, Any], target_ids: List[str], tool_labels: Dict[str, str]) -> Dict[str, Any]:
+        """{tool_id: {label}} for every tool this result references, target or not."""
+        ids = set(target_ids)
+        for key in ("observed_tools", "missing_tools", "failed_tools", "forbidden_tools"):
+            ids.update(result.get(key) or [])
+        ids.update((result.get("call_counts") or {}).keys())
+        return {tool_id: {"label": tool_labels.get(tool_id, tool_id)} for tool_id in ids}
+
+    @staticmethod
+    def _conversation_index(conversations: List[List[TestCaseInDB]]):
+        """(turn_count_by_conversation_id, conversation_number_by_id) for labelling."""
+        turn_count_by_conv: Dict[str, int] = {}
+        conv_number_by_id: Dict[str, int] = {}
+        for index, group in enumerate(conversations):
+            first = group[0] if group else None
+            conv_id = str(first.source_conversation_id) if first and first.source_conversation_id else None
+            if conv_id:
+                turn_count_by_conv[conv_id] = len(group)
+                conv_number_by_id[conv_id] = index + 1
+        return turn_count_by_conv, conv_number_by_id
+
+    @staticmethod
+    def _target_snapshot(entry, turn_index_by_case, turn_count_by_conv, conv_number_by_id) -> Dict[str, Any]:
+        """What this result graded: a whole conversation, or a single turn."""
+        if entry["scope"] == "conversation":
+            conv_id = entry.get("source_conversation_id")
+            number = conv_number_by_id.get(conv_id)
+            return {
+                "type": "conversation",
+                "label": f"Conversation {number}" if number else "Conversation",
+                "turn_count": turn_count_by_conv.get(conv_id, 1),
+            }
+        turn_index = turn_index_by_case.get(entry["case_id"])
+        return {
+            "type": "turn",
+            "label": f"Turn {turn_index + 1}" if turn_index is not None else "Turn",
+        }
+
+    @staticmethod
+    def _rule_score(status: str) -> Optional[float]:
+        if status == "passed":
+            return 1.0
+        if status == "failed":
+            return 0.0
+        return None
 
     async def get_runs_by_ids(self, ids: List[str]) -> List[TestRunInDB]:
         rows = await self.run_repo.get_by_ids(ids)
@@ -1383,11 +1650,60 @@ class TestSuiteService:
         rows = await self.result_repo.get_all_for_run(run_id)
         return [TestResultInDB.model_validate(r, from_attributes=True) for r in rows]
 
+    async def list_tool_rule_results_for_run(
+        self, run_id: UUID
+    ) -> List[TestToolRuleResult]:
+        rows = await self.tool_rule_result_repo.get_all_for_run(run_id)
+        return [TestToolRuleResult.model_validate(r, from_attributes=True) for r in rows]
+
     # ---- Evaluations -------------------------------------------------------
+
+    async def _effective_workflow_id(self, workflow_id: Any, suite_id: Any) -> Any:
+        """The workflow a run will actually use: the evaluation's own, or the
+        dataset's default when the evaluation defines none — the same rule the run
+        loop applies, so canonicalization validates against the real workflow."""
+        if workflow_id:
+            return workflow_id
+        if not suite_id:
+            return None
+        suite = await self.suite_repo.get_by_id(suite_id)
+        return suite.workflow_id if suite else None
+
+    async def _canonicalize_tool_used_configs(
+        self, workflow_id: Any, technique_configs: Dict[str, Any] | None
+    ) -> Dict[str, Any] | None:
+        """Resolve legacy tool/agent names in a tool_used config to canonical ids
+        before it is stored, so names are never persisted as if they were ids."""
+        if not technique_configs or TOOL_USED_TECHNIQUE not in technique_configs or not workflow_id:
+            return technique_configs
+        from app.services.tool_usage_rules import canonicalize_tool_usage_config
+
+        agents = await self._full_agent_catalog(workflow_id)
+        resolve_tool_id, resolve_agent_id, _, all_tool_ids = resolvers_from_agents(agents)
+        try:
+            canonical = canonicalize_tool_usage_config(
+                technique_configs[TOOL_USED_TECHNIQUE],
+                resolve_tool_id=resolve_tool_id,
+                resolve_agent_id=resolve_agent_id,
+                all_tool_ids=all_tool_ids,
+            )
+        except ValueError as exc:
+            raise AppException(
+                error_key=ErrorKey.TOOL_USAGE_CONFIG_INVALID,
+                status_code=400,
+                error_detail=str(exc),
+            ) from exc
+        return {**technique_configs, TOOL_USED_TECHNIQUE: canonical}
 
     async def create_evaluation(self, data: TestEvaluationCreate) -> TestEvaluationInDB:
         payload = data.model_dump()
         payload["run_ids"] = []
+        workflow_id = await self._effective_workflow_id(
+            payload.get("workflow_id"), payload.get("suite_id")
+        )
+        payload["technique_configs"] = await self._canonicalize_tool_used_configs(
+            workflow_id, payload.get("technique_configs")
+        )
         orm = TestEvaluationModel(**payload)
         created = await self.evaluation_repo.create(orm)
         return TestEvaluationInDB.model_validate(created, from_attributes=True)
@@ -1408,7 +1724,18 @@ class TestSuiteService:
         row = await self.evaluation_repo.get_by_id(evaluation_id)
         if not row:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        for field, value in data.model_dump(exclude_none=True).items():
+        updates = data.model_dump(exclude_none=True)
+        if "technique_configs" in updates:
+            # Resolve against the evaluation's *new* dataset/workflow when either is
+            # being changed, so validation never uses the old dataset's workflow.
+            suite_id = updates.get("suite_id") or row.suite_id
+            workflow_id = await self._effective_workflow_id(
+                updates.get("workflow_id") or row.workflow_id, suite_id
+            )
+            updates["technique_configs"] = await self._canonicalize_tool_used_configs(
+                workflow_id, updates["technique_configs"]
+            )
+        for field, value in updates.items():
             setattr(row, field, value)
         updated = await self.evaluation_repo.update(row)
         return TestEvaluationInDB.model_validate(updated, from_attributes=True)
@@ -1479,6 +1806,45 @@ class TestSuiteService:
     ) -> List[TestEvaluationModel]:
         """The Run all scope: every evaluation for the workflow (DB-filtered)."""
         return await self.evaluation_repo.get_all_for_workflow(workflow_id)
+
+    async def _full_agent_catalog(self, workflow_id: Any) -> List[Dict[str, Any]]:
+        """Agents + tools for a workflow, expanding nested workflows (cycle-safe).
+
+        The single catalogue the UI, config canonicalization and run-time grading all
+        consume, so a nested or MCP tool shown in the UI resolves everywhere it is
+        used — never rejected as unknown, never treated as a non-agent node.
+        """
+        from app.services.tool_catalog import nested_workflow_refs, resolve_agents
+
+        agents: List[Dict[str, Any]] = []
+        visited: set[str] = set()
+
+        async def walk(current_id: str, path: List[str]) -> None:
+            if current_id in visited:
+                return
+            visited.add(current_id)
+            try:
+                workflow = await self.workflow_service.get_by_id(UUID(str(current_id)))
+            except Exception:  # pylint: disable=broad-except
+                return
+            graph = {
+                "id": str(workflow.id),
+                "nodes": workflow.nodes or [],
+                "edges": workflow.edges or [],
+            }
+            agents.extend(resolve_agents(graph, workflow_path=path))
+            for ref in nested_workflow_refs(graph):
+                await walk(ref["workflow_id"], path + [ref["label"]])
+
+        await walk(str(workflow_id), [])
+        return agents
+
+    async def get_evaluation_tool_catalog(
+        self, workflow_id: UUID
+    ) -> "EvaluationToolCatalog":
+        """Agents + tools for a workflow, expanding nested workflows (cycle-safe)."""
+        agents = await self._full_agent_catalog(workflow_id)
+        return EvaluationToolCatalog(workflow_id=workflow_id, agents=agents)
 
     async def get_workflow_evaluation_summaries(
         self,

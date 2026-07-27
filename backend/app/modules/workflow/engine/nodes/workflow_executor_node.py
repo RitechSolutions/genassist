@@ -82,6 +82,9 @@ class WorkflowExecutorNode(BaseNode):
                 persist=False  # Don't persist nested workflow executions
             )
 
+            # Nested runs use a separate state; carry their tool events up for evaluation.
+            self.get_state().absorb_tool_events(state)
+
             # Format and return the response
             result = state.format_state_as_response()
 

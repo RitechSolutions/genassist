@@ -1,7 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -177,4 +177,37 @@ class TestResultModel(Base):
 
     run = relationship("TestRunModel", back_populates="results")
     case = relationship("TestCaseModel", back_populates="results")
+
+
+class TestToolRuleResultModel(Base):
+    """Canonical per-rule outcome for Tool Usage evaluation.
+
+    One row per rule per scope unit: a specific/every-turn rule stores case_id; a
+    conversation rule stores source_conversation_id. ``details`` snapshots the
+    evaluated rule so historical results stay readable after config changes.
+    """
+
+    __tablename__ = "test_tool_rule_results"
+    __table_args__ = (
+        Index("ix_test_tool_rule_results_run", "run_id"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("test_runs.id"), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    # Turn-scoped rules point at a case; conversation-scoped rules at a conversation.
+    case_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("test_cases.id"), nullable=True
+    )
+    source_conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+
+    # passed | failed | not_evaluated
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Snapshot of the evaluated rule + observed/missing/forbidden tools.
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
