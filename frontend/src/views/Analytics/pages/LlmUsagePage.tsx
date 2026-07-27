@@ -36,8 +36,8 @@ import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownC
 import { LlmUsageProviderDonut } from "../components/reports/LlmUsageProviderDonut";
 import { LlmUsageTimeseriesChart, type SpendMetric } from "../components/reports/LlmUsageTimeseriesChart";
 
+// Provider is covered by the always-on Provider share card, so it stays out of this selector
 const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: string }> = [
-  { value: "provider", label: "Provider" },
   { value: "model", label: "Model" },
   { value: "agent", label: "Agent" },
   { value: "source", label: "Usage type", heading: "Type" },
@@ -59,7 +59,7 @@ function LlmUsagePage() {
 
   const [provider, setProvider] = useState(ALL);
   const [model, setModel] = useState(ALL);
-  const [dimension, setDimension] = useState<LlmUsageDimension>("provider");
+  const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
   const [ratesOpen, setRatesOpen] = useState(false);
 
@@ -142,7 +142,7 @@ function LlmUsagePage() {
   const exportParams = useMemo(() => ({ ...queryFilters, dimension }), [queryFilters, dimension]);
 
   const activeDimension = DIMENSIONS.find((d) => d.value === dimension);
-  const dimensionLabel = activeDimension?.label ?? "Provider";
+  const dimensionLabel = activeDimension?.label ?? "Model";
   const dimensionHeading = activeDimension?.heading ?? dimensionLabel;
   const costFor = (key: string) => sourceItems.find((i) => i.key === key)?.cost_usd ?? 0;
   const unpricedTokenPct = 100 - (summary?.priced_token_coverage_pct ?? 100);
