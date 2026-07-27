@@ -204,8 +204,9 @@ class MLModelInferenceNode(BaseNode):
         Returns:
             Dictionary with prediction results in batch format:
                 {
-                    "prediction": [{"result": 1, "label": "Available"}, ...],
+                    "prediction": [1, 0, ...],  # flat list (backward compatible)
                     "prediction_label": ["Available", "Not Available", ...],
+                    "prediction_details": [{"result": 1, "label": "Available"}, ...],
                     "probabilities": [{...}, {...}, ...],
                     "batch_size": N,
                     ...
@@ -334,8 +335,17 @@ class MLModelInferenceNode(BaseNode):
                     "features_used": ml_model.features,
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,
-                    "prediction": prediction_entries,
-                    "prediction_label": [_label_for_prediction(p) for p in predictions],
+                    # Backward-compatible flat outputs. Existing client workflows consume
+                    # `prediction` as a list of ints and `prediction_label` as a list of
+                    # strings; keep that contract stable.
+                    "prediction": [int(p) for p in predictions],
+                    "prediction_label": [
+                        "Available" if p == 1 else "Not Available" for p in predictions
+                    ],
+                    # New structured entries for drag-and-drop variable binding, e.g.
+                    # {{source.prediction_details[0].result}}. Additive — does not replace
+                    # the flat `prediction` field above.
+                    "prediction_details": prediction_entries,
                 }
 
                 # Add probabilities and confidence
