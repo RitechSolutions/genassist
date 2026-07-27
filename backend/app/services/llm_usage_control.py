@@ -38,9 +38,13 @@ class LlmUsageControlService:
         return self._to_read(control)
 
     async def activate_capture(self) -> LlmUsageControlRead:
-        """Enable capture and stamp the backfill boundary"""
+        """Enable capture and stamp the backfill boundary.
+
+        Capture ships on, so this is normally a no-op; it still repairs a row that is
+        enabled without a stamp, which would otherwise leave the backfill with no cut-off.
+        """
         control = await self._require_singleton()
-        if not control.capture_enabled:
+        if not control.capture_enabled or control.capture_started_at is None:
             control = await self.repo.activate_capture()
         return self._to_read(control)
 

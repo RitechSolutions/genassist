@@ -131,8 +131,8 @@ def upgrade() -> None:
         "llm_usage_control",
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column("singleton_key", sa.String(length=32), nullable=False),
-        sa.Column("capture_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("capture_started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("capture_enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("capture_started_at", sa.DateTime(timezone=True), nullable=True, server_default=sa.text("now()")),
         sa.Column("ledger_cutover_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("shadow_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("shadow_passed_at", sa.DateTime(timezone=True), nullable=True),
@@ -143,8 +143,8 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "INSERT INTO llm_usage_control "
-            "(id, singleton_key, capture_enabled, ledger_cutover_enabled, is_deleted) "
-            "VALUES (:id, 'singleton', false, false, 0) "
+            "(id, singleton_key, capture_enabled, capture_started_at, ledger_cutover_enabled, is_deleted) "
+            "VALUES (:id, 'singleton', true, now(), false, 0) "
             "ON CONFLICT (singleton_key) DO NOTHING"
         ).bindparams(id=_CONTROL_SINGLETON_ID)
     )

@@ -186,7 +186,7 @@ class Seeder:
             await self.db.execute(text("DELETE FROM llm_usage_reconciliation_reports WHERE report_date = :d"), {"d": d})
         await self.db.execute(
             text(
-                "UPDATE llm_usage_control SET capture_enabled=false, capture_started_at=NULL, "
+                "UPDATE llm_usage_control SET capture_enabled=true, capture_started_at=now(), "
                 "shadow_started_at=NULL, shadow_passed_at=NULL, ledger_cutover_enabled=false "
                 "WHERE singleton_key=:k"
             ),

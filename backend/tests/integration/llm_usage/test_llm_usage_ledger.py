@@ -50,26 +50,30 @@ def _event_row(**overrides) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_control_singleton_is_inert(db):
+async def test_control_singleton_captures_by_default(db):
     result = await db.execute(
         text(
-            "SELECT capture_enabled, ledger_cutover_enabled FROM llm_usage_control "
-            "WHERE singleton_key = :k"
+            "SELECT capture_enabled, capture_started_at, ledger_cutover_enabled "
+            "FROM llm_usage_control WHERE singleton_key = :k"
         ),
         {"k": CONTROL_SINGLETON_KEY},
     )
     row = result.first()
     assert row is not None, "control singleton row must be seeded by the migration"
-    assert row.capture_enabled is False
+    assert row.capture_enabled is True
+    assert row.capture_started_at is not None, "capture without a boundary leaves the backfill inert"
     assert row.ledger_cutover_enabled is False
 
 
 @pytest.mark.asyncio
-async def test_no_ledger_rows_before_activation(db):
-    events = await db.execute(text("SELECT count(*) FROM llm_usage_events"))
-    receipts = await db.execute(text("SELECT count(*) FROM llm_usage_capture_runs"))
-    assert events.scalar() == 0
-    assert receipts.scalar() == 0
+async def test_no_live_events_predate_the_capture_boundary(db):
+    result = await db.execute(
+        text(
+            "SELECT count(*) FROM llm_usage_events e, llm_usage_control c "
+            "WHERE e.legacy_response_log_id IS NULL AND e.occurred_at < c.capture_started_at"
+        )
+    )
+    assert result.scalar() == 0
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ import pytest
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.date_time_utils import utc_now
+from app.db.models.llm_usage import LlmUsageControlModel
 from app.schemas.llm_usage_control import COST_SOURCE_DAILY_STATS, COST_SOURCE_LEDGER
 from app.services.llm_usage_control import SHADOW_QUALIFYING_WINDOW_DAYS, LlmUsageControlService
 from app.services.llm_usage_shadow_window import GATE_VERSION, qualifying_days
@@ -123,6 +124,33 @@ async def test_activate_capture_is_idempotent_no_restamp():
     assert read.capture_enabled is True
     assert read.capture_started_at == datetime(2025, 6, 1, tzinfo=timezone.utc)
     assert repo.activate_calls == 0  # short-circuits, never touches the stamp
+
+
+@pytest.mark.asyncio
+async def test_activate_capture_repairs_enabled_row_with_no_stamp():
+    control = FakeControl()
+    control.capture_enabled = True
+    service, repo, _ = _service(control=control)
+
+    read = await service.activate_capture()
+
+    assert read.capture_started_at is not None
+    assert repo.activate_calls == 1
+
+
+class TestCaptureShipsOn:
+
+    columns = LlmUsageControlModel.__table__.c
+
+    def test_capture_enabled_defaults_to_true(self):
+        assert self.columns.capture_enabled.default.arg is True
+        assert "true" in str(self.columns.capture_enabled.server_default.arg).lower()
+
+    def test_capture_started_at_is_stamped_on_insert(self):
+        assert self.columns.capture_started_at.server_default is not None
+
+    def test_cutover_stays_off_by_default(self):
+        assert self.columns.ledger_cutover_enabled.default.arg is False
 
 
 @pytest.mark.asyncio

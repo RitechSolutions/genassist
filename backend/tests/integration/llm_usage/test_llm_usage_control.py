@@ -26,24 +26,25 @@ async def control_db():
     engine = create_async_engine(settings.DATABASE_URL)
     maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def reset():
+    async def set_capture(enabled: bool):
         async with maker() as session:
             await session.execute(
                 text(
-                    "UPDATE llm_usage_control SET capture_enabled=false, capture_started_at=NULL, "
+                    "UPDATE llm_usage_control SET capture_enabled=:on, "
+                    "capture_started_at=CASE WHEN :on THEN now() ELSE NULL END, "
                     "ledger_cutover_enabled=false, shadow_started_at=NULL, shadow_passed_at=NULL "
                     "WHERE singleton_key=:k"
                 ),
-                {"k": CONTROL_SINGLETON_KEY},
+                {"on": enabled, "k": CONTROL_SINGLETON_KEY},
             )
             await session.execute(text("DELETE FROM llm_usage_reconciliation_reports"))
             await session.commit()
 
-    await reset()
+    await set_capture(False)
     try:
         yield maker
     finally:
-        await reset()
+        await set_capture(True)
         await engine.dispose()
 
 

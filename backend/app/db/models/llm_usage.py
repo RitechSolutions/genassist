@@ -17,6 +17,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -151,9 +152,11 @@ class LlmUsageControlModel(Base):
 
     singleton_key: Mapped[str] = mapped_column(String(32), nullable=False, default=CONTROL_SINGLETON_KEY)
 
-    capture_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    capture_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    ledger_cutover_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    capture_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    capture_started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, server_default=func.now()
+    )
+    ledger_cutover_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     shadow_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     shadow_passed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
