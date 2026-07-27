@@ -22,7 +22,7 @@ import { getEdgeTypes } from "./edgeTypes";
 import nodeRegistry from "./registry/nodeRegistry";
 import { NodeData } from "./types/nodes";
 import { Workflow } from "@/interfaces/workflow.interface";
-import WorkflowTestDialog from "./components/WorkflowTestDialog";
+import WorkflowTestPanel, { TestRunRecord } from "./components/WorkflowTestPanel";
 import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
@@ -48,7 +48,9 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X, Plus } from "lucide-react";
+import { useSidebar } from "@/components/sidebar";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
+import { History, ChevronLeft, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
@@ -125,6 +127,10 @@ const GraphFlowContent: React.FC = () => {
 
   const showChatInput = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CHAT_INPUT);
 
+  // Sidebar state — when collapsed, a floating toggle button sits at the
+  // top-left of the viewport; shift the tab switcher right to clear it.
+  const { state: sidebarState } = useSidebar();
+
   const [workflow, setWorkflow] = useState<Workflow>();
   const [agent, setAgent] = useState<AgentConfig>();
 
@@ -139,7 +145,15 @@ const GraphFlowContent: React.FC = () => {
   const [currentTestConfig, setCurrentTestConfig] = useState<Workflow | null>(
     null
   );
-  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  // Which top-level view is showing: the graph editor or the executions/test page.
+  // (The Evaluations tab is disabled/"coming soon" and can't be selected.)
+  // Switching is a local toggle (not a route) so the live graph stays mounted.
+  const [activeTab, setActiveTab] = useState<"workflow" | "executions">(
+    "workflow"
+  );
+  // In-memory history of test runs (newest first). Lives here so it survives
+  // switching between the Workflow/Executions tabs; cleared on page leave/refresh.
+  const [testHistory, setTestHistory] = useState<TestRunRecord[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -396,6 +410,16 @@ const GraphFlowContent: React.FC = () => {
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
+  // Same trick for edges/workflow so canvas-level node actions (e.g. the Start
+  // node's inline Test) can read the latest graph without re-subscribing.
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+  const workflowRef = useRef(workflow);
+  useEffect(() => {
+    workflowRef.current = workflow;
+  }, [workflow]);
 
   // Update node data (used for saving input values)
   const updateNodeData = useCallback(
@@ -711,11 +735,35 @@ const GraphFlowContent: React.FC = () => {
     setWorkflow({ ...workflow, testInput: inputs });
   };
 
-  // Handle test graph
-  const handleTestGraph = (graphData: Workflow) => {
+  // Cap the in-memory history so a long session doesn't grow unbounded.
+  const handleAddTestRun = useCallback((record: TestRunRecord) => {
+    setTestHistory((prev) => [record, ...prev].slice(0, 50));
+  }, []);
+  const handleClearTestHistory = useCallback(() => setTestHistory([]), []);
+
+  // Snapshot the current graph into the test config so the Executions page tests
+  // exactly what's on the canvas, then switch to the Executions tab.
+  const openExecutions = (graphData: Workflow) => {
     setCurrentTestConfig(graphData);
     setShowNodePanel(false);
-    setTestDialogOpen(true);
+    setShowWorkflowPanel(false);
+    setActiveTab("executions");
+  };
+
+  // "Test" buttons (bottom panel, setup wizard) now open the Executions page.
+  const handleTestGraph = (graphData: Workflow) => {
+    openExecutions(graphData);
+  };
+
+  // Tab switch between the graph editor and the executions/test page.
+  const handleTabChange = (tab: string) => {
+    if (tab === "executions") {
+      // Re-snapshot the live graph on entry so the test always reflects the
+      // current canvas, and close editor-only drawers.
+      openExecutions({ ...workflow, nodes, edges } as Workflow);
+    } else {
+      setActiveTab("workflow");
+    }
   };
 
   // Handle selection change — highlight edges connected to any selected node.
@@ -918,9 +966,28 @@ const GraphFlowContent: React.FC = () => {
     [replaceTargetId, replaceNode]
   );
 
+  // Run the full workflow from the Executions panel. Stable (reads the latest
+  // graph through refs) so the NodeActionsContext value doesn't churn on every
+  // drag/edit. Mirrors openExecutions(); inlined so the deps can stay empty.
+  const testWorkflowFromCanvas = useCallback(() => {
+    setCurrentTestConfig({
+      ...(workflowRef.current || {}),
+      nodes: nodesRef.current,
+      edges: edgesRef.current,
+    } as Workflow);
+    setShowNodePanel(false);
+    setShowWorkflowPanel(false);
+    setActiveTab("executions");
+  }, []);
+
   const nodeActionsValue = useMemo(
-    () => ({ duplicateNode, copyNode, requestReplaceNode }),
-    [duplicateNode, copyNode, requestReplaceNode]
+    () => ({
+      duplicateNode,
+      copyNode,
+      requestReplaceNode,
+      testWorkflow: testWorkflowFromCanvas,
+    }),
+    [duplicateNode, copyNode, requestReplaceNode, testWorkflowFromCanvas]
   );
 
   // Keyboard shortcuts for canvas interactions
@@ -1317,9 +1384,59 @@ const GraphFlowContent: React.FC = () => {
               </div>
             </CanvasContextMenu>
 
-            {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons) */}
+            {/* Top-left view switcher: graph editor vs. executions/test page.
+                The sidebar's floating toggle button sits at the top-left corner
+                when collapsed (far left, ~44px) and at the sidebar's right edge
+                when expanded (overlapping the canvas edge), so keep a consistent
+                gap after it in both states. */}
+            <div
+              className={`absolute top-2 z-30 transition-[left] duration-200 ${
+                sidebarState === "collapsed" ? "left-16" : "left-8"
+              }`}
+            >
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                {/* h-11 (44px) + glassy background matches the Save/Test pill and the
+                    workflow-details card so all three top controls read as one family. */}
+                <TabsList className="h-11 rounded-full bg-background/80 shadow-sm backdrop-blur-sm">
+                  <TabsTrigger value="workflow" className="gap-1.5 px-3 text-xs">
+                    <WorkflowIcon className="h-3.5 w-3.5" />
+                    Workflow
+                  </TabsTrigger>
+                  <TabsTrigger value="executions" className="gap-1.5 px-3 text-xs">
+                    <Play className="h-3.5 w-3.5" />
+                    Executions
+                  </TabsTrigger>
+                  {/* Evaluations isn't built yet — disabled, with a "Coming soon"
+                      tooltip on hover. The disabled trigger has pointer-events-none
+                      (from the base styles), so hover falls through to this group
+                      wrapper and the CSS tooltip shows even though the button is off. */}
+                  <span className="group relative inline-flex cursor-not-allowed">
+                    <TabsTrigger
+                      value="evaluations"
+                      disabled
+                      className="gap-1.5 px-3 text-xs"
+                    >
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                      Evaluations
+                    </TabsTrigger>
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+                    >
+                      Coming soon
+                    </span>
+                  </span>
+                </TabsList>
+              </Tabs>
+            </div>
+
+            {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons).
+                Kept mounted (hidden on the Executions tab) so BottomPanel's unsaved-changes
+                navigation guard and live execution mirroring stay active. */}
             <div
               className={`fixed top-2 z-20 flex flex-row flex-wrap items-start justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
+                activeTab !== "workflow" ? "hidden" : ""
+              } ${
                 (() => {
                   if (showNodePanel && showWorkflowPanel) {
                     return "right-[calc(360px+20rem+1rem)]";
@@ -1410,24 +1527,41 @@ const GraphFlowContent: React.FC = () => {
               onSaveWorkflow={handleSaveWorkflow}
             />
 
-            <WorkflowTestDialog
-              isOpen={testDialogOpen}
-              onClose={() => setTestDialogOpen(false)}
-              workflowName="Current Graph"
-              workflow={currentTestConfig}
-              onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
-            />
+            {/* Executions page — overlays the canvas (which stays mounted
+                underneath so the graph/viewport is preserved). */}
+            {activeTab === "executions" && (
+              <div className="absolute inset-0 z-20 flex flex-col bg-background">
+                {/* Title on the same row as the floating tabs (which sit at the
+                    left); the columns start immediately below with no extra gap. */}
+                <div className="flex h-14 shrink-0 items-center justify-center px-3">
+                  <h2 className="text-base font-semibold leading-none tracking-tight">
+                    Test Workflow: Current Graph
+                  </h2>
+                </div>
+                <div className="min-h-0 flex-1 px-3 pb-3">
+                  <WorkflowTestPanel
+                    active
+                    workflow={currentTestConfig}
+                    history={testHistory}
+                    onAddTestRun={handleAddTestRun}
+                    onClearHistory={handleClearTestHistory}
+                    onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
+                  />
+                </div>
+              </div>
+            )}
 
-            {showSetupWizard ? (
-              <SetupWizardPanel
-                nodes={nodes}
-                onNodeFocus={handleNodeFocus}
-                onClose={() => setShowSetupWizard(false)}
-                onTest={() => handleTestGraph({ ...workflow, nodes, edges } as Workflow)}
-              />
-            ) : wizardWasShown ? (
-              <SetupWizardReopenButton onClick={() => setShowSetupWizard(true)} />
-            ) : null}
+            {activeTab === "workflow" &&
+              (showSetupWizard ? (
+                <SetupWizardPanel
+                  nodes={nodes}
+                  onNodeFocus={handleNodeFocus}
+                  onClose={() => setShowSetupWizard(false)}
+                  onTest={() => handleTestGraph({ ...workflow, nodes, edges } as Workflow)}
+                />
+              ) : wizardWasShown ? (
+                <SetupWizardReopenButton onClick={() => setShowSetupWizard(true)} />
+              ) : null)}
 
             {nodeSearchOpen && (
               <WorkflowCommandPalette

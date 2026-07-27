@@ -13,6 +13,12 @@ export interface NodeActionsContextValue {
   copyNode: (id: string) => void;
   /** Open the Available Nodes sidebar in "replace" mode for this node. */
   requestReplaceNode: (id: string) => void;
+  /**
+   * Run the whole workflow in the Executions test panel. Used by the Start
+   * (Chat Input) node's inline "Test" affordance — it's the workflow entry
+   * point, so testing "directly" from it runs the full graph.
+   */
+  testWorkflow: () => void;
 }
 
 export const NodeActionsContext = createContext<NodeActionsContextValue | null>(
