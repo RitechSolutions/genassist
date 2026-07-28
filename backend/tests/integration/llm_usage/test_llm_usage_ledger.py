@@ -1,4 +1,4 @@
-"""Integration tests for the LLM usage ledger schema (migration 00101)"""
+"""Integration tests for the LLM usage ledger schema (migration 00102)"""
 
 from datetime import datetime, timezone
 from uuid import uuid4

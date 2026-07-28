@@ -4,8 +4,8 @@ Creates the ledger tables (events, receipts, control flag) and adds optional
 ``workflow_execution_id`` on ``agent_response_logs``.
 
 Revision ID: c6974c08b567
-Revises: a3f9c1d7e204
-Create Date: 2026-07-23 00:00:00.000000
+Revises: b7c2e9d14a83
+Create Date: 2026-07-28 00:00:00.000000
 
 """
 
@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "c6974c08b567"
-down_revision: Union[str, None] = "a3f9c1d7e204"
+down_revision: Union[str, None] = "b7c2e9d14a83"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

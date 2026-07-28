@@ -285,8 +285,11 @@ class BaseNode(ABC):
                 if node:
                     # Check if node exposes multiple tools (e.g., MCP node)
                     if hasattr(node, "get_tools") and callable(getattr(node, "get_tools")):
-                        # Node exposes multiple tools
+                        # Node exposes multiple tools (e.g. MCP)
                         tools = node.get_tools()
+                        for t in tools:
+                            t.agent_id = self.node_id
+                            t.state = self.get_state()
                         connected_nodes.extend(tools)
                         logger.debug("Added %d tools from node %s", len(tools), source_node_id)
                     else:
@@ -298,6 +301,8 @@ class BaseNode(ABC):
                             parameters=node.get_input_schema(),
                             return_direct=node.get_node_data().get("returnDirect", False),
                             function=node.execute,
+                            agent_id=self.node_id,
+                            state=self.get_state(),
                         )
 
                         connected_nodes.append(tool)

@@ -83,6 +83,9 @@ class WorkflowExecutorNode(BaseNode):
                 usage_sink=self.get_state().llm_usage,  # child usage flows to parent, even on raise
             )
 
+            # Nested runs use a separate state; carry their tool events up for evaluation.
+            self.get_state().absorb_tool_events(state)
+
             # Format and return the response
             result = state.format_state_as_response()
 

@@ -272,7 +272,7 @@ async def test_breakdown_source_relabels_workflow_and_analyst():
     resp = await service.get_breakdown(_params(), "source")
     by = {i.key: i for i in resp.items}
     assert by["workflow"].label == "Workflow"
-    assert by["llm_analyst"].label == "Analyst"
+    assert by["llm_analyst"].label == "Conversation Analyst"
     assert resp.dimension == "source"
 
 
