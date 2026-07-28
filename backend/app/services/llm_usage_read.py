@@ -2,7 +2,6 @@ from injector import inject
 
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.repositories.agent import AgentRepository
-from app.repositories.llm_usage_control import LlmUsageControlRepository
 from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import (
     LlmUsageAgentOption,
@@ -14,7 +13,6 @@ from app.schemas.llm_usage import (
     LlmUsageTimeseriesItem,
     LlmUsageTimeseriesResponse,
 )
-from app.schemas.llm_usage_control import CostSource
 
 _DIMENSION_COLUMNS = {
     "provider": LlmUsageEventModel.provider_key,
@@ -23,7 +21,7 @@ _DIMENSION_COLUMNS = {
     "source": LlmUsageEventModel.source_type,
 }
 
-_SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Analyst"}
+_SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Conversation Analyst"}
 
 
 def _is_empty_scope(scope) -> bool:
@@ -49,23 +47,14 @@ class LlmUsageReadService:
     def __init__(
         self,
         repo: LlmUsageReadRepository,
-        control_repo: LlmUsageControlRepository,
         agent_repo: AgentRepository,
     ):
         self.repo = repo
-        self.control_repo = control_repo
         self.agent_repo = agent_repo
-
-    async def _dashboard_cost_source(self) -> CostSource:
-        """What the dashboard currently reads cost from"""
-        control = await self.control_repo.get_singleton()
-        if control is not None and control.ledger_cutover_enabled:
-            return CostSource.LEDGER
-        return CostSource.DAILY_STATS
 
     async def get_summary(self, params: LlmUsageQueryParams) -> LlmUsageSummaryResponse:
         scope = await self.repo.resolve_scope(params)
-        return await self._summary(params, scope, await self._dashboard_cost_source())
+        return await self._summary(params, scope)
 
     async def get_timeseries(self, params: LlmUsageQueryParams) -> LlmUsageTimeseriesResponse:
         scope = await self.repo.resolve_scope(params)
@@ -80,7 +69,7 @@ class LlmUsageReadService:
             )
             for stat_date, cost, tokens, calls, unpriced in rows
         ]
-        return LlmUsageTimeseriesResponse(items=items, total=len(items), cost_source=CostSource.LEDGER)
+        return LlmUsageTimeseriesResponse(items=items, total=len(items))
 
     async def get_breakdown(self, params: LlmUsageQueryParams, dimension: str) -> LlmUsageBreakdownResponse:
         scope = await self.repo.resolve_scope(params)
@@ -91,9 +80,8 @@ class LlmUsageReadService:
     ) -> tuple[LlmUsageSummaryResponse, LlmUsageBreakdownResponse]:
         """Summary plus breakdown for one export"""
         scope = await self.repo.resolve_scope(params)
-        dashboard_source = await self._dashboard_cost_source()
         return (
-            await self._summary(params, scope, dashboard_source),
+            await self._summary(params, scope),
             await self._breakdown(params, scope, dimension),
         )
 
@@ -111,10 +99,10 @@ class LlmUsageReadService:
         agents.sort(key=lambda a: a.name.lower())
         return LlmUsageFilterOptionsResponse(providers=providers, models=models, agents=agents)
 
-    async def _summary(self, params, scope, dashboard_source: CostSource) -> LlmUsageSummaryResponse:
+    async def _summary(self, params, scope) -> LlmUsageSummaryResponse:
         row = None if _is_empty_scope(scope) else await self.repo.summary(params, scope)
         if row is None:
-            return self._empty_summary(params, dashboard_source)
+            return self._empty_summary(params)
         (
             sum_cost,
             input_tokens,
@@ -150,17 +138,13 @@ class LlmUsageReadService:
             priced_token_coverage_pct=_coverage_pct(
                 int(total_calls), int(total_tokens), int(priced_tokens), int(unpriced_calls)
             ),
-            cost_source=CostSource.LEDGER,
-            dashboard_cost_source=dashboard_source,
         )
 
     async def _breakdown(self, params, scope, dimension: str) -> LlmUsageBreakdownResponse:
         rows = [] if _is_empty_scope(scope) else await self.repo.breakdown(params, scope, _DIMENSION_COLUMNS[dimension])
         agent_names = await self._agent_names([k for k, *_ in rows]) if dimension == "agent" else {}
         items = [self._breakdown_item(dimension, row, agent_names) for row in rows]
-        return LlmUsageBreakdownResponse(
-            dimension=dimension, items=items, total=len(items), cost_source=CostSource.LEDGER
-        )
+        return LlmUsageBreakdownResponse(dimension=dimension, items=items, total=len(items))
 
     async def _agent_names(self, agent_ids) -> dict:
         ids = [a for a in agent_ids if a is not None]
@@ -192,7 +176,7 @@ class LlmUsageReadService:
         )
 
     @staticmethod
-    def _empty_summary(params: LlmUsageQueryParams, dashboard_source: CostSource) -> LlmUsageSummaryResponse:
+    def _empty_summary(params: LlmUsageQueryParams) -> LlmUsageSummaryResponse:
         return LlmUsageSummaryResponse(
             from_date=params.from_date,
             to_date=params.to_date,
@@ -209,6 +193,4 @@ class LlmUsageReadService:
             legacy_estimate_calls=0,
             unpriced_calls=0,
             priced_token_coverage_pct=100.0,
-            cost_source=CostSource.LEDGER,
-            dashboard_cost_source=dashboard_source,
         )

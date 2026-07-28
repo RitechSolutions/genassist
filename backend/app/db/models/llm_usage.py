@@ -1,6 +1,6 @@
 """Tables that store LLM token and cost usage"""
 
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -9,7 +9,6 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
-    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -145,7 +144,7 @@ class LlmUsageCaptureRunModel(Base):
 
 
 class LlmUsageControlModel(Base):
-    """Single shared control row for capture, shadow, and cutover flags (keyed by ``singleton_key``)"""
+    """Single shared control row for capture state (keyed by ``singleton_key``)"""
 
     __tablename__ = "llm_usage_control"
     __table_args__ = (UniqueConstraint("singleton_key", name="uq_llm_usage_control_singleton"),)
@@ -156,20 +155,3 @@ class LlmUsageControlModel(Base):
     capture_started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, server_default=func.now()
     )
-    ledger_cutover_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    shadow_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    shadow_passed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class LlmUsageReconciliationReportModel(Base):
-    """One reconciliation report per covered UTC day. Re-runs replace via ON CONFLICT DO UPDATE"""
-
-    __tablename__ = "llm_usage_reconciliation_reports"
-    __table_args__ = (UniqueConstraint("report_date", name="uq_llm_usage_reconciliation_reports_date"),)
-
-    report_date: Mapped[date] = mapped_column(Date, nullable=False)
-    interval_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    interval_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    reasons: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)

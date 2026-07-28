@@ -8,8 +8,7 @@ from sqlalchemy.dialects import postgresql
 
 import app.db.models
 import app.db.models.test_suite
-from app.db.models.llm_usage import LlmUsageEventModel
-from app.repositories.dashboard import DashboardRepository
+from app.repositories.dashboard import DashboardRepository, _ledger_window
 from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
 
@@ -103,7 +102,7 @@ async def test_summary_scopes_agent_studio_cost_to_the_two_studio_test_sources()
 @pytest.mark.asyncio
 async def test_dashboard_ledger_total_is_half_open_and_skips_deleted():
     db = CapturingDb()
-    await DashboardRepository(db).get_total_cost_usd_from_ledger(
+    await DashboardRepository(db).get_total_cost_usd(
         datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc)
     )
     sql = _sql(db.statements[0])
@@ -116,20 +115,35 @@ async def test_dashboard_ledger_total_is_half_open_and_skips_deleted():
 async def test_dashboard_agent_cost_today_is_half_open_and_skips_deleted():
     db = CapturingDb()
     day_start = datetime(2026, 1, 15, tzinfo=timezone.utc)
-    await DashboardRepository(db)._agent_cost_today_ledger([uuid4()], day_start, day_start + timedelta(days=1))
+    await DashboardRepository(db)._agent_cost_today([uuid4()], day_start, day_start + timedelta(days=1))
     sql = _sql(db.statements[0])
     assert "occurred_at >= '2026-01-15 00:00:00+00:00'" in sql
     assert "occurred_at < '2026-01-16 00:00:00+00:00'" in sql
     assert "is_deleted = 0" in sql
 
 
-@pytest.mark.asyncio
-async def test_legacy_daily_stats_total_keeps_its_inclusive_raw_bounds():
-    db = CapturingDb()
-    from_date = datetime(2026, 1, 1, 13, 30, tzinfo=timezone.utc)
-    to_date = datetime(2026, 1, 31, 13, 30, tzinfo=timezone.utc)
-    await DashboardRepository(db).get_total_cost_usd(from_date, to_date)
-    sql = _sql(db.statements[0])
-    assert LlmUsageEventModel.__tablename__ not in sql
-    assert "stat_date >= '2026-01-01 13:30:00+00:00'" in sql
-    assert "stat_date <= '2026-01-31 13:30:00+00:00'" in sql
+def test_ledger_window_is_half_open_on_whole_utc_days():
+    start, end = _ledger_window(
+        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc)
+    )
+    assert start == datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert end == datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+
+def test_ledger_window_rounds_a_mid_day_lower_bound_up():
+    start, _ = _ledger_window(
+        datetime(2026, 1, 1, 13, 30, tzinfo=timezone.utc), datetime(2026, 1, 31, 13, 30, tzinfo=timezone.utc)
+    )
+    assert start == datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+
+def test_ledger_window_includes_the_whole_upper_bound_day():
+    _, end = _ledger_window(
+        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, 13, 30, tzinfo=timezone.utc)
+    )
+    assert end == datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+
+def test_ledger_window_of_a_single_day_covers_that_day():
+    day = datetime(2026, 1, 15, tzinfo=timezone.utc)
+    assert _ledger_window(day, day) == (day, day + timedelta(days=1))

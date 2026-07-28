@@ -172,10 +172,6 @@ class ErrorKey(Enum):
     SSO_MICROSOFT_NOT_CONFIGURED = "SSO_MICROSOFT_NOT_CONFIGURED"
     LLM_USAGE_CONTROL_NOT_FOUND = "LLM_USAGE_CONTROL_NOT_FOUND"
     LLM_USAGE_CAPTURE_NOT_ENABLED = "LLM_USAGE_CAPTURE_NOT_ENABLED"
-    LLM_USAGE_SHADOW_ALREADY_RUNNING = "LLM_USAGE_SHADOW_ALREADY_RUNNING"
-    LLM_USAGE_SHADOW_ALREADY_PASSED = "LLM_USAGE_SHADOW_ALREADY_PASSED"
-    LLM_USAGE_SHADOW_NOT_PASSED = "LLM_USAGE_SHADOW_NOT_PASSED"
-    LLM_USAGE_SHADOW_WINDOW_STALE = "LLM_USAGE_SHADOW_WINDOW_STALE"
     LLM_COST_RATE_ALREADY_EXISTS = "LLM_COST_RATE_ALREADY_EXISTS"
 
 
@@ -346,10 +342,6 @@ ERROR_MESSAGES = {
         ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
         ErrorKey.LLM_USAGE_CONTROL_NOT_FOUND: "LLM usage control state is not initialized.",
         ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED: "LLM usage capture must be activated first.",
-        ErrorKey.LLM_USAGE_SHADOW_ALREADY_RUNNING: "Shadow reconciliation is already running.",
-        ErrorKey.LLM_USAGE_SHADOW_ALREADY_PASSED: "Shadow reconciliation has already passed.",
-        ErrorKey.LLM_USAGE_SHADOW_NOT_PASSED: "Shadow reconciliation has not passed yet.",
-        ErrorKey.LLM_USAGE_SHADOW_WINDOW_STALE: "The passing shadow window is no longer current.",
         ErrorKey.LLM_COST_RATE_ALREADY_EXISTS: "A rate for this provider and model already exists.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",

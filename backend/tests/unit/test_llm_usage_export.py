@@ -5,7 +5,6 @@ from datetime import date
 import pytest
 
 from app.schemas.llm_usage import LlmUsageBreakdownItem, LlmUsageBreakdownResponse, LlmUsageSummaryResponse
-from app.schemas.llm_usage_control import CostSource
 from app.services.llm_usage_export import export_llm_usage
 
 
@@ -26,8 +25,6 @@ def _summary(**overrides) -> LlmUsageSummaryResponse:
         "legacy_estimate_calls": 1,
         "unpriced_calls": 1,
         "priced_token_coverage_pct": 90.0,
-        "cost_source": CostSource.LEDGER,
-        "dashboard_cost_source": CostSource.DAILY_STATS,
     }
     values.update(overrides)
     return LlmUsageSummaryResponse(**values)
@@ -48,7 +45,6 @@ def _breakdown(dimension="source") -> LlmUsageBreakdownResponse:
             )
         ],
         total=1,
-        cost_source=CostSource.LEDGER,
     )
 
 
@@ -71,14 +67,12 @@ def test_csv_header_per_dimension(dimension, header):
     assert header in _csv_text(breakdown=_breakdown(dimension))
 
 
-def test_csv_includes_provenance_counts_and_both_sources():
+def test_csv_includes_rate_provenance_counts():
     text = _csv_text()
     assert "Calls priced at configured rates,6" in text
     assert "Calls priced at bundled fallback rates,2" in text
     assert "Calls carrying legacy estimated cost,1" in text
     assert "Unpriced calls,1" in text
-    assert "Report cost source,llm_usage_ledger" in text
-    assert "Dashboard cost source,daily_stats" in text
 
 
 def test_csv_labels_agent_studio_test_cost():

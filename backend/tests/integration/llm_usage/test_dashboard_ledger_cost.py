@@ -1,4 +1,4 @@
-"""Integration tests for the dashboard reading LLM cost from the ledger after cutover"""
+"""Integration tests for the dashboard reading LLM cost from the ledger"""
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,11 +12,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config.settings import settings
 from app.db.models.agent import AgentModel
-from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.conversation import ConversationModel
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.db.models.operator import OperatorModel
 from app.repositories.dashboard import DashboardRepository
+from app.repositories.llm_usage_read import LlmUsageReadRepository
+from app.schemas.llm_usage import LlmUsageQueryParams
+from app.services.llm_usage_read import LlmUsageReadService
 
 
 @pytest_asyncio.fixture
@@ -64,12 +66,12 @@ def _today_range() -> tuple[datetime, datetime]:
 async def test_ledger_total_sums_priced_cost(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd_from_ledger(start, end)
+    before = await repo.get_total_cost_usd(start, end)
 
     db.add(_event(cost_usd=Decimal("0.25")))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    after = await repo.get_total_cost_usd(start, end)
     assert after - before == pytest.approx(0.25)
 
 
@@ -77,12 +79,12 @@ async def test_ledger_total_sums_priced_cost(db):
 async def test_ledger_total_excludes_unpriced(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd_from_ledger(start, end)
+    before = await repo.get_total_cost_usd(start, end)
 
     db.add(_event(cost_usd=None, input_per_1k=None, output_per_1k=None, pricing_status="unpriced"))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    after = await repo.get_total_cost_usd(start, end)
     assert after == pytest.approx(before)
 
 
@@ -90,12 +92,12 @@ async def test_ledger_total_excludes_unpriced(db):
 async def test_ledger_total_excludes_events_outside_window(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd_from_ledger(start, end)
+    before = await repo.get_total_cost_usd(start, end)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start - timedelta(hours=1)))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    after = await repo.get_total_cost_usd(start, end)
     assert after == pytest.approx(before)
 
 
@@ -103,12 +105,12 @@ async def test_ledger_total_excludes_events_outside_window(db):
 async def test_ledger_total_upper_bound_is_exclusive_of_the_next_day(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd_from_ledger(start, end)
+    before = await repo.get_total_cost_usd(start, end)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start + timedelta(days=1)))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    after = await repo.get_total_cost_usd(start, end)
     assert after == pytest.approx(before)
 
 
@@ -117,12 +119,12 @@ async def test_ledger_total_drops_the_day_of_a_mid_day_lower_bound(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
     mid_day = start + timedelta(hours=13)
-    before = await repo.get_total_cost_usd_from_ledger(mid_day, end)
+    before = await repo.get_total_cost_usd(mid_day, end)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start + timedelta(hours=20)))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(mid_day, end)
+    after = await repo.get_total_cost_usd(mid_day, end)
     assert after == pytest.approx(before)
 
 
@@ -130,12 +132,12 @@ async def test_ledger_total_drops_the_day_of_a_mid_day_lower_bound(db):
 async def test_ledger_total_excludes_soft_deleted_events(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd_from_ledger(start, end)
+    before = await repo.get_total_cost_usd(start, end)
 
     db.add(_event(cost_usd=Decimal("0.77"), is_deleted=1))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    after = await repo.get_total_cost_usd(start, end)
     assert after == pytest.approx(before)
 
 
@@ -151,14 +153,14 @@ async def test_agent_cost_today_ledger_sums_for_agent(db):
 
     repo = DashboardRepository(db)
     start, end = _today_window()
-    before = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    before = _agent_cost(await repo._agent_cost_today([agent_id], start, end), agent_id)
 
     db.add(_event(agent_id=agent_id, cost_usd=Decimal("0.40")))
     # An unpriced call for the same agent must not lift the priced subtotal.
     db.add(_event(agent_id=agent_id, cost_usd=None, pricing_status="unpriced"))
     await db.flush()
 
-    after = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    after = _agent_cost(await repo._agent_cost_today([agent_id], start, end), agent_id)
     assert after - before == pytest.approx(0.40)
 
 
@@ -170,12 +172,12 @@ async def test_agent_cost_today_ledger_excludes_next_day(db):
 
     repo = DashboardRepository(db)
     start, end = _today_window()
-    before = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    before = _agent_cost(await repo._agent_cost_today([agent_id], start, end), agent_id)
 
     db.add(_event(agent_id=agent_id, cost_usd=Decimal("0.99"), occurred_at=end))
     await db.flush()
 
-    after = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    after = _agent_cost(await repo._agent_cost_today([agent_id], start, end), agent_id)
     assert after == pytest.approx(before)
 
 
@@ -190,7 +192,7 @@ async def test_agent_cost_per_conversation_today_ledger_is_canonical(db):
 
     repo = DashboardRepository(db)
     start, end = _today_window()
-    before = (await repo._agent_cost_today_ledger([agent_id], start, end)).get(agent_id, {})
+    before = (await repo._agent_cost_today([agent_id], start, end)).get(agent_id, {})
     if before.get("cost_per_conversation") is not None:
         pytest.skip("agent already has conversation-attributed ledger rows today")
 
@@ -205,7 +207,7 @@ async def test_agent_cost_per_conversation_today_ledger_is_canonical(db):
     db.add(_event(agent_id=agent_id, conversation_id=None, cost_usd=Decimal("0.50")))
     await db.flush()
 
-    after = (await repo._agent_cost_today_ledger([agent_id], start, end)).get(agent_id, {})
+    after = (await repo._agent_cost_today([agent_id], start, end)).get(agent_id, {})
     assert after["cost_per_conversation"] == pytest.approx(0.30)
     assert after["cost"] - before.get("cost", 0.0) == pytest.approx(1.10)
 
@@ -221,7 +223,7 @@ async def test_agent_cost_per_conversation_counts_unpriced_only_conversations(db
 
     repo = DashboardRepository(db)
     start, end = _today_window()
-    before = (await repo._agent_cost_today_ledger([agent_id], start, end)).get(agent_id, {})
+    before = (await repo._agent_cost_today([agent_id], start, end)).get(agent_id, {})
     if before.get("cost_per_conversation") is not None:
         pytest.skip("agent already has conversation-attributed ledger rows today")
 
@@ -234,43 +236,8 @@ async def test_agent_cost_per_conversation_counts_unpriced_only_conversations(db
     db.add(_event(agent_id=agent_id, conversation_id=unpriced_conv, cost_usd=None, pricing_status="unpriced"))
     await db.flush()
 
-    after = (await repo._agent_cost_today_ledger([agent_id], start, end)).get(agent_id, {})
+    after = (await repo._agent_cost_today([agent_id], start, end)).get(agent_id, {})
     assert after["cost_per_conversation"] == pytest.approx(0.15)
-
-
-@pytest.mark.asyncio
-async def test_agent_cost_today_daily_stats_never_attributes_per_conversation(db):
-    agent_id = (await db.execute(select(AgentModel.id).where(AgentModel.is_deleted == 0).limit(1))).scalar()
-    if agent_id is None:
-        pytest.skip("no agent available to attribute daily-stats cost to")
-
-    today = datetime.now(timezone.utc).date()
-    existing = (
-        await db.execute(
-            select(AgentExecutionDailyStatsModel.id).where(
-                AgentExecutionDailyStatsModel.agent_id == agent_id,
-                AgentExecutionDailyStatsModel.stat_date == today,
-            )
-        )
-    ).scalar()
-    if existing is not None:
-        pytest.skip("agent already has a daily-stats row today")
-
-    db.add(
-        AgentExecutionDailyStatsModel(
-            agent_id=agent_id,
-            stat_date=today,
-            total_cost_usd=Decimal("3.33"),
-            last_aggregated_at=datetime.now(timezone.utc),
-        )
-    )
-    await db.flush()
-
-    repo = DashboardRepository(db)
-    record = (await repo._agent_cost_today_daily_stats([agent_id], today)).get(agent_id)
-    assert record is not None
-    assert record["cost"] == pytest.approx(3.33)
-    assert record["cost_per_conversation"] is None
 
 
 @pytest.mark.asyncio
@@ -281,12 +248,12 @@ async def test_agent_cost_today_ledger_excludes_soft_deleted_events(db):
 
     repo = DashboardRepository(db)
     start, end = _today_window()
-    before = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    before = _agent_cost(await repo._agent_cost_today([agent_id], start, end), agent_id)
 
     db.add(_event(agent_id=agent_id, cost_usd=Decimal("0.77"), is_deleted=1))
     await db.flush()
 
-    after = _agent_cost(await repo._agent_cost_today_ledger([agent_id], start, end), agent_id)
+    after = _agent_cost(await repo._agent_cost_today([agent_id], start, end), agent_id)
     assert after == pytest.approx(before)
 
 
@@ -294,37 +261,58 @@ async def test_agent_cost_today_ledger_excludes_soft_deleted_events(db):
 async def test_ledger_total_includes_analyst_source(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd_from_ledger(start, end)
+    before = await repo.get_total_cost_usd(start, end)
 
     db.add(_event(source_type="llm_analyst", source="conversation_analysis", cost_usd=Decimal("0.30")))
     await db.flush()
 
-    after = await repo.get_total_cost_usd_from_ledger(start, end)
+    after = await repo.get_total_cost_usd(start, end)
     assert after - before == pytest.approx(0.30)
 
 
 @pytest.mark.asyncio
-async def test_get_agents_with_stats_picks_source_by_use_ledger(db):
+async def test_get_agents_with_stats_reports_ledger_cost_and_per_conversation(db):
     agent_id = (
         await db.execute(select(AgentModel.id).where(AgentModel.is_deleted == 0).order_by(AgentModel.name).limit(1))
     ).scalar()
-    if agent_id is None:
-        pytest.skip("no agent available to attribute ledger cost to")
+    operator_id = (await db.execute(select(OperatorModel.id).limit(1))).scalar()
+    if agent_id is None or operator_id is None:
+        pytest.skip("need an agent and an operator to attribute ledger cost to")
 
     repo = DashboardRepository(db)
 
-    def _cost_for(rows):
-        return next((row["cost"] or 0.0 for row in rows if row["id"] == agent_id), None)
+    def _row_for(rows):
+        return next((row for row in rows if row["id"] == agent_id), None)
 
-    on_before = _cost_for(await repo.get_agents_with_stats(limit=5, use_ledger=True))
-    off_before = _cost_for(await repo.get_agents_with_stats(limit=5, use_ledger=False))
-    assert on_before is not None, "seed agent must be within the returned set"
+    before = _row_for(await repo.get_agents_with_stats(limit=5))
+    assert before is not None, "seed agent must be within the returned set"
 
-    db.add(_event(agent_id=agent_id, cost_usd=Decimal("0.40")))
+    conversation_id = uuid4()
+    db.add(ConversationModel(id=conversation_id, operator_id=operator_id, conversation_type="chat"))
+    await db.flush()
+    db.add(_event(agent_id=agent_id, conversation_id=conversation_id, cost_usd=Decimal("0.40")))
     await db.flush()
 
-    on_after = _cost_for(await repo.get_agents_with_stats(limit=5, use_ledger=True))
-    off_after = _cost_for(await repo.get_agents_with_stats(limit=5, use_ledger=False))
+    after = _row_for(await repo.get_agents_with_stats(limit=5))
+    assert after["cost"] - (before["cost"] or 0.0) == pytest.approx(0.40)
+    assert after["cost_per_conversation"] is not None
 
-    assert on_after - on_before == pytest.approx(0.40)
-    assert off_after == pytest.approx(off_before)
+
+@pytest.mark.asyncio
+async def test_cost_explorer_summary_total_matches_dashboard_total(db):
+    dashboard_repo = DashboardRepository(db)
+    read_service = LlmUsageReadService(LlmUsageReadRepository(db), None)
+    start, end = _today_range()
+    params = LlmUsageQueryParams(from_date=start.date(), to_date=end.date())
+
+    dashboard_before = await dashboard_repo.get_total_cost_usd(start, end)
+    summary_before = (await read_service.get_summary(params)).total_cost_usd
+    assert summary_before == pytest.approx(dashboard_before)
+
+    db.add(_event(cost_usd=Decimal("0.65")))
+    await db.flush()
+
+    dashboard_after = await dashboard_repo.get_total_cost_usd(start, end)
+    summary_after = (await read_service.get_summary(params)).total_cost_usd
+    assert summary_after == pytest.approx(dashboard_after)
+    assert dashboard_after - dashboard_before == pytest.approx(0.65)

@@ -1,4 +1,4 @@
-"""Integration tests for the LLM usage ledger schema (migration 00099)"""
+"""Integration tests for the LLM usage ledger schema (migration 00101)"""
 
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -52,17 +52,43 @@ def _event_row(**overrides) -> dict:
 @pytest.mark.asyncio
 async def test_control_singleton_captures_by_default(db):
     result = await db.execute(
-        text(
-            "SELECT capture_enabled, capture_started_at, ledger_cutover_enabled "
-            "FROM llm_usage_control WHERE singleton_key = :k"
-        ),
+        text("SELECT capture_enabled, capture_started_at FROM llm_usage_control WHERE singleton_key = :k"),
         {"k": CONTROL_SINGLETON_KEY},
     )
     row = result.first()
     assert row is not None, "control singleton row must be seeded by the migration"
     assert row.capture_enabled is True
     assert row.capture_started_at is not None, "capture without a boundary leaves the backfill inert"
-    assert row.ledger_cutover_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_ledger_tables_are_exactly_the_permanent_set(db):
+    result = await db.execute(
+        text("SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'llm\\_usage%'")
+    )
+    assert {row[0] for row in result.all()} == {
+        "llm_usage_events",
+        "llm_usage_capture_runs",
+        "llm_usage_control",
+    }
+
+
+@pytest.mark.asyncio
+async def test_control_columns_are_exactly_the_permanent_set(db):
+    result = await db.execute(
+        text("SELECT column_name FROM information_schema.columns WHERE table_name='llm_usage_control'")
+    )
+    assert {row[0] for row in result.all()} == {
+        "id",
+        "singleton_key",
+        "capture_enabled",
+        "capture_started_at",
+        "created_by",
+        "updated_by",
+        "created_at",
+        "updated_at",
+        "is_deleted",
+    }
 
 
 @pytest.mark.asyncio

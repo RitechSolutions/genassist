@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -182,7 +182,6 @@ class DashboardRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         limit: int = 5,
-        use_ledger: bool = False,
     ) -> list[dict]:
         """Load a short list of agents and their stats for the dashboard"""
         # Get agents with their operators and statistics
@@ -202,7 +201,7 @@ class DashboardRepository:
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         agent_ids = [a.id for a in agents]
-        cost_by_agent = await self._agent_cost_today(agent_ids, today_start, today_end, use_ledger)
+        cost_by_agent = await self._agent_cost_today(agent_ids, today_start, today_end)
 
         # Fetch today's conversation counts for all operators in a single GROUP BY query
         operator_ids = [a.operator_id for a in agents if a.operator_id]
@@ -252,31 +251,6 @@ class DashboardRepository:
         return agent_stats
 
     async def _agent_cost_today(
-        self, agent_ids: list[UUID], day_start: datetime, day_end: datetime, use_ledger: bool
-    ) -> dict[UUID, dict]:
-        if use_ledger:
-            return await self._agent_cost_today_ledger(agent_ids, day_start, day_end)
-        return await self._agent_cost_today_daily_stats(agent_ids, day_start.date())
-
-    async def _agent_cost_today_daily_stats(self, agent_ids: list[UUID], today: date) -> dict[UUID, dict]:
-        """Today's per-agent cost from daily stats"""
-        if not agent_ids:
-            return {}
-        query = select(
-            AgentExecutionDailyStatsModel.agent_id,
-            func.coalesce(AgentExecutionDailyStatsModel.total_cost_usd, 0).label("cost_usd"),
-        ).where(
-            AgentExecutionDailyStatsModel.stat_date == today,
-            AgentExecutionDailyStatsModel.is_deleted == 0,
-            AgentExecutionDailyStatsModel.agent_id.in_(agent_ids),
-        )
-        result = await self.db.execute(query)
-        return {
-            row.agent_id: {"cost": float(row.cost_usd or 0), "cost_per_conversation": None}
-            for row in result.all()
-        }
-
-    async def _agent_cost_today_ledger(
         self, agent_ids: list[UUID], day_start: datetime, day_end: datetime
     ) -> dict[UUID, dict]:
         """Today's per-agent cost and cost-per-conversation from the usage ledger"""
@@ -372,17 +346,7 @@ class DashboardRepository:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def get_total_cost_usd(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> float:
-        """Get total cost in USD for the given date range."""
-        query = select(func.sum(AgentExecutionDailyStatsModel.total_cost_usd)).where(
-            AgentExecutionDailyStatsModel.stat_date >= from_date,
-            AgentExecutionDailyStatsModel.stat_date <= to_date,
-            AgentExecutionDailyStatsModel.is_deleted == 0
-        )
-        result = await self.db.execute(query)
-        return float(result.scalar() or 0.00)
-
-    async def get_total_cost_usd_from_ledger(self, from_date: datetime, to_date: datetime) -> float:
+    async def get_total_cost_usd(self, from_date: datetime, to_date: datetime) -> float:
         """Total priced LLM cost over the range from the usage ledger"""
         window_start, window_end = _ledger_window(from_date, to_date)
         query = select(func.coalesce(func.sum(LlmUsageEventModel.cost_usd), 0)).where(

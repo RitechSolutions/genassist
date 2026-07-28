@@ -1,54 +1,13 @@
-from datetime import date, datetime
-from enum import StrEnum
-from typing import Any, Optional
+from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
 
-class CostSource(StrEnum):
-    """Which system a cost figure was read from"""
-
-    DAILY_STATS = "daily_stats"
-    LEDGER = "llm_usage_ledger"
-
-
-COST_SOURCE_DAILY_STATS = CostSource.DAILY_STATS
-COST_SOURCE_LEDGER = CostSource.LEDGER
-
-
 class LlmUsageControlRead(BaseModel):
-    """Capture / shadow / cutover state of the LLM usage ledger, plus the active cost source"""
+    """Capture state of the LLM usage ledger"""
 
     model_config = ConfigDict(from_attributes=True)
 
     capture_enabled: bool
     capture_started_at: Optional[datetime] = None
-    shadow_started_at: Optional[datetime] = None
-    shadow_passed_at: Optional[datetime] = None
-    ledger_cutover_enabled: bool
-    cost_source: CostSource
-
-
-class LlmUsageCutoverRequest(BaseModel):
-    """Toggle the dashboard cost source between healed daily stats and the ledger"""
-
-    enabled: bool
-
-
-class LlmUsageReconciliationReportRead(BaseModel):
-    """One shadow reconciliation report for a covered UTC day"""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    report_date: date
-    interval_start: Optional[datetime] = None
-    interval_end: Optional[datetime] = None
-    passed: bool
-    reasons: Optional[dict[str, Any]] = None
-    metrics: Optional[dict[str, Any]] = None
-
-
-class LlmUsageReconciliationListResponse(BaseModel):
-    """Recent reconciliation reports, newest day first"""
-
-    reports: list[LlmUsageReconciliationReportRead]

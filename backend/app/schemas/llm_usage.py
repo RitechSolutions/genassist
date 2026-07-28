@@ -5,8 +5,6 @@ from uuid import UUID
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas.llm_usage_control import CostSource
-
 BreakdownDimension = Literal["provider", "model", "agent", "source"]
 BREAKDOWN_DIMENSIONS: tuple[str, ...] = get_args(BreakdownDimension)
 
@@ -39,8 +37,6 @@ class LlmUsageSummaryResponse(BaseModel):
     """LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced
     rows; ``cost_is_partial`` is true when some rows had no price and were left out.
 
-    ``cost_source`` is always the ledger — these endpoints read it regardless of cutover.
-    ``dashboard_cost_source`` reports what the dashboard is currently reading instead.
     ``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only"""
 
     model_config = ConfigDict(from_attributes=True)
@@ -60,8 +56,6 @@ class LlmUsageSummaryResponse(BaseModel):
     legacy_estimate_calls: int
     unpriced_calls: int
     priced_token_coverage_pct: float
-    cost_source: CostSource
-    dashboard_cost_source: CostSource
 
 
 class LlmUsageTimeseriesItem(BaseModel):
@@ -79,7 +73,6 @@ class LlmUsageTimeseriesResponse(BaseModel):
 
     items: list[LlmUsageTimeseriesItem]
     total: int
-    cost_source: CostSource
 
 
 class LlmUsageBreakdownItem(BaseModel):
@@ -100,7 +93,6 @@ class LlmUsageBreakdownResponse(BaseModel):
     dimension: BreakdownDimension
     items: list[LlmUsageBreakdownItem]
     total: int
-    cost_source: CostSource
 
 
 class LlmUsageAgentOption(BaseModel):

@@ -11,28 +11,14 @@ from app.schemas.llm_usage import LlmUsageQueryParams
 from app.services.llm_usage_read import LlmUsageReadService
 
 
-class FakeControl:
-    def __init__(self, cutover=False):
-        self.ledger_cutover_enabled = cutover
-
-
-class FakeControlRepo:
-    def __init__(self, cutover=False):
-        self._control = FakeControl(cutover)
-        self.reads = 0
-
-    async def get_singleton(self):
-        self.reads += 1
-        return self._control
-
-
 class FakeReadRepo:
 
-    def __init__(self, summary_row=None, breakdown_rows=None, scope=None, options=None):
+    def __init__(self, summary_row=None, breakdown_rows=None, scope=None, options=None, timeseries_rows=None):
         self._summary = summary_row
         self._breakdown = breakdown_rows or []
         self._scope = scope
         self._options = options or {}
+        self._timeseries = timeseries_rows or []
         self.scope_resolutions = 0
         self.distinct_calls = []
 
@@ -44,7 +30,7 @@ class FakeReadRepo:
         return self._summary
 
     async def timeseries(self, params, scope):
-        return []
+        return self._timeseries
 
     async def breakdown(self, params, scope, column):
         return self._breakdown
@@ -76,10 +62,9 @@ def _params(**overrides):
     return LlmUsageQueryParams(**overrides)
 
 
-def _service(summary_row=None, breakdown_rows=None, cutover=False, agents=None, scope=None, options=None):
-    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options)
-    control = FakeControlRepo(cutover)
-    return LlmUsageReadService(repo, control, FakeAgentRepo(agents)), repo, control
+def _service(summary_row=None, breakdown_rows=None, agents=None, scope=None, options=None, timeseries_rows=None):
+    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows)
+    return LlmUsageReadService(repo, FakeAgentRepo(agents)), repo
 
 
 def _row(
@@ -199,28 +184,22 @@ async def test_zero_token_unpriced_calls_never_fabricate_full_coverage():
 
 
 @pytest.mark.asyncio
-async def test_summary_always_labels_ledger_and_reports_dashboard_source():
-    service, *_ = _service(summary_row=_row())
-    summ = await service.get_summary(_params())
-    assert summ.cost_source == "llm_usage_ledger"
-    assert summ.dashboard_cost_source == "daily_stats"
-
-    service, *_ = _service(summary_row=_row(), cutover=True)
-    summ = await service.get_summary(_params())
-    assert summ.cost_source == "llm_usage_ledger"
-    assert summ.dashboard_cost_source == "llm_usage_ledger"
-
-
-@pytest.mark.asyncio
-async def test_timeseries_and_breakdown_always_label_ledger():
-    service, *_ = _service(breakdown_rows=[("openai", Decimal("0.30"), 0, 500, 3)])
-    assert (await service.get_timeseries(_params())).cost_source == "llm_usage_ledger"
-    assert (await service.get_breakdown(_params(), "provider")).cost_source == "llm_usage_ledger"
+async def test_timeseries_maps_each_day_row_to_an_item():
+    rows = [
+        (date(2026, 1, 1), Decimal("0.30"), 500, 3, 0),
+        (date(2026, 1, 2), Decimal("0.10"), 100, 1, 1),
+    ]
+    service, _ = _service(timeseries_rows=rows)
+    resp = await service.get_timeseries(_params())
+    assert resp.total == 2
+    assert [i.stat_date for i in resp.items] == [date(2026, 1, 1), date(2026, 1, 2)]
+    assert [i.cost_usd for i in resp.items] == [0.30, 0.10]
+    assert [i.unpriced_calls for i in resp.items] == [0, 1]
 
 
 @pytest.mark.asyncio
 async def test_empty_scope_returns_zeroed_responses_without_querying():
-    service, repo, _ = _service(summary_row=_row(), breakdown_rows=[("openai", Decimal("1"), 0, 5, 1)], scope=[])
+    service, repo = _service(summary_row=_row(), breakdown_rows=[("openai", Decimal("1"), 0, 5, 1)], scope=[])
     summ = await service.get_summary(_params(group_id=uuid4()))
     assert summ.total_calls == 0 and summ.total_cost_usd == 0.0
     assert summ.priced_token_coverage_pct == 100.0
@@ -233,19 +212,18 @@ async def test_empty_scope_returns_zeroed_responses_without_querying():
 
 
 @pytest.mark.asyncio
-async def test_export_report_resolves_scope_and_control_once():
-    service, repo, control = _service(summary_row=_row(), breakdown_rows=[("openai", Decimal("1"), 0, 5, 1)])
+async def test_export_report_resolves_scope_once():
+    service, repo = _service(summary_row=_row(), breakdown_rows=[("openai", Decimal("1"), 0, 5, 1)])
     summary, breakdown = await service.get_export_report(_params(), "provider")
     assert repo.scope_resolutions == 1
-    assert control.reads == 1
-    assert summary.cost_source == "llm_usage_ledger"
+    assert summary.total_cost_usd == 1.0
     assert breakdown.dimension == "provider"
 
 
 @pytest.mark.asyncio
 async def test_filter_options_ignore_their_own_selection():
     options = {"provider_key": ["openai"], "model_key": ["gpt-4o"], "agent_id": []}
-    service, repo, _ = _service(options=options)
+    service, repo = _service(options=options)
     await service.get_filter_options(_params(provider="openai", model="gpt-4o"))
     by_column = {c[0]: c for c in repo.distinct_calls}
     # Providers ignore both selections, models honour the provider, agents honour both.

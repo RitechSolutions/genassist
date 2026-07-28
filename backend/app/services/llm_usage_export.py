@@ -42,8 +42,6 @@ def _summary_rows(summary: LlmUsageSummaryResponse) -> list[tuple[str, str]]:
         ("Calls carrying legacy estimated cost", str(summary.legacy_estimate_calls)),
         ("Unpriced calls", str(summary.unpriced_calls)),
         ("Priced token coverage (%)", f"{summary.priced_token_coverage_pct:.2f}"),
-        ("Report cost source", str(summary.cost_source)),
-        ("Dashboard cost source", str(summary.dashboard_cost_source)),
     ]
 
 

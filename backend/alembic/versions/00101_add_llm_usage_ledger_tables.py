@@ -1,7 +1,7 @@
 """add llm usage ledger tables
 
-Creates the ledger tables (events, receipts, control flag, reconciliation
-reports) and adds optional ``workflow_execution_id`` on ``agent_response_logs``.
+Creates the ledger tables (events, receipts, control flag) and adds optional
+``workflow_execution_id`` on ``agent_response_logs``.
 
 Revision ID: c6974c08b567
 Revises: a3f9c1d7e204
@@ -133,9 +133,6 @@ def upgrade() -> None:
         sa.Column("singleton_key", sa.String(length=32), nullable=False),
         sa.Column("capture_enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("capture_started_at", sa.DateTime(timezone=True), nullable=True, server_default=sa.text("now()")),
-        sa.Column("ledger_cutover_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("shadow_started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("shadow_passed_at", sa.DateTime(timezone=True), nullable=True),
         *_audit_timestamp_softdelete_columns(),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("singleton_key", name="uq_llm_usage_control_singleton"),
@@ -143,24 +140,10 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "INSERT INTO llm_usage_control "
-            "(id, singleton_key, capture_enabled, capture_started_at, ledger_cutover_enabled, is_deleted) "
-            "VALUES (:id, 'singleton', true, now(), false, 0) "
+            "(id, singleton_key, capture_enabled, capture_started_at, is_deleted) "
+            "VALUES (:id, 'singleton', true, now(), 0) "
             "ON CONFLICT (singleton_key) DO NOTHING"
         ).bindparams(id=_CONTROL_SINGLETON_ID)
-    )
-
-    op.create_table(
-        "llm_usage_reconciliation_reports",
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("report_date", sa.Date(), nullable=False),
-        sa.Column("interval_start", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("interval_end", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("passed", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("reasons", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("metrics", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        *_audit_timestamp_softdelete_columns(),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("report_date", name="uq_llm_usage_reconciliation_reports_date"),
     )
 
     # Correlation key: response logs ↔ workflow executions (additive, nullable)
@@ -178,7 +161,6 @@ def downgrade() -> None:
     op.drop_index("uq_agent_response_logs_workflow_execution_id", table_name="agent_response_logs")
     op.drop_column("agent_response_logs", "workflow_execution_id")
 
-    op.drop_table("llm_usage_reconciliation_reports")
     op.drop_table("llm_usage_control")
 
     op.drop_index("ix_llm_usage_capture_runs_source_occurred", table_name="llm_usage_capture_runs")

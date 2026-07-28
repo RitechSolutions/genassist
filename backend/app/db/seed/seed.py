@@ -513,7 +513,6 @@ async def seed_llm_usage_control(session: AsyncSession):
             singleton_key=CONTROL_SINGLETON_KEY,
             capture_enabled=True,
             capture_started_at=datetime.now(timezone.utc),
-            ledger_cutover_enabled=False,
         )
         .on_conflict_do_nothing(constraint="uq_llm_usage_control_singleton")
     )

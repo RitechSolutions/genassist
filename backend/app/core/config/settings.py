@@ -64,13 +64,6 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
-    # Daily shadow reconciliation for the LLM usage ledger
-    CELERY_ENABLE_LLM_USAGE_RECONCILIATION: bool = True
-    # Shadow qualifies only if the 7-day window holds at least this many capture runs,
-    # so empty weeks can never validate capture
-    LLM_USAGE_SHADOW_MIN_CAPTURE_RUNS: int = 1
-    # How far back one reconciliation run re-evaluates missing or failed days
-    LLM_USAGE_SHADOW_LOOKBACK_DAYS: int = 14
     # Periodic cleanup of stale direct-S3 upload sessions (companion to
     # FILES_DIRECT_S3_UPLOAD_ENABLED). Safe to leave on even when the feature
     # flag is off: with no direct-S3 rows the task simply finds nothing to do.

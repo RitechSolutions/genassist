@@ -6,7 +6,6 @@ from typing import Optional
 from injector import inject
 
 from app.repositories.dashboard import DashboardRepository
-from app.repositories.llm_usage_control import LlmUsageControlRepository
 from app.schemas.dashboard import (
     ActiveConversationItem,
     ActiveConversationsResponse,
@@ -17,7 +16,6 @@ from app.schemas.dashboard import (
     IntegrationItem,
     IntegrationsResponse,
 )
-from app.schemas.llm_usage_control import COST_SOURCE_DAILY_STATS, COST_SOURCE_LEDGER
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +35,8 @@ INTEGRATION_DESCRIPTIONS = {
 @inject
 class DashboardService:
 
-    def __init__(self, dashboard_repo: DashboardRepository, control_repo: LlmUsageControlRepository):
+    def __init__(self, dashboard_repo: DashboardRepository):
         self.dashboard_repo = dashboard_repo
-        self.control_repo = control_repo
-
-    async def _cost_source(self) -> str:
-        """Return which system the dashboard should treat as the cost source"""
-        control = await self.control_repo.get_singleton()
-        if control is not None and control.ledger_cutover_enabled:
-            return COST_SOURCE_LEDGER
-        return COST_SOURCE_DAILY_STATS
 
     def _get_date_range(self, days: int = 30) -> tuple[datetime, datetime]:
         """Get date range from now going back specified days."""
@@ -79,25 +69,20 @@ class DashboardService:
 
     async def get_summary_stats(
         self,
-        from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None
+        from_date: datetime,
+        to_date: datetime
     ) -> DashboardSummaryStats:
         """Get summary statistics for the dashboard header."""
-        cost_source = await self._cost_source()
         active_agents = await self.dashboard_repo.get_active_agents_count()
         workflow_runs = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
         avg_response_time = await self.dashboard_repo.get_avg_response_time(from_date, to_date)
-        if cost_source == COST_SOURCE_LEDGER:
-            total_cost_usd = await self.dashboard_repo.get_total_cost_usd_from_ledger(from_date, to_date)
-        else:
-            total_cost_usd = await self.dashboard_repo.get_total_cost_usd(from_date, to_date)
+        total_cost_usd = await self.dashboard_repo.get_total_cost_usd(from_date, to_date)
 
         return DashboardSummaryStats(
             active_agents=active_agents,
             workflow_runs=workflow_runs,
             avg_response_time_ms=avg_response_time,
             total_cost_usd=total_cost_usd,
-            cost_source=cost_source,
         )
 
     async def get_active_conversations(
@@ -174,12 +159,10 @@ class DashboardService:
         limit: int = 5
     ) -> AgentStatsResponse:
         """Get agents with their statistics."""
-        cost_source = await self._cost_source()
         agent_stats = await self.dashboard_repo.get_agents_with_stats(
             from_date=from_date,
             to_date=to_date,
             limit=limit,
-            use_ledger=cost_source == COST_SOURCE_LEDGER,
         )
 
         agent_items = [
@@ -191,7 +174,6 @@ class DashboardService:
                 avg_response_time_ms=agent["avg_response_time_ms"],
                 cost=agent["cost"],
                 cost_per_conversation=agent["cost_per_conversation"],
-                cost_source=cost_source,
                 is_active=agent["is_active"]
             )
             for agent in agent_stats

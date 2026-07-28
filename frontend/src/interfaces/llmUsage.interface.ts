@@ -1,7 +1,5 @@
 // Mirrors the backend Pydantic schemas in app/schemas/llm_usage.py
 
-export type LlmUsageCostSource = "daily_stats" | "llm_usage_ledger";
-
 export interface LlmUsageSummaryResponse {
   from_date?: string | null;
   to_date?: string | null;
@@ -18,8 +16,6 @@ export interface LlmUsageSummaryResponse {
   legacy_estimate_calls: number;
   unpriced_calls: number;
   priced_token_coverage_pct: number;
-  cost_source: LlmUsageCostSource;
-  dashboard_cost_source: LlmUsageCostSource;
 }
 
 export interface LlmUsageBreakdownItem {
@@ -37,7 +33,6 @@ export interface LlmUsageBreakdownResponse {
   dimension: LlmUsageDimension;
   items: LlmUsageBreakdownItem[];
   total: number;
-  cost_source: LlmUsageCostSource;
 }
 
 export interface LlmUsageTimeseriesItem {
@@ -51,7 +46,6 @@ export interface LlmUsageTimeseriesItem {
 export interface LlmUsageTimeseriesResponse {
   items: LlmUsageTimeseriesItem[];
   total: number;
-  cost_source: LlmUsageCostSource;
 }
 
 export interface LlmUsageAgentOption {

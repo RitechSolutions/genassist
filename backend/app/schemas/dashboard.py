@@ -5,8 +5,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas.llm_usage_control import CostSource
-
 
 class DashboardSummaryStats(BaseModel):
     """Summary statistics for the dashboard header."""
@@ -14,8 +12,6 @@ class DashboardSummaryStats(BaseModel):
     workflow_runs: int
     avg_response_time_ms: int
     total_cost_usd: float
-    # Which system ``total_cost_usd`` is read from: healed daily stats until cutover.
-    cost_source: CostSource
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -61,11 +57,9 @@ class AgentStatsItem(BaseModel):
     # None when the agent has no cost data today (vs 0 for a real zero-cost day),
     # so the frontend shows cost-per-conversation only when it exists.
     cost: Optional[Decimal] = None
-    # Canonical priced conversation cost / distinct conversations. Null until cutover
-    # (daily stats cannot attribute cost to a conversation) and null for an agent with
-    # no conversation today; the frontend shows it only when non-null.
+    # Canonical priced conversation cost / distinct conversations. Null for an agent
+    # with no conversation today; the frontend shows it only when non-null.
     cost_per_conversation: Optional[Decimal] = None
-    cost_source: CostSource
     is_active: bool = False
 
     model_config = ConfigDict(from_attributes=True)
