@@ -61,6 +61,10 @@ class ProjectSettings(BaseSettings):
     # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
     # genuinely long run is never failed prematurely.
     WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
+    # Evaluation (test) runs use the same orphaned-run reconciliation.
+    CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
+    TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
+    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m, above the 2h task timeout
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
