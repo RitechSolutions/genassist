@@ -18,6 +18,7 @@ import {
   createWebSocketConversationUrl,
   createWebSocketDiagnostic,
 } from "../utils/websocket";
+import { redactPci } from "../utils/pciRedaction";
 export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_updated";
 
 export class ChatService {
@@ -770,13 +771,18 @@ export class ChatService {
       throw new Error("Conversation not started");
     }
 
+    // Scrub any payment card numbers (PCI) client-side before the text is
+    // echoed into the user's bubble or put on the wire. The same redacted
+    // value feeds both the optimistic message and the outgoing request body.
+    const safeMessage = redactPci(message);
+
     const now = Date.now() / 1000;
     const chatMessage: ChatMessage = {
       create_time: now,
       start_time: now - this.conversationCreateTime, // Relative to conversation start
       end_time: now - this.conversationCreateTime + 0.01, // Relative to conversation start
       speaker: "customer",
-      text: message,
+      text: safeMessage,
       attachments: attachments,
     };
 
