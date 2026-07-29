@@ -17,6 +17,6 @@ export const PageHeader: FC<PageHeaderProps> = ({ title, onBack }) => (
     >
       <ArrowLeft className="w-8 h-8 text-muted-foreground" />
     </Button>
-    <h1 className="text-2xl font-semibold">{title}</h1>
+    <h1 className="text-2xl font-semibold animate-fade-down">{title}</h1>
   </div>
 );

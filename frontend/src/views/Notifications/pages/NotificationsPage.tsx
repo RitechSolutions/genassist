@@ -133,8 +133,8 @@ const NotificationsPage = () => {
             <div className="max-w-7xl mx-auto w-full">
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h1 className="text-3xl font-bold">Notifications</h1>
-                <p className="text-muted-foreground mt-1">
+                <h1 className="text-3xl font-bold animate-fade-down">Notifications</h1>
+                <p className="text-muted-foreground mt-1 animate-fade-up">
                   Stay updated with your latest activities and alerts
                 </p>
               </div>

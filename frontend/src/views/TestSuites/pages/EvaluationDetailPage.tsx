@@ -611,7 +611,9 @@ const EvaluationDetailPage: React.FC = () => {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold tracking-tight">{evaluation.name}</h1>
+          <h1 className="truncate text-2xl font-bold tracking-tight animate-fade-down">
+            {evaluation.name}
+          </h1>
           {evaluation.description && (
             <p className="truncate text-sm text-muted-foreground">{evaluation.description}</p>
           )}

@@ -662,8 +662,8 @@ const MLModelsManager: React.FC = () => {
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <h2 className="text-2xl sm:text-3xl font-bold">ML Models</h2>
-                <p className="text-muted-foreground font-normal">
+                <h2 className="text-2xl sm:text-3xl font-bold animate-fade-down">ML Models</h2>
+                <p className="text-muted-foreground font-normal animate-fade-up">
                   Manage machine learning model definitions
                 </p>
               </div>

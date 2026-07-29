@@ -384,7 +384,9 @@ const WorkflowEvaluationsPage: React.FC = () => {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight truncate">{workflowName}</h1>
+          <h1 className="text-2xl font-bold tracking-tight truncate animate-fade-down">
+            {workflowName}
+          </h1>
           <Badge variant="secondary" className="shrink-0">
             {search
               ? `Showing ${total} of ${totalUnfiltered}`

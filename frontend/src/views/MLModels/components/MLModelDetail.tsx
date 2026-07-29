@@ -400,8 +400,8 @@ const MLModelDetail: React.FC = () => {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h2 className="text-3xl font-bold">{model.name}</h2>
-          <p className="text-muted-foreground font-normal">{model.description}</p>
+          <h2 className="text-3xl font-bold animate-fade-down">{model.name}</h2>
+          <p className="text-muted-foreground font-normal animate-fade-up">{model.description}</p>
         </div>
       </div>
 

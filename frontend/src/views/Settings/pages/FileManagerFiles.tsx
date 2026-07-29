@@ -689,8 +689,8 @@ export function FileManagerFiles() {
     <PageLayout>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
         <div className="min-w-0">
-          <h1 className="text-2xl md:text-3xl font-bold mb-1">Manage Files</h1>
-          <p className="text-sm md:text-base text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">Manage Files</h1>
+          <p className="text-sm md:text-base text-muted-foreground animate-fade-up">
             Browse uploads, preview images, and manage metadata
           </p>
         </div>
