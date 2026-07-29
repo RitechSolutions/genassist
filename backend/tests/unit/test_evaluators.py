@@ -6,8 +6,8 @@ import pytest
 
 import app.services.test_suite as eval_mod
 from app.constants import DEFAULT_NLI_MODEL
-from app.modules.workflow.engine.nodes.local_nli_model import (
-    LocalNLIModel,
+from app.services.evaluation_nli import (
+    EvaluationNLIModel,
     NLIClaimResult,
 )
 from app.services.test_suite import (
@@ -1324,7 +1324,7 @@ class TestSemanticEvaluators:
     @pytest.mark.asyncio
     async def test_nli_uses_model_and_reports_name(self, monkeypatch):
         monkeypatch.setattr(
-            eval_mod.local_nli_model,
+            eval_mod.evaluation_nli_model,
             "score_evidence",
             lambda answer, evidence, model_name=None: SimpleNamespace(
                 entail_score=0.9,
@@ -1353,7 +1353,7 @@ class TestSemanticEvaluators:
         self, monkeypatch
     ):
         monkeypatch.setattr(
-            eval_mod.local_nli_model,
+            eval_mod.evaluation_nli_model,
             "score_evidence",
             lambda answer, evidence, model_name=None: SimpleNamespace(
                 entail_score=0.45,
@@ -1400,7 +1400,7 @@ class TestSemanticEvaluators:
         self, monkeypatch
     ):
         monkeypatch.setattr(
-            eval_mod.local_nli_model,
+            eval_mod.evaluation_nli_model,
             "score_evidence",
             lambda answer, evidence, model_name=None: SimpleNamespace(
                 entail_score=0.7,
@@ -1445,7 +1445,7 @@ class TestSemanticEvaluators:
         self, monkeypatch
     ):
         monkeypatch.setattr(
-            eval_mod.local_nli_model,
+            eval_mod.evaluation_nli_model,
             "score_evidence",
             lambda answer, evidence, model_name=None: SimpleNamespace(
                 entail_score=0.2,
@@ -1503,7 +1503,7 @@ class TestSemanticEvaluators:
         self, monkeypatch
     ):
         monkeypatch.setattr(
-            eval_mod.local_nli_model,
+            eval_mod.evaluation_nli_model,
             "score_evidence",
             lambda answer, evidence, model_name=None: SimpleNamespace(
                 entail_score=0.0,
@@ -1549,7 +1549,11 @@ class TestSemanticEvaluators:
                 evidence_truncated=False,
             )
 
-        monkeypatch.setattr(eval_mod.local_nli_model, "score_evidence", fake_score)
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            fake_score,
+        )
         metrics = await self.registry.evaluate(
             ["nli_eval"],
             inputs={},
@@ -1577,7 +1581,11 @@ class TestSemanticEvaluators:
                 evidence_truncated=False,
             )
 
-        monkeypatch.setattr(eval_mod.local_nli_model, "score_evidence", fake_score)
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            fake_score,
+        )
         metrics = await self.registry.evaluate(
             ["nli_eval"],
             inputs={},
@@ -1592,7 +1600,7 @@ class TestSemanticEvaluators:
     @pytest.mark.asyncio
     async def test_nli_errors_when_model_unavailable(self, monkeypatch):
         monkeypatch.setattr(
-            eval_mod.local_nli_model,
+            eval_mod.evaluation_nli_model,
             "score_evidence",
             lambda answer, evidence, model_name=None: SimpleNamespace(
                 entail_score=0.3,
@@ -1681,7 +1689,7 @@ class TestSemanticEvaluators:
                 ]
                 return SimpleNamespace(logits=torch.tensor(logits))
 
-        model = LocalNLIModel()
+        model = EvaluationNLIModel()
         model._tokenizer = FakeTokenizer()
         model._model = FakeModel()
         model._loaded_model_name = DEFAULT_NLI_MODEL
@@ -1697,8 +1705,8 @@ class TestSemanticEvaluators:
         assert result.entail_score > 0.9
         assert result.chunks_evaluated > 1
 
-    def test_nli_public_score_short_circuits_empty_evidence(self, monkeypatch):
-        model = LocalNLIModel()
+    def test_nli_evaluation_short_circuits_empty_evidence(self, monkeypatch):
+        model = EvaluationNLIModel()
 
         def unexpected_model_load(model_name):
             del model_name
@@ -1706,7 +1714,11 @@ class TestSemanticEvaluators:
 
         monkeypatch.setattr(model, "_lazy_init", unexpected_model_load)
 
-        assert model.score("An answer.", "") == (0.0, 0.0, "unknown")
+        result = model.score_evidence("An answer.", "")
+        assert result.entail_score == 0.0
+        assert result.contradiction_score == 0.0
+        assert result.verdict == "unknown"
+        assert result.model_name is None
 
     def test_nli_claim_groups_include_the_end_of_a_long_answer(self):
         class Tokenizer:
@@ -1729,7 +1741,7 @@ class TestSemanticEvaluators:
                 del skip_special_tokens
                 return " ".join(self._id_to_token[token_id] for token_id in token_ids)
 
-        model = LocalNLIModel()
+        model = EvaluationNLIModel()
         model._tokenizer = Tokenizer()
         answer = " ".join(["opening"] * 110 + ["late-answer-claim"])
 
@@ -1754,7 +1766,7 @@ class TestSemanticEvaluators:
         assert oversized_result.total_claims == 9
 
     def test_nli_bounds_huge_evidence_while_still_including_its_end(self):
-        chunks, was_bounded = LocalNLIModel._chunk_token_ids(
+        chunks, was_bounded = EvaluationNLIModel._chunk_token_ids(
             list(range(10_000)),
             window_size=100,
             overlap=20,
@@ -1764,6 +1776,67 @@ class TestSemanticEvaluators:
         assert was_bounded is True
         assert len(chunks) == 4
         assert 9_999 in chunks[-1]
+
+    @pytest.mark.asyncio
+    async def test_nli_timeout_is_metric_error_and_other_methods_continue(
+        self,
+        monkeypatch,
+    ):
+        """A slow NLI model is isolated as one readable evaluator error."""
+        import threading
+
+        def _result():
+            return SimpleNamespace(
+                entail_score=0.9,
+                contradiction_score=0.0,
+                verdict="entails",
+                model_name="m",
+                chunks_evaluated=1,
+                evidence_truncated=False,
+                claims_evaluated=1,
+                total_claims=1,
+                coverage_complete=True,
+                claim_results=(),
+            )
+
+        release_slow_call = threading.Event()
+
+        def slow_score_evidence(answer, evidence, model_name=None):
+            del answer, evidence, model_name
+            release_slow_call.wait(timeout=2.0)
+            return _result()
+
+        monkeypatch.setattr(eval_mod, "NLI_EVALUATION_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            slow_score_evidence,
+        )
+        try:
+            metrics = await self.registry.evaluate(
+                ["nli_eval", "no_errors"],
+                inputs={},
+                outputs="Answer.",
+                reference_outputs="evidence",
+                execution_trace={},
+                technique_configs={
+                    "nli_eval": {"evidence_source": "expected_output"}
+                },
+            )
+        finally:
+            # asyncio.to_thread cannot stop the running function. Let this test's
+            # straggler finish immediately after the timeout assertion path.
+            release_slow_call.set()
+
+        nli_result = metrics["nli_eval"]
+        assert nli_result["score"] is None
+        assert nli_result["passed"] is False
+        assert nli_result["error"] is True
+        assert nli_result["comment"] == (
+            "NLI evaluation error: the model did not respond "
+            "within the allowed time."
+        )
+        assert metrics["no_errors"]["passed"] is True
 
     @pytest.mark.asyncio
     async def test_provenance_skips_when_no_context(self):
@@ -1944,3 +2017,97 @@ class TestSemanticEvaluators:
         second = await self.registry._get_embedder(config)
         assert first is second
         assert builds["n"] == 1
+
+
+class TestNliSinglePairScore:
+    """score() stays single-pair for GuardrailNliNode, decoupled from the claim-based
+    score_evidence() the evaluator uses."""
+
+    def _model_with(self, logits_row):
+        import torch
+        from types import SimpleNamespace
+        from app.modules.workflow.engine.nodes.local_nli_model import LocalNLIModel
+
+        class FakeTokenizer:
+            def __call__(self, evidence, answer, **kwargs):  # noqa: ARG002
+                return {"input_ids": torch.tensor([[0]])}
+
+        class FakeModel:
+            config = SimpleNamespace(
+                id2label={0: "contradiction", 1: "neutral", 2: "entailment"}
+            )
+
+            def __call__(self, input_ids):  # noqa: ARG002
+                return SimpleNamespace(logits=torch.tensor([logits_row]))
+
+        model = LocalNLIModel()
+        model._tokenizer = FakeTokenizer()
+        model._model = FakeModel()
+        model._loaded_model_name = DEFAULT_NLI_MODEL
+        return model
+
+    def test_score_returns_entailment_in_one_pass(self):
+        _, _, verdict = self._model_with([0.0, 0.0, 6.0]).score("Answer.", "Evidence.")
+        assert verdict == "entails"
+
+    def test_score_returns_contradiction(self):
+        entail, contra, verdict = self._model_with([6.0, 0.0, 0.0]).score("A.", "B.")
+        assert verdict == "contradicts"
+        assert contra > entail
+
+    def test_score_ignores_the_claim_cap(self):
+        # >8 sentences would make score_evidence() bail with coverage_complete=False
+        # (0, 0, "unknown"). score() must score the whole answer regardless.
+        many = " ".join(f"Claim number {i}." for i in range(20))
+        _, _, verdict = self._model_with([0.0, 0.0, 6.0]).score(many, "Evidence.")
+        assert verdict == "entails"
+
+class TestGuardrailNliNode:
+    """The production guardrail node: contradiction drives fallback/blocking."""
+
+    def _node(self):
+        from app.modules.workflow.engine.nodes.guardrail_nli_node import GuardrailNliNode
+
+        node = GuardrailNliNode.__new__(GuardrailNliNode)
+        node.node_id = "n1"
+        node.set_node_input = lambda *a, **k: None
+        return node
+
+    def _patch_score(self, monkeypatch, result):
+        from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
+
+        monkeypatch.setattr(
+            local_nli_model, "score", lambda answer, evidence, model_name=None: result
+        )
+
+    @pytest.mark.asyncio
+    async def test_contradiction_swaps_in_fallback_answer(self, monkeypatch):
+        self._patch_score(monkeypatch, (0.1, 0.9, "contradicts"))
+        out = await self._node().process({
+            "answer_field": "The sky is green.",
+            "evidence_field": "The sky is blue.",
+            "fail_on_contradiction": True,
+            "fallback_answer_enabled": True,
+            "fallback_answer": "I'm not certain.",
+        })
+        assert out["answer"] == "I'm not certain."
+        assert out["_guardrail_nli"]["fallback_used"] is True
+
+    @pytest.mark.asyncio
+    async def test_contradiction_blocks_when_no_fallback(self, monkeypatch):
+        self._patch_score(monkeypatch, (0.1, 0.9, "contradicts"))
+        out = await self._node().process({
+            "answer_field": "X",
+            "evidence_field": "Y",
+            "fail_on_contradiction": True,
+        })
+        assert out.get("blocked") is True
+        assert out["verdict"] == "nli_contradiction"
+
+    @pytest.mark.asyncio
+    async def test_entailment_passes_through(self, monkeypatch):
+        self._patch_score(monkeypatch, (0.95, 0.01, "entails"))
+        out = await self._node().process({"answer_field": "A", "evidence_field": "B"})
+        assert out["answer"] == "A"
+        assert out.get("blocked") is None
+        assert out["_guardrail_nli"]["verdict"] == "entails"

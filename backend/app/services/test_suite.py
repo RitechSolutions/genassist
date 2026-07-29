@@ -18,9 +18,9 @@ from app.db.models.test_suite import (
     TestEvaluationModel,
     TestToolRuleResultModel,
 )
-from app.modules.workflow.engine.nodes.local_nli_model import (
+from app.services.evaluation_nli import (
     NLI_MAX_ANSWER_CLAIMS,
-    local_nli_model,
+    evaluation_nli_model,
 )
 from app.modules.workflow.engine.workflow_engine import (
     MemoryPersistenceError,
@@ -116,6 +116,7 @@ _FINAL_OUTPUT_TECHNIQUES = frozenset(
 # Upper bounds so one hung case or evaluator cannot keep a run in "running".
 CASE_EXECUTION_TIMEOUT_SECONDS = 20 * 60
 EVALUATOR_TIMEOUT_SECONDS = 5 * 60
+NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
 
 
 class ResultStatus:
@@ -997,11 +998,30 @@ class SimpleEvaluatorRegistry:
                 "comment": "Not evaluated: no answer or evidence source to compare.",
             }
 
-        nli_result = local_nli_model.score_evidence(
-            answer=answer,
-            evidence=evidence,
-            model_name=config.get("nli_model_name"),
-        )
+        # Transformer inference is blocking CPU work. Keep it off the event loop,
+        # but give NLI its own deadline so one slow model becomes a readable metric
+        # error and does not discard the other evaluation results for this case.
+        try:
+            nli_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    evaluation_nli_model.score_evidence,
+                    answer,
+                    evidence,
+                    config.get("nli_model_name"),
+                ),
+                timeout=NLI_EVALUATION_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "key": "nli_eval",
+                "score": None,
+                "passed": False,
+                "error": True,
+                "comment": (
+                    "NLI evaluation error: the model did not respond "
+                    "within the allowed time."
+                ),
+            }
 
         # Never silently grade only part of an answer. If the safe claim limit is
         # exceeded, report missing coverage instead of producing a misleading score.
