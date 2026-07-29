@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ChevronRight, Layers, ListChecks, Loader2, Play, Plus } from "lucide-react";
-import toast from "react-hot-toast";
+import { useQuery } from "@tanstack/react-query";
+import { Activity, ListChecks, Loader2, Plus } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,8 +16,6 @@ import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import {
   createTestEvaluation,
   getWorkflowEvaluationSummaries,
-  runWorkflowEvaluations,
-  WorkflowEvaluationSummary,
 } from "@/services/testEvaluations";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { TestSuite } from "@/interfaces/testSuite.interface";
@@ -45,7 +42,6 @@ interface WorkflowRow {
 
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
   const [suites, setSuites] = useState<TestSuite[]>([]);
   const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
@@ -54,9 +50,6 @@ const EvaluationsPage: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [runningWorkflowIds, setRunningWorkflowIds] = useState<Set<string>>(new Set());
-  // Synchronous guard against rapid double-clicks (state updates are async).
-  const inFlightWorkflowIds = useRef<Set<string>>(new Set());
 
   // Summaries carry the live health and running state. staleTime 0 makes
   // react-query refetch them when the tab regains focus; the interval only runs
@@ -135,45 +128,6 @@ const EvaluationsPage: React.FC = () => {
     navigate(`/tests/evaluations/workflows/${row.workflowId ?? UNASSIGNED}`);
   };
 
-  const markWorkflowRunning = (workflowId: string) => {
-    queryClient.setQueryData<WorkflowEvaluationSummary[]>(SUMMARIES_QUERY_KEY, (prev) =>
-      (prev ?? []).map((summary) =>
-        summary.workflow_id === workflowId ? { ...summary, any_running: true } : summary,
-      ),
-    );
-  };
-
-  const handleRunAll = async (workflowId: string) => {
-    if (inFlightWorkflowIds.current.has(workflowId)) return;
-    inFlightWorkflowIds.current.add(workflowId);
-    setRunningWorkflowIds((prev) => new Set(prev).add(workflowId));
-    try {
-      const started = await runWorkflowEvaluations(workflowId);
-      const startedCount = (started ?? []).filter((s) => s.run_id).length;
-      if (!startedCount) {
-        toast.error("No evaluations could be started for this workflow");
-      } else {
-        toast.success(`Started ${startedCount} evaluation${startedCount !== 1 ? "s" : ""}`);
-        markWorkflowRunning(workflowId);
-      }
-    } catch (error) {
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 409) {
-        toast.error("This workflow already has running evaluations");
-        markWorkflowRunning(workflowId);
-      } else {
-        toast.error("Failed to start evaluations for this workflow");
-      }
-    } finally {
-      inFlightWorkflowIds.current.delete(workflowId);
-      setRunningWorkflowIds((prev) => {
-        const next = new Set(prev);
-        next.delete(workflowId);
-        return next;
-      });
-    }
-  };
-
   const handleCreate = async (data: EvaluationWizardData) => {
     const created = await createTestEvaluation({
       name: data.name.trim(),
@@ -190,14 +144,12 @@ const EvaluationsPage: React.FC = () => {
   };
 
   const renderRow = (row: WorkflowRow) => {
-    const isPending = row.workflowId ? runningWorkflowIds.has(row.workflowId) : false;
-    const isRunning = isPending || row.anyRunning;
     const healthTooltip = row.anyRunning
       ? row.health !== null
-        ? "Evaluations running; health shown is from the previous completed runs."
+        ? "Evaluations running; accuracy shown is from the previous completed runs."
         : "Evaluations are running…"
       : row.health !== null
-        ? `Health from ${row.finishedCount} of ${row.count} evaluation${
+        ? `Accuracy from ${row.finishedCount} of ${row.count} evaluation${
             row.count !== 1 ? "s" : ""
           } (failed runs count as 0%)`
         : "No evaluations scored yet";
@@ -209,7 +161,6 @@ const EvaluationsPage: React.FC = () => {
       >
         <td className="px-6 py-4">
           <div className="flex items-center gap-2 min-w-0">
-            <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
             <EntityTitle muted={row.isUnassigned}>{row.name}</EntityTitle>
           </div>
         </td>
@@ -235,25 +186,6 @@ const EvaluationsPage: React.FC = () => {
           <Badge variant="secondary">
             {row.count} eval{row.count !== 1 ? "s" : ""}
           </Badge>
-        </td>
-        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-end gap-2">
-            {!row.isUnassigned && row.count > 0 && row.workflowId && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isRunning}
-                onClick={() => handleRunAll(row.workflowId as string)}
-              >
-                <Play className="h-3.5 w-3.5 mr-1" />
-                {isRunning ? "Running..." : "Run all"}
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={() => openWorkflow(row)}>
-              Open
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
         </td>
       </tr>
     );
@@ -309,11 +241,10 @@ const EvaluationsPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b bg-muted text-left text-xs font-medium text-muted-foreground">
                   <th className="px-6 py-3 font-medium">Workflow</th>
-                  <th className="px-6 py-3 font-medium">Health</th>
+                  <th className="px-6 py-3 font-medium">Accuracy</th>
                   <th className="px-6 py-3 font-medium">Evaluations</th>
-                  <th className="px-6 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">{rows.map(renderRow)}</tbody>
