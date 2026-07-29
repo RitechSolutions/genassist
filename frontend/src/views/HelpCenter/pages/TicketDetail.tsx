@@ -110,8 +110,8 @@ export default function TicketDetailPage() {
             </Link>
           </Button>
           <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-bold tracking-tight break-words">{ticket.title}</h2>
-            <div className="flex flex-wrap gap-2 mt-2 items-center text-sm text-muted-foreground">
+            <h2 className="text-2xl font-bold tracking-tight break-words animate-fade-down">{ticket.title}</h2>
+            <div className="flex flex-wrap gap-2 mt-2 items-center text-sm text-muted-foreground animate-fade-up">
               <TicketStatusBadge status={ticket.status} />
               <span className="capitalize">{ticket.ticket_type}</span>
               {ticket.vote_count > 1 && <span>{ticket.vote_count} reports</span>}

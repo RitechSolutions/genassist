@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ListChecks, Loader2, Play, Plus, Search } from "lucide-react";
+import { ChevronLeft, ListChecks, Loader2, Play, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { PageLayout } from "@/components/PageLayout";
@@ -373,22 +373,35 @@ const WorkflowEvaluationsPage: React.FC = () => {
 
   return (
     <PageLayout>
-      <div className="mb-6">
-        <button
-          type="button"
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => navigate("/tests/evaluations")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+          className="shrink-0"
+          aria-label="Back to evaluations"
         >
-          <ArrowLeft className="h-4 w-4" /> All workflows
-        </button>
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-2xl font-semibold truncate">{workflowName}</h1>
-            <Badge variant="secondary" className="shrink-0">
-              {search
-                ? `Showing ${total} of ${totalUnfiltered}`
-                : `${total} evaluation${total !== 1 ? "s" : ""}`}
-            </Badge>
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight truncate animate-fade-down">
+            {workflowName}
+          </h1>
+          <Badge variant="secondary" className="shrink-0">
+            {search
+              ? `Showing ${total} of ${totalUnfiltered}`
+              : `${total} evaluation${total !== 1 ? "s" : ""}`}
+          </Badge>
+        </div>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <div className="relative w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search evaluations..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
           </div>
           {!isUnassigned && (
             <Button
@@ -422,16 +435,6 @@ const WorkflowEvaluationsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="relative mb-4 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search evaluations..."
-          className="w-full pl-9 pr-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </div>
-
       <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {isLoading ? (
           <PageListSkeleton variant="evaluation" bordered={false} />
@@ -450,13 +453,8 @@ const WorkflowEvaluationsPage: React.FC = () => {
             <p className="text-sm text-muted-foreground max-w-sm">
               {search
                 ? "No evaluations match your search."
-                : "This workflow has no evaluations yet."}
+                : "This workflow has no evaluations yet. Create one from the Evaluations overview."}
             </p>
-            {!search && (
-              <Button onClick={() => navigate("/tests/evaluations")}>
-                <Plus className="h-4 w-4 mr-2" /> Create one from the overview
-              </Button>
-            )}
           </div>
         ) : (
           <div className="divide-y divide-border">

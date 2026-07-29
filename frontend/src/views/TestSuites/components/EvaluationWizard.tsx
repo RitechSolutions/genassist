@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,15 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { ChevronLeft, ChevronRight, Check, Database, Workflow, Settings, ClipboardCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, Database, Workflow, Settings, SlidersHorizontal, ClipboardCheck } from "lucide-react";
 import { cn } from "@/helpers/utils";
 import type { TestSuite } from "@/interfaces/testSuite.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import type {
-  EvaluationActionNodeInfo,
   EvaluationAgentInfo,
-  EvaluationRouterInfo,
   ToolUsagePerToolCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
@@ -121,7 +119,6 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
       { value: "contains", label: "Contains", description: "Output contains the expected text" },
       { value: "not_contains", label: "Does Not Contain", description: "Output must not contain the specified text" },
       { value: "json_match", label: "JSON Match", description: "Output matches the expected JSON structure and values" },
-      { value: "field_equals", label: "Field Equals", description: "A specific field in the output equals an expected value" },
     ],
   },
   {
@@ -145,7 +142,6 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
 
 const CONFIG_METRICS = [
   "not_contains",
-  "field_equals",
   "nli_eval",
   "provenance_eval",
   "tool_used",
@@ -166,54 +162,29 @@ const NLI_MODEL_OPTIONS = [
   { value: "cross-encoder/nli-roberta-base", label: "RoBERTa Base (NLI)" },
 ];
 
-export type GradingSourceSelection =
-  | "expected_output"
-  | "kb_retrievals"
-  | "conversation_context"
-  | "tool_events"
-  | "none"
-  | "legacy";
-
-const GRADING_SOURCE_OPTIONS: {
-  value: Exclude<GradingSourceSelection, "none" | "legacy">;
-  label: string;
-}[] = [
-  { value: "kb_retrievals", label: "Retrieved context" },
-  { value: "expected_output", label: "Expected answer" },
-];
-
-const GradingSourceSelect: React.FC<{
-  value: GradingSourceSelection;
-  onChange: (value: GradingSourceSelection) => void;
-  allowRubricOnly?: boolean;
-  legacyField?: string;
-}> = ({ value, onChange, allowRubricOnly = false, legacyField }) => (
-  <Select value={value} onValueChange={(next) => onChange(next as GradingSourceSelection)}>
-    <SelectTrigger className="mt-1">
-      <SelectValue placeholder="Select source" />
-    </SelectTrigger>
-    <SelectContent>
-      {allowRubricOnly && <SelectItem value="none">No source — rubric only</SelectItem>}
-      {GRADING_SOURCE_OPTIONS.map((source) => (
-        <SelectItem key={source.value} value={source.value}>
-          {source.label}
-        </SelectItem>
-      ))}
-      {legacyField && (
-        <SelectItem value="legacy">Legacy configured source ({legacyField})</SelectItem>
-      )}
-    </SelectContent>
-  </Select>
-);
-
-type WizardStep = "basics" | "data" | "validation" | "configure";
+type WizardStep = "workflow" | "basics" | "data" | "validation" | "configure";
 
 const STEPS: { key: WizardStep; label: string; icon: React.ElementType }[] = [
+  { key: "workflow", label: "Workflow", icon: Workflow },
   { key: "basics", label: "Basics", icon: ClipboardCheck },
   { key: "data", label: "Data Source", icon: Database },
   { key: "validation", label: "Validation", icon: Settings },
-  { key: "configure", label: "Configure", icon: Workflow },
+  { key: "configure", label: "Configure", icon: SlidersHorizontal },
 ];
+
+// Compare two workflow version strings numerically (e.g. "10" > "9", "1.2" > "1.1").
+// Returns a - b, so the highest version sorts last with a plain ascending sort.
+const compareVersions = (a: string, b: string): number => {
+  const parse = (v: string) => v.split(".").map((part) => parseInt(part.replace(/\D/g, ""), 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+};
 
 const MetricOption: React.FC<{
   metric: MetricDef;
@@ -254,20 +225,15 @@ export interface EvaluationWizardData {
   nliModelName: string;
   nliMinEntailScore: string;
   nliFailOnContradiction: boolean;
-  nliEvidenceSource: GradingSourceSelection;
-  nliEvidenceField: string;
   provMode: "embeddings" | "llm";
-  provContextSource: GradingSourceSelection;
-  provContextField: string;
   provEmbeddingType: "openai" | "huggingface" | "bedrock";
   provEmbeddingModelName: string;
   provMinScore: string;
+  provFailOnViolation: boolean;
   provLlmProviderId: string;
   provLlmJudgeSystemPromptSuffix: string;
   toolRules: ToolUsageRule[];
   notContainsText: string;
-  fieldEqualsField: string;
-  fieldEqualsExpected: string;
   routeExpected: string;
   routeNode: string;
   actionNode: string;
@@ -276,7 +242,6 @@ export interface EvaluationWizardData {
   judgeRubric: string;
   judgeMinScore: string;
   judgeProviderId: string;
-  judgeSourceType: GradingSourceSelection;
   judgeSourceField: string;
 }
 
@@ -289,6 +254,11 @@ interface EvaluationWizardProps {
   providers: LLMProviderMinimal[];
   initialData?: Partial<EvaluationWizardData>;
   mode?: "create" | "edit";
+  /**
+   * When set (e.g. creating from a workflow's page), the workflow is pinned to
+   * this id and shown read-only instead of the picker.
+   */
+  lockedWorkflowId?: string;
 }
 
 export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
@@ -300,15 +270,39 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   providers,
   initialData,
   mode = "create",
+  lockedWorkflowId,
 }) => {
-  const [step, setStep] = useState<WizardStep>("basics");
+  const [step, setStep] = useState<WizardStep>("workflow");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Which workflow group's version list is expanded (only one at a time; collapsed
+  // by default so the list stays short).
+  const [expandedWorkflowName, setExpandedWorkflowName] = useState<string | null>(null);
+
+  // Group workflows by name, newest version first, so each name shows its current
+  // version with older versions nested beneath it.
+  const workflowGroups = useMemo(() => {
+    const byName = new Map<string, WorkflowMinimal[]>();
+    for (const wf of workflows) {
+      if (!wf.id) continue;
+      const existing = byName.get(wf.name) ?? [];
+      existing.push(wf);
+      byName.set(wf.name, existing);
+    }
+    return Array.from(byName.entries())
+      .map(([wfName, versions]) => ({
+        name: wfName,
+        versions: [...versions].sort((a, b) => compareVersions(b.version, a.version)),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [workflows]);
 
   // Form state
   const [name, setName] = useState(initialData?.name ?? "");
   const [description, setDescription] = useState(initialData?.description ?? "");
   const [suiteId, setSuiteId] = useState(initialData?.suiteId ?? "none");
-  const [workflowId, setWorkflowId] = useState(initialData?.workflowId ?? "none");
+  const [workflowId, setWorkflowId] = useState(
+    lockedWorkflowId ?? initialData?.workflowId ?? "none",
+  );
   const [metrics, setMetrics] = useState<string[]>(initialData?.metrics ?? ["exact_match"]);
   const [inputMetadataText, setInputMetadataText] = useState(initialData?.inputMetadataText ?? "{}");
   const [isMetadataValid, setIsMetadataValid] = useState(true);
@@ -322,17 +316,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [nliFailOnContradiction, setNliFailOnContradiction] = useState(
     initialData?.nliFailOnContradiction ?? false
   );
-  const [nliEvidenceSource, setNliEvidenceSource] = useState<GradingSourceSelection>(
-    initialData?.nliEvidenceSource ?? "expected_output"
-  );
-  const [nliEvidenceField] = useState(initialData?.nliEvidenceField ?? "");
 
   // Provenance config
   const [provMode, setProvMode] = useState<"embeddings" | "llm">(initialData?.provMode ?? "embeddings");
-  const [provContextSource, setProvContextSource] = useState<GradingSourceSelection>(
-    initialData?.provContextSource ?? "kb_retrievals"
-  );
-  const [provContextField] = useState(initialData?.provContextField ?? "");
   const [provEmbeddingType, setProvEmbeddingType] = useState<"openai" | "huggingface" | "bedrock">(
     initialData?.provEmbeddingType ?? "huggingface"
   );
@@ -340,6 +326,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     initialData?.provEmbeddingModelName ?? "all-MiniLM-L6-v2"
   );
   const [provMinScore, setProvMinScore] = useState(initialData?.provMinScore ?? "0.5");
+  const [provFailOnViolation, setProvFailOnViolation] = useState(
+    initialData?.provFailOnViolation ?? false
+  );
   const [provLlmProviderId, setProvLlmProviderId] = useState(
     initialData?.provLlmProviderId ?? providers[0]?.id ?? ""
   );
@@ -350,17 +339,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   // Tool Usage rules + workflow tool catalogue
   const [toolRules, setToolRules] = useState<ToolUsageRule[]>(initialData?.toolRules ?? []);
   const [toolCatalog, setToolCatalog] = useState<EvaluationAgentInfo[]>([]);
-  const [catalogRouters, setCatalogRouters] = useState<EvaluationRouterInfo[]>([]);
-  const [catalogActionNodes, setCatalogActionNodes] = useState<EvaluationActionNodeInfo[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const toolUsageSelected = metrics.includes("tool_used");
-  // Route and Action dropdowns are populated from the same catalogue.
-  const needsCatalog =
-    toolUsageSelected ||
-    metrics.includes("route_taken") ||
-    metrics.includes("action_taken");
 
   // Fall back to the dataset's default workflow when none is explicitly chosen,
   // so the tool catalogue still loads.
@@ -369,10 +351,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     workflowId && workflowId !== "none" ? workflowId : selectedSuite?.workflow_id;
 
   useEffect(() => {
-    if (!needsCatalog || !effectiveWorkflowId) {
+    if (!toolUsageSelected || !effectiveWorkflowId) {
       setToolCatalog([]);
-      setCatalogRouters([]);
-      setCatalogActionNodes([]);
       return;
     }
     let cancelled = false;
@@ -380,13 +360,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setCatalogError(null);
     getEvaluationToolCatalog(effectiveWorkflowId)
       .then((catalog) => {
-        if (cancelled) return;
-        setToolCatalog(catalog.agents ?? []);
-        setCatalogRouters(catalog.routers ?? []);
-        setCatalogActionNodes(catalog.action_nodes ?? []);
+        if (!cancelled) setToolCatalog(catalog.agents ?? []);
       })
       .catch(() => {
-        if (!cancelled) setCatalogError("Failed to load workflow nodes");
+        if (!cancelled) setCatalogError("Failed to load tools");
       })
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
@@ -394,7 +371,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [needsCatalog, effectiveWorkflowId]);
+  }, [toolUsageSelected, effectiveWorkflowId]);
 
   // Imported conversations for specific-turn targeting, derived from the suite's cases.
   const [conversations, setConversations] = useState<RuleConversation[]>([]);
@@ -451,12 +428,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   // Does Not Contain config
   const [notContainsText, setNotContainsText] = useState(initialData?.notContainsText ?? "");
 
-  // Field Equals config
-  const [fieldEqualsField, setFieldEqualsField] = useState(initialData?.fieldEqualsField ?? "");
-  const [fieldEqualsExpected, setFieldEqualsExpected] = useState(
-    initialData?.fieldEqualsExpected ?? ""
-  );
-
   // Route Taken config
   const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
   const [routeNode, setRouteNode] = useState(initialData?.routeNode ?? "");
@@ -472,10 +443,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [judgeProviderId, setJudgeProviderId] = useState(
     initialData?.judgeProviderId ?? providers[0]?.id ?? ""
   );
-  const [judgeSourceType, setJudgeSourceType] = useState<GradingSourceSelection>(
-    initialData?.judgeSourceType ?? "none"
-  );
-  const [judgeSourceField] = useState(initialData?.judgeSourceField ?? "");
+  const [judgeSourceField, setJudgeSourceField] = useState(initialData?.judgeSourceField ?? "");
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
 
@@ -508,28 +476,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
   const judgeScoreInvalid = metrics.includes("llm_judge") && !isValidScore(judgeMinScore);
 
-  // Route/Action dropdowns use the catalogue; fall back to free text only when the
-  // catalogue is unavailable or a saved value predates it (an unmatched legacy id).
-  const selectedRouter = catalogRouters.find((r) => r.id === routeNode);
-  // Free text is only for a config the catalogue can't match: a saved router id that
-  // is gone, or an old "any router" config (expected set with no router chosen).
-  const routeLegacyValue =
-    catalogRouters.length > 0 &&
-    ((Boolean(routeNode) && !selectedRouter) || (!routeNode && Boolean(routeExpected)));
-  const useRouteDropdowns = catalogRouters.length > 0 && !routeLegacyValue;
-  const actionNodeInCatalog = catalogActionNodes.some((n) => n.id === actionNode);
-  const actionLegacyValue =
-    (Boolean(actionNode) && catalogActionNodes.length > 0 && !actionNodeInCatalog) ||
-    Boolean(actionNodeType);
-  const useActionDropdown = catalogActionNodes.length > 0 && !actionLegacyValue;
-
   const isConfigureStepValid = (): boolean => {
     if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
     if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
-    if (metrics.includes("route_taken")) {
-      if (useRouteDropdowns && !routeNode.trim()) return false;
-      if (!routeExpected.trim()) return false;
-    }
+    if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
     if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
     if (toolRulesInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
     return true;
@@ -537,6 +487,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   const canProceed = (): boolean => {
     switch (step) {
+      case "workflow":
+        return workflowId.length > 0;
       case "basics":
         return name.trim().length > 0;
       case "data":
@@ -576,20 +528,15 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         nliModelName,
         nliMinEntailScore,
         nliFailOnContradiction,
-        nliEvidenceSource,
-        nliEvidenceField,
         provMode,
-        provContextSource,
-        provContextField,
         provEmbeddingType,
         provEmbeddingModelName,
         provMinScore,
+        provFailOnViolation,
         provLlmProviderId,
         provLlmJudgeSystemPromptSuffix,
         toolRules,
         notContainsText,
-        fieldEqualsField,
-        fieldEqualsExpected,
         routeExpected,
         routeNode,
         actionNode,
@@ -598,7 +545,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         judgeRubric,
         judgeMinScore,
         judgeProviderId,
-        judgeSourceType,
         judgeSourceField,
       });
       // Reset form on successful create
@@ -611,11 +557,12 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   };
 
   const resetForm = () => {
-    setStep("basics");
+    setStep("workflow");
     setName("");
     setDescription("");
     setSuiteId("none");
-    setWorkflowId("none");
+    setWorkflowId(lockedWorkflowId ?? "none");
+    setExpandedWorkflowName(null);
     setMetrics(["exact_match"]);
     setInputMetadataText("{}");
     setIsMetadataValid(true);
@@ -623,18 +570,15 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setNliModelName("cross-encoder/nli-deberta-v3-base");
     setNliMinEntailScore("0.5");
     setNliFailOnContradiction(false);
-    setNliEvidenceSource("expected_output");
     setProvMode("embeddings");
-    setProvContextSource("kb_retrievals");
     setProvEmbeddingType("huggingface");
     setProvEmbeddingModelName("all-MiniLM-L6-v2");
     setProvMinScore("0.5");
+    setProvFailOnViolation(false);
     setProvLlmProviderId(providers[0]?.id ?? "");
     setProvLlmJudgeSystemPromptSuffix("");
     setToolRules([]);
     setNotContainsText("");
-    setFieldEqualsField("");
-    setFieldEqualsExpected("");
     setRouteExpected("");
     setRouteNode("");
     setActionNode("");
@@ -643,7 +587,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setJudgeRubric("");
     setJudgeMinScore("0.5");
     setJudgeProviderId(providers[0]?.id ?? "");
-    setJudgeSourceType("none");
+    setJudgeSourceField("");
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -657,6 +601,117 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   const renderStepContent = () => {
     switch (step) {
+      case "workflow":
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Select Workflow *</Label>
+              <p className="text-xs text-muted-foreground">
+                Pick the workflow this evaluation runs against. The current version is shown
+                first, with older versions nested below it.
+              </p>
+            </div>
+
+            {lockedWorkflowId ? (
+              <div className="rounded-lg border bg-muted px-4 py-3 text-sm">
+                {workflows.find((wf) => wf.id === lockedWorkflowId)?.name ?? "This workflow"}
+              </div>
+            ) : (
+              <div className="rounded-lg border p-2 space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => setWorkflowId("none")}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                    workflowId === "none"
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">Use dataset's default workflow</span>
+                  {workflowId === "none" && <Check className="ml-auto h-4 w-4 shrink-0" />}
+                </button>
+
+                {workflowGroups.map((group) => {
+                  const isExpanded = expandedWorkflowName === group.name;
+                  const selectedInGroup = group.versions.find((wf) => wf.id === workflowId);
+                  return (
+                    <div key={group.name}>
+                      {/* Workflow name = collapsible header; opening it selects the current
+                          version (collapsed by default to keep the list short). */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isExpanded) {
+                            setExpandedWorkflowName(null);
+                          } else {
+                            setExpandedWorkflowName(group.name);
+                            setWorkflowId(group.versions[0].id);
+                          }
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
+                          selectedInGroup ? "bg-primary/10" : "hover:bg-muted",
+                        )}
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                            isExpanded && "rotate-90",
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            "truncate text-sm font-semibold",
+                            selectedInGroup ? "text-primary" : "text-foreground",
+                          )}
+                        >
+                          {group.name}
+                        </span>
+                        {!isExpanded && selectedInGroup && (
+                          <span className="ml-auto shrink-0 text-xs font-medium text-primary">
+                            v{selectedInGroup.version}
+                          </span>
+                        )}
+                      </button>
+                      {isExpanded && (
+                        <div className="relative py-0.5 pl-[30px]">
+                          <div className="absolute bottom-0 left-[18px] top-0 w-px bg-border" />
+                          {group.versions.map((wf, idx) => {
+                            const selected = workflowId === wf.id;
+                            return (
+                              <button
+                                key={wf.id}
+                                type="button"
+                                onClick={() => setWorkflowId(wf.id)}
+                                className={cn(
+                                  "flex w-full items-center gap-2 rounded-md px-2.5 py-[6px] text-sm transition-colors",
+                                  selected
+                                    ? "bg-primary/10 font-semibold text-primary"
+                                    : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                                )}
+                              >
+                                <span className="truncate">v{wf.version}</span>
+                                {idx === 0 && (
+                                  <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                    Current
+                                  </span>
+                                )}
+                                {selected && <Check className="ml-auto h-4 w-4 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+
       case "basics":
         return (
           <div className="space-y-4">
@@ -708,24 +763,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               <p className="text-xs text-muted-foreground mt-1">
                 Choose the dataset containing your test cases
               </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Workflow</Label>
-              <Select value={workflowId} onValueChange={setWorkflowId}>
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue placeholder="Select workflow version" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Use dataset default workflow</SelectItem>
-                  {workflows
-                    .filter((wf): wf is WorkflowMinimal => Boolean(wf.id))
-                    .map((wf) => (
-                      <SelectItem key={wf.id} value={wf.id}>
-                        {wf.name} (v{wf.version})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
             </div>
             <JsonInput
               value={inputMetadataText}
@@ -802,7 +839,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   NLI Evaluation Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Compares the new workflow answer with the evidence source you select.
+                  Uses workflow output as answer and expected output as evidence.
                 </p>
                 <div>
                   <Label className="text-xs">NLI Model</Label>
@@ -820,18 +857,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">Compare answer with</Label>
-                  <GradingSourceSelect
-                    value={nliEvidenceSource}
-                    onChange={setNliEvidenceSource}
-                    legacyField={nliEvidenceField}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Expected answer checks consistency with the reference answer; Retrieved
-                    context checks support from what the agent retrieved this run.
-                  </p>
-                </div>
-                <div>
                   <Label className="text-xs">Min Entailment Score (0-1)</Label>
                   <Input
                     value={nliMinEntailScore}
@@ -843,18 +868,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
                   )}
                 </div>
-                <div className="flex items-center justify-between rounded-md border p-3">
-                  <div>
-                    <Label className="text-xs">Fail on strong contradiction</Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Fail when the evidence strongly contradicts the answer.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={nliFailOnContradiction}
-                    onCheckedChange={setNliFailOnContradiction}
-                  />
-                </div>
               </div>
             )}
 
@@ -865,20 +878,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Provenance Evaluation Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks whether the new workflow answer is supported by the selected source.
+                  Uses workflow output as answer and expected output as context.
                 </p>
-                <div>
-                  <Label className="text-xs">Grounding source</Label>
-                  <GradingSourceSelect
-                    value={provContextSource}
-                    onChange={setProvContextSource}
-                    legacyField={provContextField}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Retrieved context means only what the agent actually retrieved this run
-                    (KB passages and retrieval-tool results), not the whole knowledge base.
-                  </p>
-                </div>
                 <div>
                   <Label className="text-xs">Provenance Mode</Label>
                   <Select
@@ -1020,37 +1021,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               </div>
             )}
 
-            {metrics.includes("field_equals") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                  Field Equals Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Checks that a value from the run equals an expected value. Values are
-                  compared as text.
-                </p>
-                <div>
-                  <Label className="text-xs">Field</Label>
-                  <Input
-                    value={fieldEqualsField}
-                    onChange={(e) => setFieldEqualsField(e.target.value)}
-                    placeholder="Leave empty for the final output, or e.g. outputs.status"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Expected Value</Label>
-                  <Input
-                    value={fieldEqualsExpected}
-                    onChange={(e) => setFieldEqualsExpected(e.target.value)}
-                    placeholder="Leave empty to use the test case's expected output"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            )}
-
             {metrics.includes("route_taken") && (
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="text-sm font-semibold flex items-center gap-2">
@@ -1060,82 +1030,24 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 <p className="text-xs text-muted-foreground">
                   Checks that a router node selected the expected branch.
                 </p>
-                {useRouteDropdowns ? (
-                  <>
-                    <div>
-                      <Label className="text-xs">Router *</Label>
-                      <Select
-                        value={routeNode}
-                        onValueChange={(next) => {
-                          setRouteNode(next);
-                          setRouteExpected("");
-                        }}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select a router" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {catalogRouters.map((router) => (
-                            <SelectItem key={router.id} value={router.id}>
-                              {router.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {selectedRouter && selectedRouter.branches.length > 0 && (
-                      <div>
-                        <Label className="text-xs">Expected Branch *</Label>
-                        <Select value={routeExpected} onValueChange={setRouteExpected}>
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select a branch" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {selectedRouter.branches.map((branch) => (
-                              <SelectItem key={branch.value} value={branch.value}>
-                                {branch.destination
-                                  ? `${branch.value} → ${branch.destination}`
-                                  : branch.value}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {selectedRouter && selectedRouter.branches.length === 0 && (
-                      <div>
-                        <Label className="text-xs">Expected Route *</Label>
-                        <Input
-                          value={routeExpected}
-                          onChange={(e) => setRouteExpected(e.target.value)}
-                          placeholder="e.g. escalate"
-                          className="mt-1"
-                        />
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <Label className="text-xs">Expected Route *</Label>
-                      <Input
-                        value={routeExpected}
-                        onChange={(e) => setRouteExpected(e.target.value)}
-                        placeholder="e.g. escalate"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Router Node (id or label, optional)</Label>
-                      <Input
-                        value={routeNode}
-                        onChange={(e) => setRouteNode(e.target.value)}
-                        placeholder="Leave empty to match any router node"
-                        className="mt-1"
-                      />
-                    </div>
-                  </>
-                )}
+                <div>
+                  <Label className="text-xs">Expected Route *</Label>
+                  <Input
+                    value={routeExpected}
+                    onChange={(e) => setRouteExpected(e.target.value)}
+                    placeholder="e.g. escalate"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Router Node (id or label, optional)</Label>
+                  <Input
+                    value={routeNode}
+                    onChange={(e) => setRouteNode(e.target.value)}
+                    placeholder="Leave empty to match any router node"
+                    className="mt-1"
+                  />
+                </div>
               </div>
             )}
 
@@ -1146,57 +1058,32 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Action Taken Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks whether a specific workflow node ran successfully.
+                  Checks that a specific side-effect node ran successfully. Provide a node
+                  or a node type.
                 </p>
-                {useActionDropdown ? (
-                  <div>
-                    <Label className="text-xs">Node *</Label>
-                    <Select
-                      value={actionNode}
-                      onValueChange={(next) => {
-                        setActionNode(next);
-                        setActionNodeType("");
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select a node" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {catalogActionNodes.map((node) => (
-                          <SelectItem key={node.id} value={node.id}>
-                            {node.label} ({node.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <Label className="text-xs">Node (id or label)</Label>
-                      <Input
-                        value={actionNode}
-                        onChange={(e) => setActionNode(e.target.value)}
-                        placeholder="e.g. Create Zendesk Ticket"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Node Type</Label>
-                      <Input
-                        value={actionNodeType}
-                        onChange={(e) => setActionNodeType(e.target.value)}
-                        placeholder="e.g. zendeskTicketNode"
-                        className="mt-1"
-                      />
-                    </div>
-                  </>
-                )}
+                <div>
+                  <Label className="text-xs">Node (id or label)</Label>
+                  <Input
+                    value={actionNode}
+                    onChange={(e) => setActionNode(e.target.value)}
+                    placeholder="e.g. Create Zendesk Ticket"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Node Type</Label>
+                  <Input
+                    value={actionNodeType}
+                    onChange={(e) => setActionNodeType(e.target.value)}
+                    placeholder="e.g. zendeskTicketNode"
+                    className="mt-1"
+                  />
+                </div>
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
-                    <div className="text-xs font-medium">Must complete</div>
+                    <div className="text-xs font-medium">Must fire</div>
                     <div className="text-xs text-muted-foreground">
-                      Turn off to require that the node does not complete successfully
+                      Turn off to assert the node did NOT run
                     </div>
                   </div>
                   <Switch checked={actionShouldFire} onCheckedChange={setActionShouldFire} />
@@ -1250,20 +1137,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
                   )}
                 </div>
-                <div className="flex items-center justify-between rounded-md border p-3">
-                  <div>
-                    <Label className="text-xs">Give the judge the retrieved context</Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Off = rubric only (style or behavior checks). On = the judge also
-                      sees the KB passages the agent retrieved during the run.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={judgeSourceType === "kb_retrievals"}
-                    onCheckedChange={(checked) =>
-                      setJudgeSourceType(checked ? "kb_retrievals" : "none")
-                    }
+                <div>
+                  <Label className="text-xs">Grounding Source Field (optional)</Label>
+                  <Input
+                    value={judgeSourceField}
+                    onChange={(e) => setJudgeSourceField(e.target.value)}
+                    placeholder="e.g. trace.retrievals"
+                    className="mt-1 font-mono text-xs"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Dotted path into the run to check the answer against (e.g. knowledge-base
+                    retrievals).
+                  </p>
                 </div>
               </div>
             )}
@@ -1277,8 +1162,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[760px] p-0 overflow-hidden">
-        <div className="max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-[960px] p-0 overflow-hidden">
+        <div className="h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <DialogTitle>{mode === "create" ? "Create Evaluation" : "Edit Evaluation"}</DialogTitle>
             {/* Step indicator */}
@@ -1332,9 +1217,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
           <DialogFooter className="border-t px-6 py-4 shrink-0 flex justify-between">
             <div>
               {currentStepIndex > 0 && (
-                <Button variant="outline" onClick={handleBack}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Back
+                <Button variant="outline" size="icon" onClick={handleBack} aria-label="Back">
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
               )}
             </div>

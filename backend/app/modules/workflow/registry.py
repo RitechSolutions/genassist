@@ -3,8 +3,10 @@
 import logging
 from typing import Union
 
+from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models import AgentModel
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.schemas.agent import AgentRead
 
 logger = logging.getLogger(__name__)
@@ -35,8 +37,13 @@ class RegistryItem:
             self._router = None
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
-    async def execute(self, session_message: str, metadata: dict, persist: bool = True) -> dict:
-        """Execute a workflow, optionally resuming from a specific node"""
+    async def execute(self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat") -> dict:
+        """Execute a workflow, optionally resuming from a specific node.
+
+        persist=False skips writing this turn to conversation memory (used by the
+        start greeting trigger so its synthetic instruction isn't kept in history).
+        ``source`` attributes recorded LLM usage.
+        """
         if self.workflow_engine is None:
             raise ValueError(
                 f"Cannot execute workflow for agent {self.agent_name} ({self.agent_id}): "
@@ -48,12 +55,17 @@ class RegistryItem:
 
         input_data = {"message": session_message, **metadata}
 
+        # Build usage attribution before routing so resumed child and parent runs are captured
+        usage_context = self._build_usage_context(source, thread_id)
+
         # Sub-agent delegation only kicks in for workflows that have sub-agents; a
         # HITL resume (client-driven) always takes precedence over frame routing
         if self._router.has_sub_agents():
             input_data["agent_id"] = self.agent_id
             if not start_node_id and thread_id:
-                routed = await self._router.route_turn(session_message, thread_id, input_data, persist)
+                routed = await self._router.route_turn(
+                    session_message, thread_id, input_data, persist, usage_context=usage_context
+                )
                 if routed is not None:
                     return routed
 
@@ -63,5 +75,16 @@ class RegistryItem:
             thread_id=thread_id,
             persist=persist,
             registry_managed=True,
+            usage_context=usage_context,
         )
         return self._router.finalize(state.format_state_as_response())
+
+    def _build_usage_context(self, source: str, thread_id):
+        """Attribution for the usage ledger. Ids are validated (and NULLed) at record time"""
+        return WorkflowUsageContext(
+            source=source,
+            agent_id=coerce_uuid(self.agent_id),
+            workflow_id=coerce_uuid(getattr(self.workflow_engine, "workflow_id", None)),
+            conversation_id=coerce_uuid(thread_id),
+            defer_capture=True,
+        )

@@ -649,7 +649,7 @@ const KnowledgeBaseForm: React.FC = () => {
                 <Button variant="ghost" size="icon" onClick={() => navigate('/knowledge-base')} className="mr-2">
                   <ChevronLeft className="h-5 w-5" />
                 </Button>
-                <h2 className="text-2xl font-bold tracking-tight">
+                <h2 className="text-2xl font-bold tracking-tight animate-fade-down">
                   {isEditMode ? 'Edit Knowledge Base' : 'New Knowledge Base'}
                 </h2>
               </div>

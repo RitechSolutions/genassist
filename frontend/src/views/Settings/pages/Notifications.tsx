@@ -45,8 +45,8 @@ export function NotificationsSettings() {
   return (
     <PageLayout>
       <header className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-2">Notifications</h1>
-        <p className="text-sm sm:text-base text-muted-foreground">
+        <h1 className="text-2xl sm:text-3xl font-bold mb-2 animate-fade-down">Notifications</h1>
+        <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">
           Customize which notifications you want to receive.
         </p>
       </header>

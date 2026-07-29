@@ -86,7 +86,8 @@ class OpenAPINode(BaseNode):
             answer = await self._answer_query_about_spec(
                 llm_model,
                 query,
-                spec_content
+                spec_content,
+                provider_id,
             )
 
             return {
@@ -104,7 +105,8 @@ class OpenAPINode(BaseNode):
         self,
         llm_model,
         query: str,
-        spec_content: str
+        spec_content: str,
+        provider_id: str = None,
     ) -> str:
         """
         Use LLM to answer a question about the OpenAPI specification.
@@ -132,6 +134,10 @@ Answer:"""
 
             # Call LLM to get the answer
             response = await llm_model.ainvoke(prompt)
+
+            from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "openapi_query")
 
             # Extract answer from response
             answer = response.content if hasattr(

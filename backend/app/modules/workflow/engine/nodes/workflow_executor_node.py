@@ -79,7 +79,8 @@ class WorkflowExecutorNode(BaseNode):
             state = await workflow_engine.execute_from_node(
                 input_data=params,
                 thread_id=thread_id,
-                persist=False  # Don't persist nested workflow executions
+                persist=False,
+                usage_sink=self.get_state().llm_usage,  # child usage flows to parent, even on raise
             )
 
             # Nested runs use a separate state; carry their tool events up for evaluation.

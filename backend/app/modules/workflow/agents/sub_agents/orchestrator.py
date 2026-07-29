@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
 from app.dependencies.injector import injector
 from app.modules.workflow.agents.sub_agents.models import SubAgentMode
+from app.modules.workflow.usage_context import WorkflowUsageContext
 
 if TYPE_CHECKING:
     from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -127,8 +128,15 @@ async def run_child_turn(
     session: Optional[Dict[str, Any]] = None,
     timeout_seconds: float,
     inherit_pii: bool = False,
+    usage_sink: Optional[list] = None,
+    usage_context: Optional[WorkflowUsageContext] = None,
 ) -> "WorkflowState":
-    """Execute the child once and return its WorkflowState"""
+    """Execute the child once and return its WorkflowState.
+
+    Usage threading is opaque: ``usage_sink`` (initial in-parent delegation) or
+    ``usage_context`` (interactive resume) is forwarded to the child engine so
+    child LLM calls are captured exactly once.
+    """
     from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
     nodes = workflow.get("nodes", [])
@@ -158,6 +166,8 @@ async def run_child_turn(
                     input_data=input_data,
                     thread_id=thread_id,
                     persist=False,
+                    usage_sink=usage_sink,
+                    usage_context=usage_context,
                 ),
                 timeout=timeout_seconds,
             )

@@ -27,7 +27,9 @@ from app.modules.workflow.engine.workflow_engine import (
     WorkflowEngine,
 )
 from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.core.utils.transcript_utils import extract_qa_pairs
+from app.core.utils.uuid_utils import coerce_uuid
 from app.repositories.conversations import ConversationRepository
 from app.repositories.test_suite import (
     TestSuiteRepository,
@@ -1742,6 +1744,9 @@ class TestSuiteService:
                         thread_id=thread_id,
                         persist=bool(thread_id),
                         await_persist=bool(thread_id),
+                        usage_context=WorkflowUsageContext(
+                            source="test_suite", workflow_id=coerce_uuid(engine.workflow_id)
+                        ),
                     ),
                     timeout=CASE_EXECUTION_TIMEOUT_SECONDS,
                 )

@@ -144,8 +144,8 @@ const KnowledgeBaseManager: React.FC = () => {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-2xl sm:text-3xl font-bold">Knowledge Base</h2>
-          <p className="text-muted-foreground font-normal">View and manage the knowledge base</p>
+          <h2 className="text-2xl sm:text-3xl font-bold animate-fade-down">Knowledge Base</h2>
+          <p className="text-muted-foreground font-normal animate-fade-up">View and manage the knowledge base</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative">

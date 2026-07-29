@@ -11,14 +11,16 @@ from app.auth.dependencies import auth, permissions
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.string_utils import truncate_for_log
+from app.core.utils.uuid_utils import coerce_uuid
 from app.dependencies.injector import injector
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
-from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
+from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowSummary, WorkflowUpdate
 from app.services.llm_providers import LlmProviderService
 from app.services.workflow import WorkflowService
 
@@ -140,6 +142,17 @@ async def get_workflows_minimal(service: WorkflowService = Injected(WorkflowServ
     return await service.get_all_minimal()
 
 
+@router.get(
+    "/summaries",
+    response_model=List[WorkflowSummary],
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def get_workflow_summaries(
+    agent_id: UUID, service: WorkflowService = Injected(WorkflowService)
+):
+    return await service.get_summaries_by_agent(agent_id)
+
+
 @router.put(
     "/{workflow_id}",
     dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
@@ -258,7 +271,13 @@ async def execute_workflow(
         workflow_engine = WorkflowEngine(workflow_config)
 
         state = await workflow_engine.execute_from_node(
-            input_data=input_data, thread_id=thread_id
+            input_data=input_data,
+            thread_id=thread_id,
+            usage_context=WorkflowUsageContext(
+                source="workflow_api",
+                workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                defer_capture=True,
+            ),
         )
 
         return state.format_state_as_response()
@@ -307,6 +326,7 @@ async def test_workflow(
                     status_code=404, detail=f"Workflow with id {workflow_id} not found"
                 )
 
+            saved_workflow_id = str(workflow_id)
             workflow_config = {
                 "id": str(workflow_id),
                 "nodes": db_workflow.nodes,
@@ -323,6 +343,7 @@ async def test_workflow(
                 )
 
             workflow = WorkflowUpdate(**input_workflow)
+            saved_workflow_id = input_workflow.get("id")
             workflow_config = {
                 "id": "test-workflow",
                 "nodes": workflow.nodes,
@@ -335,13 +356,16 @@ async def test_workflow(
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         start_node_id = input_data.get("human_in_the_loop_node_id")
 
+        usage_context = WorkflowUsageContext(
+            source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
+        )
         turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
         supplied_thread = bool(input_data.get("thread_id"))
         if turn_router.has_sub_agents():
             input_data.setdefault("agent_id", workflow_config["id"])
             if supplied_thread and not start_node_id:
                 routed = await turn_router.route_turn(
-                    input_data.get("message", ""), thread_id, input_data, persist=True
+                    input_data.get("message", ""), thread_id, input_data, persist=True, usage_context=usage_context
                 )
                 if routed is not None:
                     return routed
@@ -351,6 +375,7 @@ async def test_workflow(
             input_data=input_data,
             thread_id=thread_id,
             registry_managed=supplied_thread,
+            usage_context=usage_context,
         )
 
         return turn_router.finalize(state.format_state_as_response())
@@ -426,7 +451,15 @@ async def test_individual_node(test_data: Dict[str, Any]):
         }
         workflow_engine = WorkflowEngine(workflow_config)
 
-        state = await workflow_engine.execute_from_node(start_node_id=test_id, input_data=input_data)
+        state = await workflow_engine.execute_from_node(
+            start_node_id=test_id,
+            input_data=input_data,
+            usage_context=WorkflowUsageContext(
+                source="node_test",
+                workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                defer_capture=True,
+            ),
+        )
 
         return state.format_state_as_response()
 

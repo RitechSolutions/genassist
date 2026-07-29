@@ -373,11 +373,11 @@ const AgentList: React.FC<AgentListProps> = ({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-3xl font-bold">
+          <h2 className="text-3xl font-bold animate-fade-down">
             Agent Studio{" "}
             <span className="hidden sm:inline text-xl sm:text-2xl text-muted-foreground font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
           </h2>
-          <p className="text-muted-foreground font-normal">View and manage workflows</p>
+          <p className="text-muted-foreground font-normal animate-fade-up">View and manage workflows</p>
           <div className="mt-2 sm:hidden">
             <span className="text-muted-foreground font-normal text-base">
               ({activeCount} Active, {inactiveCount} Inactive)

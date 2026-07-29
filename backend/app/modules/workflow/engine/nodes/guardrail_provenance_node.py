@@ -198,6 +198,10 @@ class GuardrailProvenanceNode(BaseNode):
             ]
         )
 
+        from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+        await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "provenance_judge")
+
         raw_content = getattr(response, "content", "")
         if isinstance(raw_content, list):
             raw_content = " ".join(str(part) for part in raw_content)

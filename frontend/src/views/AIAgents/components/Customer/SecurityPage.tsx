@@ -26,8 +26,8 @@ export default function SecurityPage() {
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <div>
-                <h2 className="text-3xl font-bold">Security Settings</h2>
-                <p className="text-muted-foreground font-normal mt-1">
+                <h2 className="text-3xl font-bold animate-fade-down">Security Settings</h2>
+                <p className="text-muted-foreground font-normal mt-1 animate-fade-up">
                   Configure security settings for your agent
                 </p>
               </div>

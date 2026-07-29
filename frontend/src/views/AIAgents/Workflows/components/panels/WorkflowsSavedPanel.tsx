@@ -12,7 +12,11 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/checkbox";
 import { Workflow } from "@/interfaces/workflow.interface";
-import { getAllWorkflows, deleteWorkflow } from "@/services/workflows";
+import {
+  getWorkflowSummaries,
+  getWorkflowById,
+  deleteWorkflow,
+} from "@/services/workflows";
 import VersionDiffDialog from "../diff/VersionDiffDialog";
 import {
   Dialog,
@@ -25,6 +29,7 @@ import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PageListSkeleton } from "@/components/skeletons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,6 +81,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   const [loading, setLoading] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [workflowToEdit, setWorkflowToEdit] = useState<Workflow | null>(null);
   const [workflowName, setWorkflowName] = useState(currentWorkflow.name || "");
   const [workflowVersion, setWorkflowVersion] = useState(
     currentWorkflow.version || ""
@@ -155,18 +161,14 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
       : { base: second, target: first };
   }, [compareSelection, workflows]);
 
-  // Load workflows
   const loadWorkflows = async () => {
     setLoading(true);
     setError(null);
     try {
-      let workflowList = await getAllWorkflows();
-      workflowList = workflowList.filter(
-        (workflow) => workflow["agent_id"] === agentId
-      );
+      const workflowList = await getWorkflowSummaries(agentId);
       workflowList.sort((a, b) => {
-        const dateA = new Date(a.created_at).getTime();
-        const dateB = new Date(b.created_at).getTime();
+        const dateA = new Date(a.created_at ?? 0).getTime();
+        const dateB = new Date(b.created_at ?? 0).getTime();
         return dateB - dateA;
       });
       setWorkflows(workflowList || []);
@@ -174,6 +176,17 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
       setError("Failed to load workflows. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const selectVersion = async (workflow: Workflow) => {
+    if (!workflow.id) return;
+    try {
+      const full = await getWorkflowById(workflow.id);
+      onWorkflowSelect(full);
+      setSelectedWorkflowId(workflow.id);
+    } catch (err) {
+      setError("Failed to load workflow version. Please try again.");
     }
   };
 
@@ -229,15 +242,13 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
       setWorkflowToSelect(workflow);
       setIsUnsavedChangesDialogOpen(true);
     } else {
-      setSelectedWorkflowId(workflow.id);
-      onWorkflowSelect(workflow);
+      selectVersion(workflow);
     }
   };
 
   const handleDiscardAndSwitch = () => {
     if (workflowToSelect) {
-      setSelectedWorkflowId(workflowToSelect.id);
-      onWorkflowSelect(workflowToSelect);
+      selectVersion(workflowToSelect);
     }
     setIsUnsavedChangesDialogOpen(false);
     setWorkflowToSelect(null);
@@ -247,21 +258,30 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
     if (workflowToSelect) {
       setIsSwitching(true);
       await onSaveWorkflow();
-      onWorkflowSelect(workflowToSelect);
-      setSelectedWorkflowId(workflowToSelect.id);
+      await selectVersion(workflowToSelect);
       setIsSwitching(false);
     }
     setIsUnsavedChangesDialogOpen(false);
     setWorkflowToSelect(null);
   };
 
-  const handleEditClick = (workflow: Workflow) => {
+  const handleEditClick = async (workflow: Workflow) => {
     handleWorkflowSelect(workflow);
     setWorkflowName(workflow.name);
     setWorkflowVersion(workflow.version);
     setWorkflowDescription(workflow.description || "");
     setVersionError(null);
     setEditDialogOpen(true);
+
+    if (workflow.id && workflow.id !== currentWorkflow.id) {
+      try {
+        setWorkflowToEdit(await getWorkflowById(workflow.id));
+      } catch (err) {
+        setError("Failed to load workflow version. Please try again.");
+      }
+    } else {
+      setWorkflowToEdit(null);
+    }
   };
 
   const handleActivateClick = async (workflow: Workflow) => {
@@ -273,8 +293,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
     setIsActivating(true);
 
     onActiveWorkflowChange(workflowToActivate);
-    setSelectedWorkflowId(workflowToActivate.id);
-    onWorkflowSelect(workflowToActivate);
+    await selectVersion(workflowToActivate);
 
     setWorkflowToActivate(null);
     setIsActivateDialogOpen(false);
@@ -290,14 +309,16 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   };
 
   const handleUpdateWorkflow = async () => {
-    if (!workflowName.trim() && !currentWorkflow.id) {
+    const target = workflowToEdit ?? currentWorkflow;
+
+    if (!workflowName.trim() && !target.id) {
       return;
     }
 
-    const finalVersion = workflowVersion != "" ? workflowVersion : currentWorkflow.version;
-    
+    const finalVersion = workflowVersion != "" ? workflowVersion : target.version;
+
     // Check for duplicate version (excluding current workflow)
-    if (isVersionDuplicate(workflows, finalVersion, currentWorkflow.id)) {
+    if (isVersionDuplicate(workflows, finalVersion, target.id)) {
       setVersionError(`Version "${finalVersion}" already exists. Please choose a different version number.`);
       return;
     }
@@ -306,16 +327,16 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
     setVersionError(null);
     try {
       const workflowToSave = {
-        ...currentWorkflow,
-        name: workflowName != "" ? workflowName : currentWorkflow.name,
+        ...target,
+        name: workflowName != "" ? workflowName : target.name,
         description:
           workflowDescription != ""
             ? workflowDescription
-            : currentWorkflow.description,
+            : target.description,
         version: finalVersion,
       };
 
-      await updateWorkflow(currentWorkflow.id, workflowToSave);
+      await updateWorkflow(target.id, workflowToSave);
       closeDialogs();
       loadWorkflows();
     } catch (err) {
@@ -347,8 +368,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
       
       // Auto-switch to previous version if we deleted the current workflow
       if (isCurrentlySelected && previousVersion) {
-        setSelectedWorkflowId(previousVersion.id);
-        onWorkflowSelect(previousVersion);
+        selectVersion(previousVersion);
       } else if (isCurrentlySelected && updatedWorkflows.length === 0) {
         // If no workflows left, clear selection
         setSelectedWorkflowId(null);
@@ -446,6 +466,9 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
             </div>
           )}
 
+          {loading ? (
+            <PageListSkeleton variant="standard" rows={3} bordered={false} />
+          ) : (
           <div className="space-y-2">
             {workflows.map((workflow) => (
               <div
@@ -559,6 +582,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
               </div>
             ))}
           </div>
+          )}
         </div>
       </div>
 
