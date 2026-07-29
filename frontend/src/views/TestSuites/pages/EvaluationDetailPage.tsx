@@ -465,14 +465,18 @@ const EvaluationDetailPage: React.FC = () => {
           </div>
           {result.metrics && (
             <div className="flex flex-wrap justify-end gap-1">
-              {Object.entries(result.metrics).map(([tech, metricValue]) => (
+              {Object.entries(result.metrics).map(([tech, metricValue]) => {
+                const metricNotScored = metricValue.not_evaluated || metricValue.error;
+                return (
                 <span
                   key={tech}
                   className={cn(
                     "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
-                    metricValue.passed
-                      ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
-                      : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
+                    metricNotScored
+                      ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                      : metricValue.passed
+                        ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
+                        : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
                   )}
                 >
                   <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
@@ -484,7 +488,8 @@ const EvaluationDetailPage: React.FC = () => {
                     </span>
                   )}
                 </span>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1007,6 +1012,14 @@ const EvaluationDetailPage: React.FC = () => {
                         const passed = casePassed(result);
                         const notScored = caseNotScored(result);
                         const isActive = activeCase?.id === result.id;
+                        const metricComments = Object.entries(result.metrics ?? {})
+                          .filter(([, m]) => m.comment)
+                          .map(([tech, m]) => `${methodLabel(tech)}: ${m.comment}`)
+                          .join(" | ");
+                        let caseStatusLabel = "Passed";
+                        if (notScored) caseStatusLabel = notScoredLabel(result);
+                        else if (!passed) caseStatusLabel = "Failed";
+                        const subtitleText = metricComments || caseStatusLabel;
                         return (
                           <button
                             key={result.id}
@@ -1033,10 +1046,7 @@ const EvaluationDetailPage: React.FC = () => {
                             </div>
                             {result.metrics && (
                               <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                                {Object.entries(result.metrics)
-                                  .filter(([, m]) => m.comment)
-                                  .map(([tech, m]) => `${methodLabel(tech)}: ${m.comment}`)
-                                  .join(" | ") || notScoredLabel(result)}
+                                {subtitleText}
                               </div>
                             )}
                           </button>
