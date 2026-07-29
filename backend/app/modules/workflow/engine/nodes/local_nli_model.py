@@ -10,12 +10,44 @@ falls back to a simple heuristic implementation.
 
 from __future__ import annotations
 
-from typing import Tuple, Optional
 import logging
+import re
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
-from app.constants import NLI_MODELS, DEFAULT_NLI_MODEL
+from app.constants import DEFAULT_NLI_MODEL, NLI_MODELS
 
 logger = logging.getLogger(__name__)
+
+NLI_MAX_SEQUENCE_LENGTH = 256
+NLI_CHUNK_OVERLAP = 32
+NLI_MAX_EVIDENCE_CHUNKS = 32
+NLI_INFERENCE_BATCH_SIZE = 4
+NLI_MAX_CLAIM_TOKENS = 96
+NLI_MAX_ANSWER_CLAIMS = 8
+
+
+@dataclass(frozen=True)
+class NLIClaimResult:
+    text: str
+    entail_score: float
+    contradiction_score: float
+    verdict: str
+
+
+@dataclass(frozen=True)
+class NLIScoreResult:
+    entail_score: float
+    contradiction_score: float
+    verdict: str
+    model_name: Optional[str]
+    chunks_evaluated: int = 0
+    evidence_truncated: bool = False
+    claims_evaluated: int = 0
+    total_claims: int = 0
+    pairs_evaluated: int = 0
+    coverage_complete: bool = True
+    claim_results: tuple[NLIClaimResult, ...] = ()
 
 
 class LocalNLIModel:
@@ -32,10 +64,13 @@ class LocalNLIModel:
         self._tokenizer = None
         self._loaded_model_name: Optional[str] = None
 
-    def _lazy_init(self, model_name: str) -> None:
-        """Lazily load a small NLI model if transformers is available."""
+    def _lazy_init(self, model_name: str) -> bool:
+        """Lazily load a small NLI model if transformers is available.
+
+        Returns True when a real model is loaded, False when it is unavailable.
+        """
         if self._loaded_model_name == model_name and self._model is not None:
-            return
+            return True
 
         try:
             from transformers import (
@@ -49,6 +84,7 @@ class LocalNLIModel:
                 model_name,
             )
             self._loaded_model_name = model_name
+            return True
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
                 "LocalNLIModel: transformers-based model unavailable, "
@@ -58,6 +94,7 @@ class LocalNLIModel:
             self._model = None
             self._tokenizer = None
             self._loaded_model_name = None
+            return False
 
     def score(
         self,
@@ -71,6 +108,41 @@ class LocalNLIModel:
         Returns:
             (entail_score, contradiction_score, verdict)
         """
+        entail_score, contradiction_score, verdict, _ = self.score_detailed(
+            answer, evidence, model_name
+        )
+        return entail_score, contradiction_score, verdict
+
+    def score_detailed(
+        self,
+        answer: str,
+        evidence: str,
+        model_name: Optional[str] = None,
+    ) -> Tuple[float, float, str, Optional[str]]:
+        """Compatibility wrapper for callers that expect the legacy tuple."""
+        result = self.score_evidence(answer, evidence, model_name)
+        return (
+            result.entail_score,
+            result.contradiction_score,
+            result.verdict,
+            result.model_name,
+        )
+
+    def score_evidence(
+        self,
+        answer: str,
+        evidence: str,
+        model_name: Optional[str] = None,
+    ) -> NLIScoreResult:
+        """Score bounded evidence chunks and return decision metadata."""
+        if not answer.strip() or not evidence.strip():
+            return NLIScoreResult(
+                entail_score=0.0,
+                contradiction_score=0.0,
+                verdict="unknown",
+                model_name=None,
+            )
+
         # Normalize/validate model_name against known options
         selected_model = model_name or DEFAULT_NLI_MODEL
         allowed_values = {m["value"] for m in NLI_MODELS}
@@ -84,28 +156,89 @@ class LocalNLIModel:
             selected_model = DEFAULT_NLI_MODEL
 
         # Try to use a real model first
-        self._lazy_init(selected_model)
+        loaded = self._lazy_init(selected_model)
 
-        if self._model is not None and self._tokenizer is not None:
+        if loaded and self._model is not None and self._tokenizer is not None:
             try:
-                from torch.nn.functional import softmax  # type: ignore
                 import torch  # type: ignore
+                from torch.nn.functional import softmax  # type: ignore
 
-                inputs = self._tokenizer(
-                    evidence,
-                    answer,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=256,
+                claim_token_chunks, total_claims = self._answer_claim_token_ids(
+                    answer
                 )
-                with torch.no_grad():
-                    logits = self._model(**inputs).logits[0]
-                probs = softmax(logits, dim=-1).tolist()
+                if not claim_token_chunks:
+                    return NLIScoreResult(
+                        entail_score=0.0,
+                        contradiction_score=0.0,
+                        verdict="unknown",
+                        model_name=None,
+                    )
+                if total_claims > NLI_MAX_ANSWER_CLAIMS:
+                    return NLIScoreResult(
+                        entail_score=0.0,
+                        contradiction_score=0.0,
+                        verdict="unknown",
+                        model_name=None,
+                        total_claims=total_claims,
+                        coverage_complete=False,
+                    )
+                claim_texts = [
+                    self._tokenizer.decode(chunk, skip_special_tokens=True)
+                    for chunk in claim_token_chunks
+                ]
+                special_tokens = self._tokenizer.num_special_tokens_to_add(pair=True)
+                evidence_window = max(
+                    32,
+                    NLI_MAX_SEQUENCE_LENGTH
+                    - max(len(chunk) for chunk in claim_token_chunks)
+                    - special_tokens,
+                )
+                evidence_ids = self._tokenizer.encode(
+                    evidence,
+                    add_special_tokens=False,
+                )
+                evidence_chunks, evidence_truncated = self._chunk_token_ids(
+                    evidence_ids,
+                    evidence_window,
+                    NLI_CHUNK_OVERLAP,
+                    NLI_MAX_EVIDENCE_CHUNKS,
+                )
+                chunk_texts = [
+                    self._tokenizer.decode(chunk, skip_special_tokens=True)
+                    for chunk in evidence_chunks
+                ]
+                pair_evidence_texts = chunk_texts * len(claim_texts)
+                pair_claim_texts = [
+                    claim_text
+                    for claim_text in claim_texts
+                    for _ in chunk_texts
+                ]
+                probabilities = []
+                for batch_start in range(
+                    0, len(pair_evidence_texts), NLI_INFERENCE_BATCH_SIZE
+                ):
+                    evidence_batch = pair_evidence_texts[
+                        batch_start : batch_start + NLI_INFERENCE_BATCH_SIZE
+                    ]
+                    claim_batch = pair_claim_texts[
+                        batch_start : batch_start + NLI_INFERENCE_BATCH_SIZE
+                    ]
+                    inputs = self._tokenizer(
+                        evidence_batch,
+                        claim_batch,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation="only_first",
+                        max_length=NLI_MAX_SEQUENCE_LENGTH,
+                    )
+                    with torch.no_grad():
+                        logits = self._model(**inputs).logits
+                    probabilities.extend(softmax(logits, dim=-1).tolist())
 
                 # Map logits to labels using the model's id2label mapping
                 id2label = getattr(self._model.config, "id2label", {})
                 label_map = {
-                    idx: str(label).lower() for idx, label in id2label.items()
+                    int(idx): str(label).lower() for idx, label in id2label.items()
                 }
 
                 entail_idx = None
@@ -118,21 +251,69 @@ class LocalNLIModel:
 
                 # Fallback to a common order if labels are missing
                 if entail_idx is None:
-                    entail_idx = 2 if len(probs) > 2 else 0
+                    label_count = len(probabilities[0])
+                    entail_idx = 2 if label_count > 2 else 0
                 if contradict_idx is None:
                     contradict_idx = 0
 
-                entail_score = float(probs[entail_idx])
-                contradiction_score = float(probs[contradict_idx])
+                claim_results = []
+                evidence_chunk_count = len(chunk_texts)
+                for claim_index, claim_text in enumerate(claim_texts):
+                    first_pair = claim_index * evidence_chunk_count
+                    claim_probabilities = probabilities[
+                        first_pair : first_pair + evidence_chunk_count
+                    ]
+                    claim_entail_score = max(
+                        float(probs[entail_idx]) for probs in claim_probabilities
+                    )
+                    claim_contradiction_score = max(
+                        float(probs[contradict_idx])
+                        for probs in claim_probabilities
+                    )
+                    if claim_entail_score >= 0.5:
+                        claim_verdict = "entails"
+                    elif claim_contradiction_score >= 0.5:
+                        claim_verdict = "contradicts"
+                    else:
+                        claim_verdict = "unknown"
+                    claim_results.append(
+                        NLIClaimResult(
+                            text=claim_text,
+                            entail_score=claim_entail_score,
+                            contradiction_score=claim_contradiction_score,
+                            verdict=claim_verdict,
+                        )
+                    )
 
-                if entail_score >= 0.5:
+                entail_score = min(
+                    result.entail_score for result in claim_results
+                )
+                contradiction_score = max(
+                    result.contradiction_score for result in claim_results
+                )
+
+                if all(result.entail_score >= 0.5 for result in claim_results):
                     verdict = "entails"
-                elif contradiction_score >= 0.5:
+                elif any(
+                    result.contradiction_score >= 0.5
+                    for result in claim_results
+                ):
                     verdict = "contradicts"
                 else:
                     verdict = "unknown"
 
-                return entail_score, contradiction_score, verdict
+                return NLIScoreResult(
+                    entail_score=entail_score,
+                    contradiction_score=contradiction_score,
+                    verdict=verdict,
+                    model_name=selected_model,
+                    chunks_evaluated=len(evidence_chunks),
+                    evidence_truncated=evidence_truncated,
+                    claims_evaluated=len(claim_results),
+                    total_claims=total_claims,
+                    pairs_evaluated=len(probabilities),
+                    claim_results=tuple(claim_results),
+                )
 
             except Exception as exc:  # pylint: disable=broad-except
                 logger.warning(
@@ -141,8 +322,95 @@ class LocalNLIModel:
                     exc,
                 )
 
-        # Fallback: heuristic overlap-based NLI
-        return self._heuristic_nli(answer, evidence)
+        # Fallback: heuristic overlap-based NLI (model name reported as None)
+        entail_score, contradiction_score, verdict = self._heuristic_nli(answer, evidence)
+        return NLIScoreResult(
+            entail_score=entail_score,
+            contradiction_score=contradiction_score,
+            verdict=verdict,
+            model_name=None,
+        )
+
+    def _answer_claim_token_ids(
+        self,
+        answer: str,
+    ) -> tuple[list[list[int]], int]:
+        """Group complete sentences into bounded claim-sized token windows."""
+        sentence_parts = re.split(r"(?<=[.!?])\s+|\n+", answer)
+        claim_chunks: list[list[int]] = []
+        current_chunk: list[int] = []
+
+        for sentence in sentence_parts:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            sentence_ids = self._tokenizer.encode(
+                sentence,
+                add_special_tokens=False,
+            )
+            if not sentence_ids:
+                continue
+
+            if len(sentence_ids) > NLI_MAX_CLAIM_TOKENS:
+                if current_chunk:
+                    claim_chunks.append(current_chunk)
+                    current_chunk = []
+                claim_chunks.extend(
+                    sentence_ids[start : start + NLI_MAX_CLAIM_TOKENS]
+                    for start in range(
+                        0,
+                        len(sentence_ids),
+                        NLI_MAX_CLAIM_TOKENS,
+                    )
+                )
+                continue
+
+            if (
+                current_chunk
+                and len(current_chunk) + len(sentence_ids)
+                > NLI_MAX_CLAIM_TOKENS
+            ):
+                claim_chunks.append(current_chunk)
+                current_chunk = []
+            current_chunk.extend(sentence_ids)
+
+        if current_chunk:
+            claim_chunks.append(current_chunk)
+
+        return claim_chunks, len(claim_chunks)
+
+    @staticmethod
+    def _chunk_token_ids(
+        token_ids: list[int],
+        window_size: int,
+        overlap: int,
+        max_chunks: int,
+    ) -> tuple[list[list[int]], bool]:
+        """Split evidence into bounded overlapping chunks, including its end."""
+        if not token_ids:
+            return [[]], False
+
+        window_size = max(1, window_size)
+        overlap = max(0, min(overlap, window_size - 1))
+        step = max(1, window_size - overlap)
+        final_start = max(0, len(token_ids) - window_size)
+        starts = list(range(0, final_start + 1, step))
+        if starts[-1] != final_start:
+            starts.append(final_start)
+
+        was_bounded = len(starts) > max_chunks
+        if was_bounded:
+            if max_chunks <= 1:
+                starts = [final_start]
+            else:
+                last_index = len(starts) - 1
+                starts = [
+                    starts[round(index * last_index / (max_chunks - 1))]
+                    for index in range(max_chunks)
+                ]
+
+        chunks = [token_ids[start : start + window_size] for start in starts]
+        return chunks, was_bounded
 
     def _heuristic_nli(
         self,
