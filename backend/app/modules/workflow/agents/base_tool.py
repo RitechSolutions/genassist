@@ -82,11 +82,18 @@ class BaseTool(Tool):
         """
         # Imported lazily to avoid any import-time coupling with the engine package.
         from app.modules.workflow.engine.node_result import is_node_failure
+        from app.modules.workflow.engine.workflow_state import WorkflowPausedException
 
         try:
             result = self.function({"parameters": kwargs})
             if inspect.isawaitable(result):
                 result = await result
+        except WorkflowPausedException:
+            # Human-in-the-loop: the tool paused for human input. It was used but
+            # has not completed, so record it as paused (counts as used, not
+            # successful) before the pause propagates.
+            self._record_event(kwargs, None, status="paused", error=None)
+            raise
         except Exception as exc:
             self._record_event(kwargs, None, status="failed", error=str(exc))
             raise
