@@ -21,18 +21,22 @@ class FakeReadRepo:
         self._timeseries = timeseries_rows or []
         self.scope_resolutions = 0
         self.distinct_calls = []
+        self.queries = []
 
     async def resolve_scope(self, params):
         self.scope_resolutions += 1
         return self._scope
 
     async def summary(self, params, scope):
+        self.queries.append("summary")
         return self._summary
 
     async def timeseries(self, params, scope):
+        self.queries.append("timeseries")
         return self._timeseries
 
     async def breakdown(self, params, scope, column):
+        self.queries.append("breakdown")
         return self._breakdown
 
     async def distinct_values(self, params, scope, column, *, use_provider=True, use_model=True):
@@ -209,6 +213,16 @@ async def test_empty_scope_returns_zeroed_responses_without_querying():
     options = await service.get_filter_options(_params())
     assert (options.providers, options.models, options.agents) == ([], [], [])
     assert repo.distinct_calls == []
+    assert repo.queries == []
+
+
+@pytest.mark.asyncio
+async def test_export_report_on_an_empty_scope_returns_nothing_without_querying():
+    service, repo = _service(summary_row=_row(), breakdown_rows=[("openai", Decimal("1"), 0, 5, 1)], scope=[])
+    summary, breakdown = await service.get_export_report(_params(group_id=uuid4()), "provider")
+    assert summary.total_cost_usd == 0.0 and summary.total_calls == 0
+    assert breakdown.items == []
+    assert repo.queries == []
 
 
 @pytest.mark.asyncio
