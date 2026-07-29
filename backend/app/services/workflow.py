@@ -17,7 +17,13 @@ from app.db.models.operator import OperatorModel
 from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.workflow import WorkflowRepository
-from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowMinimal, WorkflowUpdate
+from app.schemas.workflow import (
+    WorkflowCreate,
+    WorkflowInDB,
+    WorkflowMinimal,
+    WorkflowSummary,
+    WorkflowUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,17 @@ class WorkflowService:
     async def get_all_minimal(self) -> List[WorkflowMinimal]:
         rows = await self.repository.get_all_minimal()
         return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
+
+    async def get_summaries_by_agent(self, agent_id: UUID) -> List[WorkflowSummary]:
+        rows = await self.repository.get_summaries_by_agent(agent_id)
+        username_map = await self._resolve_usernames(rows)
+        result: List[WorkflowSummary] = []
+        for r in rows:
+            summary = WorkflowSummary.model_validate(r, from_attributes=True)
+            editor_id = r.updated_by or r.created_by
+            summary.updated_by_username = username_map.get(editor_id)
+            result.append(summary)
+        return result
 
     async def get_all(self) -> List[WorkflowInDB]:
         orm_objs = await self.repository.get_all()

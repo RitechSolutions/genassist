@@ -5,6 +5,7 @@ import {
   Workflow,
   WorkflowCreatePayload,
   WorkflowMinimal,
+  WorkflowSummary,
   WorkflowUpdatePayload,
 } from "@/interfaces/workflow.interface";
 import { NodeData } from "@/views/AIAgents/Workflows/types/nodes";
@@ -17,6 +18,12 @@ export const getAllWorkflows = () => apiRequest<Workflow[]>("GET", `${BASE}/`);
 // Get lightweight workflow list (id, name, version only)
 export const getWorkflowsMinimal = () =>
   apiRequest<WorkflowMinimal[]>("GET", `${BASE}/minimal`);
+
+export const getWorkflowSummaries = (agentId: string) =>
+  apiRequest<WorkflowSummary[]>(
+    "GET",
+    `${BASE}/summaries?agent_id=${encodeURIComponent(agentId)}`
+  );
 
 // Get workflow by ID
 export const getWorkflowById = (id: string) =>

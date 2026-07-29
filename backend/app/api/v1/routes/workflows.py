@@ -20,7 +20,7 @@ from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
-from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
+from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowSummary, WorkflowUpdate
 from app.services.llm_providers import LlmProviderService
 from app.services.workflow import WorkflowService
 
@@ -140,6 +140,17 @@ async def get_workflows_minimal(service: WorkflowService = Injected(WorkflowServ
     Get a lightweight list of all workflows (id, name, version only).
     """
     return await service.get_all_minimal()
+
+
+@router.get(
+    "/summaries",
+    response_model=List[WorkflowSummary],
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def get_workflow_summaries(
+    agent_id: UUID, service: WorkflowService = Injected(WorkflowService)
+):
+    return await service.get_summaries_by_agent(agent_id)
 
 
 @router.put(
