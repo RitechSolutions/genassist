@@ -6,6 +6,7 @@ import { Progress } from "@/components/progress";
 import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 import { EntityTitle } from "./EntityTitle";
 import { accuracyColorClass } from "../helpers/evaluationMetrics";
+import { methodLabel } from "../helpers/methodLabels";
 
 interface EvaluationListRowProps {
   evaluation: TestEvaluationConfig;
@@ -66,7 +67,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
           <span className="text-xs text-muted-foreground mr-1">Metrics:</span>
           {evaluation.techniques.map((tech) => (
             <Badge key={tech} variant="outline" className="text-[10px] px-1.5 py-0">
-              {tech}
+              {methodLabel(tech)}
             </Badge>
           ))}
         </div>

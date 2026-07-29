@@ -19,7 +19,12 @@ import {
   appendRunToEvaluation,
   getToolRuleResults,
 } from "@/services/testEvaluations";
-import { TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
+import {
+  TestResult,
+  TestResultMetric,
+  TestRun,
+  TestSuite,
+} from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import {
@@ -34,8 +39,13 @@ import { Progress } from "@/components/progress";
 import { cn } from "@/helpers/utils";
 import { ToolUsageResults } from "../components/ToolUsageResults";
 import { ToolUsageResultCard } from "../components/ToolUsageResultCard";
+import { methodLabel } from "../helpers/methodLabels";
 
 type ResultFilter = "all" | "passed" | "failed" | "not_scored";
+
+// A 0-1 score renders as a percentage; anything larger is shown as a fixed number.
+const formatScorePct = (value: number): string =>
+  value <= 1 ? `${Math.round(value * 100)}%` : value.toFixed(2);
 
 /** Execution counts the backend stores alongside the per-technique metrics. */
 const RUN_TOTALS_KEY = "_totals";
@@ -52,6 +62,32 @@ interface RunTotals {
   skipped: number;
 }
 
+const GRADING_SOURCE_LABELS: Record<string, string> = {
+  kb_retrievals: "Retrieved context",
+  expected_output: "Expected answer",
+  none: "Rubric only (no source)",
+  // Legacy source types kept for rendering older saved evaluations.
+  tool_events: "Tool results from this run",
+  conversation_context: "Current turn input and metadata",
+};
+
+
+const configuredSourceLabel = (
+  config: Record<string, unknown> | undefined,
+  sourceKey: string,
+  legacyFieldKey: string,
+  fallback: string,
+): string => {
+  const source = config?.[sourceKey];
+  if (typeof source === "string") {
+    return GRADING_SOURCE_LABELS[source] ?? `Configured source: ${source}`;
+  }
+  const legacyField = config?.[legacyFieldKey];
+  return typeof legacyField === "string" && legacyField
+    ? `Legacy run data: ${legacyField}`
+    : fallback;
+};
+
 const getMetricSourceLabel = (
   technique: string,
   config: Record<string, unknown> | undefined
@@ -60,25 +96,29 @@ const getMetricSourceLabel = (
     case "exact_match":
     case "contains":
     case "json_match":
-      return "Expected Output";
+      return "Expected answer";
     case "not_contains": {
       const hasPhrases = Array.isArray(config?.phrases) ? (config.phrases as unknown[]).length > 0 : Boolean(config?.text);
       return hasPhrases ? "Configured forbidden phrases" : "Forbidden phrases";
     }
     case "field_equals":
-      return config?.expected !== undefined ? "Configured expected value" : "Expected Output";
-    case "nli_eval": {
-      const evidenceField = config?.evidence_field as string | undefined;
-      return evidenceField ? `Run data: ${evidenceField}` : "Expected Output (evidence)";
-    }
-    case "provenance_eval": {
-      const contextField = config?.context_field as string | undefined;
-      return contextField ? `Run data: ${contextField}` : "Expected Output (context)";
-    }
-    case "llm_judge": {
-      const sourceField = config?.source_field as string | undefined;
-      return sourceField ? `Run data: ${sourceField}` : "Rubric only (no source)";
-    }
+      return config?.expected !== undefined ? "Configured expected value" : "Expected answer";
+    case "nli_eval":
+      return configuredSourceLabel(
+        config,
+        "evidence_source",
+        "evidence_field",
+        "Retrieved context",
+      );
+    case "provenance_eval":
+      return configuredSourceLabel(
+        config,
+        "context_source",
+        "context_field",
+        "Retrieved context",
+      );
+    case "llm_judge":
+      return configuredSourceLabel(config, "source_type", "source_field", "Rubric only (no source)");
     default:
       return null;
   }
@@ -99,9 +139,15 @@ const usesExpectedOutput = (
     case "field_equals":
       return config?.expected === undefined;
     case "nli_eval":
-      return !config?.evidence_field;
+      return config?.evidence_source
+        ? config.evidence_source === "expected_output"
+        : !config?.evidence_field;
     case "provenance_eval":
-      return !config?.context_field;
+      return config?.context_source
+        ? config.context_source === "expected_output"
+        : !config?.context_field;
+    case "llm_judge":
+      return config?.source_type === "expected_output";
     default:
       return false;
   }
@@ -110,22 +156,42 @@ const usesExpectedOutput = (
 const hasMetrics = (result: TestResult): boolean =>
   !!result.metrics && Object.keys(result.metrics).length > 0;
 
-// No metrics means no score, whatever the stored status claims.
-const isResultNotScored = (result: TestResult): boolean =>
-  !hasMetrics(result) || (!!result.status && result.status !== "scored");
+type MetricOutcome = "passed" | "failed" | "not_evaluated" | "error";
+
+const metricOutcome = (metric: TestResultMetric): MetricOutcome => {
+  if (metric.error) return "error";
+  if (metric.not_evaluated) return "not_evaluated";
+  return metric.passed ? "passed" : "failed";
+};
+
+const hasScoredExecution = (result: TestResult): boolean =>
+  !result.status || result.status === "scored";
 
 const isResultPassed = (result: TestResult): boolean =>
   hasMetrics(result) &&
-  !isResultNotScored(result) &&
-  Object.values(result.metrics!).every((m) => m.passed);
+  hasScoredExecution(result) &&
+  Object.values(result.metrics!).every((metric) => metricOutcome(metric) === "passed");
 
 const isResultFailed = (result: TestResult): boolean =>
-  !isResultPassed(result) && !isResultNotScored(result);
+  hasMetrics(result) &&
+  hasScoredExecution(result) &&
+  Object.values(result.metrics!).some((metric) => metricOutcome(metric) === "failed");
+
+// Missing metrics, execution/scoring failures, and checks that could not run are
+// unscored. They must not be presented as agent failures.
+const isResultNotScored = (result: TestResult): boolean =>
+  !isResultPassed(result) && !isResultFailed(result);
 
 const notScoredLabel = (result: TestResult): string => {
   if (result.status === "skipped") return "Skipped";
   if (result.status === "scoring_failed") return "Scoring failed";
   if (result.status === "execution_failed") return "Execution failed";
+  if (Object.values(result.metrics ?? {}).some((metric) => metric.error)) {
+    return "Evaluator error";
+  }
+  if (Object.values(result.metrics ?? {}).some((metric) => metric.not_evaluated)) {
+    return "Not evaluated";
+  }
   return "Not scored";
 };
 
@@ -157,6 +223,8 @@ const EvaluationDetailPage: React.FC = () => {
   const [inputByCaseId, setInputByCaseId] = useState<
     Record<string, Record<string, unknown> | undefined>
   >({});
+  // Turn number (1-based) for cases that belong to a multi-turn conversation.
+  const [turnByCaseId, setTurnByCaseId] = useState<Record<string, number>>({});
   const [isRunDetailsOpen, setIsRunDetailsOpen] = useState(false);
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [isLoadingRuns, setIsLoadingRuns] = useState(true);
@@ -196,14 +264,19 @@ const EvaluationDetailPage: React.FC = () => {
       const cases = await listTestCases(evaluation.suite_id);
       const expectedMapping: Record<string, Record<string, unknown> | undefined> = {};
       const inputMapping: Record<string, Record<string, unknown> | undefined> = {};
+      const turnMapping: Record<string, number> = {};
       (cases ?? []).forEach((testCase) => {
         if (testCase.id) {
           expectedMapping[testCase.id] = testCase.expected_output;
           inputMapping[testCase.id] = testCase.input_data;
+          if (testCase.source_conversation_id && testCase.turn_index != null) {
+            turnMapping[testCase.id] = testCase.turn_index + 1;
+          }
         }
       });
       setExpectedOutputByCaseId(expectedMapping);
       setInputByCaseId(inputMapping);
+      setTurnByCaseId(turnMapping);
     };
     loadExpectedOutputs();
   }, [evaluation?.suite_id]);
@@ -326,7 +399,9 @@ const EvaluationDetailPage: React.FC = () => {
     const toolFailed = tools.some((t) => t.status === "failed");
     const toolPassed = tools.some((t) => t.status === "passed");
     if (toolFailed) return false;
-    return isResultPassed(result) || (isResultNotScored(result) && toolPassed);
+    // A Tool Usage pass can score a tool-only case, but it must not hide an
+    // NLI/Provenance check that was not evaluated or crashed.
+    return isResultPassed(result) || (!hasMetrics(result) && toolPassed);
   };
 
   const caseFailed = (result: TestResult): boolean => {
@@ -405,7 +480,7 @@ const EvaluationDetailPage: React.FC = () => {
             <strong>Metrics:</strong>
             {evaluation.techniques.map((technique) => (
               <Badge key={technique} variant="secondary">
-                {technique}
+                {methodLabel(technique)}
               </Badge>
             ))}
           </div>
@@ -526,7 +601,7 @@ const EvaluationDetailPage: React.FC = () => {
                               key={tech}
                               className={`inline-flex items-center rounded-full px-2 py-0.5 ${colorClasses}`}
                             >
-                              <span className="font-semibold mr-1">{tech}</span>
+                              <span className="font-semibold mr-1">{methodLabel(tech)}</span>
                               {acc !== null && <span>{Math.round(acc * 100)}%</span>}
                             </span>
                           );
@@ -579,18 +654,29 @@ const EvaluationDetailPage: React.FC = () => {
                         {Object.entries(
                           selectedRun.summary_metrics as Record<
                             string,
-                            { accuracy?: number; avg_score?: number; cases?: number }
+                            {
+                              accuracy?: number;
+                              avg_score?: number;
+                              cases?: number;
+                              evaluated?: number;
+                              errors?: number;
+                              not_evaluated?: number;
+                            }
                           >,
                         )
                           .filter(([tech]) => tech !== RUN_TOTALS_KEY && tech !== TOOL_USED_TECHNIQUE)
                           .map(([tech, summary]) => {
                           const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
+                          const evaluated =
+                            typeof summary.evaluated === "number" ? summary.evaluated : null;
+                          const errors = summary.errors ?? 0;
+                          const notEvaluated = summary.not_evaluated ?? 0;
                           return (
                             <div
                               key={tech}
                               className="bg-card dark:bg-zinc-900 rounded-lg border p-3"
                             >
-                              <div className="text-xs font-medium text-muted-foreground mb-2">{tech}</div>
+                              <div className="text-xs font-medium text-muted-foreground mb-2">{methodLabel(tech)}</div>
                               {acc !== null && (
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between">
@@ -613,9 +699,19 @@ const EvaluationDetailPage: React.FC = () => {
                                   />
                                 </div>
                               )}
+                              {acc === null && (
+                                <div className="text-sm text-muted-foreground">No score</div>
+                              )}
                               {typeof summary.avg_score === "number" && (
                                 <div className="text-sm mt-1">
                                   Avg Score: <span className="font-medium">{summary.avg_score.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {evaluated !== null && typeof summary.cases === "number" && (
+                                <div className="text-xs text-muted-foreground mt-2">
+                                  Coverage: {evaluated}/{summary.cases}
+                                  {notEvaluated > 0 && ` · ${notEvaluated} not evaluated`}
+                                  {errors > 0 && ` · ${errors} evaluator error${errors === 1 ? "" : "s"}`}
                                 </div>
                               )}
                             </div>
@@ -737,6 +833,11 @@ const EvaluationDetailPage: React.FC = () => {
                                     <span className="font-medium text-sm">
                                       Case #{result.case_id?.slice(-4)}
                                     </span>
+                                    {result.case_id && turnByCaseId[result.case_id] && (
+                                      <span className="text-[11px] rounded-full bg-muted text-muted-foreground border px-2 py-0.5">
+                                        Turn {turnByCaseId[result.case_id]}
+                                      </span>
+                                    )}
                                     {notScored && (
                                       <span className="text-[11px] rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5">
                                         {notScoredLabel(result)}
@@ -747,17 +848,24 @@ const EvaluationDetailPage: React.FC = () => {
                                     {result.metrics && (
                                       <div className="flex flex-wrap gap-1">
                                         {Object.entries(result.metrics).map(
-                                          ([tech, metricValue]) => (
+                                          ([tech, metricValue]) => {
+                                            const outcome = metricOutcome(metricValue);
+                                            return (
                                             <span
                                               key={tech}
                                               className={cn(
                                                 "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
-                                                metricValue.passed
-                                                  ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
-                                                  : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
+                                                outcome === "passed" &&
+                                                  "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400",
+                                                outcome === "failed" &&
+                                                  "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
+                                                outcome === "not_evaluated" &&
+                                                  "bg-muted text-muted-foreground",
+                                                outcome === "error" &&
+                                                  "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
                                               )}
                                             >
-                                              <span className="font-semibold mr-1">{tech}</span>
+                                              <span className="font-semibold mr-1">{methodLabel(tech)}</span>
                                               {typeof metricValue.score === "number" && (
                                                 <span>
                                                   {metricValue.score <= 1
@@ -765,8 +873,11 @@ const EvaluationDetailPage: React.FC = () => {
                                                     : metricValue.score.toFixed(2)}
                                                 </span>
                                               )}
+                                              {outcome === "not_evaluated" && <span>Not evaluated</span>}
+                                              {outcome === "error" && <span>Evaluator error</span>}
                                             </span>
-                                          ),
+                                            );
+                                          },
                                         )}
                                       </div>
                                     )}
@@ -783,7 +894,7 @@ const EvaluationDetailPage: React.FC = () => {
                                   <div className="mt-1 text-[11px] text-muted-foreground line-clamp-1">
                                     {Object.entries(result.metrics)
                                       .filter(([, m]) => m.comment)
-                                      .map(([tech, m]) => `${tech}: ${m.comment}`)
+                                      .map(([tech, m]) => `${methodLabel(tech)}: ${m.comment}`)
                                       .join(" | ")}
                                   </div>
                                 )}
@@ -800,10 +911,23 @@ const EvaluationDetailPage: React.FC = () => {
                                           tech,
                                           evaluation?.technique_configs?.[tech]
                                         );
-                                        if (!metricValue.comment && !sourceLabel) return null;
+                                        const hasExpectedActual =
+                                          metricValue.expected != null || metricValue.actual != null;
+                                        const hasScoreThreshold =
+                                          typeof metricValue.score === "number" &&
+                                          metricValue.threshold != null;
+                                        if (
+                                          !metricValue.comment &&
+                                          !sourceLabel &&
+                                          !hasExpectedActual &&
+                                          !hasScoreThreshold
+                                        )
+                                          return null;
                                         return (
                                           <div key={`${result.id}-${tech}-comment`} className="text-xs">
-                                            <span className="font-semibold text-muted-foreground">{tech}:</span>{" "}
+                                            <span className="font-semibold text-muted-foreground">
+                                              {methodLabel(tech)}:
+                                            </span>{" "}
                                             {metricValue.comment && (
                                               <span className="text-muted-foreground">{metricValue.comment}</span>
                                             )}
@@ -811,6 +935,25 @@ const EvaluationDetailPage: React.FC = () => {
                                               <span className="text-muted-foreground">
                                                 {metricValue.comment ? " — " : ""}checked against: {sourceLabel}
                                               </span>
+                                            )}
+                                            {hasScoreThreshold && (
+                                              <div className="text-muted-foreground">
+                                                Score: {formatScorePct(metricValue.score as number)} · Threshold:{" "}
+                                                {formatScorePct(metricValue.threshold as number)}
+                                              </div>
+                                            )}
+                                            {hasExpectedActual && (
+                                              <div className="text-muted-foreground">
+                                                {metricValue.expected != null && (
+                                                  <span>Expected: {metricValue.expected}</span>
+                                                )}
+                                                {metricValue.actual != null && (
+                                                  <span>
+                                                    {metricValue.expected != null ? " · " : ""}
+                                                    Observed: {metricValue.actual}
+                                                  </span>
+                                                )}
+                                              </div>
                                             )}
                                           </div>
                                         );
@@ -902,16 +1045,21 @@ const EvaluationDetailPage: React.FC = () => {
                                   </div>
 
                                   {result.execution_trace && Object.keys(result.execution_trace).length > 0 && (
-                                    <div>
-                                      <div className="text-xs font-medium text-muted-foreground mb-1">
-                                        Execution Trace
+                                    <details className="group">
+                                      <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none">
+                                        Technical details
+                                      </summary>
+                                      <div className="mt-2">
+                                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                                          Execution Trace
+                                        </div>
+                                        <div className="bg-card dark:bg-zinc-900 rounded border p-2 text-xs">
+                                          <JsonViewer
+                                            data={(result.execution_trace ?? {}) as unknown as never}
+                                          />
+                                        </div>
                                       </div>
-                                      <div className="bg-card dark:bg-zinc-900 rounded border p-2 text-xs">
-                                        <JsonViewer
-                                          data={(result.execution_trace ?? {}) as unknown as never}
-                                        />
-                                      </div>
-                                    </div>
+                                    </details>
                                   )}
 
                                   {result.error && (
@@ -939,4 +1087,3 @@ const EvaluationDetailPage: React.FC = () => {
 };
 
 export default EvaluationDetailPage;
-
