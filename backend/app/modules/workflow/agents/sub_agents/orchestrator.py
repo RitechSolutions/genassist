@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
 from app.dependencies.injector import injector
 from app.modules.workflow.agents.sub_agents.models import SubAgentMode
+from app.modules.workflow.usage_context import WorkflowUsageContext
 
 if TYPE_CHECKING:
     from app.modules.workflow.engine.workflow_state import WorkflowState
-    from app.services.llm_usage_recorder import WorkflowUsageContext
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ async def run_child_turn(
     timeout_seconds: float,
     inherit_pii: bool = False,
     usage_sink: Optional[list] = None,
-    usage_context: Optional["WorkflowUsageContext"] = None,
+    usage_context: Optional[WorkflowUsageContext] = None,
 ) -> "WorkflowState":
     """Execute the child once and return its WorkflowState.
 

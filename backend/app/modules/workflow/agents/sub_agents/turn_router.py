@@ -2,14 +2,12 @@
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.agents.sub_agents import messages
-
-if TYPE_CHECKING:
-    from app.services.llm_usage_recorder import WorkflowUsageContext
+from app.modules.workflow.usage_context import WorkflowUsageContext
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +28,7 @@ class SubAgentTurnRouter:
         thread_id: str,
         input_data: dict,
         persist: bool,
-        usage_context: Optional["WorkflowUsageContext"] = None,
+        usage_context: Optional[WorkflowUsageContext] = None,
     ) -> Optional[dict]:
         """Route a turn into an active sub-agent, or return None to run the root flow.
 

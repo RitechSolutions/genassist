@@ -7,10 +7,9 @@ import logging
 import uuid
 from collections import defaultdict
 from contextlib import nullcontext
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
-
-if TYPE_CHECKING:
-    from app.services.llm_usage_recorder import WorkflowUsageContext
+from datetime import datetime
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi_injector import RequestScopeFactory
 from opentelemetry import trace
@@ -18,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.observability.otel import is_otel_runtime_enabled
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
+from app.core.utils.background_tasks import spawn
+from app.core.utils.date_time_utils import utc_now
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes import (
@@ -68,6 +69,7 @@ from app.modules.workflow.engine.nodes import (
     ZendeskToolNode,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
@@ -285,7 +287,7 @@ class WorkflowEngine:
         persist: Optional[bool] = True,
         registry_managed: bool = False,
         await_persist: bool = False,
-        usage_context: Optional["WorkflowUsageContext"] = None,
+        usage_context: Optional[WorkflowUsageContext] = None,
         usage_sink: Optional[list] = None,
     ) -> WorkflowState:
         """
@@ -406,23 +408,53 @@ class WorkflowEngine:
                 if usage_sink is not None:
                     usage_sink.extend(state.llm_usage)
                 elif usage_context is not None:
-                    await self._record_llm_usage_safe(
-                        state,
-                        usage_context,
-                        execution_outcome="raised" if raised else "returned",
-                    )
+                    outcome = "raised" if raised else "returned"
+                    if getattr(usage_context, "defer_capture", False):
+                        await self._schedule_llm_usage(state, usage_context, outcome)
+                    else:
+                        await self._record_llm_usage_safe(state, usage_context, execution_outcome=outcome)
+
+    async def _schedule_llm_usage(
+        self,
+        state: WorkflowState,
+        usage_context: WorkflowUsageContext,
+        outcome: str,
+    ) -> None:
+        """Take capture off the response path. Falls back to recording inline when
+        the task cannot be scheduled, so the guarantee never drops below today's"""
+        # A HITL resume clears state.llm_usage, so the task reads from a snapshot
+        snapshot = SimpleNamespace(
+            execution_id=state.execution_id,
+            llm_usage=list(state.llm_usage),
+            thread_id=getattr(state, "thread_id", None),
+            status=getattr(state, "status", None),
+        )
+        capture = self._record_llm_usage_safe(
+            snapshot,
+            usage_context,
+            execution_outcome=outcome,
+            occurred_at=utc_now(),
+        )
+        try:
+            spawn(capture, name=f"llm-usage-capture:{state.execution_id}")
+        except Exception:
+            logger.warning("Scheduling LLM usage capture failed; recording inline", exc_info=True)
+            await self._record_llm_usage_safe(state, usage_context, execution_outcome=outcome)
 
     async def _record_llm_usage_safe(
         self,
-        state: WorkflowState,
-        usage_context: "WorkflowUsageContext",
+        state: Any,
+        usage_context: WorkflowUsageContext,
         execution_outcome: str,
+        occurred_at: Optional[datetime] = None,
     ) -> None:
         """Pass usage to the recorder"""
         try:
             from app.services.llm_usage_recorder import LlmUsageRecorder
 
-            await LlmUsageRecorder().record_workflow_state(state, usage_context, execution_outcome)
+            await LlmUsageRecorder().record_workflow_state(
+                state, usage_context, execution_outcome, occurred_at=occurred_at
+            )
         except Exception:  # pragma: no cover - defensive
             logger.warning("LLM usage recording failed", exc_info=True)
 

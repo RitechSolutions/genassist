@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import app.modules.workflow.engine.workflow_engine as engine_module
+from app.core.utils import background_tasks
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
 _WORKFLOW = {
@@ -126,3 +128,72 @@ class TestUsageHandover:
             await _run(engine)
 
         recorder.assert_not_awaited()
+
+
+def _deferred(**kwargs):
+    return SimpleNamespace(source="chat", defer_capture=True, **kwargs)
+
+
+class TestDeferredCapture:
+    @pytest.fixture(autouse=True)
+    def _empty_registry(self):
+        background_tasks._TASKS.clear()
+        yield
+        background_tasks._TASKS.clear()
+
+    @pytest.mark.asyncio
+    async def test_capture_is_scheduled_instead_of_awaited(self):
+        engine = _engine()
+        recorder = AsyncMock()
+        with _recording(), patch.object(WorkflowEngine, "_record_llm_usage_safe", recorder):
+            await _run(engine, usage_context=_deferred())
+            recorder.assert_not_awaited()
+            assert len(background_tasks._TASKS) == 1
+
+            await background_tasks.drain(timeout=5.0)
+            await asyncio.sleep(0)
+
+        recorder.assert_awaited_once()
+        assert recorder.await_args.kwargs["execution_outcome"] == "returned"
+        assert not background_tasks._TASKS
+
+    @pytest.mark.asyncio
+    async def test_snapshot_survives_the_state_being_reset(self):
+        engine = _engine()
+        recorder = AsyncMock()
+        with _recording(), patch.object(WorkflowEngine, "_record_llm_usage_safe", recorder):
+            state = await _run(engine, usage_context=_deferred())
+            state.llm_usage.clear()
+            await background_tasks.drain(timeout=5.0)
+
+        assert len(recorder.await_args.args[0].llm_usage) == 1
+
+    @pytest.mark.asyncio
+    async def test_occurred_at_is_stamped_at_scheduling_time(self):
+        engine = _engine()
+        recorder = AsyncMock()
+        with _recording(), patch.object(WorkflowEngine, "_record_llm_usage_safe", recorder), patch.object(
+            engine_module, "utc_now", return_value="scheduled-at"
+        ):
+            await _run(engine, usage_context=_deferred())
+            await background_tasks.drain(timeout=5.0)
+
+        assert recorder.await_args.kwargs["occurred_at"] == "scheduled-at"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_recording_inline_when_scheduling_fails(self, caplog):
+        engine = _engine()
+        recorder = AsyncMock()
+
+        def _no_spawn(coro, *, name):
+            coro.close()
+            raise RuntimeError("cannot schedule")
+
+        with _recording(), patch.object(WorkflowEngine, "_record_llm_usage_safe", recorder), patch.object(
+            engine_module, "spawn", _no_spawn
+        ):
+            await _run(engine, usage_context=_deferred())
+
+        recorder.assert_awaited_once()
+        assert recorder.await_args.kwargs.get("occurred_at") is None
+        assert "recording inline" in caplog.text

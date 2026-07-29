@@ -1,8 +1,10 @@
+import asyncio
 import logging
-from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -12,6 +14,7 @@ from app.core.config.llm_pricing import PricingStatus, resolve_pricing
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.db_connection_utils import create_tenant_request_scope
 from app.core.utils.llm_usage_utils import is_usage_metadata_missing, usage_or_placeholder
+from app.core.utils.uuid_utils import coerce_uuid
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.conversation import ConversationModel
@@ -25,6 +28,7 @@ from app.db.models.llm_usage import (
 )
 from app.db.models.workflow import WorkflowModel
 from app.dependencies.injector import injector
+from app.modules.workflow.usage_context import WorkflowUsageContext
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +39,20 @@ _UNPRICED = {
     "pricing_status": PricingStatus.UNPRICED.value,
 }
 
+# Deferred captures outlive their request, so cap how many share the tenant pool at once
+_CAPTURE_CONCURRENCY = 4
+_capture_slots: WeakKeyDictionary = WeakKeyDictionary()
 
-@dataclass
-class WorkflowUsageContext:
-    """Attribution for a top-level workflow run's recorded usage"""
 
-    source: str
-    agent_id: Optional[UUID] = None
-    workflow_id: Optional[UUID] = None
-    conversation_id: Optional[UUID] = None
-    source_type: str = "workflow"
+def _capture_slot() -> asyncio.Semaphore:
+    """Bound per running loop. Celery runs each task on a fresh one, and a single
+    module-level semaphore would stay bound to a closed loop"""
+    loop = asyncio.get_running_loop()
+    slot = _capture_slots.get(loop)
+    if slot is None:
+        slot = asyncio.Semaphore(_CAPTURE_CONCURRENCY)
+        _capture_slots[loop] = slot
+    return slot
 
 
 def _normalize(value: Optional[str], limit: int) -> Optional[str]:
@@ -64,15 +72,6 @@ def _clamp(value: Optional[str], limit: int) -> Optional[str]:
 def _clamp_run_status(value: Any) -> str:
     status = str(value or "").strip().lower()
     return status if status in RUN_STATUSES else "completed"
-
-
-def _coerce_uuid(value: Any) -> Optional[UUID]:
-    if value is None or isinstance(value, UUID):
-        return value
-    try:
-        return UUID(str(value))
-    except (ValueError, AttributeError, TypeError):
-        return None
 
 
 def _total_tokens(entry: dict[str, Any], input_tokens: int, output_tokens: int) -> int:
@@ -186,107 +185,110 @@ class LlmUsageRecorder:
         state,
         usage_context: WorkflowUsageContext,
         execution_outcome: str,
+        occurred_at: Optional[datetime] = None,
     ) -> None:
+        """Deferred callers pass the scheduling-time ``occurred_at`` so a backlog
+        cannot shift a run's spend into the next reporting day"""
         try:
-            async with create_tenant_request_scope():
-                session = injector.get(AsyncSession)
-                try:
-                    if not await self._capture_enabled(session):
-                        return
+            async with _capture_slot():
+                async with create_tenant_request_scope():
+                    session = injector.get(AsyncSession)
+                    try:
+                        if not await self._capture_enabled(session):
+                            return
 
-                    entries = list(getattr(state, "llm_usage", []) or [])
-                    configured_rates = await self._configured_rates(session) if entries else {}
-                    occurred_at = utc_now()
-                    conversation_id = usage_context.conversation_id or _coerce_uuid(getattr(state, "thread_id", None))
+                        entries = list(getattr(state, "llm_usage", []) or [])
+                        configured_rates = await self._configured_rates(session) if entries else {}
+                        occurred_at = occurred_at or utc_now()
+                        conversation_id = usage_context.conversation_id or coerce_uuid(getattr(state, "thread_id", None))
 
-                    # Batch-validate every optional FK once; unknown → NULL, event kept
-                    valid_agents = await self._existing_ids(session, AgentModel, {usage_context.agent_id})
-                    valid_workflows = await self._existing_ids(session, WorkflowModel, {usage_context.workflow_id})
-                    valid_conversations = await self._existing_ids(session, ConversationModel, {conversation_id})
-                    provider_ids = {_coerce_uuid(e.get("llm_provider_id")) for e in entries}
-                    valid_providers = await self._existing_ids(session, LlmProvidersModel, provider_ids)
+                        valid_agents = await self._existing_ids(session, AgentModel, {usage_context.agent_id})
+                        valid_workflows = await self._existing_ids(session, WorkflowModel, {usage_context.workflow_id})
+                        valid_conversations = await self._existing_ids(session, ConversationModel, {conversation_id})
+                        provider_ids = {coerce_uuid(e.get("llm_provider_id")) for e in entries}
+                        valid_providers = await self._existing_ids(session, LlmProvidersModel, provider_ids)
 
-                    agent_id = usage_context.agent_id if usage_context.agent_id in valid_agents else None
-                    workflow_id = usage_context.workflow_id if usage_context.workflow_id in valid_workflows else None
-                    conversation_id = conversation_id if conversation_id in valid_conversations else None
-                    if agent_id is None:
-                        agent_id = await self._agent_for_workflow(session, workflow_id)
+                        agent_id = usage_context.agent_id if usage_context.agent_id in valid_agents else None
+                        workflow_id = usage_context.workflow_id if usage_context.workflow_id in valid_workflows else None
+                        conversation_id = conversation_id if conversation_id in valid_conversations else None
+                        if agent_id is None:
+                            agent_id = await self._agent_for_workflow(session, workflow_id)
 
-                    event_rows = []
-                    for idx, entry in enumerate(entries):
-                        provider = entry.get("provider", "") or ""
-                        model = entry.get("model", "") or ""
-                        input_tokens = int(entry.get("input_tokens", 0) or 0)
-                        output_tokens = int(entry.get("output_tokens", 0) or 0)
-                        provider_id = _coerce_uuid(entry.get("llm_provider_id"))
-                        token_details = entry.get("token_details")
-                        pricing = _resolve_cost(
-                            provider,
-                            model,
-                            input_tokens,
-                            output_tokens,
-                            configured_rates,
-                            usage_missing=is_usage_metadata_missing(token_details),
+                        event_rows = []
+                        for idx, entry in enumerate(entries):
+                            provider = entry.get("provider", "") or ""
+                            model = entry.get("model", "") or ""
+                            input_tokens = int(entry.get("input_tokens", 0) or 0)
+                            output_tokens = int(entry.get("output_tokens", 0) or 0)
+                            provider_id = coerce_uuid(entry.get("llm_provider_id"))
+                            token_details = entry.get("token_details")
+                            pricing = _resolve_cost(
+                                provider,
+                                model,
+                                input_tokens,
+                                output_tokens,
+                                configured_rates,
+                                usage_missing=is_usage_metadata_missing(token_details),
+                            )
+                            event_rows.append(
+                                {
+                                    "execution_id": str(state.execution_id),
+                                    "call_index": idx,
+                                    "source_type": _clamp(usage_context.source_type, 32),
+                                    "source": _clamp(usage_context.source, 64),
+                                    "purpose": _clamp(entry.get("purpose"), 64),
+                                    "agent_id": agent_id,
+                                    "workflow_id": workflow_id,
+                                    "llm_provider_id": provider_id if provider_id in valid_providers else None,
+                                    "llm_analyst_id": None,
+                                    "conversation_id": conversation_id,
+                                    "node_id": _clamp(entry.get("node_id"), 128),
+                                    "provider_key": _normalize(provider, 64),
+                                    "model_key": _normalize(model, 512),
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                    "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
+                                    "token_details": token_details,
+                                    "occurred_at": occurred_at,
+                                    **pricing,
+                                }
+                            )
+
+                        if event_rows:
+                            insert_events = insert(LlmUsageEventModel).values(event_rows)
+                            insert_events = insert_events.on_conflict_do_nothing(
+                                constraint="uq_llm_usage_events_execution_call"
+                            )
+                            await session.execute(insert_events)
+                        persisted = await self._persisted_event_count(session, str(state.execution_id))
+
+                        receipt = (
+                            insert(LlmUsageCaptureRunModel)
+                            .values(
+                                {
+                                    "execution_id": str(state.execution_id),
+                                    "source_type": _clamp(usage_context.source_type, 32),
+                                    "source": _clamp(usage_context.source, 64),
+                                    "execution_outcome": execution_outcome,
+                                    "run_status": _clamp_run_status(getattr(state, "status", None)),
+                                    "expected_entries": len(entries),
+                                    "persisted_events": persisted,
+                                    "agent_id": agent_id,
+                                    "workflow_id": workflow_id,
+                                    "conversation_id": conversation_id,
+                                    "occurred_at": occurred_at,
+                                }
+                            )
+                            .on_conflict_do_nothing(constraint="uq_llm_usage_capture_runs_execution")
                         )
-                        event_rows.append(
-                            {
-                                "execution_id": str(state.execution_id),
-                                "call_index": idx,
-                                "source_type": _clamp(usage_context.source_type, 32),
-                                "source": _clamp(usage_context.source, 64),
-                                "purpose": _clamp(entry.get("purpose"), 64),
-                                "agent_id": agent_id,
-                                "workflow_id": workflow_id,
-                                "llm_provider_id": provider_id if provider_id in valid_providers else None,
-                                "llm_analyst_id": None,
-                                "conversation_id": conversation_id,
-                                "node_id": _clamp(entry.get("node_id"), 128),
-                                "provider_key": _normalize(provider, 64),
-                                "model_key": _normalize(model, 512),
-                                "input_tokens": input_tokens,
-                                "output_tokens": output_tokens,
-                                "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
-                                "token_details": token_details,
-                                "occurred_at": occurred_at,
-                                **pricing,
-                            }
-                        )
+                        await session.execute(receipt)
 
-                    if event_rows:
-                        insert_events = insert(LlmUsageEventModel).values(event_rows)
-                        insert_events = insert_events.on_conflict_do_nothing(
-                            constraint="uq_llm_usage_events_execution_call"
-                        )
-                        await session.execute(insert_events)
-                    persisted = await self._persisted_event_count(session, str(state.execution_id))
-
-                    receipt = (
-                        insert(LlmUsageCaptureRunModel)
-                        .values(
-                            {
-                                "execution_id": str(state.execution_id),
-                                "source_type": _clamp(usage_context.source_type, 32),
-                                "source": _clamp(usage_context.source, 64),
-                                "execution_outcome": execution_outcome,
-                                "run_status": _clamp_run_status(getattr(state, "status", None)),
-                                "expected_entries": len(entries),
-                                "persisted_events": persisted,
-                                "agent_id": agent_id,
-                                "workflow_id": workflow_id,
-                                "conversation_id": conversation_id,
-                                "occurred_at": occurred_at,
-                            }
-                        )
-                        .on_conflict_do_nothing(constraint="uq_llm_usage_capture_runs_execution")
-                    )
-                    await session.execute(receipt)
-
-                    await session.commit()
-                except Exception:
-                    await session.rollback()
-                    logger.warning("Failed recording workflow LLM usage", exc_info=True)
-                finally:
-                    await session.close()
+                        await session.commit()
+                    except Exception:
+                        await session.rollback()
+                        logger.warning("Failed recording workflow LLM usage", exc_info=True)
+                    finally:
+                        await session.close()
         except Exception:
             logger.warning("Failed opening scope for LLM usage recording", exc_info=True)
 

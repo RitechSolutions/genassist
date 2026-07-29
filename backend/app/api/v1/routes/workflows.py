@@ -11,11 +11,13 @@ from app.auth.dependencies import auth, permissions
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.string_utils import truncate_for_log
+from app.core.utils.uuid_utils import coerce_uuid
 from app.dependencies.injector import injector
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
@@ -257,13 +259,13 @@ async def execute_workflow(
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         workflow_engine = WorkflowEngine(workflow_config)
 
-        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
-
         state = await workflow_engine.execute_from_node(
             input_data=input_data,
             thread_id=thread_id,
             usage_context=WorkflowUsageContext(
-                source="workflow_api", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+                source="workflow_api",
+                workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                defer_capture=True,
             ),
         )
 
@@ -343,9 +345,9 @@ async def test_workflow(
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         start_node_id = input_data.get("human_in_the_loop_node_id")
 
-        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
-
-        usage_context = WorkflowUsageContext(source="workflow_test", workflow_id=_coerce_uuid(saved_workflow_id))
+        usage_context = WorkflowUsageContext(
+            source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
+        )
         turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
         supplied_thread = bool(input_data.get("thread_id"))
         if turn_router.has_sub_agents():
@@ -438,13 +440,13 @@ async def test_individual_node(test_data: Dict[str, Any]):
         }
         workflow_engine = WorkflowEngine(workflow_config)
 
-        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
-
         state = await workflow_engine.execute_from_node(
             start_node_id=test_id,
             input_data=input_data,
             usage_context=WorkflowUsageContext(
-                source="node_test", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+                source="node_test",
+                workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                defer_capture=True,
             ),
         )
 

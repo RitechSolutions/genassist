@@ -78,7 +78,7 @@ class LlmUsageEventModel(Base):
         PGUUID(as_uuid=True), ForeignKey("llm_analyst.id", ondelete="SET NULL"), nullable=True
     )
     conversation_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
     )
     node_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     legacy_response_log_id: Mapped[Optional[UUID]] = mapped_column(
@@ -137,7 +137,7 @@ class LlmUsageCaptureRunModel(Base):
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True
     )
     conversation_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
     )
 
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

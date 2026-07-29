@@ -3,8 +3,10 @@
 import logging
 from typing import Union
 
+from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models import AgentModel
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.schemas.agent import AgentRead
 
 logger = logging.getLogger(__name__)
@@ -79,11 +81,10 @@ class RegistryItem:
 
     def _build_usage_context(self, source: str, thread_id):
         """Attribution for the usage ledger. Ids are validated (and NULLed) at record time"""
-        from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
-
         return WorkflowUsageContext(
             source=source,
-            agent_id=_coerce_uuid(self.agent_id),
-            workflow_id=_coerce_uuid(getattr(self.workflow_engine, "workflow_id", None)),
-            conversation_id=_coerce_uuid(thread_id),
+            agent_id=coerce_uuid(self.agent_id),
+            workflow_id=coerce_uuid(getattr(self.workflow_engine, "workflow_id", None)),
+            conversation_id=coerce_uuid(thread_id),
+            defer_capture=True,
         )

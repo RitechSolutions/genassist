@@ -1,22 +1,26 @@
 """Unit tests for the LLM usage recorder's pure helpers"""
 
+import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.dml import Insert
 
 import app.core.config.llm_pricing as llm_pricing
 import app.services.llm_usage_recorder as recorder_module
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.services.llm_usage_recorder import (
     LlmUsageRecorder,
-    WorkflowUsageContext,
     _clamp,
     _clamp_run_status,
-    _coerce_uuid,
     _normalize,
     _resolve_cost,
     _total_tokens,
@@ -54,24 +58,6 @@ class CapturingSession(FakeSession):
     async def execute(self, stmt):
         self.statements.append(stmt)
         return SimpleNamespace(all=lambda: [(i,) for i in self._returned])
-
-
-class TestCoerceUuid:
-    def test_passthrough_uuid(self):
-        u = uuid4()
-        assert _coerce_uuid(u) is u
-
-    def test_string_uuid(self):
-        u = uuid4()
-        assert _coerce_uuid(str(u)) == u
-
-    def test_none(self):
-        assert _coerce_uuid(None) is None
-
-    def test_garbage_returns_none(self):
-        assert _coerce_uuid("not-a-uuid") is None
-        assert _coerce_uuid("mcp_tool_abc") is None
-        assert _coerce_uuid(12345) is None
 
 
 class TestNormalize:
@@ -296,12 +282,137 @@ class TestAgentForWorkflow:
         assert "agents.is_deleted = 0" in sql
 
 
+class RecordingSession(FakeSession):
+
+    def __init__(self):
+        super().__init__()
+        self.statements = []
+        self.committed = False
+
+    async def execute(self, stmt):
+        self.statements.append(stmt)
+        return SimpleNamespace(all=lambda: [], scalar=lambda: 0, scalar_one_or_none=lambda: True)
+
+    async def commit(self):
+        self.committed = True
+
+    async def close(self):
+        pass
+
+
+@pytest.fixture
+def record_scope(monkeypatch):
+
+    @asynccontextmanager
+    async def _scope():
+        yield
+
+    session = RecordingSession()
+    monkeypatch.setattr(recorder_module, "create_tenant_request_scope", _scope)
+    monkeypatch.setattr(
+        recorder_module.injector, "get", lambda cls: session if cls is AsyncSession else FakeRateRepo([])
+    )
+    recorder_module._capture_slots.clear()
+    yield session
+    recorder_module._capture_slots.clear()
+
+
+def _bound_values(statements):
+    return {
+        value
+        for stmt in statements
+        if isinstance(stmt, Insert)
+        for value in stmt.compile(dialect=postgresql.dialect()).params.values()
+    }
+
+
+def _state(**kwargs):
+    return SimpleNamespace(
+        execution_id=str(uuid4()),
+        llm_usage=[{"provider": "openai", "model": "gpt-4o", "input_tokens": 10, "output_tokens": 5}],
+        thread_id=None,
+        status="completed",
+        **kwargs,
+    )
+
+
+class TestOccurredAt:
+    @pytest.mark.asyncio
+    async def test_passed_stamp_wins_over_the_recording_clock(self, record_scope, monkeypatch):
+        scheduled = datetime(2026, 7, 20, 23, 59, 30, tzinfo=timezone.utc)
+        recorded = datetime(2026, 7, 21, 0, 0, 15, tzinfo=timezone.utc)
+        monkeypatch.setattr(recorder_module, "utc_now", lambda: recorded)
+
+        await LlmUsageRecorder().record_workflow_state(
+            _state(), WorkflowUsageContext(source="chat"), "returned", occurred_at=scheduled
+        )
+
+        values = _bound_values(record_scope.statements)
+        assert record_scope.committed
+        assert scheduled in values
+        assert recorded not in values
+
+    @pytest.mark.asyncio
+    async def test_omitting_it_falls_back_to_the_recording_clock(self, record_scope, monkeypatch):
+        recorded = datetime(2026, 7, 21, 0, 0, 15, tzinfo=timezone.utc)
+        monkeypatch.setattr(recorder_module, "utc_now", lambda: recorded)
+
+        await LlmUsageRecorder().record_workflow_state(
+            _state(), WorkflowUsageContext(source="schedule"), "returned"
+        )
+
+        assert recorded in _bound_values(record_scope.statements)
+
+
+class TestCaptureBound:
+    @pytest.mark.asyncio
+    async def test_concurrent_captures_are_capped_per_loop(self, record_scope, monkeypatch):
+        monkeypatch.setattr(recorder_module, "_CAPTURE_CONCURRENCY", 1)
+        active, peak = 0, 0
+
+        async def _slow_gate(_self, _session):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return False
+
+        monkeypatch.setattr(LlmUsageRecorder, "_capture_enabled", _slow_gate)
+        recorder = LlmUsageRecorder()
+        ctx = WorkflowUsageContext(source="chat")
+
+        await asyncio.gather(
+            recorder.record_workflow_state(_state(), ctx, "returned"),
+            recorder.record_workflow_state(_state(), ctx, "returned"),
+        )
+
+        assert peak == 1
+
+    def test_slot_is_rebuilt_for_a_fresh_loop(self):
+        recorder_module._capture_slots.clear()
+
+        async def hold(slot):
+            async with slot:
+                await asyncio.sleep(0)
+
+        async def contend():
+            slot = recorder_module._capture_slot()
+            await asyncio.gather(*(hold(slot) for _ in range(recorder_module._CAPTURE_CONCURRENCY + 2)))
+
+        asyncio.run(contend())
+        asyncio.run(contend())
+
+        recorder_module._capture_slots.clear()
+
+
 class TestWorkflowUsageContext:
     def test_defaults(self):
         ctx = WorkflowUsageContext(source="chat")
         assert ctx.source == "chat"
         assert ctx.source_type == "workflow"
         assert ctx.agent_id is None and ctx.workflow_id is None and ctx.conversation_id is None
+        assert ctx.defer_capture is False
 
     def test_fields(self):
         aid = uuid4()

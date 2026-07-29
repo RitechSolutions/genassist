@@ -24,7 +24,9 @@ from app.modules.workflow.engine.workflow_engine import (
     WorkflowEngine,
 )
 from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.core.utils.transcript_utils import extract_qa_pairs
+from app.core.utils.uuid_utils import coerce_uuid
 from app.repositories.conversations import ConversationRepository
 from app.repositories.test_suite import (
     TestSuiteRepository,
@@ -1270,8 +1272,6 @@ class TestSuiteService:
                 merged_input.pop("thread_id", None)
             # Execution and scoring fail differently: a turn that never ran or never
             # reached memory breaks the thread, while a scoring error does not.
-            from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
-
             try:
                 state = await engine.execute_from_node(
                     input_data=merged_input,
@@ -1279,7 +1279,7 @@ class TestSuiteService:
                     persist=bool(thread_id),
                     await_persist=bool(thread_id),
                     usage_context=WorkflowUsageContext(
-                        source="test_suite", workflow_id=_coerce_uuid(engine.workflow_id)
+                        source="test_suite", workflow_id=coerce_uuid(engine.workflow_id)
                     ),
                 )
             except MemoryPersistenceError as exc:

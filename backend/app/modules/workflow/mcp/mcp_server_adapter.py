@@ -12,7 +12,9 @@ import uuid
 from mcp.types import Tool, TextContent
 from mcp.server import Server
 
+from app.core.utils.uuid_utils import coerce_uuid
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.usage_context import WorkflowUsageContext
 
 logger = logging.getLogger(__name__)
 
@@ -124,13 +126,13 @@ class WorkflowMCPServerAdapter:
 
             # Execute workflow
             thread_id = f"mcp_tool_{uuid.uuid4()}"
-            from app.services.llm_usage_recorder import WorkflowUsageContext, _coerce_uuid
-
             state = await workflow_engine.execute_from_node(
                 input_data=arguments,
                 thread_id=thread_id,
                 usage_context=WorkflowUsageContext(
-                    source="mcp", workflow_id=_coerce_uuid(workflow_engine.workflow_id)
+                    source="mcp",
+                    workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                    defer_capture=True,
                 ),
             )
 

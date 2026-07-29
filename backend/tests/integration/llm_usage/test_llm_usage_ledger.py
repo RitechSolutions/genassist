@@ -92,6 +92,33 @@ async def test_control_columns_are_exactly_the_permanent_set(db):
 
 
 @pytest.mark.asyncio
+async def test_every_ledger_fk_sets_null_on_delete(db):
+    result = await db.execute(
+        text(
+            "SELECT tc.table_name, kcu.column_name, rc.delete_rule "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.referential_constraints rc "
+            "  ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.constraint_schema "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "  AND tc.table_name IN ('llm_usage_events', 'llm_usage_capture_runs')"
+        )
+    )
+    assert {(row[0], row[1]): row[2] for row in result.all()} == {
+        ("llm_usage_events", "agent_id"): "SET NULL",
+        ("llm_usage_events", "workflow_id"): "SET NULL",
+        ("llm_usage_events", "llm_provider_id"): "SET NULL",
+        ("llm_usage_events", "llm_analyst_id"): "SET NULL",
+        ("llm_usage_events", "conversation_id"): "SET NULL",
+        ("llm_usage_events", "legacy_response_log_id"): "SET NULL",
+        ("llm_usage_capture_runs", "agent_id"): "SET NULL",
+        ("llm_usage_capture_runs", "workflow_id"): "SET NULL",
+        ("llm_usage_capture_runs", "conversation_id"): "SET NULL",
+    }
+
+
+@pytest.mark.asyncio
 async def test_no_live_events_predate_the_capture_boundary(db):
     result = await db.execute(
         text(

@@ -45,8 +45,8 @@ class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
             workflow_execution_id=workflow_execution_id,
         )
         # A replayed execution hits the partial unique index on workflow_execution_id.
-        # The savepoint keeps that failure local: it rolls back, the first row survives,
-        # and the caller's session stays usable for the reads that follow
+        # The savepoint rolls back alone, so the first row and the outer transaction
+        # survive, but the IntegrityError still re-raises to the caller
         async with self.db.begin_nested():
             self.db.add(entry)
             await self.db.flush()

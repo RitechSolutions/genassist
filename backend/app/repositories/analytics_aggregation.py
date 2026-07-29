@@ -122,9 +122,6 @@ class AnalyticsAggregationRepository:
                     "in_progress_conversations": s.get("in_progress_conversations", 0),
                     "thumbs_up_count": s.get("thumbs_up_count", 0),
                     "thumbs_down_count": s.get("thumbs_down_count", 0),
-                    "total_input_tokens": s.get("total_input_tokens"),
-                    "total_output_tokens": s.get("total_output_tokens"),
-                    "total_cost_usd": s.get("total_cost_usd"),
                     "last_aggregated_at": now,
                     "is_deleted": 0,
                     "created_at": now,
@@ -154,18 +151,6 @@ class AnalyticsAggregationRepository:
                     "in_progress_conversations": stmt.excluded.in_progress_conversations,
                     "thumbs_up_count": stmt.excluded.thumbs_up_count,
                     "thumbs_down_count": stmt.excluded.thumbs_down_count,
-                    # Realtime updates accumulate cost between aggregations; a batch that
-                    # computed nothing for these three must not wipe it. Every other
-                    # column keeps overwrite semantics on purpose
-                    "total_input_tokens": func.coalesce(
-                        stmt.excluded.total_input_tokens, AgentExecutionDailyStatsModel.total_input_tokens
-                    ),
-                    "total_output_tokens": func.coalesce(
-                        stmt.excluded.total_output_tokens, AgentExecutionDailyStatsModel.total_output_tokens
-                    ),
-                    "total_cost_usd": func.coalesce(
-                        stmt.excluded.total_cost_usd, AgentExecutionDailyStatsModel.total_cost_usd
-                    ),
                     "last_aggregated_at": stmt.excluded.last_aggregated_at,
                     "updated_at": stmt.excluded.updated_at,
                 },

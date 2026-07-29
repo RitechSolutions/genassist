@@ -15,9 +15,10 @@ from app.db.models.llm_usage import CONTROL_SINGLETON_KEY, LlmUsageCaptureRunMod
 from app.db.models.operator import OperatorModel, OperatorStatisticsModel
 from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
-from app.services.llm_usage_recorder import LlmUsageRecorder, WorkflowUsageContext
+from app.services.llm_usage_recorder import LlmUsageRecorder
 
 CALL_COST = 0.0025
 _ENTRY = {"provider": "openai", "model": "gpt-4o", "input_tokens": 1000, "output_tokens": 0}

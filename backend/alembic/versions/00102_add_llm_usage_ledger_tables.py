@@ -47,7 +47,7 @@ def upgrade() -> None:
         sa.Column("workflow_id", sa.UUID(), sa.ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True),
         sa.Column("llm_provider_id", sa.UUID(), sa.ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True),
         sa.Column("llm_analyst_id", sa.UUID(), sa.ForeignKey("llm_analyst.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("conversation_id", sa.UUID(), sa.ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("conversation_id", sa.UUID(), sa.ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True),
         sa.Column("node_id", sa.String(length=128), nullable=True),
         sa.Column(
             "legacy_response_log_id",
@@ -109,7 +109,7 @@ def upgrade() -> None:
         sa.Column("persisted_events", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("agent_id", sa.UUID(), sa.ForeignKey("agents.id", ondelete="SET NULL"), nullable=True),
         sa.Column("workflow_id", sa.UUID(), sa.ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("conversation_id", sa.UUID(), sa.ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("conversation_id", sa.UUID(), sa.ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         *_audit_timestamp_softdelete_columns(),
         sa.PrimaryKeyConstraint("id"),
