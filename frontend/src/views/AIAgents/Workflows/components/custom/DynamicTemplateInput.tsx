@@ -133,7 +133,7 @@ const DynamicTemplateInput: React.FC<DynamicTemplateInputProps> = ({
           <label className="text-sm font-medium">Dynamic Fields</label>
           <div className="flex flex-wrap gap-2">
             {dynamicFields.map((field) => (
-              <Badge key={field} variant="outline" className="bg-blue-50">
+              <Badge key={field} variant="outline" className="bg-blue-50 dark:bg-blue-500/15">
                 {field}
               </Badge>
             ))}
@@ -145,7 +145,7 @@ const DynamicTemplateInput: React.FC<DynamicTemplateInputProps> = ({
       {showProcessedOutput && processedOutput && (
         <div className="space-y-2">
           <label className="text-sm font-medium">Processed Output</label>
-          <ScrollArea className="h-20 border rounded-md p-2 bg-gray-50">
+          <ScrollArea className="h-20 border rounded-md p-2 bg-muted">
             <div className="text-sm whitespace-pre-wrap">{processedOutput}</div>
           </ScrollArea>
         </div>

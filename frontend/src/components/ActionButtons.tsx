@@ -28,7 +28,7 @@ export function ActionButtons({
     <div className="flex flex-wrap gap-2">
       {canEdit && (
         <Button variant="ghost" size="sm" onClick={onEdit} title={editTitle}>
-          <Pencil className="w-4 h-4 text-black" />
+          <Pencil className="w-4 h-4 text-foreground" />
         </Button>
       )}
       {canDelete && (
@@ -38,7 +38,7 @@ export function ActionButtons({
       )}
       {canRevert && onRevert && (
         <Button variant="ghost" size="sm" onClick={onRevert} title={revertTitle}>
-          <Undo2 className="w-4 h-4 text-emerald-600" />
+          <Undo2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
         </Button>
       )}
     </div>

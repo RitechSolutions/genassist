@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 from app.modules.workflow.audio.audio_input import build_audio_payload
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,11 @@ class TTSNode(BaseNode):
         text = config.get("text", "")
 
         if not text:
-            return {"error": "No text input provided for Text to Speech node"}
+            return node_failure("No text input provided for Text to Speech node")
 
         audio_provider_id = config.get("audioProviderId")
         if not audio_provider_id:
-            return {"error": "No audio provider configured for Text to Speech node"}
+            return node_failure("No audio provider configured for Text to Speech node")
 
         try:
             from app.modules.workflow.audio.provider import get_tts_provider
@@ -30,4 +31,4 @@ class TTSNode(BaseNode):
         except Exception as e:
             error_msg = f"TTS generation failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {"error": error_msg}
+            return node_failure(error_msg)

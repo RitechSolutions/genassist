@@ -32,7 +32,7 @@ export function OperatorAvatar({ firstName, lastName, avatarUrl, size = "md" }: 
       <img
         src={avatarUrl}
         alt={`${firstName} ${lastName}`}
-        className={`${sizeClasses[size]} rounded-full object-cover border border-gray-300`}
+        className={`${sizeClasses[size]} rounded-full object-cover border border-border`}
         onError={() => setImageError(true)}
       />
     );

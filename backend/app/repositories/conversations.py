@@ -2,7 +2,7 @@ import datetime
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import asc, cast, desc, func, and_, or_, nulls_last, String, update
+from sqlalchemy import asc, cast, desc, distinct, func, and_, or_, nulls_last, String, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -28,6 +28,7 @@ from app.db.models.conversation import ConversationAnalysisModel
 from app.db.models.operator import OperatorModel
 from app.db.models import AgentModel
 from app.db.models.user import UserModel
+from app.repositories.db_repository import DbRepository
 
 # KPI score fields on ConversationAnalysisModel (0-10 scale).
 # Used for sorting, filtering, and join detection.
@@ -41,10 +42,10 @@ ANALYSIS_SCORE_FIELDS = frozenset({
 
 
 @inject
-class ConversationRepository:
+class ConversationRepository(DbRepository[ConversationModel]):
 
     def __init__(self, db: AsyncSession):  # Auto-inject db
-        self.db = db
+        super().__init__(ConversationModel, db)
 
     async def resolve_group_id_for_operator(self, operator_id: UUID) -> Optional[UUID]:
         """User group for an agent's operator (console user), else agent creator's group."""
@@ -347,7 +348,7 @@ class ConversationRepository:
 
         if conversation_filter.id_suffix:
             query = query.where(
-                cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}")
+                cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}%")
             )
 
         custom_attrs = conversation_filter.custom_attributes_dict
@@ -477,7 +478,10 @@ class ConversationRepository:
         query = add_pagination(conversation_filter, query)
 
         result = await self.db.execute(query)
-        return result.scalars().all()
+        # The analysis outerjoin (needs_join branch) can emit one row per
+        # (conversation, analysis) pair when a conversation has more than one
+        # analysis row, so collapse duplicate ConversationModel identities.
+        return result.unique().scalars().all()
 
     @staticmethod
     def _sentiment_predicate(conversation_filter: ConversationFilter):
@@ -533,7 +537,9 @@ class ConversationRepository:
         """
         Return the total count of conversations matching ALL active filters.
         """
-        query = select(func.count(ConversationModel.id))
+        # Count distinct conversations: the analysis outerjoin below can repeat
+        # a conversation once per analysis row, which would inflate the total.
+        query = select(func.count(distinct(ConversationModel.id)))
         query = self._apply_base_filters(query, conversation_filter)
 
         group_clause = self._get_conversation_group_clause()

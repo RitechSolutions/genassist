@@ -29,13 +29,13 @@ export function MessageFeedbackPopover({
           className={`p-2 rounded-lg shadow-sm border hover:opacity-80 ${
             hasFeedbackMessage
               ? "bg-black border-black"
-              : "bg-white border-gray-200 hover:bg-gray-100"
+              : "bg-card border-border hover:bg-muted"
           }`}
           title="Add feedback message"
         >
           <MessageCircle
             className={`w-4 h-4 ${
-              hasFeedbackMessage ? "text-white fill-current" : "text-gray-500"
+              hasFeedbackMessage ? "text-white fill-current" : "text-muted-foreground"
             }`}
           />
         </button>

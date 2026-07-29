@@ -12,6 +12,7 @@ from app.api.v1.routes import (
     auth,
     auth_sso_microsoft,
     azure_blob_router,
+    bedrock_fine_tuning,
     conversations,
     customers,
     dashboard,
@@ -24,6 +25,7 @@ from app.api.v1.routes import (
     llm_analysts,
     llm_cost_rates,
     llm_providers,
+    llm_usage,
     local_fine_tuning,
     mcp,
     mcp_servers,
@@ -45,6 +47,7 @@ from app.api.v1.routes import (
     tenants,
     test_cases,
     test_evaluations,
+    templates,
     test_runs,
     test_suites,
     translations,
@@ -114,6 +117,7 @@ router.include_router(
     agent_knowledge.router, prefix="/genagent/knowledge", tags=["Knowledge Base"]
 )
 router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Workflows"])
+router.include_router(templates.router, prefix="/genagent/templates", tags=["Templates"])
 router.include_router(
     workflow_schedule.router,
     prefix="/genagent/workflow-schedules",
@@ -143,6 +147,7 @@ router.include_router(
 )
 router.include_router(file_manager.router, prefix="/file-manager", tags=["FileManager"])
 router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+router.include_router(llm_usage.router, prefix="/analytics/llm-usage", tags=["LLM Usage"])
 
 router.include_router(prompt_editor.router, prefix="/genagent/prompt-editor", tags=["Prompt Editor"])
 router.include_router(test_suites.router, prefix="/genagent/eval", tags=["Test Suites"])
@@ -166,6 +171,9 @@ router.include_router(
 router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
 
 router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenAI API"])
+router.include_router(
+    bedrock_fine_tuning.router, prefix="/bedrock", tags=["Bedrock Fine-Tuning"]
+)
 router.include_router(
     local_fine_tuning.router,
     prefix="/local-fine-tuning",

@@ -1,0 +1,123 @@
+import React from "react";
+import { Loader2, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
+import { Button } from "@/components/button";
+import { Badge } from "@/components/badge";
+import { Progress } from "@/components/progress";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
+import { EntityTitle } from "./EntityTitle";
+import { accuracyColorClass } from "../helpers/evaluationMetrics";
+
+interface EvaluationListRowProps {
+  evaluation: TestEvaluationConfig;
+  avgAccuracy: number | null;
+  isRunning: boolean;
+  lastRunStatus?: string;
+  onOpen: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onRun: (e: React.MouseEvent) => void;
+}
+
+export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
+  evaluation,
+  avgAccuracy,
+  isRunning,
+  lastRunStatus,
+  onOpen,
+  onEdit,
+  onDelete,
+  onRun,
+}) => (
+  <div className="w-full py-4 px-6 text-left hover:bg-muted transition-colors">
+    <div className="flex items-center justify-between gap-4">
+      <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left">
+        <div className="flex items-center gap-2">
+          <EntityTitle>{evaluation.name}</EntityTitle>
+        </div>
+        <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
+          {evaluation.description || "No description"}
+        </p>
+
+        {isRunning ? (
+          <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {lastRunStatus === "queued" ? "Queued" : "Running…"}
+          </div>
+        ) : lastRunStatus === "failed" ? (
+          <div className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">Last run failed</div>
+        ) : avgAccuracy !== null ? (
+          <div className="flex items-center gap-2 mt-2">
+            <Progress
+              value={avgAccuracy * 100}
+              className={cn(
+                "h-2 w-32 bg-muted",
+                avgAccuracy >= 0.9
+                  ? "[&>div]:bg-green-600"
+                  : avgAccuracy >= 0.7
+                    ? "[&>div]:bg-amber-600"
+                    : "[&>div]:bg-red-600",
+              )}
+            />
+            <span className={`text-xs font-medium ${accuracyColorClass(avgAccuracy)}`}>
+              {Math.round(avgAccuracy * 100)}% accuracy
+            </span>
+            <span className="text-xs text-muted-foreground">
+              ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})
+            </span>
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-muted-foreground">Not run yet</div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-1 mt-2">
+          <span className="text-xs text-muted-foreground mr-1">Metrics:</span>
+          {evaluation.techniques.map((tech) => (
+            <Badge key={tech} variant="outline" className="text-[10px] px-1.5 py-0">
+              {tech}
+            </Badge>
+          ))}
+        </div>
+      </button>
+
+      <div className="flex items-center gap-1 shrink-0">
+        <Button size="sm" disabled={isRunning} onClick={onRun}>
+          <Play className="h-3.5 w-3.5 mr-1" />
+          {isRunning ? "Running..." : "Run"}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={isRunning}
+              onClick={onEdit}
+              title={isRunning ? "Can't edit while this evaluation is running" : undefined}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isRunning}
+              onClick={onDelete}
+              className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+              title={isRunning ? "Can't delete while this evaluation is running" : undefined}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  </div>
+);

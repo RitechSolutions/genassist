@@ -7,7 +7,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import {
   MissingValueHandlingConfig,
   MissingValueHandlingItem,
@@ -181,7 +181,7 @@ export const MissingValueHandler: React.FC<MissingValueHandlerProps> = ({
     <div className="space-y-4">
       <div className="space-y-0.5">
         <Label>Handle Missing Values</Label>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Configure how to handle missing values in columns
         </p>
       </div>
@@ -189,11 +189,11 @@ export const MissingValueHandler: React.FC<MissingValueHandlerProps> = ({
       {(
         <div className="space-y-2">
           {!analysisResult ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               Please analyze the CSV file first to see columns with missing values.
             </p>
           ) : columnsWithMissing.length === 0 ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               No columns with missing values found.
             </p>
           ) : (
@@ -203,14 +203,14 @@ export const MissingValueHandler: React.FC<MissingValueHandlerProps> = ({
                 {columns.map((column) => (
                   <div
                     key={column.columnName}
-                    className="flex items-center justify-between p-3 border rounded hover:bg-gray-50 gap-4"
+                    className="flex items-center justify-between p-3 border rounded hover:bg-muted gap-4"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <Label className="font-medium text-sm">
                           {column.columnName}
                         </Label>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           ({column.missingCount} missing,{" "}
                           {column.missingPercentage.toFixed(1)}%)
                         </span>
@@ -269,7 +269,7 @@ export const MissingValueHandler: React.FC<MissingValueHandlerProps> = ({
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {columns.length} column{columns.length !== 1 ? "s" : ""} with
                 missing values. Sorted by percentage (highest first).
               </p>

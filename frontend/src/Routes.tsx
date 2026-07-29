@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
+import AppLayout from "@/layout/AppLayout";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
 import Index from "@/views/Index";
@@ -10,6 +11,7 @@ import Operators from "./views/Operators";
 import Analytics from "@/views/Analytics";
 import AgentPerformancePage from "@/views/Analytics/pages/AgentPerformancePage";
 import NodeAnalyticsPage from "@/views/Analytics/pages/NodeAnalyticsPage";
+import LlmUsagePage from "@/views/Analytics/pages/LlmUsagePage";
 import ReportedFeedback from "@/views/ReportedFeedback/Index";
 import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
@@ -33,6 +35,8 @@ import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
 import LocalFineTune from "@/views/LocalFineTune/Index";
 import LocalFineTuneJobDetail from "@/views/LocalFineTune/pages/LocalFineTuneJobDetail";
+import BedrockFineTune from "@/views/BedrockFineTune/Index";
+import BedrockFineTuneJobDetail from "@/views/BedrockFineTune/pages/BedrockFineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
@@ -57,11 +61,13 @@ import HelpCenterIndex from "@/views/HelpCenter/Index";
 import NewTicketPage from "@/views/HelpCenter/pages/NewTicket";
 import TicketDetailPage from "@/views/HelpCenter/pages/TicketDetail";
 import MCPServersPage from "@/views/MCPServers/pages/MCPServers";
+import TemplatesPage from "@/views/Templates/pages/Templates";
 import TestSuitesIndex from "@/views/TestSuites/Index";
 import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
 import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
 import DatasetDetailPage from "@/views/TestSuites/pages/DatasetDetailPage";
 import EvaluationDetailPage from "@/views/TestSuites/pages/EvaluationDetailPage";
+import WorkflowEvaluationsPage from "@/views/TestSuites/pages/WorkflowEvaluationsPage";
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
@@ -97,6 +103,15 @@ export type RegistrationStatus = "loading" | "new" | "existing";
 export const RoutesProvider = () => {
   const showLocalFineTune = useFeatureFlagVisible(
     FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
+  );
+  const showBedrockFineTune = useFeatureFlagVisible(
+    FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE
+  );
+  const showLlmUsage = useFeatureFlagVisible(
+    FeatureFlagKeys.ANALYTICS.SHOW_COST_PER_CONVERSATION
+  );
+  const showTemplateMarketplace = useFeatureFlagVisible(
+    FeatureFlagKeys.FEATURE.TEMPLATE_MARKETPLACE
   );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
@@ -140,6 +155,9 @@ export const RoutesProvider = () => {
           element: <ProtectedLayout />,
           children: [
             { path: "", element: <Navigate to="/dashboard" replace /> },
+            {
+              element: <AppLayout />,
+              children: [
             { path: "dashboard", element: <Index /> },
             {
               path: "transcripts",
@@ -182,11 +200,33 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "analytics/llm-usage",
+              element: (
+                showLlmUsage ? (
+                  <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                    <LlmUsagePage />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              ),
+            },
+            {
               path: "reported-feedback",
               element: (
                 <ProtectedRoute requiredPermissions={["read:conversation"]}>
                   <ReportedFeedback />
                 </ProtectedRoute>
+              ),
+            },
+            {
+              path: "templates",
+              element: showTemplateMarketplace ? (
+                <ProtectedRoute requiredPermissions={["read:template"]}>
+                  <TemplatesPage />
+                </ProtectedRoute>
+              ) : (
+                <Navigate to="/dashboard" replace />
               ),
             },
             {
@@ -308,7 +348,7 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:openai_job"]}>
                   <FineTune />
                 </ProtectedRoute>
               ),
@@ -316,16 +356,40 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:openai_job"]}>
                   <FineTuneJobDetail />
                 </ProtectedRoute>
+              ),
+            },
+            {
+              path: "bedrock-fine-tune",
+              element: (
+                showBedrockFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
+                    <BedrockFineTune />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              ),
+            },
+            {
+              path: "bedrock-fine-tune/:id",
+              element: (
+                showBedrockFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
+                    <BedrockFineTuneJobDetail />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
               path: "local-fine-tune",
               element: (
                 showLocalFineTune ? (
-                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTune />
                   </ProtectedRoute>
                 ) : (
@@ -337,7 +401,7 @@ export const RoutesProvider = () => {
               path: "local-fine-tune/:id",
               element: (
                 showLocalFineTune ? (
-                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTuneJobDetail />
                   </ProtectedRoute>
                 ) : (
@@ -490,6 +554,14 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "tests/evaluations/workflows/:workflowId",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <WorkflowEvaluationsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "tests/evaluations/:evaluationId",
               element: (
                 <ProtectedRoute requiredPermissions={["test:workflow"]}>
@@ -533,6 +605,8 @@ export const RoutesProvider = () => {
                 </ProtectedRoute>
               ),
             },
+              ],
+            },
 
             { path: "change-password", element: <ChangePassword /> },
             {
@@ -553,7 +627,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [showLocalFineTune],
+    [showLocalFineTune, showBedrockFineTune, showLlmUsage, showTemplateMarketplace],
   );
 
   const organizationRouter = useMemo(

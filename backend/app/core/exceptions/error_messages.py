@@ -10,10 +10,13 @@ logger = logging.getLogger(__name__)
 
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
+    TOOL_USAGE_CONFIG_INVALID = "tool_usage_config_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND"
+    TEMPLATE_INVALID = "TEMPLATE_INVALID"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
     INVALID_FILE_FORMAT = "invalid_file_format"
     NO_SELECTED_FILE = "no_selected_file"
@@ -85,6 +88,9 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
+    SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
+    SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
+    SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
     OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
@@ -133,6 +139,14 @@ class ErrorKey(Enum):
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
     ERROR_GENERATE_TRAINING_FILE = "ERROR_GENERATE_TRAINING_FILE"
     ERROR_TRAINING_FILE_TOO_LARGE = "ERROR_TRAINING_FILE_TOO_LARGE"
+    ERROR_UPLOAD_FILE_BEDROCK = "ERROR_UPLOAD_FILE_BEDROCK"
+    ERROR_CREATE_JOB_BEDROCK = "ERROR_CREATE_JOB_BEDROCK"
+    ERROR_MONITOR_JOB_BEDROCK = "ERROR_MONITOR_JOB_BEDROCK"
+    ERROR_CANCEL_JOB_BEDROCK = "ERROR_CANCEL_JOB_BEDROCK"
+    ERROR_DEPLOY_MODEL_BEDROCK = "ERROR_DEPLOY_MODEL_BEDROCK"
+    ERROR_UNDEPLOY_MODEL_BEDROCK = "ERROR_UNDEPLOY_MODEL_BEDROCK"
+    ERROR_BEDROCK_NOT_CONFIGURED = "ERROR_BEDROCK_NOT_CONFIGURED"
+    ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN = "ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
@@ -157,15 +171,21 @@ class ErrorKey(Enum):
     SSO_MICROSOFT_USER_DENIED = "SSO_MICROSOFT_USER_DENIED"
     SSO_MICROSOFT_REDIRECT_NOT_ALLOWED = "SSO_MICROSOFT_REDIRECT_NOT_ALLOWED"
     SSO_MICROSOFT_NOT_CONFIGURED = "SSO_MICROSOFT_NOT_CONFIGURED"
+    LLM_USAGE_CONTROL_NOT_FOUND = "LLM_USAGE_CONTROL_NOT_FOUND"
+    LLM_USAGE_CAPTURE_NOT_ENABLED = "LLM_USAGE_CAPTURE_NOT_ENABLED"
+    LLM_COST_RATE_ALREADY_EXISTS = "LLM_COST_RATE_ALREADY_EXISTS"
 
 
 ERROR_MESSAGES = {
     "en": {
         ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
+        ErrorKey.TOOL_USAGE_CONFIG_INVALID: "The tool usage configuration could not be resolved to canonical tool ids.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
+        ErrorKey.TEMPLATE_NOT_FOUND: "Template not found.",
+        ErrorKey.TEMPLATE_INVALID: "The template is invalid or cannot be used.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
         ErrorKey.NO_SELECTED_FILE: "No selected file",
         ErrorKey.INVALID_RECORDED_AT: "Invalid recorded_at format. Use ISO 8601: YYYY-MM-DDTHH:MM:SSZ",
@@ -286,6 +306,14 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_GENERATE_TRAINING_FILE: "Failed to generate training file from conversations.",
         ErrorKey.ERROR_TRAINING_FILE_TOO_LARGE: "Generated training file exceeds the 512 MB limit. Select fewer conversations.",
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
+        ErrorKey.ERROR_UPLOAD_FILE_BEDROCK: "Failed to upload training data to S3 for Bedrock.",
+        ErrorKey.ERROR_CREATE_JOB_BEDROCK: "Failed to create Bedrock fine-tuning job.",
+        ErrorKey.ERROR_MONITOR_JOB_BEDROCK: "There was an error fetching the Bedrock job.",
+        ErrorKey.ERROR_CANCEL_JOB_BEDROCK: "There was an error stopping the Bedrock job.",
+        ErrorKey.ERROR_DEPLOY_MODEL_BEDROCK: "Failed to deploy the customized Bedrock model.",
+        ErrorKey.ERROR_UNDEPLOY_MODEL_BEDROCK: "Failed to undeploy the customized Bedrock model.",
+        ErrorKey.ERROR_BEDROCK_NOT_CONFIGURED: "Bedrock fine-tuning is not configured. Set the IAM role ARN and S3 bucket.",
+        ErrorKey.ERROR_BEDROCK_TRAINING_DATA_FORBIDDEN: "Training data must be uploaded through this app and belong to your account.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
         ErrorKey.RECAPTCHA_VERIFICATION_FAILED: "reCAPTCHA verification failed. Please try again.",
@@ -314,11 +342,20 @@ ERROR_MESSAGES = {
         ErrorKey.SSO_MICROSOFT_USER_DENIED: "Your account is not provisioned for GenAssist. Contact an administrator.",
         ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED: "SSO redirect target is not allowed by server configuration.",
         ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
+        ErrorKey.LLM_USAGE_CONTROL_NOT_FOUND: "LLM usage control state is not initialized.",
+        ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED: "LLM usage capture must be activated first.",
+        ErrorKey.LLM_COST_RATE_ALREADY_EXISTS: "A rate for this provider and model already exists.",
+        ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
+        ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
+        ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+        ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
+        ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
+        ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
     },
 }
 

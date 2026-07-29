@@ -27,7 +27,7 @@ export function CollapsibleSection({
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
         )}
       </button>
-      {open && <div className="px-4 py-3 bg-white">{children}</div>}
+      {open && <div className="px-4 py-3 bg-card">{children}</div>}
     </div>
   );
 }

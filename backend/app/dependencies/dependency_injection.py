@@ -39,6 +39,9 @@ from app.repositories.file_upload_session import FileUploadSessionRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.llm_cost_rates import LlmCostRateRepository
+from app.repositories.llm_usage_backfill import LlmUsageBackfillRepository
+from app.repositories.llm_usage_control import LlmUsageControlRepository
+from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.repositories.audio_providers import AudioProviderRepository
 from app.repositories.fallback_chains import FallbackChainRepository
 from app.repositories.llm_providers import LlmProviderRepository
@@ -51,6 +54,7 @@ from app.repositories.recordings import RecordingsRepository
 from app.repositories.role_permissions import RolePermissionsRepository
 from app.repositories.roles import RolesRepository
 from app.repositories.tenant import TenantRepository
+from app.repositories.template import TemplateRepository
 from app.repositories.tool import ToolRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.repositories.user_groups import UserGroupRepository
@@ -80,6 +84,9 @@ from app.services.gpt_questions import QuestionAnswerer
 from app.services.gpt_speaker_separator import SpeakerSeparator
 from app.services.llm_analysts import LlmAnalystService
 from app.services.llm_cost_rates import LlmCostRateService
+from app.services.llm_usage_backfill import LlmUsageBackfillService
+from app.services.llm_usage_control import LlmUsageControlService
+from app.services.llm_usage_read import LlmUsageReadService
 from app.services.audio_providers import AudioProviderService
 from app.services.fallback_chains import FallbackChainService
 from app.services.llm_providers import LlmProviderService
@@ -94,6 +101,7 @@ from app.services.support_ticket_sync import SupportTicketSyncService
 from app.services.permissions import PermissionsService
 from app.services.role_permissions import RolePermissionsService
 from app.services.roles import RolesService
+from app.services.template import TemplateService
 from app.services.tenant import TenantService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.user_groups import UserGroupService
@@ -222,6 +230,9 @@ class Dependencies(Module):
         binder.bind(AgentRepository, scope=request_scope)
         binder.bind(AgentConfigService, scope=request_scope)
 
+        binder.bind(TemplateRepository, scope=request_scope)
+        binder.bind(TemplateService, scope=request_scope)
+
         binder.bind(UserService, scope=request_scope)
         binder.bind(UserRepository, scope=request_scope)
 
@@ -275,6 +286,13 @@ class Dependencies(Module):
 
         binder.bind(LlmCostRateService, scope=request_scope)
         binder.bind(LlmCostRateRepository, scope=request_scope)
+
+        binder.bind(LlmUsageControlService, scope=request_scope)
+        binder.bind(LlmUsageControlRepository, scope=request_scope)
+        binder.bind(LlmUsageReadService, scope=request_scope)
+        binder.bind(LlmUsageReadRepository, scope=request_scope)
+        binder.bind(LlmUsageBackfillService, scope=request_scope)
+        binder.bind(LlmUsageBackfillRepository, scope=request_scope)
 
         binder.bind(LlmAnalystService, scope=request_scope)
         binder.bind(LlmAnalystRepository, scope=request_scope)

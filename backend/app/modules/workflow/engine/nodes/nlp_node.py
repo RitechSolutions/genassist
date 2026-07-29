@@ -21,9 +21,11 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.dependencies.injector import injector
+from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 from .nlp_base import parse_json_object
 
 logger = logging.getLogger(__name__)
@@ -64,12 +66,20 @@ class NLPNode(BaseNode):
         input_text = str(config.get("inputField", "") or "")
 
         if task == "sentiment":
-            return await self._run_sentiment(config, provider_id, input_text)
-        if task == "extract":
-            return await self._run_extract(config, provider_id, input_text)
-        if task == "summarize":
-            return await self._run_summarize(config, provider_id, input_text)
-        return await self._run_classify(config, provider_id, input_text)
+            result = await self._run_sentiment(config, provider_id, input_text)
+        elif task == "extract":
+            result = await self._run_extract(config, provider_id, input_text)
+        elif task == "summarize":
+            result = await self._run_summarize(config, provider_id, input_text)
+        else:
+            result = await self._run_classify(config, provider_id, input_text)
+
+        # Each task returns a well-formed fallback carrying an "error" note when it
+        # could not complete. Record that as a node failure, while still handing
+        # downstream the fallback shape it expects.
+        if isinstance(result, dict) and result.get("error"):
+            return node_failure(str(result["error"]), output=result)
+        return result
 
     async def _run_classify(
         self, config: Dict[str, Any], provider_id: str, input_text: str
@@ -112,6 +122,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_classify")
             parsed = parse_json_object(str(response.content))
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (classify) LLM execution failed: %s", self.node_id, e)
@@ -174,6 +185,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_sentiment")
             parsed = parse_json_object(str(response.content))
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (sentiment) LLM execution failed: %s", self.node_id, e)
@@ -223,6 +235,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_extract")
             parsed = parse_json_object(str(response.content))
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (extract) LLM execution failed: %s", self.node_id, e)
@@ -275,6 +288,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_summarize")
             summary = str(response.content).strip()
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (summarize) LLM execution failed: %s", self.node_id, e)

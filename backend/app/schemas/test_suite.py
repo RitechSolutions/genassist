@@ -25,6 +25,17 @@ class TestCaseBase(BaseModel):
         default=None,
         description="Optional weight used when aggregating metrics.",
     )
+    source_conversation_id: Optional[UUID] = Field(
+        default=None,
+        description=(
+            "Conversation this case was imported from. Cases sharing a value "
+            "replay as one memory thread; null cases are independent."
+        ),
+    )
+    turn_index: Optional[int] = Field(
+        default=None,
+        description="Position of this turn within its source conversation.",
+    )
 
 
 class TestCaseCreate(TestCaseBase):
@@ -102,6 +113,8 @@ class TestResultMetrics(BaseModel):
     score: float | bool
     passed: bool
     comment: Optional[str] = None
+    # Per-rule breakdown for tool_used (and future multi-rule techniques).
+    details: Optional[List[Dict[str, Any]]] = None
 
 
 class TestResultBase(BaseModel):
@@ -117,6 +130,13 @@ class TestResultBase(BaseModel):
     )
     metrics: Optional[Dict[str, TestResultMetrics]] = None
     error: Optional[str] = None
+    status: Optional[str] = Field(
+        default=None,
+        description=(
+            "scored | execution_failed | scoring_failed | skipped. Null for "
+            "results recorded before statuses were introduced."
+        ),
+    )
 
 
 class TestResultInDB(TestResultBase):
@@ -129,6 +149,23 @@ class TestResultInDB(TestResultBase):
 
 class TestResult(TestResultInDB):
     pass
+
+
+class TestToolRuleResult(BaseModel):
+    """One Tool Usage rule outcome for a scope unit (turn or conversation)."""
+
+    id: UUID
+    run_id: UUID
+    rule_id: str
+    scope: str
+    case_id: Optional[UUID] = None
+    source_conversation_id: Optional[UUID] = None
+    status: str = Field(description="passed | failed | not_evaluated")
+    score: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TestRunBase(BaseModel):
@@ -191,6 +228,20 @@ class BatchRunsRequest(BaseModel):
     )
 
 
+class StartedEvaluationRun(BaseModel):
+    """Outcome of starting one evaluation in a batch/workflow run.
+
+    ``run_id``/``suite_id`` are unset and ``error`` is populated when the
+    evaluation could not be queued (``status == "failed_to_start"``).
+    """
+
+    evaluation_id: UUID
+    run_id: Optional[UUID] = None
+    suite_id: Optional[UUID] = None
+    status: str
+    error: Optional[str] = None
+
+
 class TestEvaluationBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -226,4 +277,61 @@ class TestEvaluationInDB(TestEvaluationBase):
 
 class TestEvaluation(TestEvaluationInDB):
     pass
+
+
+class EvaluationToolInfo(BaseModel):
+    """A tool an agent can call, from the workflow graph. ``id`` matches tool events."""
+
+    id: str
+    name: str
+    label: str
+    type: str
+
+
+class EvaluationAgentInfo(BaseModel):
+    id: str
+    label: str
+    type: str
+    workflow_path: List[str] = Field(default_factory=list)
+    tools: List[EvaluationToolInfo] = Field(default_factory=list)
+
+
+class EvaluationToolCatalog(BaseModel):
+    """Agents and their tools for a workflow (incl. nested workflows), for the UI."""
+
+    workflow_id: UUID
+    agents: List[EvaluationAgentInfo] = Field(default_factory=list)
+
+
+class WorkflowEvaluationSummary(BaseModel):
+    """One overview row: a workflow (or the unassigned bucket) and its eval count.
+
+    ``health`` is the mean accuracy across the workflow's evaluations whose latest
+    run has finished, counting failed runs as 0; ``None`` when none have finished.
+    ``finished_count`` is how many evaluations contributed to ``health``.
+    ``any_running`` is true when any evaluation's latest run is queued or running.
+    """
+
+    workflow_id: Optional[UUID] = None
+    eval_count: int
+    health: Optional[float] = None
+    finished_count: int = 0
+    any_running: bool = False
+
+
+class PaginatedEvaluations(BaseModel):
+    """One page of a workflow's evaluations.
+
+    ``total`` is the count for the current search; ``total_unfiltered`` is the
+    workflow's full evaluation count (ignoring search), so the header can show
+    "N of M". ``any_running`` reflects the whole workflow (across all pages), not
+    just this page, so the client can block a duplicate "Run all".
+    """
+
+    items: List[TestEvaluationInDB] = Field(default_factory=list)
+    total: int
+    total_unfiltered: int
+    page: int
+    page_size: int
+    any_running: bool = False
 

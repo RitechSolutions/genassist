@@ -57,7 +57,7 @@ export function useCanvasAssistant({
   const actionKey = (action: ParsedAction): string => {
     switch (action.type) {
       case "add_node":
-        return `add-${action.nodeType}-${action.label}-${action.connectTo}-${action.thenConnectTo}-${action.asToolFor}`;
+        return `add-${action.nodeType}-${action.label}-${action.connectTo}-${action.thenConnectTo}-${action.asToolFor}-${action.asSubAgentFor}`;
       case "update_node":
         return `update-${action.nodeId}-${JSON.stringify(action.updates)}`;
       case "remove_node":
@@ -70,8 +70,8 @@ export function useCanvasAssistant({
   // Execute parsed actions on the canvas
   const executeActions = useCallback(
     (actions: ParsedAction[]) => {
-      // Track nodes added in this batch so label resolution works across sequential ADD_NODEs
       let batchNodes: Node[] = [...nodesRef.current];
+      let batchEdges: Edge[] = [...edgesRef.current];
 
       for (const action of actions) {
         const key = actionKey(action);
@@ -82,6 +82,7 @@ export function useCanvasAssistant({
           const { nodes: newNodes, edges: newEdges } = createNodeFromAction(
             action as AddNodeAction,
             batchNodes,
+            batchEdges,
           );
           if (newNodes.length > 0) {
             const restored = newNodes.map(restoreNode);
@@ -93,6 +94,7 @@ export function useCanvasAssistant({
             });
           }
           if (newEdges.length > 0) {
+            batchEdges = [...batchEdges, ...newEdges];
             setEdges((eds) => {
               const updated = [...eds, ...newEdges];
               edgesRef.current = updated;

@@ -19,7 +19,7 @@ export interface AnalyticsFiltersProps {
   onGroupFilterChange?: (value: string) => void;
 
   /** Agent filter — pass `undefined` to hide the agent selector */
-  agents?: AgentListItem[];
+  agents?: Array<Pick<AgentListItem, "id" | "name">>;
   agentFilter?: string;
   onAgentFilterChange?: (value: string) => void;
 
@@ -64,6 +64,7 @@ export const AnalyticsFilters = ({
         "flex w-full gap-2",
         "max-md:flex-col max-md:items-stretch",
         "md:flex-row md:flex-nowrap md:items-center",
+        "xl:flex-wrap xl:justify-end",
         className,
       )}
     >
@@ -124,7 +125,7 @@ export const AnalyticsFilters = ({
       )}
 
       {children != null && (
-        <div className="flex shrink-0 flex-col gap-2 max-md:w-full md:flex-row md:items-center [&_button]:max-md:w-full">
+        <div className="flex shrink-0 flex-col gap-2 max-md:w-full md:flex-row md:items-center xl:flex-wrap xl:justify-end [&_button]:max-md:w-full">
           {children}
         </div>
       )}

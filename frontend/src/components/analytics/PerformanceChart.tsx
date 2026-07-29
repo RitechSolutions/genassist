@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { METRIC_COLORS } from "@/constants/chartColors";
 import { Card } from "@/components/card";
 import { cn } from "@/helpers/utils";
 import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
@@ -31,10 +32,10 @@ const LABELS: Record<string, string> = {
 };
 
 const SERIES = [
-  { key: "satisfaction", color: "#10b981" },
-  { key: "serviceQuality", color: "#8b5cf6" },
-  { key: "resolutionRate", color: "#f59e0b" },
-  { key: "efficiency", color: "#06b6d4" },
+  { key: "satisfaction", color: METRIC_COLORS.satisfaction },
+  { key: "serviceQuality", color: METRIC_COLORS.serviceQuality },
+  { key: "resolutionRate", color: METRIC_COLORS.resolutionRate },
+  { key: "efficiency", color: METRIC_COLORS.efficiency },
 ] as const;
 
 function formatDateLabel(dateStr: string): string {
@@ -86,7 +87,7 @@ export const PerformanceChart = ({ dateRange, agentId, groupId }: PerformanceCha
   }
 
   return (
-    <Card className={cn("bg-white p-4 shadow-sm sm:p-6", analyticsFadeUpClass)}>
+    <Card className={cn("bg-card dark:bg-zinc-900 p-4 shadow-sm sm:p-6", analyticsFadeUpClass)}>
       <h2 className="text-base sm:text-lg font-semibold mb-4">Daily Performance Trend</h2>
       <div
         className={`h-[300px] sm:h-[400px] w-full transition-opacity duration-200 ${loading ? "opacity-60" : ""}`}

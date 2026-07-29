@@ -7,9 +7,9 @@ import { PageLayout } from "@/components/PageLayout";
 import { Button } from "@/components/button";
 import { Card } from "@/components/card";
 import { Badge } from "@/components/badge";
-import { DataTable } from "@/components/DataTable";
-import { TableCell, TableRow } from "@/components/table";
+import { DataTable, Column } from "@/components/ui/data-table";
 import { PaginationBar } from "@/components/PaginationBar";
+import { formatDateTime } from "@/helpers/utils";
 
 import {
   deleteConversationForGdpr,
@@ -25,15 +25,6 @@ import { TranscriptDialog } from "@/views/Transcripts/components/TranscriptDialo
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 
 const PAGE_SIZE = 10;
-
-const formatDate = (value: string | null | undefined): string => {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
-};
 
 const getRequesterEmail = (item: GdprConversationItem): string | null => {
   const attrs = item.custom_attributes;
@@ -282,34 +273,32 @@ export default function GdprConversations() {
     }
   };
 
-  const headers = [
-    { label: "", className: "w-12 px-2" },          // checkbox column
-    { label: "Conversation", className: "w-[260px]" },
-    { label: "Email (PII)", className: "w-[220px]" },
-    { label: "Status", className: "w-[120px]" },
-    { label: "Created", className: "w-[160px]" },
-    { label: "Updated", className: "w-[160px]" },
-    { label: "Open", className: "w-[110px]" },
-  ];
-
-  const renderRow = (item: GdprConversationItem) => {
-    const requesterEmail = getRequesterEmail(item);
-    const isAnonymized = Boolean(item.pii_redacted_at);
-    const isChecked = selectedConversationIds.has(item.id);
-    return (
-      <TableRow key={item.id}>
-        <TableCell>
-          <div className="flex items-center justify-center">
+  const columns: Column<GdprConversationItem>[] = [
+    {
+      header: "",
+      key: "select",
+      headerClassName: "w-12 px-2",
+      cell: (item) => (
+        <div className="flex items-center justify-center">
           <input
             type="checkbox"
             aria-label={`Select conversation ${item.id}`}
-            checked={isChecked}
-            onChange={(event) => toggleSelectedConversation(item.id, event.target.checked)}
+            checked={selectedConversationIds.has(item.id)}
+            onChange={(event) =>
+              toggleSelectedConversation(item.id, event.target.checked)
+            }
             className="h-4 w-4 accent-primary"
           />
-          </div>
-        </TableCell>
-        <TableCell className="font-mono text-xs break-all">
+        </div>
+      ),
+    },
+    {
+      header: "Conversation",
+      key: "conversation",
+      headerClassName: "w-[260px]",
+      className: "font-mono text-xs break-all",
+      cell: (item) => (
+        <>
           <div className="flex flex-wrap items-center gap-2">
             <span className="break-all">{item.id}</span>
           </div>
@@ -318,46 +307,70 @@ export default function GdprConversations() {
               Zendesk #{item.zendesk_ticket_id}
             </Badge>
           ) : null}
-        </TableCell>
-        <TableCell className="truncate text-sm">
-          {requesterEmail || (
-            <span className="text-muted-foreground italic">
-              Not on this row (matched via transcript text)
-            </span>
+        </>
+      ),
+    },
+    {
+      header: "Email (PII)",
+      key: "email",
+      headerClassName: "w-[220px]",
+      className: "truncate text-sm",
+      cell: (item) =>
+        getRequesterEmail(item) || (
+          <span className="text-muted-foreground italic">
+            Not on this row (matched via transcript text)
+          </span>
+        ),
+    },
+    {
+      header: "Status",
+      key: "status",
+      headerClassName: "w-[120px]",
+      className: "truncate",
+      cell: (item) => (
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="default">{item.status ?? "—"}</Badge>
+          {item.pii_redacted_at && (
+            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+              Redacted
+            </Badge>
           )}
-        </TableCell>
-        <TableCell className="truncate">
-          <div className="flex flex-wrap gap-1">
-            <Badge variant="default">{item.status ?? "—"}</Badge>
-            {isAnonymized && (
-              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
-                Redacted
-              </Badge>
-            )}
-          </div>
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-          {formatDate(item.created_at)}
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-          {formatDate(item.updated_at)}
-        </TableCell>
-        <TableCell>
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            className="rounded-full"
-            title="Open conversation"
-            onClick={() => handleOpenConversation(item.id)}
-            disabled={isOpeningTranscript}
-          >
-            <MessageCircle className="h-2 w-2" /> Open
-          </Button>
-        </TableCell>
-      </TableRow>
-    );
-  };
+        </div>
+      ),
+    },
+    {
+      header: "Created",
+      key: "created_at",
+      headerClassName: "w-[160px]",
+      className: "text-xs text-muted-foreground whitespace-nowrap",
+      cell: (item) => formatDateTime(item.created_at),
+    },
+    {
+      header: "Updated",
+      key: "updated_at",
+      headerClassName: "w-[160px]",
+      className: "text-xs text-muted-foreground whitespace-nowrap",
+      cell: (item) => formatDateTime(item.updated_at),
+    },
+    {
+      header: "Open",
+      key: "open",
+      headerClassName: "w-[110px]",
+      cell: (item) => (
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          className="rounded-full"
+          title="Open conversation"
+          onClick={() => handleOpenConversation(item.id)}
+          disabled={isOpeningTranscript}
+        >
+          <MessageCircle className="h-2 w-2" /> Open
+        </Button>
+      ),
+    },
+  ];
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -366,7 +379,7 @@ export default function GdprConversations() {
     <PageLayout>
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6 text-amber-600" />
+          <ShieldAlert className="h-6 w-6 text-amber-600 dark:text-amber-400" />
           <h1 className="text-2xl md:text-3xl font-bold animate-fade-down">
             GDPR Right-to-Erasure
           </h1>
@@ -385,7 +398,7 @@ export default function GdprConversations() {
           className="flex flex-col gap-2 sm:flex-row sm:items-center"
         >
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="email"
               required
@@ -393,7 +406,7 @@ export default function GdprConversations() {
               placeholder="user@example.com"
               value={emailQuery}
               onChange={(event) => setEmailQuery(event.target.value)}
-              className="w-full rounded-full border bg-white px-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-full border bg-card px-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <Button type="submit" className="rounded-full" disabled={loading}>
@@ -446,13 +459,12 @@ export default function GdprConversations() {
 
           <DataTable
             data={items}
+            columns={columns}
             loading={loading}
             error={error}
             searchQuery={activeEmail}
-            headers={headers}
-            renderRow={renderRow}
             emptyMessage="No conversations found for this email."
-            searchEmptyMessage="No conversations found for this email."
+            notFoundMessage="No conversations found for this email."
           />
 
           {total > PAGE_SIZE && (

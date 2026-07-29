@@ -167,7 +167,7 @@ export const EvaluateOptimizeTab: React.FC<EvaluateOptimizeTabProps> = ({
         </div>
       )}
       {successMessage && (
-        <div className="flex items-center gap-2 text-green-700 text-sm bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm bg-green-50 dark:bg-green-500/15 border border-green-200 dark:border-green-500/30 rounded-md px-3 py-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{successMessage}</span>
         </div>
@@ -242,14 +242,14 @@ export const EvaluateOptimizeTab: React.FC<EvaluateOptimizeTabProps> = ({
                 <div
                   key={r.case_id || i}
                   className={`border rounded p-3 text-sm ${
-                    r.passed ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
+                    r.passed ? "border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15" : "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     {r.passed ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                     ) : (
-                      <XCircle className="h-4 w-4 text-red-600" />
+                      <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
                     )}
                     <span className="font-medium">
                       {r.passed ? "Passed" : "Failed"}
@@ -311,7 +311,7 @@ export const EvaluateOptimizeTab: React.FC<EvaluateOptimizeTabProps> = ({
           <div className="space-y-3 border-t pt-4">
             <div className="space-y-2">
               <Label className="text-sm font-medium">Suggested Prompt</Label>
-              <div className="border rounded p-3 bg-gray-50 text-sm font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+              <div className="border rounded p-3 bg-muted text-sm font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
                 {optimizeResult.suggested_prompt}
               </div>
             </div>
@@ -377,14 +377,14 @@ export const EvaluateOptimizeTab: React.FC<EvaluateOptimizeTabProps> = ({
                     <div
                       key={r.case_id || i}
                       className={`border rounded p-3 text-sm ${
-                        r.passed ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
+                        r.passed ? "border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15" : "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15"
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {r.passed ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                         ) : (
-                          <XCircle className="h-4 w-4 text-red-600" />
+                          <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
                         )}
                         <span className="font-medium">
                           {r.passed ? "Passed" : "Failed"}

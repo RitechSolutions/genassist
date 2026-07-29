@@ -75,6 +75,26 @@ def _safe_headers(headers: dict[str, str] | None) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() in _FORWARDED_HEADER_ALLOWLIST}
 
 
+async def _block_private_routes(route: Route) -> None:
+    """Route interceptor guarding sub-resource fetches against SSRF.
+
+    Non-http(s) schemes (``data:``, ``blob:``, ``about:``) are local — they never hit
+    the network — so they are allowed through. Only http/https URLs get the private-IP
+    check, which lets inline ``data:`` image/CSS URIs render while still blocking
+    requests to private ranges.
+    """
+    url = route.request.url
+    scheme = urlparse(url).scheme
+    if scheme not in _ALLOWED_SCHEMES:
+        await route.continue_()
+        return
+    try:
+        await _validate_url(url)
+        await route.continue_()
+    except ValueError:
+        await route.abort("blockedbyclient")
+
+
 async def _auto_scroll(page: Page) -> None:
     try:
         await page.evaluate(
@@ -158,13 +178,6 @@ async def fetch_from_url(
             if safe_headers:
                 await page.set_extra_http_headers(safe_headers)
 
-            async def _block_private_routes(route: Route) -> None:
-                try:
-                    await _validate_url(route.request.url)
-                    await route.continue_()
-                except ValueError:
-                    await route.abort("blockedbyclient")
-
             await page.route("**/*", _block_private_routes)
             response = await page.goto(url, wait_until=wait_until, timeout=_PLAYWRIGHT_TIMEOUT)
             # scroll then settle before snapshotting so lazy content is captured
@@ -180,5 +193,43 @@ async def fetch_from_url(
             if screenshot and screenshot != "off":
                 shot = await page.screenshot(full_page=(screenshot == "fullPage"))
             return FetchResult(html, final_url, ok, content_type, shot)
+        finally:
+            await browser.close()
+
+
+async def render_html_to_image(
+    html: str,
+    *,
+    full_page: bool = True,
+    viewport_width: int = 1280,
+    viewport_height: int = 720,
+    wait_until: str = "networkidle",
+    wait_for_ms: int = 0,
+) -> bytes:
+    """Render an HTML string in headless Chromium and return PNG screenshot bytes.
+
+    Uses ``page.set_content`` (no navigation) so an in-memory HTML document is rendered.
+    The shared ``_block_private_routes`` guard is installed on ``**/*`` so sub-resource
+    fetches (``<img>``/``<link>``/``<script>``) are validated against SSRF while inline
+    ``data:`` URIs are allowed through.
+
+    Raises ``ValueError`` when the HTML is empty or blank.
+    """
+    if not html or not html.strip():
+        raise ValueError("HTML content is required")
+
+    if wait_until not in _WAIT_UNTIL_STATES:
+        wait_until = "networkidle"
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        # try/finally so a set_content/screenshot error can't leak the browser process
+        try:
+            page = await browser.new_page(viewport={"width": viewport_width, "height": viewport_height})
+            await page.route("**/*", _block_private_routes)
+            await page.set_content(html, wait_until=wait_until, timeout=_PLAYWRIGHT_TIMEOUT)
+            if wait_for_ms > 0:
+                await page.wait_for_timeout(min(wait_for_ms, _WAIT_FOR_CAP))
+            return await page.screenshot(full_page=full_page)
         finally:
             await browser.close()

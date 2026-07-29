@@ -66,9 +66,9 @@ export function NotificationBellPopover({
           size="icon"
           aria-label="Open notifications"
           className={cn(
-            "relative border-zinc-200 bg-white hover:bg-zinc-50",
+            "relative border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800",
             compact &&
-              "h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md border focus-visible:ring-1 focus-visible:ring-zinc-200 [&_svg]:!size-3.5",
+              "h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md border focus-visible:ring-1 focus-visible:ring-zinc-200 dark:focus-visible:ring-zinc-700 [&_svg]:!size-3.5",
             className
           )}
         >
@@ -93,7 +93,7 @@ export function NotificationBellPopover({
         className="w-[min(100vw-1.5rem,340px)] max-w-[340px] p-0 overflow-x-hidden"
       >
         <div className="px-4 py-3">
-          <p className="text-sm font-semibold text-zinc-900">Notifications</p>
+          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Notifications</p>
         </div>
 
         <ScrollArea className="h-[320px] max-w-full">
@@ -126,13 +126,13 @@ export function NotificationBellPopover({
                       }
                     }}
                     className={cn(
-                      "relative mb-1 block max-w-full min-w-0 border-b border-zinc-100 px-2 py-3 transition-colors hover:bg-zinc-50 last:mb-0 last:border-b-0",
-                      !notification.read && "rounded-md bg-blue-100/70 pr-14"
+                      "relative mb-1 block max-w-full min-w-0 border-b border-zinc-100 px-2 py-3 transition-colors hover:bg-zinc-50 last:mb-0 last:border-b-0 dark:border-zinc-800 dark:hover:bg-zinc-800/60",
+                      !notification.read && "rounded-md bg-blue-100/70 pr-14 dark:bg-blue-500/15"
                     )}
                   >
                     {!notification.read && (
                       <>
-                        <span className="pointer-events-none absolute right-2 top-2 shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                        <span className="pointer-events-none absolute right-2 top-2 shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
                           New
                         </span>
                       </>
@@ -142,13 +142,13 @@ export function NotificationBellPopover({
                         className={cn("mt-0.5 h-4 w-4 shrink-0", typeMeta.iconClassName)}
                       />
                     <div className="min-w-0 flex-1 overflow-hidden">
-                      <p className="break-words text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">
+                      <p className="break-words text-sm font-medium text-zinc-900 dark:text-zinc-100 [overflow-wrap:anywhere]">
                         {notification.title}
                       </p>
-                      <p className="mt-0.5 break-words text-xs text-zinc-500 line-clamp-3 [overflow-wrap:anywhere]">
+                      <p className="mt-0.5 break-words text-xs text-zinc-500 dark:text-zinc-400 line-clamp-3 [overflow-wrap:anywhere]">
                         {formattedDescription}
                       </p>
-                      <p className="mt-1 text-[11px] text-zinc-400">
+                      <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">
                         {formatNotificationTimestamp(notification.timestamp)}
                       </p>
                     </div>
@@ -163,7 +163,7 @@ export function NotificationBellPopover({
         <div className="border-t px-3 py-2">
           <Link
             to="/notifications"
-            className="block rounded-md px-2 py-1.5 text-center text-sm font-medium text-blue-600 hover:bg-blue-50"
+            className="block rounded-md px-2 py-1.5 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10"
           >
             View all
           </Link>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { getAllLLMProviders, deleteLLMProvider } from "@/services/llmProviders";
@@ -130,41 +130,66 @@ export function LLMProviderCard({
     );
   };
 
-  const headers = ['Name', 'Type', 'Model', 'Status', 'Connection', 'Actions'];
-
-  const renderRow = (provider: LLMProvider) => (
-    <TableRow key={provider.id}>
-      <TableCell className="font-medium break-all">{provider.name}</TableCell>
-      <TableCell className="truncate">{provider.llm_model_provider}</TableCell>
-      <TableCell className="truncate">{provider.llm_model}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        <Badge variant={provider.is_active ? 'default' : 'secondary'}>
-          {provider.is_active ? 'Active' : 'Inactive'}
+  const columns: Column<LLMProvider>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (provider) => provider.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Type",
+      key: "llm_model_provider",
+      cell: (provider) => provider.llm_model_provider,
+      className: "truncate",
+    },
+    {
+      header: "Model",
+      key: "llm_model",
+      cell: (provider) => provider.llm_model,
+      className: "truncate",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (provider) => (
+        <Badge variant={provider.is_active ? "default" : "secondary"}>
+          {provider.is_active ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">{getConnectionBadge(provider)}</TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Connection",
+      key: "connection",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (provider) => getConnectionBadge(provider),
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (provider) => (
         <ActionButtons
           onEdit={() => onEdit(provider)}
           onDelete={() => handleDeleteClick(provider)}
           editTitle="Edit"
           deleteTitle="Delete"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filteredProviders}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No LLM Providers found"
-        searchEmptyMessage="No LLM Providers matching your search"
+        notFoundMessage="No LLM Providers matching your search"
       />
 
       <ConfirmDialog

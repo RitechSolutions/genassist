@@ -56,9 +56,9 @@ export function BackfillStatsCard() {
     from_date && to_date ? `${from_date} → ${to_date}` : "the entire history";
 
   return (
-    <Card className="p-6">
+    <Card className="dark:bg-zinc-900 p-6">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 rounded-md bg-zinc-100 p-2 text-zinc-600">
+        <div className="mt-0.5 rounded-md bg-muted p-2 text-muted-foreground">
           <DatabaseBackup className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">

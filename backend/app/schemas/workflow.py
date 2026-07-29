@@ -11,6 +11,7 @@ class WorkflowBase(BaseModel):
     edges: Optional[List[dict]] = None
     testInput: Optional[dict] = None
     executionState: Optional[dict] = None
+    settings: Optional[dict] = None
 
     user_id: Optional[UUID] = None
     version: str
@@ -28,6 +29,7 @@ class WorkflowUpdate(BaseModel):
     edges: Optional[List[dict]] = None
     testInput: Optional[dict] = None
     executionState: Optional[dict] = None
+    settings: Optional[dict] = None
     user_id: Optional[UUID] = None
     version: Optional[str] = None
     agent_id: Optional[UUID] = None
@@ -37,6 +39,21 @@ class WorkflowMinimal(BaseModel):
     id: UUID
     name: str
     version: str
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
+class WorkflowSummary(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    version: str
+    agent_id: Optional[UUID] = None
+    created_at: datetime
+    updated_at: datetime
+    updated_by_username: Optional[str] = None
 
     model_config = ConfigDict(
         from_attributes=True

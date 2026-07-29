@@ -12,13 +12,19 @@ import { TableSkeleton } from "@/components/skeletons";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
 import { getPaginationMeta } from "@/helpers/pagination";
+import { cn } from "@/helpers/utils";
 export interface Column<T> {
   header: React.ReactNode;
   key: string;
+  /** `index` is the item's absolute position across all pages (1-based numbering: `index + 1`). */
   cell: (item: T, index: number) => React.ReactNode;
   description?: string;
   sortable?: boolean;
   sortValue?: (item: T) => string | number;
+  /** Extra classes for this column's body `<TableCell>`. */
+  className?: string;
+  /** Extra classes for this column's header `<TableHead>`. */
+  headerClassName?: string;
 }
 
 export interface DataTableProps<T> {
@@ -34,6 +40,13 @@ export interface DataTableProps<T> {
   keyExtractor?: (item: T) => string | number;
   pageSize?: number;
   onRowClick?: (item: T) => void;
+  /** When set, rows are clustered by this key so each group's items are consecutive. */
+  groupBy?: (item: T) => string;
+  /**
+   * Renders a full-width header row above each group's first item. Receives the
+   * group key and its items; return null/undefined to omit the header for that group.
+   */
+  renderGroupHeader?: (groupKey: string, items: T[]) => React.ReactNode;
 }
 
 type SortDir = "asc" | "desc" | null;
@@ -50,6 +63,8 @@ export function DataTable<T extends { id?: string | number }>({
   keyExtractor = (item: T) => item.id as string | number,
   pageSize,
   onRowClick,
+  groupBy,
+  renderGroupHeader,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -84,8 +99,32 @@ export function DataTable<T extends { id?: string | number }>({
       });
     }
 
+    // Cluster items so each group's rows are consecutive (stable, first-seen order).
+    if (groupBy) {
+      const map = new Map<string, T[]>();
+      for (const item of result) {
+        const k = groupBy(item);
+        const arr = map.get(k);
+        if (arr) arr.push(item);
+        else map.set(k, [item]);
+      }
+      return Array.from(map.values()).flat();
+    }
+
     return result;
-  }, [data, sortKey, sortDir, columns]);
+  }, [data, sortKey, sortDir, columns, groupBy]);
+
+  const groupItems = useMemo(() => {
+    if (!groupBy) return null;
+    const map = new Map<string, T[]>();
+    for (const item of processedData) {
+      const k = groupBy(item);
+      const arr = map.get(k);
+      if (arr) arr.push(item);
+      else map.set(k, [item]);
+    }
+    return map;
+  }, [processedData, groupBy]);
 
   if (loading) {
     return <TableSkeleton columns={columns.length} />;
@@ -94,7 +133,7 @@ export function DataTable<T extends { id?: string | number }>({
   if (error) {
     return (
       <Card className="p-8">
-        <div className="text-center text-red-500">{error}</div>
+        <div className="text-center text-destructive">{error}</div>
       </Card>
     );
   }
@@ -130,8 +169,77 @@ export function DataTable<T extends { id?: string | number }>({
       : <ArrowDown className="w-3 h-3 ml-1 text-zinc-600 inline-block" />;
   };
 
+  const startIndex = pagination?.startIndex ?? 0;
+
+  const renderItemRow = (item: T, absoluteIndex: number) => (
+    <TableRow
+      key={keyExtractor(item)}
+      onClick={onRowClick ? () => onRowClick(item) : undefined}
+      onKeyDown={
+        onRowClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onRowClick(item);
+              }
+            }
+          : undefined
+      }
+      tabIndex={onRowClick ? 0 : undefined}
+      className={
+        onRowClick
+          ? "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
+          : undefined
+      }
+    >
+      {columns.map((column) => (
+        <TableCell
+          key={`${keyExtractor(item)}-${column.key}`}
+          className={column.className}
+        >
+          {column.cell(item, absoluteIndex)}
+        </TableCell>
+      ))}
+    </TableRow>
+  );
+
+  const renderRows = () => {
+    if (!groupBy) {
+      return visibleData.map((item, index) =>
+        renderItemRow(item, startIndex + index)
+      );
+    }
+    const nodes: React.ReactNode[] = [];
+    let prevGroup: string | null = null;
+    visibleData.forEach((item, index) => {
+      const key = groupBy(item);
+      if (key !== prevGroup) {
+        prevGroup = key;
+        const header = renderGroupHeader?.(key, groupItems?.get(key) ?? []);
+        if (header != null && header !== false) {
+          nodes.push(
+            <TableRow
+              key={`group-${key}`}
+              className="bg-muted/40 hover:bg-muted/40 border-t-2 border-border"
+            >
+              <TableCell
+                colSpan={columns.length}
+                className="font-semibold text-foreground py-3"
+              >
+                {header}
+              </TableCell>
+            </TableRow>
+          );
+        }
+      }
+      nodes.push(renderItemRow(item, startIndex + index));
+    });
+    return nodes;
+  };
+
   return (
-    <Card>
+    <>
+      <Card>
       <Table>
         <TableHeader>
           <TableRow>
@@ -139,7 +247,10 @@ export function DataTable<T extends { id?: string | number }>({
               <TableHead
                 key={column.key}
                 onClick={() => handleSort(column)}
-                className={column.sortable ? "cursor-pointer select-none hover:text-zinc-900" : undefined}
+                className={cn(
+                  column.sortable && "cursor-pointer select-none hover:text-zinc-900",
+                  column.headerClassName
+                )}
               >
                 {column.header}
                 {sortIcon(column)}
@@ -155,22 +266,11 @@ export function DataTable<T extends { id?: string | number }>({
               </TableCell>
             </TableRow>
           ) : (
-            visibleData.map((item, index) => (
-              <TableRow
-                key={keyExtractor(item)}
-                onClick={onRowClick ? () => onRowClick(item) : undefined}
-                className={onRowClick ? "cursor-pointer hover:bg-muted/60" : undefined}
-              >
-                {columns.map((column) => (
-                  <TableCell key={`${keyExtractor(item)}-${column.key}`}>
-                    {column.cell(item, index)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
+            renderRows()
           )}
         </TableBody>
       </Table>
+      </Card>
 
       {pagination && processedData.length > 0 && (
         <PaginationBar
@@ -181,6 +281,6 @@ export function DataTable<T extends { id?: string | number }>({
           onPageChange={setCurrentPage}
         />
       )}
-    </Card>
+    </>
   );
 }

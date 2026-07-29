@@ -205,13 +205,17 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <div className="flex-1 grid md:grid-cols-2">
-        <div className="flex items-center justify-center p-4 bg-white">
+        <div className="flex items-center justify-center p-4 bg-card">
           <div className="w-full max-w-md space-y-6">
             <div className="space-y-2">
-              <GenAssistLogo width={200} height={52} />
+              <GenAssistLogo
+                width={200}
+                height={52}
+                className="text-zinc-900 dark:text-zinc-100"
+              />
 
               <h1 className="text-3xl font-bold tracking-tight">Sign in</h1>
-              <p className="text-zinc-500">
+              <p className="text-muted-foreground">
                 Log in to unlock tailored content and stay connected with your
                 community.
               </p>
@@ -220,11 +224,11 @@ const LoginPage = () => {
             <LoginForm key={key} onSubmit={handleLogin} isLoading={isLoading} />
 
             <div className="text-center text-sm mt-8">
-              <span className="text-zinc-500">Don't have an account? </span>
+              <span className="text-muted-foreground">Don't have an account? </span>
               <Link
                 to="/register"
                 state={location.state}
-                className="text-black hover:underline font-medium"
+                className="text-foreground hover:underline font-medium"
               >
                 Sign up
               </Link>

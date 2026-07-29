@@ -28,12 +28,3 @@ export const STATUS_ORDER: FeedbackStatus[] = [
   "resolved",
   "wont_fix",
 ];
-
-export const formatDate = (value: string | null | undefined): string => {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
-};

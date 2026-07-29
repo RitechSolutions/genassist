@@ -83,7 +83,7 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
               <Label>Python Script</Label>
               <HoverCard>
                 <HoverCardTrigger>
-                  <HelpCircle className="h-4 w-4 text-gray-500" />
+                  <HelpCircle className="h-4 w-4 text-muted-foreground" />
                 </HoverCardTrigger>
                 <HoverCardContent className="w-80">
                   <div className="space-y-2">

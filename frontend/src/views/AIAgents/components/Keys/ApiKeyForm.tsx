@@ -20,7 +20,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import {
   API_KEY_EXPIRY_PRESET_VALUES,
   presetToExpiresInDays,

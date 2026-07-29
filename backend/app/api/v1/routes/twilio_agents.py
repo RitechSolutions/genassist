@@ -70,7 +70,7 @@ async def process_with_agent(
         agent = await agent_service.get_by_id_full(UUID(agent_id))
         agent = RegistryItem(agent)
         agent_response = await agent.execute(
-            session_message=transcribed_text, metadata={"thread_id": thread_id}
+            session_message=transcribed_text, metadata={"thread_id": thread_id}, source="voice"
         )
         agent_response_text = agent_response.get("output")
 

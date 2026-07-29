@@ -66,24 +66,24 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
   }, [isCollapsed, containerRef]);
 
   if (value === null) {
-    return <span className="text-gray-500">null</span>;
+    return <span className="text-gray-500 dark:text-gray-400">null</span>;
   }
 
   if (typeof value === "undefined") {
-    return <span className="text-gray-500">undefined</span>;
+    return <span className="text-gray-500 dark:text-gray-400">undefined</span>;
   }
 
   if (typeof value === "boolean") {
-    return <span className="text-blue-600 whitespace-nowrap">{value.toString()}</span>;
+    return <span className="text-blue-600 dark:text-blue-400 whitespace-nowrap">{value.toString()}</span>;
   }
 
   if (typeof value === "number") {
-    return <span className="text-green-600 whitespace-nowrap">{value}</span>;
+    return <span className="text-green-600 dark:text-green-400 whitespace-nowrap">{value}</span>;
   }
 
   if (typeof value === "string") {
     return (
-      <span className="text-red-600 inline-block max-w-[60ch] whitespace-pre-wrap break-words align-top [overflow-wrap:anywhere]">
+      <span className="text-red-600 dark:text-red-400 inline-block max-w-[60ch] whitespace-pre-wrap break-words align-top [overflow-wrap:anywhere]">
         "{value}"
       </span>
     );
@@ -91,14 +91,14 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
 
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      return <span className="text-gray-500">[]</span>;
+      return <span className="text-gray-500 dark:text-gray-400">[]</span>;
     }
 
     const summary = (
       <span className="whitespace-nowrap">
-        <span className="text-gray-500">[</span>
-        <span className="text-gray-400"> {value.length} items </span>
-        <span className="text-gray-500">]</span>
+        <span className="text-gray-500 dark:text-gray-400">[</span>
+        <span className="text-gray-400 dark:text-gray-500"> {value.length} items </span>
+        <span className="text-gray-500 dark:text-gray-400">]</span>
       </span>
     );
 
@@ -108,7 +108,7 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
         {level > 0 ? (
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-800 align-top"
+            className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 align-top"
           >
             {isCollapsed ? <ChevronRight className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
             {summary}
@@ -118,10 +118,10 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
         )}
 
         {!isCollapsed && (
-          <div className="ml-3 mt-1 space-y-1 border-l border-gray-200 pl-3">
+          <div className="ml-3 mt-1 space-y-1 border-l border-gray-200 dark:border-zinc-700 pl-3">
             {value.map((item, index) => (
               <div key={index} className="flex items-start gap-1.5">
-                <span className="text-gray-400 text-xs whitespace-nowrap pt-px">{index}:</span>
+                <span className="text-gray-400 dark:text-gray-500 text-xs whitespace-nowrap pt-px">{index}:</span>
                 <JsonValue value={item} level={level + 1} />
               </div>
             ))}
@@ -134,14 +134,14 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
   if (typeof value === "object") {
     const keys = Object.keys(value);
     if (keys.length === 0) {
-      return <span className="text-gray-500">{"{}"}</span>;
+      return <span className="text-gray-500 dark:text-gray-400">{"{}"}</span>;
     }
 
     const summary = (
       <span className="whitespace-nowrap">
-        <span className="text-gray-500">{"{"}</span>
-        <span className="text-gray-400"> {keys.length} properties </span>
-        <span className="text-gray-500">{"}"}</span>
+        <span className="text-gray-500 dark:text-gray-400">{"{"}</span>
+        <span className="text-gray-400 dark:text-gray-500"> {keys.length} properties </span>
+        <span className="text-gray-500 dark:text-gray-400">{"}"}</span>
       </span>
     );
 
@@ -151,7 +151,7 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
         {level > 0 ? (
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-800 align-top"
+            className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 align-top"
           >
             {isCollapsed ? <ChevronRight className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
             {summary}
@@ -161,10 +161,10 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
         )}
 
         {!isCollapsed && (
-          <div className="ml-3 mt-1 space-y-1 border-l border-gray-200 pl-3">
+          <div className="ml-3 mt-1 space-y-1 border-l border-gray-200 dark:border-zinc-700 pl-3">
             {keys.map((key) => (
               <div key={key} className="flex items-start gap-1.5">
-                <span className="text-blue-600 font-medium whitespace-nowrap pt-px">"{key}":</span>
+                <span className="text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap pt-px">"{key}":</span>
                 <JsonValue value={value[key]} level={level + 1} />
               </div>
             ))}
@@ -174,7 +174,7 @@ const JsonValue: React.FC<JsonValueProps> = ({ value, level = 0 }) => {
     );
   }
 
-  return <span className="text-gray-600">{String(value)}</span>;
+  return <span className="text-gray-600 dark:text-gray-400">{String(value)}</span>;
 };
 
 const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapsed = false, onCopy }) => {
@@ -207,7 +207,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapse
       {(name || onCopy) && (
         <div className="flex items-center justify-between mb-2">
           {name ? (
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 font-sans">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 font-sans">
               {name}
             </span>
           ) : (
@@ -229,7 +229,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapse
               <Button variant="ghost" size="sm" onClick={handleCopy} className="h-6 px-2 text-xs flex-shrink-0">
                 {copied ? (
                   <>
-                    <Check className="h-3 w-3 text-green-600 mr-1" /> Copied
+                    <Check className="h-3 w-3 text-green-600 dark:text-green-400 mr-1" /> Copied
                   </>
                 ) : (
                   <>
@@ -244,7 +244,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapse
 
       {/* Own only horizontal scroll; let the surrounding container handle
           vertical scroll so we never nest two vertical scrollbars. */}
-      <div ref={containerRef} className="bg-gray-50 border border-gray-200 rounded-md p-3 overflow-x-auto">
+      <div ref={containerRef} className="bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-md p-3 overflow-x-auto">
         {/* min-w-max makes width content-driven so the tree scrolls
             horizontally instead of squeezing deep nodes into thin columns */}
         <JsonScrollContext.Provider value={containerRef}>
@@ -253,7 +253,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapse
               <div className="flex items-start gap-1.5">
                 <button
                   onClick={() => setIsCollapsed(!isCollapsed)}
-                  className="flex items-center gap-1 text-gray-600 hover:text-gray-800 flex-shrink-0 pt-px"
+                  className="flex items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex-shrink-0 pt-px"
                 >
                   {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                 </button>
@@ -261,7 +261,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, name, level = 0, collapse
                   {!isCollapsed ? (
                     <JsonValue key={resetKey} value={data} level={level} />
                   ) : (
-                    <span className="text-gray-400">
+                    <span className="text-gray-400 dark:text-gray-500">
                       {Array.isArray(data) ? `[${data.length} items]` : `{${Object.keys(data).length} properties}`}
                     </span>
                   )}

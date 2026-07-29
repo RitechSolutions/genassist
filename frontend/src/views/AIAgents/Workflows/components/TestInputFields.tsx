@@ -38,7 +38,7 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
 }) => {
   if (inputFields.length === 0) {
     return (
-      <div className="text-sm text-gray-500 italic">
+      <div className="text-sm text-muted-foreground italic">
         No variables found in node configuration or inputSchema
       </div>
     );
@@ -66,7 +66,7 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
                   onChange={(e) =>
                     onTypeChange(field.id, e.target.value as SchemaType)
                   }
-                  className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  className="text-xs border border-border rounded px-1.5 py-1 bg-card text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-300"
                   disabled={isLoading}
                 >
                   {SCHEMA_TYPES.map((t) => (
@@ -75,11 +75,11 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
                     </option>
                   ))}
                 </select>
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
                   {field.source || "config"}
                 </span>
                 {isPrefilled && (
-                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200 dark:text-blue-400 dark:bg-blue-500/15 dark:border-blue-500/30">
                     Prefilled
                   </span>
                 )}
@@ -123,11 +123,11 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
                   }
                   disabled={isLoading}
                   className={`flex-1 font-mono text-xs ${
-                    isPrefilled ? "border-blue-300 bg-blue-50" : ""
+                    isPrefilled ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15" : ""
                   }`}
                   rows={3}
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {currentType === "object"
                     ? 'Enter a valid JSON object (e.g., {"key": "value"})'
                     : 'Enter a valid JSON array (e.g., ["item1", "item2"])'}
@@ -161,7 +161,7 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
                 }
                 disabled={isLoading}
                 className={`flex-1 ${
-                  isPrefilled ? "border-blue-300 bg-blue-50" : ""
+                  isPrefilled ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15" : ""
                 }`}
               />
             )}
@@ -232,12 +232,12 @@ export const STTAudioInput: React.FC<STTAudioInputProps> = ({
       )}
     </div>
     {audioFileName && (
-      <div className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+      <div className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2 dark:text-green-400 dark:bg-green-500/15 dark:border-green-500/30">
         {audioFileName}
       </div>
     )}
     {isRecording && (
-      <div className="flex items-center gap-2 text-sm text-red-600">
+      <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
         <span className="h-2 w-2 bg-red-500 rounded-full animate-pulse" />
         Recording...
       </div>
