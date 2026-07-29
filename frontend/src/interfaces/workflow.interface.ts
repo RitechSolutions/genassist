@@ -42,6 +42,17 @@ export interface WorkflowMinimal {
   version: string;
 }
 
+export interface WorkflowSummary {
+  id: string;
+  name: string;
+  description?: string;
+  version: string;
+  agent_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  updated_by_username?: string;
+}
+
 // Payload for creating a new workflow
 export interface WorkflowCreatePayload {
   name: string;

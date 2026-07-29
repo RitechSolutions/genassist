@@ -45,6 +45,21 @@ class WorkflowMinimal(BaseModel):
     )
 
 
+class WorkflowSummary(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    version: str
+    agent_id: Optional[UUID] = None
+    created_at: datetime
+    updated_at: datetime
+    updated_by_username: Optional[str] = None
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
 class WorkflowInDB(WorkflowBase):
     id: UUID
     user_id: Optional[UUID] = None
