@@ -380,9 +380,9 @@ const EvaluationDetailPage: React.FC = () => {
           </Button>
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <h1 className="text-xl font-semibold text-foreground">{evaluation.name}</h1>
+              <h1 className="text-xl font-semibold text-foreground animate-fade-down">{evaluation.name}</h1>
               {evaluation.description && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground animate-fade-up">
                   {evaluation.description}
                 </p>
               )}

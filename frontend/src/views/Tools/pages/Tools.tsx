@@ -85,8 +85,8 @@ export default function Tools() {
             <div className="max-w-7xl mx-auto space-y-6">
             <header className="flex justify-between items-center">
               <div>
-                <h1 className="text-3xl font-bold">Tools</h1>
-                <p className="text-muted-foreground">
+                <h1 className="text-3xl font-bold animate-fade-down">Tools</h1>
+                <p className="text-muted-foreground animate-fade-up">
                   View and manage the tools
                 </p>
               </div>

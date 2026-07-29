@@ -171,8 +171,8 @@ const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId, onBack }) => {
             </Button>
           )}
           <div className="min-w-0">
-            <h2 className="text-3xl font-bold">Scheduling</h2>
-            <p className="text-muted-foreground font-normal mt-1">
+            <h2 className="text-3xl font-bold animate-fade-down">Scheduling</h2>
+            <p className="text-muted-foreground font-normal mt-1 animate-fade-up">
               Schedule recurring runs of this workflow
             </p>
           </div>

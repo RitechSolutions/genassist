@@ -200,9 +200,9 @@ const DatasetDetailPage: React.FC = () => {
           </Button>
           {suite?.name && (
             <div className="text-right">
-              <h1 className="text-xl font-semibold text-foreground">{suite.name}</h1>
+              <h1 className="text-xl font-semibold text-foreground animate-fade-down">{suite.name}</h1>
               {suite.description && (
-                <p className="text-xs text-muted-foreground">{suite.description}</p>
+                <p className="text-xs text-muted-foreground animate-fade-up">{suite.description}</p>
               )}
             </div>
           )}
