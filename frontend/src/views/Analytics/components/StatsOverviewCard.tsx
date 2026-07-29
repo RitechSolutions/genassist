@@ -7,6 +7,7 @@ interface StatMetric {
   value: string;
   change: number;
   changeType: "increase" | "decrease" | "neutral";
+  description?: string;
 }
 
 interface StatsOverviewCardProps {
@@ -80,6 +81,9 @@ export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCar
                 <div className="text-sm sm:text-base font-medium text-foreground">
                   {metric.label}
                 </div>
+                {metric.description && (
+                  <div className="text-xs text-muted-foreground -mt-2">{metric.description}</div>
+                )}
               </div>
 
               {/* Vertical divider - hidden on mobile, shown on larger screens between items */}

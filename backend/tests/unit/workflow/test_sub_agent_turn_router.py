@@ -237,3 +237,49 @@ async def test_completed_child_discards_child_memory():
     ):
         await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
     discard.assert_called_once_with("t1", "child", "inv1")
+
+
+@pytest.mark.asyncio
+async def test_resume_passes_one_usage_context_to_child_and_parent():
+    router = _make_router()
+    mem = _seed_stack()
+    context = SimpleNamespace(source="chat")
+    child_state = SimpleNamespace(
+        sub_agent_control={"result": "child done"},
+        get_last_node_output=lambda: {"message": "child done"},
+        node_outputs={"child": {"message": "child done"}},
+    )
+    router.workflow_engine.execute_from_node = AsyncMock(
+        return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
+    )
+    run_child = AsyncMock(return_value=child_state)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", run_child),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True, usage_context=context)
+
+    run_child.assert_awaited_once()
+    assert run_child.await_args.kwargs["usage_context"] is context
+    assert "usage_sink" not in run_child.await_args.kwargs
+    router.workflow_engine.execute_from_node.assert_awaited_once()
+    assert router.workflow_engine.execute_from_node.await_args.kwargs["usage_context"] is context
+
+
+@pytest.mark.asyncio
+async def test_child_still_awaiting_does_not_resume_the_parent():
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = _fake_state(
+        {"status": "success", "output": {"message": "need more"}}, last_output={"message": "need more"}
+    )
+    router.workflow_engine.execute_from_node = AsyncMock()
+    run_child = AsyncMock(return_value=child_state)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", run_child),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True, usage_context=SimpleNamespace())
+
+    run_child.assert_awaited_once()
+    router.workflow_engine.execute_from_node.assert_not_awaited()

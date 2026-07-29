@@ -29,6 +29,7 @@ import { Workflow } from "@/interfaces/workflow.interface";
 import { format } from "date-fns";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { formatUsd } from "@/helpers/formatCurrency";
 
 interface AgentStats {
   id: string;
@@ -36,7 +37,7 @@ interface AgentStats {
   conversationsToday: number;
   resolutionRate: number;
   avgResponseTime: string;
-  costPerConversation: number;
+  costPerConversation: number | null;
   description?: string;
   isActive?: boolean;
   welcomeMessage?: string;
@@ -226,6 +227,7 @@ export function AgentDetailsDialog({
 
   const nodeCounts = getNodeCategoryCounts();
   const nodeTypeBadges = getNodeTypesBadges();
+  const showCost = showCostPerConversation && agent.costPerConversation != null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -286,7 +288,7 @@ export function AgentDetailsDialog({
               </div>
 
               <div
-                className={`bg-muted/50 rounded-lg p-4 border border-border ${!showCostPerConversation ? "col-span-2" : ""}`}
+                className={`bg-muted/50 rounded-lg p-4 border border-border ${!showCost ? "col-span-2" : ""}`}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-orange-600 dark:text-orange-400" />
@@ -299,7 +301,7 @@ export function AgentDetailsDialog({
                 </p>
               </div>
 
-              {showCostPerConversation && (
+              {showCost && (
                 <div className="bg-muted/50 rounded-lg p-4 border border-border">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="w-4 h-4 text-purple-600 dark:text-purple-400" />
@@ -308,7 +310,7 @@ export function AgentDetailsDialog({
                     </span>
                   </div>
                   <p className="text-2xl font-semibold text-foreground pl-5">
-                    ${agent.costPerConversation}
+                    {formatUsd(agent.costPerConversation)}
                   </p>
                 </div>
               )}

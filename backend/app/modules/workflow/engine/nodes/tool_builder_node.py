@@ -79,6 +79,7 @@ class ToolBuilderNode(BaseNode):
             input_data={**template, **source_input, **temp_data},
             thread_id=self.get_state().get_thread_id(),
             persist=False,
+            usage_sink=self.get_state().llm_usage,
         )
         self.get_state().update_nodes_from_another_state(state)
 

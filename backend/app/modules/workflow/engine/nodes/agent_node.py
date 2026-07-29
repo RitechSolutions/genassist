@@ -182,6 +182,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             existing_summary = await memory.get_compacted_summary()
             new_summary = await compactor.compact_messages(to_compact, existing_summary, important_entities)
 
+            from app.modules.workflow.engine.llm_usage_tracking import record_compaction_usage
+
+            await record_compaction_usage(self.get_state(), new_summary, self.node_id, compacting_model_id)
+
             # Store compacted summary
             await memory.set_compacted_summary(new_summary)
 
@@ -300,6 +304,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     session=state.get_session(),
                     timeout_seconds=timeout_seconds,
                     inherit_pii=inherit_pii,
+                    usage_sink=state.llm_usage,
                 )
             except asyncio.TimeoutError:
                 if persistent:

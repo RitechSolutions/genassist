@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.dependencies.injector import injector
+from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
@@ -121,6 +122,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_classify")
             parsed = parse_json_object(str(response.content))
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (classify) LLM execution failed: %s", self.node_id, e)
@@ -183,6 +185,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_sentiment")
             parsed = parse_json_object(str(response.content))
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (sentiment) LLM execution failed: %s", self.node_id, e)
@@ -232,6 +235,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_extract")
             parsed = parse_json_object(str(response.content))
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (extract) LLM execution failed: %s", self.node_id, e)
@@ -284,6 +288,7 @@ class NLPNode(BaseNode):
                     HumanMessage(content=input_text),
                 ]
             )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "nlp_summarize")
             summary = str(response.content).strip()
         except Exception as e:  # pylint: disable=broad-except
             logger.error("NLPNode %s (summarize) LLM execution failed: %s", self.node_id, e)

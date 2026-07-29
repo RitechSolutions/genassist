@@ -55,15 +55,10 @@ class AnalyticsAggregationService:
             if since is None:
                 logger.info("No logs found for backfill")
                 return {"agent_stats_upserted": 0, "node_stats_upserted": 0}
-            until = (
-                datetime.combine(to_date, time.max, tzinfo=timezone.utc)
-                if to_date is not None
-                else now
-            )
+            until = datetime.combine(to_date, time.max, tzinfo=timezone.utc) if to_date is not None else now
             affected_dates = await self.repo.get_affected_dates_since(since, until)
             logger.info(
-                f"Backfill: recomputing {len(affected_dates)} dates "
-                f"({from_date or 'earliest'} -> {to_date or 'now'})"
+                f"Backfill: recomputing {len(affected_dates)} dates ({from_date or 'earliest'} -> {to_date or 'now'})"
             )
             return await self._aggregate_dates_streaming(affected_dates)
 
@@ -121,8 +116,7 @@ class AnalyticsAggregationService:
             agent_rows += len(agent_stats)
             node_rows += len(node_stats)
         logger.info(
-            f"Backfill complete: {agent_rows} agent rows, {node_rows} node rows "
-            f"across {len(affected_dates)} dates"
+            f"Backfill complete: {agent_rows} agent rows, {node_rows} node rows across {len(affected_dates)} dates"
         )
         return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows}
 

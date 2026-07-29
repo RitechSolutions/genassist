@@ -156,6 +156,11 @@ class RouterNode(BaseNode):
                     HumanMessage(content=smart_prompt),
                 ]
             )
+            # Record before normalizing
+            from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id, "smart_route")
+
             normalized = str(response.content).strip().lower()
         except Exception as e:
             logger.error(

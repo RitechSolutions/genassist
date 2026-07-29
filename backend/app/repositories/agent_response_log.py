@@ -29,6 +29,7 @@ class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
         output_tokens: int | None = None,
         total_tokens: int | None = None,
         cost_usd: float | None = None,
+        workflow_execution_id: str | None = None,
     ) -> AgentResponseLogModel:
         """
         Create a log entry for a given transcript message with the full agent response.
@@ -41,8 +42,14 @@ class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cost_usd=cost_usd,
+            workflow_execution_id=workflow_execution_id,
         )
-        self.db.add(entry)
+        # A replayed execution hits the partial unique index on workflow_execution_id.
+        # The savepoint rolls back alone, so the first row and the outer transaction
+        # survive, but the IntegrityError still re-raises to the caller
+        async with self.db.begin_nested():
+            self.db.add(entry)
+            await self.db.flush()
         await self.db.commit()
         await self.db.refresh(entry)
         return entry

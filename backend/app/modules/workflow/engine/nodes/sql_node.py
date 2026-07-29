@@ -110,12 +110,23 @@ class SQLNode(BaseNode):
                     query_text = query_text + param_context
                     logger.info(f"Enhanced human query with parameters: {query_text}")
 
-                db_query = await translate_to_query(
-                    db_manager,
-                    llm_model=llm_model,
-                    natural_language_query=query_text,
-                    system_prompt=system_prompt,
-                )
+                usage_out: list = []
+                try:
+                    db_query = await translate_to_query(
+                        db_manager,
+                        llm_model=llm_model,
+                        natural_language_query=query_text,
+                        system_prompt=system_prompt,
+                        usage_out=usage_out,
+                    )
+                finally:
+                    # Translation parses the model's JSON/SQL after the call, so record first
+                    if usage_out:
+                        from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+                        await record_node_llm_usage(
+                            self.get_state(), usage_out[0], self.node_id, provider_id, "sql_translate"
+                        )
             else:
                 if node_parameters:
                     logger.info(

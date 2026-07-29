@@ -124,8 +124,6 @@ const navGroups: NavGroup[] = [
             title: "AI Insights",
             url: "/analytics/ai-insights",
             permissionsRequired: ["read:dashboard"],
-            badge: "NEW",
-            badgeTone: "new",
           },
           {
             title: "Agent Performance",
@@ -136,6 +134,14 @@ const navGroups: NavGroup[] = [
             title: "Node Analytics",
             url: "/analytics/node-analytics",
             permissionsRequired: ["read:dashboard"],
+          },
+          {
+            title: "Cost Explorer",
+            url: "/analytics/llm-usage",
+            permissionsRequired: ["read:dashboard"],
+            feature_flag: FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION,
+            badge: "NEW",
+            badgeTone: "new",
           },
         ],
       },

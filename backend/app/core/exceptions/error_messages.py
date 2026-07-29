@@ -171,6 +171,9 @@ class ErrorKey(Enum):
     SSO_MICROSOFT_USER_DENIED = "SSO_MICROSOFT_USER_DENIED"
     SSO_MICROSOFT_REDIRECT_NOT_ALLOWED = "SSO_MICROSOFT_REDIRECT_NOT_ALLOWED"
     SSO_MICROSOFT_NOT_CONFIGURED = "SSO_MICROSOFT_NOT_CONFIGURED"
+    LLM_USAGE_CONTROL_NOT_FOUND = "LLM_USAGE_CONTROL_NOT_FOUND"
+    LLM_USAGE_CAPTURE_NOT_ENABLED = "LLM_USAGE_CAPTURE_NOT_ENABLED"
+    LLM_COST_RATE_ALREADY_EXISTS = "LLM_COST_RATE_ALREADY_EXISTS"
 
 
 ERROR_MESSAGES = {
@@ -339,6 +342,9 @@ ERROR_MESSAGES = {
         ErrorKey.SSO_MICROSOFT_USER_DENIED: "Your account is not provisioned for GenAssist. Contact an administrator.",
         ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED: "SSO redirect target is not allowed by server configuration.",
         ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED: "Microsoft SSO is enabled but required settings are missing.",
+        ErrorKey.LLM_USAGE_CONTROL_NOT_FOUND: "LLM usage control state is not initialized.",
+        ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED: "LLM usage capture must be activated first.",
+        ErrorKey.LLM_COST_RATE_ALREADY_EXISTS: "A rate for this provider and model already exists.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",

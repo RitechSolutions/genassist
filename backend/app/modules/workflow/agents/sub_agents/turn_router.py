@@ -7,6 +7,7 @@ from typing import Optional
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.agents.sub_agents import messages
+from app.modules.workflow.usage_context import WorkflowUsageContext
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,18 @@ class SubAgentTurnRouter:
         return any(n.get("type") == "subAgentNode" for n in self.workflow_engine.workflow.get("nodes", []))
 
     async def route_turn(
-        self, session_message: str, thread_id: str, input_data: dict, persist: bool
+        self,
+        session_message: str,
+        thread_id: str,
+        input_data: dict,
+        persist: bool,
+        usage_context: Optional[WorkflowUsageContext] = None,
     ) -> Optional[dict]:
-        """Route a turn into an active sub-agent, or return None to run the root flow"""
+        """Route a turn into an active sub-agent, or return None to run the root flow.
+
+        ``usage_context`` (built by the caller before routing) attributes LLM usage
+        for the resumed child and parent runs to the ledger.
+        """
         from app.modules.workflow.agents.memory import ConversationMemory
         from app.modules.workflow.agents.sub_agents import graph as sub_graph
         from app.modules.workflow.agents.sub_agents import session as sub_session
@@ -48,9 +58,13 @@ class SubAgentTurnRouter:
             await sub_session.clear_stack(memory)
             raise AppException(ErrorKey.SUB_AGENT_SESSION_STALE, status_code=409)
 
-        return await self._run_active_child(session_message, thread_id, input_data, persist, memory, stack)
+        return await self._run_active_child(
+            session_message, thread_id, input_data, persist, memory, stack, usage_context
+        )
 
-    async def _run_active_child(self, session_message, thread_id, input_data, persist, memory, stack):
+    async def _run_active_child(
+        self, session_message, thread_id, input_data, persist, memory, stack, usage_context=None
+    ):
         from app.modules.workflow.agents.sub_agents import orchestrator
         from app.modules.workflow.agents.sub_agents import session as sub_session
         from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY, SubAgentStack
@@ -67,6 +81,7 @@ class SubAgentTurnRouter:
                 session=input_data.get("session"),
                 timeout_seconds=timeout_seconds,
                 inherit_pii=frame.inherit_pii,
+                usage_context=usage_context,
             )
         except asyncio.TimeoutError:
             return self._plain_message(messages.child_timeout(timeout_seconds, retry=True))
@@ -102,6 +117,7 @@ class SubAgentTurnRouter:
             thread_id=thread_id,
             persist=persist,
             registry_managed=True,
+            usage_context=usage_context,
         )
         return self.finalize(state.format_state_as_response())
 

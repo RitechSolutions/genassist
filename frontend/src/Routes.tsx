@@ -11,6 +11,7 @@ import Operators from "./views/Operators";
 import Analytics from "@/views/Analytics";
 import AgentPerformancePage from "@/views/Analytics/pages/AgentPerformancePage";
 import NodeAnalyticsPage from "@/views/Analytics/pages/NodeAnalyticsPage";
+import LlmUsagePage from "@/views/Analytics/pages/LlmUsagePage";
 import ReportedFeedback from "@/views/ReportedFeedback/Index";
 import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
@@ -106,6 +107,9 @@ export const RoutesProvider = () => {
   const showBedrockFineTune = useFeatureFlagVisible(
     FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE
   );
+  const showLlmUsage = useFeatureFlagVisible(
+    FeatureFlagKeys.ANALYTICS.SHOW_COST_PER_CONVERSATION
+  );
   const showTemplateMarketplace = useFeatureFlagVisible(
     FeatureFlagKeys.FEATURE.TEMPLATE_MARKETPLACE
   );
@@ -193,6 +197,18 @@ export const RoutesProvider = () => {
                 <ProtectedRoute requiredPermissions={["read:dashboard"]}>
                   <NodeAnalyticsPage />
                 </ProtectedRoute>
+              ),
+            },
+            {
+              path: "analytics/llm-usage",
+              element: (
+                showLlmUsage ? (
+                  <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                    <LlmUsagePage />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
@@ -611,7 +627,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [showLocalFineTune, showBedrockFineTune, showTemplateMarketplace],
+    [showLocalFineTune, showBedrockFineTune, showLlmUsage, showTemplateMarketplace],
   );
 
   const organizationRouter = useMemo(

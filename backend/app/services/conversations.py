@@ -445,8 +445,12 @@ class ConversationService:
         # Run GPT analysis
         llm_analyst = await self.llm_analyst_service.get_by_id(resolved_analyst_id)
 
+        # Resolve the AI agent for analyst-cost attribution
+        conversation = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(conversation_id)
+        agent_id = conversation.agent_id if conversation else None
+
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(message_type_segments,
-                llm_analyst=llm_analyst, conversation_id=conversation_id)
+                llm_analyst=llm_analyst, conversation_id=conversation_id, agent_id=agent_id)
         return gpt_analysis
 
 
@@ -530,9 +534,13 @@ class ConversationService:
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id, throw_not_found=False)
 
         if llm_analyst and llm_analyst.is_active:
+            # Load the agent id for cost tracking
+            conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
+                conversation.id)
+            agent_id = conv_with_agent.agent_id if conv_with_agent else None
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
-                        conversation_id=conversation.id))
+                        conversation_id=conversation.id, agent_id=agent_id))
         else:
             # TODO remove after fixing seed
             # Temporary solution to avoid seed missing llm_analyst

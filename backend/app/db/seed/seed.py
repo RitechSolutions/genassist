@@ -3,7 +3,7 @@ import io
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 from uuid import UUID
@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import UploadFile
 from injector import Injector
 from passlib.context import CryptContext
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.utils import hash_api_key
@@ -23,6 +24,7 @@ from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
+from app.db.models.llm_usage import CONTROL_SINGLETON_KEY, LlmUsageControlModel
 from app.db.models.operator import OperatorModel, OperatorStatisticsModel
 from app.db.models.permission import PermissionModel
 from app.db.models.role import RoleModel
@@ -465,6 +467,8 @@ async def seed_data(session: AsyncSession, injector: Injector):
     session.add(api_key)
     await session.commit()
 
+    await seed_llm_usage_control(session)
+
     # Seed tools
     # currency_tool = await seed_tools(session, admin.id, injector)
 
@@ -500,6 +504,19 @@ async def seed_data(session: AsyncSession, injector: Injector):
     await seed_connection_data_for_slack(session, admin.id, injector)
 
     logger.debug("Database seeding complete.")
+
+
+async def seed_llm_usage_control(session: AsyncSession):
+    await session.execute(
+        pg_insert(LlmUsageControlModel)
+        .values(
+            singleton_key=CONTROL_SINGLETON_KEY,
+            capture_enabled=True,
+            capture_started_at=datetime.now(timezone.utc),
+        )
+        .on_conflict_do_nothing(constraint="uq_llm_usage_control_singleton")
+    )
+    await session.commit()
 
 
 async def seed_tools(session: AsyncSession, created_by: UUID, injector: Injector):
