@@ -16,7 +16,7 @@ interface ListProps {
 export function ActiveConversationsList({ items, isLoading, error, onRetry, onClickRow }: ListProps) {
   if (error) {
     return (
-      <div className="p-6 text-red-600 flex items-center justify-between">
+      <div className="p-6 text-red-600 dark:text-red-400 flex items-center justify-between">
         <span>Failed to load conversations.</span>
         {onRetry && (
           <Button variant="outline" onClick={onRetry}>Retry</Button>
@@ -33,10 +33,10 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
     return (
       <div className="p-6 text-muted-foreground flex items-center justify-center min-h-[240px] bg-muted">
         <div className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/70">
-            <MessageSquare className="w-6 h-6 text-gray-500" />
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-background/70">
+            <MessageSquare className="w-6 h-6 text-muted-foreground" />
           </div>
-          <p className="text-sm font-medium text-gray-700">No active conversations match your filters.</p>
+          <p className="text-sm font-medium text-foreground">No active conversations match your filters.</p>
           <p className="text-xs text-muted-foreground mt-1">Adjust sentiment or category to see more conversations.</p>
         </div>
       </div>

@@ -182,7 +182,7 @@ export const WorkflowExecutorDialog: React.FC<
           </SelectContent>
         </Select>
         {workflowName && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Selected: {workflowName}
           </p>
         )}
@@ -191,17 +191,17 @@ export const WorkflowExecutorDialog: React.FC<
       {selectedWorkflowInputSchema && Object.keys(selectedWorkflowInputSchema).length > 0 && (
         <div className="space-y-2">
           <Label className="text-sm font-semibold">Input Parameters</Label>
-          <div className="space-y-3 pl-2 border-l-2 border-gray-200">
+          <div className="space-y-3 pl-2 border-l-2 border-border">
             {Object.entries(selectedWorkflowInputSchema).map(([key, field]: [string, SchemaField]) => (
               <div key={key} className="space-y-1">
                 <Label
                   htmlFor={`param-${key}`}
-                  className="text-xs text-gray-600 flex items-center gap-1"
+                  className="text-xs text-muted-foreground flex items-center gap-1"
                 >
                   {key}
                   {field.required && <span className="text-red-500">*</span>}
                   {field.description && (
-                    <span className="text-gray-400 font-normal">({field.description})</span>
+                    <span className="text-muted-foreground font-normal">({field.description})</span>
                   )}
                 </Label>
                 <DraggableInput
@@ -211,7 +211,7 @@ export const WorkflowExecutorDialog: React.FC<
                   placeholder={`Enter ${key}${field.required ? " (required)" : ""}`}
                   className="text-sm"
                 />
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-muted-foreground">
                   Use {"{{variable}}"} for dynamic values
                 </div>
               </div>
@@ -221,13 +221,13 @@ export const WorkflowExecutorDialog: React.FC<
       )}
 
       {workflowId && selectedWorkflowInputSchema && Object.keys(selectedWorkflowInputSchema).length === 0 && (
-        <div className="text-sm text-gray-500 text-center py-4">
+        <div className="text-sm text-muted-foreground text-center py-4">
           This workflow has no input parameters defined.
         </div>
       )}
 
       {!workflowId && (
-        <div className="text-sm text-gray-500 text-center py-4">
+        <div className="text-sm text-muted-foreground text-center py-4">
           Select a workflow to configure input parameters.
         </div>
       )}

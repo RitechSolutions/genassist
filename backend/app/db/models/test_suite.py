@@ -1,8 +1,9 @@
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -65,10 +66,26 @@ class TestSuiteModel(Base):
 
 class TestCaseModel(Base):
     __tablename__ = "test_cases"
+    __table_args__ = (
+        Index(
+            "ix_test_cases_conversation_turn",
+            "suite_id",
+            "source_conversation_id",
+            "turn_index",
+        ),
+    )
 
     suite_id: Mapped[UUID] = mapped_column(
         ForeignKey("test_suites.id"), nullable=False
     )
+
+    # Source conversation for imported cases; null for manual and legacy cases
+    source_conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True, index=True
+    )
+
+    # Position of this turn within its source conversation
+    turn_index: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     # Free-form scenario tags, e.g. ["refund", "es-ES"]
     tags: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
@@ -153,8 +170,44 @@ class TestResultModel(Base):
     # { technique_key: { "score": float|bool, "passed": bool, "comment": str|null } }
     metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # scored | execution_failed | scoring_failed | skipped; null for legacy rows
+    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     run = relationship("TestRunModel", back_populates="results")
     case = relationship("TestCaseModel", back_populates="results")
+
+
+class TestToolRuleResultModel(Base):
+    """Canonical per-rule outcome for Tool Usage evaluation.
+
+    One row per rule per scope unit: a specific/every-turn rule stores case_id; a
+    conversation rule stores source_conversation_id. ``details`` snapshots the
+    evaluated rule so historical results stay readable after config changes.
+    """
+
+    __tablename__ = "test_tool_rule_results"
+    __table_args__ = (
+        Index("ix_test_tool_rule_results_run", "run_id"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("test_runs.id"), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    # Turn-scoped rules point at a case; conversation-scoped rules at a conversation.
+    case_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("test_cases.id"), nullable=True
+    )
+    source_conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+
+    # passed | failed | not_evaluated
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Snapshot of the evaluated rule + observed/missing/forbidden tools.
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 

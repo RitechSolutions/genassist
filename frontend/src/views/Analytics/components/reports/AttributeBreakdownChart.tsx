@@ -96,7 +96,7 @@ export const AttributeBreakdownChart = ({
   const chartHeight = Math.max(CHART_MIN_HEIGHT, data.length * ROW_HEIGHT + CHART_PADDING);
 
   return (
-    <Card className={cn("mt-6 bg-white", analyticsFadeUpClass)}>
+    <Card className={cn("mt-6 bg-card dark:bg-zinc-900", analyticsFadeUpClass)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div>
           <CardTitle className="text-base font-semibold">
@@ -178,10 +178,10 @@ export const AttributeBreakdownChart = ({
             </ResponsiveContainer>
 
             {/* Metrics table */}
-            <div className="mt-6 rounded-lg border border-gray-100 overflow-hidden">
+            <div className="mt-6 rounded-lg border border-border overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50/80">
+                  <tr className="bg-muted/80">
                     <th className="text-left py-2.5 px-4 font-medium text-muted-foreground capitalize">
                       {selectedKey}
                     </th>
@@ -210,7 +210,7 @@ export const AttributeBreakdownChart = ({
                     return (
                       <tr
                         key={row.value}
-                        className="border-t border-gray-100 hover:bg-gray-50/50"
+                        className="border-t border-border hover:bg-muted/50"
                       >
                         <td className="py-2.5 px-4 font-medium">{row.value}</td>
                         <td className="text-right py-2.5 px-4 tabular-nums">

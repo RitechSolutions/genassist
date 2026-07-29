@@ -16,8 +16,10 @@ from app.repositories.ml_model_pipeline import (
     MLModelPipelineRunRepository,
     MLModelPipelineArtifactRepository,
 )
+from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models.ml_model_pipeline import PipelineRunStatus, ArtifactType
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
@@ -145,7 +147,11 @@ async def execute_pipeline_run_async(run_id: UUID):
                 # Execute workflow
                 thread_id = f"pipeline_run_{run_id}"
                 state = await workflow_engine.execute_from_node(
-                    input_data=input_data, thread_id=thread_id
+                    input_data=input_data,
+                    thread_id=thread_id,
+                    usage_context=WorkflowUsageContext(
+                        source="ml", workflow_id=coerce_uuid(workflow_engine.workflow_id)
+                    ),
                 )
 
                 # Extract execution results

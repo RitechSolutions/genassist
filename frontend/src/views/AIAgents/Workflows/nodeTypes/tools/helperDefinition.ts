@@ -96,6 +96,94 @@ export const WEB_SCRAPER_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const WEB_SEARCH_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Web Search node searches the web and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Result page fetches block private networks, localhost, and cloud metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Web Search node when you need to:",
+      bullets: [
+        "Find current web results for a query inside a workflow",
+        "Feed ranked results and snippets to a downstream language model",
+        "Research within specific domains",
+        "Pull the most query-relevant page content from top results in advanced depth",
+        "Replace a paid search API for simple lookups",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the Query (templatable with {{field}}).",
+        "Set Max Results (up to 20).",
+        "Choose the Search Depth (Basic snippets, or Advanced page content).",
+        "Optionally set Advanced options: domains, content budgets and caching.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.text}} — numbered, LLM-ready digest of the results",
+        "{{source.results}} — ranked array of {title, url, snippet, content, position, domain}",
+        "{{source.count}} — number of results returned",
+        "{{source.success}} — whether the search succeeded",
+        "{{source.enrichedCount}} — results whose content was fetched (advanced depth)",
+        "{{source.partial}} — true when some planned enrichment was skipped",
+      ],
+    },
+    {
+      title: "Notes",
+      bullets: [
+        "Max Results is an upper bound — filtering may return fewer.",
+        "Include Domain supports a single domain in this version.",
+        "Advanced depth enriches only the top results within a total content budget and may fall back to snippets, setting partial.",
+        "If DuckDuckGo is temporarily unavailable, up to two results are served from the Mwmbl community index and flagged in the result warnings.",
+      ],
+    },
+  ],
+};
+
+export const HTML_TO_IMAGE_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The HTML to Image node renders an HTML string in a headless browser and returns a hosted PNG image. It is useful for turning generated markup, templates or reports into shareable images. It runs without any external service and blocks private, loopback and metadata hosts.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the HTML to Image node when you need to:",
+      bullets: [
+        "Render an HTML snippet or template as an image",
+        "Turn a generated report or receipt into a PNG",
+        "Create shareable image previews from markup",
+        "Feed a rendered screenshot to a downstream node",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Enter the Node Name.",
+        "Enter the HTML to render, or connect an upstream node that provides it.",
+        "Choose the Capture Mode (Full Page or Viewport).",
+        "Set the Viewport Width and Height.",
+        "Optionally set an extra Wait For delay before capturing.",
+        "Save the node configuration.",
+      ],
+    },
+    {
+      title: "Outputs",
+      body: "Downstream nodes read fields with {{source.field}}:",
+      bullets: [
+        "{{source.image}} — hosted URL of the rendered PNG",
+        "{{source.image_file_id}} — file id of the stored image",
+      ],
+    },
+  ],
+};
+
 export const OPENAPI_EXPLORER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The OpenAPI Explorer node helps explore and work with OpenAPI-based services inside a workflow. It can be used to inspect available operations, test requests, and integrate documented API capabilities in a guided way.",

@@ -12,7 +12,7 @@ const renderInline = (line: string, key: number) => {
         }
         if (part.startsWith("`") && part.endsWith("`")) {
           return (
-            <code key={i} className="rounded bg-gray-100 px-1 py-0.5 text-xs font-mono text-[hsl(var(--brand-600))]">
+            <code key={i} className="rounded bg-muted px-1 py-0.5 text-xs font-mono text-[hsl(var(--brand-600))]">
               {part.slice(1, -1)}
             </code>
           );

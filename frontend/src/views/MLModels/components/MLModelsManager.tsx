@@ -380,7 +380,7 @@ const MLModelsManager: React.FC = () => {
           )}
 
           {success && (
-            <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 rounded-md">
+            <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 rounded-md">
               <CheckCircle2 className="h-4 w-4" />
               <p className="text-sm font-medium">{success}</p>
             </div>
@@ -388,7 +388,7 @@ const MLModelsManager: React.FC = () => {
 
           <form onSubmit={handleSubmit}>
             <div className="space-y-6">
-              <div className="rounded-lg border bg-white">
+              <div className="rounded-lg border bg-card dark:bg-zinc-900">
                 {/* Basic Information */}
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -396,7 +396,7 @@ const MLModelsManager: React.FC = () => {
                       <h3 className="text-lg font-semibold">
                         Basic Information
                       </h3>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         Basic information about the ML model.
                       </p>
                     </div>
@@ -552,14 +552,14 @@ const MLModelsManager: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="-mx-6 my-0 border-t border-gray-200" />
+                <div className="-mx-6 my-0 border-t border-border" />
 
                 {/* Features Section */}
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                       <h3 className="text-lg font-semibold">Features</h3>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         Enter comma-separated feature names for the model.
                       </p>
                     </div>
@@ -572,7 +572,7 @@ const MLModelsManager: React.FC = () => {
                           placeholder="Enter features separated by commas (e.g., age, income, credit_score)"
                         />
                         {formData.features.length > 0 && (
-                          <p className="text-sm text-gray-500 mt-2">
+                          <p className="text-sm text-muted-foreground mt-2">
                             {formData.features.length} feature{formData.features.length !== 1 ? 's' : ''} defined: {formData.features.join(', ')}
                           </p>
                         )}
@@ -581,7 +581,7 @@ const MLModelsManager: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="-mx-6 my-0 border-t border-gray-200" />
+                <div className="-mx-6 my-0 border-t border-border" />
 
                 {/* Inference Parameters Section */}
                 <div className="p-6">
@@ -590,7 +590,7 @@ const MLModelsManager: React.FC = () => {
                       <h3 className="text-lg font-semibold">
                         Inference Parameters
                       </h3>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         Define parameter names and their default values for inference.
                       </p>
                     </div>
@@ -598,7 +598,7 @@ const MLModelsManager: React.FC = () => {
                     <div className="md:col-span-2 space-y-4">
                       <div className="space-y-3">
                         {inferenceParamsKV.length === 0 && (
-                          <p className="text-sm text-gray-500">No parameters defined yet.</p>
+                          <p className="text-sm text-muted-foreground">No parameters defined yet.</p>
                         )}
                         {inferenceParamsKV.map((item, index) => (
                           <div key={index} className="grid grid-cols-12 gap-2 items-center">
@@ -662,8 +662,8 @@ const MLModelsManager: React.FC = () => {
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <h2 className="text-2xl sm:text-3xl font-bold">ML Models</h2>
-                <p className="text-zinc-400 font-normal">
+                <h2 className="text-2xl sm:text-3xl font-bold animate-fade-down">ML Models</h2>
+                <p className="text-muted-foreground font-normal animate-fade-up">
                   Manage machine learning model definitions
                 </p>
               </div>
@@ -674,7 +674,7 @@ const MLModelsManager: React.FC = () => {
                     onValueChange={(value) => setTypeFilter(value)}
                     defaultValue="all"
                   >
-                    <SelectTrigger className="w-full sm:min-w-32 bg-white">
+                    <SelectTrigger className="w-full sm:min-w-32 bg-card">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -711,24 +711,24 @@ const MLModelsManager: React.FC = () => {
             )}
 
             {success && (
-              <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 rounded-md">
+              <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 rounded-md">
                 <CheckCircle2 className="h-4 w-4" />
                 <p className="text-sm font-medium">{success}</p>
               </div>
             )}
 
-            <div className="rounded-lg border bg-white overflow-hidden">
+            <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
               {loading ? (
                 <PageListSkeleton variant="rich" bordered={false} />
               ) : filteredItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                  <div className="rounded-full bg-gray-100 p-4">
-                    <Brain className="h-12 w-12 text-gray-400" />
+                  <div className="rounded-full bg-muted p-4">
+                    <Brain className="h-12 w-12 text-muted-foreground" />
                   </div>
                   <h3 className="font-medium text-lg">
                     {searchQuery ? "No ML models found" : "No ML models yet"}
                   </h3>
-                  <p className="text-sm text-gray-500 max-w-md px-4">
+                  <p className="text-sm text-muted-foreground max-w-md px-4">
                     {searchQuery
                       ? "Try adjusting your search query or filters."
                       : "ML models let you configure and run inference pipelines. Create your first ML model to get started."}
@@ -743,11 +743,11 @@ const MLModelsManager: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-border">
                   {filteredItems.map((item) => (
                     <div
                       key={item.id}
-                      className="px-4 py-4 sm:px-6 hover:bg-gray-50 cursor-pointer transition-colors"
+                      className="px-4 py-4 sm:px-6 hover:bg-muted cursor-pointer transition-colors"
                       onClick={(e) => {
                         // Don't navigate if clicking on buttons
                         if ((e.target as HTMLElement).closest('button')) {
@@ -762,14 +762,14 @@ const MLModelsManager: React.FC = () => {
                             <h4 className="text-base sm:text-lg font-semibold break-words">
                               {item.name}
                             </h4>
-                            <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">
+                            <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-500/20 dark:text-blue-400">
                               {getModelTypeLabel(item.model_type)}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-muted-foreground">
                             {item.description}
                           </p>
-                          <div className="flex flex-wrap gap-3 text-sm text-gray-500 mt-1">
+                          <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mt-1">
                             <span>
                               <strong>Target:</strong> {item.target_variable}
                             </span>

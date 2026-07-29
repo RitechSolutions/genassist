@@ -8,6 +8,7 @@ from uuid import UUID
 
 from celery import shared_task
 
+from app.core.config.settings import settings
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
 from app.tasks.base import create_task_wrapper, run_async_in_celery
 from app.core.tenant_scope import get_tenant_context
@@ -89,6 +90,11 @@ def execute_test_suite_run_task(
     """
     logger.info("Starting test suite run execution: %s (tenant: %s)", run_id, tenant_id)
     set_tenant_context(tenant_id)
+    # Forces get_tenant_engine() onto the NullPool ("_background") engine instead of
+    # the pooled one, so this task never reuses a connection whose event loop
+    # run_async_in_celery already closed (a stale pooled connection hangs silently
+    # rather than erroring — see the ml-worker asyncio-loop crash history).
+    settings.BACKGROUND_TASK = True
     try:
         async def _run():
             async def task(**kwargs):
@@ -115,3 +121,4 @@ def execute_test_suite_run_task(
         raise
     finally:
         clear_tenant_context()
+        settings.BACKGROUND_TASK = False

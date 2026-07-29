@@ -4,10 +4,17 @@ LLM pricing: database-backed rates (llm_cost_rates) with static fallback (USD pe
 DB rows override static defaults for the same provider/model keys.
 """
 
-from typing import Dict
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Dict, Optional
 
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
+
+_BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|us-gov)\.")
 
 # Static fallback when DB is empty or missing a row (also used before first migration).
 STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
@@ -52,6 +59,21 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
 DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
 
 
+class PricingStatus(str, Enum):
+    CONFIGURED = "configured"  # tenant-managed llm_cost_rates row
+    FALLBACK = "fallback"  # bundled static rate table
+    UNPRICED = "unpriced"  # no matching rate; cost must stay NULL
+    LEGACY_ESTIMATE = "legacy_estimate"  # old cost copied during backfill; not calculated at runtime
+
+
+@dataclass(frozen=True)
+class PricingResolution:
+    status: PricingStatus
+    input_per_1k: Optional[Decimal]
+    output_per_1k: Optional[Decimal]
+    matched_model_key: Optional[str]
+
+
 def _normalize_model_name(model: str) -> str:
     if not model:
         return ""
@@ -67,6 +89,7 @@ def _merged_provider_pricing(provider_key: str, tenant: str) -> Dict[str, Dict[s
 
 
 def find_pricing(provider: str, model: str) -> Dict[str, float]:
+    """Response-cost/display helper: float rates, DEFAULT_PRICING when unknown"""
     tenant = get_tenant_context()
     provider_key = (provider or "").lower()
     model_key = _normalize_model_name(model)
@@ -88,3 +111,74 @@ def find_pricing(provider: str, model: str) -> Dict[str, float]:
     if default_row:
         return default_row.copy()
     return DEFAULT_PRICING.copy()
+
+
+def _rate_pair(row: Any) -> Optional[tuple[Decimal, Decimal]]:
+    """Coerce one rate row to Decimals, or None when it can't be priced honestly"""
+    if not isinstance(row, Mapping):
+        return None
+    try:
+        rates = (Decimal(str(row["input_per_1k"])), Decimal(str(row["output_per_1k"])))
+    except (KeyError, TypeError, ArithmeticError, ValueError):
+        return None
+    if any(r.is_nan() or r.is_infinite() or r < 0 for r in rates):
+        return None
+    return rates
+
+
+def _exact_or_longest_prefix(model_key: str, table: Mapping[str, Any]) -> Optional[str]:
+    if not model_key:
+        return None
+    if model_key in table and not model_key.startswith("_"):
+        return model_key
+    prefixes = [key for key in table if not key.startswith("_") and model_key.startswith(key)]
+    return max(prefixes, key=len) if prefixes else None
+
+
+def _match_bedrock_region_agnostic(model_key: str, table: Mapping[str, Any]) -> Optional[str]:
+    """Match a region-prefixed Bedrock model against region-stripped rate keys"""
+    base = _BEDROCK_REGION_PREFIX.sub("", model_key)
+    if not base:
+        return None
+    # Sorted so two region variants of one model always resolve the same way
+    candidates = [(_BEDROCK_REGION_PREFIX.sub("", key), key) for key in sorted(table) if not key.startswith("_")]
+    exact = [key for stripped, key in candidates if stripped == base]
+    if exact:
+        return exact[0]
+    prefixed = [(stripped, key) for stripped, key in candidates if stripped and base.startswith(stripped)]
+    if prefixed:
+        return max(prefixed, key=lambda pair: len(pair[0]))[1]
+    return None
+
+
+def resolve_pricing(
+    provider: str,
+    model: str,
+    configured: Optional[Mapping[str, Mapping[str, Any]]] = None,
+) -> PricingResolution:
+    """Resolve one call's rate for the ledger and report where it came from"""
+    provider_key = (provider or "").strip().lower()
+    model_key = _normalize_model_name(model)
+
+    configured_table = (configured or {}).get(provider_key) or {}
+    bundled_table = STATIC_LLM_PRICING_FALLBACK.get(provider_key, {})
+    layers = ((configured_table, PricingStatus.CONFIGURED), (bundled_table, PricingStatus.FALLBACK))
+
+    matchers = [_exact_or_longest_prefix]
+    if provider_key == "bedrock":
+        matchers.append(_match_bedrock_region_agnostic)
+
+    for matcher in matchers:
+        for table, status in layers:
+            matched_key = matcher(model_key, table)
+            if matched_key is None:
+                continue
+            rates = _rate_pair(table[matched_key])
+            if rates is not None:
+                return PricingResolution(status, rates[0], rates[1], matched_key)
+
+    default_rates = _rate_pair(configured_table.get("_default"))
+    if default_rates is not None:
+        return PricingResolution(PricingStatus.CONFIGURED, default_rates[0], default_rates[1], "_default")
+
+    return PricingResolution(PricingStatus.UNPRICED, None, None, None)

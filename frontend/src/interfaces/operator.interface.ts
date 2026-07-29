@@ -1,4 +1,5 @@
 export type Operator = {
+  id?: string;
   firstName: string;
   lastName: string;
   avatar?: string | null;

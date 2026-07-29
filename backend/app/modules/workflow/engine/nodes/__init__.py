@@ -12,6 +12,7 @@ from .data_mapper_node import DataMapperNode
 from .file_reader_node import FileReaderNode
 from .finalize_conversation_node import FinalizeConversationNode
 from .gmail_tool_node import GmailToolNode
+from .html_to_image_node import HtmlToImageNode
 from .guardrail_nli_node import GuardrailNliNode
 from .guardrail_provenance_node import GuardrailProvenanceNode
 from .create_workflow_schedule_node import CreateWorkflowScheduleNode
@@ -37,11 +38,13 @@ from .set_state_node import SetStateNode
 from .slack_tool_node import SlackToolNode
 from .stt_node import STTNode
 from .sql_node import SQLNode
+from .sub_agent_node import SubAgentNode
 from .thread_rag_node import ThreadRAGNode
 from .tool_builder_node import ToolBuilderNode
 from .tts_node import TTSNode
 from .voice_agent_node import VoiceAgentNode
 from .web_scraper_node import WebScraperNode
+from .web_search_node import WebSearchNode
 from .whatsapp_tool_node import WhatsAppToolNode
 from .workflow_executor_node import WorkflowExecutorNode
 from .zendesk_tool_node import ZendeskToolNode
@@ -69,6 +72,7 @@ __all__ = [
     "ZendeskToolNode",
     "SalesforceToolNode",
     "SQLNode",
+    "SubAgentNode",
     "AggregatorNode",
     "JiraNode",
     "MLModelInferenceNode",
@@ -87,6 +91,8 @@ __all__ = [
     "STTNode",
     "VoiceAgentNode",
     "WebScraperNode",
+    "WebSearchNode",
+    "HtmlToImageNode",
     "FinalizeConversationNode",
     "NLPNode",
 ]

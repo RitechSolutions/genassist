@@ -151,7 +151,7 @@ const RunHistoryDialog: React.FC<RunHistoryDialogProps> = ({
                   </div>
 
                   {run.error_message && (
-                    <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                    <div className="mt-2 rounded border border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15 p-2 text-xs text-red-700 dark:text-red-400">
                       {run.error_message}
                     </div>
                   )}

@@ -11,9 +11,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.token_utils import calculate_history_tokens
-from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
@@ -163,6 +163,10 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             existing_summary = await memory.get_compacted_summary()
             new_summary = await compactor.compact_messages(to_compact, existing_summary, important_entities)
 
+            from app.modules.workflow.engine.llm_usage_tracking import record_compaction_usage
+
+            await record_compaction_usage(self.get_state(), new_summary, self.node_id, compacting_model_id)
+
             # Store compacted summary
             await memory.set_compacted_summary(new_summary)
 
@@ -217,9 +221,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
 
                 from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 
-                await merge_llm_usage_from_result(
-                    self.get_state(), result, self.node_id, provider_id
-                )
+                await merge_llm_usage_from_result(self.get_state(), result, self.node_id, provider_id)
                 if isinstance(result, dict) and "llm_usage" in result:
                     result = {k: v for k, v in result.items() if k != "llm_usage"}
                 return result
@@ -242,35 +244,19 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
 
             # Process the input through the model
             response = await llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=message_content)])
-            result = response.content
 
-            # Extract and record token usage
-            usage = extract_usage_from_aimessage(response)
-            if usage:
-                # Attribute usage to the provider that actually answered. With a
-                # fallback chain a different provider may have served the request;
-                # FallbackChatModel stamps its id onto response_metadata.
-                from app.modules.workflow.llm.fallback_chat_model import FALLBACK_PROVIDER_ID_KEY
+            from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 
-                responding_id = (response.response_metadata or {}).get(FALLBACK_PROVIDER_ID_KEY) or provider_id
-                llm_service = injector.get(LlmProviderService)
-                provider_info = await llm_service.get_by_id(responding_id)
-                provider = (provider_info.llm_model_provider or "").lower()
-                model = provider_info.llm_model or ""
-                self.get_state().add_llm_usage(
-                    input_tokens=usage.get("input_tokens", 0),
-                    output_tokens=usage.get("output_tokens", 0),
-                    provider=provider,
-                    model=model,
-                    node_id=self.node_id,
-                )
+            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id)
 
-            return result
+            return response.content
 
         except Exception as e:
             logger.error(f"Error processing LLM node: {str(e)}")
             error_message = f"Error: {str(e)}"
-            return error_message
+            # Preserve the "Error: ..." string as the flow output so downstream
+            # text consumers still receive a string, but record the failure.
+            return node_failure(str(e), output=error_message)
 
     def _convert_attachment_to_base64(self, attachment_local_path: str) -> str:
         """Convert attachment local path to base64"""

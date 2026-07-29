@@ -56,10 +56,10 @@ export function FormDialog({
               >
                 {cancelButtonText}
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 disabled={isLoading}
-                className="px-4 bg-blue-600 hover:bg-blue-700"
+                className="px-4"
               >
                 {isLoading ? (
                   <>

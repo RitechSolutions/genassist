@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp } from "lucide-react";
+import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp, X, ExternalLink } from "lucide-react";
 import { RichInput } from "@/components/richInput";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
@@ -19,7 +19,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import type {
   NodeData,
   NodeHelpContent,
@@ -40,11 +40,19 @@ import {
   defaultHelpHeaderGradient,
   helpHeaderGradientByCategory,
 } from "@/views/AIAgents/Workflows/utils/helpHeaderGradients";
+import { getNodeDocsUrl } from "@/views/AIAgents/Workflows/utils/nodeDocsLinks";
+import { isNewNode } from "@/views/AIAgents/Workflows/utils/newNodes";
 
 interface NodePanelProps {
   isOpen: boolean;
   onClose: () => void;
   onAddNode: (nodeType: string) => void;
+  /** When true, picking a node replaces an existing node instead of adding one. */
+  replaceMode?: boolean;
+  /** Name of the node being replaced (shown in the replace-mode banner). */
+  replaceNodeName?: string;
+  /** Exit replace mode without replacing. */
+  onCancelReplace?: () => void;
   messages?: AssistantMessage[];
   isThinking?: boolean;
   activeConversationalTab?: boolean;
@@ -57,12 +65,16 @@ interface HelpDialogState {
   icon: string;
   category: string;
   helpContent: NodeHelpContent;
+  docsUrl?: string;
 }
 
 const NodePanel: React.FC<NodePanelProps> = ({
   isOpen,
   onClose,
   onAddNode,
+  replaceMode = false,
+  replaceNodeName,
+  onCancelReplace,
   messages = [],
   isThinking = false,
   activeConversationalTab = false,
@@ -281,7 +293,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 key={nodeType.type}
                 className={`${bgColor} border border-border rounded-lg p-[2px] cursor-pointer transition-all duration-200 select-none ${
                   isDragging
-                    ? "opacity-50 scale-95 border-2 border-dashed border-blue-400 bg-blue-50"
+                    ? "opacity-50 scale-95 border-2 border-dashed border-blue-400 bg-blue-50 dark:bg-blue-500/15"
                     : "hover:shadow-sm"
                 }`}
                 onClick={() => onAddNode(nodeType.type)}
@@ -293,9 +305,14 @@ const NodePanel: React.FC<NodePanelProps> = ({
                   <div className="shrink-0 w-4 h-4">
                     {renderIcon(nodeType.icon, `h-4 w-4 ${iconColor}`)}
                   </div>
-                  <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0">
+                  <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0 truncate">
                     {nodeType.label}
                   </p>
+                  {isNewNode(nodeType.type) && (
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                      NEW
+                    </span>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -310,6 +327,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                           categoryLabel[nodeType.category] ?? nodeType.category,
                         icon: nodeType.icon,
                         category: nodeType.category,
+                        docsUrl: getNodeDocsUrl(nodeType.type),
                         helpContent: nodeType.helpContent ?? {
                           intro: nodeType.description,
                           sections: nodeType.shortDescription
@@ -396,13 +414,37 @@ const NodePanel: React.FC<NodePanelProps> = ({
       ></div>
 
       <div
-        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border ${
+        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-background shadow-lg rounded-xl transition-transform duration-300 border ${
           selectedHelp ? "z-40" : "z-[1001]"
         } ${
           isOpen ? "translate-x-0" : "translate-x-[calc(100%+0.5rem)]"
         }`}
       >
         <div className="flex flex-col h-full">
+          {/* Replace-mode banner */}
+          {replaceMode && (
+            <div className="mx-4 mt-4 flex items-start justify-between gap-3 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-2">
+              <div className="min-w-0 text-xs text-foreground">
+                <p className="font-semibold">Replace node</p>
+                <p className="text-muted-foreground">
+                  Pick a node to replace
+                  {replaceNodeName ? ` “${replaceNodeName}”` : " this node"}. Its
+                  connections are kept.
+                </p>
+              </div>
+              {onCancelReplace && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  onClick={onCancelReplace}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Tabs Header */}
           <div className="p-4">
             {showConversationalTab ? (
@@ -447,8 +489,21 @@ const NodePanel: React.FC<NodePanelProps> = ({
                       placeholder="Search nodes..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 h-9 text-sm w-full"
+                      className="pl-9 pr-9 h-9 text-sm w-full"
                     />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery("");
+                          searchInputRef.current?.focus();
+                        }}
+                        aria-label="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center h-4 w-4 rounded-full bg-muted-foreground/40 text-background hover:bg-muted-foreground/60 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 {renderNodeCategories()}
@@ -506,7 +561,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm text-gray-700 leading-relaxed">
+                                <div className="text-sm text-foreground leading-relaxed">
                                   <FormattedText text={msg.text} />
                                 </div>
                                 {msg.actions && msg.actions.length > 0 && (
@@ -516,10 +571,10 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                       const isUpdate = action.type === "update_node";
                                       const Icon = isAdd ? Plus : isUpdate ? Pencil : Trash2;
                                       const colorClass = isAdd
-                                        ? "bg-green-50 text-green-700 border-green-200"
+                                        ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30"
                                         : isUpdate
-                                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                                        : "bg-red-50 text-red-700 border-red-200";
+                                        ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/30"
+                                        : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
                                       const actionKey = `${action.type}-${getActionLabel(action)}`;
                                       return (
                                         <span
@@ -545,7 +600,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                               <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--brand-600))] animate-pulse" />
                             </div>
                           </div>
-                          <div className="text-sm text-gray-400 flex items-center gap-1">
+                          <div className="text-sm text-muted-foreground flex items-center gap-1">
                             <span className="animate-pulse">Thinking</span>
                             <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
                             <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
@@ -567,12 +622,12 @@ const NodePanel: React.FC<NodePanelProps> = ({
                       onKeyDown={handleKeyDown}
                       placeholder="Ask AI to update your workflow..."
                       disabled={isThinking}
-                      className="w-full h-10 bg-white rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
+                      className="w-full h-10 bg-card rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
                     />
                     <button
                       onClick={handleSend}
                       disabled={isThinking || !inputMessage.trim()}
-                      className="absolute right-1.5 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 disabled:opacity-100 disabled:cursor-not-allowed h-7 w-7 flex items-center justify-center transition-opacity"
+                      className="absolute right-1.5 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 dark:disabled:bg-zinc-700 disabled:opacity-100 disabled:cursor-not-allowed h-7 w-7 flex items-center justify-center transition-opacity"
                     >
                       <ArrowUp className="h-3.5 w-3.5 text-white" />
                     </button>
@@ -592,9 +647,9 @@ const NodePanel: React.FC<NodePanelProps> = ({
           }
         }}
       >
-        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-gray-200 shadow-2xl">
+        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-border shadow-2xl">
           {selectedHelp && (
-            <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-white">
+            <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-card">
               <div
                 className={`px-10 pt-10 pb-6 ${
                   helpHeaderGradientByCategory[selectedHelp.category] ??
@@ -625,6 +680,17 @@ const NodePanel: React.FC<NodePanelProps> = ({
                       </Badge>
                     </div>
                   </DialogHeader>
+                  {selectedHelp.docsUrl && (
+                    <a
+                      href={selectedHelp.docsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Docs
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-8">

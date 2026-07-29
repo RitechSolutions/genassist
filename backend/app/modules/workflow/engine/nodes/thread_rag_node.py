@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.agents.rag import ThreadScopedRAG
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class ThreadRAGNode(BaseNode):
         except Exception as e:
             error_msg = f"Failed to get ThreadScopedRAG instance: {str(e)}"
             logger.error(error_msg)
-            return {"error": error_msg}
+            return node_failure(error_msg)
 
         rag_config_overrides = config.get("ragVectorConfig") or None
 
@@ -66,12 +67,12 @@ class ThreadRAGNode(BaseNode):
             else:
                 error_msg = f"Unknown action: {action}. Supported actions: add, retrieve, add_file"
                 logger.error(error_msg)
-                return {"error": error_msg}
+                return node_failure(error_msg)
 
         except Exception as e:
             error_msg = f"Error processing ThreadScopedRAG node: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {"error": error_msg}
+            return node_failure(error_msg)
 
     async def _add_message(
         self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any],
@@ -80,7 +81,7 @@ class ThreadRAGNode(BaseNode):
         """Add a message to chat history"""
         message = config.get("message")
         if not message:
-            return {"error": "message is required for add action"}
+            return node_failure("message is required for add action")
 
         message_id = config.get("message_id")
         if not message_id:
@@ -122,7 +123,7 @@ class ThreadRAGNode(BaseNode):
         """Retrieve relevant context from chat history"""
         query = config.get("query")
         if not query:
-            return {"error": "query is required for retrieve action"}
+            return node_failure("query is required for retrieve action")
 
         top_k = config.get("top_k", 5)
 
@@ -150,7 +151,7 @@ class ThreadRAGNode(BaseNode):
         file_id = config.get("file_id")
 
         if not file_content:
-            return {"error": "file_content is required for add_file action"}
+            return node_failure("file_content is required for add_file action")
 
         await thread_rag.add_file_content(
             chat_id=chat_id,

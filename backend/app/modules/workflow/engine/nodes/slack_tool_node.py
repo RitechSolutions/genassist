@@ -7,6 +7,7 @@ from typing import Dict, Any, cast
 from uuid import UUID
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 from app.modules.integration.slack import SlackConnector
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
@@ -43,7 +44,7 @@ class SlackToolNode(BaseNode):
         if not all([app_settings_id, channel, message]):
             error_msg = "Slack tool: app_settings_id, channel and message are required"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         try:
             # Get app settings from database
@@ -60,18 +61,18 @@ class SlackToolNode(BaseNode):
                     "Slack tool: slack_bot_token not found or invalid in app settings"
                 )
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             # Validate channel and message are strings
             if not isinstance(channel, str):
                 error_msg = "Slack tool: channel must be a string"
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             if not isinstance(message, str):
                 error_msg = "Slack tool: message must be a string"
                 logger.error(error_msg)
-                return {"status": 400, "data": {"error": error_msg}}
+                return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
             # At this point, we know channel and message are strings
             slack_channel: str = cast(str, channel)
@@ -86,4 +87,4 @@ class SlackToolNode(BaseNode):
         except Exception as e:
             error_msg = f"Error sending Slack message: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=500, output={"status": 500, "data": {"error": error_msg}})

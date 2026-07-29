@@ -1,6 +1,7 @@
 const NODE_TYPE_LABELS: Record<string, string> = {
   // LLM
   agentNode: "AI Agent",
+  subAgentNode: "Sub-Agent",
   llmModelNode: "Language Model",
   toolBuilderNode: "Tool Builder",
   mcpNode: "MCP Server",
@@ -13,6 +14,8 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   // Tools
   apiToolNode: "API Connector",
   webScraperNode: "Web Scraper",
+  webSearchNode: "Web Search",
+  htmlToImageNode: "HTML to Image",
   openApiNode: "OpenAPI Explorer",
   knowledgeBaseNode: "Knowledge Query",
   pythonCodeNode: "Python Executor",

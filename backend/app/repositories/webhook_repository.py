@@ -5,6 +5,7 @@ from pydantic import HttpUrl
 from sqlalchemy.orm import joinedload
 from app.db.models.agent import AgentModel
 from app.db.models.webhook import WebhookModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.webhook import WebhookBase, WebhookUpdate
 from sqlalchemy.future import select
 from injector import inject
@@ -14,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 @inject
-class WebhookRepository:
+class WebhookRepository(DbRepository[WebhookModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(WebhookModel, db)
 
     async def create(
         self, webhook_data: WebhookBase, webhook_id: Optional[UUID] = None
@@ -46,7 +47,7 @@ class WebhookRepository:
     async def get_by_id(self, webhook_id: UUID) -> Optional[WebhookModel]:
         """Fetch webhook definition by ID."""
         query = select(WebhookModel).where(
-            WebhookModel.id == webhook_id and WebhookModel.is_deleted == 0
+            WebhookModel.id == webhook_id, WebhookModel.is_deleted == 0
         )
         result = await self.db.execute(query)
         webhook = result.scalars().first()

@@ -144,13 +144,13 @@ const KnowledgeBaseManager: React.FC = () => {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-2xl sm:text-3xl font-bold">Knowledge Base</h2>
-          <p className="text-zinc-400 font-normal">View and manage the knowledge base</p>
+          <h2 className="text-2xl sm:text-3xl font-bold animate-fade-down">Knowledge Base</h2>
+          <p className="text-muted-foreground font-normal animate-fade-up">View and manage the knowledge base</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative">
             <Select value={typeFilter} onValueChange={setTypeFilter} defaultValue="all">
-              <SelectTrigger className="w-full sm:min-w-32 bg-white">
+              <SelectTrigger className="w-full sm:min-w-32 bg-card">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
               <SelectContent>
@@ -183,32 +183,32 @@ const KnowledgeBaseManager: React.FC = () => {
         </div>
       )}
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="rich" bordered={false} />
         ) : filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-            <Database className="h-12 w-12 text-gray-400" />
+            <Database className="h-12 w-12 text-muted-foreground" />
             <h3 className="font-medium text-lg">No knowledge base items found</h3>
-            <p className="text-sm text-gray-500 max-w-sm">
+            <p className="text-sm text-muted-foreground max-w-sm">
               {searchQuery ? 'Try adjusting your search query or ' : ''}add your first knowledge item to start building your knowledge base.
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {filteredItems.map((item) => (
               <div key={item.id} className="px-4 py-4 sm:px-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div className="flex-1 flex flex-col space-y-1">
                     <div className="flex items-center gap-2">
                       <h4 className="text-base sm:text-lg font-semibold break-words">{item.name}</h4>
-                      <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
+                      <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-foreground">
                         {item.type.toUpperCase()}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-500">{item.description}</p>
+                    <p className="text-sm text-muted-foreground">{item.description}</p>
                     {item.type === 'file' && (
-                      <div className="flex items-center text-sm text-gray-500 mt-1">
+                      <div className="flex items-center text-sm text-muted-foreground mt-1">
                         <FileText className="h-4 w-4 mr-1" />
                         <span>
                           {item.files && item.files.length > 0
@@ -220,17 +220,17 @@ const KnowledgeBaseManager: React.FC = () => {
                       </div>
                     )}
                     {item.type === 'text' && item.content && (
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
                         {item.content.substring(0, 100)}
                         {item.content.length > 100 ? '...' : ''}
                       </p>
                     )}
                     {item.type === 'url' && item.urls && item.urls.length > 0 && (
-                      <div className="text-sm text-gray-500 mt-1">
+                      <div className="text-sm text-muted-foreground mt-1">
                         {item.urls.length === 1 ? (
                           <div className="flex items-center">
                             <span>URL: </span>
-                            <a href={item.urls[0]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline ml-1 truncate">
+                            <a href={item.urls[0]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 underline ml-1 truncate">
                               {item.urls[0]}
                             </a>
                           </div>

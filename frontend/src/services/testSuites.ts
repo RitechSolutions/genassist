@@ -64,6 +64,12 @@ export const importCasesFromConversation = (suiteId: string, conversationId: str
     { conversation_id: conversationId, replace },
   );
 
+export const removeConversationFromSuite = (suiteId: string, conversationId: string) =>
+  apiRequest<void>(
+    "DELETE",
+    `${BASE}/suites/${suiteId}/conversations/${conversationId}`,
+  );
+
 export const startTestRun = (suiteId: string, payload: StartTestRunPayload) =>
   apiRequest<TestRun>(
     "POST",

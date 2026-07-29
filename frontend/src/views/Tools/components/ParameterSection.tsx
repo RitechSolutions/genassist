@@ -88,7 +88,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
               </div>
             </div>
             {/* Default + Description */}
-            <div className="grid grid-cols-2 gap-4 border-b border-gray-200 pb-8">
+            <div className="grid grid-cols-2 gap-4 border-b border-border pb-8">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Default Value</label>
                 <RichInput

@@ -18,8 +18,8 @@ interface OnboardingHeroProps {
 }
 
 const UserAvatar = () => (
-  <div className="h-7 w-7 shrink-0 rounded-lg bg-slate-100 flex items-center justify-center">
-    <User className="h-3.5 w-3.5 text-slate-500" />
+  <div className="h-7 w-7 shrink-0 rounded-lg bg-muted flex items-center justify-center">
+    <User className="h-3.5 w-3.5 text-muted-foreground" />
   </div>
 );
 
@@ -58,18 +58,18 @@ export const OnboardingHero = ({
             showCongrats ? "max-h-8 opacity-100" : "max-h-0 opacity-0"
           }`}
         >
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
             Congratulations!
           </span>
         </div>
       )}
 
       {/* Title */}
-      <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{title}</h1>
+      <h1 className="text-2xl font-bold text-foreground tracking-tight">{title}</h1>
 
       {/* Welcome subtitle — only before conversation starts */}
       {!hasMessages && (
-        <p className="text-[15px] text-slate-500 leading-relaxed max-w-lg mx-auto">{subtitle}</p>
+        <p className="text-[15px] text-muted-foreground leading-relaxed max-w-lg mx-auto">{subtitle}</p>
       )}
 
       {/* Chat thread */}
@@ -86,8 +86,8 @@ export const OnboardingHero = ({
             ) : (
               <div key={index} className="flex items-start gap-3 animate-fade-up">
                 <AiAvatar />
-                <div className="rounded-2xl rounded-tl-md bg-white border border-slate-200 px-4 py-2.5 max-w-[85%] shadow-sm">
-                  <div className="text-sm text-slate-700 leading-relaxed">
+                <div className="rounded-2xl rounded-tl-md bg-card border border-border px-4 py-2.5 max-w-[85%] shadow-sm">
+                  <div className="text-sm text-muted-foreground leading-relaxed">
                     <FormattedText text={msg.text} />
                   </div>
                 </div>
@@ -107,13 +107,13 @@ export const OnboardingHero = ({
               type="button"
               onClick={() => onQuickAction(action)}
               disabled={disableQuickActions}
-              className="group inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left shadow-sm transition-all duration-150 hover:border-ai-brand/30 hover:shadow-md hover:shadow-ai-brand/5 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:shadow-sm animate-fade-up"
+              className="group inline-flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-left shadow-sm transition-all duration-150 hover:border-ai-brand/30 hover:shadow-md hover:shadow-ai-brand/5 disabled:opacity-50 disabled:hover:border-border disabled:hover:shadow-sm animate-fade-up"
               style={{ animationDelay: `${index * 80}ms` }}
             >
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-500 group-hover:bg-indigo-50 group-hover:text-ai-brand transition-colors">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground group-hover:bg-indigo-50 group-hover:text-ai-brand transition-colors">
                 {index + 1}
               </span>
-              <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
+              <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
                 {action}
               </span>
             </button>

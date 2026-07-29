@@ -180,6 +180,7 @@ async def execute_agent(
         agent_response = await agent_item.execute(
             session_message=body.text,
             metadata={"thread_id": body.thread_id},
+            source="voice",
         )
         output = agent_response.get("output")
         if not output:

@@ -13,6 +13,7 @@ import { AnalyticsChartCardSkeleton } from "@/components/skeletons";
 import { NodeBreakdownChartEmptyState } from "../AnalyticsEmptyStates";
 import { analyticsFadeUpClass } from "../../constants/animations";
 import { cn } from "@/helpers/utils";
+import { CHART_NEUTRALS } from "@/constants/chartColors";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 
@@ -64,16 +65,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload as AggregatedNode;
   return (
-    <div className="bg-white border border-border rounded-xl shadow-md p-3 text-xs min-w-[160px]">
-      <p className="font-semibold text-zinc-800 mb-2">{label}</p>
+    <div className="bg-card border border-border rounded-xl shadow-md p-3 text-xs min-w-[160px]">
+      <p className="font-semibold text-foreground mb-2">{label}</p>
       <div className="space-y-1">
         <div className="flex justify-between gap-4">
           <span className="text-muted-foreground">Executions</span>
           <span className="font-medium tabular-nums">{d.executions.toLocaleString()}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-emerald-600">Success</span>
-          <span className="font-medium tabular-nums text-emerald-600">{d.success.toLocaleString()}</span>
+          <span className="text-emerald-600 dark:text-emerald-400">Success</span>
+          <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{d.success.toLocaleString()}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-red-400">Failures</span>
@@ -101,17 +102,17 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
   const chartHeight = Math.max(data.length * ROW_HEIGHT + CHART_OVERHEAD, 120);
 
   return (
-    <Card className={cn("bg-white shadow-sm", analyticsFadeUpClass)}>
+    <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <CardTitle className="text-sm font-semibold text-zinc-700">
+          <CardTitle className="text-sm font-semibold text-muted-foreground">
             Node Type Breakdown
           </CardTitle>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-400 inline-block" />
               Total
-              <span className="font-semibold text-zinc-700 ml-0.5">{totalExecutions.toLocaleString()}</span>
+              <span className="font-semibold text-muted-foreground ml-0.5">{totalExecutions.toLocaleString()}</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
@@ -122,7 +123,7 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
               Failures
             </span>
             {truncated && (
-              <span className="text-zinc-400">top {TOP_N} of {all.length}</span>
+              <span className="text-muted-foreground">top {TOP_N} of {all.length}</span>
             )}
           </div>
         </div>
@@ -139,12 +140,12 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
               barCategoryGap="35%"
               barGap={2}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" horizontal={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRALS.grid} horizontal={false} />
               <XAxis
                 type="number"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                tick={{ fontSize: 11, fill: CHART_NEUTRALS.axis }}
                 allowDecimals={false}
               />
               <YAxis
@@ -155,7 +156,7 @@ export function NodeBreakdownChart({ items, loading }: NodeBreakdownChartProps) 
                 tickLine={false}
                 tick={{ fontSize: 11, fill: "#52525b" }}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f4f4f5" }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: CHART_NEUTRALS.grid }} />
               <Bar dataKey="executions" radius={[0, 3, 3, 0]} barSize={8}>
                 {data.map((_, i) => (
                   <Cell key={i} fill="#93c5fd" />

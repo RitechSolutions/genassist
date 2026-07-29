@@ -5,12 +5,13 @@ from uuid import UUID
 from sqlalchemy.orm import joinedload
 from starlette_context import context
 from app.db.models.llm import LlmAnalystModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.llm import LlmAnalystCreate
 
 @inject
-class LlmAnalystRepository:
+class LlmAnalystRepository(DbRepository[LlmAnalystModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(LlmAnalystModel, db)
 
     async def create(self, data: LlmAnalystCreate) -> LlmAnalystModel:
         obj = LlmAnalystModel(**data.model_dump())
@@ -26,7 +27,7 @@ class LlmAnalystRepository:
             .options(
                     joinedload(LlmAnalystModel.llm_provider)
                     )
-            .where(LlmAnalystModel.id == llm_analyst_id and LlmAnalystModel.is_active == 1)
+            .where(LlmAnalystModel.id == llm_analyst_id, LlmAnalystModel.is_active == 1)
         )
         result = await self.db.execute(query)
         return result.scalars().first()
@@ -38,10 +39,6 @@ class LlmAnalystRepository:
         await self.db.commit()
         await self.db.refresh(obj)
         return obj
-
-    async def delete(self, obj: LlmAnalystModel):
-        await self.db.delete(obj)
-        await self.db.commit()
 
     async def get_all(self):
         result = await self.db.execute(

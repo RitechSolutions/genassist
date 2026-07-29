@@ -3,7 +3,9 @@ Auto-layout for generated workflows.
 
 Positions nodes in a left-to-right DAG layout using topological sort.
 Special handling for toolBuilderNode which connects via the tools port
-and should be placed above its target agentNode.
+and should be placed above its target agentNode. Sub-agent children
+(output_sub_agent -> input_sub_agents) are treated the same way: they hang
+off their parent agent rather than sitting in the main flow.
 """
 
 from collections import defaultdict, deque
@@ -47,8 +49,7 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
         src_handle = edge.get("sourceHandle", "output")
         tgt_handle = edge.get("targetHandle", "input")
 
-        # Tool connections are handled separately
-        if src_handle == "output_tool" or tgt_handle == "input_tools":
+        if src_handle in ("output_tool", "output_sub_agent") or tgt_handle in ("input_tools", "input_sub_agents"):
             tool_edges.append(edge)
             continue
 
@@ -75,6 +76,9 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
         tgt_handle = edge.get("targetHandle", "")
 
         if src_handle == "output_tool" and tgt_handle == "input_tools":
+            tool_builder_ids.add(src)
+            tool_agent_targets[src] = tgt
+        elif src_handle == "output_sub_agent" and tgt_handle == "input_sub_agents":
             tool_builder_ids.add(src)
             tool_agent_targets[src] = tgt
         elif src_handle == "starter_processor":
@@ -120,15 +124,17 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
             y = row_idx * Y_SPACING + Y_OFFSET
             positions[nid] = (x, y)
 
-    # Position tool builder nodes and their subflows relative to their agent
-    for tb_id, agent_id in tool_agent_targets.items():
-        if agent_id in positions:
+    pending = set(tool_agent_targets)
+    progress = True
+    while pending and progress:
+        progress = False
+        for tb_id in sorted(pending):
+            agent_id = tool_agent_targets[tb_id]
+            if agent_id not in positions:
+                continue
             agent_x, agent_y = positions[agent_id]
-            # Count how many tool builders target this agent (for vertical stacking)
-            sibling_tools = [
-                tid for tid, aid in tool_agent_targets.items()
-                if aid == agent_id
-            ]
+            # Count how many attachments target this parent
+            sibling_tools = [tid for tid, aid in tool_agent_targets.items() if aid == agent_id]
             tool_index = sibling_tools.index(tb_id)
             tb_x = agent_x - 100
             tb_y = agent_y + 400 + (tool_index * Y_SPACING)
@@ -141,13 +147,17 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
                     subflow_id = edge.get("target", "")
                     if subflow_id in node_ids:
                         positions[subflow_id] = (tb_x + X_SPACING, tb_y)
-        else:
-            # Agent not in main flow, place tool builder at end
-            max_layer = max(layer_groups.keys()) if layer_groups else 0
-            positions[tb_id] = (
-                (max_layer + 1) * X_SPACING + X_OFFSET,
-                Y_OFFSET,
-            )
+
+            pending.discard(tb_id)
+            progress = True
+
+    # Attachments whose parent never got positioned go at the end
+    for tb_id in pending:
+        max_layer = max(layer_groups.keys()) if layer_groups else 0
+        positions[tb_id] = (
+            (max_layer + 1) * X_SPACING + X_OFFSET,
+            Y_OFFSET,
+        )
 
     # Any remaining unpositioned nodes (edge cases)
     unpositioned = [nid for nid in node_ids if nid not in positions]

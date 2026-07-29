@@ -20,9 +20,9 @@ function HtmlBlock({ label, html }: { label: string; html?: string | null }) {
   if (isEmpty) return null;
   return (
     <div>
-      <div className="text-sm font-medium text-gray-700 mb-1">{label}</div>
+      <div className="text-sm font-medium text-muted-foreground mb-1">{label}</div>
       <div
-        className="text-sm text-gray-800 leading-relaxed [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+        className="text-sm text-foreground leading-relaxed [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -74,7 +74,7 @@ export default function TicketDetailPage() {
   if (loading) {
     return (
       <PageLayout>
-        <div className="rounded-lg border bg-white overflow-hidden">
+        <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
           <PageListSkeleton variant="rich" bordered={false} />
         </div>
       </PageLayout>
@@ -84,12 +84,12 @@ export default function TicketDetailPage() {
   if (!ticket) {
     return (
       <PageLayout>
-        <div className="rounded-lg border bg-white flex flex-col items-center justify-center py-16 gap-4 text-center">
-          <div className="rounded-full bg-gray-100 p-4">
-            <LifeBuoy className="h-12 w-12 text-gray-400" />
+        <div className="rounded-lg border bg-card dark:bg-zinc-900 flex flex-col items-center justify-center py-16 gap-4 text-center">
+          <div className="rounded-full bg-muted p-4">
+            <LifeBuoy className="h-12 w-12 text-muted-foreground" />
           </div>
           <h3 className="font-medium text-lg">Ticket not found</h3>
-          <p className="text-sm text-gray-500 max-w-md px-4">
+          <p className="text-sm text-muted-foreground max-w-md px-4">
             This ticket may have been removed or you do not have access to view it.
           </p>
           <Button asChild className="rounded-full">
@@ -110,8 +110,8 @@ export default function TicketDetailPage() {
             </Link>
           </Button>
           <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-bold tracking-tight break-words">{ticket.title}</h2>
-            <div className="flex flex-wrap gap-2 mt-2 items-center text-sm text-gray-500">
+            <h2 className="text-2xl font-bold tracking-tight break-words animate-fade-down">{ticket.title}</h2>
+            <div className="flex flex-wrap gap-2 mt-2 items-center text-sm text-muted-foreground animate-fade-up">
               <TicketStatusBadge status={ticket.status} />
               <span className="capitalize">{ticket.ticket_type}</span>
               {ticket.vote_count > 1 && <span>{ticket.vote_count} reports</span>}
@@ -127,7 +127,7 @@ export default function TicketDetailPage() {
         )}
 
         {ticket.duplicate_of_id && (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Linked duplicate of{" "}
             <Link className="underline font-medium" to={`/help-center/${ticket.duplicate_of_id}`}>
               another ticket
@@ -135,12 +135,12 @@ export default function TicketDetailPage() {
           </p>
         )}
 
-        <div className="rounded-lg border bg-white">
+        <div className="rounded-lg border bg-card dark:bg-zinc-900">
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <h3 className="text-lg font-semibold">Details</h3>
-                <p className="text-sm text-gray-500 mt-1">Issue details submitted to Help Center.</p>
+                <p className="text-sm text-muted-foreground mt-1">Issue details submitted to Help Center.</p>
               </div>
               <div className="md:col-span-2 space-y-5">
                 {ticket.ticket_type === "bug" ? (
@@ -161,26 +161,26 @@ export default function TicketDetailPage() {
             </div>
           </div>
 
-          <div className="border-t border-gray-200" />
+          <div className="border-t border-border" />
 
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <h3 className="text-lg font-semibold">Comments</h3>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   Discussion is synced to Azure DevOps when linked.
                 </p>
               </div>
               <div className="md:col-span-2 space-y-4">
                 {comments.length === 0 ? (
-                  <p className="text-sm text-gray-500">No comments yet. Be the first to reply.</p>
+                  <p className="text-sm text-muted-foreground">No comments yet. Be the first to reply.</p>
                 ) : (
                   <div className="space-y-3">
                     {comments.map((c) => (
-                      <div key={c.id} className="rounded-md border bg-gray-50 p-3 text-sm">
+                      <div key={c.id} className="rounded-md border bg-muted p-3 text-sm">
                         <p className="whitespace-pre-wrap">{c.body}</p>
                         {c.created_at && (
-                          <p className="text-xs text-gray-500 mt-2">
+                          <p className="text-xs text-muted-foreground mt-2">
                             {new Date(c.created_at).toLocaleString()}
                           </p>
                         )}

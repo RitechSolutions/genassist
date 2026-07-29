@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { toast } from "react-hot-toast";
@@ -61,8 +61,6 @@ export function DataSourceCard({
     }
   };
 
-  const headers = ["Name", "Source Type", "Status", "Connection", "Action"];
-
   const getConnectionBadge = (dataSource: DataSource) => {
     const status = ['gmail', 'o365'].includes(dataSource.source_type)
       ? dataSource.connection_data.user_email !== undefined
@@ -96,38 +94,60 @@ export function DataSourceCard({
     );
   };
 
-  const renderRow = (dataSource: DataSource) => (
-    <TableRow key={dataSource.id}>
-      <TableCell className="font-medium break-all">{dataSource.name}</TableCell>
-      <TableCell className="truncate">{dataSource.source_type}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        <Badge variant={dataSource.is_active ? 'default' : 'secondary'}>
-          {dataSource.is_active ? 'Active' : 'Inactive'}
+  const columns: Column<DataSource>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (dataSource) => dataSource.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Source Type",
+      key: "source_type",
+      cell: (dataSource) => dataSource.source_type,
+      className: "truncate",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (dataSource) => (
+        <Badge variant={dataSource.is_active ? "default" : "secondary"}>
+          {dataSource.is_active ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">{getConnectionBadge(dataSource)}</TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Connection",
+      key: "connection",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (dataSource) => getConnectionBadge(dataSource),
+    },
+    {
+      header: "Action",
+      key: "action",
+      cell: (dataSource) => (
         <ActionButtons
           onEdit={() => onEditDataSource?.(dataSource)}
           onDelete={() => handleDeleteClick(dataSource)}
           editTitle="Edit Data Source"
           deleteTitle="Delete Data Source"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filteredDataSources}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No data sources found"
-        searchEmptyMessage="No data sources found matching your search"
+        notFoundMessage="No data sources found matching your search"
       />
 
       <ConfirmDialog

@@ -104,7 +104,7 @@ export const ParameterBadges: FC<ParameterBadgesProps> = ({
           </Badge>
         ))}
       {Object.keys(params || {}).length === 0 && (
-        <span className="text-sm text-gray-400 italic">
+        <span className="text-sm text-muted-foreground italic">
           No variables required
         </span>
       )}
@@ -276,7 +276,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                   Stateful (persists across workflow executions)
                 </label>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 When enabled, this parameter will maintain its value between workflow executions
               </p>
             </div>
@@ -293,7 +293,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                   Use in filter (available for filtering & analytics)
                 </label>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 When enabled, this parameter will be stored as a custom attribute on conversations for filtering and
                 analytics
               </p>
@@ -330,7 +330,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 When enabled, this parameter is still used at runtime, but its value is stored as
                 [{(formData.name || "PARAM_NAME").toUpperCase()}] in messages, response logs and custom attributes
               </p>

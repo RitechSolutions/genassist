@@ -7,6 +7,8 @@ import logging
 import uuid
 from collections import defaultdict
 from contextlib import nullcontext
+from datetime import datetime
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi_injector import RequestScopeFactory
@@ -15,23 +17,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.observability.otel import is_otel_runtime_enabled
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
+from app.core.utils.background_tasks import spawn
+from app.core.utils.date_time_utils import utc_now
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes import (
     AgentNode,
-    ExternalAgentNode,
     AggregatorNode,
     ApiToolNode,
     CalendarEventsNode,
     ChatInputNode,
     ChatOutputNode,
+    CreateWorkflowScheduleNode,
     DataMapperNode,
+    ExternalAgentNode,
     FileReaderNode,
     FinalizeConversationNode,
     GmailToolNode,
-    CreateWorkflowScheduleNode,
     GuardrailNliNode,
     GuardrailProvenanceNode,
+    HtmlToImageNode,
     HumanInTheLoopNode,
     JiraNode,
     KnowledgeToolNode,
@@ -48,29 +53,52 @@ from app.modules.workflow.engine.nodes import (
     SlackToolNode,
     SQLNode,
     STTNode,
+    SubAgentNode,
     TemplateNode,
     ThreadRAGNode,
     ToolBuilderNode,
     TrainDataSourceNode,
-    TTSNode,
     TrainModelNode,
     TrainPreprocessNode,
+    TTSNode,
     VoiceAgentNode,
     WebScraperNode,
+    WebSearchNode,
     WhatsAppToolNode,
     WorkflowExecutorNode,
     ZendeskToolNode,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
+
+
+class MemoryPersistenceError(Exception):
+    """Raised when an awaited memory write fails, leaving the thread incomplete."""
+
+
+def should_persist_to_memory(
+    initial_values: Dict[str, Any], persist: bool, status: str
+) -> bool:
+    """Persist a completed turn on presence of a message field, so an intentionally
+    empty turn and its response still enter memory while a failed run never does."""
+    return bool(persist) and status == "completed" and "message" in initial_values
 
 
 def _sanitize_output_for_memory(output: Any) -> Any:
     """Strip nested audio payloads (base64 blobs) from an output before it is
     persisted to conversation memory. A bare audio dict (e.g. a TTS node's
     output, where the dict itself IS the audio) is kept as-is."""
+    # A sub-agent pause stores a control envelope as the output; persist only the
+    # child's plain question to the root history, not the control JSON
+    if (
+        isinstance(output, dict)
+        and output.get("status") == "awaiting_input"
+        and isinstance(output.get("sub_agent"), dict)
+    ):
+        return output["sub_agent"].get("message", "")
     if (
         isinstance(output, dict)
         and isinstance(output.get("audio"), dict)
@@ -142,8 +170,11 @@ class WorkflowEngine:
         cls._node_registry["sttNode"] = STTNode
         cls._node_registry["voiceAgentNode"] = VoiceAgentNode
         cls._node_registry["webScraperNode"] = WebScraperNode
+        cls._node_registry["webSearchNode"] = WebSearchNode
+        cls._node_registry["htmlToImageNode"] = HtmlToImageNode
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
+        cls._node_registry["subAgentNode"] = SubAgentNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -176,6 +207,7 @@ class WorkflowEngine:
             "humanInTheLoopNode",
             "setStateNode",
             "nlpNode",
+            "webSearchNode",
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
@@ -253,6 +285,10 @@ class WorkflowEngine:
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
+        registry_managed: bool = False,
+        await_persist: bool = False,
+        usage_context: Optional[WorkflowUsageContext] = None,
+        usage_sink: Optional[list] = None,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -262,6 +298,15 @@ class WorkflowEngine:
             input_data: Input data for the workflow
             thread_id: Thread ID for this execution
             persist: Whether to persist conversation to memory
+            registry_managed: True only on the interactive registry path; gates
+                persistent (task/chat) sub-agent delegations
+            await_persist: Wait for the memory write instead of scheduling it in
+                the background. Required when replaying ordered turns so a turn is
+                stored before the next one reads it
+            usage_context: Top-level runs pass this to record LLM usage to the ledger.
+            usage_sink: Nested runs pass a parent list to append their usage into, so
+                a child's usage survives even when the child raises. Mutually exclusive
+                with usage_context; when neither is set, behavior is unchanged.
 
         Returns:
             WorkflowState with execution results
@@ -297,53 +342,121 @@ class WorkflowEngine:
             else nullcontext()
         )
 
+        if usage_sink is not None and usage_context is not None:
+            logger.warning("Both usage_sink and usage_context passed; the sink wins")
+
         with span_cm:
             # Create execution state
+            raised = False
             state = WorkflowState(
                 workflow=self.workflow,
                 thread_id=thread_id or str(uuid.uuid4()),
                 initial_values=initial_values,
+                registry_managed=registry_managed,
             )
 
             try:
-                state.start_execution()
-                state.total_steps = len(self.workflow["nodes"])
-
-                # Execute from the specified node
                 try:
-                    await self._execute_from_node_recursive(
-                        start_node_id, state, set(),
-                        skip_requirement_check=True,
-                    )
+                    state.start_execution()
+                    state.total_steps = len(self.workflow["nodes"])
 
-                    state.complete_execution()
+                    # Execute from the specified node
+                    try:
+                        await self._execute_from_node_recursive(
+                            start_node_id, state, set(),
+                            skip_requirement_check=True,
+                        )
 
-                except WorkflowPausedException as e:
-                    # Workflow paused (e.g. HumanInTheLoop needs user input)
-                    state.output = e.pause_data
-                    state.status = "completed"
-                    state.is_executing = False
+                        state.complete_execution()
 
-                except ValueError as e:
+                    except WorkflowPausedException as e:
+                        # Workflow paused (e.g. HumanInTheLoop needs user input)
+                        state.output = e.pause_data
+                        state.status = "completed"
+                        state.is_executing = False
+
+                    except ValueError as e:
+                        state.fail_execution(str(e))
+
+                except WorkflowPausedException:
+                    pass  # Already handled above
+                except Exception as e:
                     state.fail_execution(str(e))
+                    raise
 
-            except WorkflowPausedException:
-                pass  # Already handled above
-            except Exception as e:
-                state.fail_execution(str(e))
-                raise
-
-            try:
-                if initial_values.get("message") and persist:
-                    asyncio.create_task(
-                        state.get_memory().add_input_output(
+                try:
+                    if should_persist_to_memory(initial_values, bool(persist), state.status):
+                        persistence = state.get_memory().add_input_output(
                             initial_values.get("message", ""),
                             _sanitize_output_for_memory(state.output)
                         )
-                    )
-            except Exception as e:
-                logger.error(f"Error adding message to memory: {e}")
-            return state
+                        if await_persist:
+                            await persistence
+                        else:
+                            asyncio.create_task(persistence)
+                except Exception as e:
+                    logger.error(f"Error adding message to memory: {e}")
+                    # Callers replaying ordered turns depend on this write; the next
+                    # turn would otherwise run with incomplete context
+                    if await_persist:
+                        raise MemoryPersistenceError(str(e)) from e
+                return state
+            except BaseException:
+                raised = True
+                raise
+            finally:
+                if usage_sink is not None:
+                    usage_sink.extend(state.llm_usage)
+                elif usage_context is not None:
+                    outcome = "raised" if raised else "returned"
+                    if getattr(usage_context, "defer_capture", False):
+                        await self._schedule_llm_usage(state, usage_context, outcome)
+                    else:
+                        await self._record_llm_usage_safe(state, usage_context, execution_outcome=outcome)
+
+    async def _schedule_llm_usage(
+        self,
+        state: WorkflowState,
+        usage_context: WorkflowUsageContext,
+        outcome: str,
+    ) -> None:
+        """Take capture off the response path. Falls back to recording inline when
+        the task cannot be scheduled, so the guarantee never drops below today's"""
+        # A HITL resume clears state.llm_usage, so the task reads from a snapshot
+        snapshot = SimpleNamespace(
+            execution_id=state.execution_id,
+            llm_usage=list(state.llm_usage),
+            thread_id=getattr(state, "thread_id", None),
+            status=getattr(state, "status", None),
+        )
+        capture = self._record_llm_usage_safe(
+            snapshot,
+            usage_context,
+            execution_outcome=outcome,
+            occurred_at=utc_now(),
+        )
+        try:
+            spawn(capture, name=f"llm-usage-capture:{state.execution_id}")
+        except Exception:
+            logger.warning("Scheduling LLM usage capture failed; recording inline", exc_info=True)
+            await self._record_llm_usage_safe(state, usage_context, execution_outcome=outcome)
+
+    async def _record_llm_usage_safe(
+        self,
+        state: Any,
+        usage_context: WorkflowUsageContext,
+        execution_outcome: str,
+        occurred_at: Optional[datetime] = None,
+    ) -> None:
+        """Pass usage to the recorder"""
+        try:
+            from app.services.llm_usage_recorder import LlmUsageRecorder
+
+            await LlmUsageRecorder().record_workflow_state(
+                state, usage_context, execution_outcome, occurred_at=occurred_at
+            )
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("LLM usage recording failed", exc_info=True)
 
     def _find_starting_nodes(self) -> List[str]:
         """Find nodes with no incoming edges (starting nodes)."""
@@ -361,6 +474,10 @@ class WorkflowEngine:
         starting_nodes = []
         for node in self.workflow["nodes"]:
             node_id = node["id"]
+            # subAgentNode only runs as a child engine's explicit start node, never
+            # as an inferred entry point of the main flow
+            if node.get("type") == "subAgentNode":
+                continue
             if node_id not in target_edges or not target_edges[node_id]:
                 starting_nodes.append(node_id)
 
@@ -381,7 +498,29 @@ class WorkflowEngine:
         # Check if aggregator requirements are satisfied
         # (skip for the starting node — its upstream nodes may not have run)
         node = self.executable_node(node_id, state)
-        if skip_requirement_check:
+
+        if node.is_deactivated():
+            # The user has deactivated (bypassed) this node in the editor. We do
+            # NOT run its logic. Instead we forward its resolved input straight
+            # through as its output, so downstream nodes — which pull their input
+            # from state.node_outputs — receive the upstream data unchanged, as
+            # if this node were not present. Chains of deactivated nodes compose
+            # because each one's forwarded output feeds the next.
+            if not skip_requirement_check and not node.check_if_requirement_satisfied():
+                # Wait for upstream inputs (e.g. an unfinished parallel branch)
+                # before passing through, mirroring normal-node behavior.
+                logger.debug(
+                    f"Deactivated node {node_id} requirements not satisfied, "
+                    "skipping for now"
+                )
+                return
+            logger.info(
+                f"Node {node_id} is deactivated — forwarding input to next nodes"
+            )
+            node.start_execution()
+            node.set_node_output(node.get_input_from_source())
+            node.complete_execution()
+        elif skip_requirement_check:
             node_output = await self._execute_single_node(node_id, state)
         elif node.check_if_requirement_satisfied():
             node_output = await self._execute_single_node(node_id, state)
@@ -480,6 +619,8 @@ class WorkflowEngine:
 
         next_nodes = []
         for edge in source_edges.get(node_id, []):
+            if edge.get("sourceHandle") == "output_sub_agent":
+                continue
             next_nodes.append(edge["target"])
 
         return next_nodes

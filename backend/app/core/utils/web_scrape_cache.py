@@ -1,7 +1,8 @@
-"""Tenant-scoped, opt-in Redis cache for web-scraper results.
+"""Tenant-scoped Redis cache for web-scraper and web-search node results.
 
 The client is resolved lazily from the injector so there is no import cycle and no request scope is required.
 Every path is wrapped so a cache miss, stale entry, or Redis outage silently degrades to a live fetch.
+Callers share one keyspace format, separated by ``key_prefix`` (defaults to the web-scraper prefix).
 """
 
 import hashlib
@@ -24,7 +25,7 @@ def _redis():
     return injector.get(RedisString)
 
 
-def build_cache_key(url: str, options: dict[str, Any]) -> str:
+def build_cache_key(url: str, options: dict[str, Any], *, key_prefix: str = _KEY_PREFIX) -> str:
     """Tenant-scoped key: same url + options collapse to one entry per tenant.
 
     ``options`` carries request headers, so differing auth hashes to a distinct
@@ -34,16 +35,18 @@ def build_cache_key(url: str, options: dict[str, Any]) -> str:
 
     raw = url + "|" + json.dumps(options, sort_keys=True, default=str)
     digest = hashlib.sha256(raw.encode()).hexdigest()
-    return f"tenant:{get_tenant_context()}:{_KEY_PREFIX}:{digest}"
+    return f"tenant:{get_tenant_context()}:{key_prefix}:{digest}"
 
 
-async def get_cached(url: str, options: dict[str, Any], max_age: int) -> dict[str, Any] | None:
+async def get_cached(
+    url: str, options: dict[str, Any], max_age: int, *, key_prefix: str = _KEY_PREFIX
+) -> dict[str, Any] | None:
     """Return a fresh cached result (with ``cacheState``/``cachedAt``) or ``None``."""
     max_age = min(max_age, _MAX_AGE_CAP)
     if max_age <= 0:
         return None
     try:
-        raw = await _redis().get(build_cache_key(url, options))
+        raw = await _redis().get(build_cache_key(url, options, key_prefix=key_prefix))
         if not raw:
             return None
         payload = json.loads(raw)  # str: RedisString runs with decode_responses
@@ -56,13 +59,17 @@ async def get_cached(url: str, options: dict[str, Any], max_age: int) -> dict[st
         return None
 
 
-async def store(url: str, options: dict[str, Any], max_age: int, result: dict[str, Any]) -> None:
+async def store(
+    url: str, options: dict[str, Any], max_age: int, result: dict[str, Any], *, key_prefix: str = _KEY_PREFIX
+) -> None:
     """Cache a successful result under a self-expiring TTL; no-op otherwise."""
     max_age = min(max_age, _MAX_AGE_CAP)
     if max_age <= 0 or not result.get("success"):
         return
     try:
         payload = {"_cachedAt": time.time(), "result": result}
-        await _redis().set(build_cache_key(url, options), json.dumps(payload, default=str), ex=max_age)
+        await _redis().set(
+            build_cache_key(url, options, key_prefix=key_prefix), json.dumps(payload, default=str), ex=max_age
+        )
     except Exception as exc:
         logger.warning("web scrape cache write failed for %s: %s", url, exc)

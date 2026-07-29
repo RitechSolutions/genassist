@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/button";
-import { Save, Upload, PlayCircle, MoreVertical, History } from "lucide-react";
+import { Download, Upload, MoreVertical, Play } from "lucide-react";
 import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -22,7 +22,6 @@ interface BottomPanelProps {
   onTestWorkflow: (workflow: Workflow) => void;
   onSaveWorkflow?: (workflow: Workflow) => Promise<void>;
   onExecutionStateChange?: (executionState: WorkflowExecutionState) => void;
-  onToggleWorkflowPanel?: () => void;
 }
 
 const BottomPanel: React.FC<BottomPanelProps> = ({
@@ -32,7 +31,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onTestWorkflow,
   onSaveWorkflow,
   onExecutionStateChange,
-  onToggleWorkflowPanel,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -181,7 +179,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   return (
     <>
-      <div className="flex gap-2 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
+      <div className="flex gap-2 bg-background/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
         {onSaveWorkflow && (
           <Button
             onClick={handleSaveToServer}
@@ -205,7 +203,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             !workflow?.nodes?.some((node) => node.type === "chatInputNode")
           }
         >
-          <PlayCircle className="h-4 w-4" />
+          <Play className="h-4 w-4" />
           Test
         </Button>
         <DropdownMenu>
@@ -219,14 +217,8 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {onToggleWorkflowPanel && (
-              <DropdownMenuItem onClick={onToggleWorkflowPanel}>
-                <History className="mr-2 h-4 w-4" />
-                <span>Saved Versions</span>
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem onClick={handleSaveToFile}>
-              <Save className="mr-2 h-4 w-4" />
+              <Download className="mr-2 h-4 w-4" />
               <span>Download</span>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={triggerFileUpload}>

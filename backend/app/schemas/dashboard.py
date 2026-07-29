@@ -54,7 +54,12 @@ class AgentStatsItem(BaseModel):
     conversations_today: int = 0
     resolution_rate: Decimal = Decimal("0.00")
     avg_response_time_ms: int = 0
-    cost: Decimal = Decimal("0.00")
+    # None when the agent has no cost data today (vs 0 for a real zero-cost day),
+    # so the frontend shows cost-per-conversation only when it exists.
+    cost: Optional[Decimal] = None
+    # Canonical priced conversation cost / distinct conversations. Null for an agent
+    # with no conversation today; the frontend shows it only when non-null.
+    cost_per_conversation: Optional[Decimal] = None
     is_active: bool = False
 
     model_config = ConfigDict(from_attributes=True)

@@ -154,7 +154,7 @@ export const ExternalAgentDialog: React.FC<
           placeholder="https://api.example.com/agent"
           className="w-full"
         />
-        <div className="text-xs text-gray-500">Use {"{{field}}"} for dynamic values</div>
+        <div className="text-xs text-muted-foreground">Use {"{{field}}"} for dynamic values</div>
       </div>
 
       <div className="space-y-2">
@@ -201,7 +201,7 @@ export const ExternalAgentDialog: React.FC<
         </Select>
 
         {(authType === "bearer" || authType === "api_key") && (
-          <div className="space-y-2 pl-2 border-l-2 border-gray-200">
+          <div className="space-y-2 pl-2 border-l-2 border-border">
             {authType === "api_key" && (
               <div className="space-y-1">
                 <Label className="text-xs">Header Name</Label>
@@ -226,7 +226,7 @@ export const ExternalAgentDialog: React.FC<
         )}
 
         {authType === "basic" && (
-          <div className="space-y-2 pl-2 border-l-2 border-gray-200">
+          <div className="space-y-2 pl-2 border-l-2 border-border">
             <div className="space-y-1">
               <Label className="text-xs">Username</Label>
               <DraggableInput
@@ -296,14 +296,14 @@ export const ExternalAgentDialog: React.FC<
             placeholder='{"message": "{{source.message}}"}'
             className="font-mono text-xs h-24 resize-none w-full"
           />
-          <div className="text-xs text-gray-500">Use {"{{field}}"} for dynamic values</div>
+          <div className="text-xs text-muted-foreground">Use {"{{field}}"} for dynamic values</div>
         </div>
       )}
 
       {/* Response mapping */}
       <div className="space-y-2">
         <Label>Response Mapping</Label>
-        <div className="text-xs text-gray-500 mb-1">
+        <div className="text-xs text-muted-foreground mb-1">
           Point to where the message lives in the JSON response using dot-notation (e.g. <code>output.text</code>). Use the Python script below if you need to combine fields, add fallback logic, or transform the data.
         </div>
         <div className={`space-y-2 ${mappingScript ? "opacity-40 pointer-events-none" : ""}`}>
@@ -327,7 +327,7 @@ export const ExternalAgentDialog: React.FC<
           </div>
         </div>
         {mappingScript && (
-          <p className="text-xs text-amber-600">Field paths are ignored — Python script is active.</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400">Field paths are ignored — Python script is active.</p>
         )}
       </div>
 
@@ -335,7 +335,7 @@ export const ExternalAgentDialog: React.FC<
       <div className="space-y-2">
         <button
           type="button"
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-muted-foreground"
           onClick={() => setShowAdvanced((v) => !v)}
         >
           {showAdvanced ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -343,22 +343,22 @@ export const ExternalAgentDialog: React.FC<
         </button>
         {showAdvanced && (
           <div className="space-y-2">
-            <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 space-y-2">
+            <div className="text-xs text-muted-foreground bg-muted rounded p-2 space-y-2">
               <div>
-                <p className="font-semibold text-gray-700">When to use this</p>
+                <p className="font-semibold text-muted-foreground">When to use this</p>
                 <p className="mt-0.5">Use this instead of the field paths above when you need to <strong>combine multiple fields</strong>, add <strong>fallback/conditional logic</strong>, or <strong>transform</strong> the response (e.g. extract items from a list). For simple cases where the message is at a known path, the field inputs above are enough.</p>
               </div>
               <div>
-                <p className="font-semibold text-gray-700">How to write it</p>
+                <p className="font-semibold text-muted-foreground">How to write it</p>
                 <ul className="mt-0.5 list-disc list-inside space-y-0.5">
-                  <li><code className="bg-gray-100 px-1 rounded">params["response"]</code> — the full parsed JSON body from the API</li>
-                  <li>Assign <code className="bg-gray-100 px-1 rounded">result</code> — a dict with <code className="bg-gray-100 px-1 rounded">"message"</code> <span className="text-gray-400">(str, required)</span> and <code className="bg-gray-100 px-1 rounded">"steps"</code> <span className="text-gray-400">(list, optional)</span></li>
+                  <li><code className="bg-muted px-1 rounded">params["response"]</code> — the full parsed JSON body from the API</li>
+                  <li>Assign <code className="bg-muted px-1 rounded">result</code> — a dict with <code className="bg-muted px-1 rounded">"message"</code> <span className="text-muted-foreground">(str, required)</span> and <code className="bg-muted px-1 rounded">"steps"</code> <span className="text-muted-foreground">(list, optional)</span></li>
                   <li>When set, this script overrides the field-path mapping above</li>
                 </ul>
               </div>
               <div>
-                <p className="font-semibold text-gray-700">Example</p>
-                <pre className="mt-1 bg-gray-100 rounded p-2 font-mono text-xs overflow-x-auto">{`response = params["response"]
+                <p className="font-semibold text-muted-foreground">Example</p>
+                <pre className="mt-1 bg-muted rounded p-2 font-mono text-xs overflow-x-auto">{`response = params["response"]
 result = {
     "message": response.get("answer") or response["fallback_text"],
     "steps": [s["description"] for s in response.get("reasoning_steps", [])],
@@ -375,7 +375,7 @@ result = {
               width="100%"
               height="100%"
             />
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-muted-foreground">
               When set, this script overrides the field path mapping above.
             </div>
           </div>

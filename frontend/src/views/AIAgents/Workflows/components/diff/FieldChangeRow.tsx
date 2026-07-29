@@ -51,11 +51,11 @@ const ValueLine: React.FC<{ side: 'before' | 'after'; value: unknown }> = ({ sid
   const complex = isObj(value);
 
   return (
-    <div className={cn('flex items-start gap-2 px-2.5 py-1.5', removed ? 'bg-rose-50/50' : 'bg-emerald-50/50')}>
+    <div className={cn('flex items-start gap-2 px-2.5 py-1.5', removed ? 'bg-rose-50/50 dark:bg-rose-500/15' : 'bg-emerald-50/50 dark:bg-emerald-500/15')}>
       <span
         className={cn(
           'mt-px select-none font-mono text-xs font-semibold leading-5',
-          removed ? 'text-rose-500' : 'text-emerald-600'
+          removed ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'
         )}
         aria-hidden="true"
       >
@@ -63,14 +63,14 @@ const ValueLine: React.FC<{ side: 'before' | 'after'; value: unknown }> = ({ sid
       </span>
       <span className="sr-only">{removed ? 'Before:' : 'After:'}</span>
       {complex ? (
-        <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-[11px] leading-5 text-slate-600">
+        <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-[11px] leading-5 text-muted-foreground">
           {JSON.stringify(value, null, 2)}
         </pre>
       ) : (
         <span
           className={cn(
             'min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-xs leading-5',
-            absent ? 'italic text-slate-400' : removed ? 'text-rose-700' : 'text-emerald-700'
+            absent ? 'italic text-muted-foreground' : removed ? 'text-rose-700 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
           )}
         >
           {formatScalar(value)}
@@ -81,7 +81,7 @@ const ValueLine: React.FC<{ side: 'before' | 'after'; value: unknown }> = ({ sid
 };
 
 const StackedDiff: React.FC<{ before: unknown; after: unknown }> = ({ before, after }) => (
-  <div className="divide-y divide-slate-100">
+  <div className="divide-y divide-border">
     <ValueLine side="before" value={before} />
     <ValueLine side="after" value={after} />
   </div>
@@ -97,11 +97,11 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({ change, className }) =>
   }, [change.before, change.after]);
 
   return (
-    <div className={cn('overflow-hidden rounded-md border border-slate-200 bg-white', className)}>
-      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-2.5 py-1">
-        <span className="font-mono text-[11px] font-medium text-slate-600">{change.key}</span>
+    <div className={cn('overflow-hidden rounded-md border border-border bg-card', className)}>
+      <div className="flex items-center justify-between border-b border-border bg-muted/80 px-2.5 py-1">
+        <span className="font-mono text-[11px] font-medium text-muted-foreground">{change.key}</span>
         {leaves && leaves.length > 0 && (
-          <span className="text-[10px] tabular-nums text-slate-400">
+          <span className="text-[10px] tabular-nums text-muted-foreground">
             {leaves.length} {leaves.length === 1 ? 'change' : 'changes'}
           </span>
         )}
@@ -109,16 +109,16 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({ change, className }) =>
 
       {leaves ? (
         leaves.length > 0 ? (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-border">
             {leaves.map((leaf) => (
               <div key={leaf.path}>
-                <div className="bg-white px-2.5 pt-1.5 font-mono text-[10px] text-slate-400">{leaf.path}</div>
+                <div className="bg-card px-2.5 pt-1.5 font-mono text-[10px] text-muted-foreground">{leaf.path}</div>
                 <StackedDiff before={leaf.before} after={leaf.after} />
               </div>
             ))}
           </div>
         ) : (
-          <div className="px-2.5 py-2 text-[11px] italic text-slate-400">Reordered — same values.</div>
+          <div className="px-2.5 py-2 text-[11px] italic text-muted-foreground">Reordered — same values.</div>
         )
       ) : (
         <StackedDiff before={change.before} after={change.after} />

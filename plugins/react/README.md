@@ -103,7 +103,7 @@ export default App;
 | useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
 | quickInput | boolean | No | false | Opt-in. In floating mode, shows a quick-message input beside the launcher bubble during an ongoing conversation while the chat panel is closed |
 | reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
-| mode | string | true | flotaing | 'Chat mode, floating or fullscreen' |
+| mode | string | true | flotaing | Chat presentation: `embedded`, `floating`, `fullscreen`, or `inputbar` (a docked "Chat Input" bar that reveals FAQs on focus and expands a conversation panel above itself) |
 | allowedExtensions | string[] | false | undefined | 'Look for type AllowedExtension and see the supported list of extensions' |
 
 

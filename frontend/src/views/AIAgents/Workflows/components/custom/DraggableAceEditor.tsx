@@ -189,8 +189,8 @@ export const DraggableAceEditor: React.FC<DraggableAceEditorProps> = ({
           />
         </div>
         {isDragOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-blue-100 bg-opacity-50 rounded-md pointer-events-none z-10">
-            <span className="text-blue-600 font-medium text-sm bg-white px-3 py-1 rounded-full shadow-sm">
+          <div className="absolute inset-0 flex items-center justify-center bg-blue-100 bg-opacity-50 dark:bg-blue-500/20 rounded-md pointer-events-none z-10">
+            <span className="text-blue-600 dark:text-blue-400 font-medium text-sm bg-card px-3 py-1 rounded-full shadow-sm">
               Drop variable at cursor position
             </span>
           </div>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { FallbackChain } from "@/interfaces/fallbackChain.interface";
 import { getAllFallbackChains, deleteFallbackChain } from "@/services/fallbackChains";
@@ -85,8 +85,6 @@ export function FallbackChainCard({
     (c.name ?? "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const headers = ["Name", "Providers (priority order)", "Retry", "Timeout", "Status", "Actions"];
-
   const timeoutLabel = (chain: FallbackChain) => {
     const def = chain.retry_policy?.timeout_seconds ?? 0;
     const hasPerProvider = Object.keys(chain.retry_policy?.provider_timeouts ?? {}).length > 0;
@@ -96,43 +94,67 @@ export function FallbackChainCard({
     return parts.length ? parts.join(" + ") : "—";
   };
 
-  const renderRow = (chain: FallbackChain) => (
-    <TableRow key={chain.id}>
-      <TableCell className="font-medium break-all">{chain.name}</TableCell>
-      <TableCell className="truncate">
-        {(chain.provider_ids ?? []).map(providerLabel).join(" → ")}
-      </TableCell>
-      <TableCell className="truncate">
-        {chain.retry_policy?.retry_count ?? 0}× / {chain.retry_policy?.backoff_seconds ?? 0}s
-      </TableCell>
-      <TableCell className="truncate">{timeoutLabel(chain)}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<FallbackChain>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (chain) => chain.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Providers (priority order)",
+      key: "providers",
+      cell: (chain) => (chain.provider_ids ?? []).map(providerLabel).join(" → "),
+      className: "truncate",
+    },
+    {
+      header: "Retry",
+      key: "retry",
+      cell: (chain) =>
+        `${chain.retry_policy?.retry_count ?? 0}× / ${chain.retry_policy?.backoff_seconds ?? 0}s`,
+      className: "truncate",
+    },
+    {
+      header: "Timeout",
+      key: "timeout",
+      cell: (chain) => timeoutLabel(chain),
+      className: "truncate",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (chain) => (
         <Badge variant={chain.is_active ? "default" : "secondary"}>
           {chain.is_active ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (chain) => (
         <ActionButtons
           onEdit={() => onEdit(chain)}
           onDelete={() => handleDeleteClick(chain)}
           editTitle="Edit"
           deleteTitle="Delete"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filteredChains}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No fallback chains found"
-        searchEmptyMessage="No fallback chains matching your search"
+        notFoundMessage="No fallback chains matching your search"
       />
 
       <ConfirmDialog
