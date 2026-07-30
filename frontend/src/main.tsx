@@ -23,19 +23,22 @@ const shouldRetry = (failureCount: number, error: unknown): boolean => {
     return false;
   }
 
-  if (error instanceof AxiosError) {
-    const status = error.response?.status;
-    const code = error.code;
+  // Validation errors raised by our own services carry no status; a retry repeats them
+  if (!(error instanceof AxiosError)) {
+    return false;
+  }
 
-    // Don't retry on server errors (5xx)
-    if (status && status >= 500) {
-      return false;
-    }
+  const status = error.response?.status;
+  const code = error.code;
 
-    // Don't retry on network errors (server unreachable)
-    if (NETWORK_ERROR_CODES.has(code ?? "")) {
-      return false;
-    }
+  // Don't retry on server errors (5xx)
+  if (status && status >= 500) {
+    return false;
+  }
+
+  // Don't retry on network errors (server unreachable)
+  if (NETWORK_ERROR_CODES.has(code ?? "")) {
+    return false;
   }
 
   return true;
