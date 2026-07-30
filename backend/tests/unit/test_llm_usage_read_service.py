@@ -21,6 +21,7 @@ class FakeReadRepo:
         self._timeseries = timeseries_rows or []
         self.scope_resolutions = 0
         self.distinct_calls = []
+        self.breakdown_calls = []
 
     async def resolve_scope(self, params):
         self.scope_resolutions += 1
@@ -32,7 +33,8 @@ class FakeReadRepo:
     async def timeseries(self, params, scope):
         return self._timeseries
 
-    async def breakdown(self, params, scope, column):
+    async def breakdown(self, params, scope, column, extra_conditions=None):
+        self.breakdown_calls.append((column, extra_conditions))
         return self._breakdown
 
     async def distinct_values(self, params, scope, column, *, use_provider=True, use_model=True):
@@ -60,6 +62,10 @@ class FakeAgentRepo:
 
 def _params(**overrides):
     return LlmUsageQueryParams(**overrides)
+
+
+def _compiled(expression) -> str:
+    return str(expression.compile(compile_kwargs={"literal_binds": True}))
 
 
 def _service(summary_row=None, breakdown_rows=None, agents=None, scope=None, options=None, timeseries_rows=None):
@@ -266,14 +272,69 @@ async def test_breakdown_agent_resolves_names_and_unattributed():
 
 
 @pytest.mark.asyncio
-async def test_breakdown_source_relabels_workflow_and_analyst():
-    rows = [("workflow", Decimal("0.80"), 0, 900, 5), ("llm_analyst", Decimal("0.20"), 0, 300, 4)]
+async def test_breakdown_source_relabels_workflow_analyst_and_evaluations():
+    rows = [
+        ("workflow", Decimal("0.80"), 0, 900, 5),
+        ("llm_analyst", Decimal("0.20"), 0, 300, 4),
+        ("evaluation", Decimal("0.05"), 0, 200, 2),
+    ]
     service, *_ = _service(breakdown_rows=rows)
     resp = await service.get_breakdown(_params(), "source")
     by = {i.key: i for i in resp.items}
     assert by["workflow"].label == "Workflow"
     assert by["llm_analyst"].label == "Conversation Analyst"
+    assert by["evaluation"].label == "Evaluations"
     assert resp.dimension == "source"
+
+
+@pytest.mark.asyncio
+async def test_breakdown_evaluation_method_labels_the_two_judges():
+    rows = [("llm_judge", Decimal("0.04"), 0, 150, 2), ("provenance_judge", Decimal("0.01"), 1, 50, 1)]
+    service, *_ = _service(breakdown_rows=rows)
+    resp = await service.get_breakdown(_params(), "evaluation_method")
+    by = {i.key: i for i in resp.items}
+    assert by["llm_judge"].label == "LLM Judge"
+    assert by["provenance_judge"].label == "Provenance"
+    assert by["provenance_judge"].cost_is_partial is True
+
+
+@pytest.mark.asyncio
+async def test_breakdown_evaluation_method_falls_back_to_the_raw_purpose():
+    rows = [("some_future_judge", Decimal("0.01"), 0, 20, 1), (None, Decimal("0"), 0, 0, 1)]
+    service, *_ = _service(breakdown_rows=rows)
+    resp = await service.get_breakdown(_params(), "evaluation_method")
+    by = {i.key: i for i in resp.items}
+    assert by["some_future_judge"].label == "some_future_judge"
+    assert by["unknown"].label == "Unknown"
+
+
+@pytest.mark.asyncio
+async def test_llm_dimension_groups_the_provider_model_pair():
+    rows = [("openai · gpt-4o", Decimal("0.30"), 0, 500, 3)]
+    service, repo = _service(breakdown_rows=rows)
+    resp = await service.get_breakdown(_params(agent_id=uuid4()), "llm")
+    assert resp.items[0].label == "openai · gpt-4o"
+    column, _ = repo.breakdown_calls[0]
+    assert "concat_ws" in str(column) and "coalesce" in str(column)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "dimension,source_type", [("llm", "workflow"), ("evaluation_method", "evaluation")]
+)
+async def test_drill_down_dimensions_carry_their_source_type_filter(dimension, source_type):
+    service, repo = _service(breakdown_rows=[])
+    await service.get_breakdown(_params(), dimension)
+    _, extra = repo.breakdown_calls[0]
+    assert [_compiled(c) for c in extra] == [f"llm_usage_events.source_type = '{source_type}'"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dimension", ["provider", "model", "agent", "source"])
+async def test_page_wide_dimensions_add_no_extra_conditions(dimension):
+    service, repo = _service(breakdown_rows=[])
+    await service.get_breakdown(_params(), dimension)
+    assert repo.breakdown_calls[0][1] is None
 
 
 def test_scope_conditions_always_exclude_soft_deleted():

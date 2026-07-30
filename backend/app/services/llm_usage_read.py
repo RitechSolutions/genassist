@@ -1,4 +1,5 @@
 from injector import inject
+from sqlalchemy import func
 
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.repositories.agent import AgentRepository
@@ -19,9 +20,22 @@ _DIMENSION_COLUMNS = {
     "model": LlmUsageEventModel.model_key,
     "agent": LlmUsageEventModel.agent_id,
     "source": LlmUsageEventModel.source_type,
+    "llm": func.concat_ws(
+        " · ",
+        func.coalesce(LlmUsageEventModel.provider_key, "unknown"),
+        func.coalesce(LlmUsageEventModel.model_key, "unknown"),
+    ),
+    "evaluation_method": LlmUsageEventModel.purpose,
 }
 
-_SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Conversation Analyst"}
+_EXTRA_BREAKDOWN_CONDITIONS = {
+    "llm": (LlmUsageEventModel.source_type == "workflow",),
+    "evaluation_method": (LlmUsageEventModel.source_type == "evaluation",),
+}
+
+_SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Conversation Analyst", "evaluation": "Evaluations"}
+
+_EVALUATION_METHOD_LABELS = {"llm_judge": "LLM Judge", "provenance_judge": "Provenance"}
 
 
 def _is_empty_scope(scope) -> bool:
@@ -141,7 +155,16 @@ class LlmUsageReadService:
         )
 
     async def _breakdown(self, params, scope, dimension: str) -> LlmUsageBreakdownResponse:
-        rows = [] if _is_empty_scope(scope) else await self.repo.breakdown(params, scope, _DIMENSION_COLUMNS[dimension])
+        rows = (
+            []
+            if _is_empty_scope(scope)
+            else await self.repo.breakdown(
+                params,
+                scope,
+                _DIMENSION_COLUMNS[dimension],
+                _EXTRA_BREAKDOWN_CONDITIONS.get(dimension),
+            )
+        )
         agent_names = await self._agent_names([k for k, *_ in rows]) if dimension == "agent" else {}
         items = [self._breakdown_item(dimension, row, agent_names) for row in rows]
         return LlmUsageBreakdownResponse(dimension=dimension, items=items, total=len(items))
@@ -162,6 +185,9 @@ class LlmUsageReadService:
         elif dimension == "source":
             key_str = key or "unknown"
             label = _SOURCE_LABELS.get(key, key or "Unknown")
+        elif dimension == "evaluation_method":
+            key_str = key or "unknown"
+            label = _EVALUATION_METHOD_LABELS.get(key, key or "Unknown")
         else:
             key_str = key or "unknown"
             label = key or "Unknown"

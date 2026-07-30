@@ -11,6 +11,7 @@ from app.core.permissions.constants import Permissions as P
 from app.core.utils.cache_headers import no_store_headers
 from app.schemas.llm_usage import (
     BreakdownDimension,
+    ExportDimension,
     ExportFormat,
     LlmUsageBreakdownResponse,
     LlmUsageFilterOptionsResponse,
@@ -103,7 +104,7 @@ async def get_timeseries(
     "/breakdown",
     response_model=LlmUsageBreakdownResponse,
     dependencies=[Depends(auth), Depends(permissions(P.Dashboard.READ))],
-    summary="LLM cost / tokens grouped by provider, model, or agent",
+    summary="LLM cost / tokens grouped by provider, model, agent, usage type, LLM, or evaluation method",
 )
 async def get_breakdown(
     params: LlmUsageQueryParams = Depends(),
@@ -133,7 +134,7 @@ async def get_filter_options(
 )
 async def export_usage(
     params: LlmUsageQueryParams = Depends(),
-    dimension: BreakdownDimension = Query(default="provider"),
+    dimension: ExportDimension = Query(default="provider"),
     fmt: ExportFormat = Query(default="csv", alias="format"),
     service: LlmUsageReadService = Injected(LlmUsageReadService),
 ) -> StreamingResponse:

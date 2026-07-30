@@ -94,7 +94,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         )
         return list((await self.db.execute(stmt)).all())
 
-    async def breakdown(self, params, scope: list[UUID] | None, key_column):
+    async def breakdown(self, params, scope: list[UUID] | None, key_column, extra_conditions=None):
         stmt = (
             select(
                 key_column.label("key"),
@@ -103,7 +103,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
                 func.coalesce(func.sum(_TOKENS), 0),
                 func.count(),
             )
-            .where(*self._conditions(params, scope))
+            .where(*self._conditions(params, scope), *(extra_conditions or ()))
             .group_by(key_column)
             .order_by(func.coalesce(func.sum(_COST), 0).desc())
         )

@@ -5,8 +5,10 @@ from uuid import UUID
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-BreakdownDimension = Literal["provider", "model", "agent", "source"]
+BreakdownDimension = Literal["provider", "model", "agent", "source", "llm", "evaluation_method"]
 BREAKDOWN_DIMENSIONS: tuple[str, ...] = get_args(BreakdownDimension)
+ExportDimension = Literal["provider", "model", "agent", "source"]
+EXPORT_DIMENSIONS: tuple[str, ...] = get_args(ExportDimension)
 
 ExportFormat = Literal["csv", "xlsx", "pdf"]
 
