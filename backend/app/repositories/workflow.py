@@ -17,7 +17,22 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
             WorkflowModel.id,
             WorkflowModel.name,
             WorkflowModel.version,
+            WorkflowModel.agent_id,
         )
+        if hasattr(WorkflowModel, "is_deleted"):
+            stmt = stmt.where(WorkflowModel.is_deleted == 0)
+        result = await self.db.execute(stmt)
+        return result.all()
+
+    async def get_minimal_by_ids(self, ids: List[UUID]) -> List:
+        if not ids:
+            return []
+        stmt = select(
+            WorkflowModel.id,
+            WorkflowModel.name,
+            WorkflowModel.version,
+            WorkflowModel.agent_id,
+        ).where(WorkflowModel.id.in_(ids))
         if hasattr(WorkflowModel, "is_deleted"):
             stmt = stmt.where(WorkflowModel.is_deleted == 0)
         result = await self.db.execute(stmt)

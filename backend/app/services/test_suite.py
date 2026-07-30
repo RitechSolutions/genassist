@@ -2146,19 +2146,32 @@ class TestSuiteService:
             return 0.0
         return None
 
-    async def get_runs_by_ids(self, ids: List[str]) -> List[TestRunInDB]:
+    async def _runs_with_workflow_labels(self, rows: List[Any]) -> List[TestRun]:
+        """Attach the executed workflow's name/version to each run for display."""
+        runs = [TestRun.model_validate(r, from_attributes=True) for r in rows]
+        ids = list({run.workflow_id for run in runs if run.workflow_id})
+        workflows = await self.workflow_service.get_minimal_by_ids(ids)
+        by_id = {workflow.id: workflow for workflow in workflows}
+        for run in runs:
+            workflow = by_id.get(run.workflow_id)
+            if workflow:
+                run.workflow_name = workflow.name
+                run.workflow_version = workflow.version
+        return runs
+
+    async def get_runs_by_ids(self, ids: List[str]) -> List[TestRun]:
         rows = await self.run_repo.get_by_ids(ids)
-        return [TestRunInDB.model_validate(r, from_attributes=True) for r in rows]
+        return await self._runs_with_workflow_labels(rows)
 
     async def get_run(self, run_id: UUID) -> TestRun:
         run = await self.run_repo.get_by_id(run_id)
         if not run:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        return TestRun.model_validate(run, from_attributes=True)
+        return (await self._runs_with_workflow_labels([run]))[0]
 
-    async def list_runs_for_suite(self, suite_id: UUID) -> List[TestRunInDB]:
+    async def list_runs_for_suite(self, suite_id: UUID) -> List[TestRun]:
         rows = await self.run_repo.get_all_for_suite(suite_id)
-        return [TestRunInDB.model_validate(r, from_attributes=True) for r in rows]
+        return await self._runs_with_workflow_labels(rows)
 
     async def list_results_for_run(self, run_id: UUID) -> List[TestResultInDB]:
         rows = await self.result_repo.get_all_for_run(run_id)
@@ -2280,6 +2293,7 @@ class TestSuiteService:
         dispatch: Callable[
             [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
         ],
+        target_workflow_id: Optional[UUID] = None,
     ) -> List[StartedEvaluationRun]:
         """Queue and dispatch a run for every evaluation targeting this workflow.
 
@@ -2287,13 +2301,29 @@ class TestSuiteService:
         through its dataset's default workflow. Each evaluation is created and
         dispatched independently: one failure is reported as ``failed_to_start``
         and does not prevent the rest from running.
+
+        ``target_workflow_id`` runs every evaluation against that version
+        instead of its own; it must be a version of ``workflow_id``.
         """
+        if target_workflow_id:
+            await self._ensure_version_of_same_workflow(
+                workflow_id, target_workflow_id
+            )
         targeted = await self._evaluations_for_workflow(workflow_id)
+
+        # Every evaluation in this scope shares ``workflow_id`` as its effective
+        # workflow, so the active version is the same for all of them: resolve it
+        # once instead of per evaluation.
+        batch_target = target_workflow_id
+        if not batch_target and targeted:
+            batch_target = await self.workflow_service.get_active_version_id(
+                workflow_id
+            )
 
         results: List[StartedEvaluationRun] = []
         for ev in targeted:
             try:
-                run = await self._start_evaluation_run(ev, dispatch)
+                run = await self._start_evaluation_run(ev, dispatch, batch_target)
                 results.append(
                     StartedEvaluationRun(
                         evaluation_id=ev.id,
@@ -2314,6 +2344,58 @@ class TestSuiteService:
                     )
                 )
         return results
+
+    async def start_evaluation_run(
+        self,
+        evaluation_id: UUID,
+        dispatch: Callable[
+            [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
+        ],
+        target_workflow_id: Optional[UUID] = None,
+    ) -> TestRunInDB:
+        """Queue and dispatch one evaluation's run, optionally against another
+        version of its workflow."""
+        ev = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not ev:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        if target_workflow_id:
+            base_workflow_id = await self._effective_workflow_id(
+                ev.workflow_id, ev.suite_id
+            )
+            await self._ensure_version_of_same_workflow(
+                base_workflow_id, target_workflow_id
+            )
+        return await self._start_evaluation_run(ev, dispatch, target_workflow_id)
+
+    async def _ensure_version_of_same_workflow(
+        self, base_workflow_id: Any, target_workflow_id: UUID
+    ) -> None:
+        """Reject a target that is not a saved version of the base workflow.
+
+        Versions of one workflow share its agent; comparing agent ids keeps an
+        evaluation from being pointed at an unrelated workflow by accident.
+        """
+        if not base_workflow_id:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_TARGET_NOT_A_VERSION,
+                error_detail=(
+                    "The evaluation has no workflow, so a target version "
+                    "cannot be resolved."
+                ),
+            )
+        if str(base_workflow_id) == str(target_workflow_id):
+            return
+        base = await self.workflow_service.get_by_id(UUID(str(base_workflow_id)))
+        target = await self.workflow_service.get_by_id(target_workflow_id)
+        same_agent = (
+            base.agent_id is not None and base.agent_id == target.agent_id
+        )
+        if not same_agent:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_TARGET_NOT_A_VERSION,
+            )
 
     async def _evaluations_for_workflow(
         self, workflow_id: UUID
@@ -2526,6 +2608,7 @@ class TestSuiteService:
         dispatch: Callable[
             [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
         ],
+        target_workflow_id: Optional[UUID] = None,
     ) -> TestRunInDB:
         """Create, record and dispatch a single evaluation run.
 
@@ -2538,10 +2621,13 @@ class TestSuiteService:
         # would merge every conversation into a single memory thread.
         input_metadata = dict(ev.input_metadata or {})
         input_metadata.pop("thread_id", None)
+        resolved_workflow_id = (
+            target_workflow_id or await self._default_run_workflow_id(ev)
+        )
         data = TestRunCreate(
             techniques=list(ev.techniques or []),
             technique_configs=ev.technique_configs or None,
-            workflow_id=ev.workflow_id,
+            workflow_id=resolved_workflow_id,
             input_metadata=input_metadata or None,
         )
         run = await self.create_run(ev.suite_id, data)
@@ -2552,6 +2638,21 @@ class TestSuiteService:
             await self._mark_run_failed_to_start(run.id)
             raise
         return run
+
+    async def _default_run_workflow_id(self, ev: TestEvaluationModel) -> Any:
+        """The version a run executes when the caller names none.
+
+        The agent's active version, so an evaluation tests what is live rather
+        than the version it happened to be configured against. Falls back to its
+        own pinned workflow when the workflow has no agent or no active version.
+        """
+        pinned = await self._effective_workflow_id(ev.workflow_id, ev.suite_id)
+        if not pinned:
+            return None
+        active = await self.workflow_service.get_active_version_id(
+            UUID(str(pinned))
+        )
+        return active or pinned
 
     async def _mark_run_failed_to_start(self, run_id: UUID) -> None:
         """Flip a still-queued run to ``failed`` so it is not left dangling."""

@@ -39,6 +39,7 @@ class WorkflowMinimal(BaseModel):
     id: UUID
     name: str
     version: str
+    agent_id: Optional[UUID] = None
 
     model_config = ConfigDict(
         from_attributes=True
