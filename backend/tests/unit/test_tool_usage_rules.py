@@ -155,6 +155,27 @@ def test_only_passes_when_all_within_set():
 
 # ---- require_success -------------------------------------------------------
 
+def test_paused_call_counts_as_used_when_success_is_not_required():
+    rule = _rule(tool_ids=["a"], operator="all", require_success=False)
+    res = evaluate_rule(rule, [_event("a", status="paused")], {"agent-1"})
+
+    assert res["status"] == RULE_PASSED
+    assert res["observed_tools"] == ["a"]
+    assert res["missing_tools"] == []
+    assert res["call_counts"]["a"] == 1
+    assert res["successful_call_counts"].get("a", 0) == 0
+
+
+def test_paused_call_does_not_satisfy_must_succeed():
+    rule = _rule(tool_ids=["a"], operator="all", require_success=True)
+    res = evaluate_rule(rule, [_event("a", status="paused")], {"agent-1"})
+
+    assert res["status"] == RULE_FAILED
+    assert res["missing_tools"] == []
+    assert res["failed_tools"] == ["a"]
+    assert "called but did not succeed" in res["comment"]
+
+
 def test_require_success_fails_when_only_failed_calls():
     rule = _rule(tool_ids=["a"], operator="all", require_success=True)
     res = evaluate_rule(rule, [_event("a", status="failed")], {"agent-1"})

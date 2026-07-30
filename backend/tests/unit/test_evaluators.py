@@ -1,8 +1,35 @@
 """Unit tests for trace-aware grading (process evaluation)."""
 
+from types import SimpleNamespace
+
 import pytest
 
-from app.services.test_suite import SimpleEvaluatorRegistry, _build_grading_context
+import app.services.test_suite as eval_mod
+from app.constants import DEFAULT_NLI_MODEL
+from app.services.evaluation_nli import (
+    EvaluationNLIModel,
+    NLIClaimResult,
+)
+from app.services.test_suite import (
+    SimpleEvaluatorRegistry,
+    _build_grading_context,
+    _is_waiting_for_human,
+    _parse_judge_json,
+)
+
+
+class _FakeEmbedder:
+    """Embedder stub returning fixed vectors, for provenance scoring tests."""
+
+    def __init__(self, answer_vec, context_vec):
+        self.answer_vec = answer_vec
+        self.context_vec = context_vec
+
+    async def initialize(self):
+        return True
+
+    async def embed_texts(self, texts):  # noqa: ARG002 - order is [answer, context]
+        return [self.answer_vec, self.context_vec]
 
 
 def _sample_trace(*, node_error=None, risk_level="low"):
@@ -33,6 +60,26 @@ def _sample_trace(*, node_error=None, risk_level="low"):
     }
 
 
+class TestHumanInputPauseDetection:
+    def test_detects_awaiting_input_output(self):
+        assert _is_waiting_for_human(
+            {"status": "awaiting_input", "form_schema": {"fields": []}}
+        )
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            None,
+            "awaiting_input",
+            {},
+            {"status": "completed"},
+            {"status": "failed"},
+        ],
+    )
+    def test_does_not_misclassify_normal_outputs(self, output):
+        assert _is_waiting_for_human(output) is False
+
+
 class TestBuildGradingContext:
     def test_exposes_nodes_session_and_metrics(self):
         ctx = _build_grading_context(_sample_trace())
@@ -51,6 +98,121 @@ class TestBuildGradingContext:
         ctx = _build_grading_context(None)
         assert ctx["nodes"] == {}
         assert ctx["errors"] == []
+
+    def test_retrievals_include_kb_tool_results(self):
+        """Retrieval done via an agent tool (not a KB node) still counts as retrieved context."""
+        trace = {
+            "state": {
+                "nodeExecutionStatus": {
+                    "agent1": {
+                        "type": "agentNode",
+                        "name": "Agent",
+                        "output": {"tools_used": []},
+                        "status": "success",
+                    }
+                }
+            },
+            "tool_events": [
+                {
+                    "tool_id": "kb1",
+                    "tool_name": "knowledge_base_for_regions",
+                    "result": "Found: refunds within 30 days",
+                    "status": "succeeded",
+                },
+                {
+                    "tool_id": "t2",
+                    "tool_name": "ticket_creation",
+                    "result": "ticket #123 created",
+                    "status": "succeeded",
+                },
+            ],
+        }
+        ctx = _build_grading_context(trace)
+        joined = str(ctx["retrievals"])
+        assert "refunds within 30 days" in joined
+        assert "ticket #123" not in joined  # a non-retrieval tool is excluded
+
+    def _kb_tool_trace(self, events):
+        return {"state": {"nodeExecutionStatus": {}}, "tool_events": events}
+
+    def test_retrieval_ignores_unsuccessful_calls(self):
+        """A paused or failed retrieval carries no usable context and is skipped."""
+        trace = self._kb_tool_trace([
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": "paused text", "status": "paused"},
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": "failed text", "status": "failed"},
+        ])
+        assert _build_grading_context(trace)["retrievals"] == []
+
+    def test_retrieval_dedupes_repeated_content(self):
+        """The same lookup made twice contributes one retrieval; a distinct lookup is kept."""
+        trace = self._kb_tool_trace([
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": "policy A", "status": "succeeded"},
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": "policy A", "status": "succeeded"},
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": "policy B", "status": "succeeded"},
+        ])
+        retrievals = _build_grading_context(trace)["retrievals"]
+        assert len(retrievals) == 2
+
+    def test_retrieval_skips_no_result_sentinels(self):
+        """A 'no results found' sentinel is not treated as retrieved context."""
+        trace = self._kb_tool_trace([
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": "No relevant information found.", "status": "succeeded"},
+            {"tool_id": "kb1", "tool_name": "knowledge_base", "result": [], "status": "succeeded"},
+        ])
+        assert _build_grading_context(trace)["retrievals"] == []
+
+    def test_retrieval_recognizes_knowledge_tool_node_by_type(self):
+        """A tool backed by a knowledgeToolNode counts as retrieval even if unnamed."""
+        trace = {
+            "state": {
+                "nodeExecutionStatus": {
+                    "kt1": {"type": "knowledgeToolNode", "name": "Docs", "status": "success"}
+                }
+            },
+            "tool_events": [
+                {"tool_id": "kt1", "tool_name": "docs", "result": "Grounding passage.", "status": "succeeded"}
+            ],
+        }
+        assert "Grounding passage." in str(_build_grading_context(trace)["retrievals"])
+
+    def _kb_node_trace(self, output, status="success", error=None):
+        return {
+            "state": {
+                "nodeExecutionStatus": {
+                    "kb": {
+                        "type": "knowledgeBaseNode",
+                        "name": "KB",
+                        "output": output,
+                        "status": status,
+                        "error": error,
+                    }
+                }
+            }
+        }
+
+    def test_kb_node_result_skips_sentinel(self):
+        """A KB node returning a no-result sentinel is not grounding context."""
+        trace = self._kb_node_trace("No relevant information found.")
+        assert _build_grading_context(trace)["retrievals"] == []
+
+    def test_kb_node_result_skips_failed_node(self):
+        """A KB node that failed is not treated as valid retrieved context."""
+        trace = self._kb_node_trace("some passage", status="failed")
+        assert _build_grading_context(trace)["retrievals"] == []
+
+    def test_kb_node_and_tool_dedupe_identical_content(self):
+        """The same passage surfaced by a KB node and a KB tool is counted once."""
+        trace = {
+            "state": {
+                "nodeExecutionStatus": {
+                    "kb": {"type": "knowledgeBaseNode", "name": "KB", "output": "shared passage", "status": "success"}
+                }
+            },
+            "tool_events": [
+                {"tool_id": "kbtool", "tool_name": "knowledge_base", "result": "shared passage", "status": "succeeded"}
+            ],
+        }
+        assert len(_build_grading_context(trace)["retrievals"]) == 1
 
 
 class TestTraceAwareEvaluators:
@@ -82,6 +244,9 @@ class TestTraceAwareEvaluators:
             },
         )
         assert metrics["field_equals"]["passed"] is False
+        m = metrics["field_equals"]
+        assert m["expected"] == "high"
+        assert m["actual"] == "low"
 
     @pytest.mark.asyncio
     async def test_field_equals_reads_node_output(self):
@@ -129,6 +294,94 @@ class TestTraceAwareEvaluators:
             reference_outputs={"value": "24/7"},
         )
         assert metrics["contains"]["passed"] is True
+
+
+class TestHumanInputPauseEvaluation:
+    @pytest.mark.asyncio
+    async def test_output_checks_are_not_evaluated_but_process_checks_continue(self):
+        registry = SimpleEvaluatorRegistry()
+        paused_output = {
+            "status": "awaiting_input",
+            "form_schema": {"fields": [{"name": "employee_id"}]},
+        }
+        trace = {
+            "output": paused_output,
+            "state": {
+                "errors": [],
+                "nodeExecutionStatus": {
+                    "router": {
+                        "type": "routerNode",
+                        "name": "Request Router",
+                        "status": "success",
+                        "output": {"route": "needs_employee"},
+                    },
+                    "action": {
+                        "type": "apiToolNode",
+                        "name": "Prepare Request",
+                        "status": "success",
+                        "output": {"prepared": True},
+                    },
+                },
+            },
+        }
+        output_checks = [
+            "exact_match",
+            "contains",
+            "not_contains",
+            "json_match",
+            "field_equals",
+            "nli_eval",
+            "provenance_eval",
+            "llm_judge",
+        ]
+        metrics = await registry.evaluate(
+            [*output_checks, "no_errors", "route_taken", "action_taken"],
+            inputs={"message": "Check my allowance"},
+            outputs=paused_output,
+            reference_outputs={"value": "Your allowance is £100."},
+            execution_trace=trace,
+            technique_configs={
+                "not_contains": {"text": "forbidden"},
+                "route_taken": {
+                    "router": "router",
+                    "expected": "needs_employee",
+                },
+                "action_taken": {
+                    "node": "action",
+                    "should_fire": True,
+                },
+                "llm_judge": {"rubric": "Be helpful."},
+            },
+        )
+
+        for technique in output_checks:
+            assert metrics[technique]["score"] is None
+            assert metrics[technique]["passed"] is False
+            assert metrics[technique]["not_evaluated"] is True
+            assert metrics[technique]["comment"] == (
+                "Not evaluated — waiting for human input."
+            )
+
+        assert metrics["no_errors"]["passed"] is True
+        assert metrics["route_taken"]["passed"] is True
+        assert metrics["action_taken"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_field_equals_can_still_check_intermediate_state(self):
+        registry = SimpleEvaluatorRegistry()
+        metrics = await registry.evaluate(
+            ["field_equals"],
+            inputs={},
+            outputs={"status": "awaiting_input"},
+            reference_outputs={"value": "low"},
+            execution_trace=_sample_trace(risk_level="low"),
+            technique_configs={
+                "field_equals": {"field": "trace.session.risk_level"}
+            },
+        )
+
+        assert metrics["field_equals"]["passed"] is True
+        assert metrics["field_equals"].get("not_evaluated") is not True
 
 
 class TestContainsAndNotContains:
@@ -939,15 +1192,16 @@ class TestLlmJudge:
         assert "SOURCE:" not in captured["user_content"]
 
     @pytest.mark.asyncio
-    async def test_unresolved_source_field_adds_no_source(self):
-        captured = {}
+    async def test_unresolved_selected_source_is_not_evaluated(self):
+        called = False
 
         async def fake_judge(*, system_prompt, user_content, provider_id=None):
-            captured["user_content"] = user_content
+            nonlocal called
+            called = True
             return 1.0, "ok"
 
         self.registry._invoke_json_judge = fake_judge
-        await self.registry.evaluate(
+        metrics = await self.registry.evaluate(
             ["llm_judge"],
             inputs={},
             outputs="Hello",
@@ -957,5 +1211,903 @@ class TestLlmJudge:
                 "llm_judge": {"rubric": "Grounded?", "source_field": "trace.session.does_not_exist"}
             },
         )
-        assert "SOURCE:" not in captured["user_content"]
-        assert "does_not_exist" not in captured["user_content"]
+        assert metrics["llm_judge"].get("not_evaluated") is True
+        assert metrics["llm_judge"]["score"] is None
+        assert called is False
+
+    @pytest.mark.asyncio
+    async def test_explicit_kb_source_preset_feeds_judge(self):
+        captured = {}
+
+        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+            captured["user_content"] = user_content
+            return 1.0, "grounded"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs="Sample answer.",
+            reference_outputs=None,
+            execution_trace=_agent_trace(),
+            technique_configs={
+                "llm_judge": {
+                    "rubric": "Use the supplied evidence.",
+                    "source_type": "kb_retrievals",
+                }
+            },
+        )
+        assert metrics["llm_judge"]["passed"] is True
+        assert "Sample retrieved content" in captured["user_content"]
+
+    @pytest.mark.asyncio
+    async def test_auto_feeds_user_question_from_inputs(self):
+        captured = {}
+
+        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+            captured["user_content"] = user_content
+            return 1.0, "ok"
+
+        self.registry._invoke_json_judge = fake_judge
+        await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={"message": "How do I pay for parking?"},
+            outputs="Tap the app.",
+            reference_outputs=None,
+            technique_configs={"llm_judge": {"rubric": "Is the reply relevant?"}},
+        )
+        assert "QUESTION:" in captured["user_content"]
+        assert "How do I pay for parking?" in captured["user_content"]
+
+    @pytest.mark.asyncio
+    async def test_malformed_judge_output_is_evaluator_error(self):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+            return None, "LLM judge response could not be parsed"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs="Hello",
+            reference_outputs=None,
+            technique_configs={"llm_judge": {"rubric": "Is the reply polite?"}},
+        )
+        assert metrics["llm_judge"]["error"] is True
+        assert metrics["llm_judge"]["passed"] is False
+        assert metrics["llm_judge"]["score"] is None
+
+
+class TestParseJudgeJson:
+    def test_valid_score_and_reason(self):
+        score, reason = _parse_judge_json('{"score": 0.8, "reason": "good"}')
+        assert score == 0.8
+        assert reason == "good"
+
+    def test_missing_score_is_none(self):
+        score, reason = _parse_judge_json('{"reason": "no score given"}')
+        assert score is None
+        assert "score" in reason.lower()
+
+    def test_non_dict_is_none(self):
+        score, _ = _parse_judge_json("[1, 2, 3]")
+        assert score is None
+
+    def test_unparseable_is_none(self):
+        score, _ = _parse_judge_json("not json at all")
+        assert score is None
+
+    def test_score_is_clamped(self):
+        assert _parse_judge_json('{"score": 5}')[0] == 1.0
+        assert _parse_judge_json('{"score": -2}')[0] == 0.0
+
+
+class TestSemanticEvaluators:
+    """Source-aware NLI and Provenance: skip vs fail, model reporting, real embeddings."""
+
+    def setup_method(self):
+        self.registry = SimpleEvaluatorRegistry()
+
+    @pytest.mark.asyncio
+    async def test_nli_skips_when_no_evidence(self):
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="The sky is blue.",
+            reference_outputs=None,
+            execution_trace={},  # no retrievals available
+            technique_configs={"nli_eval": {"evidence_source": "kb_retrievals"}},
+        )
+        m = metrics["nli_eval"]
+        assert m.get("not_evaluated") is True
+        assert m["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_nli_uses_model_and_reports_name(self, monkeypatch):
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            lambda answer, evidence, model_name=None: SimpleNamespace(
+                entail_score=0.9,
+                contradiction_score=0.01,
+                verdict="entails",
+                model_name="roberta-nli",
+                chunks_evaluated=2,
+                evidence_truncated=False,
+            ),
+        )
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="Risk is low.",
+            reference_outputs="the contract risk is low",
+            execution_trace={},
+            technique_configs={"nli_eval": {"evidence_source": "expected_output"}},
+        )
+        m = metrics["nli_eval"]
+        assert m["passed"] is True
+        assert "model=roberta-nli" in m["comment"]
+        assert "Evidence chunks checked: 2" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_nli_configured_threshold_directly_controls_passing(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            lambda answer, evidence, model_name=None: SimpleNamespace(
+                entail_score=0.45,
+                contradiction_score=0.1,
+                verdict="unknown",
+                model_name="roberta-nli",
+                chunks_evaluated=1,
+                evidence_truncated=False,
+            ),
+        )
+
+        low_threshold = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="New answer.",
+            reference_outputs="Reference.",
+            execution_trace={},
+            technique_configs={
+                "nli_eval": {
+                    "evidence_source": "expected_output",
+                    "min_entail_score": 0.4,
+                }
+            },
+        )
+        high_threshold = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="New answer.",
+            reference_outputs="Reference.",
+            execution_trace={},
+            technique_configs={
+                "nli_eval": {
+                    "evidence_source": "expected_output",
+                    "min_entail_score": 0.5,
+                }
+            },
+        )
+
+        assert low_threshold["nli_eval"]["passed"] is True
+        assert high_threshold["nli_eval"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_nli_contradiction_option_blocks_a_strong_contradiction(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            lambda answer, evidence, model_name=None: SimpleNamespace(
+                entail_score=0.7,
+                contradiction_score=0.8,
+                verdict="entails",
+                model_name="roberta-nli",
+                chunks_evaluated=2,
+                evidence_truncated=False,
+            ),
+        )
+        base_config = {
+            "evidence_source": "expected_output",
+            "min_entail_score": 0.5,
+        }
+
+        allowed = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="New answer.",
+            reference_outputs="Reference.",
+            execution_trace={},
+            technique_configs={
+                "nli_eval": {**base_config, "fail_on_contradiction": False}
+            },
+        )
+        blocked = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="New answer.",
+            reference_outputs="Reference.",
+            execution_trace={},
+            technique_configs={
+                "nli_eval": {**base_config, "fail_on_contradiction": True}
+            },
+        )
+
+        assert allowed["nli_eval"]["passed"] is True
+        assert blocked["nli_eval"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_nli_fails_when_a_later_answer_section_is_unsupported(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            lambda answer, evidence, model_name=None: SimpleNamespace(
+                entail_score=0.2,
+                contradiction_score=0.1,
+                verdict="unknown",
+                model_name="roberta-nli",
+                chunks_evaluated=3,
+                evidence_truncated=False,
+                claims_evaluated=2,
+                total_claims=2,
+                pairs_evaluated=6,
+                coverage_complete=True,
+                claim_results=(
+                    NLIClaimResult(
+                        text="The handbook allows annual leave.",
+                        entail_score=0.9,
+                        contradiction_score=0.01,
+                        verdict="entails",
+                    ),
+                    NLIClaimResult(
+                        text="Employees also receive unlimited paid leave.",
+                        entail_score=0.2,
+                        contradiction_score=0.1,
+                        verdict="unknown",
+                    ),
+                ),
+            ),
+        )
+
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="A supported claim followed by an unsupported claim.",
+            reference_outputs="Handbook evidence.",
+            execution_trace={},
+            technique_configs={
+                "nli_eval": {
+                    "evidence_source": "expected_output",
+                    "min_entail_score": 0.5,
+                }
+            },
+        )
+
+        result = metrics["nli_eval"]
+        assert result["passed"] is False
+        assert result["claims_checked"] == 2
+        assert result["supported_claims"] == 1
+        assert result["unsupported_claims"] == [
+            "Employees also receive unlimited paid leave."
+        ]
+        assert "1/2 answer sections supported" in result["comment"]
+
+    @pytest.mark.asyncio
+    async def test_nli_does_not_score_an_answer_above_the_safe_claim_limit(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            lambda answer, evidence, model_name=None: SimpleNamespace(
+                entail_score=0.0,
+                contradiction_score=0.0,
+                verdict="unknown",
+                model_name=None,
+                chunks_evaluated=0,
+                evidence_truncated=False,
+                claims_evaluated=0,
+                total_claims=9,
+                pairs_evaluated=0,
+                coverage_complete=False,
+                claim_results=(),
+            ),
+        )
+
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="A very long answer.",
+            reference_outputs="Evidence.",
+            execution_trace={},
+            technique_configs={"nli_eval": {"evidence_source": "expected_output"}},
+        )
+
+        result = metrics["nli_eval"]
+        assert result.get("not_evaluated") is True
+        assert result.get("error") is not True
+        assert "9 claim groups" in result["comment"]
+
+    @pytest.mark.asyncio
+    async def test_nli_legacy_config_without_source_uses_expected_output(self, monkeypatch):
+        captured = {}
+
+        def fake_score(answer, evidence, model_name=None):
+            captured["evidence"] = evidence
+            return SimpleNamespace(
+                entail_score=0.9,
+                contradiction_score=0.01,
+                verdict="entails",
+                model_name="roberta-nli",
+                chunks_evaluated=1,
+                evidence_truncated=False,
+            )
+
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            fake_score,
+        )
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="New answer.",
+            reference_outputs="Imported reference answer.",
+            execution_trace={},
+            technique_configs={"nli_eval": {}},
+        )
+        assert metrics["nli_eval"]["passed"] is True
+        assert captured["evidence"] == "Imported reference answer."
+
+    @pytest.mark.asyncio
+    async def test_nli_unresolved_legacy_field_is_not_evaluated(self, monkeypatch):
+        called = False
+
+        def fake_score(answer, evidence, model_name=None):
+            nonlocal called
+            called = True
+            return SimpleNamespace(
+                entail_score=1.0,
+                contradiction_score=0.0,
+                verdict="entails",
+                model_name="roberta-nli",
+                chunks_evaluated=1,
+                evidence_truncated=False,
+            )
+
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            fake_score,
+        )
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="New answer.",
+            reference_outputs="Reference.",
+            execution_trace={},
+            technique_configs={"nli_eval": {"evidence_field": "trace.missing.value"}},
+        )
+        assert metrics["nli_eval"].get("not_evaluated") is True
+        assert called is False
+
+    @pytest.mark.asyncio
+    async def test_nli_errors_when_model_unavailable(self, monkeypatch):
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            lambda answer, evidence, model_name=None: SimpleNamespace(
+                entail_score=0.3,
+                contradiction_score=0.0,
+                verdict="unknown",
+                model_name=None,
+                chunks_evaluated=0,
+                evidence_truncated=False,
+            ),
+        )
+        metrics = await self.registry.evaluate(
+            ["nli_eval"],
+            inputs={},
+            outputs="X.",
+            reference_outputs="the contract risk is low",
+            execution_trace={},
+            technique_configs={"nli_eval": {"evidence_source": "expected_output"}},
+        )
+        m = metrics["nli_eval"]
+        assert m.get("error") is True
+        assert m["passed"] is False
+
+    def test_nli_checks_support_beyond_the_first_token_window(self):
+        import torch
+
+        class FakeTokenizer:
+            def __init__(self):
+                self._token_to_id = {}
+                self._id_to_token = {}
+
+            def encode(
+                self,
+                text,
+                add_special_tokens=False,
+                truncation=False,
+                max_length=None,
+            ):
+                del add_special_tokens
+                tokens = text.split()
+                if truncation and max_length is not None:
+                    tokens = tokens[:max_length]
+                ids = []
+                for token in tokens:
+                    if token not in self._token_to_id:
+                        token_id = len(self._token_to_id) + 1
+                        self._token_to_id[token] = token_id
+                        self._id_to_token[token_id] = token
+                    ids.append(self._token_to_id[token])
+                return ids
+
+            def decode(self, token_ids, skip_special_tokens=True):
+                del skip_special_tokens
+                return " ".join(self._id_to_token[token_id] for token_id in token_ids)
+
+            @staticmethod
+            def num_special_tokens_to_add(pair=True):
+                del pair
+                return 3
+
+            @staticmethod
+            def __call__(
+                evidence_chunks,
+                answers,
+                return_tensors,
+                padding,
+                truncation,
+                max_length,
+            ):
+                del answers, return_tensors, padding, truncation, max_length
+                markers = [
+                    [1 if "late-support" in chunk else 0]
+                    for chunk in evidence_chunks
+                ]
+                return {"input_ids": torch.tensor(markers)}
+
+        class FakeModel:
+            config = SimpleNamespace(
+                id2label={0: "contradiction", 1: "neutral", 2: "entailment"}
+            )
+
+            @staticmethod
+            def __call__(input_ids):
+                logits = [
+                    [0.0, 0.0, 6.0] if row[0].item() else [0.0, 6.0, 0.0]
+                    for row in input_ids
+                ]
+                return SimpleNamespace(logits=torch.tensor(logits))
+
+        model = EvaluationNLIModel()
+        model._tokenizer = FakeTokenizer()
+        model._model = FakeModel()
+        model._loaded_model_name = DEFAULT_NLI_MODEL
+        evidence = " ".join(["filler"] * 400 + ["late-support"] + ["tail"] * 30)
+
+        result = model.score_evidence(
+            "The policy is supported.",
+            evidence,
+            DEFAULT_NLI_MODEL,
+        )
+
+        assert result.verdict == "entails"
+        assert result.entail_score > 0.9
+        assert result.chunks_evaluated > 1
+
+    def test_nli_evaluation_short_circuits_empty_evidence(self, monkeypatch):
+        model = EvaluationNLIModel()
+
+        def unexpected_model_load(model_name):
+            del model_name
+            pytest.fail("The model should not load for empty evidence.")
+
+        monkeypatch.setattr(model, "_lazy_init", unexpected_model_load)
+
+        result = model.score_evidence("An answer.", "")
+        assert result.entail_score == 0.0
+        assert result.contradiction_score == 0.0
+        assert result.verdict == "unknown"
+        assert result.model_name is None
+
+    def test_nli_claim_groups_include_the_end_of_a_long_answer(self):
+        class Tokenizer:
+            def __init__(self):
+                self._token_to_id = {}
+                self._id_to_token = {}
+
+            def encode(self, text, add_special_tokens=False):
+                del add_special_tokens
+                ids = []
+                for token in text.split():
+                    if token not in self._token_to_id:
+                        token_id = len(self._token_to_id) + 1
+                        self._token_to_id[token] = token_id
+                        self._id_to_token[token_id] = token
+                    ids.append(self._token_to_id[token])
+                return ids
+
+            def decode(self, token_ids, skip_special_tokens=True):
+                del skip_special_tokens
+                return " ".join(self._id_to_token[token_id] for token_id in token_ids)
+
+        model = EvaluationNLIModel()
+        model._tokenizer = Tokenizer()
+        answer = " ".join(["opening"] * 110 + ["late-answer-claim"])
+
+        claim_chunks, total_claims = model._answer_claim_token_ids(answer)
+        final_claim = model._tokenizer.decode(claim_chunks[-1])
+
+        assert total_claims == 2
+        assert "late-answer-claim" in final_claim
+
+        model._model = object()
+        model._loaded_model_name = DEFAULT_NLI_MODEL
+        oversized_answer = " ".join(
+            f"claim-token-{index}" for index in range(9 * 96)
+        )
+        oversized_result = model.score_evidence(
+            oversized_answer,
+            "Evidence.",
+            DEFAULT_NLI_MODEL,
+        )
+
+        assert oversized_result.coverage_complete is False
+        assert oversized_result.total_claims == 9
+
+    def test_nli_bounds_huge_evidence_while_still_including_its_end(self):
+        chunks, was_bounded = EvaluationNLIModel._chunk_token_ids(
+            list(range(10_000)),
+            window_size=100,
+            overlap=20,
+            max_chunks=4,
+        )
+
+        assert was_bounded is True
+        assert len(chunks) == 4
+        assert 9_999 in chunks[-1]
+
+    @pytest.mark.asyncio
+    async def test_nli_timeout_is_metric_error_and_other_methods_continue(
+        self,
+        monkeypatch,
+    ):
+        """A slow NLI model is isolated as one readable evaluator error."""
+        import threading
+
+        def _result():
+            return SimpleNamespace(
+                entail_score=0.9,
+                contradiction_score=0.0,
+                verdict="entails",
+                model_name="m",
+                chunks_evaluated=1,
+                evidence_truncated=False,
+                claims_evaluated=1,
+                total_claims=1,
+                coverage_complete=True,
+                claim_results=(),
+            )
+
+        release_slow_call = threading.Event()
+
+        def slow_score_evidence(answer, evidence, model_name=None):
+            del answer, evidence, model_name
+            release_slow_call.wait(timeout=2.0)
+            return _result()
+
+        monkeypatch.setattr(eval_mod, "NLI_EVALUATION_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(
+            eval_mod.evaluation_nli_model,
+            "score_evidence",
+            slow_score_evidence,
+        )
+        try:
+            metrics = await self.registry.evaluate(
+                ["nli_eval", "no_errors"],
+                inputs={},
+                outputs="Answer.",
+                reference_outputs="evidence",
+                execution_trace={},
+                technique_configs={
+                    "nli_eval": {"evidence_source": "expected_output"}
+                },
+            )
+        finally:
+            # asyncio.to_thread cannot stop the running function. Let this test's
+            # straggler finish immediately after the timeout assertion path.
+            release_slow_call.set()
+
+        nli_result = metrics["nli_eval"]
+        assert nli_result["score"] is None
+        assert nli_result["passed"] is False
+        assert nli_result["error"] is True
+        assert nli_result["comment"] == (
+            "NLI evaluation error: the model did not respond "
+            "within the allowed time."
+        )
+        assert metrics["no_errors"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_provenance_skips_when_no_context(self):
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="Answer text.",
+            reference_outputs=None,
+            execution_trace={},
+            technique_configs={"provenance_eval": {}},
+        )
+        assert metrics["provenance_eval"].get("not_evaluated") is True
+
+    @pytest.mark.asyncio
+    async def test_provenance_overlap_default(self):
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="the contract risk is low",
+            reference_outputs="the contract risk is low",
+            execution_trace={},
+            technique_configs={
+                "provenance_eval": {"context_source": "expected_output", "min_score": 0.5}
+            },
+        )
+        m = metrics["provenance_eval"]
+        assert m.get("not_evaluated") is not True
+        assert m["passed"] is True
+        assert "overlap" in m["comment"].lower()
+
+    @pytest.mark.asyncio
+    async def test_provenance_legacy_config_without_source_uses_expected_output(self):
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="the contract risk is low",
+            reference_outputs="the contract risk is low",
+            execution_trace={},
+            technique_configs={"provenance_eval": {"min_score": 0.5}},
+        )
+        assert metrics["provenance_eval"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_provenance_embeddings_uses_real_provider(self, monkeypatch):
+        async def fake_embed(answer, context, config):
+            return 0.95
+
+        self.registry._embedding_provenance_score = fake_embed
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="grounded answer",
+            reference_outputs="some grounding context",
+            execution_trace={},
+            technique_configs={
+                "provenance_eval": {
+                    "context_source": "expected_output",
+                    "provenance_mode": "embeddings",
+                    "min_score": 0.8,
+                }
+            },
+        )
+        m = metrics["provenance_eval"]
+        assert m["passed"] is True
+        assert "embedding" in m["comment"].lower()
+        assert m["threshold"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_provenance_embeddings_errors_when_unavailable(self):
+        async def boom(answer, context, config):
+            raise RuntimeError("no embedding provider")
+
+        self.registry._embedding_provenance_score = boom
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="grounded answer",
+            reference_outputs="some grounding context",
+            execution_trace={},
+            technique_configs={
+                "provenance_eval": {
+                    "context_source": "expected_output",
+                    "provenance_mode": "embeddings",
+                }
+            },
+        )
+        m = metrics["provenance_eval"]
+        assert m.get("error") is True
+        assert m["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_provenance_embeddings_clamps_unrelated_to_zero(self):
+        """Orthogonal vectors (cosine 0) score 0 and fail — not 0.5 as the old remap gave."""
+        async def fake_get(config):
+            return _FakeEmbedder([1.0, 0.0], [0.0, 1.0])
+
+        self.registry._get_embedder = fake_get
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="unrelated answer",
+            reference_outputs="different context",
+            execution_trace={},
+            technique_configs={
+                "provenance_eval": {
+                    "context_source": "expected_output",
+                    "provenance_mode": "embeddings",
+                    "min_score": 0.5,
+                }
+            },
+        )
+        m = metrics["provenance_eval"]
+        assert m["score"] == 0.0
+        assert m["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_provenance_embeddings_scores_identical_as_one(self):
+        async def fake_get(config):
+            return _FakeEmbedder([1.0, 0.0], [1.0, 0.0])
+
+        self.registry._get_embedder = fake_get
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="grounded answer",
+            reference_outputs="grounded answer",
+            execution_trace={},
+            technique_configs={
+                "provenance_eval": {
+                    "context_source": "expected_output",
+                    "provenance_mode": "embeddings",
+                    "min_score": 0.8,
+                }
+            },
+        )
+        assert metrics["provenance_eval"]["score"] == 1.0
+        assert metrics["provenance_eval"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_provenance_rejects_out_of_range_threshold(self):
+        async def fake_get(config):
+            return _FakeEmbedder([1.0, 0.0], [1.0, 0.0])
+
+        self.registry._get_embedder = fake_get
+        metrics = await self.registry.evaluate(
+            ["provenance_eval"],
+            inputs={},
+            outputs="grounded answer",
+            reference_outputs="grounded answer",
+            execution_trace={},
+            technique_configs={
+                "provenance_eval": {
+                    "context_source": "expected_output",
+                    "provenance_mode": "embeddings",
+                    "min_score": 5,
+                }
+            },
+        )
+        assert metrics["provenance_eval"].get("error") is True
+
+    @pytest.mark.asyncio
+    async def test_embedder_is_cached_across_calls(self, monkeypatch):
+        import app.modules.data.providers.vector.embedding.base as emb_base
+
+        builds = {"n": 0}
+
+        class _FakeCfg:
+            def __init__(self, **kwargs):
+                pass
+
+            def get(self):
+                builds["n"] += 1
+                return _FakeEmbedder([1.0, 0.0], [1.0, 0.0])
+
+        monkeypatch.setattr(emb_base, "EmbeddingConfig", _FakeCfg)
+        config = {"embedding_type": "huggingface", "embedding_model_name": "all-MiniLM-L6-v2"}
+        first = await self.registry._get_embedder(config)
+        second = await self.registry._get_embedder(config)
+        assert first is second
+        assert builds["n"] == 1
+
+
+class TestNliSinglePairScore:
+    """score() stays single-pair for GuardrailNliNode, decoupled from the claim-based
+    score_evidence() the evaluator uses."""
+
+    def _model_with(self, logits_row):
+        import torch
+        from types import SimpleNamespace
+        from app.modules.workflow.engine.nodes.local_nli_model import LocalNLIModel
+
+        class FakeTokenizer:
+            def __call__(self, evidence, answer, **kwargs):  # noqa: ARG002
+                return {"input_ids": torch.tensor([[0]])}
+
+        class FakeModel:
+            config = SimpleNamespace(
+                id2label={0: "contradiction", 1: "neutral", 2: "entailment"}
+            )
+
+            def __call__(self, input_ids):  # noqa: ARG002
+                return SimpleNamespace(logits=torch.tensor([logits_row]))
+
+        model = LocalNLIModel()
+        model._tokenizer = FakeTokenizer()
+        model._model = FakeModel()
+        model._loaded_model_name = DEFAULT_NLI_MODEL
+        return model
+
+    def test_score_returns_entailment_in_one_pass(self):
+        _, _, verdict = self._model_with([0.0, 0.0, 6.0]).score("Answer.", "Evidence.")
+        assert verdict == "entails"
+
+    def test_score_returns_contradiction(self):
+        entail, contra, verdict = self._model_with([6.0, 0.0, 0.0]).score("A.", "B.")
+        assert verdict == "contradicts"
+        assert contra > entail
+
+    def test_score_ignores_the_claim_cap(self):
+        # >8 sentences would make score_evidence() bail with coverage_complete=False
+        # (0, 0, "unknown"). score() must score the whole answer regardless.
+        many = " ".join(f"Claim number {i}." for i in range(20))
+        _, _, verdict = self._model_with([0.0, 0.0, 6.0]).score(many, "Evidence.")
+        assert verdict == "entails"
+
+class TestGuardrailNliNode:
+    """The production guardrail node: contradiction drives fallback/blocking."""
+
+    def _node(self):
+        from app.modules.workflow.engine.nodes.guardrail_nli_node import GuardrailNliNode
+
+        node = GuardrailNliNode.__new__(GuardrailNliNode)
+        node.node_id = "n1"
+        node.set_node_input = lambda *a, **k: None
+        return node
+
+    def _patch_score(self, monkeypatch, result):
+        from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
+
+        monkeypatch.setattr(
+            local_nli_model, "score", lambda answer, evidence, model_name=None: result
+        )
+
+    @pytest.mark.asyncio
+    async def test_contradiction_swaps_in_fallback_answer(self, monkeypatch):
+        self._patch_score(monkeypatch, (0.1, 0.9, "contradicts"))
+        out = await self._node().process({
+            "answer_field": "The sky is green.",
+            "evidence_field": "The sky is blue.",
+            "fail_on_contradiction": True,
+            "fallback_answer_enabled": True,
+            "fallback_answer": "I'm not certain.",
+        })
+        assert out["answer"] == "I'm not certain."
+        assert out["_guardrail_nli"]["fallback_used"] is True
+
+    @pytest.mark.asyncio
+    async def test_contradiction_blocks_when_no_fallback(self, monkeypatch):
+        self._patch_score(monkeypatch, (0.1, 0.9, "contradicts"))
+        out = await self._node().process({
+            "answer_field": "X",
+            "evidence_field": "Y",
+            "fail_on_contradiction": True,
+        })
+        assert out.get("blocked") is True
+        assert out["verdict"] == "nli_contradiction"
+
+    @pytest.mark.asyncio
+    async def test_entailment_passes_through(self, monkeypatch):
+        self._patch_score(monkeypatch, (0.95, 0.01, "entails"))
+        out = await self._node().process({"answer_field": "A", "evidence_field": "B"})
+        assert out["answer"] == "A"
+        assert out.get("blocked") is None
+        assert out["_guardrail_nli"]["verdict"] == "entails"

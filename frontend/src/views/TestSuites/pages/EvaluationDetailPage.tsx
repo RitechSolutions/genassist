@@ -40,6 +40,7 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { cn } from "@/helpers/utils";
 import { ToolUsageResults } from "../components/ToolUsageResults";
 import { ToolUsageResultCard } from "../components/ToolUsageResultCard";
+import { methodLabel } from "../helpers/methodLabels";
 
 type ResultFilter = "all" | "passed" | "failed" | "not_scored";
 
@@ -464,17 +465,21 @@ const EvaluationDetailPage: React.FC = () => {
           </div>
           {result.metrics && (
             <div className="flex flex-wrap justify-end gap-1">
-              {Object.entries(result.metrics).map(([tech, metricValue]) => (
+              {Object.entries(result.metrics).map(([tech, metricValue]) => {
+                const metricNotScored = metricValue.not_evaluated || metricValue.error;
+                return (
                 <span
                   key={tech}
                   className={cn(
                     "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
-                    metricValue.passed
-                      ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
-                      : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
+                    metricNotScored
+                      ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                      : metricValue.passed
+                        ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
+                        : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
                   )}
                 >
-                  <span className="mr-1 font-semibold">{tech}</span>
+                  <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
                   {typeof metricValue.score === "number" && (
                     <span>
                       {metricValue.score <= 1
@@ -483,7 +488,8 @@ const EvaluationDetailPage: React.FC = () => {
                     </span>
                   )}
                 </span>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -500,7 +506,7 @@ const EvaluationDetailPage: React.FC = () => {
                 if (!metricValue.comment && !sourceLabel) return null;
                 return (
                   <div key={`${result.id}-${tech}-comment`} className="text-xs">
-                    <span className="font-semibold text-muted-foreground">{tech}:</span>{" "}
+                    <span className="font-semibold text-muted-foreground">{methodLabel(tech)}:</span>{" "}
                     {metricValue.comment && (
                       <span className="text-muted-foreground">{metricValue.comment}</span>
                     )}
@@ -659,7 +665,7 @@ const EvaluationDetailPage: React.FC = () => {
               <div className="mt-1 flex flex-wrap gap-1">
                 {evaluation.techniques.map((technique) => (
                   <Badge key={technique} variant="secondary">
-                    {technique}
+                    {methodLabel(technique)}
                   </Badge>
                 ))}
               </div>
@@ -836,7 +842,7 @@ const EvaluationDetailPage: React.FC = () => {
                               key={tech}
                               className={`inline-flex items-center rounded-full px-2 py-0.5 ${colorClasses}`}
                             >
-                              <span className="mr-1 font-semibold">{tech}</span>
+                              <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
                               {acc !== null && <span>{Math.round(acc * 100)}%</span>}
                             </span>
                           );
@@ -907,7 +913,7 @@ const EvaluationDetailPage: React.FC = () => {
                     const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
                     return (
                       <div key={tech} className="rounded-lg border bg-card p-3 dark:bg-zinc-900">
-                        <div className="mb-2 text-xs font-medium text-muted-foreground">{tech}</div>
+                        <div className="mb-2 text-xs font-medium text-muted-foreground">{methodLabel(tech)}</div>
                         {acc !== null && (
                           <div className="space-y-1">
                             <div className="flex items-center justify-between">
@@ -1006,6 +1012,14 @@ const EvaluationDetailPage: React.FC = () => {
                         const passed = casePassed(result);
                         const notScored = caseNotScored(result);
                         const isActive = activeCase?.id === result.id;
+                        const metricComments = Object.entries(result.metrics ?? {})
+                          .filter(([, m]) => m.comment)
+                          .map(([tech, m]) => `${methodLabel(tech)}: ${m.comment}`)
+                          .join(" | ");
+                        let caseStatusLabel = "Passed";
+                        if (notScored) caseStatusLabel = notScoredLabel(result);
+                        else if (!passed) caseStatusLabel = "Failed";
+                        const subtitleText = metricComments || caseStatusLabel;
                         return (
                           <button
                             key={result.id}
@@ -1032,10 +1046,7 @@ const EvaluationDetailPage: React.FC = () => {
                             </div>
                             {result.metrics && (
                               <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                                {Object.entries(result.metrics)
-                                  .filter(([, m]) => m.comment)
-                                  .map(([tech, m]) => `${tech}: ${m.comment}`)
-                                  .join(" | ") || notScoredLabel(result)}
+                                {subtitleText}
                               </div>
                             )}
                           </button>

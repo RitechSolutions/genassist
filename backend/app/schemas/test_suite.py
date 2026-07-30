@@ -110,9 +110,18 @@ class TestSuite(TestSuiteInDB):
 
 class TestResultMetrics(BaseModel):
     # technique_key -> {score, passed, comment}
-    score: float | bool
+    # A check that could not run has no score; it is neither a pass nor a fail.
+    score: float | bool | None = None
     passed: bool
+    error: bool = False
+    not_evaluated: bool = False
     comment: Optional[str] = None
+    # Human-readable expected vs observed values, shown on the result card for the
+    # methods that genuinely have them (e.g. route/action). None when not applicable.
+    expected: Optional[str] = None
+    actual: Optional[str] = None
+    # Pass threshold for scored methods (NLI, Provenance, LLM Judge), shown by the score.
+    threshold: Optional[float] = None
     # Per-rule breakdown for tool_used (and future multi-rule techniques).
     details: Optional[List[Dict[str, Any]]] = None
 
@@ -296,11 +305,34 @@ class EvaluationAgentInfo(BaseModel):
     tools: List[EvaluationToolInfo] = Field(default_factory=list)
 
 
+class EvaluationRouterBranch(BaseModel):
+    """One selectable branch of a router node, with the node it routes to."""
+
+    value: str
+    destination: Optional[str] = None
+
+
+class EvaluationRouterInfo(BaseModel):
+    id: str
+    label: str
+    workflow_path: List[str] = Field(default_factory=list)
+    branches: List[EvaluationRouterBranch] = Field(default_factory=list)
+
+
+class EvaluationActionNodeInfo(BaseModel):
+    id: str
+    label: str
+    type: str
+    workflow_path: List[str] = Field(default_factory=list)
+
+
 class EvaluationToolCatalog(BaseModel):
-    """Agents and their tools for a workflow (incl. nested workflows), for the UI."""
+    """Agents/tools, routers and executable nodes for a workflow (incl. nested), for the UI."""
 
     workflow_id: UUID
     agents: List[EvaluationAgentInfo] = Field(default_factory=list)
+    routers: List[EvaluationRouterInfo] = Field(default_factory=list)
+    action_nodes: List[EvaluationActionNodeInfo] = Field(default_factory=list)
 
 
 class WorkflowEvaluationSummary(BaseModel):
@@ -334,4 +366,3 @@ class PaginatedEvaluations(BaseModel):
     page: int
     page_size: int
     any_running: bool = False
-

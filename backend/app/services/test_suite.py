@@ -18,7 +18,10 @@ from app.db.models.test_suite import (
     TestEvaluationModel,
     TestToolRuleResultModel,
 )
-from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
+from app.services.evaluation_nli import (
+    NLI_MAX_ANSWER_CLAIMS,
+    evaluation_nli_model,
+)
 from app.modules.workflow.engine.workflow_engine import (
     MemoryPersistenceError,
     WorkflowEngine,
@@ -99,6 +102,24 @@ RUN_TOTALS_KEY = "_totals"
 # Tool Usage is graded per scope from collected tool events, not per case.
 TOOL_USED_TECHNIQUE = "tool_used"
 
+# Checks that cannot honestly run until the workflow has produced its final answer.
+_FINAL_OUTPUT_TECHNIQUES = frozenset(
+    {
+        "exact_match",
+        "contains",
+        "not_contains",
+        "json_match",
+        "nli_eval",
+        "provenance_eval",
+        "llm_judge",
+    }
+)
+
+# Upper bounds so one hung case or evaluator cannot keep a run in "running".
+CASE_EXECUTION_TIMEOUT_SECONDS = 20 * 60
+EVALUATOR_TIMEOUT_SECONDS = 5 * 60
+NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
+
 
 class ResultStatus:
     """Why a case did or did not produce metrics."""
@@ -118,6 +139,29 @@ def _failure_reason(state: Any) -> str:
         if message:
             return str(message)
     return "Workflow execution failed"
+
+
+def _is_waiting_for_human(output: Any) -> bool:
+    """True when workflow execution paused to collect human input."""
+    return isinstance(output, dict) and output.get("status") == "awaiting_input"
+
+
+def _requires_final_output(technique: str, config: Dict[str, Any]) -> bool:
+    """Whether a check needs the final answer rather than intermediate run state."""
+    if technique in _FINAL_OUTPUT_TECHNIQUES:
+        return True
+    if technique != "field_equals":
+        return False
+
+    field = config.get("field")
+    if not field:
+        return True
+    return (
+        field == "outputs"
+        or field.startswith("outputs.")
+        or field == "trace.output"
+        or field.startswith("trace.output.")
+    )
 
 
 def _group_cases_into_conversations(
@@ -168,6 +212,55 @@ def _resolve_selector_value(
     return selector
 
 
+# Stable source presets grounding evaluators can compare against, decoupling the
+# UI ("Knowledge-base passages retrieved during the run") from the trace shape.
+GRADING_SOURCE_TYPES = (
+    "none",
+    "expected_output",
+    "output",
+    "kb_retrievals",
+    "conversation_context",
+    "tool_events",
+)
+
+
+def _source_text(source_type: str, payload: Dict[str, Any]) -> str:
+    """Render a named grading source from the payload as bounded text."""
+    trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
+    if source_type == "none":
+        return ""
+    if source_type == "expected_output":
+        return _normalize_text(payload.get("reference_outputs"))
+    if source_type == "output":
+        return _normalize_text(payload.get("outputs"))
+    if source_type == "kb_retrievals":
+        return _serialize_judge_source(trace.get("retrievals"))
+    if source_type == "conversation_context":
+        return _serialize_judge_source(trace.get("session"))
+    if source_type == "tool_events":
+        return _serialize_judge_source(trace.get("tool_events"))
+    return ""
+
+
+def _resolve_grading_source(
+    config: Dict[str, Any],
+    *,
+    source_key: str,
+    legacy_field_key: str,
+    payload: Dict[str, Any],
+) -> str:
+    """Resolve a grounding source to text: explicit source type, else a legacy
+    dotted-path field, else the expected output used by legacy evaluations. Empty text means the
+    caller should skip (not_evaluated) rather than grade against nothing."""
+    source_type = config.get(source_key)
+    if source_type:
+        return _source_text(source_type, payload)
+    legacy = config.get(legacy_field_key)
+    if isinstance(legacy, str):
+        return _normalize_text(_read_path(payload, legacy))
+    return _source_text("expected_output", payload)
+
+
 def _normalize_tool_call(entry: Dict[str, Any]) -> Dict[str, Any]:
     """Map an agent tool step/record to a stable {name, args, result}."""
     return {
@@ -205,8 +298,46 @@ def _extract_retrieval(node_type: Any, output: Any) -> Dict[str, Any] | None:
     return None
 
 
+# Substrings that mark a tool as a knowledge-retrieval tool, so retrieval done
+# through an agent tool (not a dedicated KB node) still counts as retrieved context.
+_RETRIEVAL_TOOL_HINTS = (
+    "knowledge", "kb", "retriev", "rag", "search_doc", "document_search",
+    "vector", "semantic", "faq", "lookup",
+)
+_RETRIEVAL_NODE_TYPES = {
+    "knowledgebasenode", "knowledgetoolnode", "threadragnode", "websearchnode",
+}
+
+
+def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
+    """True when a tool event represents knowledge retrieval (KB-backed or named like one)."""
+    node = nodes.get(event.get("tool_id")) if isinstance(nodes, dict) else None
+    node_type = node.get("type") if isinstance(node, dict) else None
+    if isinstance(node_type, str) and node_type.lower() in _RETRIEVAL_NODE_TYPES:
+        return True
+    name = _normalize_text(event.get("tool_name")).lower()
+    return any(hint in name for hint in _RETRIEVAL_TOOL_HINTS)
+
+
 def _names_equal(first: Any, second: Any) -> bool:
     return _normalize_text(first).lower() == _normalize_text(second).lower()
+
+
+def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
+    """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
+    try:
+        parsed = json.loads(raw_content)
+        if not isinstance(parsed, dict):
+            return None, "LLM judge response was not a JSON object"
+        # A missing score is a malformed judgment, not a real 0.0 — surface it as
+        # an error rather than silently failing the answer.
+        if parsed.get("score") is None:
+            return None, "LLM judge response did not include a score"
+        score = max(0.0, min(1.0, float(parsed["score"])))
+        reason = str(parsed.get("reason", "")).strip() or None
+        return score, reason
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None, "LLM judge response could not be parsed"
 
 
 def _serialize_judge_source(value: Any, max_length: int = 16000) -> str:
@@ -247,6 +378,36 @@ def _node_matches_selector(node: Dict[str, Any], selector: Any) -> bool:
     return node.get("id") == selector or _names_equal(node.get("label"), selector)
 
 
+def _is_empty_retrieval_result(result: Any) -> bool:
+    """True when a retrieval result carries no usable content (empty or a no-result sentinel)."""
+    return not _tool_result_satisfies({"result": result}, require_not_empty=True, required_text="")
+
+
+def _retrieval_content_key(value: Any) -> str:
+    """Normalized fingerprint of retrieved content, so identical results dedupe by text."""
+    text = value if isinstance(value, str) else json.dumps(value, default=str, sort_keys=True)
+    return _normalize_text(text).lower()
+
+
+def _append_retrieval(
+    retrievals: List[Any],
+    seen_content: set,
+    *,
+    node: Any,
+    label: Any,
+    query: Any,
+    results: Any,
+) -> None:
+    """Add a retrieval unless its content is empty, a no-result sentinel, or a duplicate."""
+    if _is_empty_retrieval_result(results):
+        return
+    content_key = _retrieval_content_key(results)
+    if content_key in seen_content:
+        return
+    retrievals.append({"node": node, "label": label, "query": query, "results": results})
+    seen_content.add(content_key)
+
+
 def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
     """Stable, workflow-agnostic view of a run for evaluators to grade against."""
     trace = execution_trace if isinstance(execution_trace, dict) else {}
@@ -280,14 +441,44 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
     errors: List[Any] = list(state.get("errors") or [])
     tools: List[Any] = []
     retrievals: List[Any] = []
+    # Retrieved context is deduped by content across both sources below, and skips
+    # empty or no-result payloads, so grounding evaluators never check against nothing.
+    seen_content: set = set()
     for entry in nodes.values():
         if entry.get("error"):
             errors.append({"node": entry["id"], "error": entry["error"]})
         for call in _extract_tool_calls(entry["output"]):
             tools.append({"node": entry["id"], **call})
         retrieval = _extract_retrieval(entry["type"], entry["output"])
-        if retrieval is not None:
-            retrievals.append({"node": entry["id"], "label": entry["label"], **retrieval})
+        node_failed = entry.get("status") == "failed" or bool(entry.get("error"))
+        if retrieval is not None and not node_failed:
+            _append_retrieval(
+                retrievals,
+                seen_content,
+                node=entry["id"],
+                label=entry["label"],
+                query=retrieval.get("query"),
+                results=retrieval.get("results"),
+            )
+
+    # Agents retrieve through tools (e.g. a knowledge-base tool), whose result
+    # lands in tool_events rather than a KB node. Fold those in so "retrieved
+    # context" reflects what the agent actually looked up; only successful calls count.
+    for event in (trace.get("tool_events") or []):
+        if not isinstance(event, dict):
+            continue
+        if event.get("status") != "succeeded":
+            continue
+        if not _is_retrieval_tool(event, nodes):
+            continue
+        _append_retrieval(
+            retrievals,
+            seen_content,
+            node=event.get("tool_id"),
+            label=event.get("tool_name"),
+            query=None,
+            results=event.get("result"),
+        )
 
     return {
         "output": trace.get("output"),
@@ -387,6 +578,7 @@ class SimpleEvaluatorRegistry:
     """
 
     def __init__(self) -> None:
+        self._embedder_cache: Dict[str, Any] = {}
         self._evaluators = {
             "exact_match": self._exact_match,
             "contains": self._contains,
@@ -433,13 +625,23 @@ class SimpleEvaluatorRegistry:
             fn = self._evaluators.get(key)
             if not fn:
                 continue
+            config = (technique_configs or {}).get(key, {})
+            if _is_waiting_for_human(outputs) and _requires_final_output(key, config):
+                results[key] = {
+                    "key": key,
+                    "score": None,
+                    "passed": False,
+                    "not_evaluated": True,
+                    "comment": "Not evaluated — waiting for human input.",
+                }
+                continue
             try:
                 result = await fn(
                     inputs=inputs,
                     outputs=outputs,
                     reference_outputs=reference_outputs,
                     payload=payload,
-                    config=(technique_configs or {}).get(key, {}),
+                    config=config,
                 )
                 results[result["key"]] = result
             except Exception as exc:  # pylint: disable=broad-except
@@ -448,10 +650,14 @@ class SimpleEvaluatorRegistry:
                 # logs only; the user-facing comment stays generic to avoid leaking
                 # provider/internal details.
                 logger.exception("Error running evaluator %s: %s", key, exc)
+                # An evaluator crash is our fault, not the agent's — mark it as an
+                # error so aggregation excludes it from pass/fail instead of
+                # counting a broken evaluator as a failing agent.
                 results[key] = {
                     "key": key,
-                    "score": False,
+                    "score": None,
                     "passed": False,
+                    "error": True,
                     "comment": "Evaluator failed to run. Check server logs for details.",
                 }
         return results
@@ -570,6 +776,8 @@ class SimpleEvaluatorRegistry:
             "key": "field_equals",
             "score": passed,
             "passed": passed,
+            "expected": expected,
+            "actual": actual,
             "comment": (
                 None if passed else f"{field or 'outputs'}={actual!r} (expected {expected!r})"
             ),
@@ -690,11 +898,14 @@ class SimpleEvaluatorRegistry:
             if isinstance(r.get("output"), dict)
         ]
         passed = any(_names_equal(route, expected) for route in routes)
+        observed = ", ".join(route for route in routes if route) or "none"
 
         return {
             "key": "route_taken",
             "score": passed,
             "passed": passed,
+            "expected": expected,
+            "actual": observed,
             "comment": None if passed else f"Expected route {expected!r}, took {routes or 'none'}.",
         }
 
@@ -732,6 +943,7 @@ class SimpleEvaluatorRegistry:
         candidates = [node for node in nodes.values() if is_target(node)]
         fired = any(node.get("status") == "success" and not node.get("error") for node in candidates)
         passed = fired if should_fire else not fired
+        errored = any(node.get("error") for node in candidates)
 
         if passed:
             comment = f"{target!r} did not run in this evaluation." if not candidates else None
@@ -739,7 +951,23 @@ class SimpleEvaluatorRegistry:
             comment = f"Expected {target!r} to fire but it did not."
         else:
             comment = f"Expected {target!r} not to fire but it did."
-        return {"key": "action_taken", "score": passed, "passed": passed, "comment": comment}
+
+        if not candidates:
+            observed = "did not run"
+        elif fired:
+            observed = "completed"
+        elif errored:
+            observed = "ran with an error"
+        else:
+            observed = "did not complete"
+        return {
+            "key": "action_taken",
+            "score": passed,
+            "passed": passed,
+            "expected": "must complete" if should_fire else "must not complete",
+            "actual": observed,
+            "comment": comment,
+        }
 
     async def _guardrail_nli(
         self,
@@ -750,39 +978,159 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        default_answer = outputs
-        default_evidence = reference_outputs
+        answer = _normalize_text(
+            _resolve_selector_value(
+                config.get("answer_field"), payload=payload, default=outputs
+            )
+        )
+        evidence = _resolve_grading_source(
+            config,
+            source_key="evidence_source",
+            legacy_field_key="evidence_field",
+            payload=payload,
+        )
 
-        answer = _resolve_selector_value(
-            config.get("answer_field"), payload=payload, default=default_answer
-        )
-        evidence = _resolve_selector_value(
-            config.get("evidence_field"), payload=payload, default=default_evidence
-        )
+        # No evidence to check against → skip, never a false failure.
+        if not answer or not evidence:
+            return {
+                "key": "nli_eval",
+                "score": None,
+                "passed": False,
+                "not_evaluated": True,
+                "comment": "Not evaluated: no answer or evidence source to compare.",
+            }
 
-        entail_score, contradiction_score, verdict = local_nli_model.score(
-            answer=_normalize_text(answer),
-            evidence=_normalize_text(evidence),
-            model_name=config.get("nli_model_name"),
-        )
+        # Transformer inference is blocking CPU work. Keep it off the event loop,
+        # but give NLI its own deadline so one slow model becomes a readable metric
+        # error and does not discard the other evaluation results for this case.
+        try:
+            nli_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    evaluation_nli_model.score_evidence,
+                    answer,
+                    evidence,
+                    config.get("nli_model_name"),
+                ),
+                timeout=NLI_EVALUATION_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "key": "nli_eval",
+                "score": None,
+                "passed": False,
+                "error": True,
+                "comment": (
+                    "NLI evaluation error: the model did not respond "
+                    "within the allowed time."
+                ),
+            }
+
+        # Never silently grade only part of an answer. If the safe claim limit is
+        # exceeded, report missing coverage instead of producing a misleading score.
+        if not getattr(nli_result, "coverage_complete", True):
+            return {
+                "key": "nli_eval",
+                "score": None,
+                "passed": False,
+                "not_evaluated": True,
+                "comment": (
+                    "Not evaluated: the answer requires "
+                    f"{nli_result.total_claims} claim groups, above the safe "
+                    f"limit of {NLI_MAX_ANSWER_CLAIMS}."
+                ),
+            }
+
+        # The real NLI model could not run. Surface an error instead of silently
+        # grading with the word-overlap heuristic.
+        if nli_result.model_name is None:
+            raise RuntimeError(
+                "NLI model unavailable; refusing to fall back to word overlap."
+            )
+
         min_entail_score = float(config.get("min_entail_score", 0.5))
+        if not 0.0 <= min_entail_score <= 1.0:
+            raise ValueError("NLI entailment threshold must be between 0 and 1.")
         fail_on_contradiction = bool(config.get("fail_on_contradiction", False))
+        claim_results = tuple(getattr(nli_result, "claim_results", ()))
+        if claim_results:
+            unsupported_claims = [
+                claim.text
+                for claim in claim_results
+                if claim.entail_score < min_entail_score
+            ]
+            contradicted_claims = [
+                claim.text
+                for claim in claim_results
+                if claim.contradiction_score >= 0.5
+            ]
+            claims_checked = len(claim_results)
+        else:
+            # Compatibility for mocked/legacy model results without claim metadata.
+            unsupported_claims = (
+                [answer] if nli_result.entail_score < min_entail_score else []
+            )
+            contradicted_claims = (
+                [answer] if nli_result.contradiction_score >= 0.5 else []
+            )
+            claims_checked = max(
+                int(getattr(nli_result, "claims_evaluated", 0)),
+                1,
+            )
 
-        if verdict == "entails" and entail_score < min_entail_score:
-            verdict = "unknown"
+        supported_claims = claims_checked - len(unsupported_claims)
+        contradiction_blocked = (
+            fail_on_contradiction and bool(contradicted_claims)
+        )
+        passed = not unsupported_claims and not contradiction_blocked
 
-        passed = verdict == "entails"
-        if verdict == "contradicts" and fail_on_contradiction:
-            passed = False
+        def _claim_previews(claims: list[str]) -> str:
+            previews = []
+            for claim in claims[:3]:
+                normalized = " ".join(claim.split())
+                previews.append(
+                    f'"{normalized[:157]}..."'
+                    if len(normalized) > 160
+                    else f'"{normalized}"'
+                )
+            if len(claims) > 3:
+                previews.append(f"and {len(claims) - 3} more")
+            return "; ".join(previews)
+
+        comment_parts = [
+            f"{supported_claims}/{claims_checked} answer sections supported."
+        ]
+        if unsupported_claims:
+            comment_parts.append(
+                f"Unsupported: {_claim_previews(unsupported_claims)}."
+            )
+        if contradicted_claims:
+            suffix = "" if fail_on_contradiction else " (not configured to fail)"
+            comment_parts.append(
+                "Strong contradiction observed: "
+                f"{_claim_previews(contradicted_claims)}{suffix}."
+            )
+        comment_parts.append(
+            f"Evidence chunks checked: {nli_result.chunks_evaluated}; "
+            f"model={nli_result.model_name}."
+        )
+        if nli_result.evidence_truncated:
+            comment_parts.append(
+                "The evidence exceeded the safety limit and was evenly sampled."
+            )
 
         return {
             "key": "nli_eval",
-            "score": entail_score,
+            "score": nli_result.entail_score,
             "passed": passed,
-            "comment": (
-                f"verdict={verdict}, contradiction_score={contradiction_score:.3f}, "
-                f"threshold={min_entail_score:.3f}"
-            ),
+            "threshold": min_entail_score,
+            "comment": " ".join(comment_parts),
+            "claims_checked": claims_checked,
+            "supported_claims": supported_claims,
+            "unsupported_claims": unsupported_claims,
+            "contradicted_claims": contradicted_claims,
+            "chunks_checked": nli_result.chunks_evaluated,
+            "evidence_bounded": nli_result.evidence_truncated,
+            "model": nli_result.model_name,
         }
 
     async def _guardrail_provenance(
@@ -794,54 +1142,124 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        default_answer = outputs
-        default_context = reference_outputs
-
-        answer = _resolve_selector_value(
-            config.get("answer_field"), payload=payload, default=default_answer
+        answer = _normalize_text(
+            _resolve_selector_value(
+                config.get("answer_field"), payload=payload, default=outputs
+            )
         )
-        context_text = _resolve_selector_value(
-            config.get("context_field"),
+        context_text = _resolve_grading_source(
+            config,
+            source_key="context_source",
+            legacy_field_key="context_field",
             payload=payload,
-            default=default_context,
         )
 
-        heuristic_score = self._naive_provenance_score(
-            _normalize_text(answer), _normalize_text(context_text)
-        )
-        score = heuristic_score
-        reason = "Heuristic overlap score"
+        # No grounding source to verify against → skip, never a false failure.
+        if not answer or not context_text:
+            return {
+                "key": "provenance_eval",
+                "score": None,
+                "passed": False,
+                "not_evaluated": True,
+                "comment": "Not evaluated: no answer or grounding source to compare.",
+            }
+
         use_llm_judge = bool(
             config.get("use_llm_judge", False)
             or config.get("provenance_mode") == "llm"
         )
+        use_embeddings = config.get("provenance_mode") == "embeddings"
 
         if use_llm_judge:
-            llm_score, llm_reason = await self._run_provenance_judge(
-                answer=_normalize_text(answer),
-                context=_normalize_text(context_text),
+            score, reason = await self._run_provenance_judge(
+                answer=answer,
+                context=context_text,
                 provider_id=config.get("llm_provider_id"),
                 system_prompt_suffix=config.get("llm_judge_system_prompt_suffix") or "",
             )
-            if llm_score is not None:
-                score = llm_score
-            if llm_reason:
-                reason = llm_reason
+            if score is None:
+                raise RuntimeError("Provenance LLM judge did not return a score.")
+        elif use_embeddings:
+            # Real embedding similarity; never silently fall back to word overlap.
+            score = await self._embedding_provenance_score(answer, context_text, config)
+            reason = "Embedding similarity score"
+        else:
+            score = self._naive_provenance_score(answer, context_text)
+            reason = "Word-overlap score"
 
         min_score = float(config.get("min_score", 0.5))
-        fail_on_violation = bool(config.get("fail_on_violation", False))
+        if not 0.0 <= min_score <= 1.0:
+            raise ValueError("Provenance threshold must be between 0 and 1.")
         passed = score >= min_score
-        if fail_on_violation and not passed:
-            passed = False
 
         return {
             "key": "provenance_eval",
             "score": score,
             "passed": passed,
-            "comment": (
-                f"{reason}; heuristic_score={heuristic_score:.3f}; threshold={min_score:.3f}"
-            ),
+            "threshold": min_score,
+            "comment": f"{reason}; score={score:.3f}; threshold={min_score:.3f}",
         }
+
+    async def _embedding_provenance_score(
+        self, answer: str, context: str, config: Dict[str, Any]
+    ) -> float:
+        """Cosine similarity between answer and context using the configured
+        embedding provider. Raises on failure so the caller reports an error
+        rather than silently degrading to word overlap."""
+        embedder = await self._get_embedder(config)
+        answer_vec, context_vec = await embedder.embed_texts([answer, context])
+        dot = sum(a * b for a, b in zip(answer_vec, context_vec))
+        # Vectors are normalized, so the dot product is cosine similarity. Clamp to
+        # [0, 1]: unrelated text (cosine near 0) scores near 0 and fails grounding.
+        return max(0.0, min(1.0, dot))
+
+    async def _get_embedder(self, config: Dict[str, Any]):
+        """Build (and cache per provider/model) the embedder for provenance scoring."""
+        from app.core.config.settings import settings
+        from app.modules.data.providers.vector.embedding.base import EmbeddingConfig
+
+        embedding_type = config.get("embedding_type", "huggingface")
+        model_name = config.get("embedding_model_name", "all-MiniLM-L6-v2")
+
+        if embedding_type == "openai":
+            base_url = config.get("embedding_base_url") or None
+            embedding_config = EmbeddingConfig(
+                type="openai",
+                model_name=model_name,
+                api_key=config.get("embedding_api_key") or settings.OPENAI_API_KEY,
+                base_url=base_url,
+                normalize_embeddings=True,
+            )
+            cache_key = f"openai:{model_name}:{base_url}"
+        elif embedding_type == "bedrock":
+            model_id = config.get("embedding_model_id")
+            region_name = config.get("embedding_region_name")
+            embedding_config = EmbeddingConfig(
+                type="bedrock",
+                model_name="",
+                model_id=model_id,
+                region_name=region_name,
+                normalize_embeddings=True,
+            )
+            cache_key = f"bedrock:{model_id}:{region_name}"
+        else:
+            embedding_config = EmbeddingConfig(
+                type="huggingface",
+                model_name=model_name,
+                normalize_embeddings=True,
+            )
+            cache_key = f"huggingface:{model_name}"
+
+        cached = self._embedder_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        embedder = embedding_config.get()
+        # Embedders return False (not raise) on init failure — never cache a broken one.
+        if not await embedder.initialize():
+            raise RuntimeError(f"Embedding provider {embedding_type!r} failed to initialize.")
+        self._embedder_cache[cache_key] = embedder
+        return embedder
 
     def _naive_provenance_score(self, answer: str, context: str) -> float:
         if not answer or not context:
@@ -909,22 +1327,12 @@ class SimpleEvaluatorRegistry:
         raw_content = getattr(response, "content", "")
         if isinstance(raw_content, list):
             raw_content = " ".join(str(part) for part in raw_content)
-
-        try:
-            parsed = json.loads(raw_content)
-            if not isinstance(parsed, dict):
-                return None, "LLM judge response was not a JSON object"
-            score = float(parsed.get("score", 0.0))
-            score = max(0.0, min(1.0, score))
-            reason = str(parsed.get("reason", "")).strip() or None
-            return score, reason
-        except (ValueError, TypeError, json.JSONDecodeError):
-            return None, "LLM judge response could not be parsed"
+        return _parse_judge_json(raw_content)
 
     async def _llm_judge(
         self,
         *,
-        inputs: Dict[str, Any],  # noqa: ARG002 - question sourced via question_field
+        inputs: Dict[str, Any],
         outputs: Any,
         reference_outputs: Any,  # noqa: ARG002 - reserved for unified signature
         payload: Dict[str, Any],
@@ -946,12 +1354,38 @@ class SimpleEvaluatorRegistry:
             min_score = 0.5
 
         answer = _resolve_selector_value(config.get("answer_field"), payload=payload, default=outputs)
-        question = _resolve_selector_value(config.get("question_field"), payload=payload, default="")
-        source_field = config.get("source_field")
-        source = _read_path(payload, source_field) if source_field else None
+        # Auto-provide the user's turn as the QUESTION so the wizard only needs a
+        # rubric; a configured question_field still overrides it.
+        default_question = inputs.get("message") if isinstance(inputs, dict) else ""
+        question = _resolve_selector_value(
+            config.get("question_field"), payload=payload, default=default_question
+        )
         answer_text = _normalize_text(answer)
         question_text = _normalize_text(question)
-        source_text = _serialize_judge_source(source)
+
+        # New configs use a stable source preset. Saved legacy configs keep their
+        # dotted source_field; an unresolved selected source skips instead of
+        # silently degrading into a rubric-only judgment.
+        source_type = config.get("source_type")
+        source_field = config.get("source_field")
+        source_required = False
+        if isinstance(source_type, str):
+            source_required = source_type != "none"
+            source_text = _source_text(source_type, payload)
+        elif isinstance(source_field, str) and source_field:
+            source_required = True
+            source_text = _serialize_judge_source(_read_path(payload, source_field))
+        else:
+            source_text = ""
+
+        if source_required and not source_text:
+            return {
+                "key": "llm_judge",
+                "score": None,
+                "passed": False,
+                "not_evaluated": True,
+                "comment": "Not evaluated: the selected grounding source was unavailable.",
+            }
 
         system_prompt = (
             f"{rubric}\n\n"
@@ -971,12 +1405,15 @@ class SimpleEvaluatorRegistry:
             user_content="\n\n".join(user_parts),
             provider_id=config.get("llm_provider_id"),
         )
+        # A missing score means the judge output was malformed — our evaluator's
+        # problem, not the agent's. Report it as an error, not a failing answer.
         if score is None:
             return {
                 "key": "llm_judge",
-                "score": 0.0,
+                "score": None,
                 "passed": False,
-                "comment": reason or "LLM judge failed.",
+                "error": True,
+                "comment": reason or "LLM judge did not return a usable score.",
             }
 
         passed = score >= min_score
@@ -984,6 +1421,7 @@ class SimpleEvaluatorRegistry:
             "key": "llm_judge",
             "score": score,
             "passed": passed,
+            "threshold": min_score,
             "comment": f"{reason or 'no reason'}; threshold={min_score:.2f}",
         }
 
@@ -1187,7 +1625,50 @@ class TestSuiteService:
         created = await self.run_repo.create(run)
         return TestRunInDB.model_validate(created, from_attributes=True)
 
+    async def _fail_run(self, run: TestRunModel, error: str) -> None:
+        """Move a run to the terminal failed state and notify the user."""
+        run.status = "failed"
+        run.summary_metrics = {"error": error}
+        await self.run_repo.update(run)
+        emit_notification(
+            socket_connection_manager=injector.get(SocketConnectionManager),
+            tenant_id=get_tenant_context(),
+            payload=notification_payload(
+                notification_id=f"workflow_failed:test:{run.id}",
+                title="Workflow Run Failed",
+                description=f"Test run {str(run.id)[:8]}... failed.",
+                level="error",
+                action_url="/tests/evaluations",
+                entity_kind="test_run",
+                entity_id=run.id,
+                event_key=f"workflow_failed:test:{run.id}",
+            ),
+        )
+
     async def _execute_run(
+        self,
+        suite: TestSuiteModel,
+        workflow: WorkflowInDB,
+        run: TestRunModel,
+        run_input_metadata: Dict[str, Any] | None = None,
+        technique_configs: Dict[str, Dict[str, Any]] | None = None,
+    ) -> None:
+        """Guarantee a terminal state: any unhandled error marks the run failed."""
+        try:
+            await self._execute_run_inner(
+                suite,
+                workflow,
+                run,
+                run_input_metadata=run_input_metadata,
+                technique_configs=technique_configs,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception("Test run %s failed unexpectedly: %s", run.id, exc)
+            if run.status not in ("completed", "failed"):
+                await self._fail_run(run, f"Run failed unexpectedly: {exc}")
+            raise
+
+    async def _execute_run_inner(
         self,
         suite: TestSuiteModel,
         workflow: WorkflowInDB,
@@ -1202,23 +1683,7 @@ class TestSuiteService:
         # Load cases
         cases = await self.list_cases_for_suite(suite.id)
         if not cases:
-            run.status = "failed"
-            run.summary_metrics = {"error": "No test cases in suite"}
-            await self.run_repo.update(run)
-            emit_notification(
-                socket_connection_manager=injector.get(SocketConnectionManager),
-                tenant_id=get_tenant_context(),
-                payload=notification_payload(
-                    notification_id=f"workflow_failed:test:{run.id}",
-                    title="Workflow Run Failed",
-                    description=f"Test run {str(run.id)[:8]}... failed.",
-                    level="error",
-                    action_url="/tests/evaluations",
-                    entity_kind="test_run",
-                    entity_id=run.id,
-                    event_key=f"workflow_failed:test:{run.id}",
-                ),
-            )
+            await self._fail_run(run, "No test cases in suite")
             return
 
         # Build workflow config for engine
@@ -1255,8 +1720,8 @@ class TestSuiteService:
                 )
             )
 
-        async def execute_single(case: TestCaseInDB, thread_id: str | None) -> bool:
-            """Run one turn. Returns False when the conversation must not continue."""
+        async def execute_single(case: TestCaseInDB, thread_id: str | None) -> str:
+            """Run one turn and report whether it completed, failed, or paused."""
             merged_input: Dict[str, Any] = {}
             if run_input_metadata:
                 merged_input.update(run_input_metadata)
@@ -1273,15 +1738,26 @@ class TestSuiteService:
             # Execution and scoring fail differently: a turn that never ran or never
             # reached memory breaks the thread, while a scoring error does not.
             try:
-                state = await engine.execute_from_node(
-                    input_data=merged_input,
-                    thread_id=thread_id,
-                    persist=bool(thread_id),
-                    await_persist=bool(thread_id),
-                    usage_context=WorkflowUsageContext(
-                        source="test_suite", workflow_id=coerce_uuid(engine.workflow_id)
+                state = await asyncio.wait_for(
+                    engine.execute_from_node(
+                        input_data=merged_input,
+                        thread_id=thread_id,
+                        persist=bool(thread_id),
+                        await_persist=bool(thread_id),
+                        usage_context=WorkflowUsageContext(
+                            source="test_suite", workflow_id=coerce_uuid(engine.workflow_id)
+                        ),
                     ),
+                    timeout=CASE_EXECUTION_TIMEOUT_SECONDS,
                 )
+            except asyncio.TimeoutError:
+                logger.error("Test case %s timed out after %ss", case.id, CASE_EXECUTION_TIMEOUT_SECONDS)
+                await record_case_error(
+                    case,
+                    f"Execution timed out after {CASE_EXECUTION_TIMEOUT_SECONDS}s",
+                    ResultStatus.EXECUTION_FAILED,
+                )
+                return "failed"
             except MemoryPersistenceError as exc:
                 logger.error("Memory write failed for test case %s: %s", case.id, exc)
                 await record_case_error(
@@ -1289,13 +1765,13 @@ class TestSuiteService:
                     f"Memory write failed, later turns skipped: {exc}",
                     ResultStatus.EXECUTION_FAILED,
                 )
-                return False
+                return "failed"
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Error executing test case %s: %s", case.id, exc)
                 await record_case_error(
                     case, f"Execution failed: {exc}", ResultStatus.EXECUTION_FAILED
                 )
-                return False
+                return "failed"
 
             # The engine reports some failures on the state instead of raising, and
             # a failed run is never written to memory.
@@ -1305,8 +1781,9 @@ class TestSuiteService:
                 await record_case_error(
                     case, f"Execution failed: {reason}", ResultStatus.EXECUTION_FAILED
                 )
-                return False
+                return "failed"
 
+            waiting_for_human = _is_waiting_for_human(state.output)
             try:
                 output = state.output
                 truncated_output = _truncate_output(output)
@@ -1317,13 +1794,16 @@ class TestSuiteService:
                     node_status = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
                     case_events[str(case.id)] = execution_trace.get("tool_events") or []
                     case_executed_agents[str(case.id)] = set(node_status.keys())
-                metrics = await self.evaluators.evaluate(
-                    per_case_keys,
-                    inputs=merged_input,
-                    outputs=output,
-                    reference_outputs=case.expected_output,
-                    execution_trace=execution_trace,
-                    technique_configs=technique_configs,
+                metrics = await asyncio.wait_for(
+                    self.evaluators.evaluate(
+                        per_case_keys,
+                        inputs=merged_input,
+                        outputs=output,
+                        reference_outputs=case.expected_output,
+                        execution_trace=execution_trace,
+                        technique_configs=technique_configs,
+                    ),
+                    timeout=EVALUATOR_TIMEOUT_SECONDS,
                 )
                 result = TestResultModel(
                     run_id=run.id,
@@ -1346,8 +1826,7 @@ class TestSuiteService:
                 await record_case_error(
                     case, f"Scoring failed: {exc}", ResultStatus.SCORING_FAILED
                 )
-            # The turn ran and persisted, so the conversation stays intact.
-            return True
+            return "waiting_for_human" if waiting_for_human else "completed"
 
         use_memory = bool((run_input_metadata or {}).get("use_memory"))
         conversations = _group_cases_into_conversations(cases)
@@ -1374,44 +1853,74 @@ class TestSuiteService:
                         "the conversation's memory",
                         ResultStatus.SKIPPED,
                     )
-                elif await execute_single(case, thread_id):
+                    turn_outcome = "failed"
+                else:
+                    turn_outcome = await execute_single(case, thread_id)
+
+                if turn_outcome == "completed":
                     continue
 
                 # Only a shared thread creates a dependency between turns. Without
-                # memory each case is independent, so a failure stops nothing.
-                if not thread_id:
+                # memory an ordinary failure stops nothing. A HIL pause still stops
+                # its conversation because later turns do not contain the requested
+                # human answer.
+                if turn_outcome != "waiting_for_human" and not thread_id:
                     continue
 
+                skip_reason = (
+                    "Skipped: an earlier turn is waiting for human input"
+                    if turn_outcome == "waiting_for_human"
+                    else "Skipped: an earlier turn was not persisted to memory"
+                )
                 for skipped in conversation_cases[position + 1:]:
                     await record_case_error(
                         skipped,
-                        "Skipped: an earlier turn was not persisted to memory",
+                        skip_reason,
                         ResultStatus.SKIPPED,
                     )
                 break
 
-        # Aggregate metrics
+        # Aggregate metrics. A metric can be scored, an evaluator error, or not
+        # evaluated (no source). Only scored metrics count toward pass/fail; the
+        # others are surfaced as coverage so a run with skipped checks never
+        # reports a misleading 100%.
         summary: Dict[str, Any] = {}
         counts: Dict[str, int] = {}
+        evaluated: Dict[str, int] = {}
         sums: Dict[str, float] = {}
         passes: Dict[str, int] = {}
+        errors: Dict[str, int] = {}
+        not_evaluated: Dict[str, int] = {}
 
         for metrics in per_case_metrics:
             for key, value in metrics.items():
-                score = value.get("score")
-                passed = bool(value.get("passed"))
                 counts[key] = counts.get(key, 0) + 1
-                passes[key] = passes.get(key, 0) + (1 if passed else 0)
+                if value.get("error"):
+                    errors[key] = errors.get(key, 0) + 1
+                    continue
+                if value.get("not_evaluated"):
+                    not_evaluated[key] = not_evaluated.get(key, 0) + 1
+                    continue
+                evaluated[key] = evaluated.get(key, 0) + 1
+                if value.get("passed"):
+                    passes[key] = passes.get(key, 0) + 1
+                score = value.get("score")
                 if isinstance(score, (int, float, bool)):
                     sums[key] = sums.get(key, 0.0) + float(score)
 
         for key, count in counts.items():
-            avg_score = sums.get(key, 0.0) / count if count else 0.0
-            accuracy = passes.get(key, 0) / count if count else 0.0
+            scored = evaluated.get(key, 0)
+            # No scored cases → the metric was not evaluated; leave scores null so
+            # it does not read as 0% in health or pass-rate displays.
+            avg_score = sums.get(key, 0.0) / scored if scored else None
+            accuracy = passes.get(key, 0) / scored if scored else None
             summary[key] = {
                 "avg_score": avg_score,
                 "accuracy": accuracy,
                 "cases": count,
+                "evaluated": scored,
+                "errors": errors.get(key, 0),
+                "not_evaluated": not_evaluated.get(key, 0),
             }
 
         # Tool Usage: grade rules across their scope from the collected events and
@@ -1812,16 +2321,23 @@ class TestSuiteService:
         """The Run all scope: every evaluation for the workflow (DB-filtered)."""
         return await self.evaluation_repo.get_all_for_workflow(workflow_id)
 
-    async def _full_agent_catalog(self, workflow_id: Any) -> List[Dict[str, Any]]:
-        """Agents + tools for a workflow, expanding nested workflows (cycle-safe).
+    async def _walk_workflow_catalog(self, workflow_id: Any) -> Dict[str, List[Dict[str, Any]]]:
+        """One cycle-safe walk of a workflow (+ nested) collecting agents, routers and nodes.
 
         The single catalogue the UI, config canonicalization and run-time grading all
         consume, so a nested or MCP tool shown in the UI resolves everywhere it is
         used — never rejected as unknown, never treated as a non-agent node.
         """
-        from app.services.tool_catalog import nested_workflow_refs, resolve_agents
+        from app.services.tool_catalog import (
+            nested_workflow_refs,
+            resolve_action_nodes,
+            resolve_agents,
+            resolve_routers,
+        )
 
         agents: List[Dict[str, Any]] = []
+        routers: List[Dict[str, Any]] = []
+        action_nodes: List[Dict[str, Any]] = []
         visited: set[str] = set()
 
         async def walk(current_id: str, path: List[str]) -> None:
@@ -1838,18 +2354,29 @@ class TestSuiteService:
                 "edges": workflow.edges or [],
             }
             agents.extend(resolve_agents(graph, workflow_path=path))
+            routers.extend(resolve_routers(graph, workflow_path=path))
+            action_nodes.extend(resolve_action_nodes(graph, workflow_path=path))
             for ref in nested_workflow_refs(graph):
                 await walk(ref["workflow_id"], path + [ref["label"]])
 
         await walk(str(workflow_id), [])
-        return agents
+        return {"agents": agents, "routers": routers, "action_nodes": action_nodes}
+
+    async def _full_agent_catalog(self, workflow_id: Any) -> List[Dict[str, Any]]:
+        """Agents + tools for a workflow, expanding nested workflows (cycle-safe)."""
+        return (await self._walk_workflow_catalog(workflow_id))["agents"]
 
     async def get_evaluation_tool_catalog(
         self, workflow_id: UUID
     ) -> "EvaluationToolCatalog":
-        """Agents + tools for a workflow, expanding nested workflows (cycle-safe)."""
-        agents = await self._full_agent_catalog(workflow_id)
-        return EvaluationToolCatalog(workflow_id=workflow_id, agents=agents)
+        """Agents, routers and executable nodes for a workflow, expanding nested (cycle-safe)."""
+        catalog = await self._walk_workflow_catalog(workflow_id)
+        return EvaluationToolCatalog(
+            workflow_id=workflow_id,
+            agents=catalog["agents"],
+            routers=catalog["routers"],
+            action_nodes=catalog["action_nodes"],
+        )
 
     async def get_workflow_evaluation_summaries(
         self,
@@ -2036,4 +2563,3 @@ class TestSuiteService:
                 await self.run_repo.update(row)
         except Exception:
             logger.exception("Could not mark run %s as failed after start error", run_id)
-

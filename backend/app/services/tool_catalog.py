@@ -24,6 +24,7 @@ from app.modules.workflow.agents.base_tool import to_snake_case
 
 MCP_NODE_TYPE = "mcpNode"
 WORKFLOW_EXECUTOR_NODE_TYPE = "workflowExecutorNode"
+ROUTER_NODE_TYPE = "routerNode"
 _TOOLS_HANDLE = "tools"
 
 
@@ -96,6 +97,67 @@ def resolve_agents(workflow: Any, workflow_path: Optional[List[str]] = None) -> 
             agents[agent_id]["tools"].append(tool)
 
     return list(agents.values())
+
+
+def _route_value_from_handle(handle: Any) -> str:
+    """The route a router records is the edge ``sourceHandle`` minus its ``output_``
+    prefix (handle ``output_true`` -> route ``true``), which is what route_taken compares."""
+    value = str(handle or "").strip()
+    prefix = "output_"
+    return value[len(prefix):] if value.startswith(prefix) else value
+
+
+def resolve_routers(workflow: Any, workflow_path: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Router nodes with their selectable branches, each pointing at its destination node.
+
+    A branch value is the route the router records (e.g. ``true``/``false``), so it matches
+    the route_taken check.
+    """
+    workflow_path = workflow_path or []
+    nodes = _nodes(workflow)
+    nodes_by_id = {n.get("id"): n for n in nodes}
+    routers: List[Dict[str, Any]] = []
+    for node in nodes:
+        if node.get("type") != ROUTER_NODE_TYPE:
+            continue
+        node_id = node.get("id")
+        branches: List[Dict[str, Any]] = []
+        seen: set = set()
+        for edge in _edges(workflow):
+            if edge.get("source") != node_id:
+                continue
+            value = _route_value_from_handle(edge.get("sourceHandle"))
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            target = nodes_by_id.get(edge.get("target"))
+            branches.append(
+                {"value": value, "destination": _node_label(target) if target else None}
+            )
+        routers.append(
+            {
+                "id": node_id,
+                "label": _node_label(node),
+                "workflow_path": list(workflow_path),
+                "branches": branches,
+            }
+        )
+    return routers
+
+
+def resolve_action_nodes(workflow: Any, workflow_path: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Every executable node in the workflow, so Action Taken can target any of them by id."""
+    workflow_path = workflow_path or []
+    return [
+        {
+            "id": node.get("id"),
+            "label": _node_label(node),
+            "type": node.get("type", ""),
+            "workflow_path": list(workflow_path),
+        }
+        for node in _nodes(workflow)
+        if node.get("id")
+    ]
 
 
 def nested_workflow_refs(workflow: Any) -> List[Dict[str, Any]]:

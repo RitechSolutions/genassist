@@ -54,9 +54,30 @@ export interface EvaluationAgentInfo {
   tools: EvaluationToolInfo[];
 }
 
+export interface EvaluationRouterBranch {
+  value: string;
+  destination: string | null;
+}
+
+export interface EvaluationRouterInfo {
+  id: string;
+  label: string;
+  workflow_path: string[];
+  branches: EvaluationRouterBranch[];
+}
+
+export interface EvaluationActionNodeInfo {
+  id: string;
+  label: string;
+  type: string;
+  workflow_path: string[];
+}
+
 export interface EvaluationToolCatalog {
   workflow_id: string;
   agents: EvaluationAgentInfo[];
+  routers: EvaluationRouterInfo[];
+  action_nodes: EvaluationActionNodeInfo[];
 }
 
 export type ToolUsageOperator = "all" | "any" | "none" | "only";

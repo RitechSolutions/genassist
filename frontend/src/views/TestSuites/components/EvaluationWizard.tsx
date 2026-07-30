@@ -26,7 +26,9 @@ import type { TestSuite } from "@/interfaces/testSuite.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import type {
+  EvaluationActionNodeInfo,
   EvaluationAgentInfo,
+  EvaluationRouterInfo,
   ToolUsagePerToolCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
@@ -119,6 +121,7 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
       { value: "contains", label: "Contains", description: "Output contains the expected text" },
       { value: "not_contains", label: "Does Not Contain", description: "Output must not contain the specified text" },
       { value: "json_match", label: "JSON Match", description: "Output matches the expected JSON structure and values" },
+      { value: "field_equals", label: "Field Equals", description: "A specific field in the output equals an expected value" },
     ],
   },
   {
@@ -142,6 +145,7 @@ const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
 
 const CONFIG_METRICS = [
   "not_contains",
+  "field_equals",
   "nli_eval",
   "provenance_eval",
   "tool_used",
@@ -161,6 +165,46 @@ const NLI_MODEL_OPTIONS = [
   { value: "cross-encoder/nli-deberta-v3-base", label: "DeBERTa v3 Base (NLI)" },
   { value: "cross-encoder/nli-roberta-base", label: "RoBERTa Base (NLI)" },
 ];
+
+export type GradingSourceSelection =
+  | "expected_output"
+  | "kb_retrievals"
+  | "conversation_context"
+  | "tool_events"
+  | "none"
+  | "legacy";
+
+const GRADING_SOURCE_OPTIONS: {
+  value: Exclude<GradingSourceSelection, "none" | "legacy">;
+  label: string;
+}[] = [
+  { value: "kb_retrievals", label: "Retrieved context" },
+  { value: "expected_output", label: "Expected answer" },
+];
+
+const GradingSourceSelect: React.FC<{
+  value: GradingSourceSelection;
+  onChange: (value: GradingSourceSelection) => void;
+  allowRubricOnly?: boolean;
+  legacyField?: string;
+}> = ({ value, onChange, allowRubricOnly = false, legacyField }) => (
+  <Select value={value} onValueChange={(next) => onChange(next as GradingSourceSelection)}>
+    <SelectTrigger className="mt-1">
+      <SelectValue placeholder="Select source" />
+    </SelectTrigger>
+    <SelectContent>
+      {allowRubricOnly && <SelectItem value="none">No source — rubric only</SelectItem>}
+      {GRADING_SOURCE_OPTIONS.map((source) => (
+        <SelectItem key={source.value} value={source.value}>
+          {source.label}
+        </SelectItem>
+      ))}
+      {legacyField && (
+        <SelectItem value="legacy">Legacy configured source ({legacyField})</SelectItem>
+      )}
+    </SelectContent>
+  </Select>
+);
 
 type WizardStep = "workflow" | "basics" | "data" | "validation" | "configure";
 
@@ -225,7 +269,11 @@ export interface EvaluationWizardData {
   nliModelName: string;
   nliMinEntailScore: string;
   nliFailOnContradiction: boolean;
+  nliEvidenceSource: GradingSourceSelection;
+  nliEvidenceField: string;
   provMode: "embeddings" | "llm";
+  provContextSource: GradingSourceSelection;
+  provContextField: string;
   provEmbeddingType: "openai" | "huggingface" | "bedrock";
   provEmbeddingModelName: string;
   provMinScore: string;
@@ -234,6 +282,8 @@ export interface EvaluationWizardData {
   provLlmJudgeSystemPromptSuffix: string;
   toolRules: ToolUsageRule[];
   notContainsText: string;
+  fieldEqualsField: string;
+  fieldEqualsExpected: string;
   routeExpected: string;
   routeNode: string;
   actionNode: string;
@@ -242,6 +292,7 @@ export interface EvaluationWizardData {
   judgeRubric: string;
   judgeMinScore: string;
   judgeProviderId: string;
+  judgeSourceType: GradingSourceSelection;
   judgeSourceField: string;
 }
 
@@ -316,9 +367,17 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [nliFailOnContradiction, setNliFailOnContradiction] = useState(
     initialData?.nliFailOnContradiction ?? false
   );
+  const [nliEvidenceSource, setNliEvidenceSource] = useState<GradingSourceSelection>(
+    initialData?.nliEvidenceSource ?? "expected_output"
+  );
+  const [nliEvidenceField] = useState(initialData?.nliEvidenceField ?? "");
 
   // Provenance config
   const [provMode, setProvMode] = useState<"embeddings" | "llm">(initialData?.provMode ?? "embeddings");
+  const [provContextSource, setProvContextSource] = useState<GradingSourceSelection>(
+    initialData?.provContextSource ?? "kb_retrievals"
+  );
+  const [provContextField] = useState(initialData?.provContextField ?? "");
   const [provEmbeddingType, setProvEmbeddingType] = useState<"openai" | "huggingface" | "bedrock">(
     initialData?.provEmbeddingType ?? "huggingface"
   );
@@ -339,10 +398,17 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   // Tool Usage rules + workflow tool catalogue
   const [toolRules, setToolRules] = useState<ToolUsageRule[]>(initialData?.toolRules ?? []);
   const [toolCatalog, setToolCatalog] = useState<EvaluationAgentInfo[]>([]);
+  const [catalogRouters, setCatalogRouters] = useState<EvaluationRouterInfo[]>([]);
+  const [catalogActionNodes, setCatalogActionNodes] = useState<EvaluationActionNodeInfo[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const toolUsageSelected = metrics.includes("tool_used");
+  // Route and Action dropdowns are populated from the same catalogue.
+  const needsCatalog =
+    toolUsageSelected ||
+    metrics.includes("route_taken") ||
+    metrics.includes("action_taken");
 
   // Fall back to the dataset's default workflow when none is explicitly chosen,
   // so the tool catalogue still loads.
@@ -351,8 +417,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     workflowId && workflowId !== "none" ? workflowId : selectedSuite?.workflow_id;
 
   useEffect(() => {
-    if (!toolUsageSelected || !effectiveWorkflowId) {
+    if (!needsCatalog || !effectiveWorkflowId) {
       setToolCatalog([]);
+      setCatalogRouters([]);
+      setCatalogActionNodes([]);
       return;
     }
     let cancelled = false;
@@ -360,10 +428,13 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setCatalogError(null);
     getEvaluationToolCatalog(effectiveWorkflowId)
       .then((catalog) => {
-        if (!cancelled) setToolCatalog(catalog.agents ?? []);
+        if (cancelled) return;
+        setToolCatalog(catalog.agents ?? []);
+        setCatalogRouters(catalog.routers ?? []);
+        setCatalogActionNodes(catalog.action_nodes ?? []);
       })
       .catch(() => {
-        if (!cancelled) setCatalogError("Failed to load tools");
+        if (!cancelled) setCatalogError("Failed to load workflow nodes");
       })
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
@@ -371,7 +442,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [toolUsageSelected, effectiveWorkflowId]);
+  }, [needsCatalog, effectiveWorkflowId]);
 
   // Imported conversations for specific-turn targeting, derived from the suite's cases.
   const [conversations, setConversations] = useState<RuleConversation[]>([]);
@@ -428,6 +499,12 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   // Does Not Contain config
   const [notContainsText, setNotContainsText] = useState(initialData?.notContainsText ?? "");
 
+  // Field Equals config
+  const [fieldEqualsField, setFieldEqualsField] = useState(initialData?.fieldEqualsField ?? "");
+  const [fieldEqualsExpected, setFieldEqualsExpected] = useState(
+    initialData?.fieldEqualsExpected ?? ""
+  );
+
   // Route Taken config
   const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
   const [routeNode, setRouteNode] = useState(initialData?.routeNode ?? "");
@@ -443,7 +520,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [judgeProviderId, setJudgeProviderId] = useState(
     initialData?.judgeProviderId ?? providers[0]?.id ?? ""
   );
-  const [judgeSourceField, setJudgeSourceField] = useState(initialData?.judgeSourceField ?? "");
+  const [judgeSourceType, setJudgeSourceType] = useState<GradingSourceSelection>(
+    initialData?.judgeSourceType ?? "none"
+  );
+  const [judgeSourceField] = useState(initialData?.judgeSourceField ?? "");
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
 
@@ -476,10 +556,28 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
   const judgeScoreInvalid = metrics.includes("llm_judge") && !isValidScore(judgeMinScore);
 
+  // Route/Action dropdowns use the catalogue; fall back to free text only when the
+  // catalogue is unavailable or a saved value predates it (an unmatched legacy id).
+  const selectedRouter = catalogRouters.find((r) => r.id === routeNode);
+  // Free text is only for a config the catalogue can't match: a saved router id that
+  // is gone, or an old "any router" config (expected set with no router chosen).
+  const routeLegacyValue =
+    catalogRouters.length > 0 &&
+    ((Boolean(routeNode) && !selectedRouter) || (!routeNode && Boolean(routeExpected)));
+  const useRouteDropdowns = catalogRouters.length > 0 && !routeLegacyValue;
+  const actionNodeInCatalog = catalogActionNodes.some((n) => n.id === actionNode);
+  const actionLegacyValue =
+    (Boolean(actionNode) && catalogActionNodes.length > 0 && !actionNodeInCatalog) ||
+    Boolean(actionNodeType);
+  const useActionDropdown = catalogActionNodes.length > 0 && !actionLegacyValue;
+
   const isConfigureStepValid = (): boolean => {
     if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
     if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
-    if (metrics.includes("route_taken") && !routeExpected.trim()) return false;
+    if (metrics.includes("route_taken")) {
+      if (useRouteDropdowns && !routeNode.trim()) return false;
+      if (!routeExpected.trim()) return false;
+    }
     if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
     if (toolRulesInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
     return true;
@@ -528,7 +626,11 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         nliModelName,
         nliMinEntailScore,
         nliFailOnContradiction,
+        nliEvidenceSource,
+        nliEvidenceField,
         provMode,
+        provContextSource,
+        provContextField,
         provEmbeddingType,
         provEmbeddingModelName,
         provMinScore,
@@ -537,6 +639,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         provLlmJudgeSystemPromptSuffix,
         toolRules,
         notContainsText,
+        fieldEqualsField,
+        fieldEqualsExpected,
         routeExpected,
         routeNode,
         actionNode,
@@ -545,6 +649,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         judgeRubric,
         judgeMinScore,
         judgeProviderId,
+        judgeSourceType,
         judgeSourceField,
       });
       // Reset form on successful create
@@ -570,7 +675,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setNliModelName("cross-encoder/nli-deberta-v3-base");
     setNliMinEntailScore("0.5");
     setNliFailOnContradiction(false);
+    setNliEvidenceSource("expected_output");
     setProvMode("embeddings");
+    setProvContextSource("kb_retrievals");
     setProvEmbeddingType("huggingface");
     setProvEmbeddingModelName("all-MiniLM-L6-v2");
     setProvMinScore("0.5");
@@ -579,6 +686,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setProvLlmJudgeSystemPromptSuffix("");
     setToolRules([]);
     setNotContainsText("");
+    setFieldEqualsField("");
+    setFieldEqualsExpected("");
     setRouteExpected("");
     setRouteNode("");
     setActionNode("");
@@ -587,7 +696,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setJudgeRubric("");
     setJudgeMinScore("0.5");
     setJudgeProviderId(providers[0]?.id ?? "");
-    setJudgeSourceField("");
+    setJudgeSourceType("none");
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -857,6 +966,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   </Select>
                 </div>
                 <div>
+                  <Label className="text-xs">Compare answer with</Label>
+                  <GradingSourceSelect
+                    value={nliEvidenceSource}
+                    onChange={setNliEvidenceSource}
+                    legacyField={nliEvidenceField}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Expected answer checks consistency with the reference answer; Retrieved
+                    context checks support from what the agent retrieved this run.
+                  </p>
+                </div>
+                <div>
                   <Label className="text-xs">Min Entailment Score (0-1)</Label>
                   <Input
                     value={nliMinEntailScore}
@@ -880,6 +1001,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 <p className="text-xs text-muted-foreground">
                   Uses workflow output as answer and expected output as context.
                 </p>
+                <div>
+                  <Label className="text-xs">Grounding source</Label>
+                  <GradingSourceSelect
+                    value={provContextSource}
+                    onChange={setProvContextSource}
+                    legacyField={provContextField}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Retrieved context means only what the agent actually retrieved this run
+                    (KB passages and retrieval-tool results), not the whole knowledge base.
+                  </p>
+                </div>
                 <div>
                   <Label className="text-xs">Provenance Mode</Label>
                   <Select
@@ -1021,6 +1154,37 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               </div>
             )}
 
+            {metrics.includes("field_equals") && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                  Field Equals Config
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Checks that a value from the run equals an expected value. Values are
+                  compared as text.
+                </p>
+                <div>
+                  <Label className="text-xs">Field</Label>
+                  <Input
+                    value={fieldEqualsField}
+                    onChange={(e) => setFieldEqualsField(e.target.value)}
+                    placeholder="Leave empty for the final output, or e.g. outputs.status"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Expected Value</Label>
+                  <Input
+                    value={fieldEqualsExpected}
+                    onChange={(e) => setFieldEqualsExpected(e.target.value)}
+                    placeholder="Leave empty to use the test case's expected output"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            )}
+
             {metrics.includes("route_taken") && (
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="text-sm font-semibold flex items-center gap-2">
@@ -1030,24 +1194,82 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 <p className="text-xs text-muted-foreground">
                   Checks that a router node selected the expected branch.
                 </p>
-                <div>
-                  <Label className="text-xs">Expected Route *</Label>
-                  <Input
-                    value={routeExpected}
-                    onChange={(e) => setRouteExpected(e.target.value)}
-                    placeholder="e.g. escalate"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Router Node (id or label, optional)</Label>
-                  <Input
-                    value={routeNode}
-                    onChange={(e) => setRouteNode(e.target.value)}
-                    placeholder="Leave empty to match any router node"
-                    className="mt-1"
-                  />
-                </div>
+                {useRouteDropdowns ? (
+                  <>
+                    <div>
+                      <Label className="text-xs">Router *</Label>
+                      <Select
+                        value={routeNode}
+                        onValueChange={(next) => {
+                          setRouteNode(next);
+                          setRouteExpected("");
+                        }}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select a router" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {catalogRouters.map((router) => (
+                            <SelectItem key={router.id} value={router.id}>
+                              {router.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {selectedRouter && selectedRouter.branches.length > 0 && (
+                      <div>
+                        <Label className="text-xs">Expected Branch *</Label>
+                        <Select value={routeExpected} onValueChange={setRouteExpected}>
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Select a branch" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {selectedRouter.branches.map((branch) => (
+                              <SelectItem key={branch.value} value={branch.value}>
+                                {branch.destination
+                                  ? `${branch.value} → ${branch.destination}`
+                                  : branch.value}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {selectedRouter && selectedRouter.branches.length === 0 && (
+                      <div>
+                        <Label className="text-xs">Expected Route *</Label>
+                        <Input
+                          value={routeExpected}
+                          onChange={(e) => setRouteExpected(e.target.value)}
+                          placeholder="e.g. escalate"
+                          className="mt-1"
+                        />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <Label className="text-xs">Expected Route *</Label>
+                      <Input
+                        value={routeExpected}
+                        onChange={(e) => setRouteExpected(e.target.value)}
+                        placeholder="e.g. escalate"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Router Node (id or label, optional)</Label>
+                      <Input
+                        value={routeNode}
+                        onChange={(e) => setRouteNode(e.target.value)}
+                        placeholder="Leave empty to match any router node"
+                        className="mt-1"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1058,32 +1280,57 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Action Taken Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks that a specific side-effect node ran successfully. Provide a node
-                  or a node type.
+                  Checks whether a specific workflow node ran successfully.
                 </p>
-                <div>
-                  <Label className="text-xs">Node (id or label)</Label>
-                  <Input
-                    value={actionNode}
-                    onChange={(e) => setActionNode(e.target.value)}
-                    placeholder="e.g. Create Zendesk Ticket"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Node Type</Label>
-                  <Input
-                    value={actionNodeType}
-                    onChange={(e) => setActionNodeType(e.target.value)}
-                    placeholder="e.g. zendeskTicketNode"
-                    className="mt-1"
-                  />
-                </div>
+                {useActionDropdown ? (
+                  <div>
+                    <Label className="text-xs">Node *</Label>
+                    <Select
+                      value={actionNode}
+                      onValueChange={(next) => {
+                        setActionNode(next);
+                        setActionNodeType("");
+                      }}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select a node" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {catalogActionNodes.map((node) => (
+                          <SelectItem key={node.id} value={node.id}>
+                            {node.label} ({node.type})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <Label className="text-xs">Node (id or label)</Label>
+                      <Input
+                        value={actionNode}
+                        onChange={(e) => setActionNode(e.target.value)}
+                        placeholder="e.g. Create Zendesk Ticket"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Node Type</Label>
+                      <Input
+                        value={actionNodeType}
+                        onChange={(e) => setActionNodeType(e.target.value)}
+                        placeholder="e.g. zendeskTicketNode"
+                        className="mt-1"
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
-                    <div className="text-xs font-medium">Must fire</div>
+                    <div className="text-xs font-medium">Must complete</div>
                     <div className="text-xs text-muted-foreground">
-                      Turn off to assert the node did NOT run
+                      Turn off to require that the node does not complete successfully
                     </div>
                   </div>
                   <Switch checked={actionShouldFire} onCheckedChange={setActionShouldFire} />
@@ -1137,18 +1384,20 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
                   )}
                 </div>
-                <div>
-                  <Label className="text-xs">Grounding Source Field (optional)</Label>
-                  <Input
-                    value={judgeSourceField}
-                    onChange={(e) => setJudgeSourceField(e.target.value)}
-                    placeholder="e.g. trace.retrievals"
-                    className="mt-1 font-mono text-xs"
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <Label className="text-xs">Give the judge the retrieved context</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Off = rubric only (style or behavior checks). On = the judge also
+                      sees the KB passages the agent retrieved during the run.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={judgeSourceType === "kb_retrievals"}
+                    onCheckedChange={(checked) =>
+                      setJudgeSourceType(checked ? "kb_retrievals" : "none")
+                    }
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Dotted path into the run to check the answer against (e.g. knowledge-base
-                    retrievals).
-                  </p>
                 </div>
               </div>
             )}

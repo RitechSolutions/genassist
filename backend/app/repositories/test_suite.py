@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID
 
@@ -108,6 +109,38 @@ class TestRunRepository(DbRepository[TestRunModel]):
             .execution_options(synchronize_session="fetch")
         )
         await self.db.commit()
+
+    async def mark_stuck_as_failed(
+        self,
+        queued_before: datetime,
+        running_before: datetime,
+        error_message: str,
+    ) -> int:
+        """Fail runs orphaned by a worker/pod crash in one atomic UPDATE:
+        queued runs never picked up, and running runs past the max execution age.
+        Returns the number of rows transitioned to failed.
+        """
+        stmt = (
+            update(TestRunModel)
+            .where(
+                TestRunModel.is_deleted == 0,
+                or_(
+                    and_(
+                        TestRunModel.status == "queued",
+                        TestRunModel.updated_at < queued_before,
+                    ),
+                    and_(
+                        TestRunModel.status == "running",
+                        TestRunModel.updated_at < running_before,
+                    ),
+                ),
+            )
+            .values(status="failed", summary_metrics={"error": error_message})
+            .execution_options(synchronize_session=False)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        return result.rowcount or 0
 
 
 @inject

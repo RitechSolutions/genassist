@@ -37,9 +37,14 @@ export interface TestRun {
 }
 
 export interface TestResultMetric {
-  score: number | boolean;
+  score: number | boolean | null;
   passed: boolean;
+  error?: boolean;
+  not_evaluated?: boolean;
   comment?: string | null;
+  expected?: string | null;
+  actual?: string | null;
+  threshold?: number | null;
 }
 
 export interface TestResult {
@@ -76,4 +81,3 @@ export interface StartTestRunPayload {
   workflow_id?: string;
   input_metadata?: Record<string, unknown>;
 }
-

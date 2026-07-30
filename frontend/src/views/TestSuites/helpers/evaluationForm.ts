@@ -1,4 +1,7 @@
-import { EvaluationWizardData } from "../components/EvaluationWizard";
+import {
+  EvaluationWizardData,
+  GradingSourceSelection,
+} from "../components/EvaluationWizard";
 import {
   TestEvaluationConfig,
   ToolUsageOperator,
@@ -7,6 +10,43 @@ import {
   ToolUsageScope,
 } from "@/interfaces/testEvaluation.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+
+const GRADING_SOURCES = new Set<GradingSourceSelection>([
+  "expected_output",
+  "kb_retrievals",
+  "conversation_context",
+  "tool_events",
+  "none",
+]);
+
+const LEGACY_SOURCE_PRESETS: Record<string, GradingSourceSelection> = {
+  reference_outputs: "expected_output",
+  "trace.retrievals": "kb_retrievals",
+  "trace.session": "conversation_context",
+  "trace.tool_events": "tool_events",
+};
+
+const parseGradingSource = (
+  config: Record<string, unknown> | undefined,
+  sourceKey: string,
+  legacyFieldKey: string,
+  fallback: GradingSourceSelection,
+): { selection: GradingSourceSelection; legacyField: string } => {
+  const configured = config?.[sourceKey];
+  if (typeof configured === "string" && GRADING_SOURCES.has(configured as GradingSourceSelection)) {
+    return { selection: configured as GradingSourceSelection, legacyField: "" };
+  }
+
+  const legacyField = config?.[legacyFieldKey];
+  if (typeof legacyField !== "string" || !legacyField) {
+    return { selection: fallback, legacyField: "" };
+  }
+
+  return {
+    selection: LEGACY_SOURCE_PRESETS[legacyField] ?? "legacy",
+    legacyField,
+  };
+};
 
 // Read back a stored per_tool map, keeping only the recognized check fields.
 const parsePerTool = (
@@ -164,11 +204,21 @@ export const buildTechniqueConfigs = (
     };
   }
 
+  if (data.metrics.includes("field_equals")) {
+    configs.field_equals = {
+      ...(data.fieldEqualsField.trim() ? { field: data.fieldEqualsField.trim() } : {}),
+      ...(data.fieldEqualsExpected.trim() ? { expected: data.fieldEqualsExpected.trim() } : {}),
+    };
+  }
+
   if (data.metrics.includes("nli_eval")) {
     configs.nli_eval = {
       min_entail_score: Number(data.nliMinEntailScore || "0.5"),
       fail_on_contradiction: data.nliFailOnContradiction,
       ...(data.nliModelName.trim() ? { nli_model_name: data.nliModelName.trim() } : {}),
+      ...(data.nliEvidenceSource === "legacy" && data.nliEvidenceField
+        ? { evidence_field: data.nliEvidenceField }
+        : { evidence_source: data.nliEvidenceSource }),
     };
   }
 
@@ -176,9 +226,11 @@ export const buildTechniqueConfigs = (
     const isLlmMode = data.provMode === "llm";
     configs.provenance_eval = {
       min_score: Number(data.provMinScore || "0.5"),
-      fail_on_violation: data.provFailOnViolation,
       use_llm_judge: isLlmMode,
       provenance_mode: data.provMode,
+      ...(data.provContextSource === "legacy" && data.provContextField
+        ? { context_field: data.provContextField }
+        : { context_source: data.provContextSource }),
       ...(isLlmMode && data.provLlmProviderId.trim()
         ? { llm_provider_id: data.provLlmProviderId.trim() }
         : {}),
@@ -220,7 +272,9 @@ export const buildTechniqueConfigs = (
       rubric: data.judgeRubric.trim(),
       min_score: Number(data.judgeMinScore || "0.5"),
       ...(data.judgeProviderId.trim() ? { llm_provider_id: data.judgeProviderId.trim() } : {}),
-      ...(data.judgeSourceField.trim() ? { source_field: data.judgeSourceField.trim() } : {}),
+      ...(data.judgeSourceType === "legacy" && data.judgeSourceField
+        ? { source_field: data.judgeSourceField }
+        : { source_type: data.judgeSourceType }),
     };
   }
 
@@ -232,12 +286,26 @@ export const getEditInitialData = (
   providers: LLMProviderMinimal[],
 ): Partial<EvaluationWizardData> => {
   const notContainsCfg = evaluation.technique_configs?.["not_contains"] as Record<string, unknown> | undefined;
+  const fieldEqualsCfg = evaluation.technique_configs?.["field_equals"] as Record<string, unknown> | undefined;
   const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
   const provCfg = evaluation.technique_configs?.["provenance_eval"] as Record<string, unknown> | undefined;
   const toolCfg = evaluation.technique_configs?.["tool_used"] as Record<string, unknown> | undefined;
   const routeCfg = evaluation.technique_configs?.["route_taken"] as Record<string, unknown> | undefined;
   const actionCfg = evaluation.technique_configs?.["action_taken"] as Record<string, unknown> | undefined;
   const judgeCfg = evaluation.technique_configs?.["llm_judge"] as Record<string, unknown> | undefined;
+  const nliSource = parseGradingSource(
+    nliCfg,
+    "evidence_source",
+    "evidence_field",
+    "expected_output",
+  );
+  const provSource = parseGradingSource(
+    provCfg,
+    "context_source",
+    "context_field",
+    "expected_output",
+  );
+  const judgeSource = parseGradingSource(judgeCfg, "source_type", "source_field", "none");
   const metaWithoutMemory = evaluation.input_metadata
     ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
     : {};
@@ -253,15 +321,21 @@ export const getEditInitialData = (
     nliModelName: (nliCfg?.nli_model_name as string) ?? "cross-encoder/nli-deberta-v3-base",
     nliMinEntailScore: String(nliCfg?.min_entail_score ?? "0.5"),
     nliFailOnContradiction: Boolean(nliCfg?.fail_on_contradiction),
+    nliEvidenceSource: nliSource.selection,
+    nliEvidenceField: nliSource.legacyField,
     provMode: (provCfg?.provenance_mode as "embeddings" | "llm") ?? "embeddings",
+    provContextSource: provSource.selection,
+    provContextField: provSource.legacyField,
     provEmbeddingType: (provCfg?.embedding_type as "openai" | "huggingface" | "bedrock") ?? "huggingface",
     provEmbeddingModelName: (provCfg?.embedding_model_name as string) ?? "all-MiniLM-L6-v2",
     provMinScore: String(provCfg?.min_score ?? "0.5"),
-    provFailOnViolation: Boolean(provCfg?.fail_on_violation),
     provLlmProviderId: (provCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
     provLlmJudgeSystemPromptSuffix: (provCfg?.llm_judge_system_prompt_suffix as string) ?? "",
     toolRules: parseToolRules(toolCfg),
     notContainsText: forbiddenPhrasesToText(notContainsCfg),
+    fieldEqualsField: (fieldEqualsCfg?.field as string) ?? "",
+    fieldEqualsExpected:
+      fieldEqualsCfg?.expected != null ? String(fieldEqualsCfg.expected) : "",
     routeExpected: (routeCfg?.expected as string) ?? "",
     routeNode: (routeCfg?.node as string) ?? "",
     actionNode: (actionCfg?.node as string) ?? "",
@@ -270,6 +344,7 @@ export const getEditInitialData = (
     judgeRubric: (judgeCfg?.rubric as string) ?? "",
     judgeMinScore: String(judgeCfg?.min_score ?? "0.5"),
     judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
-    judgeSourceField: (judgeCfg?.source_field as string) ?? "",
+    judgeSourceType: judgeSource.selection,
+    judgeSourceField: judgeSource.legacyField,
   };
 };

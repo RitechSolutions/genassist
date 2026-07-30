@@ -6,8 +6,10 @@ from app.services.tool_catalog import (
     build_agent_index,
     build_tool_index,
     nested_workflow_refs,
+    resolve_action_nodes,
     resolve_agents,
     resolve_in_index,
+    resolve_routers,
 )
 
 
@@ -120,6 +122,63 @@ def test_duplicate_tool_name_is_ambiguous():
     # Each concrete id still resolves uniquely despite the shared name.
     assert resolve_in_index(tool_index, "t1", "tool") == "t1"
     assert resolve_in_index(tool_index, "t2", "tool") == "t2"
+
+
+def test_resolve_routers_lists_branches_with_destinations():
+    wf = {
+        "nodes": [
+            {"id": "r1", "type": "routerNode", "data": {"name": "Escalate?"}},
+            {"id": "hr", "type": "agentNode", "data": {"name": "HR Agent"}},
+            {"id": "bot", "type": "agentNode", "data": {"name": "Bot"}},
+        ],
+        "edges": [
+            # Handles carry the output_ prefix; the branch value is the bare route.
+            {"source": "r1", "target": "hr", "sourceHandle": "output_true"},
+            {"source": "r1", "target": "bot", "sourceHandle": "output_false"},
+        ],
+    }
+    routers = resolve_routers(wf)
+    assert len(routers) == 1
+    assert routers[0]["id"] == "r1"
+    assert routers[0]["label"] == "Escalate?"
+    assert routers[0]["branches"] == [
+        {"value": "true", "destination": "HR Agent"},
+        {"value": "false", "destination": "Bot"},
+    ]
+
+
+def test_resolve_routers_keeps_unprefixed_handles():
+    wf = {
+        "nodes": [{"id": "r1", "type": "routerNode", "data": {"name": "R"}}],
+        "edges": [{"source": "r1", "target": "a", "sourceHandle": "escalate"}],
+    }
+    assert resolve_routers(wf)[0]["branches"] == [{"value": "escalate", "destination": None}]
+
+
+def test_resolve_routers_dedupes_branch_values():
+    wf = {
+        "nodes": [{"id": "r1", "type": "routerNode", "data": {"name": "R"}}],
+        "edges": [
+            {"source": "r1", "target": "a", "sourceHandle": "true"},
+            {"source": "r1", "target": "b", "sourceHandle": "true"},
+        ],
+    }
+    routers = resolve_routers(wf)
+    assert [b["value"] for b in routers[0]["branches"]] == ["true"]
+
+
+def test_resolve_action_nodes_lists_every_node_with_type():
+    wf = {
+        "nodes": [
+            {"id": "n1", "type": "zendeskTicketNode", "data": {"name": "Create Ticket"}},
+            {"id": "n2", "type": "agentNode", "data": {"name": "Agent"}},
+        ],
+        "edges": [],
+    }
+    actions = {n["id"]: n for n in resolve_action_nodes(wf)}
+    assert actions["n1"]["label"] == "Create Ticket"
+    assert actions["n1"]["type"] == "zendeskTicketNode"
+    assert actions["n2"]["type"] == "agentNode"
 
 
 def test_mcp_node_exposes_composite_tool_ids():
