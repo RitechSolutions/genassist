@@ -355,6 +355,7 @@ def create_celery():
             "execute_workflow_run": {"queue": "ml"},
             "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs": {"queue": "ml"},
             "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs": {"queue": "ml"},
+            "app.tasks.test_suite_tasks.reconcile_stuck_test_runs": {"queue": "ml"},
         },
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
@@ -497,6 +498,12 @@ def create_celery():
     if settings.CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK:
         beat_schedule["reconcile-stuck-workflow-runs"] = {
             "task": "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        }
+
+    if settings.CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK:
+        beat_schedule["reconcile-stuck-test-runs"] = {
+            "task": "app.tasks.test_suite_tasks.reconcile_stuck_test_runs",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
         }
 
