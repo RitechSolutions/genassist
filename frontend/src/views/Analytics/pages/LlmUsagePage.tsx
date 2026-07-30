@@ -6,8 +6,6 @@ import { format } from "date-fns";
 import {
   Activity,
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
   Coins,
   DollarSign,
   Info,
@@ -44,6 +42,7 @@ import { ALL_FILTER_VALUE, LlmUsageFilterMenu } from "../components/LlmUsageFilt
 import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
+import { LlmUsageCostShare } from "../components/reports/LlmUsageCostShare";
 import { LlmUsageEvaluationMethods } from "../components/reports/LlmUsageEvaluationMethods";
 import { LlmUsageProviderDonut } from "../components/reports/LlmUsageProviderDonut";
 import { LlmUsageTimeseriesChart, type SpendMetric } from "../components/reports/LlmUsageTimeseriesChart";
@@ -58,7 +57,6 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
 const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
 const EVALUATION_KEY = "evaluation";
-const EVAL_DETAIL_ID = "evaluation-methods-detail";
 
 const compact = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : `${n}`;
@@ -237,29 +235,28 @@ function LlmUsagePage() {
 
   const isEvaluationRow = (i: LlmUsageBreakdownItem) => dimension === "source" && i.key === EVALUATION_KEY;
 
+  // Only a settled response may label the row, so a filter change can't flash a stale count
+  const evaluationMethodCount =
+    !evalMethods.isPlaceholderData && !evalMethods.isError ? evalMethods.data?.total : undefined;
+  const methodCountLabel = evaluationMethodCount
+    ? `${evaluationMethodCount} ${evaluationMethodCount === 1 ? "method" : "methods"}`
+    : null;
+
   const columns: Column<LlmUsageBreakdownItem>[] = [
     {
       header: dimensionLabel,
       key: "label",
       cell: (i) =>
         isEvaluationRow(i) ? (
-          <span className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setEvalExpanded((prev) => !prev)}
-              aria-expanded={evalExpanded}
-              aria-controls={EVAL_DETAIL_ID}
-              aria-label={`${evalExpanded ? "Hide" : "Show"} evaluation method breakdown`}
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {evalExpanded ? (
-                <ChevronDown className="h-4 w-4" aria-hidden />
-              ) : (
-                <ChevronRight className="h-4 w-4" aria-hidden />
-              )}
-            </button>
-            <span className="font-medium">{i.label}</span>
-          </span>
+          // No onClick: the native click bubbles to the row handler, keyboard included
+          <button
+            type="button"
+            aria-expanded={evalExpanded}
+            className="flex items-center gap-2 rounded text-left font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <span>{i.label}</span>
+            {methodCountLabel && <span className="text-xs font-normal text-muted-foreground">{methodCountLabel}</span>}
+          </button>
         ) : (
           <span className="font-medium">{i.label}</span>
         ),
@@ -300,17 +297,7 @@ function LlmUsagePage() {
     {
       header: "Share",
       key: "share",
-      cell: (i) => {
-        const pct = totalItemCost > 0 ? (i.cost_usd / totalItemCost) * 100 : 0;
-        return (
-          <div className="flex items-center justify-end gap-2 tabular-nums">
-            <span className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
-              <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-            </span>
-            {pct.toFixed(1)}%
-          </div>
-        );
-      },
+      cell: (i) => <LlmUsageCostShare costUsd={i.cost_usd} totalCostUsd={totalItemCost} />,
     },
   ];
 
@@ -319,7 +306,7 @@ function LlmUsagePage() {
       label: "Total LLM Cost",
       value: formatUsd(summary?.total_cost_usd),
       icon: DollarSign,
-      sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)} · Evaluations ${formatUsd(costFor(EVALUATION_KEY), 2)}`,
+      sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)}`,
       delta:
         summary && previous ? <KpiDelta delta={pctChange(summary.total_cost_usd, previous.total_cost_usd)} /> : null,
     },
@@ -489,17 +476,27 @@ function LlmUsagePage() {
               emptyMessage="No LLM costs recorded for this period."
               keyExtractor={(item) => item.key}
               pageSize={10}
-              renderRowDetail={
+              getRowProps={
+                dimension === "source"
+                  ? (i) =>
+                      isEvaluationRow(i)
+                        ? {
+                            onClick: () => setEvalExpanded((current) => !current),
+                            className: "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60",
+                          }
+                        : undefined
+                  : undefined
+              }
+              renderSubRows={
                 dimension === "source"
                   ? (i) =>
                       isEvaluationRow(i) && evalExpanded ? (
-                        <div id={EVAL_DETAIL_ID}>
-                          <LlmUsageEvaluationMethods
-                            items={evalMethods.data?.items ?? []}
-                            loading={evalMethods.isPending || evalMethods.isPlaceholderData}
-                            error={Boolean(evalMethods.error)}
-                          />
-                        </div>
+                        <LlmUsageEvaluationMethods
+                          items={evalMethods.data?.items ?? []}
+                          totalCostUsd={totalItemCost}
+                          loading={evalMethods.isPending || evalMethods.isPlaceholderData}
+                          error={evalMethods.isError}
+                        />
                       ) : null
                   : undefined
               }

@@ -27,6 +27,8 @@ export interface Column<T> {
   headerClassName?: string;
 }
 
+export type DataTableRowProps = Omit<React.HTMLAttributes<HTMLTableRowElement>, "children">;
+
 export interface DataTableProps<T> {
   data: T[];
   columns: Column<T>[];
@@ -48,11 +50,17 @@ export interface DataTableProps<T> {
    */
   renderGroupHeader?: (groupKey: string, items: T[]) => React.ReactNode;
   /**
-   * Renders a full-width detail row directly under an item's row; return null to
-   * leave that row without a detail. The detail travels with its parent through
-   * sorting, grouping and pagination, and never counts as a data row.
+   * Renders subordinate `<TableRow>` elements directly under an item's row, so they
+   * share the parent's column layout; return null for items without subrows. Subrows
+   * travel with their parent through sorting, grouping and pagination, and never count
+   * as data rows.
    */
-  renderRowDetail?: (item: T) => React.ReactNode;
+  renderSubRows?: (item: T, absoluteIndex: number) => React.ReactNode;
+  /**
+   * Per-row `<tr>` attributes. `onClick`, `onKeyDown` and `tabIndex` take precedence
+   * over the table-wide `onRowClick` behavior for that row; `className` is merged.
+   */
+  getRowProps?: (item: T) => DataTableRowProps | undefined;
 }
 
 type SortDir = "asc" | "desc" | null;
@@ -71,7 +79,8 @@ export function DataTable<T extends { id?: string | number }>({
   onRowClick,
   groupBy,
   renderGroupHeader,
-  renderRowDetail,
+  renderSubRows,
+  getRowProps,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -97,8 +106,12 @@ export function DataTable<T extends { id?: string | number }>({
     if (sortKey && sortDir) {
       const col = columns.find((c) => c.key === sortKey);
       result.sort((a, b) => {
-        const va = col?.sortValue ? col.sortValue(a) : (a as any)[sortKey] ?? "";
-        const vb = col?.sortValue ? col.sortValue(b) : (b as any)[sortKey] ?? "";
+        const va = col?.sortValue
+          ? col.sortValue(a)
+          : (a as unknown as Record<string, unknown>)[sortKey] ?? "";
+        const vb = col?.sortValue
+          ? col.sortValue(b)
+          : (b as unknown as Record<string, unknown>)[sortKey] ?? "";
         const cmp = typeof va === "number" && typeof vb === "number"
           ? va - vb
           : String(va).localeCompare(String(vb));
@@ -179,27 +192,34 @@ export function DataTable<T extends { id?: string | number }>({
   const startIndex = pagination?.startIndex ?? 0;
 
   const renderItemRow = (item: T, absoluteIndex: number) => {
-    const detail = renderRowDetail?.(item);
+    const {
+      className: rowClassName,
+      onClick: rowOnClick,
+      onKeyDown: rowOnKeyDown,
+      tabIndex: rowTabIndex,
+      ...remainingRowProps
+    } = getRowProps?.(item) ?? {};
     return (
       <React.Fragment key={keyExtractor(item)}>
         <TableRow
-          onClick={onRowClick ? () => onRowClick(item) : undefined}
+          {...remainingRowProps}
+          onClick={rowOnClick ?? (onRowClick ? () => onRowClick(item) : undefined)}
           onKeyDown={
-            onRowClick
+            rowOnKeyDown ??
+            (onRowClick
               ? (e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     onRowClick(item);
                   }
                 }
-              : undefined
+              : undefined)
           }
-          tabIndex={onRowClick ? 0 : undefined}
-          className={
-            onRowClick
-              ? "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
-              : undefined
-          }
+          tabIndex={rowTabIndex ?? (onRowClick ? 0 : undefined)}
+          className={cn(
+            onRowClick && "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60",
+            rowClassName
+          )}
         >
           {columns.map((column) => (
             <TableCell
@@ -210,13 +230,7 @@ export function DataTable<T extends { id?: string | number }>({
             </TableCell>
           ))}
         </TableRow>
-        {detail != null && detail !== false && (
-          <TableRow className="hover:bg-transparent">
-            <TableCell colSpan={columns.length} className="p-0 bg-muted/30">
-              {detail}
-            </TableCell>
-          </TableRow>
-        )}
+        {renderSubRows?.(item, absoluteIndex)}
       </React.Fragment>
     );
   };
