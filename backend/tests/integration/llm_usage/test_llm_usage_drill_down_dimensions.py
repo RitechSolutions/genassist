@@ -21,7 +21,6 @@ from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
 from app.services.llm_usage_read import LlmUsageReadService
 
-
 _EVENTS = (
     ("workflow", None, "openai", "gpt-4o", "0.10"),
     ("workflow", None, "openai", "gpt-4o", "0.05"),

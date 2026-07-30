@@ -1117,7 +1117,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_passes_above_threshold(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return 0.8, "professional and complete"
 
         self.registry._invoke_json_judge = fake_judge
@@ -1133,7 +1133,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_fails_below_threshold(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return 0.3, "curt"
 
         self.registry._invoke_json_judge = fake_judge
@@ -1150,7 +1150,7 @@ class TestLlmJudge:
     async def test_source_field_feeds_kb_content_to_judge(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "grounded"
 
@@ -1176,7 +1176,7 @@ class TestLlmJudge:
     async def test_no_source_block_when_unconfigured(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "fine"
 
@@ -1195,7 +1195,7 @@ class TestLlmJudge:
     async def test_unresolved_selected_source_is_not_evaluated(self):
         called = False
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             nonlocal called
             called = True
             return 1.0, "ok"
@@ -1219,7 +1219,7 @@ class TestLlmJudge:
     async def test_explicit_kb_source_preset_feeds_judge(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "grounded"
 
@@ -1244,7 +1244,7 @@ class TestLlmJudge:
     async def test_auto_feeds_user_question_from_inputs(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "ok"
 
@@ -1261,7 +1261,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_malformed_judge_output_is_evaluator_error(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return None, "LLM judge response could not be parsed"
 
         self.registry._invoke_json_judge = fake_judge
