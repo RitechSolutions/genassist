@@ -32,6 +32,8 @@ export interface TestRun {
   status: string;
   techniques: string[];
   summary_metrics?: Record<string, unknown>;
+  workflow_name?: string | null;
+  workflow_version?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -73,11 +75,4 @@ export interface CreateTestCasePayload {
   expected_output?: Record<string, unknown>;
   tags?: string[];
   weight?: number;
-}
-
-export interface StartTestRunPayload {
-  techniques: string[];
-  technique_configs?: Record<string, Record<string, unknown>>;
-  workflow_id?: string;
-  input_metadata?: Record<string, unknown>;
 }
