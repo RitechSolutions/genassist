@@ -47,6 +47,12 @@ export interface DataTableProps<T> {
    * group key and its items; return null/undefined to omit the header for that group.
    */
   renderGroupHeader?: (groupKey: string, items: T[]) => React.ReactNode;
+  /**
+   * Renders a full-width detail row directly under an item's row; return null to
+   * leave that row without a detail. The detail travels with its parent through
+   * sorting, grouping and pagination, and never counts as a data row.
+   */
+  renderRowDetail?: (item: T) => React.ReactNode;
 }
 
 type SortDir = "asc" | "desc" | null;
@@ -65,6 +71,7 @@ export function DataTable<T extends { id?: string | number }>({
   onRowClick,
   groupBy,
   renderGroupHeader,
+  renderRowDetail,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -171,37 +178,48 @@ export function DataTable<T extends { id?: string | number }>({
 
   const startIndex = pagination?.startIndex ?? 0;
 
-  const renderItemRow = (item: T, absoluteIndex: number) => (
-    <TableRow
-      key={keyExtractor(item)}
-      onClick={onRowClick ? () => onRowClick(item) : undefined}
-      onKeyDown={
-        onRowClick
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onRowClick(item);
-              }
-            }
-          : undefined
-      }
-      tabIndex={onRowClick ? 0 : undefined}
-      className={
-        onRowClick
-          ? "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
-          : undefined
-      }
-    >
-      {columns.map((column) => (
-        <TableCell
-          key={`${keyExtractor(item)}-${column.key}`}
-          className={column.className}
+  const renderItemRow = (item: T, absoluteIndex: number) => {
+    const detail = renderRowDetail?.(item);
+    return (
+      <React.Fragment key={keyExtractor(item)}>
+        <TableRow
+          onClick={onRowClick ? () => onRowClick(item) : undefined}
+          onKeyDown={
+            onRowClick
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onRowClick(item);
+                  }
+                }
+              : undefined
+          }
+          tabIndex={onRowClick ? 0 : undefined}
+          className={
+            onRowClick
+              ? "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
+              : undefined
+          }
         >
-          {column.cell(item, absoluteIndex)}
-        </TableCell>
-      ))}
-    </TableRow>
-  );
+          {columns.map((column) => (
+            <TableCell
+              key={`${keyExtractor(item)}-${column.key}`}
+              className={column.className}
+            >
+              {column.cell(item, absoluteIndex)}
+            </TableCell>
+          ))}
+        </TableRow>
+        {detail != null && detail !== false && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={columns.length} className="p-0 bg-muted/30">
+              {detail}
+            </TableCell>
+          </TableRow>
+        )}
+      </React.Fragment>
+    );
+  };
 
   const renderRows = () => {
     if (!groupBy) {

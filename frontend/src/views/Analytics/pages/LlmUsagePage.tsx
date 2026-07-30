@@ -6,6 +6,8 @@ import { format } from "date-fns";
 import {
   Activity,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   Coins,
   DollarSign,
   Info,
@@ -42,6 +44,7 @@ import { ALL_FILTER_VALUE, LlmUsageFilterMenu } from "../components/LlmUsageFilt
 import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
+import { LlmUsageEvaluationMethods } from "../components/reports/LlmUsageEvaluationMethods";
 import { LlmUsageProviderDonut } from "../components/reports/LlmUsageProviderDonut";
 import { LlmUsageTimeseriesChart, type SpendMetric } from "../components/reports/LlmUsageTimeseriesChart";
 
@@ -54,6 +57,8 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
 
 const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
+const EVALUATION_KEY = "evaluation";
+const EVAL_DETAIL_ID = "evaluation-methods-detail";
 
 const compact = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : `${n}`;
@@ -109,6 +114,7 @@ function LlmUsagePage() {
   const [model, setModel] = useState(ALL);
   const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
+  const [evalExpanded, setEvalExpanded] = useState(false);
 
   const dateParams = useMemo(() => toExpandedUTCDateRange(dateRange), [dateRange]);
   const queryFilters = useMemo<LlmUsageQueryFilters>(
@@ -151,6 +157,21 @@ function LlmUsagePage() {
   const breakdown = useQuery({
     queryKey: ["llm-usage", "breakdown", dimension, ...filterKey],
     queryFn: () => fetchLlmUsageBreakdown(dimension, queryFilters),
+    placeholderData: keepPreviousData,
+  });
+
+  const evalMethods = useQuery({
+    queryKey: ["llm-usage", "breakdown", "evaluation_method", ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown("evaluation_method", queryFilters),
+    enabled: evalExpanded && dimension === "source",
+    placeholderData: keepPreviousData,
+  });
+
+  const showCostByLlm = agentFilter !== ALL && dimension === "agent";
+  const agentLlm = useQuery({
+    queryKey: ["llm-usage", "breakdown", "llm", ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown("llm", queryFilters),
+    enabled: showCostByLlm,
     placeholderData: keepPreviousData,
   });
 
@@ -214,8 +235,35 @@ function LlmUsagePage() {
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const previous = hasCompare ? compare.data : undefined;
 
+  const isEvaluationRow = (i: LlmUsageBreakdownItem) => dimension === "source" && i.key === EVALUATION_KEY;
+
   const columns: Column<LlmUsageBreakdownItem>[] = [
-    { header: dimensionLabel, key: "label", cell: (i) => <span className="font-medium">{i.label}</span> },
+    {
+      header: dimensionLabel,
+      key: "label",
+      cell: (i) =>
+        isEvaluationRow(i) ? (
+          <span className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setEvalExpanded((prev) => !prev)}
+              aria-expanded={evalExpanded}
+              aria-controls={EVAL_DETAIL_ID}
+              aria-label={`${evalExpanded ? "Hide" : "Show"} evaluation method breakdown`}
+              className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {evalExpanded ? (
+                <ChevronDown className="h-4 w-4" aria-hidden />
+              ) : (
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              )}
+            </button>
+            <span className="font-medium">{i.label}</span>
+          </span>
+        ) : (
+          <span className="font-medium">{i.label}</span>
+        ),
+    },
     {
       header: "Calls",
       key: "calls",
@@ -271,7 +319,7 @@ function LlmUsagePage() {
       label: "Total LLM Cost",
       value: formatUsd(summary?.total_cost_usd),
       icon: DollarSign,
-      sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)}`,
+      sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)} · Evaluations ${formatUsd(costFor(EVALUATION_KEY), 2)}`,
       delta:
         summary && previous ? <KpiDelta delta={pctChange(summary.total_cost_usd, previous.total_cost_usd)} /> : null,
     },
@@ -441,11 +489,33 @@ function LlmUsagePage() {
               emptyMessage="No LLM costs recorded for this period."
               keyExtractor={(item) => item.key}
               pageSize={10}
+              renderRowDetail={
+                dimension === "source"
+                  ? (i) =>
+                      isEvaluationRow(i) && evalExpanded ? (
+                        <div id={EVAL_DETAIL_ID}>
+                          <LlmUsageEvaluationMethods
+                            items={evalMethods.data?.items ?? []}
+                            loading={evalMethods.isPending || evalMethods.isPlaceholderData}
+                            error={Boolean(evalMethods.error)}
+                          />
+                        </div>
+                      ) : null
+                  : undefined
+              }
             />
           </CardContent>
         </Card>
 
-        <LlmUsageBreakdownChart items={items} dimensionLabel={dimensionHeading} loading={tableLoading} />
+        {showCostByLlm && (
+          <LlmUsageBreakdownChart
+            items={agentLlm.data?.items ?? []}
+            dimensionLabel="LLM"
+            loading={agentLlm.isPending || agentLlm.isPlaceholderData}
+            maxRows={Infinity}
+            error={agentLlm.error ? "Failed to load LLM costs for this agent." : null}
+          />
+        )}
       </div>
     </div>
   );

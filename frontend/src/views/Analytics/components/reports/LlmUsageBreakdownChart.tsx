@@ -9,6 +9,8 @@ interface LlmUsageBreakdownChartProps {
   items: LlmUsageBreakdownItem[];
   dimensionLabel: string;
   loading?: boolean;
+  maxRows?: number;
+  error?: string | null;
 }
 
 const MAX_ROWS = 12;
@@ -19,8 +21,14 @@ const formatShare = (pct: number) => (pct > 0 && pct < 1 ? "<1%" : `${Math.round
 
 const railWidth = (pct: number) => `${Math.min(100, Math.max(pct > 0 ? 1.5 : 0, pct))}%`;
 
-export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUsageBreakdownChartProps) {
-  const rows = items.slice(0, MAX_ROWS);
+export function LlmUsageBreakdownChart({
+  items,
+  dimensionLabel,
+  loading,
+  maxRows = MAX_ROWS,
+  error = null,
+}: LlmUsageBreakdownChartProps) {
+  const rows = items.slice(0, maxRows);
   const total = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const peak = rows.reduce((max, i) => Math.max(max, i.cost_usd), 0);
   const digits = peak >= 1 ? 2 : 4;
@@ -31,12 +39,12 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
         <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">Cost by {dimensionLabel}</h3>
           <div className="flex items-baseline gap-4 text-xs text-muted-foreground">
-            {items.length > MAX_ROWS && (
+            {items.length > maxRows && (
               <span>
-                Top {MAX_ROWS} of {items.length}
+                Top {maxRows} of {items.length}
               </span>
             )}
-            {!loading && rows.length > 0 && (
+            {!loading && !error && rows.length > 0 && (
               <span>
                 Total{" "}
                 <span className="ml-0.5 font-semibold tabular-nums text-foreground">{formatUsd(total, digits)}</span>
@@ -54,6 +62,8 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
               </div>
             ))}
           </div>
+        ) : error ? (
+          <div className="flex h-40 items-center justify-center text-sm text-destructive">{error}</div>
         ) : rows.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
             No usage recorded for this period.
