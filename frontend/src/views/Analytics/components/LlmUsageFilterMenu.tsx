@@ -81,14 +81,15 @@ export function LlmUsageFilterMenu({
       options: agents.map((a) => ({ value: a.id, label: a.name })),
       onChange: onAgentFilterChange,
     },
-    {
-      key: "provider",
-      label: "Provider",
-      allLabel: "All providers",
-      value: provider,
-      options: providers.map((p) => ({ value: p, label: p })),
-      onChange: onProviderChange,
-    },
+ // Keep it in case we need it :)   
+ // {
+ //   key: "provider",
+ //   label: "Provider",
+ //   allLabel: "All providers",
+ //   value: provider,
+ //   options: providers.map((p) => ({ value: p, label: p })),
+ //   onChange: onProviderChange,
+ //   },
     {
       key: "model",
       label: "Model",
