@@ -27,6 +27,8 @@ export interface LlmUsageBreakdownItem {
   total_tokens: number;
   calls: number;
   unpriced_calls: number;
+  /** Node dimension only: true when only an older workflow version still names the node */
+  removed?: boolean;
 }
 
 export interface LlmUsageBreakdownResponse {
@@ -59,7 +61,7 @@ export interface LlmUsageFilterOptionsResponse {
   agents: LlmUsageAgentOption[];
 }
 
-export type LlmUsageDimension = "provider" | "model" | "agent" | "source" | "llm" | "evaluation_method";
+export type LlmUsageDimension = "provider" | "model" | "agent" | "source" | "llm" | "evaluation_method" | "node";
 
 export interface LlmUsageQueryFilters {
   agent_id?: string;

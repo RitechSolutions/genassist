@@ -165,11 +165,11 @@ function LlmUsagePage() {
     placeholderData: keepPreviousData,
   });
 
-  const showCostByLlm = agentFilter !== ALL && dimension === "agent";
-  const agentLlm = useQuery({
-    queryKey: ["llm-usage", "breakdown", "llm", ...filterKey],
-    queryFn: () => fetchLlmUsageBreakdown("llm", queryFilters),
-    enabled: showCostByLlm,
+  const showNodePanel = agentFilter !== ALL;
+  const agentNodes = useQuery({
+    queryKey: ["llm-usage", "breakdown", "node", ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown("node", queryFilters),
+    enabled: showNodePanel,
     placeholderData: keepPreviousData,
   });
 
@@ -504,13 +504,14 @@ function LlmUsagePage() {
           </CardContent>
         </Card>
 
-        {showCostByLlm && (
+        {showNodePanel && (
           <LlmUsageBreakdownChart
-            items={agentLlm.data?.items ?? []}
-            dimensionLabel="LLM"
-            loading={agentLlm.isPending || agentLlm.isPlaceholderData}
+            items={agentNodes.data?.items ?? []}
+            dimensionLabel="Node"
+            scopeNote="Workflow node calls only."
+            loading={agentNodes.isPending || agentNodes.isPlaceholderData}
             maxRows={Infinity}
-            error={agentLlm.error ? "Failed to load LLM costs for this agent." : null}
+            error={agentNodes.error ? "Failed to load node costs for this agent." : null}
           />
         )}
       </div>

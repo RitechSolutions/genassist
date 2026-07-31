@@ -11,6 +11,7 @@ interface LlmUsageBreakdownChartProps {
   loading?: boolean;
   maxRows?: number;
   error?: string | null;
+  scopeNote?: string;
 }
 
 const MAX_ROWS = 12;
@@ -27,6 +28,7 @@ export function LlmUsageBreakdownChart({
   loading,
   maxRows = MAX_ROWS,
   error = null,
+  scopeNote,
 }: LlmUsageBreakdownChartProps) {
   const rows = items.slice(0, maxRows);
   const total = items.reduce((sum, i) => sum + i.cost_usd, 0);
@@ -52,6 +54,7 @@ export function LlmUsageBreakdownChart({
             )}
           </div>
         </div>
+        {scopeNote && <p className="-mt-3 mb-4 text-xs text-muted-foreground">{scopeNote}</p>}
         {loading ? (
           <div className="space-y-4">
             {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -87,6 +90,8 @@ export function LlmUsageBreakdownChart({
                       {item.label}
                     </span>
                     <div className="col-start-3 row-start-1 flex shrink-0 items-baseline justify-end gap-2 sm:col-start-4">
+                      {/* Muted, not amber: it explains history rather than warning about the number */}
+                      {item.removed && <span className="text-xs text-muted-foreground">removed</span>}
                       {item.cost_is_partial && <span className="text-xs text-amber-500">partial</span>}
                       <span className="text-sm font-semibold tabular-nums text-foreground">
                         {formatUsd(item.cost_usd, digits)}
