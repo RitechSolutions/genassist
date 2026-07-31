@@ -298,6 +298,7 @@ class LlmUsageRecorder:
         entries: list[dict[str, Any]],
         *,
         workflow_id: Optional[UUID] = None,
+        agent_id: Optional[UUID] = None,
         source: str = "test_suite",
         occurred_at: Optional[datetime] = None,
     ) -> None:
@@ -316,11 +317,13 @@ class LlmUsageRecorder:
                         occurred_at = occurred_at or utc_now()
 
                         valid_workflows = await self._existing_ids(session, WorkflowModel, {workflow_id})
+                        valid_agents = await self._existing_ids(session, AgentModel, {agent_id})
                         provider_ids = {coerce_uuid(e.get("llm_provider_id")) for e in entries}
                         valid_providers = await self._existing_ids(session, LlmProvidersModel, provider_ids)
 
                         workflow_id = workflow_id if workflow_id in valid_workflows else None
-                        agent_id = await self._agent_for_workflow(session, workflow_id)
+                        if agent_id not in valid_agents:
+                            agent_id = await self._agent_for_workflow(session, workflow_id)
 
                         event_rows = []
                         for entry in entries:

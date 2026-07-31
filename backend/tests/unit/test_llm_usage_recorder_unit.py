@@ -408,17 +408,22 @@ class TestCaptureBound:
 
 class EvaluationSession(FakeSession):
 
-    def __init__(self, *, workflows=(), providers=(), agents=(), persisted=0, capture_enabled=True):
+    def __init__(
+        self, *, workflows=(), providers=(), agents=(), workflow_agents=None, persisted=0, capture_enabled=True
+    ):
         super().__init__()
         self.statements = []
         self.committed = False
         self.closed = False
         self._by_table = {"workflows": list(workflows), "llm_providers": list(providers), "agents": list(agents)}
+        self._workflow_agents = workflow_agents
         self._persisted = persisted
         self._capture_enabled = capture_enabled
 
     def _ids_for(self, stmt):
         sql = str(stmt)
+        if "agents.workflow_id" in sql and self._workflow_agents is not None:
+            return self._workflow_agents
         for table, ids in self._by_table.items():
             if f"FROM {table}" in sql:
                 return ids
@@ -578,6 +583,48 @@ class TestRecordEvaluationCalls:
         receipt = _rows_of(_insert_for(session.statements, "llm_usage_capture_runs"))[0]
         assert row["workflow_id"] == workflow_id and row["agent_id"] == agent_id
         assert receipt["workflow_id"] == workflow_id and receipt["agent_id"] == agent_id
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_owner_outranks_the_workflows_active_agent(self, evaluation_scope):
+        workflow_id, historical_owner, active_agent = uuid4(), uuid4(), uuid4()
+        session = evaluation_scope(
+            EvaluationSession(workflows=[workflow_id], agents=[historical_owner], workflow_agents=[active_agent])
+        )
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry()], workflow_id=workflow_id, agent_id=historical_owner
+        )
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        receipt = _rows_of(_insert_for(session.statements, "llm_usage_capture_runs"))[0]
+        assert row["agent_id"] == historical_owner, "the evaluated version's owner, not whoever runs it now"
+        assert receipt["agent_id"] == historical_owner
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_owner_falls_back_to_the_workflows_active_agent(self, evaluation_scope):
+        workflow_id, active_agent = uuid4(), uuid4()
+        session = evaluation_scope(
+            EvaluationSession(workflows=[workflow_id], agents=[], workflow_agents=[active_agent])
+        )
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry()], workflow_id=workflow_id, agent_id=uuid4()
+        )
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert row["agent_id"] == active_agent
+
+    @pytest.mark.asyncio
+    async def test_an_absent_owner_keeps_deriving_the_agent_from_the_workflow(self, evaluation_scope):
+        workflow_id, active_agent = uuid4(), uuid4()
+        session = evaluation_scope(
+            EvaluationSession(workflows=[workflow_id], agents=[], workflow_agents=[active_agent])
+        )
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()], workflow_id=workflow_id)
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert row["agent_id"] == active_agent
 
     @pytest.mark.asyncio
     async def test_unknown_workflow_and_provider_are_nulled_not_rejected(self, evaluation_scope):

@@ -523,7 +523,6 @@ function LlmUsagePage() {
             dimensionLabel="Node"
             scopeNote="Workflow node calls only."
             loading={agentNodes.isPending || agentNodes.isPlaceholderData}
-            maxRows={Infinity}
             error={agentNodes.error ? "Failed to load node costs for this agent." : null}
           />
         )}

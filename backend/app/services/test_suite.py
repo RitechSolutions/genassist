@@ -576,6 +576,7 @@ class EvaluationUsageRef:
 
     execution_id: str
     workflow_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None
     entries: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
 
 
@@ -1726,7 +1727,10 @@ class TestSuiteService:
             )
 
         await LlmUsageRecorder().record_evaluation_calls(
-            usage_ref.execution_id, entries, workflow_id=usage_ref.workflow_id
+            usage_ref.execution_id,
+            entries,
+            workflow_id=usage_ref.workflow_id,
+            agent_id=usage_ref.agent_id,
         )
 
     async def _flush_judge_usage(
@@ -1906,6 +1910,7 @@ class TestSuiteService:
                     EvaluationUsageRef(
                         execution_id=f"eval:{state_execution_id}",
                         workflow_id=coerce_uuid(engine.workflow_id),
+                        agent_id=coerce_uuid(workflow.agent_id),
                     )
                     if state_execution_id
                     else None

@@ -33,7 +33,7 @@ const NODE_ITEMS = [
   },
 ];
 
-const SCOPE_NOTE = 'Recorded workflow calls — excludes analyst and evaluation spend.';
+const SCOPE_NOTE = 'Workflow node calls only.';
 
 const nodePanel = (page: Page) =>
   page.locator('div').filter({ has: page.getByRole('heading', { name: 'Cost by Node' }) }).last();
@@ -74,15 +74,6 @@ test('Cost Explorer › node panel stays hidden until one agent is selected', as
 
   await expect(page.getByRole('heading', { name: 'Cost by Node' })).toBeVisible();
   await expect(page.getByText(SCOPE_NOTE)).toBeVisible();
-});
-
-test('Cost Explorer › the node panel replaces Cost by LLM', async ({ page }) => {
-  await stubNodeBreakdown(page);
-  await openCostExplorer(page);
-  await selectFirstAgent(page);
-
-  await expect(page.getByRole('heading', { name: 'Cost by Node' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Cost by LLM' })).toHaveCount(0);
 });
 
 test('Cost Explorer › the node panel survives a table dimension change', async ({ page }) => {

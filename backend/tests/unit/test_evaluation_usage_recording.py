@@ -1,6 +1,7 @@
 """Unit tests for collecting judge LLM usage and flushing it outside the scoring timeout"""
 
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ import app.services.llm_usage_recorder as recorder_module
 import app.services.test_suite as test_suite_module
 from app.modules.workflow.engine import llm_usage_tracking
 from app.modules.workflow.llm.fallback_exceptions import FALLBACK_PROVIDER_ID_KEY
+from app.schemas.workflow import WorkflowInDB
 from app.services.test_suite import EvaluationUsageRef, SimpleEvaluatorRegistry
 
 _JUDGE_JSON = '{"score": 0.9, "reason": "grounded"}'
@@ -71,7 +73,7 @@ def _service():
 
 
 def _ref() -> EvaluationUsageRef:
-    return EvaluationUsageRef(execution_id=f"eval:{uuid4()}", workflow_id=uuid4())
+    return EvaluationUsageRef(execution_id=f"eval:{uuid4()}", workflow_id=uuid4(), agent_id=uuid4())
 
 
 async def _evaluate(techniques, *, usage_ref, configs, outputs="A polite, complete reply."):
@@ -275,8 +277,8 @@ class TestFlush:
         recorded = []
 
         class FakeRecorder:
-            async def record_evaluation_calls(self, execution_id, entries, *, workflow_id=None, **_):
-                recorded.append((execution_id, entries, workflow_id))
+            async def record_evaluation_calls(self, execution_id, entries, *, workflow_id=None, agent_id=None, **_):
+                recorded.append((execution_id, entries, workflow_id, agent_id))
 
         monkeypatch.setattr(recorder_module, "LlmUsageRecorder", FakeRecorder)
         return recorded
@@ -308,8 +310,9 @@ class TestFlush:
         await _service()._flush_judge_usage(ref, {}, {"timed_out": False})
 
         assert len(recorded) == 1, "one recorder invocation per evaluated case"
-        execution_id, entries, workflow_id = recorded[0]
+        execution_id, entries, workflow_id, agent_id = recorded[0]
         assert execution_id == ref.execution_id and workflow_id == ref.workflow_id
+        assert agent_id == ref.agent_id, "the owning agent reaches the recorder, not just the workflow"
         assert [(e["provider"], e["model"]) for e in entries] == [("openai", "gpt-4o")] * 2
         assert {e["llm_provider_id"] for e in entries} == {provider_id}
 
@@ -463,3 +466,106 @@ class TestDefaultProviderLookup:
         monkeypatch.setattr(test_suite_module.injector, "get", boom)
 
         assert await _service()._default_judge_provider_id() is None
+
+
+class EngineStub:
+
+    def __init__(self, config):
+        self.workflow_id = config["id"]
+
+    async def execute_from_node(self, **_kwargs):
+        return SimpleNamespace(
+            execution_id=uuid4(),
+            status="completed",
+            output="ok",
+            format_state_as_response=lambda: {"state": {}},
+        )
+
+
+class EvaluatorSpy:
+    def __init__(self):
+        self.usage_refs = []
+
+    def default_techniques(self):
+        return ["contains"]
+
+    async def evaluate(self, _techniques, *, usage_ref=None, **_kwargs):
+        self.usage_refs.append(usage_ref)
+        return {}
+
+
+class TestRunAttribution:
+
+    @staticmethod
+    def _workflow(workflow_id, agent_id):
+        now = datetime(2026, 7, 30, tzinfo=timezone.utc)
+        return WorkflowInDB(
+            id=workflow_id,
+            name="historical version",
+            version="1",
+            nodes=[],
+            edges=[],
+            agent_id=agent_id,
+            created_at=now,
+            updated_at=now,
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_run_tags_judge_usage_with_the_evaluated_versions_owner(self, monkeypatch):
+        workflow_id, owner_id = uuid4(), uuid4()
+        monkeypatch.setattr(test_suite_module, "WorkflowEngine", EngineStub)
+
+        async def _accept(*_args, **_kwargs):
+            return None
+
+        service = _service()
+        spy = EvaluatorSpy()
+        service.evaluators = spy
+        service.run_repo = SimpleNamespace(update=_accept)
+        service.result_repo = SimpleNamespace(create=_accept)
+        case = SimpleNamespace(
+            id=uuid4(),
+            source_conversation_id=None,
+            turn_index=0,
+            created_at=0,
+            input_data={"message": "hello"},
+            expected_output=None,
+        )
+        monkeypatch.setattr(service, "list_cases_for_suite", lambda _suite_id: _async([case]))
+        suite = SimpleNamespace(id=uuid4(), default_input_metadata=None)
+        run = SimpleNamespace(id=uuid4(), status="pending", techniques=["contains"], summary_metrics=None)
+
+        await service._execute_run_inner(suite, self._workflow(workflow_id, owner_id), run)
+
+        assert len(spy.usage_refs) == 1
+        usage_ref = spy.usage_refs[0]
+        assert usage_ref.agent_id == owner_id, "the version's own agent, whichever version is active now"
+        assert usage_ref.workflow_id == workflow_id
+
+    @pytest.mark.asyncio
+    async def test_an_ownerless_workflow_leaves_the_recorder_to_derive_the_agent(self, monkeypatch):
+        monkeypatch.setattr(test_suite_module, "WorkflowEngine", EngineStub)
+
+        async def _accept(*_args, **_kwargs):
+            return None
+
+        service = _service()
+        spy = EvaluatorSpy()
+        service.evaluators = spy
+        service.run_repo = SimpleNamespace(update=_accept)
+        service.result_repo = SimpleNamespace(create=_accept)
+        case = SimpleNamespace(
+            id=uuid4(),
+            source_conversation_id=None,
+            turn_index=0,
+            created_at=0,
+            input_data={"message": "hello"},
+            expected_output=None,
+        )
+        monkeypatch.setattr(service, "list_cases_for_suite", lambda _suite_id: _async([case]))
+        suite = SimpleNamespace(id=uuid4(), default_input_metadata=None)
+        run = SimpleNamespace(id=uuid4(), status="pending", techniques=["contains"], summary_metrics=None)
+
+        await service._execute_run_inner(suite, self._workflow(uuid4(), None), run)
+
+        assert spy.usage_refs[0].agent_id is None

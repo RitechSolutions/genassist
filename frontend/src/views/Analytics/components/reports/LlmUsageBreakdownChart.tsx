@@ -9,7 +9,6 @@ interface LlmUsageBreakdownChartProps {
   items: LlmUsageBreakdownItem[];
   dimensionLabel: string;
   loading?: boolean;
-  maxRows?: number;
   error?: string | null;
   scopeNote?: string;
 }
@@ -26,11 +25,10 @@ export function LlmUsageBreakdownChart({
   items,
   dimensionLabel,
   loading,
-  maxRows = MAX_ROWS,
   error = null,
   scopeNote,
 }: LlmUsageBreakdownChartProps) {
-  const rows = items.slice(0, maxRows);
+  const rows = items.slice(0, MAX_ROWS);
   const total = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const peak = rows.reduce((max, i) => Math.max(max, i.cost_usd), 0);
   const digits = peak >= 1 ? 2 : 4;
@@ -41,9 +39,9 @@ export function LlmUsageBreakdownChart({
         <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">Cost by {dimensionLabel}</h3>
           <div className="flex items-baseline gap-4 text-xs text-muted-foreground">
-            {items.length > maxRows && (
+            {items.length > MAX_ROWS && (
               <span>
-                Top {maxRows} of {items.length}
+                Top {MAX_ROWS} of {items.length}
               </span>
             )}
             {!loading && !error && rows.length > 0 && (

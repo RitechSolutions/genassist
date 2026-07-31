@@ -40,22 +40,30 @@ def _entries(*purposes, model="gpt-4o") -> list[dict]:
     ]
 
 
+def _cost(items: dict, key: str) -> float:
+    item = items.get(key)
+    return float(item.cost_usd) if item else 0.0
+
+
 class World:
 
-    def __init__(self, maker, agent_id, workflow_id):
+    def __init__(self, maker, agent_id, workflow_id, historical_workflow_id):
         self.maker = maker
         self.agent_id = agent_id
         self.workflow_id = workflow_id
+        self.historical_workflow_id = historical_workflow_id
         self.execution_ids: list[str] = []
 
-    async def record(self, *purposes, execution_id=None, workflow_id=True, model="gpt-4o") -> str:
+    async def record(self, *purposes, execution_id=None, workflow_id=True, agent_id=None, model="gpt-4o") -> str:
         execution_id = execution_id or f"eval:{uuid4()}"
         if execution_id not in self.execution_ids:
             self.execution_ids.append(execution_id)
+        target_workflow = self.workflow_id if workflow_id is True else (workflow_id or None)
         await LlmUsageRecorder().record_evaluation_calls(
             execution_id,
             _entries(*purposes, model=model),
-            workflow_id=self.workflow_id if workflow_id else None,
+            workflow_id=target_workflow,
+            agent_id=agent_id,
         )
         return execution_id
 
@@ -141,9 +149,19 @@ async def world(app_def):
             is_deleted=0,
         )
         session.add(agent)
+        historical = WorkflowModel(
+            id=uuid4(),
+            name="eval-capture",
+            version="0",
+            nodes=[],
+            edges=[],
+            agent_id=agent.id,
+            is_deleted=0,
+        )
+        session.add(historical)
         await session.commit()
 
-    built = World(maker, agent.id, workflow.id)
+    built = World(maker, agent.id, workflow.id, historical.id)
     try:
         yield built
     finally:
@@ -160,7 +178,7 @@ async def world(app_def):
             await session.execute(delete(AgentModel).where(AgentModel.id == agent.id))
             await session.execute(delete(OperatorModel).where(OperatorModel.id == operator.id))
             await session.execute(delete(OperatorStatisticsModel).where(OperatorStatisticsModel.id == statistics.id))
-            await session.execute(delete(WorkflowModel).where(WorkflowModel.id == workflow.id))
+            await session.execute(delete(WorkflowModel).where(WorkflowModel.id.in_([workflow.id, historical.id])))
             await session.execute(
                 text("UPDATE llm_usage_control SET capture_enabled = true WHERE singleton_key = :k"),
                 {"k": CONTROL_SINGLETON_KEY},
@@ -192,6 +210,33 @@ async def test_judge_events_are_attributed_to_the_workflows_owning_agent(world):
     receipt = (await world.receipts(execution_id))[0]
     assert events[0].agent_id == world.agent_id and events[0].workflow_id == world.workflow_id
     assert receipt.agent_id == world.agent_id
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_evaluating_a_historical_version_still_bills_its_owning_agent(world):
+    before_source = await world.breakdown("source")
+    before_method = await world.breakdown("evaluation_method")
+
+    execution_id = await world.record(
+        "llm_judge",
+        "provenance_judge",
+        workflow_id=world.historical_workflow_id,
+        agent_id=world.agent_id,
+    )
+
+    events = await world.events(execution_id)
+    receipt = (await world.receipts(execution_id))[0]
+    assert {e.workflow_id for e in events} == {world.historical_workflow_id}
+    assert {e.agent_id for e in events} == {world.agent_id}, "no agent has this version active any more"
+    assert receipt.agent_id == world.agent_id
+
+    after_source = await world.breakdown("source")
+    after_method = await world.breakdown("evaluation_method")
+    assert _cost(after_source, "evaluation") - _cost(before_source, "evaluation") == pytest.approx(2 * JUDGE_CALL_COST)
+    assert _cost(after_method, "llm_judge") - _cost(before_method, "llm_judge") == pytest.approx(JUDGE_CALL_COST)
+    assert _cost(after_method, "provenance_judge") - _cost(before_method, "provenance_judge") == pytest.approx(
+        JUDGE_CALL_COST
+    )
 
 
 @pytest.mark.asyncio(loop_scope="module")
