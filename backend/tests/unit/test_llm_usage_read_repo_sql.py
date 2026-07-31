@@ -135,6 +135,37 @@ async def test_evaluation_method_dimension_groups_purpose_over_evaluation_rows_o
 
 
 @pytest.mark.asyncio
+async def test_node_dimension_groups_node_id_over_workflow_rows_only():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).breakdown(
+        LlmUsageQueryParams(), None, _DIMENSION_COLUMNS["node"], _EXTRA_BREAKDOWN_CONDITIONS["node"]
+    )
+    sql = _sql(db.statements[0])
+    assert "GROUP BY llm_usage_events.node_id" in sql
+    assert "source_type = 'workflow'" in sql
+
+
+@pytest.mark.asyncio
+async def test_distinct_agent_workflow_pairs_is_distinct_and_filtered():
+    db = CapturingDb()
+    agent_id = uuid4()
+    params = LlmUsageQueryParams(from_date=date(2026, 1, 1), provider="OpenAI")
+    await LlmUsageReadRepository(db).distinct_agent_workflow_pairs(
+        params, [agent_id], _EXTRA_BREAKDOWN_CONDITIONS["node"]
+    )
+    sql = _sql(db.statements[0])
+    assert "SELECT DISTINCT llm_usage_events.agent_id, llm_usage_events.workflow_id" in sql
+    for clause in (
+        "is_deleted = 0",
+        f"agent_id = '{agent_id}'",
+        "occurred_at >= '2026-01-01 00:00:00+00:00'",
+        "provider_key = 'openai'",
+        "source_type = 'workflow'",
+    ):
+        assert clause in sql
+
+
+@pytest.mark.asyncio
 async def test_extra_conditions_compose_with_scope_date_and_provider_filters():
     db = CapturingDb()
     agent_id = uuid4()

@@ -120,3 +120,11 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         col = LlmUsageEventModel.agent_id
         stmt = select(distinct(col)).where(*self._conditions(params, scope), col.isnot(None))
         return [row[0] for row in (await self.db.execute(stmt)).all()]
+
+    async def distinct_agent_workflow_pairs(self, params, scope: list[UUID] | None, extra_conditions=None):
+        stmt = (
+            select(LlmUsageEventModel.agent_id, LlmUsageEventModel.workflow_id)
+            .distinct()
+            .where(*self._conditions(params, scope), *(extra_conditions or ()))
+        )
+        return list((await self.db.execute(stmt)).all())

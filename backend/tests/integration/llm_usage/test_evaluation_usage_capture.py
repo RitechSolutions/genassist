@@ -17,6 +17,7 @@ from app.db.models.workflow import WorkflowModel
 from app.db.multi_tenant_session import MultiTenantSessionManager
 from app.repositories.agent import AgentRepository
 from app.repositories.llm_usage_read import LlmUsageReadRepository
+from app.repositories.workflow import WorkflowRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
 from app.services.llm_usage_read import LlmUsageReadService
 from app.services.llm_usage_recorder import LlmUsageRecorder
@@ -91,7 +92,9 @@ class World:
     async def breakdown(self, dimension: str, *, scoped=True) -> dict:
         params = LlmUsageQueryParams(agent_id=self.agent_id if scoped else None)
         async with self.maker() as session:
-            service = LlmUsageReadService(LlmUsageReadRepository(session), AgentRepository(session))
+            service = LlmUsageReadService(
+                LlmUsageReadRepository(session), AgentRepository(session), WorkflowRepository(session)
+            )
             response = await service.get_breakdown(params, dimension)
         return {item.key: item for item in response.items}
 

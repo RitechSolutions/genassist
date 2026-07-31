@@ -1,6 +1,6 @@
 """Unit tests for LlmUsageReadService canonical cost/coverage math"""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -22,6 +22,7 @@ class FakeReadRepo:
         self.scope_resolutions = 0
         self.distinct_calls = []
         self.breakdown_calls = []
+        self.pair_calls = []
 
     async def resolve_scope(self, params):
         self.scope_resolutions += 1
@@ -45,11 +46,16 @@ class FakeReadRepo:
         self.distinct_calls.append(("agent_id", True, True))
         return self._options.get("agent_id", [])
 
+    async def distinct_agent_workflow_pairs(self, params, scope, extra_conditions=None):
+        self.pair_calls.append(extra_conditions)
+        return self._options.get("pairs", [])
+
 
 class FakeAgent:
-    def __init__(self, id, name):
+    def __init__(self, id, name, workflow_id=None):
         self.id = id
         self.name = name
+        self.workflow_id = workflow_id
 
 
 class FakeAgentRepo:
@@ -60,6 +66,21 @@ class FakeAgentRepo:
         return [a for a in self._agents if a.id in ids]
 
 
+class FakeWorkflow:
+    def __init__(self, id, nodes, created_at=None):
+        self.id = id
+        self.nodes = nodes
+        self.created_at = created_at
+
+
+class FakeWorkflowRepo:
+    def __init__(self, workflows=None):
+        self._workflows = workflows or []
+
+    async def get_by_ids(self, ids):
+        return [w for w in self._workflows if w.id in ids]
+
+
 def _params(**overrides):
     return LlmUsageQueryParams(**overrides)
 
@@ -68,9 +89,25 @@ def _compiled(expression) -> str:
     return str(expression.compile(compile_kwargs={"literal_binds": True}))
 
 
-def _service(summary_row=None, breakdown_rows=None, agents=None, scope=None, options=None, timeseries_rows=None):
+def _node(node_id, name):
+    return {"id": node_id, "type": "llmModelNode", "data": {"name": name}}
+
+
+def _at(day: int) -> datetime:
+    return datetime(2026, 1, day, tzinfo=timezone.utc)
+
+
+def _service(
+    summary_row=None,
+    breakdown_rows=None,
+    agents=None,
+    scope=None,
+    options=None,
+    timeseries_rows=None,
+    workflows=None,
+):
     repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows)
-    return LlmUsageReadService(repo, FakeAgentRepo(agents)), repo
+    return LlmUsageReadService(repo, FakeAgentRepo(agents), FakeWorkflowRepo(workflows)), repo
 
 
 def _row(
@@ -320,7 +357,8 @@ async def test_llm_dimension_groups_the_provider_model_pair():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dimension,source_type", [("llm", "workflow"), ("evaluation_method", "evaluation")]
+    "dimension,source_type",
+    [("llm", "workflow"), ("evaluation_method", "evaluation"), ("node", "workflow")],
 )
 async def test_drill_down_dimensions_carry_their_source_type_filter(dimension, source_type):
     service, repo = _service(breakdown_rows=[])
@@ -335,6 +373,156 @@ async def test_page_wide_dimensions_add_no_extra_conditions(dimension):
     service, repo = _service(breakdown_rows=[])
     await service.get_breakdown(_params(), dimension)
     assert repo.breakdown_calls[0][1] is None
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_prefers_the_current_workflow_version_name():
+    agent_id, old, current = uuid4(), uuid4(), uuid4()
+    rows = [
+        ("n1", Decimal("0.30"), 0, 500, 3),
+        ("n2", Decimal("0.10"), 0, 100, 1),
+        (None, Decimal("0.05"), 0, 50, 1),
+        ("ghost", Decimal("0.01"), 0, 20, 1),
+    ]
+    service, _ = _service(
+        breakdown_rows=rows,
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, old)]},
+        workflows=[
+            FakeWorkflow(old, [_node("n1", "Old step"), _node("n2", "Legacy step")], _at(1)),
+            FakeWorkflow(current, [_node("n1", "New step")], _at(2)),
+        ],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    by = {i.key: i for i in resp.items}
+    assert (by["n1"].label, by["n1"].removed) == ("New step", False)
+    assert (by["n2"].label, by["n2"].removed) == ("Legacy step", True)
+    assert (by["unattributed"].label, by["unattributed"].removed) == ("Unattributed", None)
+    assert (by["ghost"].label, by["ghost"].removed) == ("Unknown", None)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_keeps_the_newest_surviving_name_for_a_deleted_node():
+    agent_id, oldest, newer, current = uuid4(), uuid4(), uuid4(), uuid4()
+    service, _ = _service(
+        breakdown_rows=[("n1", Decimal("0.10"), 0, 100, 1)],
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, oldest), (agent_id, newer)]},
+        workflows=[
+            FakeWorkflow(oldest, [_node("n1", "First name")], _at(1)),
+            FakeWorkflow(newer, [_node("n1", "Second name")], _at(2)),
+            FakeWorkflow(current, [_node("n9", "Something else")], _at(3)),
+        ],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    assert (resp.items[0].label, resp.items[0].removed) == ("Second name", True)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_reports_unresolvable_nodes_as_unknown_without_a_removed_flag():
+    agent_id, current = uuid4(), uuid4()
+    service, _ = _service(
+        breakdown_rows=[("gone", Decimal("0.10"), 0, 100, 1)],
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, current)]},
+        workflows=[FakeWorkflow(current, [_node("n1", "Answer drafting")], _at(1))],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    # In-place deletes leave no stored name, so the row stays honest rather than claiming removal.
+    assert (resp.items[0].label, resp.items[0].removed) == ("Unknown", None)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_tolerates_malformed_node_entries():
+    agent_id, current = uuid4(), uuid4()
+    nodes = [
+        "not-a-dict",
+        {"type": "llmModelNode"},
+        {"id": "n1", "data": None},
+        {"id": "n2", "data": "text"},
+        {"id": "n3", "data": {"name": 42}},
+        _node("n4", "Answer drafting"),
+    ]
+    service, _ = _service(
+        breakdown_rows=[("n1", Decimal("0.10"), 0, 100, 1), ("n4", Decimal("0.20"), 0, 200, 2)],
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, current)]},
+        workflows=[FakeWorkflow(current, nodes, _at(1))],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    by = {i.key: i for i in resp.items}
+    assert (by["n1"].label, by["n1"].removed) == ("Unknown", False)
+    assert (by["n4"].label, by["n4"].removed) == ("Answer drafting", False)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_disambiguates_duplicate_names():
+    agent_id, current = uuid4(), uuid4()
+    service, _ = _service(
+        breakdown_rows=[("abcdef-one", Decimal("0.20"), 0, 200, 2), ("abcdef-two", Decimal("0.10"), 0, 100, 1)],
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, current)]},
+        workflows=[
+            FakeWorkflow(current, [_node("abcdef-one", "Summarizer"), _node("abcdef-two", "Summarizer")], _at(1))
+        ],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    by = {i.key: i for i in resp.items}
+    assert by["abcdef-one"].label == "Summarizer · abcdef-o"
+    assert by["abcdef-two"].label == "Summarizer · abcdef-t"
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_matches_overlong_ids_via_the_ledger_clamp():
+    agent_id, current = uuid4(), uuid4()
+    long_id = "n" * 200
+    service, _ = _service(
+        breakdown_rows=[(long_id[:128], Decimal("0.10"), 0, 100, 1)],
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, current)]},
+        workflows=[FakeWorkflow(current, [_node(long_id, "Long node")], _at(1))],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    assert (resp.items[0].label, resp.items[0].removed) == ("Long node", False)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_handles_null_created_at_versions():
+    agent_id, undated, current = uuid4(), uuid4(), uuid4()
+    service, _ = _service(
+        breakdown_rows=[("n1", Decimal("0.10"), 0, 100, 1)],
+        agents=[FakeAgent(agent_id, "Sales Bot", workflow_id=current)],
+        options={"pairs": [(agent_id, undated)]},
+        workflows=[
+            FakeWorkflow(undated, [_node("n1", "Undated step")], None),
+            FakeWorkflow(current, [_node("n2", "Current step")], _at(2)),
+        ],
+    )
+    resp = await service.get_breakdown(_params(agent_id=agent_id), "node")
+    assert (resp.items[0].label, resp.items[0].removed) == ("Undated step", True)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_skips_name_resolution_when_no_rows():
+    service, repo = _service(breakdown_rows=[])
+    resp = await service.get_breakdown(_params(agent_id=uuid4()), "node")
+    assert resp.items == []
+    assert repo.pair_calls == []
+
+
+@pytest.mark.asyncio
+async def test_breakdown_node_passes_the_drill_down_filter_to_the_pairs_query():
+    service, repo = _service(breakdown_rows=[("n1", Decimal("0.10"), 0, 100, 1)])
+    await service.get_breakdown(_params(agent_id=uuid4()), "node")
+    assert [_compiled(c) for c in repo.pair_calls[0]] == ["llm_usage_events.source_type = 'workflow'"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dimension", ["provider", "model", "agent", "source", "llm", "evaluation_method"])
+async def test_removed_stays_null_on_every_other_dimension(dimension):
+    service, _ = _service(breakdown_rows=[("openai", Decimal("0.10"), 0, 100, 1)])
+    resp = await service.get_breakdown(_params(), dimension)
+    assert resp.items[0].removed is None
 
 
 def test_scope_conditions_always_exclude_soft_deleted():

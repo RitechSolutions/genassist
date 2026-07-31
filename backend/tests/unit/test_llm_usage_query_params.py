@@ -40,7 +40,7 @@ def test_filters_are_carried_through():
 
 
 def test_breakdown_dimensions_match_the_literal():
-    assert BREAKDOWN_DIMENSIONS == ("provider", "model", "agent", "source", "llm", "evaluation_method")
+    assert BREAKDOWN_DIMENSIONS == ("provider", "model", "agent", "source", "llm", "evaluation_method", "node")
 
 
 def test_export_dimensions_match_the_literal():
@@ -48,4 +48,4 @@ def test_export_dimensions_match_the_literal():
 
 
 def test_export_excludes_the_drill_down_dimensions():
-    assert set(BREAKDOWN_DIMENSIONS) - set(EXPORT_DIMENSIONS) == {"llm", "evaluation_method"}
+    assert set(BREAKDOWN_DIMENSIONS) - set(EXPORT_DIMENSIONS) == {"llm", "evaluation_method", "node"}
