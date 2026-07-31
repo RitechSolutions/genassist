@@ -1,6 +1,7 @@
 """Unit tests for collecting judge LLM usage and flushing it outside the scoring timeout"""
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -197,18 +198,22 @@ class TestJudgeCollection:
         assert ref.entries == []
 
     @pytest.mark.asyncio
-    async def test_the_prompt_editor_path_collects_nothing(self, judge_llm):
+    async def test_the_prompt_editor_path_collects_nothing(self, judge_llm, caplog):
         llm = judge_llm()
 
-        await SimpleEvaluatorRegistry().evaluate(
-            ["llm_judge"],
-            inputs={},
-            outputs="Hello",
-            reference_outputs=None,
-            technique_configs={"llm_judge": _RUBRIC},
-        )
+        with caplog.at_level(logging.WARNING, logger=test_suite_module.__name__):
+            await SimpleEvaluatorRegistry().evaluate(
+                ["llm_judge"],
+                inputs={},
+                outputs="Hello",
+                reference_outputs=None,
+                technique_configs={"llm_judge": _RUBRIC},
+            )
 
         assert llm.calls == 1, "the judge still runs; only metering is absent"
+        assert [r for r in caplog.records if r.name == test_suite_module.__name__] == [], (
+            "a ref-less judge skips collection instead of failing into it"
+        )
 
     @pytest.mark.asyncio
     async def test_metering_leaves_the_metrics_untouched(self, judge_llm):

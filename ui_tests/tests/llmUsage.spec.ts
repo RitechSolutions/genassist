@@ -155,7 +155,7 @@ test('Cost Explorer › the node breakdown is requested only after an agent is s
   await selectFirstAgent(page);
 
   await expect(page.getByRole('heading', { name: 'Cost by Node' })).toBeVisible();
-  expect(requested).toContain('node');
+  await expect.poll(() => requested).toContain('node');
 });
 
 test('Cost Explorer › the node panel survives a table dimension change', async ({ page }) => {

@@ -23,13 +23,13 @@ import { cn } from "@/helpers/utils";
 /**
  * Displays help for a column header
  */
-function ColumnDescription({ text }: { text: string }) {
+function ColumnDescription({ label, text }: { label?: string; text: string }) {
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger
           type="button"
-          aria-label={text}
+          aria-label={label ? `${label} help` : text}
           onClick={(e) => e.stopPropagation()}
           className="ml-1 inline-flex -translate-y-px cursor-help align-middle text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
@@ -317,7 +317,12 @@ export function DataTable<T extends { id?: string | number }>({
               >
                 {column.header}
                 {sortIcon(column)}
-                {column.description && <ColumnDescription text={column.description} />}
+                {column.description && (
+                  <ColumnDescription
+                    label={typeof column.header === "string" ? column.header : undefined}
+                    text={column.description}
+                  />
+                )}
               </TableHead>
             ))}
           </TableRow>
