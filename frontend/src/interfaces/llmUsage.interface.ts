@@ -16,6 +16,7 @@ export interface LlmUsageSummaryResponse {
   legacy_estimate_calls: number;
   unpriced_calls: number;
   priced_token_coverage_pct: number;
+  last_unpriced_at?: string | null;
 }
 
 export interface LlmUsageBreakdownItem {

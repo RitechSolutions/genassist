@@ -92,7 +92,6 @@ export function LlmUsageBreakdownChart({
                     <div className="col-start-3 row-start-1 flex shrink-0 items-baseline justify-end gap-2 sm:col-start-4">
                       {/* Muted, not amber: it explains history rather than warning about the number */}
                       {item.removed && <span className="text-xs text-muted-foreground">removed</span>}
-                      {item.cost_is_partial && <span className="text-xs text-amber-500">partial</span>}
                       <span className="text-sm font-semibold tabular-nums text-foreground">
                         {formatUsd(item.cost_usd, digits)}
                       </span>

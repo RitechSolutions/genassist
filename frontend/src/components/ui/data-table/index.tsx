@@ -9,15 +9,46 @@ import {
 } from "@/components/table";
 import { Card } from "@/components/card";
 import { TableSkeleton } from "@/components/skeletons";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { cn } from "@/helpers/utils";
+
+/**
+ * Displays help for a column header
+ */
+function ColumnDescription({ text }: { text: string }) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label={text}
+          onClick={(e) => e.stopPropagation()}
+          className="ml-1 inline-flex -translate-y-px cursor-help align-middle text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs whitespace-normal text-xs font-normal">
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export interface Column<T> {
   header: React.ReactNode;
   key: string;
   /** `index` is the item's absolute position across all pages (1-based numbering: `index + 1`). */
   cell: (item: T, index: number) => React.ReactNode;
+  /** Help text for the column, shown in a tooltip behind a question mark in the header. */
   description?: string;
   sortable?: boolean;
   sortValue?: (item: T) => string | number;
@@ -286,6 +317,7 @@ export function DataTable<T extends { id?: string | number }>({
               >
                 {column.header}
                 {sortIcon(column)}
+                {column.description && <ColumnDescription text={column.description} />}
               </TableHead>
             ))}
           </TableRow>

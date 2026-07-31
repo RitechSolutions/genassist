@@ -65,10 +65,7 @@ export function LlmUsageEvaluationMethods({ items, totalCostUsd, loading, error 
             <span className="tabular-nums">{item.total_tokens.toLocaleString()}</span>
           </TableCell>
           <TableCell className="py-2">
-            <span className="tabular-nums font-semibold">
-              {formatUsd(item.cost_usd)}
-              {item.cost_is_partial && <span className="ml-1 text-xs font-normal text-amber-500">partial</span>}
-            </span>
+            <span className="tabular-nums font-semibold">{formatUsd(item.cost_usd)}</span>
           </TableCell>
           <TableCell className="py-2">
             <span className="tabular-nums text-muted-foreground">

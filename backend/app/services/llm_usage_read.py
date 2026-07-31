@@ -188,6 +188,7 @@ class LlmUsageReadService:
             priced_token_coverage_pct=_coverage_pct(
                 int(total_calls), int(total_tokens), int(priced_tokens), int(unpriced_calls)
             ),
+            last_unpriced_at=(await self.repo.last_unpriced_at() if unpriced_calls else None),
         )
 
     async def _breakdown(self, params, scope, dimension: str) -> LlmUsageBreakdownResponse:

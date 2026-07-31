@@ -46,6 +46,11 @@ class LlmUsageEventModel(Base):
         Index("ix_llm_usage_events_provider_model_occurred", "provider_key", "model_key", "occurred_at"),
         Index("ix_llm_usage_events_source_type_occurred", "source_type", "occurred_at"),
         Index("ix_llm_usage_events_conversation", "conversation_id"),
+        Index(
+            "ix_llm_usage_events_unpriced_created",
+            "created_at",
+            postgresql_where="cost_usd IS NULL AND is_deleted = 0",
+        ),
         CheckConstraint(
             "source_type IN ('workflow', 'llm_analyst', 'evaluation')", name="ck_llm_usage_events_source_type"
         ),

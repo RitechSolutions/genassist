@@ -66,13 +66,7 @@ function ProviderSliceTooltip({ active, payload, total, digits }: ProviderSliceT
   const slice = payload?.[0]?.payload;
   if (!active || !slice) return null;
   const stats: Array<[string, ReactNode]> = [
-    [
-      "Cost",
-      <>
-        {formatUsd(slice.cost_usd, digits)}
-        {slice.cost_is_partial && <span className="ml-1 font-normal text-amber-500">partial</span>}
-      </>,
-    ],
+    ["Cost", formatUsd(slice.cost_usd, digits)],
     ["Calls", slice.calls.toLocaleString()],
     ["Tokens", slice.total_tokens.toLocaleString()],
     ["Share", total > 0 ? formatShare((slice.cost_usd / total) * 100) : "—"],
@@ -175,8 +169,7 @@ export function LlmUsageProviderDonut({ items, loading }: LlmUsageProviderDonutP
             <ul className="sr-only">
               {slices.map((slice) => (
                 <li key={slice.key}>
-                  {slice.label}: {formatUsd(slice.cost_usd, digits)}
-                  {slice.cost_is_partial && " (partial)"}, {slice.calls.toLocaleString()} calls,{" "}
+                  {slice.label}: {formatUsd(slice.cost_usd, digits)}, {slice.calls.toLocaleString()} calls,{" "}
                   {slice.total_tokens.toLocaleString()} tokens
                   {priced && `, ${formatShare((slice.cost_usd / total) * 100)} of spend`}
                 </li>

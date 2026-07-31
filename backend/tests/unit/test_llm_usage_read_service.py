@@ -13,16 +13,26 @@ from app.services.llm_usage_read import LlmUsageReadService
 
 class FakeReadRepo:
 
-    def __init__(self, summary_row=None, breakdown_rows=None, scope=None, options=None, timeseries_rows=None):
+    def __init__(
+        self,
+        summary_row=None,
+        breakdown_rows=None,
+        scope=None,
+        options=None,
+        timeseries_rows=None,
+        last_unpriced=None,
+    ):
         self._summary = summary_row
         self._breakdown = breakdown_rows or []
         self._scope = scope
         self._options = options or {}
         self._timeseries = timeseries_rows or []
+        self._last_unpriced = last_unpriced
         self.scope_resolutions = 0
         self.distinct_calls = []
         self.breakdown_calls = []
         self.pair_calls = []
+        self.last_unpriced_calls = 0
 
     async def resolve_scope(self, params):
         self.scope_resolutions += 1
@@ -30,6 +40,10 @@ class FakeReadRepo:
 
     async def summary(self, params, scope):
         return self._summary
+
+    async def last_unpriced_at(self):
+        self.last_unpriced_calls += 1
+        return self._last_unpriced
 
     async def timeseries(self, params, scope):
         return self._timeseries
@@ -105,8 +119,9 @@ def _service(
     options=None,
     timeseries_rows=None,
     workflows=None,
+    last_unpriced=None,
 ):
-    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows)
+    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows, last_unpriced)
     return LlmUsageReadService(repo, FakeAgentRepo(agents), FakeWorkflowRepo(workflows)), repo
 
 
@@ -172,6 +187,33 @@ async def test_partial_cost_and_token_coverage():
     assert summ.unpriced_calls == 1
     assert summ.priced_token_coverage_pct == 60.0
     assert summ.cost_per_conversation_usd == 0.25
+
+
+@pytest.mark.asyncio
+async def test_unpriced_calls_expose_the_tenant_wide_watermark():
+    watermark = datetime(2026, 7, 30, 9, 15, tzinfo=timezone.utc)
+    row = _row(calls=3, unpriced=1, configured=2)
+    service, repo = _service(summary_row=row, last_unpriced=watermark)
+    summ = await service.get_summary(_params())
+    assert summ.last_unpriced_at == watermark
+    assert repo.last_unpriced_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_full_coverage_skips_the_watermark_query():
+    row = _row(calls=4, unpriced=0, configured=4)
+    service, repo = _service(summary_row=row, last_unpriced=datetime.now(timezone.utc))
+    summ = await service.get_summary(_params())
+    assert summ.last_unpriced_at is None
+    assert repo.last_unpriced_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_scope_summary_has_no_watermark():
+    service, repo = _service(scope=[])
+    summ = await service.get_summary(_params())
+    assert summ.last_unpriced_at is None
+    assert repo.last_unpriced_calls == 0
 
 
 @pytest.mark.asyncio
