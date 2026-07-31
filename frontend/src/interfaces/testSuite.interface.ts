@@ -38,6 +38,14 @@ export interface TestRun {
   updated_at?: string;
 }
 
+export interface MetricRuleDetail {
+  rule_number?: number;
+  passed: boolean;
+  comment?: string | null;
+  expected?: string | null;
+  observed?: string | null;
+}
+
 export interface TestResultMetric {
   score: number | boolean | null;
   passed: boolean;
@@ -47,6 +55,7 @@ export interface TestResultMetric {
   expected?: string | null;
   actual?: string | null;
   threshold?: number | null;
+  details?: MetricRuleDetail[] | null;
 }
 
 export interface TestResult {

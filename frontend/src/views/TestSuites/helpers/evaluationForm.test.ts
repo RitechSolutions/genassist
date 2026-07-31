@@ -43,6 +43,14 @@ describe("parseToolRules legacy shapes", () => {
     const rules = parseRules({ tool: "search", result_contains: "ok" });
     expect(rules[0].per_tool?.search?.result_contains).toBe("ok");
   });
+
+  it("skips non-object rule entries instead of crashing the edit wizard", () => {
+    const rules = parseRules({
+      rules: [null, { id: "r1", tool_ids: ["t1"], operator: "all", scope: "every_turn" }],
+    });
+    expect(rules).toHaveLength(1);
+    expect(rules[0].id).toBe("r1");
+  });
 });
 
 describe("serializeToolRule round-trips per_tool", () => {
@@ -86,17 +94,23 @@ describe("grading source configs", () => {
       provEmbeddingModelName: "all-MiniLM-L6-v2",
       provLlmProviderId: "",
       provLlmJudgeSystemPromptSuffix: "",
-      judgeRubric: "The answer should be helpful.",
-      judgeMinScore: "0.5",
+      judgeRules: [
+        {
+          label: "",
+          rubric: "The answer should be helpful.",
+          minScore: "0.5",
+          sourceType: "none",
+          sourceField: "",
+        },
+      ],
       judgeProviderId: "",
-      judgeSourceType: "none",
-      judgeSourceField: "",
     } as unknown as EvaluationWizardData;
 
     const configs = buildTechniqueConfigs(data);
     expect(configs.nli_eval.evidence_source).toBe("expected_output");
     expect(configs.provenance_eval.context_source).toBe("kb_retrievals");
-    expect(configs.llm_judge.source_type).toBe("none");
+    const judgeRules = configs.llm_judge.rules as Record<string, unknown>[];
+    expect(judgeRules[0].source_type).toBe("none");
   });
 
   it("keeps unknown legacy source fields when an evaluation is edited", () => {
@@ -124,7 +138,8 @@ describe("grading source configs", () => {
 
     expect(configs.nli_eval.evidence_field).toBe("trace.nodes.custom.output");
     expect(configs.provenance_eval.context_field).toBe("trace.nodes.legacy.output");
-    expect(configs.llm_judge.source_field).toBe("trace.session.custom");
+    const judgeRules = configs.llm_judge.rules as Record<string, unknown>[];
+    expect(judgeRules[0].source_field).toBe("trace.session.custom");
   });
 
   it("preserves the old expected-output default for saved semantic evaluations", () => {
@@ -146,7 +161,56 @@ describe("grading source configs", () => {
     const initial = getEditInitialData(evaluation, []);
     expect(initial.nliEvidenceSource).toBe("expected_output");
     expect(initial.provContextSource).toBe("expected_output");
-    expect(initial.judgeSourceType).toBe("none");
+    expect(initial.judgeRules?.[0]?.sourceType).toBe("none");
+  });
+
+  it("round-trips a multi-rule judge config through the wizard", () => {
+    const evaluation = {
+      id: "e4",
+      name: "multi judge",
+      suite_id: "s1",
+      techniques: ["llm_judge"],
+      technique_configs: {
+        llm_judge: {
+          llm_provider_id: "p1",
+          rules: [
+            { label: "Tone", rubric: "Polite?", min_score: 0.5, source_type: "none" },
+            {
+              label: "Relevance",
+              rubric: "Sources relevant?",
+              min_score: 0.7,
+              source_type: "kb_retrievals",
+            },
+          ],
+        },
+      },
+      run_ids: [],
+      created_at: "",
+      updated_at: "",
+    } as TestEvaluationConfig;
+
+    const initial = getEditInitialData(evaluation, []);
+    expect(initial.judgeRules).toHaveLength(2);
+    expect(initial.judgeRules?.[1]?.sourceType).toBe("kb_retrievals");
+
+    const data = {
+      metrics: ["llm_judge"],
+      judgeRules: initial.judgeRules,
+      judgeProviderId: initial.judgeProviderId,
+    } as unknown as EvaluationWizardData;
+    const configs = buildTechniqueConfigs(data);
+    expect(configs.llm_judge).toEqual({
+      llm_provider_id: "p1",
+      rules: [
+        { label: "Tone", rubric: "Polite?", min_score: 0.5, source_type: "none" },
+        {
+          label: "Relevance",
+          rubric: "Sources relevant?",
+          min_score: 0.7,
+          source_type: "kb_retrievals",
+        },
+      ],
+    });
   });
 });
 
@@ -189,5 +253,88 @@ describe("field_equals config", () => {
     const initial = getEditInitialData(evaluation, []);
     expect(initial.fieldEqualsField).toBe("outputs.status");
     expect(initial.fieldEqualsExpected).toBe("resolved");
+  });
+});
+
+describe("route_taken and action_taken multi-rule configs", () => {
+  const evalWithConfigs = (
+    configs: Record<string, Record<string, unknown>>,
+  ): TestEvaluationConfig =>
+    ({
+      id: "ra1",
+      name: "route/action",
+      suite_id: "s1",
+      techniques: Object.keys(configs),
+      technique_configs: configs,
+      run_ids: [],
+      created_at: "",
+      updated_at: "",
+    }) as TestEvaluationConfig;
+
+  it("parses a legacy single-rule route config into one draft rule", () => {
+    const initial = getEditInitialData(
+      evalWithConfigs({ route_taken: { expected: "true", node: "router1" } }),
+      [],
+    );
+    expect(initial.routeRules).toEqual([{ router: "router1", expected: "true" }]);
+  });
+
+  it("parses a legacy single-rule action config into one draft rule", () => {
+    const initial = getEditInitialData(
+      evalWithConfigs({ action_taken: { node: "action1", should_fire: false } }),
+      [],
+    );
+    expect(initial.actionRules).toEqual([
+      { node: "action1", nodeType: "", shouldFire: false },
+    ]);
+  });
+
+  it("serializes route rules as a rules list", () => {
+    const data = {
+      metrics: ["route_taken"],
+      routeRules: [
+        { router: "r1", expected: "true" },
+        { router: "", expected: "support" },
+      ],
+    } as unknown as EvaluationWizardData;
+
+    expect(buildTechniqueConfigs(data).route_taken).toEqual({
+      rules: [{ router: "r1", expected: "true" }, { expected: "support" }],
+    });
+  });
+
+  it("skips non-object rule entries the backend tolerates instead of crashing", () => {
+    const initial = getEditInitialData(
+      evalWithConfigs({
+        route_taken: { rules: [null, { router: "r1", expected: "true" }, "junk"] },
+        action_taken: { rules: [42, { node: "a1" }] },
+      }),
+      [],
+    );
+    expect(initial.routeRules).toEqual([{ router: "r1", expected: "true" }]);
+    expect(initial.actionRules).toEqual([{ node: "a1", nodeType: "", shouldFire: true }]);
+  });
+
+  it("round-trips a stored multi-rule action config through the wizard", () => {
+    const stored = {
+      action_taken: {
+        rules: [
+          { node: "a1", should_fire: true },
+          { node_type: "zendeskTicketNode", should_fire: false },
+        ],
+      },
+    };
+    const initial = getEditInitialData(evalWithConfigs(stored), []);
+    const data = {
+      metrics: ["action_taken"],
+      actionRules: initial.actionRules,
+    } as unknown as EvaluationWizardData;
+
+    expect(buildTechniqueConfigs(data).action_taken).toEqual({
+      rules: [
+        { node: "a1", should_fire: true },
+        { node_type: "zendeskTicketNode", should_fire: false },
+      ],
+    });
   });
 });
