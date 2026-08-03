@@ -304,3 +304,10 @@ export const probeApiHealth = async (): Promise<boolean> => {
  *  Note: Vite reads env at dev server start / build time; restart the dev server after changing .env. */
 export const isPollEnabled =
   (import.meta.env.VITE_USE_POLL ?? "true").toString().toLowerCase() === "true" && !isWsEnabled;
+
+/** Whether the notifications feed may poll the API (VITE_NOTIFICATION_POLLING_ENABLED=true).
+ *  Opt-in and independent of VITE_USE_POLL: defaults to false (notifications rely on WS only) when
+ *  the var is unset or not exactly "true". Enable only for clients that need polling and can absorb
+ *  the request volume. */
+export const isNotificationPollingEnabled =
+  (import.meta.env.VITE_NOTIFICATION_POLLING_ENABLED ?? "false").toString().toLowerCase() === "true";
