@@ -15,12 +15,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/components/table";
 import {
   getLlmCostRates,
   importLlmCostRatesCsv,
   deleteLlmCostRate,
   exportLlmCostRatesCsv,
+  createLlmCostRate,
+  updateLlmCostRate,
 } from "@/services/llmCostRates";
 import type { LlmCostRate } from "@/interfaces/llmCostRate.interface";
 import toast from "react-hot-toast";
@@ -29,6 +31,8 @@ import {
   Download,
   FileText,
   Loader2,
+  Pencil,
+  Plus,
   RefreshCcw,
   Trash2,
   Upload,
@@ -41,12 +45,47 @@ const CSV_MODEL = `provider,model,input_per_1k,output_per_1k
 openai,gpt-4o,0.0025,0.01
 openai,gpt-4o-mini,0.00015,0.0006
 anthropic,claude-3-5-sonnet,0.003,0.015
+bedrock,eu.amazon.nova-2-lite-v1:0,0.0001,0.0004
 openrouter,_default,0.001,0.002
 vllm,_default,0,0`;
 
 interface LlmCostRatesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+interface RateForm {
+  provider: string;
+  model: string;
+  input_per_1k: string;
+  output_per_1k: string;
+}
+
+const EMPTY_FORM: RateForm = {
+  provider: "",
+  model: "",
+  input_per_1k: "",
+  output_per_1k: "",
+};
+
+function backendErrorMessage(err: unknown, fallback: string): string {
+  const data = (err as { response?: { data?: unknown } })?.response?.data as
+    | { error?: string; detail?: unknown }
+    | undefined;
+  if (typeof data?.error === "string" && data.error) return data.error;
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) =>
+        typeof d === "object" && d && "msg" in d
+          ? String((d as { msg: string }).msg)
+          : ""
+      )
+      .filter(Boolean);
+    if (messages.length) return messages.join("; ");
+  }
+  return err instanceof Error ? err.message : fallback;
 }
 
 export function LlmCostRatesDialog({
@@ -62,6 +101,10 @@ export function LlmCostRatesDialog({
   const [deleting, setDeleting] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [form, setForm] = useState<RateForm | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,6 +179,58 @@ export function LlmCostRatesDialog({
     toast.success("Example CSV copied to clipboard.");
   };
 
+  const closeForm = () => {
+    setForm(null);
+    setEditingId(null);
+    setFormError(null);
+  };
+
+  const openCreateForm = () => {
+    setEditingId(null);
+    setFormError(null);
+    setForm({ ...EMPTY_FORM });
+  };
+
+  const openEditForm = (row: LlmCostRate) => {
+    setEditingId(row.id);
+    setFormError(null);
+    setForm({
+      provider: row.provider_key,
+      model: row.model_key,
+      input_per_1k: row.input_per_1k,
+      output_per_1k: row.output_per_1k,
+    });
+  };
+
+  const submitForm = async () => {
+    if (!form) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      if (editingId) {
+        await updateLlmCostRate(editingId, {
+          input_per_1k: form.input_per_1k.trim(),
+          output_per_1k: form.output_per_1k.trim(),
+        });
+        toast.success("Cost rate updated.");
+      } else {
+        await createLlmCostRate({
+          provider: form.provider.trim(),
+          model: form.model.trim(),
+          input_per_1k: form.input_per_1k.trim(),
+          output_per_1k: form.output_per_1k.trim(),
+        });
+        toast.success("Cost rate added.");
+      }
+      closeForm();
+      await load();
+    } catch (err) {
+      setFormError(backendErrorMessage(err, "Could not save this cost rate."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDeleteClick = (row: LlmCostRate) => {
     setRowToDelete(row);
     setDeleteDialogOpen(true);
@@ -194,6 +289,7 @@ export function LlmCostRatesDialog({
           setCsvFormatOpen(false);
           setDeleteDialogOpen(false);
           setRowToDelete(null);
+          closeForm();
         }
         onOpenChange(next);
       }}
@@ -202,12 +298,20 @@ export function LlmCostRatesDialog({
         <DialogHeader>
           <DialogTitle>LLM cost rates</DialogTitle>
           <DialogDescription>
-            USD per 1K tokens. Open <strong>CSV template</strong> for the exact
-            column layout and a ready-to-edit example.
+            USD per 1K tokens. Open{" "} <strong>CSV template</strong> for the exact column layout and a ready-to-edit example.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={openCreateForm}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add rate
+          </Button>
           <Button
             type="button"
             variant="secondary"
@@ -262,6 +366,89 @@ export function LlmCostRatesDialog({
           </Button>
         </div>
 
+        {form && (
+          <div className="rounded-md border p-3 space-y-3 shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Provider</span>
+                <Input
+                  value={form.provider}
+                  disabled={!!editingId || saving}
+                  placeholder="openai"
+                  onChange={(e) =>
+                    setForm({ ...form, provider: e.target.value })
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Model</span>
+                <Input
+                  value={form.model}
+                  disabled={!!editingId || saving}
+                  placeholder="gpt-4o"
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Input / 1K</span>
+                <Input
+                  value={form.input_per_1k}
+                  disabled={saving}
+                  inputMode="decimal"
+                  placeholder="0.00015"
+                  onChange={(e) =>
+                    setForm({ ...form, input_per_1k: e.target.value })
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">
+                  Output / 1K
+                </span>
+                <Input
+                  value={form.output_per_1k}
+                  disabled={saving}
+                  inputMode="decimal"
+                  placeholder="0.0006"
+                  onChange={(e) =>
+                    setForm({ ...form, output_per_1k: e.target.value })
+                  }
+                />
+              </label>
+            </div>
+
+            {editingId && (
+              <p className="text-xs text-muted-foreground">
+                Provider and model are fixed. Delete and re-add to move a rate.
+              </p>
+            )}
+            {formError && (
+              <p className="text-sm text-destructive">{formError}</p>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={saving}
+                onClick={() => void submitForm()}
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                {editingId ? "Save changes" : "Add rate"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={closeForm}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 min-h-0 overflow-auto rounded-md border">
           {loading ? (
             <div className="flex items-center justify-center p-8 text-muted-foreground">
@@ -270,7 +457,7 @@ export function LlmCostRatesDialog({
             </div>
           ) : rows.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">
-              No rates in the database yet. Run migrations or upload a CSV.
+              No rates configured yet. Add one, or upload a CSV.
             </p>
           ) : (
             <Table>
@@ -281,7 +468,7 @@ export function LlmCostRatesDialog({
                   <TableHead className="text-right">Input / 1K</TableHead>
                   <TableHead className="text-right">Output / 1K</TableHead>
                   <TableHead className="whitespace-nowrap">Updated</TableHead>
-                  <TableHead className="w-[72px] text-right">Actions</TableHead>
+                  <TableHead className="w-[104px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -305,6 +492,16 @@ export function LlmCostRatesDialog({
                       {formatTimeAgo(r.updated_at)}
                     </TableCell>
                     <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                        title="Edit rate"
+                        onClick={() => openEditForm(r)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                       <Button
                         type="button"
                         variant="ghost"

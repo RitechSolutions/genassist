@@ -2,15 +2,24 @@ import csv
 import io
 import logging
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from injector import inject
+from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
 from app.db.models.llm_cost_rate import LlmCostRateModel
 from app.repositories.llm_cost_rates import LlmCostRateRepository
-from app.schemas.llm_cost_rate import LlmCostRateImportResult
+from app.schemas.llm_cost_rate import (
+    LlmCostRateCreate,
+    LlmCostRateImportResult,
+    LlmCostRateRead,
+    LlmCostRateUpdate,
+    format_rate,
+)
 from app.services.llm_pricing_cache import invalidate_llm_cost_rates_cache
 
 logger = logging.getLogger(__name__)
@@ -39,11 +48,44 @@ class LlmCostRateService:
                 [
                     (r.provider_key or "").strip(),
                     (r.model_key or "").strip(),
-                    f"{float(r.input_per_1k):.10g}",
-                    f"{float(r.output_per_1k):.10g}",
+                    format_rate(r.input_per_1k),
+                    format_rate(r.output_per_1k),
                 ]
             )
         return out.getvalue()
+
+    async def create_rate(self, dto: LlmCostRateCreate) -> LlmCostRateRead:
+        """Insert one rate. 409 if an active rate for the same provider+model exists"""
+        tenant = get_tenant_context()
+        provider = dto.provider
+        model = dto.model
+        existing = await self.repo.get_active_by_provider_model(provider, model)
+        if existing:
+            raise AppException(error_key=ErrorKey.LLM_COST_RATE_ALREADY_EXISTS, status_code=409)
+        created = await self.repo.create(
+            LlmCostRateModel(
+                provider_key=provider,
+                model_key=model,
+                input_per_1k=dto.input_per_1k,
+                output_per_1k=dto.output_per_1k,
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        invalidate_llm_cost_rates_cache(tenant)
+        return LlmCostRateRead.model_validate(created, from_attributes=True)
+
+    async def update_rate(self, rate_id: UUID, dto: LlmCostRateUpdate) -> LlmCostRateRead | None:
+        """Edit an active rate's prices. Returns None when the rate is missing"""
+        tenant = get_tenant_context()
+        row = await self.repo.get_active_by_id(rate_id)
+        if not row:
+            return None
+        row.input_per_1k = dto.input_per_1k
+        row.output_per_1k = dto.output_per_1k
+        row.updated_at = datetime.now(timezone.utc)
+        updated = await self.repo.update(row)
+        invalidate_llm_cost_rates_cache(tenant)
+        return LlmCostRateRead.model_validate(updated, from_attributes=True)
 
     async def delete_by_id(self, rate_id: UUID) -> bool:
         tenant = get_tenant_context()
@@ -78,25 +120,31 @@ class LlmCostRateService:
                     return (v or "").strip()
             return ""
 
+        seen_keys: dict[tuple[str, str], int] = {}
         for i, row in enumerate(reader, start=2):
-            prov = col(row, "provider").strip().lower()
-            mod = col(row, "model").strip().lower()
-            if not prov or not mod:
-                errors.append(f"Row {i}: provider and model are required")
-                continue
-            inp_s = col(row, "input_per_1k")
-            out_s = col(row, "output_per_1k")
+            # Every row goes through the create schema, so CSV and JSON reject
+            # blank keys, negatives, non-finite and over-precise rates alike
             try:
-                inp = float(Decimal(inp_s))
-                out = float(Decimal(out_s))
-            except (InvalidOperation, ValueError):
-                errors.append(f"Row {i}: invalid input_per_1k or output_per_1k")
+                dto = LlmCostRateCreate(
+                    provider=col(row, "provider"),
+                    model=col(row, "model"),
+                    input_per_1k=col(row, "input_per_1k"),
+                    output_per_1k=col(row, "output_per_1k"),
+                )
+            except ValidationError:
+                errors.append(f"Row {i}: invalid provider, model, input_per_1k or output_per_1k")
                 continue
 
-            existing = await self.repo.get_active_by_provider_model(prov, mod)
+            key = (dto.provider, dto.model)
+            if key in seen_keys:
+                errors.append(f"Row {i}: duplicate of row {seen_keys[key]} for {dto.provider}/{dto.model}")
+                continue
+            seen_keys[key] = i
+
+            existing = await self.repo.get_active_by_provider_model(dto.provider, dto.model)
             if existing:
-                existing.input_per_1k = inp
-                existing.output_per_1k = out
+                existing.input_per_1k = dto.input_per_1k
+                existing.output_per_1k = dto.output_per_1k
                 # Defensive: older schema/model mismatch could leave this NULL.
                 existing.updated_at = datetime.now(timezone.utc)
                 self.repo.db.add(existing)
@@ -104,15 +152,22 @@ class LlmCostRateService:
             else:
                 self.repo.db.add(
                     LlmCostRateModel(
-                        provider_key=prov,
-                        model_key=mod,
-                        input_per_1k=inp,
-                        output_per_1k=out,
+                        provider_key=dto.provider,
+                        model_key=dto.model,
+                        input_per_1k=dto.input_per_1k,
+                        output_per_1k=dto.output_per_1k,
                         updated_at=datetime.now(timezone.utc),
                     )
                 )
                 inserted += 1
 
-        await self.repo.db.commit()
+        try:
+            await self.repo.db.commit()
+        except IntegrityError:
+            await self.repo.db.rollback()
+            logger.warning("LLM cost rate import rejected by the database", exc_info=True)
+            errors.append("No rows were imported: the file conflicts with existing rates")
+            return LlmCostRateImportResult(inserted=0, updated=0, errors=errors)
+
         invalidate_llm_cost_rates_cache(tenant)
         return LlmCostRateImportResult(inserted=inserted, updated=updated, errors=errors)

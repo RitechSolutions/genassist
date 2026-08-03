@@ -7,7 +7,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import {
   CategoricalEncodingConfig,
   CategoricalEncodingItem,
@@ -137,7 +137,7 @@ export const CategoricalEncodingHandler: React.FC<
     <div className="space-y-4">
       <div className="space-y-0.5">
         <Label>Categorical Encoding</Label>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Encode categorical columns for machine learning
         </p>
       </div>
@@ -145,11 +145,11 @@ export const CategoricalEncodingHandler: React.FC<
       {(
         <div className="space-y-2">
           {!analysisResult ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               Please analyze the CSV file first to see categorical columns.
             </p>
           ) : categoricalColumns.length === 0 ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               No categorical columns found or all categorical columns are
               filtered out.
             </p>
@@ -164,7 +164,7 @@ export const CategoricalEncodingHandler: React.FC<
                   return (
                     <div
                       key={column.columnName}
-                      className="flex items-center justify-between p-3 border rounded hover:bg-gray-50 gap-4"
+                      className="flex items-center justify-between p-3 border rounded hover:bg-muted gap-4"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -172,7 +172,7 @@ export const CategoricalEncodingHandler: React.FC<
                             {column.columnName}
                           </Label>
                           {columnInfo && (
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-muted-foreground">
                               ({columnInfo.unique_count} unique
                               {columnInfo.category_count
                                 ? `, ${columnInfo.category_count} categories`
@@ -218,7 +218,7 @@ export const CategoricalEncodingHandler: React.FC<
                   );
                 })}
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {columns.length} categorical column
                 {columns.length !== 1 ? "s" : ""} available. One-Hot creates
                 binary columns, Label assigns numeric codes, Ordinal uses custom

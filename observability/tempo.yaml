@@ -1,0 +1,35 @@
+# Grafana Tempo (dev) — trace backend for the OTEL stack.
+# Receives traces from the OTel Collector via OTLP (gRPC 4317 / HTTP 4318, internal to the
+# compose network) and serves them to Grafana on the query API (:3200).
+# Storage is local + ephemeral (no host volume) — fine for dev, like Prometheus here.
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 24h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    local:
+      path: /tmp/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

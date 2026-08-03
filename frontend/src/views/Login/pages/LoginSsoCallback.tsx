@@ -71,9 +71,9 @@ const LoginSsoCallbackPage = () => {
   }, [navigate, refreshFlags, searchParams]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-card">
       <GenAssistLogo width={180} height={47} className="mb-8" />
-      <p className="text-zinc-600">{message}</p>
+      <p className="text-muted-foreground">{message}</p>
     </div>
   );
 };

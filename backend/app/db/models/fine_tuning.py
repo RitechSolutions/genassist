@@ -11,6 +11,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.core.utils.enums.open_ai_fine_tuning_enum import FileStatus, JobStatus
+from app.core.utils.enums.bedrock_fine_tuning_enum import (
+    BedrockDeploymentStatus,
+    BedrockJobStatus,
+)
 from app.db.base import Base
 
 
@@ -90,6 +94,61 @@ class FineTuningJobModel(Base):
         cascade="all, delete-orphan",
         order_by="FineTuningEventModel.event_created_at"
     )
+
+
+class BedrockFineTuningJobModel(Base):
+    """A Bedrock model customization (fine-tuning) job for Amazon Nova.
+
+    Unlike the OpenAI flow, training data lives in S3 (not a provider file
+    store), so we track the S3 URIs directly on the job instead of a separate
+    file table.
+    """
+
+    __tablename__ = "bedrock_fine_tuning_jobs"
+
+    # Bedrock identifiers
+    job_arn = Column(String, unique=True, nullable=False, index=True)
+    job_name = Column(String, nullable=False)
+
+    # Job configuration
+    base_model_id = Column(String, nullable=False)
+    custom_model_name = Column(String, nullable=False)
+    suffix = Column(String(40), nullable=True)
+    hyperparameters = Column(JSONB, nullable=True)
+    region = Column(String, nullable=False)
+
+    # Data locations (S3)
+    training_data_s3_uri = Column(String, nullable=False)
+    validation_data_s3_uri = Column(String, nullable=True)
+    output_s3_uri = Column(String, nullable=True)
+
+    # Job status
+    status = Column(
+        Enum(BedrockJobStatus),
+        default=BedrockJobStatus.IN_PROGRESS,
+        nullable=False,
+        index=True,
+    )
+    custom_model_arn = Column(String, nullable=True)
+
+    # On-demand deployment (Nova)
+    deployment_status = Column(
+        Enum(BedrockDeploymentStatus),
+        default=BedrockDeploymentStatus.NOT_DEPLOYED,
+        nullable=False,
+    )
+    deployment_arn = Column(String, nullable=True)
+
+    # Timestamps
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Metrics
+    trained_tokens = Column(Integer, nullable=True)
+    metrics = Column(JSONB, nullable=True)
+
+    # Error handling
+    error_message = Column(Text, nullable=True)
 
 
 class FineTuningEventModel(Base):

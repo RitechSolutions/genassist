@@ -4,14 +4,15 @@ from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.models.tenant import TenantModel
+from app.repositories.db_repository import DbRepository
 
 
 @inject
-class TenantRepository:
+class TenantRepository(DbRepository[TenantModel]):
     """Repository for tenant operations"""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(TenantModel, db)
 
     async def get_by_slug(self, slug: str) -> Optional[TenantModel]:
         """Get tenant by slug"""

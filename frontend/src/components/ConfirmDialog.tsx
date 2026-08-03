@@ -46,13 +46,10 @@ export function ConfirmDialog({
 
   const defaultDescription = `This action cannot be undone. This will permanently delete "${itemName}".`;
   const confirmBlocked = !!requireConfirmText && confirmInput !== requireConfirmText;
-  // const confirmButton = isDeleteDialog ? "Delete" : "Save";
-  // const clickedConfirmButton = isDeleteDialog ? "Deleting..." : "Saving...";
-  // const cancelButton = isDeleteDialog ? "Cancel" : "Discard";
   const confirmButtonClassName =
     primaryButtonText === "Delete"
-      ? "bg-red-600 hover:bg-red-700 focus:ring-red-600"
-      : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-600";
+      ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:ring-destructive"
+      : "bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-primary";
 
   return (
     <AlertDialog open={isOpen} onOpenChange={onOpenChange}>

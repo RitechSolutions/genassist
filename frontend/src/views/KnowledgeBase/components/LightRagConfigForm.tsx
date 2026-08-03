@@ -29,13 +29,13 @@ const LightRagConfigForm: React.FC<LightRagConfigFormProps> = ({ lightRagConfig,
   };
 
   return (
-    <div className="bg-gray-50 rounded-lg">
+    <div className="bg-muted rounded-lg">
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
-          <Lightbulb className="h-5 w-5 text-gray-500" />
+          <Lightbulb className="h-5 w-5 text-muted-foreground" />
           <div>
             <div className="font-medium">LightRAG</div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Enable LightRAG for advanced retrieval capabilities
             </p>
           </div>
@@ -67,7 +67,7 @@ const LightRagConfigForm: React.FC<LightRagConfigFormProps> = ({ lightRagConfig,
                 <SelectItem value="mix">Mix (Recommended)</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Mix mode integrates knowledge graph and vector retrieval for best results.
             </p>
           </div>

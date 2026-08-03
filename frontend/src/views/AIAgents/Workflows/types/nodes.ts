@@ -4,7 +4,14 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 // Define compatibility types
-export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "audio" | "any";
+export type NodeCompatibility =
+  | "text"
+  | "tools"
+  | "llm"
+  | "json"
+  | "audio"
+  | "sub_agents"
+  | "any";
 
 // Define handler types
 export interface NodeHandler {
@@ -20,6 +27,10 @@ export interface BaseNodeData {
   name: string;
   handlers?: NodeHandler[];
   unwrap?: boolean;
+  // When true, the node is bypassed at execution time: the engine forwards the
+  // upstream node's output straight to the downstream node(s), as if this node
+  // were not present. Persisted inside the node's `data` (workflows.nodes JSONB).
+  deactivated?: boolean;
   updateNodeData?: <T extends BaseNodeData>(
     nodeId: string,
     data: Partial<T>,
@@ -103,6 +114,23 @@ export interface RouterNodeData extends BaseNodeData {
   second_value?: string;
 }
 
+// NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
+export interface NlpNodeData extends BaseNodeData {
+  providerId?: string;
+  inputField?: string;
+  task?: "classify" | "sentiment" | "extract" | "summarize";
+  // task === "classify"
+  categories?: string[];
+  multiLabel?: boolean;
+  // task === "sentiment"
+  scale?: "1-5" | "1-10";
+  // task === "extract"
+  schema?: string;
+  // task === "summarize"
+  maxLength?: number;
+  style?: "concise" | "bullets" | "detailed";
+}
+
 export interface AggregatorNodeData extends BaseNodeData {
   aggregationStrategy?: "list" | "merge" | "first" | "last";
   timeoutSeconds?: number;
@@ -176,6 +204,46 @@ export interface APIToolNodeData extends BaseNodeData {
   requestBody: string;
 }
 
+// Web Scraper Node Data
+export type WebScraperFormat = "markdown" | "html" | "both";
+export type WebScraperScreenshot = "off" | "viewport" | "fullPage";
+
+export interface WebScraperNodeData extends BaseNodeData {
+  url: string;
+  format: WebScraperFormat;
+  headers: Record<string, string>;
+  onlyMainContent: boolean;
+  screenshot: WebScraperScreenshot;
+  waitFor: number;
+  scrollToBottom: boolean;
+  maxAge: number;
+}
+
+// Web Search Node Data
+export type WebSearchDepth = "basic" | "advanced";
+
+export interface WebSearchNodeData extends BaseNodeData {
+  query: string;
+  maxResults: number;
+  searchDepth: WebSearchDepth;
+  includeDomains: string;
+  excludeDomains: string;
+  maxContentChars: number;
+  maxTotalContentChars: number;
+  maxAge: number;
+}
+
+// HTML to Image Node Data
+export type HtmlToImageCaptureMode = "fullPage" | "viewport";
+
+export interface HtmlToImageNodeData extends BaseNodeData {
+  html: string;
+  captureMode: HtmlToImageCaptureMode;
+  viewportWidth: number;
+  viewportHeight: number;
+  waitFor: number;
+}
+
 // External Agent Node Data
 export interface ExternalAgentNodeData extends BaseNodeData {
   endpoint: string;
@@ -228,6 +296,18 @@ export interface BaseLLMNodeData extends BaseNodeData {
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
   type: "ReActAgent" | "ToolSelector" | "Chain-of-Thought" | "ReActAgentLC";
+}
+/** Collaboration mode controlling how control returns to the parent */
+export type SubAgentMode = "single_turn" | "task" | "chat";
+
+// Sub-Agent Node Data (a specialist child a parent agent delegates to)
+export interface SubAgentNodeData extends BaseLLMNodeData {
+  type: "ReActAgent" | "ToolSelector" | "ReActAgentLC";
+  mode: SubAgentMode;
+  /** Shown to the parent agent so it knows when to delegate */
+  description: string;
+  /** Seconds the parent waits for one delegated turn (5–300) */
+  timeoutSeconds?: number;
 }
 // Voice Agent Node Data (native speech-to-speech via Gemini Live API)
 export interface VoiceAgentNodeData extends BaseNodeData {
@@ -490,6 +570,7 @@ export interface GuardrailNliNodeData extends BaseNodeData {
 
 // File Reader Node Data
 export interface FileReaderNodeData extends BaseNodeData {
+  fileSource?: "chatAttachment" | "upload";
   fileName?: string;
   filePath?: string;
   fileUrl?: string;
@@ -527,6 +608,7 @@ export type NodeData =
   | FinalizeConversationNodeData
   | APIToolNodeData
   | AgentNodeData
+  | SubAgentNodeData
   | KnowledgeBaseNodeData
   | SQLNodeData
   | PythonCodeNodeData
@@ -534,6 +616,7 @@ export type NodeData =
   | SlackOutputNodeData
   | WhatsappNodeData
   | RouterNodeData
+  | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
   | CalendarEventToolNodeData
@@ -553,7 +636,10 @@ export type NodeData =
   | ExternalAgentNodeData
   | TTSNodeData
   | STTNodeData
-  | VoiceAgentNodeData;
+  | VoiceAgentNodeData
+  | WebScraperNodeData
+  | HtmlToImageNodeData
+  | WebSearchNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

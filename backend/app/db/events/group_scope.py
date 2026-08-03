@@ -82,8 +82,9 @@ def get_group_scope_clause(model_cls):
     Return a SQLAlchemy WHERE clause for group-based row filtering, or ``None``
     if no filtering should be applied (admin, no auth context, etc.).
 
-    Use this for queries that select individual columns or aggregates rather than
-    full ORM entities, since ``with_loader_criteria`` only fires for entity selects::
+    Use this for statements that never reference the ORM entity — Core selects against
+    ``Model.__table__`` — which ``with_loader_criteria`` cannot reach. ORM selects are
+    filtered automatically, individual columns and aggregates included::
 
         clause = get_group_scope_clause(AgentModel)
         if clause is not None:

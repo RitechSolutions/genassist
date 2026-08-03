@@ -513,7 +513,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                 {isCall ? 'Call' : 'Chat'} #{(localTranscript?.metadata?.title ?? '----').slice(-4)}
               </span>
               {supervisorId && (
-                <div className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-800">
+                <div className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-800 dark:text-blue-400">
                   <span className="flex items-center gap-1.5 leading-none">
                     <span>Supervisor:</span>
                     <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-200 text-[10px] font-semibold uppercase text-blue-800">
@@ -526,7 +526,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
               <Button
                 variant="ghost"
                 size="sm"
-                className={`ml-auto h-7 w-7 p-0 transition-colors ${linkCopied ? 'text-green-600' : ''}`}
+                className={`ml-auto h-7 w-7 p-0 transition-colors ${linkCopied ? 'text-green-600 dark:text-green-400' : ''}`}
                 title="Copy share link"
                 disabled={linkCopied}
                 onClick={async () => {
@@ -579,7 +579,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {localTranscript.metrics.tone.map((tone, index) => (
-                      <span key={index} className="px-2 py-1 bg-gray-100 text-gray-900 rounded-full text-xs font-bold">
+                      <span key={index} className="px-2 py-1 bg-muted text-foreground rounded-full text-xs font-bold">
                         {tone.toLowerCase()}
                       </span>
                     ))}
@@ -602,13 +602,13 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                       <div className="flex items-center gap-2">
                         {userFeedback.feedback === 'good' ? (
                           <>
-                            <ThumbsUp className="w-5 h-5 text-green-600" />
-                            <span className="text-sm font-medium text-green-600">Good</span>
+                            <ThumbsUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                            <span className="text-sm font-medium text-green-600 dark:text-green-400">Good</span>
                           </>
                         ) : (
                           <>
-                            <ThumbsDown className="w-5 h-5 text-red-600" />
-                            <span className="text-sm font-medium text-red-600">Bad</span>
+                            <ThumbsDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                            <span className="text-sm font-medium text-red-600 dark:text-red-400">Bad</span>
                           </>
                         )}
                       </div>
@@ -616,10 +616,10 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
 
                     <div>
                       <h4 className="text-sm font-medium mb-2">Feedback for this message</h4>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-muted-foreground mb-2">
                         {formatFeedbackDate(userFeedback.feedback_timestamp)}
                       </p>
-                      <p className="text-sm text-gray-700 leading-relaxed">{userFeedback.feedback_message}</p>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{userFeedback.feedback_message}</p>
                     </div>
 
                     <Button
@@ -642,8 +642,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                           onClick={() => setFeedbackType('good')}
                           className={`p-2 rounded transition-all ${
                             feedbackType === 'good'
-                              ? 'bg-green-100 text-green-600'
-                              : 'bg-gray-100 text-gray-400 hover:text-gray-600'
+                              ? 'bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400'
+                              : 'bg-muted text-muted-foreground hover:text-muted-foreground'
                           }`}
                         >
                           <ThumbsUp className="w-4 h-4" />
@@ -654,8 +654,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                           onClick={() => setFeedbackType('bad')}
                           className={`p-2 rounded transition-all ${
                             feedbackType === 'bad'
-                              ? 'bg-red-100 text-red-600'
-                              : 'bg-gray-100 text-gray-400 hover:text-gray-600'
+                              ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400'
+                              : 'bg-muted text-muted-foreground hover:text-muted-foreground'
                           }`}
                         >
                           <ThumbsDown className="w-4 h-4" />
@@ -713,9 +713,9 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                 </div>
               <div className="p-3 rounded-lg">
                 <h4 className="text-sm font-medium mb-2">Conversation Costs</h4>
-                <p className="text-sm text-gray-700 flex justify-between"><span>Input Tokens:</span> <b>{totalCost.input_tokens}</b></p>
-                <p className="text-sm text-gray-700 flex justify-between"><span>Output Tokens:</span> <b>{totalCost.output_tokens}</b></p>
-                <p className="text-sm text-gray-700 flex justify-between"><span>Total Cost:</span> <b>${totalCost.total.toFixed(6)}</b></p>
+                <p className="text-sm text-muted-foreground flex justify-between"><span>Input Tokens:</span> <b>{totalCost.input_tokens}</b></p>
+                <p className="text-sm text-muted-foreground flex justify-between"><span>Output Tokens:</span> <b>{totalCost.output_tokens}</b></p>
+                <p className="text-sm text-muted-foreground flex justify-between"><span>Total Cost:</span> <b>${totalCost.total.toFixed(6)}</b></p>
               </div>
               </>
             )}
@@ -759,7 +759,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                             className="flex justify-center my-3"
                             key={`takeover-${index}-${entryObj.create_time || index}`}
                           >
-                            <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center">
+                            <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">
                               <User className="w-3 h-3 mr-1" />
                               Supervisor took over
                             </div>
@@ -792,7 +792,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                           key={index}
                           className={`flex flex-col ${isAgent ? 'items-end' : 'items-start'} group relative`}
                         >
-                          <span className="text-[11px] text-black font-medium mb-1">{speakerName}</span>
+                          <span className="text-[11px] text-foreground font-medium mb-1">{speakerName}</span>
                           <div className="relative">
                             {isAgent && messageId && (
                               <div
@@ -803,25 +803,25 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                                 } items-center gap-2 z-10`}
                               >
                                 {hasGood ? (
-                                  <div className="flex items-center bg-white rounded-lg shadow-sm border border-green-200 p-2">
-                                    <ThumbsUp className="w-4 h-4 text-green-600" />
+                                  <div className="flex items-center bg-card rounded-lg shadow-sm border border-green-200 dark:border-green-500/30 p-2">
+                                    <ThumbsUp className="w-4 h-4 text-green-600 dark:text-green-400" />
                                   </div>
                                 ) : hasBad ? (
-                                  <div className="flex items-center bg-white rounded-lg shadow-sm border border-red-200 p-2">
-                                    <ThumbsDown className="w-4 h-4 text-red-600" />
+                                  <div className="flex items-center bg-card rounded-lg shadow-sm border border-red-200 dark:border-red-500/30 p-2">
+                                    <ThumbsDown className="w-4 h-4 text-red-600 dark:text-red-400" />
                                   </div>
                                 ) : (
-                                  <div className="flex items-center bg-white rounded-lg shadow-sm border border-gray-200">
+                                  <div className="flex items-center bg-card rounded-lg shadow-sm border border-border">
                                     <button
-                                      className="p-2 hover:bg-gray-100 rounded-l-lg"
+                                      className="p-2 hover:bg-muted rounded-l-lg"
                                       title="Good response"
                                       onClick={() => handleMessageFeedback(messageId, 'good')}
                                     >
                                       <ThumbsUp className="w-4 h-4 text-yellow-500" />
                                     </button>
-                                    <div className="h-4 w-px bg-gray-200" />
+                                    <div className="h-4 w-px bg-muted" />
                                     <button
-                                      className="p-2 hover:bg-gray-100 rounded-r-lg"
+                                      className="p-2 hover:bg-muted rounded-r-lg"
                                       title="Bad response"
                                       onClick={() => handleMessageFeedback(messageId, 'bad')}
                                     >
@@ -842,7 +842,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                                 className={`p-2 rounded-lg leading-tight break-words inline-block z-10 ${
                                   isAgent
                                     ? 'bg-blue-600 text-white rounded-tl-lg rounded-tr-none'
-                                    : 'bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none'
+                                    : 'bg-muted text-foreground rounded-tr-lg rounded-tl-none'
                                 }`}
                               >
                                 <ConversationEntryWrapper entry={entryObj} conversationId={localTranscript.id} />
@@ -850,7 +850,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                                 <div className="flex items-center justify-end">
                                   <span
                                     className={`block text-[10px] text-right mt-1 ${
-                                      isAgent ? 'text-white/80' : 'text-gray-600'
+                                      isAgent ? 'text-white/80' : 'text-muted-foreground'
                                     }`}
                                   >
                                     {isCall
@@ -898,7 +898,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                     })}
                     {localTranscript.status === 'finalized' && (
                       <div className="flex justify-center my-3">
-                        <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center">
+                        <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">
                           Conversation Finalized
                         </div>
                       </div>
@@ -927,7 +927,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                       ))}
                       {loading && (
                         <div className="flex justify-start">
-                          <div className="p-2 rounded-lg bg-gray-100 text-gray-900 max-w-[75%]">
+                          <div className="p-2 rounded-lg bg-muted text-foreground max-w-[75%]">
                             <span className="block text-[11px] text-muted-foreground font-medium">GenAssist AI</span>
                             Thinking...
                           </div>
@@ -936,7 +936,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                     </div>
                   ) : (
                     <div className="flex flex-1 flex-col justify-center items-center text-muted-foreground">
-                      <BotMessageSquare className="w-12 h-12 text-gray-400" />
+                      <BotMessageSquare className="w-12 h-12 text-muted-foreground" />
                       <p className="text-sm mt-2">What can I help with?</p>
                     </div>
                   )}

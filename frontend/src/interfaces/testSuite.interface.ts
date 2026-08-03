@@ -17,6 +17,10 @@ export interface TestCase {
   expected_output?: Record<string, unknown>;
   tags?: string[];
   weight?: number;
+  /** Cases sharing a source conversation replay as one memory thread. */
+  source_conversation_id?: string | null;
+  /** Position of this turn within its source conversation. */
+  turn_index?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -28,14 +32,30 @@ export interface TestRun {
   status: string;
   techniques: string[];
   summary_metrics?: Record<string, unknown>;
+  workflow_name?: string | null;
+  workflow_version?: string | null;
   created_at?: string;
   updated_at?: string;
 }
 
-export interface TestResultMetric {
-  score: number | boolean;
+export interface MetricRuleDetail {
+  rule_number?: number;
   passed: boolean;
   comment?: string | null;
+  expected?: string | null;
+  observed?: string | null;
+}
+
+export interface TestResultMetric {
+  score: number | boolean | null;
+  passed: boolean;
+  error?: boolean;
+  not_evaluated?: boolean;
+  comment?: string | null;
+  expected?: string | null;
+  actual?: string | null;
+  threshold?: number | null;
+  details?: MetricRuleDetail[] | null;
 }
 
 export interface TestResult {
@@ -46,6 +66,8 @@ export interface TestResult {
   execution_trace?: Record<string, unknown>;
   metrics?: Record<string, TestResultMetric>;
   error?: string | null;
+  /** scored | execution_failed | scoring_failed | skipped; null for legacy results. */
+  status?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -63,11 +85,3 @@ export interface CreateTestCasePayload {
   tags?: string[];
   weight?: number;
 }
-
-export interface StartTestRunPayload {
-  techniques: string[];
-  technique_configs?: Record<string, Record<string, unknown>>;
-  workflow_id?: string;
-  input_metadata?: Record<string, unknown>;
-}
-

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,17 @@ class AgentResponseLogModel(Base):
     """
 
     __tablename__ = "agent_response_logs"
+
+    # Declared here so Alembic autogenerate knows this
+    # partial unique index belongs to the model and does not try to drop it
+    __table_args__ = (
+        Index(
+            "uq_agent_response_logs_workflow_execution_id",
+            "workflow_execution_id",
+            unique=True,
+            postgresql_where="workflow_execution_id IS NOT NULL",
+        ),
+    )
 
     transcript_message_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -43,6 +54,8 @@ class AgentResponseLogModel(Base):
     output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     cost_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    workflow_execution_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

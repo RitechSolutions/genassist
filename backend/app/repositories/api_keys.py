@@ -16,17 +16,18 @@ from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.api_key import ApiKeyCreate, ApiKeyUpdate
 from app.schemas.filter import ApiKeysFilter
 
 api_key_key_builder  = make_key_builder("api_key")
 
 @inject
-class ApiKeysRepository:
+class ApiKeysRepository(DbRepository[ApiKeyModel]):
     """Repository for user-related database operations."""
 
     def __init__(self, db: AsyncSession):  # Auto-inject db
-        self.db = db
+        super().__init__(ApiKeyModel, db)
 
 
     async def get_by_hashed_value(self, hashed_value: str) -> Optional[ApiKeyModel | None]:

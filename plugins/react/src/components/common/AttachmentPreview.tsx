@@ -98,7 +98,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({ file, onRe
         <div style={fileSizeStyle}>{(file.size ? file.size / 1024 : 0).toFixed(2)} KB</div>
       </div>
       {!uploading && (
-        <button onClick={onRemove} style={removeButtonStyle} title="Remove file">
+        <button type="button" onClick={onRemove} style={removeButtonStyle} title="Remove file">
           &#x2715;
         </button>
       )}

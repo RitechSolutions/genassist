@@ -1,11 +1,29 @@
-"""Unit tests for LLM cost calculator."""
+"""Unit tests for LLM cost calculator and pricing resolution"""
 
+from decimal import Decimal
 
+import pytest
 
+import app.core.config.llm_pricing as llm_pricing
+from app.core.config.llm_pricing import (
+    DEFAULT_PRICING,
+    PricingStatus,
+    find_pricing,
+    resolve_pricing,
+)
 from app.services.llm_cost_calculator import LlmCostCalculator
 
 
+@pytest.fixture
+def no_db_rates(monkeypatch):
+    monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+
+
 class TestCalculateCost:
+    @pytest.fixture(autouse=True)
+    def _no_db_rates(self, no_db_rates):
+        pass
+
     def setup_method(self):
         self.calculator = LlmCostCalculator()
 
@@ -25,3 +43,198 @@ class TestCalculateCost:
     def test_unknown_model_uses_default_pricing(self):
         cost = self.calculator.calculate_cost("openai", "unknown-model-xyz", 1000, 1000)
         assert cost > 0
+
+    def test_bedrock_nova_lite(self):
+        cost = self.calculator.calculate_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 1000, 1000)
+        assert abs(cost - 0.0005) < 0.0001
+
+
+class TestResolvePricingBundledLayer:
+
+    def test_exact_match_from_bundled_table_is_fallback(self):
+        res = resolve_pricing("openai", "gpt-4o", {})
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0025")
+        assert res.output_per_1k == Decimal("0.01")
+        assert res.matched_model_key == "gpt-4o"
+
+    def test_longest_prefix_wins(self):
+        res = resolve_pricing("openai", "gpt-4o-mini-2024-07-18", {})
+        assert res.matched_model_key == "gpt-4o-mini"
+        assert res.input_per_1k == Decimal("0.00015")
+
+    def test_rates_are_decimal_from_str(self):
+        res = resolve_pricing("anthropic", "claude-3-5-haiku", {})
+        assert isinstance(res.input_per_1k, Decimal)
+        assert res.input_per_1k == Decimal("0.0008")
+        assert res.output_per_1k == Decimal("0.004")
+
+    def test_tiny_bundled_rate_keeps_full_precision(self):
+        res = resolve_pricing("google_genai", "gemini-1.5-flash", {})
+        assert res.input_per_1k == Decimal("0.000075")
+
+    def test_unknown_model_without_default_is_unpriced(self):
+        res = resolve_pricing("openai", "unknown-model-xyz", {})
+        assert res.status is PricingStatus.UNPRICED
+        assert res.input_per_1k is None
+        assert res.output_per_1k is None
+        assert res.matched_model_key is None
+
+    def test_unknown_provider_is_unpriced(self):
+        assert resolve_pricing("no-such-provider", "gpt-4o", {}).status is PricingStatus.UNPRICED
+
+    def test_empty_model_is_unpriced(self):
+        assert resolve_pricing("openai", "", {}).status is PricingStatus.UNPRICED
+
+    def test_bundled_default_row_is_never_used(self):
+        for provider in ("openrouter", "vllm", "ollama"):
+            res = resolve_pricing(provider, "some/new-model", {})
+            assert res.status is PricingStatus.UNPRICED, provider
+            assert res.matched_model_key is None
+
+    def test_provider_and_model_are_normalized(self):
+        res = resolve_pricing("  OpenAI  ", "  GPT-4o  ", {})
+        assert res.matched_model_key == "gpt-4o"
+        assert res.status is PricingStatus.FALLBACK
+
+    def test_missing_configured_map_defaults_to_bundled(self):
+        assert resolve_pricing("openai", "gpt-4o").status is PricingStatus.FALLBACK
+
+
+class TestResolvePricingConfiguredLayer:
+
+    def test_configured_exact_overrides_bundled(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": "0.005", "output_per_1k": "0.02"}}}
+        res = resolve_pricing("openai", "gpt-4o", configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.input_per_1k == Decimal("0.005")
+        assert res.output_per_1k == Decimal("0.02")
+
+    def test_configured_prefix_beats_bundled_exact(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": "0.009", "output_per_1k": "0.02"}}}
+        res = resolve_pricing("openai", "gpt-4o-mini", configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.matched_model_key == "gpt-4o"
+
+    def test_configured_longest_prefix_wins(self):
+        configured = {"openai": {"gpt-4o-mini-2024": {"input_per_1k": "0.0002", "output_per_1k": "0.0008"}}}
+        res = resolve_pricing("openai", "gpt-4o-mini-2024-07-18", configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.matched_model_key == "gpt-4o-mini-2024"
+
+    def test_tenant_default_applies_only_after_specific_layers(self):
+        configured = {
+            "openai": {
+                "gpt-4o": {"input_per_1k": "0.005", "output_per_1k": "0.02"},
+                "_default": {"input_per_1k": "0.5", "output_per_1k": "0.9"},
+            }
+        }
+        assert resolve_pricing("openai", "gpt-4o", configured).matched_model_key == "gpt-4o"
+        assert resolve_pricing("openai", "gpt-4-turbo", configured).matched_model_key == "gpt-4-turbo"
+
+        fallthrough = resolve_pricing("openai", "brand-new-model", configured)
+        assert fallthrough.status is PricingStatus.CONFIGURED
+        assert fallthrough.matched_model_key == "_default"
+        assert fallthrough.input_per_1k == Decimal("0.5")
+
+    def test_configured_decimal_rates_keep_precision(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": Decimal("0.0000001"), "output_per_1k": Decimal("0")}}}
+        res = resolve_pricing("openai", "gpt-4o", configured)
+        assert res.input_per_1k == Decimal("0.0000001")
+        assert res.output_per_1k == Decimal("0")
+
+    def test_zero_configured_rate_is_priced_not_unpriced(self):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": "0", "output_per_1k": "0"}}}
+        res = resolve_pricing("openai", "gpt-4o", configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.input_per_1k == Decimal("0")
+
+    @pytest.mark.parametrize("bad", ["abc", "-1", "NaN", "Infinity", None])
+    def test_unusable_configured_row_falls_through_to_bundled(self, bad):
+        configured = {"openai": {"gpt-4o": {"input_per_1k": bad, "output_per_1k": "1"}}}
+        res = resolve_pricing("openai", "gpt-4o", configured)
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0025")
+
+    def test_rate_edit_is_picked_up_by_the_next_call_without_invalidation(self):
+        before = {"openai": {"gpt-4o": {"input_per_1k": "0.005", "output_per_1k": "0.02"}}}
+        after = {"openai": {"gpt-4o": {"input_per_1k": "0.011", "output_per_1k": "0.04"}}}
+        assert resolve_pricing("openai", "gpt-4o", before).input_per_1k == Decimal("0.005")
+        assert resolve_pricing("openai", "gpt-4o", after).input_per_1k == Decimal("0.011")
+
+
+class TestResolvePricingBedrockRegions:
+    def test_bedrock_eu_region_matches_us_priced_variant(self):
+        res = resolve_pricing("bedrock", "eu.amazon.nova-2-lite-v1:0", {})
+        assert res.status is PricingStatus.FALLBACK
+        assert res.matched_model_key == "us.amazon.nova-2-lite-v1:0"
+        assert res.input_per_1k == Decimal("0.0001")
+        assert res.output_per_1k == Decimal("0.0004")
+
+    def test_bedrock_apac_region_matches(self):
+        res = resolve_pricing("bedrock", "apac.amazon.nova-2-pro-v1:0", {})
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0002")
+
+    def test_bedrock_region_less_id_matches(self):
+        res = resolve_pricing("bedrock", "amazon.nova-2-flash-v1:0", {})
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0004")
+
+    def test_bedrock_unknown_model_still_unpriced(self):
+        assert resolve_pricing("bedrock", "eu.amazon.titan-text-v1", {}).status is PricingStatus.UNPRICED
+
+    def test_bedrock_region_retry_prefers_configured_over_bundled(self):
+        configured = {"bedrock": {"us.amazon.nova-2-lite-v1:0": {"input_per_1k": "0.009", "output_per_1k": "0.02"}}}
+        res = resolve_pricing("bedrock", "eu.amazon.nova-2-lite-v1:0", configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.input_per_1k == Decimal("0.009")
+
+    def test_bedrock_region_retry_runs_before_tenant_default(self):
+        configured = {"bedrock": {"_default": {"input_per_1k": "0.5", "output_per_1k": "0.9"}}}
+        res = resolve_pricing("bedrock", "eu.amazon.nova-2-pro-v1:0", configured)
+        assert res.status is PricingStatus.FALLBACK
+        assert res.matched_model_key == "us.amazon.nova-2-pro-v1:0"
+
+    def test_region_prefix_matching_is_deterministic(self):
+        configured = {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {"input_per_1k": "0.001", "output_per_1k": "0.002"},
+                "eu.amazon.nova-2-lite-v1:0": {"input_per_1k": "0.003", "output_per_1k": "0.004"},
+            }
+        }
+        matches = {resolve_pricing("bedrock", "apac.amazon.nova-2-lite-v1:0", configured).matched_model_key}
+        for _ in range(20):
+            matches.add(resolve_pricing("bedrock", "apac.amazon.nova-2-lite-v1:0", configured).matched_model_key)
+        assert len(matches) == 1
+
+
+class TestFindPricingLegacyContract:
+
+    @pytest.fixture(autouse=True)
+    def _no_db_rates(self, no_db_rates):
+        pass
+
+    def test_returns_floats_for_known_model(self):
+        pricing = find_pricing("openai", "gpt-4o")
+        assert pricing == {"input_per_1k": 0.0025, "output_per_1k": 0.01}
+        assert isinstance(pricing["input_per_1k"], float)
+
+    def test_unmatched_returns_default_pricing_copy(self):
+        pricing = find_pricing("openai", "unknown-model-xyz")
+        assert pricing == DEFAULT_PRICING
+        assert pricing is not DEFAULT_PRICING
+
+    def test_bundled_default_row_still_applies_on_the_legacy_path(self):
+        assert find_pricing("openrouter", "some/new-model") == {"input_per_1k": 0.001, "output_per_1k": 0.002}
+
+    def test_first_match_prefix_scan_is_preserved(self):
+        assert find_pricing("openai", "gpt-4o-mini-2024-07-18")["input_per_1k"] == 0.0025
+
+    def test_db_rate_overrides_static(self, monkeypatch):
+        monkeypatch.setattr(
+            llm_pricing,
+            "get_db_pricing_nested",
+            lambda tenant: {"openai": {"gpt-4o": {"input_per_1k": 0.005, "output_per_1k": 0.02}}},
+        )
+        assert find_pricing("openai", "gpt-4o")["input_per_1k"] == 0.005

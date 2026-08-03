@@ -1,5 +1,19 @@
 import { apiRequest } from "@/config/api";
-import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
+import {
+  EvaluationToolCatalog,
+  PaginatedEvaluations,
+  StartedEvaluationRun,
+  TestEvaluationConfig,
+  TestToolRuleResult,
+  WorkflowEvaluationSummary,
+} from "@/interfaces/testEvaluation.interface";
+import { TestRun } from "@/interfaces/testSuite.interface";
+
+export type {
+  PaginatedEvaluations,
+  StartedEvaluationRun,
+  WorkflowEvaluationSummary,
+} from "@/interfaces/testEvaluation.interface";
 
 const BASE = "genagent/eval";
 
@@ -8,6 +22,8 @@ export type CreateTestEvaluationPayload = Omit<
   "id" | "run_ids" | "created_at" | "updated_at"
 >;
 
+// Kept as a compatibility wrapper for GET /evaluations until that endpoint is
+// formally deprecated, even though the UI no longer calls it directly.
 export const listTestEvaluations = () =>
   apiRequest<TestEvaluationConfig[]>("GET", `${BASE}/evaluations`);
 
@@ -36,8 +52,55 @@ export const updateTestEvaluation = (
 export const deleteTestEvaluation = (id: string) =>
   apiRequest<void>("DELETE", `${BASE}/evaluations/${id}`);
 
-export const appendRunToEvaluation = (evaluationId: string, runId: string) =>
-  apiRequest<TestEvaluationConfig>(
+export const runTestEvaluation = (
+  evaluationId: string,
+  targetWorkflowId?: string,
+) =>
+  apiRequest<TestRun>(
     "POST",
-    `${BASE}/evaluations/${evaluationId}/runs/${runId}`,
+    `${BASE}/evaluations/${evaluationId}/run`,
+    targetWorkflowId ? { target_workflow_id: targetWorkflowId } : {},
+  );
+
+export const runWorkflowEvaluations = (
+  workflowId: string,
+  targetWorkflowId?: string,
+) =>
+  apiRequest<StartedEvaluationRun[]>(
+    "POST",
+    `${BASE}/workflows/${workflowId}/evaluations/run`,
+    targetWorkflowId ? { target_workflow_id: targetWorkflowId } : undefined,
+  );
+
+export const getWorkflowEvaluationSummaries = () =>
+  apiRequest<WorkflowEvaluationSummary[]>(
+    "GET",
+    `${BASE}/workflows/evaluation-summaries`,
+  );
+
+export const getWorkflowEvaluationsPage = (
+  workflowId: string,
+  params: { page: number; pageSize: number; search?: string },
+) => {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    page_size: String(params.pageSize),
+  });
+  if (params.search?.trim()) query.set("search", params.search.trim());
+  return apiRequest<PaginatedEvaluations>(
+    "GET",
+    `${BASE}/workflows/${workflowId}/evaluations?${query.toString()}`,
+  );
+};
+
+export const getEvaluationToolCatalog = (workflowId: string) =>
+  apiRequest<EvaluationToolCatalog>(
+    "GET",
+    `${BASE}/workflows/${workflowId}/evaluation-tool-catalog`,
+  );
+
+export const getToolRuleResults = (runId: string) =>
+  apiRequest<TestToolRuleResult[]>(
+    "GET",
+    `${BASE}/runs/${runId}/tool-rule-results`,
   );

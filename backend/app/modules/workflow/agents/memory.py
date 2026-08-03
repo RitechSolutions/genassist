@@ -76,6 +76,10 @@ class BaseConversationMemory:
         """Get metadata for the conversation"""
         raise NotImplementedError
 
+    async def get_metadata_strict(self, key: str) -> Any:
+        """Read metadata and fail if anything goes wrong"""
+        raise NotImplementedError
+
     async def get_chat_history(
         self, as_string: bool = False, max_messages: int = 10
     ) -> Union[List[Message], str]:
@@ -255,6 +259,11 @@ class InMemoryConversationMemory(BaseConversationMemory):
     async def get_metadata(self, key: str, default: Any = None) -> Any:
         """Get metadata for the conversation"""
         return self.metadata.get(key, default)
+
+    async def get_metadata_strict(self, key: str) -> Any:
+        if key not in self.metadata:
+            raise KeyError(key)
+        return self.metadata[key]
 
     async def get_chat_history(
         self, as_string: bool = False, max_messages: int = 10
@@ -710,6 +719,14 @@ class RedisConversationMemory(BaseConversationMemory):
                 f"Failed to get metadata from Redis for thread {self.thread_id}: {e}"
             )
             return default
+
+    async def get_metadata_strict(self, key: str) -> Any:
+        """Read metadata; raise ``KeyError`` if missing"""
+        redis = await self._get_redis()
+        metadata_json = await redis.hget(self._metadata_key, key)  # type: ignore
+        if metadata_json is None:
+            raise KeyError(key)
+        return json.loads(metadata_json)
 
     async def get_chat_history(
         self, as_string: bool = False, max_messages: int = 10
@@ -1192,6 +1209,12 @@ class ConversationMemory:
             else:
                 cls._instances[thread_id] = InMemoryConversationMemory(thread_id)
         return cls._instances[thread_id]
+
+    @classmethod
+    def discard(cls, thread_id: str) -> None:
+        """Drop one cached instance; used for sub-agent threads that would
+        otherwise accumulate one entry per delegation"""
+        cls._instances.pop(thread_id, None)
 
     @classmethod
     def clear_all(cls) -> None:

@@ -14,6 +14,8 @@ import {
   Loader2,
   Workflow,
   CalendarClock,
+  LayoutGrid,
+  BookmarkPlus,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -24,6 +26,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/dropdown-menu";
 import { AgentFormDialog } from "./AgentForm";
+import { SaveAsTemplateDialog } from "./SaveAsTemplateDialog";
 import { SearchInput } from "@/components/SearchInput";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { getAgentConfig } from "@/services/api";
@@ -31,6 +34,8 @@ import { getWorkflowSchedules } from "@/services/workflowSchedules";
 import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { PageListSkeleton } from "@/components/skeletons";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface AgentListProps {
   agents: AgentListItem[];
@@ -65,6 +70,9 @@ const AgentList: React.FC<AgentListProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
+  const showTemplates = useFeatureFlagVisible(
+    FeatureFlags.FEATURE.TEMPLATE_MARKETPLACE
+  );
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useMemo(() => currentUserIsAdmin(), []);
 
@@ -126,6 +134,10 @@ const AgentList: React.FC<AgentListProps> = ({
   );
 
   const [openAgentForm, setOpenAgentForm] = useState(false);
+  const [templateAgent, setTemplateAgent] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [settingsFormData, setSettingsFormData] = useState<{
     id: string;
@@ -213,12 +225,12 @@ const AgentList: React.FC<AgentListProps> = ({
             <div className="flex items-center gap-2">
               <h4 className="text-base font-semibold">{agentName}</h4>
               {agent.is_system && (
-                <span className="inline-flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center text-xs text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/15 px-2 py-0.5 rounded-full">
                   System
                 </span>
               )}
               {!isActive && (
-                <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-500/15 px-2 py-0.5 rounded-full">
                   <AlertCircle className="h-3 w-3" />
                   Inactive
                 </span>
@@ -227,8 +239,8 @@ const AgentList: React.FC<AgentListProps> = ({
                 <span
                   className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
                     scheduleStatusByAgent[agent.id] === "active"
-                      ? "text-green-700 bg-green-50"
-                      : "text-gray-600 bg-gray-100"
+                      ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-500/15"
+                      : "text-muted-foreground bg-muted"
                   }`}
                   title={
                     scheduleStatusByAgent[agent.id] === "active"
@@ -269,7 +281,7 @@ const AgentList: React.FC<AgentListProps> = ({
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="shadow-lg">
                   {(!agent.is_system || isAdmin) && (
                     <DropdownMenuItem asChild>
                       <Link to={`/ai-agents/workflow/${agent.id}`}>
@@ -279,7 +291,7 @@ const AgentList: React.FC<AgentListProps> = ({
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
-                    className="text-black"
+                    className="text-foreground"
                     onClick={() => onManageKeys(agent.id)}
                   >
                     <KeyRoundIcon className="mr-2 h-4 w-4" />
@@ -305,6 +317,17 @@ const AgentList: React.FC<AgentListProps> = ({
                       <span>Scheduling</span>
                     </Link>
                   </DropdownMenuItem>
+                  {showTemplates && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTemplateAgent({ id: agent.id, name: agent.name });
+                      }}
+                    >
+                      <BookmarkPlus className="mr-2 h-4 w-4" />
+                      <span>Save as template</span>
+                    </DropdownMenuItem>
+                  )}
                   {(!agent.is_system || isAdmin) && (
                     <>
                       <DropdownMenuSeparator />
@@ -350,13 +373,13 @@ const AgentList: React.FC<AgentListProps> = ({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-3xl font-bold">
+          <h2 className="text-3xl font-bold animate-fade-down">
             Agent Studio{" "}
-            <span className="hidden sm:inline text-xl sm:text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
+            <span className="hidden sm:inline text-xl sm:text-2xl text-muted-foreground font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
           </h2>
-          <p className="text-zinc-400 font-normal">View and manage workflows</p>
+          <p className="text-muted-foreground font-normal animate-fade-up">View and manage workflows</p>
           <div className="mt-2 sm:hidden">
-            <span className="text-zinc-400 font-normal text-base">
+            <span className="text-muted-foreground font-normal text-base">
               ({activeCount} Active, {inactiveCount} Inactive)
             </span>
           </div>
@@ -368,6 +391,16 @@ const AgentList: React.FC<AgentListProps> = ({
             placeholder="Search agents..."
             className="w-full sm:w-[200px]"
           />
+          {showTemplates && (
+            <Button
+              variant="outline"
+              className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
+              onClick={() => navigate("/templates")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Start from template
+            </Button>
+          )}
           <Button
             className="flex w-full items-center justify-center gap-2 rounded-full sm:w-auto"
             onClick={() => setOpenAgentForm(true)}
@@ -386,13 +419,13 @@ const AgentList: React.FC<AgentListProps> = ({
         </TabsList>
       </Tabs>
 
-      <div className="rounded-md border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-md border bg-card dark:bg-zinc-900 shadow-sm overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="agent" rows={5} bordered={false} />
         ) : isListEmpty ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <Workflow className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <Workflow className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">
               {isSearchActive
@@ -401,7 +434,7 @@ const AgentList: React.FC<AgentListProps> = ({
                   ? "No system agents"
                   : "No agents yet"}
             </h3>
-            <p className="text-sm text-gray-500 max-w-sm px-4">
+            <p className="text-sm text-muted-foreground max-w-sm px-4">
               {isSearchActive
                 ? "Try adjusting your search query."
                 : activeTab === "system"
@@ -449,6 +482,11 @@ const AgentList: React.FC<AgentListProps> = ({
         redirectOnCreate={false}
         onCreated={() => handleSettingsDialogClose()}
         onSaved={() => onRefresh()}
+      />
+      <SaveAsTemplateDialog
+        agent={templateAgent}
+        onClose={() => setTemplateAgent(null)}
+        onSaved={onRefresh}
       />
     </div>
   );

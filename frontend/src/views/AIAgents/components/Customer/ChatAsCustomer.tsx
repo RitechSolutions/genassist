@@ -138,7 +138,7 @@ export default function ChatAsCustomer() {
             variant="ghost"
             size="icon"
             onClick={() => navigate("/ai-agents")}
-            className="rounded-full bg-white shadow-lg"
+            className="rounded-full bg-white dark:bg-zinc-800 shadow-lg"
             aria-label="Back to AI Agents"
           >
             <ArrowLeft />

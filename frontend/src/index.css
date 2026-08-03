@@ -29,8 +29,60 @@
     --ai-brand: 245 100% 65%;
     --ai-brand-hover: 243 75% 59%;
     --ai-brand-light: 258 90% 66%;
+    /* Semantic status tokens — prefer these over literal green/amber/blue classes */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 92% 12%;
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 98%;
+    /* Categorical chart series — replaces per-file hex palettes */
+    --chart-1: 229 86% 51%;
+    --chart-2: 258 90% 66%;
+    --chart-3: 160 84% 39%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 340 82% 60%;
+    --chart-6: 190 90% 45%;
     --radius: 0.75rem;
     --handler-diameter: 14;
+  }
+
+  /* Dark theme token values. Inert until a `.dark` class is applied to <html>
+     (no theme toggle is wired yet). Token-driven components adapt automatically;
+     views still using literal color classes will need dark: variants before
+     dark mode is switched on for users. */
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 229 86% 61%;
+    --primary-hover: 229 86% 71%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 229 86% 61%;
+    --brand-600: 229 86% 61%;
+    --brand-50: 229 40% 14%;
+    --ai-brand: 245 100% 70%;
+    --ai-brand-hover: 243 75% 64%;
+    --ai-brand-light: 258 90% 71%;
+    --success: 142 64% 40%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 38 92% 12%;
+    --info: 217 91% 65%;
+    --info-foreground: 0 0% 98%;
   }
 }
 
@@ -258,7 +310,9 @@ input[type="checkbox"]:hover {
     #f472b6
   );
   padding: 3px;
-  border-radius: 9px;
+  /* Concentric with the inner card's rounded-lg (var(--radius)) + 3px padding,
+     so the animated border stays parallel to the node's corners. */
+  border-radius: calc(var(--radius) + 3px);
   animation: agent-border-spin 4s linear infinite;
 }
 
@@ -285,12 +339,12 @@ input[type="checkbox"]:hover {
   width: 36px;
   height: 32px;
   padding: 0;
-  background-color: white;
+  background-color: hsl(var(--card));
   border: none;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid hsl(var(--border));
   cursor: pointer;
   transition: background-color 0.2s;
-  color: #374151;
+  color: hsl(var(--muted-foreground));
 }
 
 .react-flow__controls-button:first-child {
@@ -305,11 +359,33 @@ input[type="checkbox"]:hover {
 }
 
 .react-flow__controls-button:hover {
-  background-color: #f3f4f6;
+  background-color: hsl(var(--muted));
 }
 
 .react-flow__controls-button:active {
-  background-color: #e5e7eb;
+  background-color: hsl(var(--accent));
+}
+
+.react-flow {
+  background-color: hsl(var(--background));
+}
+
+.dark .react-flow {
+  background-color: #101014;
+}
+
+.dark .react-flow__controls-button {
+  background-color: hsl(var(--card));
+  border-bottom-color: hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.dark .react-flow__controls-button:hover {
+  background-color: hsl(var(--muted));
+}
+
+.dark .react-flow__controls .react-flow__controls-button svg {
+  fill: hsl(var(--muted-foreground));
 }
 
 .react-flow__controls-button svg {
@@ -320,3 +396,80 @@ input[type="checkbox"]:hover {
   min-height: 14px !important;
   flex-shrink: 0;
 }
+
+/* ============================================================================
+   WORKFLOW MINIMAP (see components/WorkflowMiniMap.tsx).
+   Two-class selector (`.react-flow__minimap.wf-minimap`) so it outranks React
+   Flow's base `.react-flow__minimap { background:#fff }`. Node fills come from
+   the nodeColor callback; the container + mask are themed here for light/dark.
+   ============================================================================ */
+.react-flow__minimap.wf-minimap {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  /* Sit just to the right of the bottom-left zoom/lock controls: React Flow anchors
+     the panel 15px from the left, so shift it clear of the ~36px controls column
+     (15 + 36 + ~13 gap). Bottom margin stays 15px so it lines up with the controls. */
+  margin-left: 64px;
+  /* Hidden until the user moves around the canvas; GraphFlow toggles `is-visible`
+     (see revealMinimap). Hovering keeps it up so it stays usable as a nav control. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.react-flow__minimap.wf-minimap.is-visible,
+.react-flow__minimap.wf-minimap:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Mask = everything OUTSIDE the current viewport; a soft dim reads as "the rest
+   of the graph". Set via CSS (not the maskColor prop) so it can be theme-aware. */
+.wf-minimap .react-flow__minimap-mask {
+  fill: rgba(148, 163, 184, 0.22);
+}
+
+.dark .react-flow__minimap.wf-minimap {
+  background-color: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.4);
+}
+
+.dark .wf-minimap .react-flow__minimap-mask {
+  fill: rgba(2, 6, 23, 0.5);
+}
+
+/* The minimap adds clutter on small screens where the controls already crowd
+   the canvas — hide it there (mirrors the mobile treatment elsewhere). */
+@media (max-width: 768px) {
+  .react-flow__minimap.wf-minimap {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   LOW-DETAIL MODE (level-of-detail rendering).
+   Toggled by the `.rf-low-detail` class on the flow root when the canvas is
+   zoomed out over a large graph (see LowDetailWatcher in GraphFlow.tsx). Drops
+   the paint-heavy effects that make pan/drag janky at scale — on ALL browsers.
+   Full detail returns automatically when the user zooms back in.
+   ============================================================================ */
+/* Remove node drop-shadows / glows (set as inline styles, hence !important). */
+.rf-low-detail .react-flow__node,
+.rf-low-detail .react-flow__node * {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+/* Keep the AI-agent gradient border, but freeze the per-frame conic-gradient spin. */
+.rf-low-detail .agent-gradient-border {
+  animation: none !important;
+}
+/* Stop edge marching-ants and use solid strokes (cheaper to rasterize at scale). */
+.rf-low-detail .react-flow__edge path {
+  animation: none !important;
+  stroke-dasharray: none !important;
+}
+/* ========================= END LOW-DETAIL MODE ============================= */

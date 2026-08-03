@@ -122,7 +122,7 @@ export function FeatureFlagsCard({
 
   if (loading) {
     return (
-      <Card className="p-8 flex justify-center items-center">
+      <Card className="dark:bg-zinc-900 p-8 flex justify-center items-center">
         <Loader2 className="w-6 h-6 animate-spin" />
       </Card>
     );
@@ -130,7 +130,7 @@ export function FeatureFlagsCard({
 
   if (error) {
     return (
-      <Card className="p-8">
+      <Card className="dark:bg-zinc-900 p-8">
         <div className="text-center text-red-500">{error}</div>
       </Card>
     );
@@ -140,10 +140,10 @@ export function FeatureFlagsCard({
 
   return (
     <>
-      <Card className="overflow-hidden shadow-sm">
+      <Card className="dark:bg-zinc-900 overflow-hidden shadow-sm">
         {filteredFeatureFlags.length === 0 ? (
           <ListEmptyState
-            icon={<ToggleLeft className="h-12 w-12 text-gray-400" />}
+            icon={<ToggleLeft className="h-12 w-12 text-muted-foreground" />}
             title={
               isSearchActive
                 ? "No matching feature flags"
@@ -200,7 +200,7 @@ export function FeatureFlagsCard({
                       onClick={() => onEditFeatureFlag(flag)}
                       title="Edit Feature Flag"
                     >
-                      <Pencil className="w-4 h-4 text-black" />
+                      <Pencil className="w-4 h-4 text-foreground" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -236,7 +236,7 @@ export function FeatureFlagsCard({
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:ring-destructive"
             >
               {isDeleting ? (
                 <>

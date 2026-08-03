@@ -12,6 +12,7 @@ from app.schemas.test_suite import (
     TestResult,
     TestRun,
     TestRunCreate,
+    TestToolRuleResult,
 )
 from app.services.test_suite import TestSuiteService
 from app.tasks.test_suite_tasks import execute_test_suite_run_task
@@ -94,3 +95,16 @@ async def list_results_for_run(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     return await service.list_results_for_run(run_id)
+
+
+@router.get(
+    "/runs/{run_id}/tool-rule-results",
+    response_model=List[TestToolRuleResult],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def list_tool_rule_results_for_run(
+    run_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Per-rule Tool Usage outcomes for a run (turn- and conversation-scoped)."""
+    return await service.list_tool_rule_results_for_run(run_id)

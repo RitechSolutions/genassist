@@ -11,6 +11,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     inspect as sa_inspect,
     text,
 )
@@ -31,6 +32,9 @@ class ConversationAnalysisModel(Base):
             ["conversation_id"], ["conversations.id"], name="conversation_id_fk"
         ),
         PrimaryKeyConstraint("id", name="conversation_analysis_pkey"),
+        UniqueConstraint(
+            "conversation_id", name="uq_conversation_analysis_conversation_id"
+        ),
     )
 
     conversation_id: Mapped[UUID] = mapped_column(UUID)
