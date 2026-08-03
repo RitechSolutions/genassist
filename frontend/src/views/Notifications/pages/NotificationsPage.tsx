@@ -18,6 +18,7 @@ import { type NotificationTypeFilter } from "@/services/dashboard"
 import { EmptyNotificationsState } from "../components/EmptyNotificationsState"
 import { NotificationCard } from "../components/NotificationCard"
 import { getAllUserGroups } from "@/services/userGroups"
+import { currentUserIsAdmin } from "@/services/auth"
 
 type ConversationTypeFilter = Exclude<NotificationTypeFilter, "all">
 
@@ -82,9 +83,11 @@ const NotificationsPage = () => {
     isLoading,
   } = useNotificationsInfinite({ typeFilter, levelFilter })
 
+  // /user-groups is admin-only; non-admins got an empty list here anyway
   const { data: groups = [] } = useQuery({
     queryKey: ["user-groups-all"],
     queryFn: () => getAllUserGroups(),
+    enabled: currentUserIsAdmin(),
   })
   const groupNameById = useMemo(
     () => Object.fromEntries(groups.map((g) => [g.id, g.name])),

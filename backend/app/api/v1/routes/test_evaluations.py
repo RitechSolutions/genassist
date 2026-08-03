@@ -11,12 +11,15 @@ from app.core.tenant_scope import get_tenant_context
 from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
 from app.schemas.test_suite import (
+    EvaluationRunRequest,
     EvaluationToolCatalog,
     PaginatedEvaluations,
+    RunWorkflowEvaluationsRequest,
     StartedEvaluationRun,
     TestEvaluation,
     TestEvaluationCreate,
     TestEvaluationUpdate,
+    TestRun,
     WorkflowEvaluationSummary,
 )
 from app.services.test_suite import TestSuiteService
@@ -120,6 +123,42 @@ async def append_run_to_evaluation(
     return await service.append_run_to_evaluation(evaluation_id, str(run_id))
 
 
+@router.post(
+    "/evaluations/{evaluation_id}/run",
+    response_model=TestRun,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.RUN))],
+)
+async def run_evaluation(
+    evaluation_id: UUID,
+    data: Optional[EvaluationRunRequest] = None,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Queue one evaluation's run, optionally against another version of its
+    workflow. Refuses with 409 while the evaluation is queued/running."""
+    if await service.evaluation_has_active_run(evaluation_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This evaluation is already running.",
+        )
+
+    tenant = get_tenant_context()
+
+    def dispatch(run, input_metadata, technique_configs):
+        execute_test_suite_run_task.delay(
+            str(run.id),
+            tenant,
+            input_metadata,
+            technique_configs,
+        )
+
+    return await service.start_evaluation_run(
+        evaluation_id,
+        dispatch,
+        data.target_workflow_id if data else None,
+    )
+
+
 @router.delete(
     "/evaluations/{evaluation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -147,6 +186,7 @@ async def delete_evaluation(
 )
 async def run_workflow_evaluations(
     workflow_id: UUID,
+    data: Optional[RunWorkflowEvaluationsRequest] = None,
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     """
@@ -186,7 +226,11 @@ async def run_workflow_evaluations(
                 technique_configs,
             )
 
-        return await service.start_workflow_evaluations(workflow_id, dispatch)
+        return await service.start_workflow_evaluations(
+            workflow_id,
+            dispatch,
+            data.target_workflow_id if data else None,
+        )
     finally:
         # Compare-and-delete so we only release our own lock; never let a release
         # error mask the actual response.

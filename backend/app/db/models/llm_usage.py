@@ -46,7 +46,14 @@ class LlmUsageEventModel(Base):
         Index("ix_llm_usage_events_provider_model_occurred", "provider_key", "model_key", "occurred_at"),
         Index("ix_llm_usage_events_source_type_occurred", "source_type", "occurred_at"),
         Index("ix_llm_usage_events_conversation", "conversation_id"),
-        CheckConstraint("source_type IN ('workflow', 'llm_analyst')", name="ck_llm_usage_events_source_type"),
+        Index(
+            "ix_llm_usage_events_unpriced_created",
+            "created_at",
+            postgresql_where="cost_usd IS NULL AND is_deleted = 0",
+        ),
+        CheckConstraint(
+            "source_type IN ('workflow', 'llm_analyst', 'evaluation')", name="ck_llm_usage_events_source_type"
+        ),
         CheckConstraint(
             "pricing_status IN ('configured', 'fallback', 'unpriced', 'legacy_estimate')",
             name="ck_llm_usage_events_pricing_status",
@@ -109,7 +116,9 @@ class LlmUsageCaptureRunModel(Base):
         UniqueConstraint("execution_id", name="uq_llm_usage_capture_runs_execution"),
         Index("ix_llm_usage_capture_runs_occurred_at", "occurred_at"),
         Index("ix_llm_usage_capture_runs_source_occurred", "source", "occurred_at"),
-        CheckConstraint("source_type IN ('workflow', 'llm_analyst')", name="ck_llm_usage_capture_runs_source_type"),
+        CheckConstraint(
+            "source_type IN ('workflow', 'llm_analyst', 'evaluation')", name="ck_llm_usage_capture_runs_source_type"
+        ),
         CheckConstraint("execution_outcome IN ('returned', 'raised')", name="ck_llm_usage_capture_runs_outcome"),
         CheckConstraint(
             "run_status IN ('completed', 'failed', 'paused', 'idle', 'running')",

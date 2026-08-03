@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query"
 import { toast } from "react-hot-toast"
 
-import { isPollEnabled } from "@/config/api"
+import { isNotificationPollingEnabled } from "@/config/api"
 import { Notification } from "@/interfaces/notification.interface"
 import {
   fetchDashboardNotificationsPage,
@@ -76,7 +76,7 @@ export const useNotificationsInfinite = ({
     initialPageParam: 0,
     getNextPageParam: (lastPage, _pages, lastSkip) =>
       lastPage.hasMore ? (lastSkip as number) + lastPage.items.length : undefined,
-    refetchInterval: isPollEnabled ? 15000 : false,
+    refetchInterval: isNotificationPollingEnabled ? 15000 : false,
   })
 
   const flatNotifications = useMemo(

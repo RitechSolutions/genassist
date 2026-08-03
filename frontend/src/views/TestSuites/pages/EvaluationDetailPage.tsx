@@ -1,23 +1,32 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import toast from "react-hot-toast";
 import { PageLayout } from "@/components/PageLayout";
 import JsonViewer from "@/components/JsonViewer";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
-import { ChevronLeft, Play, CheckCircle2, XCircle, AlertCircle, Loader2 } from "lucide-react";
+import {
+  ChevronLeft,
+  GitBranch,
+  GitCompareArrows,
+  Play,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import {
   getTestRun,
   getTestRunsBatch,
   listTestCases,
   listResultsForRun,
   listTestSuites,
-  startTestRun,
 } from "@/services/testSuites";
 import { getWorkflowsMinimal } from "@/services/workflows";
 import {
   getTestEvaluationById,
-  appendRunToEvaluation,
   getToolRuleResults,
+  runTestEvaluation,
 } from "@/services/testEvaluations";
 import { TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
@@ -37,10 +46,22 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/skeleton";
 import { Progress } from "@/components/progress";
 import { PaginationBar } from "@/components/PaginationBar";
+import { TooltipProvider } from "@/components/RadixTooltip";
+import { TooltipButton } from "@/components/tooltip-button";
 import { cn } from "@/helpers/utils";
 import { ToolUsageResults } from "../components/ToolUsageResults";
 import { ToolUsageResultCard } from "../components/ToolUsageResultCard";
+import { RunAgainstVersionDialog } from "../components/RunAgainstVersionDialog";
+import { CompareRunsDialog } from "../components/CompareRunsDialog";
+import { MetricRuleBreakdown } from "../components/MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
+import {
+  isResultFailed,
+  isResultNotScored,
+  isResultPassed,
+  notScoredLabel,
+  runAvgAccuracy,
+} from "../helpers/runResults";
 
 type ResultFilter = "all" | "passed" | "failed" | "not_scored";
 
@@ -117,28 +138,6 @@ const usesExpectedOutput = (
   }
 };
 
-const hasMetrics = (result: TestResult): boolean =>
-  !!result.metrics && Object.keys(result.metrics).length > 0;
-
-// No metrics means no score, whatever the stored status claims.
-const isResultNotScored = (result: TestResult): boolean =>
-  !hasMetrics(result) || (!!result.status && result.status !== "scored");
-
-const isResultPassed = (result: TestResult): boolean =>
-  hasMetrics(result) &&
-  !isResultNotScored(result) &&
-  Object.values(result.metrics!).every((m) => m.passed);
-
-const isResultFailed = (result: TestResult): boolean =>
-  !isResultPassed(result) && !isResultNotScored(result);
-
-const notScoredLabel = (result: TestResult): string => {
-  if (result.status === "skipped") return "Skipped";
-  if (result.status === "scoring_failed") return "Scoring failed";
-  if (result.status === "execution_failed") return "Execution failed";
-  return "Not scored";
-};
-
 const accuracyTextClass = (acc: number): string =>
   acc >= 0.9
     ? "text-green-600 dark:text-green-400"
@@ -172,6 +171,9 @@ const EvaluationDetailPage: React.FC = () => {
   const [toolResultsByRun, setToolResultsByRun] = useState<Record<string, TestToolRuleResult[]>>({});
   const [suite, setSuite] = useState<TestSuite | null>(null);
   const [workflowName, setWorkflowName] = useState<string>("Dataset default");
+  const [workflowAgentId, setWorkflowAgentId] = useState<string | null>(null);
+  const [isVersionDialogOpen, setIsVersionDialogOpen] = useState(false);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [expectedOutputByCaseId, setExpectedOutputByCaseId] = useState<
     Record<string, Record<string, unknown> | undefined>
   >({});
@@ -205,6 +207,7 @@ const EvaluationDetailPage: React.FC = () => {
         (item: WorkflowMinimal) => item.id === evaluation.workflow_id,
       );
       setWorkflowName(workflowData?.name ?? "Dataset default");
+      setWorkflowAgentId(workflowData?.agent_id ?? null);
     };
     loadContext();
   }, [evaluation]);
@@ -275,20 +278,12 @@ const EvaluationDetailPage: React.FC = () => {
     loadSelectedRunResults();
   }, [selectedRunId]);
 
-  const handleRunEvaluation = async () => {
+  const handleRunEvaluation = async (targetWorkflowId?: string) => {
     if (!evaluation || !evaluationId) return;
     setIsRunning(true);
     try {
-      // Memory threads are generated per conversation by the backend at run time.
-      const runMetadata = evaluation.input_metadata ?? undefined;
-      const created = await startTestRun(evaluation.suite_id, {
-        techniques: evaluation.techniques,
-        technique_configs: evaluation.technique_configs,
-        workflow_id: evaluation.workflow_id,
-        input_metadata: runMetadata,
-      });
+      const created = await runTestEvaluation(evaluationId, targetWorkflowId);
       if (created?.id) {
-        await appendRunToEvaluation(evaluationId, created.id);
         setRuns((prev) => [created, ...prev]);
         setRunsPage(1); // jump back to the first page so the new run is visible
 
@@ -313,8 +308,16 @@ const EvaluationDetailPage: React.FC = () => {
         // Return early — setIsRunning(false) is handled by the interval above.
         return;
       }
-    } catch {
-      // fall through to finally
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response
+        ?.status;
+      if (status === 409) {
+        toast.error("This evaluation is already running.");
+      } else if (status === 400) {
+        toast.error("That version does not belong to this workflow.");
+      } else {
+        toast.error("Failed to start the evaluation.");
+      }
     }
     setIsRunning(false);
   };
@@ -387,13 +390,6 @@ const EvaluationDetailPage: React.FC = () => {
     RUN_TOTALS_KEY
   ] as RunTotals | undefined;
 
-  const runAvgAccuracy = (run: TestRun): number | null => {
-    const summaryMetrics = run.summary_metrics as Record<string, { accuracy?: number }> | undefined;
-    const scored = Object.values(summaryMetrics ?? {}).filter((m) => typeof m.accuracy === "number");
-    if (!scored.length) return null;
-    return scored.reduce((sum, m, _, arr) => sum + (m.accuracy ?? 0) / arr.length, 0);
-  };
-
   // Client-side pagination for the runs list (runs are all loaded up front).
   const runsTotalPages = Math.max(1, Math.ceil(runs.length / RUNS_PAGE_SIZE));
   const runsSafePage = Math.min(runsPage, runsTotalPages);
@@ -401,6 +397,13 @@ const EvaluationDetailPage: React.FC = () => {
     (runsSafePage - 1) * RUNS_PAGE_SIZE,
     runsSafePage * RUNS_PAGE_SIZE,
   );
+
+  // Offered whenever the evaluation targets a workflow; the dialog handles a
+  // workflow that has no second version to choose.
+  const canRunAgainstVersion = Boolean(workflowAgentId && evaluation?.workflow_id);
+  const finishedRunCount = runs.filter(
+    (run) => run.status === "completed" || run.status === "failed",
+  ).length;
 
   // Runs are sorted newest-first, so the most recent is the summary for the header.
   const lastRun = runs[0];
@@ -503,18 +506,23 @@ const EvaluationDetailPage: React.FC = () => {
                   tech,
                   evaluation?.technique_configs?.[tech],
                 );
-                if (!metricValue.comment && !sourceLabel) return null;
+                const ruleDetails =
+                  Array.isArray(metricValue.details) && metricValue.details.length > 1
+                    ? metricValue.details
+                    : null;
+                if (!metricValue.comment && !sourceLabel && !ruleDetails) return null;
                 return (
                   <div key={`${result.id}-${tech}-comment`} className="text-xs">
                     <span className="font-semibold text-muted-foreground">{methodLabel(tech)}:</span>{" "}
-                    {metricValue.comment && (
+                    {metricValue.comment && !ruleDetails && (
                       <span className="text-muted-foreground">{metricValue.comment}</span>
                     )}
                     {sourceLabel && (
                       <span className="text-muted-foreground">
-                        {metricValue.comment ? " — " : ""}checked against: {sourceLabel}
+                        {metricValue.comment && !ruleDetails ? " — " : ""}checked against: {sourceLabel}
                       </span>
                     )}
+                    {ruleDetails && <MetricRuleBreakdown details={ruleDetails} />}
                   </div>
                 );
               })}
@@ -624,19 +632,38 @@ const EvaluationDetailPage: React.FC = () => {
             <p className="truncate text-sm text-muted-foreground">{evaluation.description}</p>
           )}
         </div>
-        <Button
-          onClick={handleRunEvaluation}
-          disabled={isRunning}
-          className="shrink-0"
-          aria-label="Run evaluation"
-        >
-          {isRunning ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Play className="mr-2 h-4 w-4" />
+        <div className="flex shrink-0 items-center gap-2">
+          {canRunAgainstVersion && (
+            <TooltipProvider delayDuration={200}>
+              <TooltipButton
+                button={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={isRunning}
+                    onClick={() => setIsVersionDialogOpen(true)}
+                    aria-label="Run against a version"
+                  >
+                    <GitBranch className="h-4 w-4" />
+                  </Button>
+                }
+                tooltipContent={{ children: <p>Run against a version</p> }}
+              />
+            </TooltipProvider>
           )}
-          {isRunning ? "Running..." : "Run"}
-        </Button>
+          <Button
+            onClick={() => handleRunEvaluation()}
+            disabled={isRunning}
+            aria-label="Run evaluation"
+          >
+            {isRunning ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="mr-2 h-4 w-4" />
+            )}
+            {isRunning ? "Running..." : "Run"}
+          </Button>
+        </div>
       </div>
 
       {/* Configuration + Last Run summary */}
@@ -701,6 +728,11 @@ const EvaluationDetailPage: React.FC = () => {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">Run #{lastRun.id?.slice(-4)}</span>
+                  {lastRun.workflow_version && (
+                    <Badge variant="outline" className="text-[10px]">
+                      v{lastRun.workflow_version}
+                    </Badge>
+                  )}
                   <RunStatusBadge status={lastRun.status} />
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
@@ -745,9 +777,17 @@ const EvaluationDetailPage: React.FC = () => {
       <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Previous Executions</h2>
-          <Badge variant="secondary" className="text-xs">
-            {runs.length} run{runs.length !== 1 ? "s" : ""}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {finishedRunCount >= 2 && (
+              <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
+                <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
+                Compare
+              </Button>
+            )}
+            <Badge variant="secondary" className="text-xs">
+              {runs.length} run{runs.length !== 1 ? "s" : ""}
+            </Badge>
+          </div>
         </div>
 
         {isLoadingRuns ? (
@@ -791,6 +831,11 @@ const EvaluationDetailPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">Run #{run.id?.slice(-4)}</span>
+                      {run.workflow_version && (
+                        <Badge variant="outline" className="text-[10px]">
+                          v{run.workflow_version}
+                        </Badge>
+                      )}
                       {avgAccuracy !== null && (
                         <div className="flex items-center gap-1">
                           <Progress
@@ -877,7 +922,14 @@ const EvaluationDetailPage: React.FC = () => {
         <DialogContent className="flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1400px] flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-5 py-3">
             <div className="flex items-center justify-between gap-3">
-              <DialogTitle>Run Details #{selectedRun?.id?.slice(-4)}</DialogTitle>
+              <div className="flex items-center gap-2">
+                <DialogTitle>Run Details #{selectedRun?.id?.slice(-4)}</DialogTitle>
+                {selectedRun?.workflow_version && (
+                  <Badge variant="outline" className="text-[10px]">
+                    v{selectedRun.workflow_version}
+                  </Badge>
+                )}
+              </div>
               {selectedRun && <RunStatusBadge status={selectedRun.status} />}
             </div>
             {selectedRun?.created_at && (
@@ -1077,6 +1129,27 @@ const EvaluationDetailPage: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {canRunAgainstVersion && workflowAgentId && (
+        <RunAgainstVersionDialog
+          isOpen={isVersionDialogOpen}
+          onOpenChange={setIsVersionDialogOpen}
+          agentId={workflowAgentId}
+          currentWorkflowId={evaluation.workflow_id}
+          workflowName={workflowName}
+          isStarting={isRunning}
+          onRun={(targetWorkflowId) => {
+            setIsVersionDialogOpen(false);
+            void handleRunEvaluation(targetWorkflowId);
+          }}
+        />
+      )}
+
+      <CompareRunsDialog
+        isOpen={isCompareOpen}
+        onOpenChange={setIsCompareOpen}
+        runs={runs}
+      />
     </PageLayout>
   );
 };

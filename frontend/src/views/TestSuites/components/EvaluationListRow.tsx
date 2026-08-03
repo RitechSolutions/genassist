@@ -101,7 +101,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               disabled={isRunning}
-              onClick={onEdit}
+              onSelect={onEdit}
               title={isRunning ? "Can't edit while this evaluation is running" : undefined}
             >
               <Pencil className="h-4 w-4 mr-2" />
@@ -109,7 +109,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isRunning}
-              onClick={onDelete}
+              onSelect={onDelete}
               className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
               title={isRunning ? "Can't delete while this evaluation is running" : undefined}
             >

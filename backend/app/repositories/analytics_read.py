@@ -1,7 +1,11 @@
 import logging
 from datetime import date, datetime, time, timezone
 
-from app.core.utils.analytics_agent_scope import get_agents_for_group, resolve_scoped_agent_ids
+from app.core.utils.analytics_agent_scope import (
+    get_authorized_agents_for_group,
+    resolve_authorized_agent_ids,
+    resolve_scoped_agent_ids,
+)
 from app.core.utils.date_time_utils import previous_period
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from uuid import UUID
@@ -36,7 +40,7 @@ class AnalyticsReadRepository:
         self.db = db
 
     async def get_agents_for_group(self, group_id: UUID) -> list[dict]:
-        return await get_agents_for_group(self.db, group_id)
+        return await get_authorized_agents_for_group(self.db, group_id)
 
     async def get_agent_daily_stats(
         self,
@@ -45,7 +49,7 @@ class AnalyticsReadRepository:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> list[AgentExecutionDailyStatsModel]:
-        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
         if agent_ids is not None and not agent_ids:
             return []
 
@@ -69,7 +73,7 @@ class AnalyticsReadRepository:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> list[NodeExecutionDailyStatsModel]:
-        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
         if agent_ids is not None and not agent_ids:
             return []
 
@@ -220,7 +224,7 @@ class AnalyticsReadRepository:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> dict:
-        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
+        agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
         if agent_ids is not None and not agent_ids and group_id is None:
             return {
                 "total_executions": 0,
@@ -309,6 +313,10 @@ class AnalyticsReadRepository:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> list[dict]:
+        agent_ids = await resolve_authorized_agent_ids(self.db, agent_id=agent_id)
+        if not agent_ids:
+            return []
+
         stmt = select(
             NodeExecutionDailyStatsModel.node_type,
             func.sum(NodeExecutionDailyStatsModel.execution_count).label("execution_count"),
@@ -349,21 +357,15 @@ class AnalyticsReadRepository:
         from app.db.models.workflow import WorkflowModel
         from app.core.utils.custom_attributes import get_filterable_keys
 
-        agent_ids = await resolve_scoped_agent_ids(self.db, agent_id, group_id)
-        if agent_ids is not None and not agent_ids and group_id is None:
+        agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids:
             return []
 
-        if agent_ids is not None and agent_ids:
+        if agent_ids is not None:
             stmt = (
                 select(WorkflowModel.nodes)
                 .join(AgentModel, AgentModel.workflow_id == WorkflowModel.id)
                 .where(AgentModel.id.in_(agent_ids))
-            )
-        elif agent_id is not None:
-            stmt = (
-                select(WorkflowModel.nodes)
-                .join(AgentModel, AgentModel.workflow_id == WorkflowModel.id)
-                .where(AgentModel.id == agent_id)
             )
         else:
             stmt = select(WorkflowModel.nodes)

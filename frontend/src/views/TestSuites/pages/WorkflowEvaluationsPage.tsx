@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ListChecks, Loader2, Play, Search } from "lucide-react";
+import { ChevronLeft, GitBranch, ListChecks, Loader2, Play, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { PageLayout } from "@/components/PageLayout";
@@ -16,14 +16,16 @@ import {
 } from "@/components/dialog";
 import { PaginationBar } from "@/components/PaginationBar";
 import { PageListSkeleton } from "@/components/skeletons";
+import { TooltipProvider } from "@/components/RadixTooltip";
+import { TooltipButton } from "@/components/tooltip-button";
 
 import { getWorkflowsMinimal } from "@/services/workflows";
-import { getTestRunsBatch, listTestSuites, startTestRun } from "@/services/testSuites";
+import { getTestRunsBatch, listTestSuites } from "@/services/testSuites";
 import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import {
-  appendRunToEvaluation,
   deleteTestEvaluation,
   getWorkflowEvaluationsPage,
+  runTestEvaluation,
   runWorkflowEvaluations,
   updateTestEvaluation,
 } from "@/services/testEvaluations";
@@ -33,6 +35,7 @@ import { TestRun, TestSuite } from "@/interfaces/testSuite.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import { EvaluationWizard, EvaluationWizardData } from "../components/EvaluationWizard";
 import { EvaluationListRow } from "../components/EvaluationListRow";
+import { RunAgainstVersionDialog } from "../components/RunAgainstVersionDialog";
 import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
 
 const PAGE_SIZE = 20;
@@ -94,6 +97,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
 
   const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
   const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
+  const [isRunAllVersionDialogOpen, setIsRunAllVersionDialogOpen] = useState(false);
 
   // staleTime 0 makes react-query refetch this when the tab regains focus. The
   // interval is the page's only poll: it runs when a batch is active that this
@@ -120,9 +124,13 @@ const WorkflowEvaluationsPage: React.FC = () => {
   const evaluations = pageData?.items ?? [];
   const total = pageData?.total ?? 0;
   const totalUnfiltered = pageData?.total_unfiltered ?? 0;
+  const currentWorkflow = workflows.find((w) => w.id === workflowId);
   const workflowName = isUnassigned
     ? "Unassigned evaluations"
-    : workflows.find((w) => w.id === workflowId)?.name ?? "Workflow";
+    : currentWorkflow?.name ?? "Workflow";
+  const workflowAgentId = isUnassigned ? null : currentWorkflow?.agent_id ?? null;
+  // Offered on every workflow; the dialog handles one with no second version.
+  const canRunAgainstVersion = Boolean(workflowAgentId);
 
   useEffect(() => {
     const load = async () => {
@@ -201,22 +209,19 @@ const WorkflowEvaluationsPage: React.FC = () => {
     if (!evaluation.id || isEvaluationRunning(evaluation)) return;
     setRunningEvalIds((prev) => new Set(prev).add(evaluation.id));
     try {
-      // Memory threads are generated per conversation by the backend at run time.
-      const runMetadata = evaluation.input_metadata ?? undefined;
-      const created = await startTestRun(evaluation.suite_id, {
-        techniques: evaluation.techniques,
-        technique_configs: evaluation.technique_configs,
-        workflow_id: evaluation.workflow_id,
-        input_metadata: runMetadata,
-      });
+      const created = await runTestEvaluation(evaluation.id);
       if (created?.id) {
-        await appendRunToEvaluation(evaluation.id, created.id);
         setLastRunsByEvaluationId((prev) => ({ ...prev, [evaluation.id as string]: created }));
         toast.success("Evaluation started");
         void refetchPage(); // any_running turns on, which starts the status poll
       }
-    } catch {
-      toast.error("Failed to start evaluation");
+    } catch (error) {
+      if (isRunningConflict(error)) {
+        toast.error("This evaluation is already running");
+        void refetchPage();
+      } else {
+        toast.error("Failed to start evaluation");
+      }
     } finally {
       setRunningEvalIds((prev) => {
         const next = new Set(prev);
@@ -226,7 +231,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
     }
   };
 
-  const handleRunAll = async () => {
+  const handleRunAll = async (targetWorkflowId?: string) => {
     if (isUnassigned || isRunAllInFlight.current || isWorkflowRunning || pageData?.any_running) {
       return;
     }
@@ -243,7 +248,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
     };
 
     try {
-      const started = await runWorkflowEvaluations(workflowId);
+      const started = await runWorkflowEvaluations(workflowId, targetWorkflowId);
       if (isStale()) return; // navigated away before the POST resolved
       const startedRuns = (started ?? []).filter(
         (s): s is typeof s & { run_id: string } => Boolean(s.run_id),
@@ -404,33 +409,53 @@ const WorkflowEvaluationsPage: React.FC = () => {
             />
           </div>
           {!isUnassigned && (
-            <Button
-              variant="outline"
-              disabled={isWorkflowRunning || Boolean(pageData?.any_running)}
-              onClick={handleRunAll}
-            >
-              {isWorkflowRunning && workflowProgress ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  {workflowProgress.done}/{workflowProgress.total}
-                </>
-              ) : isWorkflowRunning ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  Starting…
-                </>
-              ) : pageData?.any_running ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  Running…
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5 mr-1" />
-                  Run all
-                </>
+            <div className="flex items-center gap-2">
+              {canRunAgainstVersion && (
+                <TooltipProvider delayDuration={200}>
+                  <TooltipButton
+                    button={
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        disabled={isWorkflowRunning || Boolean(pageData?.any_running)}
+                        onClick={() => setIsRunAllVersionDialogOpen(true)}
+                        aria-label="Run all against a version"
+                      >
+                        <GitBranch className="h-4 w-4" />
+                      </Button>
+                    }
+                    tooltipContent={{ children: <p>Run all against a version</p> }}
+                  />
+                </TooltipProvider>
               )}
-            </Button>
+              <Button
+                variant="outline"
+                disabled={isWorkflowRunning || Boolean(pageData?.any_running)}
+                onClick={() => handleRunAll()}
+              >
+                {isWorkflowRunning && workflowProgress ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    {workflowProgress.done}/{workflowProgress.total}
+                  </>
+                ) : isWorkflowRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Starting…
+                  </>
+                ) : pageData?.any_running ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Running…
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3.5 w-3.5 mr-1" />
+                    Run all
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -485,6 +510,22 @@ const WorkflowEvaluationsPage: React.FC = () => {
           pageItemCount={evaluations.length}
           onPageChange={setPage}
           className="mt-4"
+        />
+      )}
+
+      {canRunAgainstVersion && workflowAgentId && (
+        <RunAgainstVersionDialog
+          isOpen={isRunAllVersionDialogOpen}
+          onOpenChange={setIsRunAllVersionDialogOpen}
+          agentId={workflowAgentId}
+          currentWorkflowId={workflowId}
+          workflowName={workflowName}
+          confirmLabel="Run all"
+          isStarting={isWorkflowRunning}
+          onRun={(targetWorkflowId) => {
+            setIsRunAllVersionDialogOpen(false);
+            void handleRunAll(targetWorkflowId);
+          }}
         />
       )}
 

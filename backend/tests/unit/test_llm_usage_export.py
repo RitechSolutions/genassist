@@ -4,7 +4,12 @@ from datetime import date
 
 import pytest
 
-from app.schemas.llm_usage import LlmUsageBreakdownItem, LlmUsageBreakdownResponse, LlmUsageSummaryResponse
+from app.schemas.llm_usage import (
+    EXPORT_DIMENSIONS,
+    LlmUsageBreakdownItem,
+    LlmUsageBreakdownResponse,
+    LlmUsageSummaryResponse,
+)
 from app.services.llm_usage_export import export_llm_usage
 
 
@@ -54,6 +59,10 @@ def _csv_text(summary=None, breakdown=None) -> str:
     )
     assert media_type
     return content.decode("utf-8-sig")
+
+
+def test_node_stays_out_of_export_dimensions():
+    assert "node" not in EXPORT_DIMENSIONS
 
 
 def test_csv_labels_source_dimension_as_usage_type():

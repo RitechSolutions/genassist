@@ -50,7 +50,7 @@ import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
 import { NotificationsSettings } from "./views/Settings/pages/Notifications";
 import { Maintenance } from "./views/Settings/pages/Maintenance";
 import { FeatureFlags as FeatureFlagKeys } from "@/config/featureFlags";
-import { useFeatureFlagVisible } from "@/components/featureFlag";
+import FeatureFlagRoute from "@/layout/FeatureFlagRoute";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
 import { useServerStatus } from "@/context/ServerStatusContext";
@@ -101,19 +101,6 @@ const ProtectedLayout = () => {
 export type RegistrationStatus = "loading" | "new" | "existing";
 
 export const RoutesProvider = () => {
-  const showLocalFineTune = useFeatureFlagVisible(
-    FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
-  );
-  const showBedrockFineTune = useFeatureFlagVisible(
-    FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE
-  );
-  const showLlmUsage = useFeatureFlagVisible(
-    FeatureFlagKeys.ANALYTICS.SHOW_COST_PER_CONVERSATION
-  );
-  const showTemplateMarketplace = useFeatureFlagVisible(
-    FeatureFlagKeys.FEATURE.TEMPLATE_MARKETPLACE
-  );
-
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
   const [skipOnboarding, setSkipOnboarding] = useState(false);
 
@@ -202,13 +189,11 @@ export const RoutesProvider = () => {
             {
               path: "analytics/llm-usage",
               element: (
-                showLlmUsage ? (
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.ANALYTICS.SHOW_COST_PER_CONVERSATION}>
                   <ProtectedRoute requiredPermissions={["read:dashboard"]}>
                     <LlmUsagePage />
                   </ProtectedRoute>
-                ) : (
-                  <Navigate to="/dashboard" replace />
-                )
+                </FeatureFlagRoute>
               ),
             },
             {
@@ -221,12 +206,12 @@ export const RoutesProvider = () => {
             },
             {
               path: "templates",
-              element: showTemplateMarketplace ? (
-                <ProtectedRoute requiredPermissions={["read:template"]}>
-                  <TemplatesPage />
-                </ProtectedRoute>
-              ) : (
-                <Navigate to="/dashboard" replace />
+              element: (
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.FEATURE.TEMPLATE_MARKETPLACE}>
+                  <ProtectedRoute requiredPermissions={["read:template"]}>
+                    <TemplatesPage />
+                  </ProtectedRoute>
+                </FeatureFlagRoute>
               ),
             },
             {
@@ -364,49 +349,41 @@ export const RoutesProvider = () => {
             {
               path: "bedrock-fine-tune",
               element: (
-                showBedrockFineTune ? (
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE}>
                   <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
                     <BedrockFineTune />
                   </ProtectedRoute>
-                ) : (
-                  <Navigate to="/dashboard" replace />
-                )
+                </FeatureFlagRoute>
               ),
             },
             {
               path: "bedrock-fine-tune/:id",
               element: (
-                showBedrockFineTune ? (
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.LLM_SETTINGS.SHOW_BEDROCK_FINE_TUNE}>
                   <ProtectedRoute requiredPermissions={["*", "read:bedrock_job"]}>
                     <BedrockFineTuneJobDetail />
                   </ProtectedRoute>
-                ) : (
-                  <Navigate to="/dashboard" replace />
-                )
+                </FeatureFlagRoute>
               ),
             },
             {
               path: "local-fine-tune",
               element: (
-                showLocalFineTune ? (
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE}>
                   <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTune />
                   </ProtectedRoute>
-                ) : (
-                  <Navigate to="/dashboard" replace />
-                )
+                </FeatureFlagRoute>
               ),
             },
             {
               path: "local-fine-tune/:id",
               element: (
-                showLocalFineTune ? (
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE}>
                   <ProtectedRoute requiredPermissions={["*", "read:local_fine_tuning"]}>
                     <LocalFineTuneJobDetail />
                   </ProtectedRoute>
-                ) : (
-                  <Navigate to="/dashboard" replace />
-                )
+                </FeatureFlagRoute>
               ),
             },
             {
@@ -627,7 +604,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [showLocalFineTune, showBedrockFineTune, showLlmUsage, showTemplateMarketplace],
+    [],
   );
 
   const organizationRouter = useMemo(

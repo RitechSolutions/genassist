@@ -167,6 +167,37 @@ async def test_source_type_check_rejects_bad_value(db):
 
 
 @pytest.mark.asyncio
+async def test_event_source_type_check_accepts_evaluation(db):
+    db.add(LlmUsageEventModel(**_event_row(source_type="evaluation", source="test_suite", purpose="llm_judge")))
+    try:
+        await db.flush()
+    finally:
+        await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_capture_run_source_type_check_accepts_evaluation(db):
+    db.add(
+        LlmUsageCaptureRunModel(
+            id=uuid4(),
+            execution_id=f"eval:{uuid4()}",
+            source_type="evaluation",
+            source="test_suite",
+            execution_outcome="returned",
+            run_status="completed",
+            expected_entries=2,
+            persisted_events=2,
+            occurred_at=datetime.now(timezone.utc),
+            is_deleted=0,
+        )
+    )
+    try:
+        await db.flush()
+    finally:
+        await db.rollback()
+
+
+@pytest.mark.asyncio
 async def test_total_ge_parts_check(db):
     db.add(
         LlmUsageEventModel(**_event_row(input_tokens=10, output_tokens=10, total_tokens=5))

@@ -160,6 +160,11 @@ def resolve_action_nodes(workflow: Any, workflow_path: Optional[List[str]] = Non
     ]
 
 
+def resolve_node_labels(workflow: Any) -> Dict[str, str]:
+    """Display label for every node id in the workflow graph."""
+    return {node.get("id"): _node_label(node) for node in _nodes(workflow) if node.get("id")}
+
+
 def nested_workflow_refs(workflow: Any) -> List[Dict[str, Any]]:
     """Executor nodes that run another workflow, for the caller to expand recursively."""
     refs = []

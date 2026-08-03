@@ -406,6 +406,262 @@ class TestCaptureBound:
         recorder_module._capture_slots.clear()
 
 
+class EvaluationSession(FakeSession):
+
+    def __init__(
+        self, *, workflows=(), providers=(), agents=(), workflow_agents=None, persisted=0, capture_enabled=True
+    ):
+        super().__init__()
+        self.statements = []
+        self.committed = False
+        self.closed = False
+        self._by_table = {"workflows": list(workflows), "llm_providers": list(providers), "agents": list(agents)}
+        self._workflow_agents = workflow_agents
+        self._persisted = persisted
+        self._capture_enabled = capture_enabled
+
+    def _ids_for(self, stmt):
+        sql = str(stmt)
+        if "agents.workflow_id" in sql and self._workflow_agents is not None:
+            return self._workflow_agents
+        for table, ids in self._by_table.items():
+            if f"FROM {table}" in sql:
+                return ids
+        return []
+
+    async def execute(self, stmt):
+        self.statements.append(stmt)
+        ids = self._ids_for(stmt)
+        return SimpleNamespace(
+            all=lambda: [(i,) for i in ids],
+            scalar=lambda: self._persisted,
+            scalar_one_or_none=lambda: self._capture_enabled,
+        )
+
+    async def commit(self):
+        self.committed = True
+
+    async def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def evaluation_scope(monkeypatch):
+
+    @asynccontextmanager
+    async def _scope():
+        yield
+
+    sessions = []
+
+    def _install(session):
+        sessions.append(session)
+        monkeypatch.setattr(recorder_module, "create_tenant_request_scope", _scope)
+        monkeypatch.setattr(
+            recorder_module.injector, "get", lambda cls: session if cls is AsyncSession else FakeRateRepo([])
+        )
+        recorder_module._capture_slots.clear()
+        return session
+
+    yield _install
+    recorder_module._capture_slots.clear()
+
+
+def _insert_for(statements, table: str):
+    return next(s for s in statements if isinstance(s, Insert) and s.table.name == table)
+
+
+def _rows_of(stmt) -> list[dict]:
+    params = stmt.compile(dialect=postgresql.dialect()).params
+    rows: dict[int, dict] = {}
+    for key, value in params.items():
+        name, _, index = key.rpartition("_m")
+        if index.isdigit():
+            rows.setdefault(int(index), {})[name] = value
+    return [rows[i] for i in sorted(rows)] if rows else [params]
+
+
+_JUDGE_USAGE = {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+
+
+def _entry(call_index=0, purpose="llm_judge", provider="openai", model="gpt-4o", usage=_JUDGE_USAGE, provider_id=None):
+    return {
+        "call_index": call_index,
+        "purpose": purpose,
+        "provider": provider,
+        "model": model,
+        "usage": usage,
+        "llm_provider_id": provider_id,
+    }
+
+
+class TestRecordEvaluationCalls:
+
+    @pytest.mark.asyncio
+    async def test_empty_entries_never_touch_the_database(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [])
+
+        assert session.statements == [] and session.committed is False
+
+    @pytest.mark.asyncio
+    async def test_inert_while_capture_is_disabled(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession(capture_enabled=False))
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+
+        assert not [s for s in session.statements if isinstance(s, Insert)]
+        assert session.committed is False
+
+    @pytest.mark.asyncio
+    async def test_events_and_receipt_are_written_in_one_commit(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession(persisted=2))
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry(0, "llm_judge"), _entry(1, "provenance_judge")]
+        )
+
+        inserts = [s for s in session.statements if isinstance(s, Insert)]
+        assert len(inserts) == 2, "one batched events insert plus one receipt"
+        assert session.committed is True and session.closed is True
+
+    @pytest.mark.asyncio
+    async def test_every_event_carries_the_evaluation_source_type_and_its_purpose(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry(0, "llm_judge"), _entry(3, "provenance_judge")]
+        )
+
+        rows = _rows_of(_insert_for(session.statements, "llm_usage_events"))
+        assert [r["source_type"] for r in rows] == ["evaluation", "evaluation"]
+        assert [r["source"] for r in rows] == ["test_suite", "test_suite"]
+        assert [r["purpose"] for r in rows] == ["llm_judge", "provenance_judge"]
+        assert [r["call_index"] for r in rows] == [0, 3], "gaps in technique positions are kept as-is"
+
+    @pytest.mark.asyncio
+    async def test_one_receipt_reports_expected_and_persisted_counts(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession(persisted=2))
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry(0), _entry(1)])
+
+        receipt = _rows_of(_insert_for(session.statements, "llm_usage_capture_runs"))[0]
+        assert receipt["execution_id"] == "eval:abc"
+        assert receipt["source_type"] == "evaluation"
+        assert (receipt["expected_entries"], receipt["persisted_events"]) == (2, 2)
+        assert (receipt["execution_outcome"], receipt["run_status"]) == ("returned", "completed")
+
+    @pytest.mark.asyncio
+    async def test_events_are_priced_from_their_own_usage(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert (row["input_tokens"], row["output_tokens"], row["total_tokens"]) == (100, 50, 150)
+        assert row["pricing_status"] == "fallback" and row["cost_usd"] > 0
+
+    @pytest.mark.asyncio
+    async def test_missing_usage_still_counts_the_call_but_stays_unpriced(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry(usage=None)])
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert row["total_tokens"] == 0
+        assert row["pricing_status"] == "unpriced" and row["cost_usd"] is None
+
+    @pytest.mark.asyncio
+    async def test_agent_is_derived_from_the_validated_workflow(self, evaluation_scope):
+        workflow_id, agent_id = uuid4(), uuid4()
+        session = evaluation_scope(EvaluationSession(workflows=[workflow_id], agents=[agent_id]))
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()], workflow_id=workflow_id)
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        receipt = _rows_of(_insert_for(session.statements, "llm_usage_capture_runs"))[0]
+        assert row["workflow_id"] == workflow_id and row["agent_id"] == agent_id
+        assert receipt["workflow_id"] == workflow_id and receipt["agent_id"] == agent_id
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_owner_outranks_the_workflows_active_agent(self, evaluation_scope):
+        workflow_id, historical_owner, active_agent = uuid4(), uuid4(), uuid4()
+        session = evaluation_scope(
+            EvaluationSession(workflows=[workflow_id], agents=[historical_owner], workflow_agents=[active_agent])
+        )
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry()], workflow_id=workflow_id, agent_id=historical_owner
+        )
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        receipt = _rows_of(_insert_for(session.statements, "llm_usage_capture_runs"))[0]
+        assert row["agent_id"] == historical_owner, "the evaluated version's owner, not whoever runs it now"
+        assert receipt["agent_id"] == historical_owner
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_owner_falls_back_to_the_workflows_active_agent(self, evaluation_scope):
+        workflow_id, active_agent = uuid4(), uuid4()
+        session = evaluation_scope(
+            EvaluationSession(workflows=[workflow_id], agents=[], workflow_agents=[active_agent])
+        )
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry()], workflow_id=workflow_id, agent_id=uuid4()
+        )
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert row["agent_id"] == active_agent
+
+    @pytest.mark.asyncio
+    async def test_an_absent_owner_keeps_deriving_the_agent_from_the_workflow(self, evaluation_scope):
+        workflow_id, active_agent = uuid4(), uuid4()
+        session = evaluation_scope(
+            EvaluationSession(workflows=[workflow_id], agents=[], workflow_agents=[active_agent])
+        )
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()], workflow_id=workflow_id)
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert row["agent_id"] == active_agent
+
+    @pytest.mark.asyncio
+    async def test_unknown_workflow_and_provider_are_nulled_not_rejected(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry(provider_id=uuid4())], workflow_id=uuid4()
+        )
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert row["workflow_id"] is None and row["llm_provider_id"] is None and row["agent_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_events_insert_is_idempotent_on_execution_and_call_index(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+
+        events = _insert_for(session.statements, "llm_usage_events")
+        receipt = _insert_for(session.statements, "llm_usage_capture_runs")
+        assert events._post_values_clause is not None, "events must be ON CONFLICT DO NOTHING"
+        assert receipt._post_values_clause is not None, "the receipt must be ON CONFLICT DO NOTHING"
+
+    @pytest.mark.asyncio
+    async def test_a_write_failure_rolls_back_and_never_raises(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        async def boom(_stmt):
+            raise RuntimeError("ledger unavailable")
+
+        session.execute = boom
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+
+        assert session.rolled_back is True and session.committed is False
+
+
 class TestWorkflowUsageContext:
     def test_defaults(self):
         ctx = WorkflowUsageContext(source="chat")

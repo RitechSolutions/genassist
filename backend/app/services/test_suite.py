@@ -1,6 +1,8 @@
 import asyncio
+import dataclasses
 import logging
 import json
+import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -28,6 +30,7 @@ from app.modules.workflow.engine.workflow_engine import (
 )
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
 from app.repositories.conversations import ConversationRepository
@@ -120,6 +123,9 @@ CASE_EXECUTION_TIMEOUT_SECONDS = 20 * 60
 EVALUATOR_TIMEOUT_SECONDS = 5 * 60
 NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
 
+# Metering runs outside the scoring budget; one hung flush must not stall a long run.
+EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS = 30
+
 
 class ResultStatus:
     """Why a case did or did not produce metrics."""
@@ -182,6 +188,26 @@ def _group_cases_into_conversations(
         group.sort(key=lambda case: (case.turn_index or 0, case.created_at))
 
     return list(conversations.values())
+
+
+# Rule 1 of any technique keeps the technique's own position as call_index,
+# unchanged from before multi-rule judging existed. A second+ rule on the same
+# technique would otherwise collide with that position (or another
+# technique's), so it's parked in a namespace disjoint from every possible
+# technique_index, still bucketed per technique so two techniques' overflow
+# rules never collide with each other either.
+_JUDGE_RULE_OVERFLOW_BASE = 1_000_000
+_JUDGE_RULE_OVERFLOW_SPAN = 1_000
+
+
+def _judge_rule_call_index(payload: Dict[str, Any], rule_number: int) -> int | None:
+    """call_index for one rule's real LLM call within a (possibly multi-rule) judge technique."""
+    technique_index = payload.get("_technique_index")
+    if technique_index is None:
+        return None
+    if rule_number <= 1:
+        return technique_index
+    return _JUDGE_RULE_OVERFLOW_BASE + technique_index * _JUDGE_RULE_OVERFLOW_SPAN + (rule_number - 1)
 
 
 def _read_path(data: Any, path: str) -> Any:
@@ -378,6 +404,319 @@ def _node_matches_selector(node: Dict[str, Any], selector: Any) -> bool:
     return node.get("id") == selector or _names_equal(node.get("label"), selector)
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+
+def _display_name(value: Any, labels: Dict[str, str], fallback: str = "unknown node") -> str:
+    """Human name for a node/tool reference: its resolved label, the value itself
+    when it already reads as a name, or a neutral fallback instead of a raw id."""
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    label = labels.get(text)
+    if label:
+        return label
+    # MCP tool ids are "{nodeId}:{toolName}"; the tool name half is readable.
+    prefix, _, suffix = text.partition(":")
+    if suffix and _UUID_RE.match(prefix):
+        return suffix
+    return fallback if _UUID_RE.match(text) else text
+
+
+def _tool_usage_labeler(
+    labels: Dict[str, str], events: Iterable[Dict[str, Any]] | None = None
+) -> Callable[[str], str]:
+    """id → display name for tool-usage comments; event tool names fill any gaps
+    in the catalogue labels."""
+    combined = dict(labels)
+    for event in events or []:
+        tool_id, tool_name = event.get("tool_id"), event.get("tool_name")
+        if tool_id and tool_name:
+            combined.setdefault(tool_id, tool_name)
+    return lambda value: _display_name(value, combined)
+
+
+def _shorten(value: Any, max_length: int) -> str:
+    """Single-line preview of a value, truncated with an ellipsis."""
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    text = " ".join(str(text).split())
+    return text if len(text) <= max_length else text[: max_length - 3] + "..."
+
+
+def _describe_run_error(entry: Any, nodes: Dict[str, Any]) -> str:
+    """One readable "node — error" fragment for a run-level error entry."""
+    if isinstance(entry, dict) and "node" in entry:
+        node = nodes.get(entry.get("node")) or {}
+        source = node.get("label") or node.get("type") or "unknown node"
+        message = _shorten(entry.get("error") or "", 120)
+    elif isinstance(entry, dict) and "message" in entry:
+        # The engine's run-level errors are {"message", "type", "timestamp"} dicts;
+        # only the message is worth showing, with node ids swapped for labels.
+        source = "workflow"
+        text = str(entry.get("message") or "")
+        for node_id, node in nodes.items():
+            if node_id in text and node.get("label"):
+                text = text.replace(node_id, node["label"])
+        message = _shorten(text, 120)
+    else:
+        source = "workflow"
+        message = _shorten(entry, 120)
+    return f"'{source}' — {message}" if message else f"'{source}'"
+
+
+def _summarize_run_errors(errors: List[Any], nodes: Dict[str, Any], max_entries: int = 3) -> str:
+    described = [_describe_run_error(entry, nodes) for entry in errors[:max_entries]]
+    suffix = f"; and {len(errors) - max_entries} more" if len(errors) > max_entries else ""
+    return f"{len(errors)} error(s) during run: " + "; ".join(described) + suffix + "."
+
+
+def _json_diff_summary(
+    actual: Dict[str, Any], expected: Dict[str, Any], max_entries: int = 4
+) -> str:
+    """Readable top-level field diff between actual and expected JSON objects."""
+    differences: List[str] = []
+    for key in expected:
+        if key not in actual:
+            differences.append(f"missing field '{key}'")
+        elif actual[key] != expected[key]:
+            differences.append(
+                f"'{key}': expected {_shorten(expected[key], 40)}, got {_shorten(actual[key], 40)}"
+            )
+    for key in actual:
+        if key not in expected:
+            differences.append(f"unexpected field '{key}'")
+    shown = differences[:max_entries]
+    if len(differences) > max_entries:
+        shown.append(f"and {len(differences) - max_entries} more difference(s)")
+    return "; ".join(shown)
+
+
+def _parse_route_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Route rules from config; a legacy single-rule config becomes a one-item list."""
+    raw_rules = config.get("rules")
+    if isinstance(raw_rules, list):
+        rules = []
+        for raw in raw_rules:
+            if not isinstance(raw, dict):
+                continue
+            expected = _normalize_text(raw.get("expected"))
+            if not expected:
+                continue
+            rules.append({"router": raw.get("router") or raw.get("node"), "expected": expected})
+        return rules
+    expected = _normalize_text(config.get("expected"))
+    if not expected:
+        return []
+    return [{"router": config.get("router") or config.get("node"), "expected": expected}]
+
+
+def _parse_action_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Action rules from config; a legacy single-rule config becomes a one-item list."""
+
+    def build(raw: Dict[str, Any]) -> Dict[str, Any] | None:
+        selector = raw.get("node")
+        node_type = raw.get("node_type")
+        if not selector and not node_type:
+            return None
+        return {
+            "node": selector,
+            "node_type": node_type,
+            "should_fire": bool(raw.get("should_fire", True)),
+        }
+
+    raw_rules = config.get("rules")
+    if isinstance(raw_rules, list):
+        built = [build(raw) for raw in raw_rules if isinstance(raw, dict)]
+        return [rule for rule in built if rule]
+    rule = build(config)
+    return [rule] if rule else []
+
+
+def _parse_judge_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Judge rules from config; a legacy single-rubric config becomes a one-item list."""
+
+    def build(raw: Dict[str, Any]) -> Dict[str, Any] | None:
+        rubric = str(raw.get("rubric") or raw.get("instructions") or "").strip()
+        if not rubric:
+            return None
+        try:
+            min_score = float(raw.get("min_score", 0.5))
+        except (TypeError, ValueError):
+            min_score = 0.5
+        return {
+            "rubric": rubric,
+            "min_score": min_score,
+            "label": str(raw.get("label") or "").strip(),
+            "source_type": raw.get("source_type"),
+            "source_field": raw.get("source_field"),
+        }
+
+    raw_rules = config.get("rules")
+    if isinstance(raw_rules, list):
+        built = [build(raw) for raw in raw_rules if isinstance(raw, dict)]
+        return [rule for rule in built if rule]
+    rule = build(config)
+    return [rule] if rule else []
+
+
+def _grade_route_rule(
+    rule: Dict[str, Any],
+    routers: List[Dict[str, Any]],
+    node_labels: Dict[str, str],
+    rule_number: int,
+) -> Dict[str, Any]:
+    """Grade one route rule against the routers seen in the trace."""
+    selector = rule.get("router")
+    expected = rule["expected"]
+    matched = [r for r in routers if _node_matches_selector(r, selector)] if selector else routers
+    routes = [
+        _normalize_text((r.get("output") or {}).get("route"))
+        for r in matched
+        if isinstance(r.get("output"), dict)
+    ]
+    passed = any(_names_equal(route, expected) for route in routes)
+    if selector:
+        trace_label = matched[0].get("label") if matched else None
+        router_name = trace_label or _display_name(selector, node_labels)
+    else:
+        router_name = None
+    routes_taken = [route for route in routes if route]
+    # The stored observed value stays plain (legacy shape); quotes are comment-only.
+    observed = ", ".join(routes_taken) or "none"
+    quoted_routes = ", ".join(f"'{route}'" for route in routes_taken) or "none"
+
+    if passed:
+        comment = (
+            f"Router '{router_name}' took route '{expected}'."
+            if router_name
+            else f"Route '{expected}' was taken."
+        )
+    elif selector and not matched:
+        comment = f"Router '{router_name}' did not run."
+    elif router_name:
+        comment = f"Expected route '{expected}' on router '{router_name}', took {quoted_routes}."
+    else:
+        comment = f"Expected route '{expected}', took {quoted_routes}."
+
+    return {
+        "rule_number": rule_number,
+        "router": {"id": selector, "label": router_name},
+        "expected": expected,
+        "observed": observed,
+        "passed": passed,
+        "comment": comment,
+    }
+
+
+def _grade_action_rule(
+    rule: Dict[str, Any],
+    nodes: Dict[str, Any],
+    node_labels: Dict[str, str],
+    rule_number: int,
+) -> Dict[str, Any]:
+    """Grade one action rule against the executed nodes in the trace."""
+    selector = rule.get("node")
+    node_type = rule.get("node_type")
+    should_fire = rule["should_fire"]
+
+    def is_target(node: Dict[str, Any]) -> bool:
+        if selector and not _node_matches_selector(node, selector):
+            return False
+        if node_type and node.get("type") != node_type:
+            return False
+        return True
+
+    candidates = [node for node in nodes.values() if is_target(node)]
+    fired_node = next(
+        (node for node in candidates if node.get("status") == "success" and not node.get("error")),
+        None,
+    )
+    fired = fired_node is not None
+    errored = any(node.get("error") for node in candidates)
+    passed = fired if should_fire else not fired
+
+    # Name the node that determined the outcome: the one that fired when the rule
+    # hinges on firing, else the first match (all share the not-fired status).
+    named_node = fired_node or (candidates[0] if candidates else None)
+    trace_label = named_node.get("label") if named_node else None
+    target_name = trace_label or _display_name(selector or node_type, node_labels)
+
+    show_comment_on_pass = False
+    if passed:
+        if not candidates:
+            comment = f"'{target_name}' did not run in this evaluation."
+            show_comment_on_pass = True
+        elif fired:
+            comment = f"'{target_name}' completed."
+        else:
+            comment = f"'{target_name}' did not complete."
+    elif should_fire:
+        comment = f"Expected '{target_name}' to fire but it did not."
+    else:
+        comment = f"Expected '{target_name}' not to fire but it did."
+
+    if not candidates:
+        observed = "did not run"
+    elif fired:
+        observed = "completed"
+    elif errored:
+        observed = "ran with an error"
+    else:
+        observed = "did not complete"
+
+    return {
+        "rule_number": rule_number,
+        "node": {"id": selector or node_type, "label": target_name},
+        "expected": "must complete" if should_fire else "must not complete",
+        "observed": observed,
+        "passed": passed,
+        "comment": comment,
+        "show_comment_on_pass": show_comment_on_pass,
+    }
+
+
+def _rules_result(key: str, details: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Roll one or more graded rule details into a single metric result.
+
+    A single rule keeps the legacy shape (bool score, its own comment) so stored
+    configs render exactly as before; multiple rules score the passed fraction.
+    """
+    total = len(details)
+    passed_count = sum(1 for detail in details if detail["passed"])
+    all_passed = passed_count == total
+
+    if total == 1:
+        single = details[0]
+        hide_comment = single["passed"] and not single.get("show_comment_on_pass")
+        return {
+            "key": key,
+            "score": single["passed"],
+            "passed": single["passed"],
+            "expected": single["expected"],
+            "actual": single["observed"],
+            "comment": None if hide_comment else single["comment"],
+            "details": details,
+        }
+
+    failing = [detail["comment"] for detail in details if not detail["passed"]]
+    comment = f"{passed_count} of {total} rule(s) passed."
+    if failing:
+        comment += " " + " ".join(failing[:2])
+        if len(failing) > 2:
+            comment += f" (+{len(failing) - 2} more)"
+    return {
+        "key": key,
+        "score": passed_count / total,
+        "passed": all_passed,
+        "expected": f"{total} rules",
+        "actual": f"{passed_count} of {total} passed",
+        "comment": comment,
+        "details": details,
+    }
+
+
 def _is_empty_retrieval_result(result: Any) -> bool:
     """True when a retrieval result carries no usable content (empty or a no-result sentinel)."""
     return not _tool_result_satisfies({"result": result}, require_not_empty=True, required_text="")
@@ -565,6 +904,16 @@ def build_tool_usage_resolvers(workflow: Any):
     return resolvers_from_agents(resolve_agents(workflow))
 
 
+@dataclasses.dataclass
+class EvaluationUsageRef:
+    """In-memory sink for one case's judge calls"""
+
+    execution_id: str
+    workflow_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None
+    entries: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
+
+
 class SimpleEvaluatorRegistry:
     """
     Lightweight evaluator registry inspired by OpenEvals.
@@ -611,6 +960,7 @@ class SimpleEvaluatorRegistry:
         execution_trace: Any = None,
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
+        usage_ref: "EvaluationUsageRef | None" = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -620,11 +970,13 @@ class SimpleEvaluatorRegistry:
             "trace": _build_grading_context(execution_trace),
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
+            "_usage_ref": usage_ref,
         }
-        for key in techniques:
+        for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
             if not fn:
                 continue
+            payload["_technique_index"] = technique_index
             config = (technique_configs or {}).get(key, {})
             if _is_waiting_for_human(outputs) and _requires_final_output(key, config):
                 results[key] = {
@@ -751,7 +1103,11 @@ class SimpleEvaluatorRegistry:
             "key": "json_match",
             "score": passed,
             "passed": passed,
-            "comment": None if passed else "JSON outputs do not match.",
+            "comment": (
+                None
+                if passed
+                else f"JSON outputs do not match: {_json_diff_summary(outputs, reference_outputs)}."
+            ),
         }
 
     async def _field_equals(
@@ -801,7 +1157,7 @@ class SimpleEvaluatorRegistry:
             "key": "no_errors",
             "score": passed,
             "passed": passed,
-            "comment": None if passed else f"{len(errors)} error(s) during run.",
+            "comment": None if passed else _summarize_run_errors(errors, trace.get("nodes") or {}),
         }
 
     # ---- agent process techniques ----------------------------------------
@@ -824,12 +1180,19 @@ class SimpleEvaluatorRegistry:
             parse_tool_usage_config,
         )
 
+        from app.services.tool_catalog import resolve_agents
+
         trace = payload.get("trace") or {}
         events = trace.get("tool_events") or []
 
+        workflow = payload.get("workflow")
         resolve_tool_id, resolve_agent_id, agent_ids, all_tool_ids = build_tool_usage_resolvers(
-            payload.get("workflow")
+            workflow
         )
+        catalog = resolve_agents(workflow) if workflow is not None else []
+        labels = {agent["id"]: agent["label"] for agent in catalog}
+        labels.update({tool["id"]: tool["label"] for agent in catalog for tool in agent["tools"]})
+        label_of = _tool_usage_labeler(labels, events)
         executed_nodes = set((trace.get("nodes") or {}).keys())
         # Only real agents count as "executed"; other node types can't use tools.
         executed_agent_ids = executed_nodes & agent_ids if agent_ids is not None else executed_nodes
@@ -848,7 +1211,7 @@ class SimpleEvaluatorRegistry:
             return {"key": "tool_used", "score": 0.0, "passed": False,
                     "comment": "No tool usage rules configured."}
 
-        summary = evaluate_rules(parsed.rules, events, executed_agent_ids)
+        summary = evaluate_rules(parsed.rules, events, executed_agent_ids, label_of)
         coverage = summary["coverage"]
         score = summary["score"]
         results = summary["results"]
@@ -877,9 +1240,11 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pass when a router node chose the expected branch."""
-        expected = _normalize_text(config.get("expected"))
-        if not expected:
+        """Pass when every configured router rule saw its expected branch taken."""
+        from app.services.tool_catalog import resolve_node_labels
+
+        rules = _parse_route_rules(config)
+        if not rules:
             return {
                 "key": "route_taken",
                 "score": False,
@@ -888,26 +1253,14 @@ class SimpleEvaluatorRegistry:
             }
 
         routers = (payload.get("trace") or {}).get("nodes_by_type", {}).get("routerNode", [])
-        selector = config.get("router") or config.get("node")
-        if selector:
-            routers = [r for r in routers if _node_matches_selector(r, selector)]
+        workflow = payload.get("workflow")
+        node_labels = resolve_node_labels(workflow) if workflow is not None else {}
 
-        routes = [
-            _normalize_text((r.get("output") or {}).get("route"))
-            for r in routers
-            if isinstance(r.get("output"), dict)
+        details = [
+            _grade_route_rule(rule, routers, node_labels, index)
+            for index, rule in enumerate(rules, start=1)
         ]
-        passed = any(_names_equal(route, expected) for route in routes)
-        observed = ", ".join(route for route in routes if route) or "none"
-
-        return {
-            "key": "route_taken",
-            "score": passed,
-            "passed": passed,
-            "expected": expected,
-            "actual": observed,
-            "comment": None if passed else f"Expected route {expected!r}, took {routes or 'none'}.",
-        }
+        return _rules_result("route_taken", details)
 
     async def _action_taken(
         self,
@@ -918,10 +1271,11 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pass when a configured side-effect node (by id/label/type) ran successfully."""
-        selector = config.get("node")
-        node_type = config.get("node_type")
-        if not selector and not node_type:
+        """Pass when every configured side-effect node rule is satisfied."""
+        from app.services.tool_catalog import resolve_node_labels
+
+        rules = _parse_action_rules(config)
+        if not rules:
             return {
                 "key": "action_taken",
                 "score": False,
@@ -930,44 +1284,14 @@ class SimpleEvaluatorRegistry:
             }
 
         nodes = (payload.get("trace") or {}).get("nodes") or {}
-        should_fire = bool(config.get("should_fire", True))
-        target = selector or node_type
+        workflow = payload.get("workflow")
+        node_labels = resolve_node_labels(workflow) if workflow is not None else {}
 
-        def is_target(node: Dict[str, Any]) -> bool:
-            if selector and not _node_matches_selector(node, selector):
-                return False
-            if node_type and node.get("type") != node_type:
-                return False
-            return True
-
-        candidates = [node for node in nodes.values() if is_target(node)]
-        fired = any(node.get("status") == "success" and not node.get("error") for node in candidates)
-        passed = fired if should_fire else not fired
-        errored = any(node.get("error") for node in candidates)
-
-        if passed:
-            comment = f"{target!r} did not run in this evaluation." if not candidates else None
-        elif should_fire:
-            comment = f"Expected {target!r} to fire but it did not."
-        else:
-            comment = f"Expected {target!r} not to fire but it did."
-
-        if not candidates:
-            observed = "did not run"
-        elif fired:
-            observed = "completed"
-        elif errored:
-            observed = "ran with an error"
-        else:
-            observed = "did not complete"
-        return {
-            "key": "action_taken",
-            "score": passed,
-            "passed": passed,
-            "expected": "must complete" if should_fire else "must not complete",
-            "actual": observed,
-            "comment": comment,
-        }
+        details = [
+            _grade_action_rule(rule, nodes, node_labels, index)
+            for index, rule in enumerate(rules, start=1)
+        ]
+        return _rules_result("action_taken", details)
 
     async def _guardrail_nli(
         self,
@@ -1168,7 +1492,6 @@ class SimpleEvaluatorRegistry:
             config.get("use_llm_judge", False)
             or config.get("provenance_mode") == "llm"
         )
-        use_embeddings = config.get("provenance_mode") == "embeddings"
 
         if use_llm_judge:
             score, reason = await self._run_provenance_judge(
@@ -1176,16 +1499,16 @@ class SimpleEvaluatorRegistry:
                 context=context_text,
                 provider_id=config.get("llm_provider_id"),
                 system_prompt_suffix=config.get("llm_judge_system_prompt_suffix") or "",
+                usage_ref=payload.get("_usage_ref"),
+                call_index=payload.get("_technique_index"),
             )
             if score is None:
                 raise RuntimeError("Provenance LLM judge did not return a score.")
-        elif use_embeddings:
-            # Real embedding similarity; never silently fall back to word overlap.
+        else:
+            # Embeddings are the default; mode-less legacy configs grade the same
+            # way rather than with the removed word-overlap heuristic.
             score = await self._embedding_provenance_score(answer, context_text, config)
             reason = "Embedding similarity score"
-        else:
-            score = self._naive_provenance_score(answer, context_text)
-            reason = "Word-overlap score"
 
         min_score = float(config.get("min_score", 0.5))
         if not 0.0 <= min_score <= 1.0:
@@ -1261,19 +1584,6 @@ class SimpleEvaluatorRegistry:
         self._embedder_cache[cache_key] = embedder
         return embedder
 
-    def _naive_provenance_score(self, answer: str, context: str) -> float:
-        if not answer or not context:
-            return 0.0
-
-        answer_tokens = {token.lower() for token in answer.split() if len(token) > 3}
-        context_tokens = {token.lower() for token in context.split() if len(token) > 3}
-
-        if not answer_tokens:
-            return 0.0
-
-        overlap = answer_tokens & context_tokens
-        return len(overlap) / float(len(answer_tokens))
-
     async def _run_provenance_judge(
         self,
         *,
@@ -1281,6 +1591,8 @@ class SimpleEvaluatorRegistry:
         context: str,
         provider_id: str | None = None,
         system_prompt_suffix: str = "",
+        usage_ref: "EvaluationUsageRef | None" = None,
+        call_index: int | None = None,
     ) -> tuple[float | None, str | None]:
         """Grounding-locked judge used by provenance_eval; distinct from the rubric-based _llm_judge."""
         base_instructions = (
@@ -1305,7 +1617,12 @@ class SimpleEvaluatorRegistry:
         system_prompt = base_instructions + extra_instructions + json_format_requirement
         user_content = f"CONTEXT:\n{context}\n\nANSWER:\n{answer}\n"
         return await self._invoke_json_judge(
-            system_prompt=system_prompt, user_content=user_content, provider_id=provider_id
+            system_prompt=system_prompt,
+            user_content=user_content,
+            provider_id=provider_id,
+            usage_ref=usage_ref,
+            purpose="provenance_judge",
+            call_index=call_index,
         )
 
     async def _invoke_json_judge(
@@ -1314,6 +1631,9 @@ class SimpleEvaluatorRegistry:
         system_prompt: str,
         user_content: str,
         provider_id: str | None = None,
+        usage_ref: "EvaluationUsageRef | None" = None,
+        purpose: str | None = None,
+        call_index: int | None = None,
     ) -> tuple[float | None, str | None]:
         """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
         llm_provider = injector.get(LLMProvider)
@@ -1324,6 +1644,19 @@ class SimpleEvaluatorRegistry:
                 HumanMessage(content=user_content),
             ]
         )
+        if usage_ref is not None and call_index is not None:
+            try:
+                usage = extract_usage_from_aimessage(response)
+                usage_ref.entries.append(
+                    {
+                        "call_index": call_index,
+                        "provider_id": (usage or {}).get("provider_id") or provider_id,
+                        "purpose": purpose,
+                        "usage": usage,
+                    }
+                )
+            except Exception:
+                logger.warning("Collecting judge usage failed", exc_info=True)
         raw_content = getattr(response, "content", "")
         if isinstance(raw_content, list):
             raw_content = " ".join(str(part) for part in raw_content)
@@ -1338,20 +1671,15 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Grade the answer against a user-supplied rubric (any criteria)."""
-        rubric = (config.get("rubric") or config.get("instructions") or "").strip()
-        if not rubric:
+        """Grade the answer against one or more user-supplied rubrics."""
+        rules = _parse_judge_rules(config)
+        if not rules:
             return {
                 "key": "llm_judge",
                 "score": False,
                 "passed": False,
                 "comment": "No rubric configured for llm_judge.",
             }
-
-        try:
-            min_score = float(config.get("min_score", 0.5))
-        except (TypeError, ValueError):
-            min_score = 0.5
 
         answer = _resolve_selector_value(config.get("answer_field"), payload=payload, default=outputs)
         # Auto-provide the user's turn as the QUESTION so the wizard only needs a
@@ -1362,12 +1690,47 @@ class SimpleEvaluatorRegistry:
         )
         answer_text = _normalize_text(answer)
         question_text = _normalize_text(question)
+        provider_id = config.get("llm_provider_id")
+
+        details = list(
+            await asyncio.gather(
+                *(
+                    self._grade_judge_rule(
+                        rule,
+                        rule_number=index,
+                        question_text=question_text,
+                        answer_text=answer_text,
+                        payload=payload,
+                        provider_id=provider_id,
+                    )
+                    for index, rule in enumerate(rules, start=1)
+                )
+            )
+        )
+
+        if len(details) == 1:
+            return self._single_judge_result(details[0])
+        return self._multi_judge_result(details)
+
+    async def _grade_judge_rule(
+        self,
+        rule: Dict[str, Any],
+        *,
+        rule_number: int,
+        question_text: str,
+        answer_text: str,
+        payload: Dict[str, Any],
+        provider_id: str | None,
+    ) -> Dict[str, Any]:
+        """Run one rubric through the judge and return its per-rule detail."""
+        label = rule["label"] or f"Rule {rule_number}"
+        min_score = rule["min_score"]
 
         # New configs use a stable source preset. Saved legacy configs keep their
         # dotted source_field; an unresolved selected source skips instead of
         # silently degrading into a rubric-only judgment.
-        source_type = config.get("source_type")
-        source_field = config.get("source_field")
+        source_type = rule.get("source_type")
+        source_field = rule.get("source_field")
         source_required = False
         if isinstance(source_type, str):
             source_required = source_type != "none"
@@ -1380,15 +1743,18 @@ class SimpleEvaluatorRegistry:
 
         if source_required and not source_text:
             return {
-                "key": "llm_judge",
+                "rule_number": rule_number,
+                "label": label,
                 "score": None,
+                "threshold": min_score,
                 "passed": False,
                 "not_evaluated": True,
-                "comment": "Not evaluated: the selected grounding source was unavailable.",
+                "reason": None,
+                "comment": f"{label}: not evaluated — the grounding source was unavailable.",
             }
 
         system_prompt = (
-            f"{rubric}\n\n"
+            f"{rule['rubric']}\n\n"
             "Return ONLY a compact JSON object in this exact format:\n"
             '{"score": 0.0-1.0, "reason": "short explanation"}\n'
             "Do not include any extra text or explanation."
@@ -1403,26 +1769,107 @@ class SimpleEvaluatorRegistry:
         score, reason = await self._invoke_json_judge(
             system_prompt=system_prompt,
             user_content="\n\n".join(user_parts),
-            provider_id=config.get("llm_provider_id"),
+            provider_id=provider_id,
+            usage_ref=payload.get("_usage_ref"),
+            purpose="llm_judge",
+            call_index=_judge_rule_call_index(payload, rule_number),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.
         if score is None:
             return {
-                "key": "llm_judge",
+                "rule_number": rule_number,
+                "label": label,
                 "score": None,
+                "threshold": min_score,
                 "passed": False,
                 "error": True,
-                "comment": reason or "LLM judge did not return a usable score.",
+                "reason": reason,
+                "comment": f"{label}: {reason or 'LLM judge did not return a usable score.'}",
             }
 
         passed = score >= min_score
         return {
-            "key": "llm_judge",
+            "rule_number": rule_number,
+            "label": label,
             "score": score,
-            "passed": passed,
             "threshold": min_score,
-            "comment": f"{reason or 'no reason'}; threshold={min_score:.2f}",
+            "passed": passed,
+            "reason": reason,
+            "comment": f"{label}: {reason or 'no reason'}; score={score:.2f}; threshold={min_score:.2f}",
+        }
+
+    @staticmethod
+    def _single_judge_result(detail: Dict[str, Any]) -> Dict[str, Any]:
+        """Legacy single-rubric result shape, unchanged for stored configs."""
+        if detail.get("not_evaluated"):
+            return {
+                "key": "llm_judge",
+                "score": None,
+                "passed": False,
+                "not_evaluated": True,
+                "comment": "Not evaluated: the selected grounding source was unavailable.",
+            }
+        if detail.get("error"):
+            return {
+                "key": "llm_judge",
+                "score": None,
+                "passed": False,
+                "error": True,
+                "comment": detail.get("reason") or "LLM judge did not return a usable score.",
+            }
+        return {
+            "key": "llm_judge",
+            "score": detail["score"],
+            "passed": detail["passed"],
+            "threshold": detail["threshold"],
+            "comment": f"{detail.get('reason') or 'no reason'}; threshold={detail['threshold']:.2f}",
+            "details": [detail],
+        }
+
+    @staticmethod
+    def _multi_judge_result(details: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Roll several judge rules into one metric, mirroring Tool Usage semantics:
+        errors surface as an evaluator error, skipped rules are excluded from the
+        score, and the metric passes only when every graded rule passes."""
+        errored = [detail for detail in details if detail.get("error")]
+        if errored:
+            return {
+                "key": "llm_judge",
+                "score": None,
+                "passed": False,
+                "error": True,
+                "comment": f"{len(errored)} judge rule(s) failed to run. {errored[0]['comment']}",
+                "details": details,
+            }
+
+        graded = [d for d in details if not d.get("not_evaluated")]
+        skipped = len(details) - len(graded)
+        if not graded:
+            return {
+                "key": "llm_judge",
+                "score": None,
+                "passed": False,
+                "not_evaluated": True,
+                "comment": "Not evaluated: no judge rule had an available grounding source.",
+                "details": details,
+            }
+
+        passed_count = sum(1 for detail in graded if detail["passed"])
+        comment = f"{passed_count} of {len(graded)} judge rule(s) passed."
+        if skipped:
+            comment += f" {skipped} not evaluated."
+        failing = [detail["comment"] for detail in graded if not detail["passed"]]
+        if failing:
+            comment += " " + " ".join(failing[:2])
+            if len(failing) > 2:
+                comment += f" (+{len(failing) - 2} more)"
+        return {
+            "key": "llm_judge",
+            "score": passed_count / len(graded),
+            "passed": passed_count == len(graded),
+            "comment": comment,
+            "details": details,
         }
 
 
@@ -1645,6 +2092,67 @@ class TestSuiteService:
             ),
         )
 
+    async def _default_judge_provider_id(self) -> str | None:
+        """Judge configs may omit a provider, and ``get_model(None)`` serves the first row"""
+        try:
+            from app.services.llm_providers import LlmProviderService
+
+            providers = await injector.get(LlmProviderService).get_all()
+            return str(providers[0].id) if providers else None
+        except Exception:
+            logger.warning("Could not resolve the default judge LLM provider", exc_info=True)
+            return None
+
+    async def _persist_judge_usage(
+        self, usage_ref: EvaluationUsageRef, cache: Dict[str, Tuple[str, str]]
+    ) -> None:
+        """Resolve each judge call's provider identity, then record the case's batch."""
+        from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
+        from app.services.llm_usage_recorder import LlmUsageRecorder
+
+        default_id = None
+        if any(not collected.get("provider_id") for collected in usage_ref.entries):
+            default_id = await self._default_judge_provider_id()
+
+        entries: List[Dict[str, Any]] = []
+        for collected in usage_ref.entries:
+            effective_id = collected.get("provider_id") or default_id
+            provider, model = await resolve_provider_model(effective_id, cache)
+            entries.append(
+                {
+                    **collected,
+                    "provider": provider,
+                    "model": model,
+                    "llm_provider_id": coerce_uuid(effective_id),
+                }
+            )
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            usage_ref.execution_id,
+            entries,
+            workflow_id=usage_ref.workflow_id,
+            agent_id=usage_ref.agent_id,
+        )
+
+    async def _flush_judge_usage(
+        self,
+        usage_ref: Optional[EvaluationUsageRef],
+        cache: Dict[str, Tuple[str, str]],
+        metering_state: Dict[str, Any],
+    ) -> None:
+        if usage_ref is None or not usage_ref.entries or metering_state.get("timed_out"):
+            return
+        try:
+            await asyncio.wait_for(
+                self._persist_judge_usage(usage_ref, cache),
+                timeout=EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            metering_state["timed_out"] = True
+            logger.warning("Evaluation usage metering timed out; disabled for the rest of this run")
+        except Exception:
+            logger.warning("Recording evaluation LLM usage failed", exc_info=True)
+
     async def _execute_run(
         self,
         suite: TestSuiteModel,
@@ -1704,6 +2212,8 @@ class TestSuiteService:
         status_counts: Dict[str, int] = {}
         case_events: Dict[str, List[Dict[str, Any]]] = {}
         case_executed_agents: Dict[str, set] = {}
+        provider_name_cache: Dict[str, Tuple[str, str]] = {}
+        metering_state: Dict[str, Any] = {"timed_out": False}
 
         async def record_case_error(
             case: TestCaseInDB, error: str, status: str
@@ -1794,17 +2304,36 @@ class TestSuiteService:
                     node_status = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
                     case_events[str(case.id)] = execution_trace.get("tool_events") or []
                     case_executed_agents[str(case.id)] = set(node_status.keys())
-                metrics = await asyncio.wait_for(
-                    self.evaluators.evaluate(
-                        per_case_keys,
-                        inputs=merged_input,
-                        outputs=output,
-                        reference_outputs=case.expected_output,
-                        execution_trace=execution_trace,
-                        technique_configs=technique_configs,
-                    ),
-                    timeout=EVALUATOR_TIMEOUT_SECONDS,
+                # The prefix keeps judge rows off the execution's own ledger key; without
+                # an execution id there is nothing to key on, so metering stays off
+                state_execution_id = getattr(state, "execution_id", None)
+                usage_ref = (
+                    EvaluationUsageRef(
+                        execution_id=f"eval:{state_execution_id}",
+                        workflow_id=coerce_uuid(engine.workflow_id),
+                        agent_id=coerce_uuid(workflow.agent_id),
+                    )
+                    if state_execution_id
+                    else None
                 )
+                try:
+                    metrics = await asyncio.wait_for(
+                        self.evaluators.evaluate(
+                            per_case_keys,
+                            inputs=merged_input,
+                            outputs=output,
+                            reference_outputs=case.expected_output,
+                            execution_trace=execution_trace,
+                            technique_configs=technique_configs,
+                            # Evaluators resolve node/tool ids to display labels from
+                            # the graph; without it comments degrade to "unknown node".
+                            workflow=workflow,
+                            usage_ref=usage_ref,
+                        ),
+                        timeout=EVALUATOR_TIMEOUT_SECONDS,
+                    )
+                finally:
+                    await self._flush_judge_usage(usage_ref, provider_name_cache, metering_state)
                 result = TestResultModel(
                     run_id=run.id,
                     case_id=case.id,
@@ -2032,20 +2561,22 @@ class TestSuiteService:
         ]
         conversation_groups = [[str(case.id) for case in group] for group in conversations]
 
-        planned = plan_tool_rule_results(
-            parsed.rules, turns, conversation_groups, case_events, case_executed_agents
-        )
-
-        rule_by_id = {rule.id: rule for rule in parsed.rules}
-        # Turn index per case so a per-turn result can name the turn it graded.
-        turn_index_by_case = {turn["id"]: turn["turn_index"] for turn in turns}
-
         # Human-readable snapshot captured at run time, so results stay legible even
         # if a tool or agent is later renamed. Labels come from the resolved catalogue.
         agent_labels = {agent["id"]: agent["label"] for agent in agents}
         tool_labels = {
             tool["id"]: tool["label"] for agent in agents for tool in agent["tools"]
         }
+        all_events = [event for events in case_events.values() for event in events]
+        label_of = _tool_usage_labeler({**agent_labels, **tool_labels}, all_events)
+
+        planned = plan_tool_rule_results(
+            parsed.rules, turns, conversation_groups, case_events, case_executed_agents, label_of
+        )
+
+        rule_by_id = {rule.id: rule for rule in parsed.rules}
+        # Turn index per case so a per-turn result can name the turn it graded.
+        turn_index_by_case = {turn["id"]: turn["turn_index"] for turn in turns}
         rule_snapshot_by_id = {
             rule.id: self._rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule)
             for index, rule in enumerate(parsed.rules)
@@ -2106,7 +2637,10 @@ class TestSuiteService:
         for key in ("observed_tools", "missing_tools", "failed_tools", "forbidden_tools"):
             ids.update(result.get(key) or [])
         ids.update((result.get("call_counts") or {}).keys())
-        return {tool_id: {"label": tool_labels.get(tool_id, tool_id)} for tool_id in ids}
+        return {
+            tool_id: {"label": _display_name(tool_id, tool_labels, fallback="unknown tool")}
+            for tool_id in ids
+        }
 
     @staticmethod
     def _conversation_index(conversations: List[List[TestCaseInDB]]):
@@ -2146,19 +2680,32 @@ class TestSuiteService:
             return 0.0
         return None
 
-    async def get_runs_by_ids(self, ids: List[str]) -> List[TestRunInDB]:
+    async def _runs_with_workflow_labels(self, rows: List[Any]) -> List[TestRun]:
+        """Attach the executed workflow's name/version to each run for display."""
+        runs = [TestRun.model_validate(r, from_attributes=True) for r in rows]
+        ids = list({run.workflow_id for run in runs if run.workflow_id})
+        workflows = await self.workflow_service.get_minimal_by_ids(ids)
+        by_id = {workflow.id: workflow for workflow in workflows}
+        for run in runs:
+            workflow = by_id.get(run.workflow_id)
+            if workflow:
+                run.workflow_name = workflow.name
+                run.workflow_version = workflow.version
+        return runs
+
+    async def get_runs_by_ids(self, ids: List[str]) -> List[TestRun]:
         rows = await self.run_repo.get_by_ids(ids)
-        return [TestRunInDB.model_validate(r, from_attributes=True) for r in rows]
+        return await self._runs_with_workflow_labels(rows)
 
     async def get_run(self, run_id: UUID) -> TestRun:
         run = await self.run_repo.get_by_id(run_id)
         if not run:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        return TestRun.model_validate(run, from_attributes=True)
+        return (await self._runs_with_workflow_labels([run]))[0]
 
-    async def list_runs_for_suite(self, suite_id: UUID) -> List[TestRunInDB]:
+    async def list_runs_for_suite(self, suite_id: UUID) -> List[TestRun]:
         rows = await self.run_repo.get_all_for_suite(suite_id)
-        return [TestRunInDB.model_validate(r, from_attributes=True) for r in rows]
+        return await self._runs_with_workflow_labels(rows)
 
     async def list_results_for_run(self, run_id: UUID) -> List[TestResultInDB]:
         rows = await self.result_repo.get_all_for_run(run_id)
@@ -2280,6 +2827,7 @@ class TestSuiteService:
         dispatch: Callable[
             [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
         ],
+        target_workflow_id: Optional[UUID] = None,
     ) -> List[StartedEvaluationRun]:
         """Queue and dispatch a run for every evaluation targeting this workflow.
 
@@ -2287,13 +2835,29 @@ class TestSuiteService:
         through its dataset's default workflow. Each evaluation is created and
         dispatched independently: one failure is reported as ``failed_to_start``
         and does not prevent the rest from running.
+
+        ``target_workflow_id`` runs every evaluation against that version
+        instead of its own; it must be a version of ``workflow_id``.
         """
+        if target_workflow_id:
+            await self._ensure_version_of_same_workflow(
+                workflow_id, target_workflow_id
+            )
         targeted = await self._evaluations_for_workflow(workflow_id)
+
+        # Every evaluation in this scope shares ``workflow_id`` as its effective
+        # workflow, so the active version is the same for all of them: resolve it
+        # once instead of per evaluation.
+        batch_target = target_workflow_id
+        if not batch_target and targeted:
+            batch_target = await self.workflow_service.get_active_version_id(
+                workflow_id
+            )
 
         results: List[StartedEvaluationRun] = []
         for ev in targeted:
             try:
-                run = await self._start_evaluation_run(ev, dispatch)
+                run = await self._start_evaluation_run(ev, dispatch, batch_target)
                 results.append(
                     StartedEvaluationRun(
                         evaluation_id=ev.id,
@@ -2314,6 +2878,58 @@ class TestSuiteService:
                     )
                 )
         return results
+
+    async def start_evaluation_run(
+        self,
+        evaluation_id: UUID,
+        dispatch: Callable[
+            [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
+        ],
+        target_workflow_id: Optional[UUID] = None,
+    ) -> TestRunInDB:
+        """Queue and dispatch one evaluation's run, optionally against another
+        version of its workflow."""
+        ev = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not ev:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        if target_workflow_id:
+            base_workflow_id = await self._effective_workflow_id(
+                ev.workflow_id, ev.suite_id
+            )
+            await self._ensure_version_of_same_workflow(
+                base_workflow_id, target_workflow_id
+            )
+        return await self._start_evaluation_run(ev, dispatch, target_workflow_id)
+
+    async def _ensure_version_of_same_workflow(
+        self, base_workflow_id: Any, target_workflow_id: UUID
+    ) -> None:
+        """Reject a target that is not a saved version of the base workflow.
+
+        Versions of one workflow share its agent; comparing agent ids keeps an
+        evaluation from being pointed at an unrelated workflow by accident.
+        """
+        if not base_workflow_id:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_TARGET_NOT_A_VERSION,
+                error_detail=(
+                    "The evaluation has no workflow, so a target version "
+                    "cannot be resolved."
+                ),
+            )
+        if str(base_workflow_id) == str(target_workflow_id):
+            return
+        base = await self.workflow_service.get_by_id(UUID(str(base_workflow_id)))
+        target = await self.workflow_service.get_by_id(target_workflow_id)
+        same_agent = (
+            base.agent_id is not None and base.agent_id == target.agent_id
+        )
+        if not same_agent:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_TARGET_NOT_A_VERSION,
+            )
 
     async def _evaluations_for_workflow(
         self, workflow_id: UUID
@@ -2526,6 +3142,7 @@ class TestSuiteService:
         dispatch: Callable[
             [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
         ],
+        target_workflow_id: Optional[UUID] = None,
     ) -> TestRunInDB:
         """Create, record and dispatch a single evaluation run.
 
@@ -2538,10 +3155,13 @@ class TestSuiteService:
         # would merge every conversation into a single memory thread.
         input_metadata = dict(ev.input_metadata or {})
         input_metadata.pop("thread_id", None)
+        resolved_workflow_id = (
+            target_workflow_id or await self._default_run_workflow_id(ev)
+        )
         data = TestRunCreate(
             techniques=list(ev.techniques or []),
             technique_configs=ev.technique_configs or None,
-            workflow_id=ev.workflow_id,
+            workflow_id=resolved_workflow_id,
             input_metadata=input_metadata or None,
         )
         run = await self.create_run(ev.suite_id, data)
@@ -2552,6 +3172,21 @@ class TestSuiteService:
             await self._mark_run_failed_to_start(run.id)
             raise
         return run
+
+    async def _default_run_workflow_id(self, ev: TestEvaluationModel) -> Any:
+        """The version a run executes when the caller names none.
+
+        The agent's active version, so an evaluation tests what is live rather
+        than the version it happened to be configured against. Falls back to its
+        own pinned workflow when the workflow has no agent or no active version.
+        """
+        pinned = await self._effective_workflow_id(ev.workflow_id, ev.suite_id)
+        if not pinned:
+            return None
+        active = await self.workflow_service.get_active_version_id(
+            UUID(str(pinned))
+        )
+        return active or pinned
 
     async def _mark_run_failed_to_start(self, run_id: UUID) -> None:
         """Flip a still-queued run to ``failed`` so it is not left dangling."""

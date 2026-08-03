@@ -83,6 +83,35 @@ export interface EvaluationToolCatalog {
 export type ToolUsageOperator = "all" | "any" | "none" | "only";
 export type ToolUsageScope = "specific_turn" | "every_turn" | "conversation";
 
+// ---- Route / Action multi-rule builder drafts ----
+
+export interface RouteRuleDraft {
+  router: string;
+  expected: string;
+}
+
+export interface ActionRuleDraft {
+  node: string;
+  nodeType: string;
+  shouldFire: boolean;
+}
+
+export type JudgeRuleSource =
+  | "expected_output"
+  | "kb_retrievals"
+  | "conversation_context"
+  | "tool_events"
+  | "none"
+  | "legacy";
+
+export interface JudgeRuleDraft {
+  label: string;
+  rubric: string;
+  minScore: string;
+  sourceType: JudgeRuleSource;
+  sourceField: string;
+}
+
 // Extra per-tool assertions (result/argument checks). Not edited in the builder yet,
 // but preserved verbatim so editing a rule never drops them.
 export interface ToolUsagePerToolCheck {

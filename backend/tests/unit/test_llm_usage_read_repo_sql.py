@@ -11,6 +11,10 @@ import app.db.models.test_suite
 from app.repositories.dashboard import DashboardRepository, _ledger_window
 from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
+from app.services.llm_usage_read import _DIMENSION_COLUMNS, _EXTRA_BREAKDOWN_CONDITIONS
+
+WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
+WINDOW_END = datetime(2026, 1, 31, tzinfo=timezone.utc)
 
 
 class _Result:
@@ -100,15 +104,146 @@ async def test_summary_scopes_agent_studio_cost_to_the_two_studio_test_sources()
 
 
 @pytest.mark.asyncio
+async def test_breakdown_without_extra_conditions_stays_all_source():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).breakdown(
+        LlmUsageQueryParams(), None, _DIMENSION_COLUMNS["provider"]
+    )
+    assert "source_type" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_llm_dimension_groups_the_provider_model_pair_over_workflow_rows_only():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).breakdown(
+        LlmUsageQueryParams(), None, _DIMENSION_COLUMNS["llm"], _EXTRA_BREAKDOWN_CONDITIONS["llm"]
+    )
+    sql = _sql(db.statements[0])
+    assert "concat_ws" in sql and "coalesce(llm_usage_events.provider_key, 'unknown')" in sql
+    assert "source_type = 'workflow'" in sql
+
+
+@pytest.mark.asyncio
+async def test_evaluation_method_dimension_groups_purpose_over_evaluation_rows_only():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).breakdown(
+        LlmUsageQueryParams(),
+        None,
+        _DIMENSION_COLUMNS["evaluation_method"],
+        _EXTRA_BREAKDOWN_CONDITIONS["evaluation_method"],
+    )
+    sql = _sql(db.statements[0])
+    assert "llm_usage_events.purpose" in sql
+    assert "source_type = 'evaluation'" in sql
+
+
+@pytest.mark.asyncio
+async def test_node_dimension_groups_node_id_over_workflow_rows_only():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).breakdown(
+        LlmUsageQueryParams(), None, _DIMENSION_COLUMNS["node"], _EXTRA_BREAKDOWN_CONDITIONS["node"]
+    )
+    sql = _sql(db.statements[0])
+    assert "GROUP BY llm_usage_events.node_id" in sql
+    assert "source_type = 'workflow'" in sql
+
+
+@pytest.mark.asyncio
+async def test_distinct_agent_workflow_pairs_is_distinct_and_filtered():
+    db = CapturingDb()
+    agent_id = uuid4()
+    params = LlmUsageQueryParams(from_date=date(2026, 1, 1), provider="OpenAI")
+    await LlmUsageReadRepository(db).distinct_agent_workflow_pairs(
+        params, [agent_id], _EXTRA_BREAKDOWN_CONDITIONS["node"]
+    )
+    sql = _sql(db.statements[0])
+    assert "SELECT DISTINCT llm_usage_events.agent_id, llm_usage_events.workflow_id" in sql
+    for clause in (
+        "is_deleted = 0",
+        f"agent_id = '{agent_id}'",
+        "occurred_at >= '2026-01-01 00:00:00+00:00'",
+        "provider_key = 'openai'",
+        "source_type = 'workflow'",
+    ):
+        assert clause in sql
+
+
+@pytest.mark.asyncio
+async def test_extra_conditions_compose_with_scope_date_and_provider_filters():
+    db = CapturingDb()
+    agent_id = uuid4()
+    params = LlmUsageQueryParams(from_date=date(2026, 1, 1), to_date=date(2026, 1, 31), provider="OpenAI")
+    await LlmUsageReadRepository(db).breakdown(
+        params, [agent_id], _DIMENSION_COLUMNS["llm"], _EXTRA_BREAKDOWN_CONDITIONS["llm"]
+    )
+    sql = _sql(db.statements[0])
+    for clause in (
+        "is_deleted = 0",
+        f"agent_id = '{agent_id}'",
+        "occurred_at >= '2026-01-01 00:00:00+00:00'",
+        "occurred_at < '2026-02-01 00:00:00+00:00'",
+        "provider_key = 'openai'",
+        "source_type = 'workflow'",
+    ):
+        assert clause in sql
+
+
+@pytest.mark.asyncio
 async def test_dashboard_ledger_total_is_half_open_and_skips_deleted():
     db = CapturingDb()
     await DashboardRepository(db).get_total_cost_usd(
-        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc)
+        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc), agent_ids=None
     )
     sql = _sql(db.statements[0])
     assert "occurred_at >= '2026-01-01 00:00:00+00:00'" in sql
     assert "occurred_at < '2026-02-01 00:00:00+00:00'" in sql
     assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_without_a_scope_has_no_agent_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=None)
+    assert "agent_id" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_restricts_to_the_visible_agents():
+    db = CapturingDb()
+    scope = [uuid4(), uuid4()]
+    await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=scope)
+    assert "agent_id IN" in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
+    db = CapturingDb()
+    total = await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=[])
+    assert total == 0.0
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_without_a_scope_has_no_agent_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=None)
+    assert "agent_id" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_restricts_to_the_visible_agents():
+    db = CapturingDb()
+    scope = [uuid4(), uuid4()]
+    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=scope)
+    assert "agent_id IN" in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_short_circuits_on_an_empty_scope():
+    db = CapturingDb()
+    avg = await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=[])
+    assert avg == 0
+    assert db.statements == []
 
 
 @pytest.mark.asyncio

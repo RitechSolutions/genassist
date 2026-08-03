@@ -26,9 +26,12 @@ import type { TestSuite } from "@/interfaces/testSuite.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import type {
+  ActionRuleDraft,
   EvaluationActionNodeInfo,
   EvaluationAgentInfo,
   EvaluationRouterInfo,
+  JudgeRuleDraft,
+  RouteRuleDraft,
   ToolUsagePerToolCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
@@ -36,6 +39,9 @@ import { getEvaluationToolCatalog } from "@/services/testEvaluations";
 import { listTestCases } from "@/services/testSuites";
 import type { TestCase } from "@/interfaces/testSuite.interface";
 import { ToolUsageRuleBuilder, type RuleConversation } from "./ToolUsageRuleBuilder";
+import { RouteRulesBuilder, newRouteRule } from "./RouteRulesBuilder";
+import { ActionRulesBuilder, newActionRule } from "./ActionRulesBuilder";
+import { JudgeRulesBuilder, newJudgeRule } from "./JudgeRulesBuilder";
 
 // Group imported multi-turn cases into conversations for specific-turn targeting.
 const deriveConversations = (cases: TestCase[]): RuleConversation[] => {
@@ -182,6 +188,60 @@ const GRADING_SOURCE_OPTIONS: {
   { value: "expected_output", label: "Expected answer" },
 ];
 
+// Ready-made rubrics: one click fills the rubric text and picks the matching
+// grading source. The user can still edit the text afterwards.
+// Anchors put "partial" at 0.4 so it lands under the default 0.5 threshold — a
+// partially satisfied criterion should not pass unless the user lowers the bar.
+const RUBRIC_PRESETS: {
+  key: string;
+  label: string;
+  rubric: string;
+  sourceType: GradingSourceSelection;
+}[] = [
+  {
+    key: "retrieval_relevance",
+    label: "Retrieval relevance",
+    rubric:
+      "Judge whether the SOURCE passages are relevant to answering the QUESTION. " +
+      "Ignore the answer itself. Score 1.0 when the passages contain the " +
+      "information needed to answer the question, 0.4 when they are only " +
+      "partially relevant, and 0.0 when they are unrelated to the question. " +
+      "Intermediate scores are allowed.",
+    sourceType: "kb_retrievals",
+  },
+  {
+    key: "completeness",
+    label: "Completeness",
+    rubric:
+      "Judge whether the ANSWER fully addresses every part of the QUESTION. " +
+      "Ignore style and tone. Score 1.0 when every part is answered, 0.4 when " +
+      "only some parts are answered, and 0.0 when the answer misses the point " +
+      "of the question. Intermediate scores are allowed.",
+    sourceType: "none",
+  },
+  {
+    key: "helpfulness",
+    label: "Helpfulness",
+    rubric:
+      "Judge whether the ANSWER moves the user toward resolving their request. " +
+      "Ignore length and formatting. Score 1.0 when it resolves the request or " +
+      "gives a clear, correct next step, 0.4 when it is on topic but leaves the " +
+      "user without a usable way forward, and 0.0 when it is unhelpful or " +
+      "off-topic. Intermediate scores are allowed.",
+    sourceType: "none",
+  },
+  {
+    key: "politeness",
+    label: "Politeness & tone",
+    rubric:
+      "Judge whether the ANSWER is polite, professional and helpful in tone. " +
+      "Ignore factual correctness. Score 1.0 when it is courteous and " +
+      "constructive, 0.4 when it is neutral or curt, and 0.0 when it is rude, " +
+      "dismissive or inappropriate. Intermediate scores are allowed.",
+    sourceType: "none",
+  },
+];
+
 const GradingSourceSelect: React.FC<{
   value: GradingSourceSelection;
   onChange: (value: GradingSourceSelection) => void;
@@ -284,16 +344,10 @@ export interface EvaluationWizardData {
   notContainsText: string;
   fieldEqualsField: string;
   fieldEqualsExpected: string;
-  routeExpected: string;
-  routeNode: string;
-  actionNode: string;
-  actionNodeType: string;
-  actionShouldFire: boolean;
-  judgeRubric: string;
-  judgeMinScore: string;
+  routeRules: RouteRuleDraft[];
+  actionRules: ActionRuleDraft[];
+  judgeRules: JudgeRuleDraft[];
   judgeProviderId: string;
-  judgeSourceType: GradingSourceSelection;
-  judgeSourceField: string;
 }
 
 interface EvaluationWizardProps {
@@ -505,25 +559,23 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     initialData?.fieldEqualsExpected ?? ""
   );
 
-  // Route Taken config
-  const [routeExpected, setRouteExpected] = useState(initialData?.routeExpected ?? "");
-  const [routeNode, setRouteNode] = useState(initialData?.routeNode ?? "");
+  // Route Taken config — always at least one rule row to fill in.
+  const [routeRules, setRouteRules] = useState<RouteRuleDraft[]>(
+    initialData?.routeRules?.length ? initialData.routeRules : [newRouteRule()],
+  );
 
-  // Action Taken config
-  const [actionNode, setActionNode] = useState(initialData?.actionNode ?? "");
-  const [actionNodeType, setActionNodeType] = useState(initialData?.actionNodeType ?? "");
-  const [actionShouldFire, setActionShouldFire] = useState(initialData?.actionShouldFire ?? true);
+  // Action Taken config — always at least one rule row to fill in.
+  const [actionRules, setActionRules] = useState<ActionRuleDraft[]>(
+    initialData?.actionRules?.length ? initialData.actionRules : [newActionRule()],
+  );
 
-  // LLM Judge config
-  const [judgeRubric, setJudgeRubric] = useState(initialData?.judgeRubric ?? "");
-  const [judgeMinScore, setJudgeMinScore] = useState(initialData?.judgeMinScore ?? "0.5");
+  // LLM Judge config — always at least one rule row to fill in.
+  const [judgeRules, setJudgeRules] = useState<JudgeRuleDraft[]>(
+    initialData?.judgeRules?.length ? initialData.judgeRules : [newJudgeRule()],
+  );
   const [judgeProviderId, setJudgeProviderId] = useState(
     initialData?.judgeProviderId ?? providers[0]?.id ?? ""
   );
-  const [judgeSourceType, setJudgeSourceType] = useState<GradingSourceSelection>(
-    initialData?.judgeSourceType ?? "none"
-  );
-  const [judgeSourceField] = useState(initialData?.judgeSourceField ?? "");
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
 
@@ -554,32 +606,36 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
       ));
   const nliScoreInvalid = metrics.includes("nli_eval") && !isValidScore(nliMinEntailScore);
   const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
-  const judgeScoreInvalid = metrics.includes("llm_judge") && !isValidScore(judgeMinScore);
+  const judgeRulesInvalid =
+    metrics.includes("llm_judge") &&
+    (judgeRules.length === 0 ||
+      judgeRules.some((rule) => !rule.rubric.trim() || !isValidScore(rule.minScore)));
 
-  // Route/Action dropdowns use the catalogue; fall back to free text only when the
-  // catalogue is unavailable or a saved value predates it (an unmatched legacy id).
-  const selectedRouter = catalogRouters.find((r) => r.id === routeNode);
-  // Free text is only for a config the catalogue can't match: a saved router id that
-  // is gone, or an old "any router" config (expected set with no router chosen).
-  const routeLegacyValue =
-    catalogRouters.length > 0 &&
-    ((Boolean(routeNode) && !selectedRouter) || (!routeNode && Boolean(routeExpected)));
-  const useRouteDropdowns = catalogRouters.length > 0 && !routeLegacyValue;
-  const actionNodeInCatalog = catalogActionNodes.some((n) => n.id === actionNode);
-  const actionLegacyValue =
-    (Boolean(actionNode) && catalogActionNodes.length > 0 && !actionNodeInCatalog) ||
-    Boolean(actionNodeType);
-  const useActionDropdown = catalogActionNodes.length > 0 && !actionLegacyValue;
+  // Per-rule validity mirrors the builders' dropdown/free-text split: with a
+  // catalogue, a fresh rule must pick a router; legacy free-text rules only
+  // need the expected route.
+  const routeRuleInvalid = (rule: RouteRuleDraft): boolean => {
+    const inCatalog = catalogRouters.some((router) => router.id === rule.router);
+    const isLegacyValue =
+      catalogRouters.length > 0 &&
+      ((Boolean(rule.router) && !inCatalog) || (!rule.router && Boolean(rule.expected)));
+    const usesDropdowns = catalogRouters.length > 0 && !isLegacyValue;
+    if (usesDropdowns && !rule.router.trim()) return true;
+    return !rule.expected.trim();
+  };
+
+  const actionRuleInvalid = (rule: ActionRuleDraft): boolean =>
+    !rule.node.trim() && !rule.nodeType.trim();
 
   const isConfigureStepValid = (): boolean => {
-    if (metrics.includes("llm_judge") && !judgeRubric.trim()) return false;
     if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
     if (metrics.includes("route_taken")) {
-      if (useRouteDropdowns && !routeNode.trim()) return false;
-      if (!routeExpected.trim()) return false;
+      if (routeRules.length === 0 || routeRules.some(routeRuleInvalid)) return false;
     }
-    if (metrics.includes("action_taken") && !actionNode.trim() && !actionNodeType.trim()) return false;
-    if (toolRulesInvalid || nliScoreInvalid || provScoreInvalid || judgeScoreInvalid) return false;
+    if (metrics.includes("action_taken")) {
+      if (actionRules.length === 0 || actionRules.some(actionRuleInvalid)) return false;
+    }
+    if (toolRulesInvalid || nliScoreInvalid || provScoreInvalid || judgeRulesInvalid) return false;
     return true;
   };
 
@@ -641,16 +697,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         notContainsText,
         fieldEqualsField,
         fieldEqualsExpected,
-        routeExpected,
-        routeNode,
-        actionNode,
-        actionNodeType,
-        actionShouldFire,
-        judgeRubric,
-        judgeMinScore,
+        routeRules,
+        actionRules,
+        judgeRules,
         judgeProviderId,
-        judgeSourceType,
-        judgeSourceField,
       });
       // Reset form on successful create
       if (mode === "create") {
@@ -688,15 +738,10 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setNotContainsText("");
     setFieldEqualsField("");
     setFieldEqualsExpected("");
-    setRouteExpected("");
-    setRouteNode("");
-    setActionNode("");
-    setActionNodeType("");
-    setActionShouldFire(true);
-    setJudgeRubric("");
-    setJudgeMinScore("0.5");
+    setRouteRules([newRouteRule()]);
+    setActionRules([newActionRule()]);
+    setJudgeRules([newJudgeRule()]);
     setJudgeProviderId(providers[0]?.id ?? "");
-    setJudgeSourceType("none");
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -1192,84 +1237,14 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Route Taken Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks that a router node selected the expected branch.
+                  Checks that router nodes selected the expected branches. All rules must
+                  pass.
                 </p>
-                {useRouteDropdowns ? (
-                  <>
-                    <div>
-                      <Label className="text-xs">Router *</Label>
-                      <Select
-                        value={routeNode}
-                        onValueChange={(next) => {
-                          setRouteNode(next);
-                          setRouteExpected("");
-                        }}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select a router" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {catalogRouters.map((router) => (
-                            <SelectItem key={router.id} value={router.id}>
-                              {router.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {selectedRouter && selectedRouter.branches.length > 0 && (
-                      <div>
-                        <Label className="text-xs">Expected Branch *</Label>
-                        <Select value={routeExpected} onValueChange={setRouteExpected}>
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select a branch" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {selectedRouter.branches.map((branch) => (
-                              <SelectItem key={branch.value} value={branch.value}>
-                                {branch.destination
-                                  ? `${branch.value} → ${branch.destination}`
-                                  : branch.value}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {selectedRouter && selectedRouter.branches.length === 0 && (
-                      <div>
-                        <Label className="text-xs">Expected Route *</Label>
-                        <Input
-                          value={routeExpected}
-                          onChange={(e) => setRouteExpected(e.target.value)}
-                          placeholder="e.g. escalate"
-                          className="mt-1"
-                        />
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <Label className="text-xs">Expected Route *</Label>
-                      <Input
-                        value={routeExpected}
-                        onChange={(e) => setRouteExpected(e.target.value)}
-                        placeholder="e.g. escalate"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Router Node (id or label, optional)</Label>
-                      <Input
-                        value={routeNode}
-                        onChange={(e) => setRouteNode(e.target.value)}
-                        placeholder="Leave empty to match any router node"
-                        className="mt-1"
-                      />
-                    </div>
-                  </>
-                )}
+                <RouteRulesBuilder
+                  rules={routeRules}
+                  routers={catalogRouters}
+                  onChange={setRouteRules}
+                />
               </div>
             )}
 
@@ -1280,61 +1255,14 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Action Taken Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks whether a specific workflow node ran successfully.
+                  Checks whether specific workflow nodes ran successfully. All rules must
+                  pass.
                 </p>
-                {useActionDropdown ? (
-                  <div>
-                    <Label className="text-xs">Node *</Label>
-                    <Select
-                      value={actionNode}
-                      onValueChange={(next) => {
-                        setActionNode(next);
-                        setActionNodeType("");
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select a node" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {catalogActionNodes.map((node) => (
-                          <SelectItem key={node.id} value={node.id}>
-                            {node.label} ({node.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <Label className="text-xs">Node (id or label)</Label>
-                      <Input
-                        value={actionNode}
-                        onChange={(e) => setActionNode(e.target.value)}
-                        placeholder="e.g. Create Zendesk Ticket"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Node Type</Label>
-                      <Input
-                        value={actionNodeType}
-                        onChange={(e) => setActionNodeType(e.target.value)}
-                        placeholder="e.g. zendeskTicketNode"
-                        className="mt-1"
-                      />
-                    </div>
-                  </>
-                )}
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <div>
-                    <div className="text-xs font-medium">Must complete</div>
-                    <div className="text-xs text-muted-foreground">
-                      Turn off to require that the node does not complete successfully
-                    </div>
-                  </div>
-                  <Switch checked={actionShouldFire} onCheckedChange={setActionShouldFire} />
-                </div>
+                <ActionRulesBuilder
+                  rules={actionRules}
+                  nodes={catalogActionNodes}
+                  onChange={setActionRules}
+                />
               </div>
             )}
 
@@ -1345,18 +1273,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   LLM Judge Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Grades the answer against a rubric you write. One criterion per judge works best.
+                  Grades the answer against rubrics you write. One criterion per rule works
+                  best; all rules must pass.
                 </p>
-                <div>
-                  <Label className="text-xs">Rubric *</Label>
-                  <Textarea
-                    value={judgeRubric}
-                    onChange={(e) => setJudgeRubric(e.target.value)}
-                    placeholder="e.g. Score 1.0 if the answer is polite and offers a next step, 0.0 otherwise."
-                    rows={4}
-                    className="mt-1"
-                  />
-                </div>
                 <div>
                   <Label className="text-xs">LLM Provider</Label>
                   <Select value={judgeProviderId} onValueChange={setJudgeProviderId}>
@@ -1372,33 +1291,11 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label className="text-xs">Min Score (0-1)</Label>
-                  <Input
-                    value={judgeMinScore}
-                    onChange={(e) => setJudgeMinScore(e.target.value)}
-                    className="mt-1"
-                    placeholder="0.5"
-                  />
-                  {judgeScoreInvalid && (
-                    <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
-                  )}
-                </div>
-                <div className="flex items-center justify-between rounded-md border p-3">
-                  <div>
-                    <Label className="text-xs">Give the judge the retrieved context</Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Off = rubric only (style or behavior checks). On = the judge also
-                      sees the KB passages the agent retrieved during the run.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={judgeSourceType === "kb_retrievals"}
-                    onCheckedChange={(checked) =>
-                      setJudgeSourceType(checked ? "kb_retrievals" : "none")
-                    }
-                  />
-                </div>
+                <JudgeRulesBuilder
+                  rules={judgeRules}
+                  presets={RUBRIC_PRESETS}
+                  onChange={setJudgeRules}
+                />
               </div>
             )}
           </div>

@@ -124,6 +124,86 @@ class TestPausedToolEvent:
         assert recorded["error"] is None
 
 
+class TestToolResultRecording:
+    @pytest.mark.asyncio
+    async def test_recorded_tool_result_feeds_result_checks_and_retrievals(self):
+        """End-to-end over the real recording chain: a tool invoked through
+        BaseTool on a real WorkflowState must surface its result to the
+        result-content checks and the retrieved-context collector."""
+        from app.modules.workflow.agents.base_tool import BaseTool
+        from app.modules.workflow.engine.workflow_state import WorkflowState
+        from app.services.test_suite import SimpleEvaluatorRegistry, _build_grading_context
+
+        workflow = {
+            "id": "wf1",
+            "nodes": [
+                {"id": "agent1", "type": "agentNode", "data": {"name": "HR Agent"}},
+                {"id": "kb1", "type": "knowledgeToolNode", "data": {"name": "Search Handbook"}},
+            ],
+            "edges": [{"source": "kb1", "target": "agent1", "targetHandle": "tools"}],
+        }
+        state = WorkflowState(workflow=workflow)
+        handbook_text = "Employees receive 25 vacation days per year."
+
+        # The tool's function is the node's execute, which tracks node status
+        # around the actual work — mirrored here without a full engine run.
+        async def _node_execute(_payload):
+            state.start_node_execution("kb1")
+            state.complete_node_execution("kb1", output=handbook_text)
+            return handbook_text
+
+        tool = BaseTool(
+            node_id="kb1",
+            name="search_handbook",
+            description="",
+            parameters={},
+            function=_node_execute,
+            agent_id="agent1",
+            state=state,
+        )
+        # The agent node executes as a workflow step and calls the tool mid-run.
+        state.start_node_execution("agent1")
+        result = await tool.invoke(topic="vacation days")
+        state.complete_node_execution("agent1", output={"message": "answered"})
+        assert result == handbook_text
+
+        trace = state.format_state_as_response()
+        events = trace.get("tool_events") or []
+        assert events and events[0]["result"] == handbook_text
+
+        context = _build_grading_context(trace)
+        assert any(
+            handbook_text in str(retrieval.get("results")) for retrieval in context["retrievals"]
+        )
+
+        registry = SimpleEvaluatorRegistry()
+        metrics = await registry.evaluate(
+            ["tool_used"],
+            inputs={"message": "How many vacation days do I get?"},
+            outputs="You get 25 vacation days per year.",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={
+                "tool_used": {"tool": "search_handbook", "result_contains": "25 vacation days"}
+            },
+            workflow=workflow,
+        )
+        assert metrics["tool_used"]["passed"] is True
+
+        failing = await registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={
+                "tool_used": {"tool": "search_handbook", "result_contains": "unlimited holidays"}
+            },
+            workflow=workflow,
+        )
+        assert failing["tool_used"]["passed"] is False
+
+
 class TestMetricResultContract:
     def test_accepts_not_evaluated_without_a_score(self):
         from app.schemas.test_suite import TestResultMetrics
@@ -232,6 +312,63 @@ class TestCoverageAggregation:
         assert metric["cases"] == 2
         assert metric["evaluated"] == 2
         assert metric["accuracy"] == 0.5
+
+
+class TestRunPathLabelResolution:
+    @pytest.mark.asyncio
+    async def test_run_loop_passes_workflow_so_comments_use_node_labels(self):
+        """The run loop must hand the workflow graph to the evaluators — without
+        it, route/action comments degrade to 'unknown node' for real runs."""
+        service = _service()
+        now = datetime(2026, 1, 1)
+        router_id = str(uuid4())
+        case = SimpleNamespace(
+            id=uuid4(),
+            suite_id=uuid4(),
+            source_conversation_id=None,
+            turn_index=None,
+            input_data={"message": "hi"},
+            expected_output={"value": "ok"},
+            tags=["imported"],
+            weight=None,
+            created_at=now,
+            updated_at=now,
+        )
+        service.case_repo.get_all_for_suite.return_value = [case]
+
+        suite = SimpleNamespace(id=uuid4(), default_input_metadata=None)
+        workflow = SimpleNamespace(
+            id=uuid4(),
+            nodes=[{"id": router_id, "type": "routerNode", "data": {"name": "Escalation Router"}}],
+            edges=[],
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["route_taken"], status="queued", summary_metrics=None
+        )
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            return_value=SimpleNamespace(
+                output="out",
+                status="ok",
+                # The router never ran, so only the workflow graph can name it.
+                format_state_as_response=lambda: {"state": {"nodeExecutionStatus": {}}},
+            )
+        )
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                suite,
+                workflow,
+                run,
+                technique_configs={
+                    "route_taken": {"rules": [{"router": router_id, "expected": "true"}]}
+                },
+            )
+
+        persisted = service.result_repo.create.call_args[0][0]
+        comment = persisted.metrics["route_taken"]["comment"]
+        assert "Escalation Router" in comment
+        assert router_id not in comment
+        assert "unknown node" not in comment
 
 
 class TestPausedConversationExecution:

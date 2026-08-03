@@ -6,7 +6,7 @@ from sqlalchemy import Date, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.llm_pricing import PricingStatus
-from app.core.utils.analytics_agent_scope import resolve_scoped_agent_ids
+from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.repositories.db_repository import DbRepository
 
@@ -40,7 +40,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         super().__init__(LlmUsageEventModel, db)
 
     async def resolve_scope(self, params) -> list[UUID] | None:
-        return await resolve_scoped_agent_ids(self.db, params.agent_id, params.group_id)
+        return await resolve_authorized_agent_ids(self.db, params.agent_id, params.group_id)
 
     @staticmethod
     def _conditions(params, scope: list[UUID] | None, *, use_provider: bool = True, use_model: bool = True) -> list:
@@ -78,6 +78,13 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         ).where(*self._conditions(params, scope))
         return (await self.db.execute(stmt)).one()
 
+    async def last_unpriced_at(self) -> datetime | None:
+        """Return when the tenant last recorded an unpriced call, ignoring read filters"""
+        stmt = select(func.max(LlmUsageEventModel.created_at)).where(
+            LlmUsageEventModel.is_deleted == 0, _COST.is_(None)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def timeseries(self, params, scope: list[UUID] | None):
         day = _utc_day(LlmUsageEventModel.occurred_at)
         stmt = (
@@ -94,7 +101,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         )
         return list((await self.db.execute(stmt)).all())
 
-    async def breakdown(self, params, scope: list[UUID] | None, key_column):
+    async def breakdown(self, params, scope: list[UUID] | None, key_column, extra_conditions=None):
         stmt = (
             select(
                 key_column.label("key"),
@@ -103,7 +110,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
                 func.coalesce(func.sum(_TOKENS), 0),
                 func.count(),
             )
-            .where(*self._conditions(params, scope))
+            .where(*self._conditions(params, scope), *(extra_conditions or ()))
             .group_by(key_column)
             .order_by(func.coalesce(func.sum(_COST), 0).desc())
         )
@@ -120,3 +127,11 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         col = LlmUsageEventModel.agent_id
         stmt = select(distinct(col)).where(*self._conditions(params, scope), col.isnot(None))
         return [row[0] for row in (await self.db.execute(stmt)).all()]
+
+    async def distinct_agent_workflow_pairs(self, params, scope: list[UUID] | None, extra_conditions=None):
+        stmt = (
+            select(LlmUsageEventModel.agent_id, LlmUsageEventModel.workflow_id)
+            .distinct()
+            .where(*self._conditions(params, scope), *(extra_conditions or ()))
+        )
+        return list((await self.db.execute(stmt)).all())

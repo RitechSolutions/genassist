@@ -3,6 +3,9 @@ import {
   GradingSourceSelection,
 } from "../components/EvaluationWizard";
 import {
+  ActionRuleDraft,
+  JudgeRuleDraft,
+  RouteRuleDraft,
   TestEvaluationConfig,
   ToolUsageOperator,
   ToolUsagePerToolCheck,
@@ -79,13 +82,21 @@ const legacyPerTool = (cfg: Record<string, unknown>): Record<string, ToolUsagePe
   };
 };
 
+// Keep only plain-object rule entries; the backend tolerates junk entries, so
+// the wizard must too instead of crashing the page render.
+const objectRules = (rules: unknown[]): Record<string, unknown>[] =>
+  rules.filter(
+    (rule): rule is Record<string, unknown> =>
+      Boolean(rule) && typeof rule === "object" && !Array.isArray(rule),
+  );
+
 // Parse a stored tool_used config into builder rules, converting the legacy shape.
 const parseToolRules = (
   cfg: Record<string, unknown> | undefined,
 ): ToolUsageRule[] => {
   if (!cfg) return [];
   if (Array.isArray(cfg.rules)) {
-    return (cfg.rules as Record<string, unknown>[]).map((rule, index) => ({
+    return objectRules(cfg.rules).map((rule, index) => ({
       id: (rule.id as string) ?? `rule-${index}`,
       agent_id: (rule.agent_id as string) ?? null,
       tool_ids: Array.isArray(rule.tool_ids) ? (rule.tool_ids as string[]) : [],
@@ -143,6 +154,72 @@ const serializeToolRule = (rule: ToolUsageRule): Record<string, unknown> => ({
   ...(rule.max_calls != null ? { max_calls: rule.max_calls } : {}),
   ...(rule.per_tool && Object.keys(rule.per_tool).length ? { per_tool: rule.per_tool } : {}),
 });
+
+// Parse a stored llm_judge config into builder rules; a legacy single-rubric
+// config becomes a one-item list.
+const parseJudgeRules = (cfg: Record<string, unknown> | undefined): JudgeRuleDraft[] => {
+  if (!cfg) return [];
+
+  const toDraft = (rule: Record<string, unknown>): JudgeRuleDraft | null => {
+    const rubric = ((rule.rubric ?? rule.instructions) as string) ?? "";
+    if (!rubric.trim()) return null;
+    const source = parseGradingSource(rule, "source_type", "source_field", "none");
+    return {
+      label: (rule.label as string) ?? "",
+      rubric,
+      minScore: String(rule.min_score ?? "0.5"),
+      sourceType: source.selection,
+      sourceField: source.legacyField,
+    };
+  };
+
+  if (Array.isArray(cfg.rules)) {
+    return objectRules(cfg.rules)
+      .map(toDraft)
+      .filter((rule): rule is JudgeRuleDraft => rule !== null);
+  }
+  const single = toDraft(cfg);
+  return single ? [single] : [];
+};
+
+// Parse a stored route_taken config into builder rules; a legacy single-rule
+// config becomes a one-item list.
+const parseRouteRules = (cfg: Record<string, unknown> | undefined): RouteRuleDraft[] => {
+  if (!cfg) return [];
+  if (Array.isArray(cfg.rules)) {
+    return objectRules(cfg.rules).map((rule) => ({
+      router: ((rule.router ?? rule.node) as string) ?? "",
+      expected: (rule.expected as string) ?? "",
+    }));
+  }
+  if (cfg.expected) {
+    return [
+      {
+        router: ((cfg.router ?? cfg.node) as string) ?? "",
+        expected: cfg.expected as string,
+      },
+    ];
+  }
+  return [];
+};
+
+// Parse a stored action_taken config into builder rules; a legacy single-rule
+// config becomes a one-item list.
+const parseActionRules = (cfg: Record<string, unknown> | undefined): ActionRuleDraft[] => {
+  if (!cfg) return [];
+  const toDraft = (rule: Record<string, unknown>): ActionRuleDraft => ({
+    node: (rule.node as string) ?? "",
+    nodeType: (rule.node_type as string) ?? "",
+    shouldFire: rule.should_fire === undefined ? true : Boolean(rule.should_fire),
+  });
+  if (Array.isArray(cfg.rules)) {
+    return objectRules(cfg.rules).map(toDraft);
+  }
+  if (cfg.node || cfg.node_type) {
+    return [toDraft(cfg)];
+  }
+  return [];
+};
 
 const parseJsonObject = (
   text: string,
@@ -254,27 +331,34 @@ export const buildTechniqueConfigs = (
 
   if (data.metrics.includes("route_taken")) {
     configs.route_taken = {
-      expected: data.routeExpected.trim(),
-      ...(data.routeNode.trim() ? { node: data.routeNode.trim() } : {}),
+      rules: data.routeRules.map((rule) => ({
+        expected: rule.expected.trim(),
+        ...(rule.router.trim() ? { router: rule.router.trim() } : {}),
+      })),
     };
   }
 
   if (data.metrics.includes("action_taken")) {
     configs.action_taken = {
-      should_fire: data.actionShouldFire,
-      ...(data.actionNode.trim() ? { node: data.actionNode.trim() } : {}),
-      ...(data.actionNodeType.trim() ? { node_type: data.actionNodeType.trim() } : {}),
+      rules: data.actionRules.map((rule) => ({
+        should_fire: rule.shouldFire,
+        ...(rule.node.trim() ? { node: rule.node.trim() } : {}),
+        ...(rule.nodeType.trim() ? { node_type: rule.nodeType.trim() } : {}),
+      })),
     };
   }
 
   if (data.metrics.includes("llm_judge")) {
     configs.llm_judge = {
-      rubric: data.judgeRubric.trim(),
-      min_score: Number(data.judgeMinScore || "0.5"),
       ...(data.judgeProviderId.trim() ? { llm_provider_id: data.judgeProviderId.trim() } : {}),
-      ...(data.judgeSourceType === "legacy" && data.judgeSourceField
-        ? { source_field: data.judgeSourceField }
-        : { source_type: data.judgeSourceType }),
+      rules: data.judgeRules.map((rule) => ({
+        rubric: rule.rubric.trim(),
+        min_score: Number(rule.minScore || "0.5"),
+        ...(rule.label.trim() ? { label: rule.label.trim() } : {}),
+        ...(rule.sourceType === "legacy" && rule.sourceField
+          ? { source_field: rule.sourceField }
+          : { source_type: rule.sourceType }),
+      })),
     };
   }
 
@@ -305,7 +389,6 @@ export const getEditInitialData = (
     "context_field",
     "expected_output",
   );
-  const judgeSource = parseGradingSource(judgeCfg, "source_type", "source_field", "none");
   const metaWithoutMemory = evaluation.input_metadata
     ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
     : {};
@@ -336,15 +419,9 @@ export const getEditInitialData = (
     fieldEqualsField: (fieldEqualsCfg?.field as string) ?? "",
     fieldEqualsExpected:
       fieldEqualsCfg?.expected != null ? String(fieldEqualsCfg.expected) : "",
-    routeExpected: (routeCfg?.expected as string) ?? "",
-    routeNode: (routeCfg?.node as string) ?? "",
-    actionNode: (actionCfg?.node as string) ?? "",
-    actionNodeType: (actionCfg?.node_type as string) ?? "",
-    actionShouldFire: actionCfg?.should_fire === undefined ? true : Boolean(actionCfg.should_fire),
-    judgeRubric: (judgeCfg?.rubric as string) ?? "",
-    judgeMinScore: String(judgeCfg?.min_score ?? "0.5"),
+    routeRules: parseRouteRules(routeCfg),
+    actionRules: parseActionRules(actionCfg),
+    judgeRules: parseJudgeRules(judgeCfg),
     judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
-    judgeSourceType: judgeSource.selection,
-    judgeSourceField: judgeSource.legacyField,
   };
 };

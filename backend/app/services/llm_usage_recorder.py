@@ -292,6 +292,117 @@ class LlmUsageRecorder:
         except Exception:
             logger.warning("Failed opening scope for LLM usage recording", exc_info=True)
 
+    async def record_evaluation_calls(
+        self,
+        execution_id: str,
+        entries: list[dict[str, Any]],
+        *,
+        workflow_id: Optional[UUID] = None,
+        agent_id: Optional[UUID] = None,
+        source: str = "test_suite",
+        occurred_at: Optional[datetime] = None,
+    ) -> None:
+        """One batch per evaluated case: the case's judge events plus a single receipt"""
+        if not entries:
+            return
+        try:
+            async with _capture_slot():
+                async with create_tenant_request_scope():
+                    session = injector.get(AsyncSession)
+                    try:
+                        if not await self._capture_enabled(session):
+                            return
+
+                        configured_rates = await self._configured_rates(session)
+                        occurred_at = occurred_at or utc_now()
+
+                        valid_workflows = await self._existing_ids(session, WorkflowModel, {workflow_id})
+                        valid_agents = await self._existing_ids(session, AgentModel, {agent_id})
+                        provider_ids = {coerce_uuid(e.get("llm_provider_id")) for e in entries}
+                        valid_providers = await self._existing_ids(session, LlmProvidersModel, provider_ids)
+
+                        workflow_id = workflow_id if workflow_id in valid_workflows else None
+                        if agent_id not in valid_agents:
+                            agent_id = await self._agent_for_workflow(session, workflow_id)
+
+                        event_rows = []
+                        for entry in entries:
+                            usage = usage_or_placeholder(entry.get("usage"))
+                            input_tokens = int(usage.get("input_tokens") or 0)
+                            output_tokens = int(usage.get("output_tokens") or 0)
+                            token_details = usage.get("token_details")
+                            provider = entry.get("provider", "") or ""
+                            model = entry.get("model", "") or ""
+                            provider_id = coerce_uuid(entry.get("llm_provider_id"))
+                            pricing = _resolve_cost(
+                                provider,
+                                model,
+                                input_tokens,
+                                output_tokens,
+                                configured_rates,
+                                usage_missing=is_usage_metadata_missing(token_details),
+                            )
+                            event_rows.append(
+                                {
+                                    "execution_id": execution_id,
+                                    "call_index": int(entry.get("call_index") or 0),
+                                    "source_type": "evaluation",
+                                    "source": _clamp(source, 64),
+                                    "purpose": _clamp(entry.get("purpose"), 64),
+                                    "agent_id": agent_id,
+                                    "workflow_id": workflow_id,
+                                    "llm_provider_id": provider_id if provider_id in valid_providers else None,
+                                    "llm_analyst_id": None,
+                                    "conversation_id": None,
+                                    "node_id": None,
+                                    "provider_key": _normalize(provider, 64),
+                                    "model_key": _normalize(model, 512),
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                    "total_tokens": _total_tokens(usage, input_tokens, output_tokens),
+                                    "token_details": token_details,
+                                    "occurred_at": occurred_at,
+                                    **pricing,
+                                }
+                            )
+
+                        insert_events = (
+                            insert(LlmUsageEventModel)
+                            .values(event_rows)
+                            .on_conflict_do_nothing(constraint="uq_llm_usage_events_execution_call")
+                        )
+                        await session.execute(insert_events)
+                        persisted = await self._persisted_event_count(session, execution_id)
+
+                        receipt = (
+                            insert(LlmUsageCaptureRunModel)
+                            .values(
+                                {
+                                    "execution_id": execution_id,
+                                    "source_type": "evaluation",
+                                    "source": _clamp(source, 64),
+                                    "execution_outcome": "returned",
+                                    "run_status": "completed",
+                                    "expected_entries": len(entries),
+                                    "persisted_events": persisted,
+                                    "agent_id": agent_id,
+                                    "workflow_id": workflow_id,
+                                    "occurred_at": occurred_at,
+                                }
+                            )
+                            .on_conflict_do_nothing(constraint="uq_llm_usage_capture_runs_execution")
+                        )
+                        await session.execute(receipt)
+
+                        await session.commit()
+                    except Exception:
+                        await session.rollback()
+                        logger.warning("Failed recording evaluation LLM usage", exc_info=True)
+                    finally:
+                        await session.close()
+        except Exception:
+            logger.warning("Failed opening scope for evaluation LLM usage recording", exc_info=True)
+
     async def record_analyst_call(
         self,
         analysis_execution_id: str,

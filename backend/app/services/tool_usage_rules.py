@@ -20,7 +20,7 @@ Each rule result is one of three states so incomplete runs never look healthy:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -245,13 +245,23 @@ def _count_calls(scoped: List[Dict[str, Any]]) -> "tuple[Dict[str, int], Dict[st
     return call_counts, successful
 
 
+def _named(ids: Iterable[str], label_of: Callable[[str], str]) -> str:
+    return ", ".join(f"'{label_of(item)}'" for item in ids)
+
+
 def evaluate_rule(
     rule: ToolUsageRule,
     events: Iterable[Dict[str, Any]],
     executed_agent_ids: Optional[Set[str]] = None,
+    label_of: Optional[Callable[[str], str]] = None,
 ) -> Dict[str, Any]:
-    """Grade one rule against a scoped set of tool events. Returns a three-state result."""
+    """Grade one rule against a scoped set of tool events. Returns a three-state result.
+
+    ``label_of`` renders tool/agent ids as display names in comments; ids are kept
+    as-is in the structured result fields.
+    """
     executed_agent_ids = executed_agent_ids or set()
+    label_of = label_of or (lambda value: value)
     scoped = _events_for_rule(rule, events)
     target_set: Set[str] = set(rule.tool_ids)
 
@@ -277,7 +287,7 @@ def evaluate_rule(
         violated = sorted(t for t in (target_set & attempted) if t)
         if violated:
             return done(_result(rule, RULE_FAILED, forbidden=violated,
-                                comment=f"Forbidden tool(s) attempted: {violated}."))
+                                comment=f"Forbidden tool(s) attempted: {_named(violated, label_of)}."))
         if not agent_ran:
             return done(_result(rule, RULE_NOT_EVALUATED,
                                 comment="Agent did not run; forbidden-tool rule could not be checked."))
@@ -287,7 +297,7 @@ def evaluate_rule(
         outside = sorted(t for t in (attempted - target_set) if t)
         if outside:
             return done(_result(rule, RULE_FAILED, forbidden=outside,
-                                comment=f"Tool(s) outside the allowed set were used: {outside}."))
+                                comment=f"Tool(s) outside the allowed set were used: {_named(outside, label_of)}."))
         if not agent_ran:
             return done(_result(rule, RULE_NOT_EVALUATED,
                                 comment="Agent did not run; allowed-only rule could not be checked."))
@@ -324,14 +334,16 @@ def evaluate_rule(
         return done(_result(rule, RULE_PASSED, observed=observed,
                             comment="Required tool usage satisfied."))
 
-    scope = f" by node {rule.agent_id}" if rule.agent_id else ""
+    scope = f" by agent '{label_of(rule.agent_id)}'" if rule.agent_id else ""
     parts: List[str] = []
     if not_called:
-        parts.append(f"not called: {not_called}")
+        parts.append(f"not called: {_named(not_called, label_of)}")
     if called_but_failed:
-        parts.append(f"called but did not succeed: {called_but_failed}")
+        parts.append(f"called but did not succeed: {_named(called_but_failed, label_of)}")
     if per_tool_reasons:
-        reasons = "; ".join(f"{tool_id}: {reason}" for tool_id, reason in sorted(per_tool_reasons.items()))
+        reasons = "; ".join(
+            f"{label_of(tool_id)}: {reason}" for tool_id, reason in sorted(per_tool_reasons.items())
+        )
         parts.append(f"result/argument checks failed — {reasons}")
     comment = f"Required tool usage not satisfied{scope}: " + "; ".join(parts) + "."
     return done(_result(rule, RULE_FAILED, observed=observed, missing=not_called,
@@ -387,10 +399,11 @@ def evaluate_rules(
     rules: Iterable[ToolUsageRule],
     events: Iterable[Dict[str, Any]],
     executed_agent_ids: Optional[Set[str]] = None,
+    label_of: Optional[Callable[[str], str]] = None,
 ) -> Dict[str, Any]:
     """Grade every rule and summarize with pass/fail/coverage. ``events`` is one scope slice."""
     events = list(events)
-    results = [evaluate_rule(rule, events, executed_agent_ids) for rule in rules]
+    results = [evaluate_rule(rule, events, executed_agent_ids, label_of) for rule in rules]
 
     passed = sum(1 for r in results if r["status"] == RULE_PASSED)
     failed = sum(1 for r in results if r["status"] == RULE_FAILED)
@@ -431,6 +444,7 @@ def plan_tool_rule_results(
     conversation_groups: List[List[str]],
     events_by_turn: Dict[str, List[Dict[str, Any]]],
     executed_by_turn: Dict[str, Set[str]],
+    label_of: Optional[Callable[[str], str]] = None,
 ) -> List[Dict[str, Any]]:
     """Grade every rule over its scope and return placed results (no DB, no ORM).
 
@@ -464,13 +478,17 @@ def plan_tool_rule_results(
             if target_id is None:
                 planned.append(place(rule, _not_evaluated_result(rule, "Target turn not found in this run.")))
                 continue
-            result = evaluate_rule(rule, events_by_turn.get(target_id, []), executed_by_turn.get(target_id, set()))
+            result = evaluate_rule(
+                rule, events_by_turn.get(target_id, []), executed_by_turn.get(target_id, set()), label_of
+            )
             planned.append(place(rule, result, case_id=target_id))
 
         elif rule.scope == "every_turn":
             for turn in turns:
                 tid = turn["id"]
-                result = evaluate_rule(rule, events_by_turn.get(tid, []), executed_by_turn.get(tid, set()))
+                result = evaluate_rule(
+                    rule, events_by_turn.get(tid, []), executed_by_turn.get(tid, set()), label_of
+                )
                 planned.append(place(rule, result, case_id=tid))
 
         else:  # conversation: merge every turn's events and grade once
@@ -482,7 +500,7 @@ def plan_tool_rule_results(
                     merged_executed |= executed_by_turn.get(tid, set())
                 representative = group[0] if group else None
                 conversation_id = turns_by_id.get(representative, {}).get("source_conversation_id")
-                result = evaluate_rule(rule, merged_events, merged_executed)
+                result = evaluate_rule(rule, merged_events, merged_executed, label_of)
                 planned.append(place(
                     rule, result,
                     case_id=None if conversation_id is not None else representative,
