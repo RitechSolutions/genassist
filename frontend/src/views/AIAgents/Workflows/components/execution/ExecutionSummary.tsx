@@ -15,8 +15,8 @@ interface ExecutionSummaryProps {
 
 const Metric: React.FC<{ label: string; value: React.ReactNode; title?: string }> = ({ label, value, title }) => (
   <span className="flex items-center gap-1 whitespace-nowrap" title={title}>
-    <span className="text-gray-400">{label}</span>
-    <span className="max-w-[140px] truncate font-semibold tabular-nums text-gray-800">{value}</span>
+    <span className="text-muted-foreground">{label}</span>
+    <span className="max-w-[140px] truncate font-semibold tabular-nums text-foreground">{value}</span>
   </span>
 );
 
@@ -24,7 +24,7 @@ const ExecutionSummary: React.FC<ExecutionSummaryProps> = ({ model }) => {
   const slowest = model.slowestNodeId ? model.byId[model.slowestNodeId] : undefined;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-200 bg-gray-50/70 px-3 py-1.5 text-xs">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border bg-muted/70 px-3 py-1.5 text-xs">
       <Metric label="Nodes" value={model.totalNodes} />
       <Metric label="Steps" value={model.totalSteps ?? '—'} />
       <Metric label="Duration" value={formatDuration(model.overallDurationMs)} />
@@ -36,7 +36,7 @@ const ExecutionSummary: React.FC<ExecutionSummaryProps> = ({ model }) => {
         />
       )}
 
-      <span className="mx-0.5 h-4 w-px bg-gray-200" aria-hidden="true" />
+      <span className="mx-0.5 h-4 w-px bg-muted" aria-hidden="true" />
 
       <span className="flex flex-wrap items-center gap-1.5" role="list" aria-label="Node status counts">
         {SUMMARY_STATUS_ORDER.filter((status) => model.counts[status] > 0).map((status) => {

@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.db.models.fallback_chain import FallbackChainModel
+from app.repositories.db_repository import DbRepository
 
 
 @inject
-class FallbackChainRepository:
+class FallbackChainRepository(DbRepository[FallbackChainModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(FallbackChainModel, db)
 
     async def create(self, data):
         obj = FallbackChainModel(**data)
@@ -27,10 +28,6 @@ class FallbackChainRepository:
         await self.db.commit()
         await self.db.refresh(obj)
         return obj
-
-    async def delete(self, obj: FallbackChainModel):
-        await self.db.delete(obj)
-        await self.db.commit()
 
     async def get_all(self):
         result = await self.db.execute(

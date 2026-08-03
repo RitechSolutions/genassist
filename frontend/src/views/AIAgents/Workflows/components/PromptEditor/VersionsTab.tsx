@@ -73,7 +73,7 @@ export const VersionsTab: React.FC<VersionsTabProps> = ({
         <div
           key={version.id}
           className={`flex items-start gap-3 rounded-lg border p-3 ${
-            version.is_active ? "border-blue-200 bg-blue-50" : ""
+            version.is_active ? "border-blue-200 bg-blue-50 dark:border-blue-500/30 dark:bg-blue-500/15" : ""
           }`}
         >
           <div className="flex-1 min-w-0">

@@ -6,6 +6,7 @@ import { fetchDashboardSummary } from "@/services/dashboard";
 import type { DashboardSummaryStats } from "@/interfaces/dashboard.interface";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { formatUsd } from "@/helpers/formatCurrency";
 
 interface KPISectionProps {
   days: number;
@@ -79,10 +80,10 @@ export function KPISection({ days }: KPISectionProps) {
     ...(showCostPerConversation
       ? [
           {
-            label: "Usage",
-            value: `$${summaryStats?.total_cost_usd?.toFixed(4) || "0.00"}`,
-            change: 16,
-            changeType: "increase" as const,
+            label: "LLM Costs",
+            value: formatUsd(summaryStats?.total_cost_usd),
+            change: 0,
+            changeType: "neutral" as const,
           },
         ]
       : []),

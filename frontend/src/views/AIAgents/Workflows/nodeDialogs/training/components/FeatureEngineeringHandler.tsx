@@ -8,7 +8,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import {
   FeatureEngineeringConfig,
   FeatureEngineeringItem,
@@ -84,7 +84,7 @@ export const FeatureEngineeringHandler: React.FC<
     <div className="space-y-4">
       <div className="space-y-0.5">
         <Label>Feature Engineering</Label>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Create new features from existing columns
         </p>
       </div>
@@ -92,7 +92,7 @@ export const FeatureEngineeringHandler: React.FC<
       {(
         <div className="space-y-2">
           {!analysisResult ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               Please analyze the CSV file first to see available columns.
             </p>
           ) : (
@@ -114,7 +114,7 @@ export const FeatureEngineeringHandler: React.FC<
                 {features.map((feature) => (
                   <div
                     key={feature.id}
-                    className="p-3 border rounded hover:bg-gray-50 space-y-2"
+                    className="p-3 border rounded hover:bg-muted space-y-2"
                   >
                     <div className="flex items-center justify-between">
                       <Label className="text-sm font-medium">
@@ -181,7 +181,7 @@ export const FeatureEngineeringHandler: React.FC<
                             placeholder='e.g., df["col1"] + df["col2"]'
                             className="h-8 text-xs font-mono"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Use df["column_name"] to reference columns
                           </p>
                         </div>
@@ -231,7 +231,7 @@ export const FeatureEngineeringHandler: React.FC<
                         feature.strategy === "standardize") && (
                         <div>
                           <Label className="text-xs">Columns</Label>
-                          <p className="text-xs text-gray-500 mb-1">
+                          <p className="text-xs text-muted-foreground mb-1">
                             Select columns to {feature.strategy}
                           </p>
                           <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-2">
@@ -282,7 +282,7 @@ export const FeatureEngineeringHandler: React.FC<
                           </div>
                           <div>
                             <Label className="text-xs">Columns</Label>
-                            <p className="text-xs text-gray-500 mb-1">
+                            <p className="text-xs text-muted-foreground mb-1">
                               Select columns for polynomial features
                             </p>
                             <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-2">
@@ -322,11 +322,11 @@ export const FeatureEngineeringHandler: React.FC<
                 ))}
               </div>
               {features.length === 0 && (
-                <p className="text-sm text-gray-500 italic py-2 text-center">
+                <p className="text-sm text-muted-foreground italic py-2 text-center">
                   No features added. Click "Add Feature" to create a new feature.
                 </p>
               )}
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {features.length} feature{features.length !== 1 ? "s" : ""}{" "}
                 configured. Features are created in the order listed.
               </p>

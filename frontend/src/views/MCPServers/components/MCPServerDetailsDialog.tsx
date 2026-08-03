@@ -73,7 +73,7 @@ export function MCPServerDetailsDialog({
           <DialogHeader>
             <DialogTitle>Loading...</DialogTitle>
           </DialogHeader>
-          <div className="py-8 text-center text-gray-500">Loading server details...</div>
+          <div className="py-8 text-center text-muted-foreground">Loading server details...</div>
         </DialogContent>
       </Dialog>
     );
@@ -101,19 +101,19 @@ export function MCPServerDetailsDialog({
 
         <div className="space-y-4 py-4">
           <div>
-            <Label className="text-xs text-gray-500">Name</Label>
+            <Label className="text-xs text-muted-foreground">Name</Label>
             <p className="text-sm font-medium mt-1">{server.name}</p>
           </div>
 
           {server.description && (
             <div>
-              <Label className="text-xs text-gray-500">Description</Label>
+              <Label className="text-xs text-muted-foreground">Description</Label>
               <p className="text-sm mt-1">{server.description}</p>
             </div>
           )}
 
           <div>
-            <Label className="text-xs text-gray-500">Status</Label>
+            <Label className="text-xs text-muted-foreground">Status</Label>
             <div className="mt-1">
               <Badge variant={server.is_active === 1 ? "default" : "secondary"}>
                 {server.is_active === 1 ? "Active" : "Inactive"}
@@ -122,7 +122,7 @@ export function MCPServerDetailsDialog({
           </div>
 
           <div>
-            <Label className="text-xs text-gray-500">Authentication</Label>
+            <Label className="text-xs text-muted-foreground">Authentication</Label>
             <div className="mt-1">
               <Badge variant="outline">
                 {server.auth_type === "oauth2" ? "OAuth 2.0 / OIDC (JWT)" : "API key"}
@@ -131,13 +131,13 @@ export function MCPServerDetailsDialog({
           </div>
 
           {server.auth_type === "oauth2" && (
-            <div className="rounded-md border bg-gray-50/80 p-4 space-y-4">
-              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+            <div className="rounded-md border bg-muted/80 p-4 space-y-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 OAuth 2.0 configuration
               </p>
-              <p className="text-xs text-gray-600 -mt-2">
+              <p className="text-xs text-muted-foreground -mt-2">
                 Callers send a JWT with{" "}
-                <code className="text-xs bg-gray-100 px-1 rounded">Authorization: Bearer &lt;access_token&gt;</code>
+                <code className="text-xs bg-muted px-1 rounded">Authorization: Bearer &lt;access_token&gt;</code>
                 . Genassist loads the discovery document below, then JWKS, and checks signature, issuer (
                 <code className="text-xs">iss</code> vs document <code className="text-xs">issuer</code>
                 ), optional scope/scp, and optional audience. The OAuth client id must match the application id
@@ -146,7 +146,7 @@ export function MCPServerDetailsDialog({
               </p>
 
               <div>
-                <Label className="text-xs text-gray-500">OIDC issuer URL</Label>
+                <Label className="text-xs text-muted-foreground">OIDC issuer URL</Label>
                 <div className="mt-1 flex items-start gap-2">
                   <p className="text-sm font-mono flex-1 break-all min-w-0">
                     {displayDiscovery || "—"}
@@ -161,7 +161,7 @@ export function MCPServerDetailsDialog({
                         title="Copy issuer URL"
                       >
                         {copiedField === "discovery" ? (
-                          <Check className="h-3.5 w-3.5 text-green-600" />
+                          <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}
@@ -171,7 +171,7 @@ export function MCPServerDetailsDialog({
               </div>
 
               <div>
-                <Label className="text-xs text-gray-500">Scope</Label>
+                <Label className="text-xs text-muted-foreground">Scope</Label>
                 <p className="text-sm font-mono mt-1 break-all">
                   {oauthScope || "None — scope/scp not enforced"}
                 </p>
@@ -179,7 +179,7 @@ export function MCPServerDetailsDialog({
 
               {oauthAudience ? (
                 <div>
-                  <Label className="text-xs text-gray-500">Expected JWT audience (legacy)</Label>
+                  <Label className="text-xs text-muted-foreground">Expected JWT audience (legacy)</Label>
                   <div className="mt-1 flex items-start gap-2">
                     <p className="text-sm font-mono flex-1 break-all min-w-0">{oauthAudience}</p>
                     <Button
@@ -191,7 +191,7 @@ export function MCPServerDetailsDialog({
                       title="Copy audience"
                     >
                       {copiedField === "audience" ? (
-                        <Check className="h-3.5 w-3.5 text-green-600" />
+                        <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
                       ) : (
                         <Copy className="h-3.5 w-3.5" />
                       )}
@@ -201,20 +201,20 @@ export function MCPServerDetailsDialog({
               ) : null}
 
               <div>
-                <Label className="text-xs text-gray-500">OAuth client ID</Label>
+                <Label className="text-xs text-muted-foreground">OAuth client ID</Label>
                 <p className="text-sm font-mono mt-1 break-all">
                   {typeof server.auth_values?.oauth2_client_id === "string" &&
                   server.auth_values.oauth2_client_id.trim()
                     ? server.auth_values.oauth2_client_id
                     : "—"}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Must match the id embedded in access tokens from your IdP for this app.
                 </p>
               </div>
 
               <div>
-                <Label className="text-xs text-gray-500">Client secret</Label>
+                <Label className="text-xs text-muted-foreground">Client secret</Label>
                 <p className="text-sm mt-1">
                   {server.auth_values?.oauth2_client_secret_set
                     ? "Stored on the server (not shown). Edit the server to rotate it."
@@ -225,8 +225,8 @@ export function MCPServerDetailsDialog({
           )}
 
           {server.auth_type === "api_key" && (
-            <div className="rounded-md border bg-gray-50/80 p-4 space-y-2">
-              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+            <div className="rounded-md border bg-muted/80 p-4 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 API key
               </p>
               <p className="text-sm font-mono">
@@ -239,9 +239,9 @@ export function MCPServerDetailsDialog({
 
           {server.url && (
             <div>
-              <Label className="text-xs text-gray-500">MCP Server URL</Label>
+              <Label className="text-xs text-muted-foreground">MCP Server URL</Label>
               <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 bg-gray-100 px-3 py-2 rounded text-sm font-mono break-all">
+                <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono break-all">
                   {server.url}
                 </code>
                 <Button
@@ -253,33 +253,33 @@ export function MCPServerDetailsDialog({
                   title="Copy URL"
                 >
                   {copiedField === "url" ? (
-                    <Check className="h-4 w-4 text-green-600" />
+                    <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Use this URL to connect MCP clients to this server
               </p>
             </div>
           )}
 
           <div>
-            <Label className="text-xs text-gray-500">Workflows</Label>
+            <Label className="text-xs text-muted-foreground">Workflows</Label>
             <div className="mt-2 space-y-2">
               {server.workflows.length === 0 ? (
-                <p className="text-sm text-gray-500">No workflows configured</p>
+                <p className="text-sm text-muted-foreground">No workflows configured</p>
               ) : (
                 server.workflows.map((workflow) => (
                   <div
                     key={workflow.workflow_id}
-                    className="border rounded-md p-3 bg-gray-50"
+                    className="border rounded-md p-3 bg-muted"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <p className="text-sm font-medium">{workflow.tool_name}</p>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           {workflow.tool_description}
                         </p>
                       </div>
@@ -292,11 +292,11 @@ export function MCPServerDetailsDialog({
 
           <div className="grid grid-cols-2 gap-4 pt-2 border-t">
             <div>
-              <Label className="text-xs text-gray-500">Created</Label>
+              <Label className="text-xs text-muted-foreground">Created</Label>
               <p className="text-sm mt-1">{formatDate(server.created_at)}</p>
             </div>
             <div>
-              <Label className="text-xs text-gray-500">Last Updated</Label>
+              <Label className="text-xs text-muted-foreground">Last Updated</Label>
               <p className="text-sm mt-1">{formatDate(server.updated_at)}</p>
             </div>
           </div>

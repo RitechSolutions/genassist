@@ -6,6 +6,7 @@ from typing import List, Optional
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.file import FileModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.file import FileBase
 from app.cache.redis_cache import make_key_builder
 from starlette_context import context
@@ -16,11 +17,11 @@ file_manager_key_builder = make_key_builder("file_manager")
 
 
 @inject
-class FileManagerRepository:
+class FileManagerRepository(DbRepository[FileModel]):
     """Repository for file and folder database operations with caching."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(FileModel, db)
 
     # ==================== File Methods ====================
 

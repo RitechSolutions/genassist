@@ -438,7 +438,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Region",
                 required=False,
-                default="ca-central-1",
+                default="eu-central-1",
                 description="AWS region name",
             ),
             FieldSchema(
@@ -446,8 +446,28 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Model",
                 required=True,
-                default="us.amazon.nova-2-lite-v1:0",
+                default="eu.amazon.nova-2-lite-v1:0",
                 description="AWS model name",
+            ),
+            FieldSchema(
+                name="model_provider",
+                type="select",
+                label="Model Provider",
+                required=False,
+                description=(
+                    "Foundation-model family. Required only when Model is a full model "
+                    "ARN (custom / fine-tuned / provisioned / inference-profile), which "
+                    "does not encode its own family."
+                ),
+                options=[
+                    {"value": "amazon", "label": "Amazon (Nova / Titan)"},
+                    {"value": "anthropic", "label": "Anthropic (Claude)"},
+                    {"value": "meta", "label": "Meta (Llama)"},
+                    {"value": "cohere", "label": "Cohere"},
+                    {"value": "mistral", "label": "Mistral"},
+                    {"value": "ai21", "label": "AI21"},
+                    {"value": "deepseek", "label": "DeepSeek"},
+                ],
             ),
             FieldSchema(
                 name="temperature",

@@ -2,13 +2,23 @@
 Base node class for workflow execution with state management.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Literal, Optional, List
 import logging
 import time
+from abc import ABC, abstractmethod
+from contextlib import nullcontext
+from typing import Any, Dict, List, Literal, Optional
+
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+from app.core.observability.otel import (
+    is_otel_runtime_enabled,
+    record_workflow_node_duration,
+)
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
-from app.modules.workflow.engine.utils import replace_config_vars, extract_code_params
+from app.modules.workflow.engine.node_result import is_node_failure, node_failure
+from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -69,6 +79,18 @@ class BaseNode(ABC):
     def get_type(self) -> str:
         """Get the node type from configuration."""
         return self.node_config.get("type", "unknown")
+
+    def is_deactivated(self) -> bool:
+        """Whether the user has deactivated (bypassed) this node in the editor.
+
+        A deactivated node does not run its own logic at execution time. The
+        engine instead forwards the node's resolved input straight through as
+        its output, so the workflow behaves as if the node were not present and
+        data flows from the upstream node directly to the downstream node(s).
+        The flag is stored on the node's ``data`` in the workflow's ``nodes``
+        JSONB column, so it is persisted with the workflow.
+        """
+        return bool(self.node_data.get("deactivated", False))
 
     def get_node_config(self, node_id: str):
         """Get the node config and type."""
@@ -132,13 +154,11 @@ class BaseNode(ABC):
             source_id = edge.get("source")
             if source_id:
                 _, node_type = self.get_node_config(source_id)
-                if "toolBuilderNode" in node_type or "mcpNode" in node_type:
+                if "toolBuilderNode" in node_type or "mcpNode" in node_type or "subAgentNode" in node_type:
                     continue
                 source_nodes.append(source_id)
 
-        logger.debug(
-            f"Found {len(source_nodes)} source nodes for next node {self.node_id}: {source_nodes}"
-        )
+        logger.debug(f"Found {len(source_nodes)} source nodes for next node {self.node_id}: {source_nodes}")
         return source_nodes
 
     def check_if_requirement_satisfied(self) -> bool:
@@ -157,9 +177,7 @@ class BaseNode(ABC):
         for source_id in source_nodes:
             source_output = self.state.get_node_output(source_id)
             if source_output is None:
-                logger.debug(
-                    f"Source node {source_id} not ready for next node {self.node_id}"
-                )
+                logger.debug(f"Source node {source_id} not ready for next node {self.node_id}")
                 return False
 
         logger.debug(f"All requirements satisfied for node: {self.node_id}")
@@ -186,9 +204,7 @@ class BaseNode(ABC):
             return self.execution_end_time - self.execution_start_time
         return 0.0
 
-    async def dummy_process(
-        self, config: Optional[Dict[str, Any]] = None, node_input: Any = None
-    ) -> Any:
+    async def dummy_process(self, config: Optional[Dict[str, Any]] = None, node_input: Any = None) -> Any:
         if config is None:
             config = {}
         logger.info(f"Dummy process called for node {self.node_id}")
@@ -196,9 +212,7 @@ class BaseNode(ABC):
         logger.info("Node config: %s", truncate_for_log(str(config)))
         return f"Success on node_input: {node_input}"
 
-    def get_connected_nodes(
-        self, tag: Literal["tools", "starter", "true", "false", "default"]
-    ) -> list:
+    def get_connected_nodes(self, tag: Literal["tools", "starter", "true", "false", "default"]) -> list:
         """
         Get connected source nodes, optionally filtered by target handle, in BaseTool format.
 
@@ -237,7 +251,6 @@ class BaseNode(ABC):
 
             # Check if this is a "tools" type connection (for tools)
             if "tools" in edge_target_handle:
-
                 from app.modules.workflow.agents.base_tool import BaseTool
                 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
@@ -246,9 +259,7 @@ class BaseNode(ABC):
                 # Get node config directly from the workflow state
                 workflow = self.get_state().workflow
                 if not workflow:
-                    logger.warning(
-                        "No workflow found in state for node %s", self.node_id
-                    )
+                    logger.warning("No workflow found in state for node %s", self.node_id)
                     continue
 
                 # Find the node configuration in the workflow
@@ -266,24 +277,21 @@ class BaseNode(ABC):
                 node_type = node_config.get("type", "")
                 node_class = WorkflowEngine._node_registry.get(node_type)
                 if not node_class:
-                    logger.warning(
-                        "Unknown node type: %s for node %s", node_type, source_node_id
-                    )
+                    logger.warning("Unknown node type: %s for node %s", node_type, source_node_id)
                     continue
 
                 node = node_class(source_node_id, node_config, self.get_state())
 
                 if node:
                     # Check if node exposes multiple tools (e.g., MCP node)
-                    if hasattr(node, "get_tools") and callable(
-                        getattr(node, "get_tools")
-                    ):
-                        # Node exposes multiple tools
+                    if hasattr(node, "get_tools") and callable(getattr(node, "get_tools")):
+                        # Node exposes multiple tools (e.g. MCP)
                         tools = node.get_tools()
+                        for t in tools:
+                            t.agent_id = self.node_id
+                            t.state = self.get_state()
                         connected_nodes.extend(tools)
-                        logger.debug(
-                            "Added %d tools from node %s", len(tools), source_node_id
-                        )
+                        logger.debug("Added %d tools from node %s", len(tools), source_node_id)
                     else:
                         # Standard single tool node
                         tool = BaseTool(
@@ -291,16 +299,14 @@ class BaseNode(ABC):
                             name=node.get_name(),
                             description=node.get_description(),
                             parameters=node.get_input_schema(),
-                            return_direct=node.get_node_data().get(
-                                "returnDirect", False
-                            ),
+                            return_direct=node.get_node_data().get("returnDirect", False),
                             function=node.execute,
+                            agent_id=self.node_id,
+                            state=self.get_state(),
                         )
 
                         connected_nodes.append(tool)
-                        logger.debug(
-                            "Added tool: %s from node %s", tool.name, source_node_id
-                        )
+                        logger.debug("Added tool: %s from node %s", tool.name, source_node_id)
 
             else:
                 source_node_id = edge.get("target")
@@ -314,9 +320,7 @@ class BaseNode(ABC):
 
         return connected_nodes
 
-    async def execute(
-        self, direct_input: Any = None
-    ) -> Any:  # pylint: disable=unused-argument
+    async def execute(self, direct_input: Any = None) -> Any:  # pylint: disable=unused-argument
         """
         Execute the node with the given input data.
 
@@ -333,57 +337,106 @@ class BaseNode(ABC):
         Returns:
             The processed output from the node
         """
+        t0 = time.perf_counter()
+        success = False
+        span_cm = (
+            trace.get_tracer(__name__).start_as_current_span(
+                "workflow.node.execute",
+                attributes={
+                    "genassist.node.id": self.node_id,
+                    "genassist.node.type": self.get_type(),
+                    "genassist.workflow.id": str(self.state.workflow_id or ""),
+                    "genassist.workflow.execution_id": str(getattr(self.state, "execution_id", "") or ""),
+                },
+            )
+            if is_otel_runtime_enabled()
+            else nullcontext()
+        )
+
         try:
+            with span_cm as span:
+                try:
+                    # Start execution tracking
+                    self.start_execution()
+                    # self.set_node_input(input_data)
 
-            # Start execution tracking
-            self.start_execution()
-            # self.set_node_input(input_data)
+                    # Resolve configuration template variables
+                    source_output = self.get_input_from_source()
+                    config_data = self.node_config.get("data", {})
+                    resolved_config_data, replacements = replace_config_vars(
+                        config=config_data,
+                        state=self.state,
+                        source_output=source_output,
+                        direct_input=direct_input,
+                    )
 
-            # Resolve configuration template variables
-            source_output = self.get_input_from_source()
-            config_data = self.node_config.get("data", {})
-            resolved_config_data, replacements = replace_config_vars(
-                config=config_data,
-                state=self.state,
-                source_output=source_output,
-                direct_input=direct_input,
-            )
+                    # Log replacements for debugging
+                    if replacements and logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "Node %s variable replacements: %s",
+                            self.node_id,
+                            redact_sensitive_substrings(truncate_for_log(str(replacements))),
+                        )
 
-            # Log replacements for debugging
-            if replacements and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "Node %s variable replacements: %s", self.node_id, redact_sensitive_substrings(truncate_for_log(str(replacements)))
-                )
+                    # Extract params.get("varName") references from code fields
+                    # so Python scripts can access them at execution time
+                    self.code_params = extract_code_params(
+                        data=resolved_config_data,
+                        state=self.state,
+                        source_output=source_output,
+                        direct_input=direct_input,
+                    )
+                    if self.code_params:
+                        logger.debug(
+                            "Node %s code params: %s",
+                            self.node_id,
+                            redact_sensitive_substrings(str(self.code_params)),
+                        )
 
-            # Extract params.get("varName") references from code fields
-            # so Python scripts can access them at execution time
-            self.code_params = extract_code_params(
-                data=resolved_config_data,
-                state=self.state,
-                source_output=source_output,
-                direct_input=direct_input,
-            )
-            if self.code_params:
-                logger.debug("Node %s code params: %s", self.node_id, self.code_params)
+                    self.set_node_input(replacements)
+                    # Process the node (implemented by subclasses)
+                    result = await self.process(resolved_config_data)
 
-            self.set_node_input(replacements)
-            # Process the node (implemented by subclasses)
-            result = await self.process(resolved_config_data)
+                    # A node can also fail WITHOUT raising — by returning an error
+                    # envelope, an HTTP-500-style body, or a swallowed None. Detect
+                    # that here so the failure is recorded, while still letting the
+                    # workflow continue with the node's (partial) output so the user
+                    # keeps getting a response. See node_result.is_node_failure.
+                    failure = is_node_failure(result)
+                    if failure is not None:
+                        if span is not None and span.is_recording():
+                            span.set_status(Status(StatusCode.ERROR, str(failure.get("error"))))
+                        flow_output = failure.get("output")
+                        if flow_output is not None:
+                            self.set_node_output(flow_output)
+                        self.complete_execution(error=failure.get("error"))
+                        # Return the RAW result (not the unwrapped output) so a caller
+                        # using this node as a tool can itself detect the failure.
+                        return result
 
-            # Set output data
-            if result is not None:
-                self.set_node_output(result)
+                    # Set output data
+                    if result is not None:
+                        self.set_node_output(result)
 
-            # Complete execution tracking
-            self.complete_execution()
+                    # Complete execution tracking
+                    self.complete_execution()
+                    success = True
+                    return result
 
-            return result
-
-        except Exception as e:
-            error_msg = f"Error executing node {self.node_id}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            self.complete_execution(error=error_msg)
-            # raise
+                except Exception as e:
+                    if span is not None and span.is_recording():
+                        span.record_exception(e)
+                        span.set_status(Status(StatusCode.ERROR, str(e)))
+                    error_msg = f"Error executing node {self.node_id}: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    self.complete_execution(error=error_msg)
+                    # Return a detectable failure envelope (not None) so a caller using
+                    # this node as a tool learns it failed. Downstream engine flow is
+                    # unchanged: no node output was stored and the envelope carries no
+                    # `next_nodes` key.
+                    return node_failure(error_msg, code=500)
+        finally:
+            record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:
@@ -415,8 +468,7 @@ class BaseNode(ABC):
         """
         all_target_edges = self.get_state().target_edges
         target_edges = all_target_edges.get(self.node_id, [])
-        input_edges = [edge for edge in target_edges if edge.get(
-            "targetHandle", "") == "input"]
+        input_edges = [edge for edge in target_edges if edge.get("targetHandle", "") == "input"]
         if not input_edges:
             logger.debug("No target edges found for node %s", self.node_id)
             return None
@@ -429,14 +481,17 @@ class BaseNode(ABC):
             source_output = self.get_state().get_node_output(source_node_id)
 
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("Node %s retrieved output from source node %s: %s",
-                             self.node_id, source_node_id, redact_sensitive_substrings(truncate_for_log(str(source_output))))
+                logger.debug(
+                    "Node %s retrieved output from source node %s: %s",
+                    self.node_id,
+                    source_node_id,
+                    redact_sensitive_substrings(truncate_for_log(str(source_output))),
+                )
         else:
             source_output = {}
             for edge in input_edges:
                 source_node_id = edge["source"]
-                source_output = {
-                    **source_output, **{source_node_id: self.get_state().get_node_output(source_node_id)}}
+                source_output = {**source_output, **{source_node_id: self.get_state().get_node_output(source_node_id)}}
 
         return source_output
 

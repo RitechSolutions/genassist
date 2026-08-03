@@ -1,18 +1,16 @@
 import logging
 from datetime import date, datetime, time, timezone
 
-from app.core.utils.date_time_utils import utc_now
-from uuid import UUID
-
 from injector import inject
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils.date_time_utils import utc_now
+from app.db.base import generate_sequential_uuid
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
-from app.db.base import generate_sequential_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +55,7 @@ class AnalyticsAggregationRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_affected_dates_since(
-        self, since: datetime, until: datetime
-    ) -> list[date]:
+    async def get_affected_dates_since(self, since: datetime, until: datetime) -> list[date]:
         """Return distinct dates that have logs in the given time range."""
         stmt = (
             select(func.distinct(func.date(AgentResponseLogModel.logged_at)))
@@ -134,7 +130,7 @@ class AnalyticsAggregationRepository:
             )
 
         for start in range(0, len(rows), _UPSERT_BATCH_SIZE):
-            chunk = rows[start:start + _UPSERT_BATCH_SIZE]
+            chunk = rows[start : start + _UPSERT_BATCH_SIZE]
             stmt = insert(AgentExecutionDailyStatsModel).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_agent_execution_daily_stats_agent_date",
@@ -197,7 +193,7 @@ class AnalyticsAggregationRepository:
             )
 
         for start in range(0, len(rows), _UPSERT_BATCH_SIZE):
-            chunk = rows[start:start + _UPSERT_BATCH_SIZE]
+            chunk = rows[start : start + _UPSERT_BATCH_SIZE]
             stmt = insert(NodeExecutionDailyStatsModel).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_node_execution_daily_stats_agent_node_date",

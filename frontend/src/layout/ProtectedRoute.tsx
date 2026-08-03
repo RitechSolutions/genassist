@@ -5,7 +5,7 @@ import {
   useIsLoadingPermissions,
   useRefreshPermissions,
 } from "@/context/PermissionContext";
-import { Skeleton } from "@/components/skeleton";
+import RouteLoadingFallback from "@/layout/RouteLoadingFallback";
 import { useEffect } from "react";
 import { useServerStatus } from "@/context/ServerStatusContext";
 
@@ -46,17 +46,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="flex flex-col space-y-3">
-          <Skeleton className="h-[125px] w-[250px] rounded-xl" />
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-[250px]" />
-            <Skeleton className="h-4 w-[200px]" />
-          </div>
-        </div>
-      </div>
-    );
+    return <RouteLoadingFallback />;
   }
 
   if (
@@ -64,17 +54,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     Array.isArray(requiredPermissions) &&
     requiredPermissions.length > 0
   ) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="flex flex-col space-y-3">
-          <Skeleton className="h-[125px] w-[250px] rounded-xl" />
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-[250px]" />
-            <Skeleton className="h-4 w-[200px]" />
-          </div>
-        </div>
-      </div>
-    );
+    return <RouteLoadingFallback />;
   }
 
   const normalize = (input?: string | string[]) =>

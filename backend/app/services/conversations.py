@@ -364,13 +364,18 @@ class ConversationService:
         # Get messages for analysis
         gpt_analysis = await self._analyze_transcript(conversation_id, resolved_analyst_id)
 
+        # Snapshot any pre-existing analysis so a replace (e.g. a concurrent backfill
+        # already created one) adjusts operator stats instead of double-counting.
+        previous_analysis = await self.conversation_analysis_service.get_by_conversation_id(
+                saved_conversation.id)
+
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis, resolved_analyst_id,
                     saved_conversation.id))
 
         # Update operator statistics
         await self.operator_statistics_service.update_from_analysis(conversation_analysis, conversation.operator_id,
-                saved_conversation.duration)
+                saved_conversation.duration, previous_analysis=previous_analysis)
 
         # Store in Zendesk if enabled
         store_in_zendesk = (os.getenv("STORE_CONVERSATIONS_IN_ZENDESK", "false").lower() == "true")
@@ -440,8 +445,12 @@ class ConversationService:
         # Run GPT analysis
         llm_analyst = await self.llm_analyst_service.get_by_id(resolved_analyst_id)
 
+        # Resolve the AI agent for analyst-cost attribution
+        conversation = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(conversation_id)
+        agent_id = conversation.agent_id if conversation else None
+
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(message_type_segments,
-                llm_analyst=llm_analyst, conversation_id=conversation_id)
+                llm_analyst=llm_analyst, conversation_id=conversation_id, agent_id=agent_id)
         return gpt_analysis
 
 
@@ -456,11 +465,15 @@ class ConversationService:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
 
         gpt_analysis = await self._analyze_transcript(conversation_id, llm_analyst_id)
+        # Snapshot any pre-existing analysis so re-analysis replaces the row and adjusts
+        # operator stats in place rather than counting the conversation twice.
+        previous_analysis = await self.conversation_analysis_service.get_by_conversation_id(
+                conversation_id)
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis, llm_analyst_id,
                     conversation_id))
         await self.operator_statistics_service.update_from_analysis(conversation_analysis, conversation.operator_id,
-                conversation.duration)
+                conversation.duration, previous_analysis=previous_analysis)
 
 
     async def store_zendesk_analysis(self, saved_conversation: ConversationModel,
@@ -521,9 +534,13 @@ class ConversationService:
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id, throw_not_found=False)
 
         if llm_analyst and llm_analyst.is_active:
+            # Load the agent id for cost tracking
+            conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
+                conversation.id)
+            agent_id = conv_with_agent.agent_id if conv_with_agent else None
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
-                        conversation_id=conversation.id))
+                        conversation_id=conversation.id, agent_id=agent_id))
         else:
             # TODO remove after fixing seed
             # Temporary solution to avoid seed missing llm_analyst

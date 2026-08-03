@@ -216,11 +216,12 @@ export const FILE_READER_NODE_DEFINITION: NodeTypeDefinition<FileReaderNodeData>
   description: 'Reads the content of an uploaded file and outputs it as text.',
   shortDescription: 'Extract content of a file',
   helpContent: FILE_READER_HELP_CONTENT,
-  configSubtitle: 'Upload a file whose content will be extracted.',
+  configSubtitle: 'Extract text from a chat-attached document or an uploaded file.',
   category: 'utils',
   icon: 'FileText',
   defaultData: {
     name: 'File Reader',
+    fileSource: 'chatAttachment',
     handlers: [
       {
         id: 'input',

@@ -1,6 +1,11 @@
 import { Node, Edge, MarkerType } from "reactflow";
 import { v4 as uuidv4 } from "uuid";
 import nodeRegistry from "../registry/nodeRegistry";
+import {
+  SUB_AGENT_SOURCE_HANDLE,
+  SUB_AGENT_TARGET_HANDLE,
+  validateSubAgentConnection,
+} from "./subAgentGraph";
 
 // ── Types ──
 
@@ -18,6 +23,8 @@ export interface AddNodeAction {
   thenConnectToLabel?: string;
   /** When set, wraps the new node in a toolBuilderNode and connects both to this agent node id */
   asToolFor?: string;
+  /** When set, attaches this subAgentNode to the given parent agent/sub-agent id as a delegate */
+  asSubAgentFor?: string;
 }
 
 export interface UpdateNodeAction {
@@ -102,6 +109,7 @@ export function parseAgentActions(text: string): ParseResult {
           thenConnectTo: parsed.then_connect_to,
           thenConnectToLabel: parsed.then_connect_to_label,
           asToolFor: parsed.as_tool_for,
+          asSubAgentFor: parsed.as_sub_agent_for,
         });
       }
     } catch {
@@ -258,6 +266,7 @@ function makeEdge(
 export function createNodeFromAction(
   action: AddNodeAction,
   existingNodes: Node[],
+  existingEdges: Edge[] = [],
 ): { nodes: Node[]; edges: Edge[] } {
   const nodeDef = nodeRegistry.getNodeType(action.nodeType);
   if (!nodeDef) return { nodes: [], edges: [] };
@@ -280,7 +289,7 @@ export function createNodeFromAction(
   const resolvedThenConnectTo = resolveId(action.thenConnectTo, action.thenConnectToLabel);
 
   const id = uuidv4();
-  const anchorId = action.asToolFor ?? resolvedConnectTo;
+  const anchorId = action.asToolFor ?? action.asSubAgentFor ?? resolvedConnectTo;
   const position = calculateNodePosition(anchorId, existingNodes);
 
   const overrideData: Record<string, unknown> = {};
@@ -289,6 +298,29 @@ export function createNodeFromAction(
 
   const node = nodeRegistry.createNode(action.nodeType, id, position, overrideData);
   if (!node) return { nodes: [], edges: [] };
+
+  // Sub-agents only link to a parent via the delegation handle
+  if (action.nodeType === "subAgentNode") {
+    const parentId = action.asSubAgentFor ?? resolvedConnectTo;
+    const parent = existingNodes.find((n) => n.id === parentId);
+    if (!parentId || !parent) return { nodes: [node], edges: [] };
+    const check = validateSubAgentConnection(
+      {
+        source: id,
+        target: parentId,
+        sourceHandle: SUB_AGENT_SOURCE_HANDLE,
+        targetHandle: SUB_AGENT_TARGET_HANDLE,
+      },
+      [...existingNodes, node],
+      existingEdges,
+    );
+    if (!check.ok) return { nodes: [node], edges: [] };
+    node.position = { x: parent.position?.x ?? position.x, y: (parent.position?.y ?? position.y) + 250 };
+    return {
+      nodes: [node],
+      edges: [makeEdge(id, parentId, SUB_AGENT_SOURCE_HANDLE, SUB_AGENT_TARGET_HANDLE)],
+    };
+  }
 
   // ── Tool pattern: wrap in toolBuilderNode ──
   if (action.asToolFor) {

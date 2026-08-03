@@ -6,6 +6,7 @@ from typing import Dict, Any
 import logging
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.utils import execute_python_code
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class PythonToolNode(BaseNode):
         if not code:
             error_msg = "No Python code specified for Python tool"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=400, output={"status": 400, "data": {"error": error_msg}})
 
         try:
             # Execute the Python code with resolved params from code_params
@@ -48,4 +49,4 @@ class PythonToolNode(BaseNode):
         except Exception as e:
             error_msg = f"Error processing Python tool: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}}
+            return node_failure(error_msg, code=500, output={"status": 500, "data": {"error": error_msg}})

@@ -220,7 +220,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
               <SelectItem value="csv">CSV Upload</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Select a TimeDB, Snowflake, or other database source, or upload a
             CSV file
           </p>
@@ -237,7 +237,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
               placeholder="SELECT * FROM training_data WHERE ..."
               className="w-full min-h-[120px] font-mono text-sm"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               SQL query to fetch training data. Use variables from previous
               nodes if needed.
             </p>

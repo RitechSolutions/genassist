@@ -17,14 +17,9 @@ function buildQueryString(params: Record<string, string | undefined>): string {
 }
 
 export const fetchGroupAgents = async (groupId: string): Promise<GroupAgentItem[]> => {
-  try {
-    return (
-      (await apiRequest<GroupAgentItem[]>("get", `/analytics/groups/${groupId}/agents`)) ?? []
-    );
-  } catch (error) {
-    console.error("Error fetching group agents:", error);
-    return [];
-  }
+  const data = await apiRequest<GroupAgentItem[]>("get", `/analytics/groups/${groupId}/agents`);
+  if (!Array.isArray(data)) throw new Error("Failed to fetch group agents");
+  return data;
 };
 
 export const fetchAgentDailyStats = async (

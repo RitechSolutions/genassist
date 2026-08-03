@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 import logging
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.data.manager import AgentRAGServiceManager
 from app.services.agent_knowledge import KnowledgeBaseService
 
@@ -33,7 +34,7 @@ class KnowledgeToolNode(BaseNode):
         if not selected_bases:
             error_msg = "No knowledge bases selected for query"
             logger.error(error_msg)
-            return {"error": error_msg}
+            return node_failure(error_msg)
 
         try:
             result = await self._query_knowledge_base(selected_bases, query, limit, force_limit)
@@ -42,7 +43,7 @@ class KnowledgeToolNode(BaseNode):
         except Exception as e:
             error_msg = f"Error processing knowledge tool: {str(e)}"
             logger.error(error_msg)
-            return {"error": error_msg}
+            return node_failure(error_msg)
 
     async def _query_knowledge_base(self, base_ids: List[str], query: str, limit: int = 5, force_limit: bool = False) -> str:
         """Query knowledge bases with the given query using simplified manager"""
@@ -63,5 +64,7 @@ class KnowledgeToolNode(BaseNode):
                 return "No relevant information found in the knowledge bases."
 
         except Exception as e:
+            # Propagate so process() records this as a node failure instead of
+            # returning an error string that looks like a normal result.
             logger.error(f"Error querying knowledge base: {str(e)}")
-            return f"Error querying knowledge base: {str(e)}"
+            raise

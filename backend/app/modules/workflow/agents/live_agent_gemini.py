@@ -77,6 +77,7 @@ class GeminiLiveAgent:
         self._user_tx: List[str] = []
         self._agent_tx: List[str] = []
         self._tool_steps: List[Dict[str, Any]] = []  # tool calls made this turn
+        self._last_usage: Any = None
 
     # ==================== ENTRY POINTS ====================
 
@@ -95,6 +96,7 @@ class GeminiLiveAgent:
 
         self._log_session("single-turn")
         audio_out = bytearray()
+        self._last_usage = None  # per-turn reset
 
         async def _collect_audio(chunk: bytes) -> None:
             audio_out.extend(chunk)
@@ -119,6 +121,37 @@ class GeminiLiveAgent:
             "message": "".join(self._agent_tx).strip(),
             "audio": bytes(audio_out),
             "steps": list(self._tool_steps),
+            "usage": self._extract_live_usage(),
+        }
+
+    def _extract_live_usage(self) -> Optional[Dict[str, Any]]:
+        """Convert Gemini Live usage_metadata to the ledger's token shape"""
+        u = self._last_usage
+        if u is None:
+            return None
+
+        def _n(attr: str) -> int:
+            return int(getattr(u, attr, None) or 0)
+
+        reply_tokens = _n("response_token_count") or _n("candidates_token_count")
+        input_tokens = _n("prompt_token_count") + _n("tool_use_prompt_token_count")
+        output_tokens = reply_tokens + _n("thoughts_token_count")
+        total = _n("total_token_count")
+        if input_tokens == 0 and output_tokens == 0 and total == 0:
+            return None
+        return {
+            "model": self._model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": max(total, input_tokens + output_tokens),
+            "token_details": {
+                "prompt_token_count": _n("prompt_token_count"),
+                "tool_use_prompt_token_count": _n("tool_use_prompt_token_count"),
+                "response_token_count": _n("response_token_count"),
+                "candidates_token_count": _n("candidates_token_count"),
+                "thoughts_token_count": _n("thoughts_token_count"),
+                "cached_content_token_count": _n("cached_content_token_count"),
+            },
         }
 
     async def stream(self, audio_in: asyncio.Queue, send_audio: SendAudio, send_event: SendEvent) -> None:
@@ -185,6 +218,11 @@ class GeminiLiveAgent:
         emitted), audio (streamed or collected via `send_audio`), and barge-in.
         Transcript/event emission is a no-op on the single-turn path.
         """
+        # Per-turn cumulative usage
+        usage_metadata = getattr(message, "usage_metadata", None)
+        if usage_metadata is not None:
+            self._last_usage = usage_metadata
+
         if message.tool_call and message.tool_call.function_calls:
             await self._handle_tool_calls(session, message.tool_call.function_calls, send_event)
             return False
@@ -262,6 +300,7 @@ class GeminiLiveAgent:
         self._user_tx = []
         self._agent_tx = []
         self._tool_steps = []
+        self._last_usage = None
 
     async def _safe_persist(self, user_text: str, agent_text: str, steps: List[Dict[str, Any]]) -> None:
         try:

@@ -17,7 +17,8 @@ export const FeatureFlags = {
       USER_TYPES: 'feature.userTypes',
       ROLES: 'feature.roles',
       ANALYTICS: 'feature.analytics',
-      API_KEYS: 'feature.apiKeys'
+      API_KEYS: 'feature.apiKeys',
+      TEMPLATE_MARKETPLACE: 'feature.templateMarketplace'
     },
 
     // Analytics / agent metrics: cost is hidden by default; show when this flag is enabled
@@ -27,6 +28,7 @@ export const FeatureFlags = {
 
     LLM_SETTINGS: {
       SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
+      SHOW_BEDROCK_FINE_TUNE: 'llmSettings.showBedrockFineTune',
     },
 
     // Workflow specific flags

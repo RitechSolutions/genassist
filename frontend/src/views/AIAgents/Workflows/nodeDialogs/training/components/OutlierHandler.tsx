@@ -7,7 +7,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/select";
 import {
   OutlierHandlingConfig,
   OutlierHandlingItem,
@@ -187,7 +187,7 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
     <div className="space-y-4">
       <div className="space-y-0.5">
         <Label>Handle Outliers</Label>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Configure how to handle outliers in numeric columns
         </p>
       </div>
@@ -195,11 +195,11 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
       {(
         <div className="space-y-2">
           {!analysisResult ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               Please analyze the CSV file first to see numeric columns.
             </p>
           ) : numericColumns.length === 0 ? (
-            <p className="text-sm text-gray-500 italic py-2">
+            <p className="text-sm text-muted-foreground italic py-2">
               No numeric columns found or all numeric columns are filtered out.
             </p>
           ) : (
@@ -213,7 +213,7 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
                   return (
                     <div
                       key={column.columnName}
-                      className="flex items-center justify-between p-3 border rounded hover:bg-gray-50 gap-4"
+                      className="flex items-center justify-between p-3 border rounded hover:bg-muted gap-4"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -221,7 +221,7 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
                             {column.columnName}
                           </Label>
                           {columnInfo && (
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-muted-foreground">
                               (min: {columnInfo.min ?? "N/A"}, max:{" "}
                               {columnInfo.max ?? "N/A"})
                             </span>
@@ -309,7 +309,7 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
                   );
                 })}
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {columns.length} numeric column{columns.length !== 1 ? "s" : ""}{" "}
                 available. IQR method uses Q1/Q3 quartiles. Z-Score method uses
                 standard deviations from mean.

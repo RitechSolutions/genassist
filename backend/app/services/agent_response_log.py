@@ -22,10 +22,12 @@ class AgentResponseLogService:
         conversation_id: UUID,
         transcript_message_id: UUID,
         agent_response: Dict[str, Any],
+        workflow_execution_id: str | None = None,
     ):
         """
         Persist the raw agent response for later debugging.
         Extracts token_usage and cost_usd when present.
+        ``workflow_execution_id`` correlates the log to the usage ledger.
         """
         token_usage = agent_response.get("token_usage") or {}
         input_tokens = token_usage.get("input_tokens")
@@ -41,6 +43,7 @@ class AgentResponseLogService:
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cost_usd=cost_usd,
+            workflow_execution_id=workflow_execution_id,
         )
 
     async def get_log_for_message(

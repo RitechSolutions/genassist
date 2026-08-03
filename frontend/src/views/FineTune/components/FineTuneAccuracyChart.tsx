@@ -29,9 +29,9 @@ export function FineTuneAccuracyChart({
   }));
 
   return (
-    <Card className={`bg-white shadow-sm ${className || ""}`}>
+    <Card className={`bg-card shadow-sm ${className || ""}`}>
       <CardHeader className="pb-0">
-        <CardTitle className="text-sm font-semibold text-zinc-700">{title}</CardTitle>
+        <CardTitle className="text-sm font-semibold text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
         <div className="h-[240px] relative">

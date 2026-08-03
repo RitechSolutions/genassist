@@ -6,7 +6,11 @@ from fastapi_injector import Injected
 from injector import inject
 
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
-from app.schemas.conversation_analysis import AnalysisResult, ConversationAnalysisCreate
+from app.schemas.conversation_analysis import (
+    AnalysisResult,
+    ConversationAnalysisCreate,
+    ConversationAnalysisRead,
+)
 
 
 def _truncate(text: Optional[str], max_length: int = 255) -> str:
@@ -24,6 +28,19 @@ class ConversationAnalysisService:
     async def save_conversation_analysis(self, conversation: ConversationAnalysisCreate):
         model = await self.repository.save_conversation_analysis(conversation)
         return model
+
+    async def get_by_conversation_id(
+        self, conversation_id: UUID
+    ) -> Optional[ConversationAnalysisRead]:
+        """Return a detached snapshot of the current analysis (or None).
+
+        Callers use this to capture the pre-existing values before an upsert so
+        operator statistics can be adjusted instead of double-counted on replace.
+        """
+        model = await self.repository.get_by_conversation_id(conversation_id)
+        if model is None:
+            return None
+        return ConversationAnalysisRead.model_validate(model)
 
 
     async def create_conversation_analysis(self, gpt_analysis: AnalysisResult, llm_analyst_id: UUID,

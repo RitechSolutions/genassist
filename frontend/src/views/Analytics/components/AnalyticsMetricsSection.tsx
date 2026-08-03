@@ -1,4 +1,5 @@
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
+import { METRIC_COLORS } from "@/constants/chartColors";
 import { Card } from "@/components/card";
 import { AnalyticsMetricsCardsSkeleton } from "./skeletons";
 import {
@@ -43,10 +44,10 @@ interface AnalyticsMetricsSectionProps {
 
 /** Return a Tailwind text color class based on score percentage. */
 function getScoreColor(value: number, hasData: boolean): string {
-  if (!hasData) return "text-zinc-900";
-  if (value >= 70) return "text-emerald-600";
-  if (value >= 40) return "text-amber-600";
-  return "text-rose-600";
+  if (!hasData) return "text-foreground";
+  if (value >= 70) return "text-emerald-600 dark:text-emerald-400";
+  if (value >= 40) return "text-amber-600 dark:text-amber-400";
+  return "text-rose-600 dark:text-rose-400";
 }
 
 function parsePercent(str: string): number {
@@ -58,7 +59,7 @@ function DeltaBadge({ delta }: { delta: number | undefined | null }) {
   if (delta === undefined || delta === null || delta === 0) return null;
   const isPositive = delta > 0;
   const Icon = isPositive ? TrendingUp : TrendingDown;
-  const color = isPositive ? "text-emerald-600" : "text-rose-500";
+  const color = isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500";
   return (
     <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${color}`}>
       <Icon className="w-3 h-3" />
@@ -104,7 +105,7 @@ export const AnalyticsMetricsSection = ({
       icon: SmileIcon,
       description:
         "AI-evaluated score of how satisfied the customer appeared during the conversation.",
-      color: "#10b981",
+      color: METRIC_COLORS.satisfaction,
       deltaKey: "Customer Satisfaction",
     },
     {
@@ -114,7 +115,7 @@ export const AnalyticsMetricsSection = ({
       icon: Award,
       description:
         "AI-evaluated score of overall service quality, including accuracy, tone, and completeness.",
-      color: "#8b5cf6",
+      color: METRIC_COLORS.serviceQuality,
       deltaKey: "Quality of Service",
     },
     {
@@ -124,7 +125,7 @@ export const AnalyticsMetricsSection = ({
       icon: CheckCircle,
       description:
         "AI-evaluated score of how well customer issues were resolved.",
-      color: "#f59e0b",
+      color: METRIC_COLORS.resolutionRate,
       deltaKey: "Resolution Rate",
     },
     {
@@ -134,7 +135,7 @@ export const AnalyticsMetricsSection = ({
       icon: Zap,
       description:
         "AI-evaluated score of how efficiently the agent handled the conversation.",
-      color: "#06b6d4",
+      color: METRIC_COLORS.efficiency,
       deltaKey: "Efficiency",
     },
     {
@@ -171,7 +172,7 @@ export const AnalyticsMetricsSection = ({
 
   return (
     <div className={cn("space-y-6 sm:space-y-8", analyticsRefreshingClassName(refreshing))}>
-      <Card className={cn("mb-0 w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
+      <Card className={cn("mb-0 w-full bg-card dark:bg-zinc-900 px-4 py-4 shadow-sm sm:px-6 sm:py-6", analyticsFadeUpClass)}>
         {/* Context line */}
         {(analyzedCount > 0 || deltas) && (
           <p className="text-xs text-muted-foreground mb-4">

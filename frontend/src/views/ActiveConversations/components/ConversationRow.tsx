@@ -19,11 +19,11 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
   // Get sentiment badge styles: Green for Good, Blue for Neutral, Red for Bad
   const getSentimentBadgeStyles = (sentiment: string) => {
     if (sentiment === "positive") {
-      return "bg-green-100 text-green-800 border-transparent";
+      return "bg-green-100 text-green-800 border-transparent dark:bg-green-500/20 dark:text-green-400";
     } else if (sentiment === "negative") {
-      return "bg-red-100 text-red-800 border-transparent";
+      return "bg-red-100 text-red-800 border-transparent dark:bg-red-500/20 dark:text-red-400";
     } else {
-      return "bg-blue-100 text-blue-800 border-transparent";
+      return "bg-blue-100 text-blue-800 border-transparent dark:bg-blue-500/20 dark:text-blue-400";
     }
   };
   
@@ -35,7 +35,7 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
     <div
       role="button"
       tabIndex={0}
-      className="bg-primary-foreground px-4 py-4 cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors overflow-hidden w-full max-w-full min-w-0"
+      className="bg-card px-4 py-4 cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors overflow-hidden w-full max-w-full min-w-0"
       onClick={() => onClick?.(item)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

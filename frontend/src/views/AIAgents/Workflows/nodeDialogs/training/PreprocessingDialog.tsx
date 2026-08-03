@@ -27,13 +27,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@/components/ui/select";
+} from "@/components/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
@@ -696,18 +696,18 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                   wrap: true,
                 }}
               />
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-muted-foreground">
                 <ul className="list-disc list-inside space-y-1">
                   <li className="break-words">
                     Use{" "}
-                    <code className="bg-gray-100 px-1 rounded">
+                    <code className="bg-muted px-1 rounded">
                       params["df"]
                     </code>{" "}
                     to access the input dataframe from previous node
                   </li>
                   <li className="break-words">
                     Store your processed dataframe in{" "}
-                    <code className="bg-gray-100 px-1 rounded">df</code>{" "}
+                    <code className="bg-muted px-1 rounded">df</code>{" "}
                     variable and return it
                   </li>
                   <li className="break-words">
@@ -727,7 +727,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           {/* Configure Mode */}
           {mode === "configure" && (
             <div className="space-y-4">
-              <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <div className="text-sm text-muted-foreground bg-blue-50 dark:bg-blue-500/15 p-3 rounded-lg border border-blue-200 dark:border-blue-500/30">
                 <p className="font-medium mb-1">Visual Configuration</p>
                 <p className="text-xs">
                   Add preprocessing steps below. Steps are executed in order.
@@ -738,7 +738,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
               {/* Steps List */}
               <div className="space-y-3">
                 {config.steps.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 border border-dashed rounded-lg">
+                  <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
                     <p className="text-sm">No preprocessing steps added yet.</p>
                     <p className="text-xs mt-1">
                       Click the + button below to add your first step.
@@ -748,13 +748,13 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                   config.steps.map((step, index) => (
                     <div
                       key={step.id}
-                      className="border rounded-lg p-4 space-y-3 bg-white"
+                      className="border rounded-lg p-4 space-y-3 bg-card"
                     >
                       {/* Step Header */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 flex-1">
-                          <GripVertical className="h-4 w-4 text-gray-400" />
-                          <span className="text-xs font-medium text-gray-500">
+                          <GripVertical className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-xs font-medium text-muted-foreground">
                             Step {index + 1}
                           </span>
                           <span className="text-sm font-semibold">
@@ -817,7 +817,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
+                              className="h-7 w-7 p-0 text-red-600 dark:text-red-400 hover:text-red-700"
                               onClick={() => handleRemoveStep(step.id)}
                             >
                               <X className="h-4 w-4" />
@@ -828,15 +828,15 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
 
                       {/* Step Configuration */}
                       {step.enabled && (
-                        <div className="pl-6 border-l-2 border-gray-200">
+                        <div className="pl-6 border-l-2 border-border">
                           {renderStepConfig(step, index)}
                         </div>
                       )}
 
                       {/* Show analysis result for this step if available */}
                       {analysisResults[step.id] && (
-                        <div className="pl-6 border-l-2 border-gray-200 mt-3">
-                          <div className="text-xs font-medium text-gray-600 mb-2">
+                        <div className="pl-6 border-l-2 border-border mt-3">
+                          <div className="text-xs font-medium text-muted-foreground mb-2">
                             Result after this step:
                           </div>
                           <CSVAnalysisDisplay
@@ -895,7 +895,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             placeholder="Enter a prompt (optional)"
             value={templatePrompt}
             onChange={(e) => setTemplatePrompt(e.target.value)}
-            className="mt-2 w-full rounded border border-gray-300 p-2 text-sm min-h-[80px] resize-y bg-background"
+            className="mt-2 w-full rounded border border-border p-2 text-sm min-h-[80px] resize-y bg-background"
             rows={4}
           />
           <DialogFooter className="mt-4">

@@ -197,17 +197,17 @@ export function ConversationEntryWrapper({
       const cleanJson = entry.text && entry.text.replace(/\\/g, '');
       const formSchema = cleanJson ? JSON.parse(cleanJson) : null;
       return (
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-3 max-w-sm">
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-3 max-w-sm dark:bg-blue-500/15 dark:border-blue-500/30">
           <div className="flex items-center gap-2 mb-2">
-            <ClipboardList className="h-4 w-4 text-blue-600" />
+            <ClipboardList className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <span className="text-sm font-medium text-blue-900">User Input Form</span>
           </div>
-          <p className="text-xs text-blue-700 mb-2">
+          <p className="text-xs text-blue-700 mb-2 dark:text-blue-400">
             {formSchema?.message || 'User input requested'}
           </p>
           <div className="flex flex-wrap gap-1">
             {formSchema?.fields?.map((f: { label: string; type: string; required?: boolean }, i: number) => (
-              <span key={i} className="inline-flex items-center rounded border border-blue-300 bg-white px-1.5 py-0.5 text-[10px] text-blue-800">
+              <span key={i} className="inline-flex items-center rounded border border-blue-300 bg-card px-1.5 py-0.5 text-[10px] text-blue-800 dark:text-blue-400">
                 {f.label}
                 {f.required && <span className="text-red-500 ml-0.5">*</span>}
               </span>

@@ -25,6 +25,12 @@ export {
   generateMessageContent,
 } from './utils/interactiveContent';
 export {
+  redactPci,
+  containsPci,
+  isLuhnValid,
+  PCI_REDACTION_PLACEHOLDER,
+} from './utils/pciRedaction';
+export {
   defaultTranslations,
   spanishTranslations,
   frenchTranslations,

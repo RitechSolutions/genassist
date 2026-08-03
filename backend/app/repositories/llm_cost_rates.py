@@ -1,16 +1,31 @@
+import logging
 from uuid import UUID
 
 from injector import inject
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.db.models.llm_cost_rate import LlmCostRateModel
+from app.repositories.db_repository import DbRepository
+
+logger = logging.getLogger(__name__)
 
 
 @inject
-class LlmCostRateRepository:
+class LlmCostRateRepository(DbRepository[LlmCostRateModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(LlmCostRateModel, db)
+
+    async def create(self, obj: LlmCostRateModel) -> LlmCostRateModel:
+        try:
+            return await super().create(obj)
+        except IntegrityError as e:
+            await self.db.rollback()
+            logger.warning("Duplicate active LLM cost rate rejected by the database: %s", e)
+            raise AppException(error_key=ErrorKey.LLM_COST_RATE_ALREADY_EXISTS, status_code=409) from e
 
     async def list_active(self) -> list[LlmCostRateModel]:
         result = await self.db.execute(
@@ -21,6 +36,15 @@ class LlmCostRateRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def get_active_by_id(self, rate_id: UUID) -> LlmCostRateModel | None:
+        result = await self.db.execute(
+            select(LlmCostRateModel).where(
+                LlmCostRateModel.id == rate_id,
+                LlmCostRateModel.is_deleted == 0,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def get_active_by_provider_model(
         self, provider_key: str, model_key: str

@@ -60,7 +60,7 @@ export function SalesforceConnection({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Cloud className="w-5 h-5 text-blue-600" />
+        <Cloud className="w-5 h-5 text-blue-600 dark:text-blue-400" />
         <span className="font-medium">SalesForce Connection</span>
       </div>
 
