@@ -1493,7 +1493,7 @@ class TestLlmJudge:
     @pytest.mark.asyncio
     async def test_multiple_rules_report_each(self):
         """Two rubrics grade independently; the metric passes only when all do."""
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             if "polite" in system_prompt.lower():
                 return 0.9, "courteous"
             return 0.2, "misses half the question"
@@ -1525,7 +1525,7 @@ class TestLlmJudge:
     @pytest.mark.asyncio
     async def test_multiple_rules_skip_rule_with_unavailable_source(self):
         """A rule whose grounding source is missing is excluded, not failed."""
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return 0.8, "fine"
 
         self.registry._invoke_json_judge = fake_judge
@@ -1557,7 +1557,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_multiple_rules_error_surfaces_as_evaluator_error(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             if "polite" in system_prompt.lower():
                 return 0.9, "fine"
             return None, "malformed judge output"

@@ -10,6 +10,17 @@ are logged nowhere else, and deleting them would erase the only record of that
 spend. Removing those rows is a deliberate operator decision, taken before the
 downgrade rather than silently as part of it.
 
+Swapping a CHECK constraint on a live table normally means DROP + re-CREATE,
+which validates the new condition against every existing row while holding an
+ACCESS EXCLUSIVE lock for the whole scan — on ``llm_usage_events`` (written on
+every LLM call) that blocks all writes for the duration. Instead each table's
+swap is: ADD the new constraint NOT VALID (instant, no scan), DROP the old one
+(instant), then VALIDATE the new one (scans the table but only needs a SHARE
+UPDATE EXCLUSIVE lock, so concurrent reads/writes are unaffected), then rename
+it back to the original name. Each of those is issued as its own
+autocommitted statement — batching them into one transaction would hold the
+DROP's ACCESS EXCLUSIVE lock through the VALIDATE scan and defeat the point.
+
 Revision ID: a5784baf5f4c
 Revises: c6974c08b567
 Create Date: 2026-07-30 17:08:42.824353
@@ -37,9 +48,15 @@ _ORIGINAL = "source_type IN ('workflow', 'llm_analyst')"
 
 
 def _swap_source_type_checks(condition: str) -> None:
-    for table, name in _CONSTRAINTS:
-        op.drop_constraint(name, table, type_="check")
-        op.create_check_constraint(name, table, condition)
+    # Each statement autocommits on its own — see the module docstring for why
+    # batching these into one transaction would reintroduce the write lock.
+    with op.get_context().autocommit_block():
+        for table, name in _CONSTRAINTS:
+            tmp_name = f"{name}__tmp"
+            op.execute(f"ALTER TABLE {table} ADD CONSTRAINT {tmp_name} CHECK ({condition}) NOT VALID")
+            op.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
+            op.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {tmp_name}")
+            op.execute(f"ALTER TABLE {table} RENAME CONSTRAINT {tmp_name} TO {name}")
 
 
 def upgrade() -> None:

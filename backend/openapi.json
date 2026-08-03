@@ -9365,6 +9365,159 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Create Cost Rate",
+        "operationId": "create_cost_rate_api_llm_cost_rates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmCostRateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCostRateRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-cost-rates/{rate_id}": {
+      "put": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Update Cost Rate",
+        "operationId": "update_cost_rate_api_llm_cost_rates__rate_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmCostRateUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCostRateRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Delete Cost Rate",
+        "operationId": "delete_cost_rate_api_llm_cost_rates__rate_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rate Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/llm-cost-rates/import": {
@@ -9443,51 +9596,6 @@
             "OAuth2PasswordBearer": []
           }
         ]
-      }
-    },
-    "/api/llm-cost-rates/{rate_id}": {
-      "delete": {
-        "tags": [
-          "v1",
-          "LlmCostRates"
-        ],
-        "summary": "Delete Cost Rate",
-        "operationId": "delete_cost_rate_api_llm_cost_rates__rate_id__delete",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "rate_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Rate Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/llm-analyst/available-enrichments": {
@@ -11740,6 +11848,62 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      }
+    },
+    "/api/genagent/workflow/summaries": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflows"
+        ],
+        "summary": "Get Workflow Summaries",
+        "operationId": "get_workflow_summaries_api_genagent_workflow_summaries_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowSummary"
+                  },
+                  "title": "Response Get Workflow Summaries Api Genagent Workflow Summaries Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/genagent/workflow/{workflow_id}": {
@@ -16571,6 +16735,878 @@
         }
       }
     },
+    "/api/analytics/llm-usage/control": {
+      "get": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Get LLM usage capture state",
+        "operationId": "get_control_api_analytics_llm_usage_control_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageControlRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/analytics/llm-usage/capture": {
+      "post": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Activate LLM usage capture",
+        "description": "Enable usage capture and mark the backfill start time. No request body",
+        "operationId": "activate_capture_api_analytics_llm_usage_capture_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageControlRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/analytics/llm-usage/backfill": {
+      "post": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Backfill the ledger with pre-activation chat history",
+        "description": "Queue the one-time legacy usage backfill for this tenant",
+        "operationId": "trigger_backfill_api_analytics_llm_usage_backfill_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Re-copy existing legacy rows instead of skipping them",
+              "default": false,
+              "title": "Force"
+            },
+            "description": "Re-copy existing legacy rows instead of skipping them"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/llm-usage/summary": {
+      "get": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Canonical LLM cost / token / coverage totals",
+        "operationId": "get_summary_api_analytics_llm_usage_summary_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/llm-usage/timeseries": {
+      "get": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Daily LLM cost / tokens / calls",
+        "operationId": "get_timeseries_api_analytics_llm_usage_timeseries_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageTimeseriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/llm-usage/breakdown": {
+      "get": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "LLM cost / tokens grouped by provider, model, agent, usage type, LLM, evaluation method, or node",
+        "operationId": "get_breakdown_api_analytics_llm_usage_breakdown_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dimension",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "provider",
+                "model",
+                "agent",
+                "source",
+                "llm",
+                "evaluation_method",
+                "node"
+              ],
+              "type": "string",
+              "default": "provider",
+              "title": "Dimension"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageBreakdownResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/llm-usage/filter-options": {
+      "get": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Distinct providers, models, and agents available for filtering",
+        "operationId": "get_filter_options_api_analytics_llm_usage_filter_options_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageFilterOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/llm-usage/export": {
+      "get": {
+        "tags": [
+          "v1",
+          "LLM Usage"
+        ],
+        "summary": "Export LLM usage report (csv / xlsx / pdf)",
+        "operationId": "export_usage_api_analytics_llm_usage_export_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dimension",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "provider",
+                "model",
+                "agent",
+                "source"
+              ],
+              "type": "string",
+              "default": "provider",
+              "title": "Dimension"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "csv",
+                "xlsx",
+                "pdf"
+              ],
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/prompt-editor/versions/{workflow_id}/{node_id}/{prompt_field}": {
       "get": {
         "tags": [
@@ -18036,6 +19072,116 @@
         }
       }
     },
+    "/api/genagent/eval/runs/{run_id}/tool-rule-results": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Runs"
+        ],
+        "summary": "List Tool Rule Results For Run",
+        "description": "Per-rule Tool Usage outcomes for a run (turn- and conversation-scoped).",
+        "operationId": "list_tool_rule_results_for_run_api_genagent_eval_runs__run_id__tool_rule_results_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TestToolRuleResult"
+                  },
+                  "title": "Response List Tool Rule Results For Run Api Genagent Eval Runs  Run Id  Tool Rule Results Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/workflows/{workflow_id}/evaluation-tool-catalog": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Get Evaluation Tool Catalog",
+        "description": "Agents and their tools for a workflow, so the rule builder never needs free text.",
+        "operationId": "get_evaluation_tool_catalog_api_genagent_eval_workflows__workflow_id__evaluation_tool_catalog_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationToolCatalog"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/evaluations": {
       "get": {
         "tags": [
@@ -18337,6 +19483,76 @@
         }
       }
     },
+    "/api/genagent/eval/evaluations/{evaluation_id}/run": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Run Evaluation",
+        "description": "Queue one evaluation's run, optionally against another version of its\nworkflow. Refuses with 409 while the evaluation is queued/running.",
+        "operationId": "run_evaluation_api_genagent_eval_evaluations__evaluation_id__run_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/EvaluationRunRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestRun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/workflows/{workflow_id}/evaluations/run": {
       "post": {
         "tags": [
@@ -18366,6 +19582,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RunWorkflowEvaluationsRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Successful Response",
@@ -25957,9 +27190,26 @@
             "default": 0
           },
           "cost": {
-            "type": "string",
-            "title": "Cost",
-            "default": "0.00"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "cost_per_conversation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per Conversation"
           },
           "is_active": {
             "type": "boolean",
@@ -30002,6 +31252,215 @@
         "title": "DiscoverToolsResponse",
         "description": "Response model for tool discovery"
       },
+      "EvaluationActionNodeInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "workflow_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workflow Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "type"
+        ],
+        "title": "EvaluationActionNodeInfo"
+      },
+      "EvaluationAgentInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "workflow_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workflow Path"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationToolInfo"
+            },
+            "type": "array",
+            "title": "Tools"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "type"
+        ],
+        "title": "EvaluationAgentInfo"
+      },
+      "EvaluationRouterBranch": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "EvaluationRouterBranch",
+        "description": "One selectable branch of a router node, with the node it routes to."
+      },
+      "EvaluationRouterInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "workflow_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workflow Path"
+          },
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRouterBranch"
+            },
+            "type": "array",
+            "title": "Branches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "EvaluationRouterInfo"
+      },
+      "EvaluationRunRequest": {
+        "properties": {
+          "target_workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Workflow Id",
+            "description": "Run against this workflow version instead of the evaluation's own. Must be a version of the same workflow (same agent)."
+          }
+        },
+        "type": "object",
+        "title": "EvaluationRunRequest",
+        "description": "Options for starting a single evaluation run."
+      },
+      "EvaluationToolCatalog": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationAgentInfo"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "routers": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRouterInfo"
+            },
+            "type": "array",
+            "title": "Routers"
+          },
+          "action_nodes": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationActionNodeInfo"
+            },
+            "type": "array",
+            "title": "Action Nodes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id"
+        ],
+        "title": "EvaluationToolCatalog",
+        "description": "Agents/tools, routers and executable nodes for a workflow (incl. nested), for the UI."
+      },
+      "EvaluationToolInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "label",
+          "type"
+        ],
+        "title": "EvaluationToolInfo",
+        "description": "A tool an agent can call, from the workflow graph. ``id`` matches tool events."
+      },
       "ExistsRequest": {
         "properties": {
           "smb_host": {
@@ -33139,6 +34598,55 @@
         "type": "object",
         "title": "LlmAnalystUpdate"
       },
+      "LlmCostRateCreate": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "input_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Input Per 1K"
+          },
+          "output_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Output Per 1K"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "input_per_1k",
+          "output_per_1k"
+        ],
+        "title": "LlmCostRateCreate",
+        "description": "Payload for creating a rate. Provider and model are trimmed and lowercased\nso the \u201calready exists\u201d check and the DB unique index use the same key"
+      },
       "LlmCostRateImportResult": {
         "properties": {
           "inserted": {
@@ -33205,6 +34713,41 @@
           "updated_at"
         ],
         "title": "LlmCostRateRead"
+      },
+      "LlmCostRateUpdate": {
+        "properties": {
+          "input_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Input Per 1K"
+          },
+          "output_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Output Per 1K"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_per_1k",
+          "output_per_1k"
+        ],
+        "title": "LlmCostRateUpdate",
+        "description": "Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate"
       },
       "LlmProviderBase": {
         "properties": {
@@ -33593,6 +35136,343 @@
         },
         "type": "object",
         "title": "LlmProviderUpdate"
+      },
+      "LlmUsageAgentOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LlmUsageAgentOption"
+      },
+      "LlmUsageBreakdownItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "cost_is_partial": {
+            "type": "boolean",
+            "title": "Cost Is Partial"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "unpriced_calls": {
+            "type": "integer",
+            "title": "Unpriced Calls"
+          },
+          "removed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "cost_usd",
+          "cost_is_partial",
+          "total_tokens",
+          "calls",
+          "unpriced_calls"
+        ],
+        "title": "LlmUsageBreakdownItem"
+      },
+      "LlmUsageBreakdownResponse": {
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "provider",
+              "model",
+              "agent",
+              "source",
+              "llm",
+              "evaluation_method",
+              "node"
+            ],
+            "title": "Dimension"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LlmUsageBreakdownItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimension",
+          "items",
+          "total"
+        ],
+        "title": "LlmUsageBreakdownResponse"
+      },
+      "LlmUsageControlRead": {
+        "properties": {
+          "capture_enabled": {
+            "type": "boolean",
+            "title": "Capture Enabled"
+          },
+          "capture_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Started At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "capture_enabled"
+        ],
+        "title": "LlmUsageControlRead",
+        "description": "Capture state of the LLM usage ledger"
+      },
+      "LlmUsageFilterOptionsResponse": {
+        "properties": {
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/LlmUsageAgentOption"
+            },
+            "type": "array",
+            "title": "Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "providers",
+          "models",
+          "agents"
+        ],
+        "title": "LlmUsageFilterOptionsResponse"
+      },
+      "LlmUsageSummaryResponse": {
+        "properties": {
+          "from_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
+          },
+          "cost_is_partial": {
+            "type": "boolean",
+            "title": "Cost Is Partial"
+          },
+          "cost_per_conversation_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per Conversation Usd"
+          },
+          "agent_studio_test_cost_usd": {
+            "type": "number",
+            "title": "Agent Studio Test Cost Usd"
+          },
+          "total_input_tokens": {
+            "type": "integer",
+            "title": "Total Input Tokens"
+          },
+          "total_output_tokens": {
+            "type": "integer",
+            "title": "Total Output Tokens"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "total_calls": {
+            "type": "integer",
+            "title": "Total Calls"
+          },
+          "configured_calls": {
+            "type": "integer",
+            "title": "Configured Calls"
+          },
+          "fallback_calls": {
+            "type": "integer",
+            "title": "Fallback Calls"
+          },
+          "legacy_estimate_calls": {
+            "type": "integer",
+            "title": "Legacy Estimate Calls"
+          },
+          "unpriced_calls": {
+            "type": "integer",
+            "title": "Unpriced Calls"
+          },
+          "priced_token_coverage_pct": {
+            "type": "number",
+            "title": "Priced Token Coverage Pct"
+          },
+          "last_unpriced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Unpriced At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_cost_usd",
+          "cost_is_partial",
+          "agent_studio_test_cost_usd",
+          "total_input_tokens",
+          "total_output_tokens",
+          "total_tokens",
+          "total_calls",
+          "configured_calls",
+          "fallback_calls",
+          "legacy_estimate_calls",
+          "unpriced_calls",
+          "priced_token_coverage_pct"
+        ],
+        "title": "LlmUsageSummaryResponse",
+        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls"
+      },
+      "LlmUsageTimeseriesItem": {
+        "properties": {
+          "stat_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Stat Date"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "unpriced_calls": {
+            "type": "integer",
+            "title": "Unpriced Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stat_date",
+          "cost_usd",
+          "total_tokens",
+          "calls",
+          "unpriced_calls"
+        ],
+        "title": "LlmUsageTimeseriesItem"
+      },
+      "LlmUsageTimeseriesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LlmUsageTimeseriesItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "LlmUsageTimeseriesResponse"
       },
       "LocalFineTuneDeployment": {
         "properties": {
@@ -37803,6 +39683,26 @@
         "type": "object",
         "title": "RoleUpdate"
       },
+      "RunWorkflowEvaluationsRequest": {
+        "properties": {
+          "target_workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Workflow Id",
+            "description": "Run every evaluation against this workflow version instead of its own. Must be a version of the same workflow (same agent)."
+          }
+        },
+        "type": "object",
+        "title": "RunWorkflowEvaluationsRequest",
+        "description": "Options for the workflow-wide Run all."
+      },
       "Sentiment": {
         "type": "string",
         "enum": [
@@ -39691,6 +41591,9 @@
               },
               {
                 "type": "boolean"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Score"
@@ -39698,6 +41601,16 @@
           "passed": {
             "type": "boolean",
             "title": "Passed"
+          },
+          "error": {
+            "type": "boolean",
+            "title": "Error",
+            "default": false
+          },
+          "not_evaluated": {
+            "type": "boolean",
+            "title": "Not Evaluated",
+            "default": false
           },
           "comment": {
             "anyOf": [
@@ -39709,11 +41622,58 @@
               }
             ],
             "title": "Comment"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "actual": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
           }
         },
         "type": "object",
         "required": [
-          "score",
           "passed"
         ],
         "title": "TestResultMetrics"
@@ -39770,6 +41730,28 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "workflow_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version"
           }
         },
         "type": "object",
@@ -40009,6 +41991,96 @@
         },
         "type": "object",
         "title": "TestSuiteUpdate"
+      },
+      "TestToolRuleResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "passed | failed | not_evaluated"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id",
+          "rule_id",
+          "scope",
+          "status",
+          "created_at"
+        ],
+        "title": "TestToolRuleResult",
+        "description": "One Tool Usage rule outcome for a scope unit (turn or conversation)."
       },
       "ThreadIdMode": {
         "type": "string",
@@ -41497,6 +43569,18 @@
             ],
             "title": "Executionstate"
           },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
           "user_id": {
             "anyOf": [
               {
@@ -41657,6 +43741,18 @@
             ],
             "title": "Executionstate"
           },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
           "user_id": {
             "anyOf": [
               {
@@ -41754,6 +43850,18 @@
           "version": {
             "type": "string",
             "title": "Version"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
           }
         },
         "type": "object",
@@ -42158,6 +44266,76 @@
         "type": "object",
         "title": "WorkflowScheduleUpdate"
       },
+      "WorkflowSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "updated_by_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkflowSummary"
+      },
       "WorkflowUpdate": {
         "properties": {
           "name": {
@@ -42235,6 +44413,18 @@
               }
             ],
             "title": "Executionstate"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           },
           "user_id": {
             "anyOf": [

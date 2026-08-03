@@ -6,6 +6,11 @@ to decide whether a dismissed pricing-coverage notice should return: because the
 index holds nothing else, the watermark is a first-row lookup rather than a scan
 past every priced call recorded since.
 
+Built with CREATE INDEX CONCURRENTLY so no write lock is taken on
+``llm_usage_events`` (written on every LLM call) while the index is built.
+CONCURRENTLY cannot run inside a transaction, so this uses an autocommit block
+the same way migration 00091 does.
+
 Revision ID: 5161ef5ad5de
 Revises: a5784baf5f4c
 Create Date: 2026-07-31 15:20:24.542929
@@ -26,13 +31,16 @@ _TABLE = "llm_usage_events"
 
 
 def upgrade() -> None:
-    op.create_index(
-        _INDEX,
-        _TABLE,
-        ["created_at"],
-        postgresql_where="cost_usd IS NULL AND is_deleted = 0",
-    )
+    with op.get_context().autocommit_block():
+        op.execute(
+            f"""
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS {_INDEX}
+            ON {_TABLE} (created_at)
+            WHERE cost_usd IS NULL AND is_deleted = 0
+            """
+        )
 
 
 def downgrade() -> None:
-    op.drop_index(_INDEX, table_name=_TABLE)
+    with op.get_context().autocommit_block():
+        op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX}")

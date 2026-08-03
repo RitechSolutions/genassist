@@ -154,6 +154,36 @@ class TestJudgeCollection:
         assert [e["call_index"] for e in ref.entries] == [0, 1]
 
     @pytest.mark.asyncio
+    async def test_a_multi_rule_judge_bills_every_rule_at_a_distinct_index(self, judge_llm):
+        """Each rule of a multi-rule llm_judge makes its own real LLM call; without
+        a distinct call_index per rule, the recorder's (execution_id, call_index)
+        upsert silently drops every rule but one."""
+        llm = judge_llm(FakeResponse(), FakeResponse(), FakeResponse())
+        ref = _ref()
+
+        await _evaluate(
+            ["llm_judge", "provenance_eval"],
+            usage_ref=ref,
+            configs={
+                "llm_judge": {
+                    "rules": [
+                        {"label": "Tone", "rubric": "Polite?", "min_score": 0.5},
+                        {"label": "Completeness", "rubric": "Complete?", "min_score": 0.5},
+                    ]
+                },
+                "provenance_eval": _PROVENANCE_LLM,
+            },
+        )
+
+        assert llm.calls == 3
+        call_indexes = [e["call_index"] for e in ref.entries]
+        assert len(set(call_indexes)) == 3, "every rule's call must get its own index"
+        # The technique after a multi-rule judge still lands on its own position,
+        # unaffected by how many calls the multi-rule technique before it made.
+        assert [e["purpose"] for e in ref.entries][-1] == "provenance_judge"
+        assert call_indexes[-1] == 1
+
+    @pytest.mark.asyncio
     async def test_a_skipped_judge_never_shifts_another_method_onto_its_index(self, judge_llm):
         judge_llm()
         ref = _ref()

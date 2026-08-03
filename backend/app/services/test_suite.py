@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import itertools
 import logging
 import json
 import re
@@ -191,17 +190,24 @@ def _group_cases_into_conversations(
     return list(conversations.values())
 
 
-def _next_call_index(payload: Dict[str, Any]) -> int | None:
-    """The next unique index for a real judge LLM call within this case.
+# Rule 1 of any technique keeps the technique's own position as call_index,
+# unchanged from before multi-rule judging existed. A second+ rule on the same
+# technique would otherwise collide with that position (or another
+# technique's), so it's parked in a namespace disjoint from every possible
+# technique_index, still bucketed per technique so two techniques' overflow
+# rules never collide with each other either.
+_JUDGE_RULE_OVERFLOW_BASE = 1_000_000
+_JUDGE_RULE_OVERFLOW_SPAN = 1_000
 
-    Falls back to the technique's position when no shared counter was set up
-    (e.g. a payload built directly in a test), matching the old one-call-per-
-    technique behavior.
-    """
-    counter = payload.get("_call_index_counter")
-    if counter is not None:
-        return next(counter)
-    return payload.get("_technique_index")
+
+def _judge_rule_call_index(payload: Dict[str, Any], rule_number: int) -> int | None:
+    """call_index for one rule's real LLM call within a (possibly multi-rule) judge technique."""
+    technique_index = payload.get("_technique_index")
+    if technique_index is None:
+        return None
+    if rule_number <= 1:
+        return technique_index
+    return _JUDGE_RULE_OVERFLOW_BASE + technique_index * _JUDGE_RULE_OVERFLOW_SPAN + (rule_number - 1)
 
 
 def _read_path(data: Any, path: str) -> Any:
@@ -965,11 +971,6 @@ class SimpleEvaluatorRegistry:
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
             "_usage_ref": usage_ref,
-            # One case can make several real judge calls per technique (e.g. a
-            # multi-rule llm_judge gathers one call per rule); a shared counter
-            # gives each call its own index so none collide on the recorder's
-            # (execution_id, call_index) key and get silently dropped.
-            "_call_index_counter": itertools.count(),
         }
         for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
@@ -1499,7 +1500,7 @@ class SimpleEvaluatorRegistry:
                 provider_id=config.get("llm_provider_id"),
                 system_prompt_suffix=config.get("llm_judge_system_prompt_suffix") or "",
                 usage_ref=payload.get("_usage_ref"),
-                call_index=_next_call_index(payload),
+                call_index=payload.get("_technique_index"),
             )
             if score is None:
                 raise RuntimeError("Provenance LLM judge did not return a score.")
@@ -1771,7 +1772,7 @@ class SimpleEvaluatorRegistry:
             provider_id=provider_id,
             usage_ref=payload.get("_usage_ref"),
             purpose="llm_judge",
-            call_index=_next_call_index(payload),
+            call_index=_judge_rule_call_index(payload, rule_number),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.
