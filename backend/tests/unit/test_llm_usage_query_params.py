@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.llm_usage import BREAKDOWN_DIMENSIONS, LlmUsageQueryParams
+from app.schemas.llm_usage import BREAKDOWN_DIMENSIONS, EXPORT_DIMENSIONS, LlmUsageQueryParams
 
 
 def test_defaults_are_constructible_outside_a_request():
@@ -40,4 +40,12 @@ def test_filters_are_carried_through():
 
 
 def test_breakdown_dimensions_match_the_literal():
-    assert BREAKDOWN_DIMENSIONS == ("provider", "model", "agent", "source")
+    assert BREAKDOWN_DIMENSIONS == ("provider", "model", "agent", "source", "llm", "evaluation_method", "node")
+
+
+def test_export_dimensions_match_the_literal():
+    assert EXPORT_DIMENSIONS == ("provider", "model", "agent", "source")
+
+
+def test_export_excludes_the_drill_down_dimensions():
+    assert set(BREAKDOWN_DIMENSIONS) - set(EXPORT_DIMENSIONS) == {"llm", "evaluation_method", "node"}

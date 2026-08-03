@@ -1,12 +1,14 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Literal, Optional, get_args
 from uuid import UUID
 
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-BreakdownDimension = Literal["provider", "model", "agent", "source"]
+BreakdownDimension = Literal["provider", "model", "agent", "source", "llm", "evaluation_method", "node"]
 BREAKDOWN_DIMENSIONS: tuple[str, ...] = get_args(BreakdownDimension)
+ExportDimension = Literal["provider", "model", "agent", "source"]
+EXPORT_DIMENSIONS: tuple[str, ...] = get_args(ExportDimension)
 
 ExportFormat = Literal["csv", "xlsx", "pdf"]
 
@@ -37,7 +39,11 @@ class LlmUsageSummaryResponse(BaseModel):
     """LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced
     rows; ``cost_is_partial`` is true when some rows had no price and were left out.
 
-    ``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only"""
+    ``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.
+
+    ``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,
+    ignoring the filters, so a client can tell whether one has landed since it last
+    reported the gap. It is only populated when the filtered window has unpriced calls"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,6 +62,7 @@ class LlmUsageSummaryResponse(BaseModel):
     legacy_estimate_calls: int
     unpriced_calls: int
     priced_token_coverage_pct: float
+    last_unpriced_at: Optional[datetime] = None
 
 
 class LlmUsageTimeseriesItem(BaseModel):
@@ -85,6 +92,7 @@ class LlmUsageBreakdownItem(BaseModel):
     total_tokens: int
     calls: int
     unpriced_calls: int
+    removed: Optional[bool] = None
 
 
 class LlmUsageBreakdownResponse(BaseModel):

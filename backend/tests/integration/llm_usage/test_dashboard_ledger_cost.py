@@ -1,7 +1,9 @@
 """Integration tests for the dashboard reading LLM cost from the ledger"""
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -9,6 +11,7 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from starlette_context import context, request_cycle_context
 
 from app.core.config.settings import settings
 from app.db.models.agent import AgentModel
@@ -62,16 +65,26 @@ def _today_range() -> tuple[datetime, datetime]:
     return start, start
 
 
+@contextmanager
+def _admin_context():
+    with request_cycle_context():
+        context["user_id"] = uuid4()
+        context["group_id"] = None
+        context["supervised_group_ids"] = []
+        context["user_roles"] = [SimpleNamespace(name="admin")]
+        yield
+
+
 @pytest.mark.asyncio
 async def test_ledger_total_sums_priced_cost(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd(start, end)
+    before = await repo.get_total_cost_usd(start, end, agent_ids=None)
 
     db.add(_event(cost_usd=Decimal("0.25")))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(start, end)
+    after = await repo.get_total_cost_usd(start, end, agent_ids=None)
     assert after - before == pytest.approx(0.25)
 
 
@@ -79,12 +92,12 @@ async def test_ledger_total_sums_priced_cost(db):
 async def test_ledger_total_excludes_unpriced(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd(start, end)
+    before = await repo.get_total_cost_usd(start, end, agent_ids=None)
 
     db.add(_event(cost_usd=None, input_per_1k=None, output_per_1k=None, pricing_status="unpriced"))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(start, end)
+    after = await repo.get_total_cost_usd(start, end, agent_ids=None)
     assert after == pytest.approx(before)
 
 
@@ -92,12 +105,12 @@ async def test_ledger_total_excludes_unpriced(db):
 async def test_ledger_total_excludes_events_outside_window(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd(start, end)
+    before = await repo.get_total_cost_usd(start, end, agent_ids=None)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start - timedelta(hours=1)))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(start, end)
+    after = await repo.get_total_cost_usd(start, end, agent_ids=None)
     assert after == pytest.approx(before)
 
 
@@ -105,12 +118,12 @@ async def test_ledger_total_excludes_events_outside_window(db):
 async def test_ledger_total_upper_bound_is_exclusive_of_the_next_day(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd(start, end)
+    before = await repo.get_total_cost_usd(start, end, agent_ids=None)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start + timedelta(days=1)))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(start, end)
+    after = await repo.get_total_cost_usd(start, end, agent_ids=None)
     assert after == pytest.approx(before)
 
 
@@ -119,12 +132,12 @@ async def test_ledger_total_drops_the_day_of_a_mid_day_lower_bound(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
     mid_day = start + timedelta(hours=13)
-    before = await repo.get_total_cost_usd(mid_day, end)
+    before = await repo.get_total_cost_usd(mid_day, end, agent_ids=None)
 
     db.add(_event(cost_usd=Decimal("0.99"), occurred_at=start + timedelta(hours=20)))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(mid_day, end)
+    after = await repo.get_total_cost_usd(mid_day, end, agent_ids=None)
     assert after == pytest.approx(before)
 
 
@@ -132,12 +145,12 @@ async def test_ledger_total_drops_the_day_of_a_mid_day_lower_bound(db):
 async def test_ledger_total_excludes_soft_deleted_events(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd(start, end)
+    before = await repo.get_total_cost_usd(start, end, agent_ids=None)
 
     db.add(_event(cost_usd=Decimal("0.77"), is_deleted=1))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(start, end)
+    after = await repo.get_total_cost_usd(start, end, agent_ids=None)
     assert after == pytest.approx(before)
 
 
@@ -261,12 +274,12 @@ async def test_agent_cost_today_ledger_excludes_soft_deleted_events(db):
 async def test_ledger_total_includes_analyst_source(db):
     repo = DashboardRepository(db)
     start, end = _today_range()
-    before = await repo.get_total_cost_usd(start, end)
+    before = await repo.get_total_cost_usd(start, end, agent_ids=None)
 
     db.add(_event(source_type="llm_analyst", source="conversation_analysis", cost_usd=Decimal("0.30")))
     await db.flush()
 
-    after = await repo.get_total_cost_usd(start, end)
+    after = await repo.get_total_cost_usd(start, end, agent_ids=None)
     assert after - before == pytest.approx(0.30)
 
 
@@ -301,18 +314,20 @@ async def test_get_agents_with_stats_reports_ledger_cost_and_per_conversation(db
 @pytest.mark.asyncio
 async def test_cost_explorer_summary_total_matches_dashboard_total(db):
     dashboard_repo = DashboardRepository(db)
-    read_service = LlmUsageReadService(LlmUsageReadRepository(db), None)
+    read_service = LlmUsageReadService(LlmUsageReadRepository(db), None, None)
     start, end = _today_range()
     params = LlmUsageQueryParams(from_date=start.date(), to_date=end.date())
 
-    dashboard_before = await dashboard_repo.get_total_cost_usd(start, end)
-    summary_before = (await read_service.get_summary(params)).total_cost_usd
+    dashboard_before = await dashboard_repo.get_total_cost_usd(start, end, agent_ids=None)
+    with _admin_context():
+        summary_before = (await read_service.get_summary(params)).total_cost_usd
     assert summary_before == pytest.approx(dashboard_before)
 
     db.add(_event(cost_usd=Decimal("0.65")))
     await db.flush()
 
-    dashboard_after = await dashboard_repo.get_total_cost_usd(start, end)
-    summary_after = (await read_service.get_summary(params)).total_cost_usd
+    dashboard_after = await dashboard_repo.get_total_cost_usd(start, end, agent_ids=None)
+    with _admin_context():
+        summary_after = (await read_service.get_summary(params)).total_cost_usd
     assert summary_after == pytest.approx(dashboard_after)
     assert dashboard_after - dashboard_before == pytest.approx(0.65)

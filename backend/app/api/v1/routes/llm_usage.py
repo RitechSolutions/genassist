@@ -1,6 +1,6 @@
 import io
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi_injector import Injected
 
@@ -11,6 +11,7 @@ from app.core.permissions.constants import Permissions as P
 from app.core.utils.cache_headers import no_store_headers
 from app.schemas.llm_usage import (
     BreakdownDimension,
+    ExportDimension,
     ExportFormat,
     LlmUsageBreakdownResponse,
     LlmUsageFilterOptionsResponse,
@@ -102,14 +103,18 @@ async def get_timeseries(
 @router.get(
     "/breakdown",
     response_model=LlmUsageBreakdownResponse,
+    response_model_exclude_none=True,
     dependencies=[Depends(auth), Depends(permissions(P.Dashboard.READ))],
-    summary="LLM cost / tokens grouped by provider, model, or agent",
+    summary="LLM cost / tokens grouped by provider, model, agent, usage type, LLM, evaluation method, or node",
 )
 async def get_breakdown(
     params: LlmUsageQueryParams = Depends(),
     dimension: BreakdownDimension = Query(default="provider"),
     service: LlmUsageReadService = Injected(LlmUsageReadService),
 ) -> LlmUsageBreakdownResponse:
+    # Template cloning copies node ids across workflows, so a wider scope would merge unrelated nodes
+    if dimension == "node" and params.agent_id is None:
+        raise HTTPException(status_code=400, detail="agent_id is required for the node dimension")
     return await service.get_breakdown(params, dimension)
 
 
@@ -133,7 +138,7 @@ async def get_filter_options(
 )
 async def export_usage(
     params: LlmUsageQueryParams = Depends(),
-    dimension: BreakdownDimension = Query(default="provider"),
+    dimension: ExportDimension = Query(default="provider"),
     fmt: ExportFormat = Query(default="csv", alias="format"),
     service: LlmUsageReadService = Injected(LlmUsageReadService),
 ) -> StreamingResponse:

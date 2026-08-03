@@ -13,6 +13,7 @@ import {
   PhoneCall,
   TrendingDown,
   TrendingUp,
+  X,
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/card";
@@ -21,6 +22,7 @@ import { ExportButton } from "@/components/ui/ExportButton";
 import { formatUsd } from "@/helpers/formatCurrency";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { cn } from "@/helpers/utils";
+import { useDismissibleNotice } from "@/hooks/useDismissibleNotice";
 import { COMPARE_DATE_RANGE_STORAGE_KEY, usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import {
   fetchLlmUsageBreakdown,
@@ -42,6 +44,8 @@ import { ALL_FILTER_VALUE, LlmUsageFilterMenu } from "../components/LlmUsageFilt
 import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
+import { LlmUsageCostShare } from "../components/reports/LlmUsageCostShare";
+import { LlmUsageEvaluationMethods } from "../components/reports/LlmUsageEvaluationMethods";
 import { LlmUsageProviderDonut } from "../components/reports/LlmUsageProviderDonut";
 import { LlmUsageTimeseriesChart, type SpendMetric } from "../components/reports/LlmUsageTimeseriesChart";
 
@@ -54,6 +58,12 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
 
 const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
+const EVALUATION_KEY = "evaluation";
+const COVERAGE_NOTICE = "llm-unpriced-coverage";
+const PARTIAL_COST_HELP =
+  "Some calls here ran on a model with no configured rate. " +
+  "This figure is the priced subtotal, real spend may be higher. Add the missing rates under " +
+  "LLM Settings › LLM Providers to price them.";
 
 const compact = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : `${n}`;
@@ -109,6 +119,7 @@ function LlmUsagePage() {
   const [model, setModel] = useState(ALL);
   const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
+  const [evalExpanded, setEvalExpanded] = useState(false);
 
   const dateParams = useMemo(() => toExpandedUTCDateRange(dateRange), [dateRange]);
   const queryFilters = useMemo<LlmUsageQueryFilters>(
@@ -151,6 +162,21 @@ function LlmUsagePage() {
   const breakdown = useQuery({
     queryKey: ["llm-usage", "breakdown", dimension, ...filterKey],
     queryFn: () => fetchLlmUsageBreakdown(dimension, queryFilters),
+    placeholderData: keepPreviousData,
+  });
+
+  const evalMethods = useQuery({
+    queryKey: ["llm-usage", "breakdown", "evaluation_method", ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown("evaluation_method", queryFilters),
+    enabled: evalExpanded && dimension === "source",
+    placeholderData: keepPreviousData,
+  });
+
+  const showNodePanel = agentFilter !== ALL;
+  const agentNodes = useQuery({
+    queryKey: ["llm-usage", "breakdown", "node", ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown("node", queryFilters),
+    enabled: showNodePanel,
     placeholderData: keepPreviousData,
   });
 
@@ -213,9 +239,37 @@ function LlmUsagePage() {
   const unpricedTokenPct = 100 - (summary?.priced_token_coverage_pct ?? 100);
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const previous = hasCompare ? compare.data : undefined;
+  const hasPartialCost = items.some((i) => i.cost_is_partial);
+  const coverageNotice = useDismissibleNotice(COVERAGE_NOTICE, summary?.last_unpriced_at);
+
+  const isEvaluationRow = (i: LlmUsageBreakdownItem) => dimension === "source" && i.key === EVALUATION_KEY;
+
+  // Only a settled response may label the row, so a filter change can't flash a stale count
+  const evaluationMethodCount =
+    !evalMethods.isPlaceholderData && !evalMethods.isError ? evalMethods.data?.total : undefined;
+  const methodCountLabel = evaluationMethodCount
+    ? `${evaluationMethodCount} ${evaluationMethodCount === 1 ? "method" : "methods"}`
+    : null;
 
   const columns: Column<LlmUsageBreakdownItem>[] = [
-    { header: dimensionLabel, key: "label", cell: (i) => <span className="font-medium">{i.label}</span> },
+    {
+      header: dimensionLabel,
+      key: "label",
+      cell: (i) =>
+        isEvaluationRow(i) ? (
+          // No onClick: the native click bubbles to the row handler, keyboard included
+          <button
+            type="button"
+            aria-expanded={evalExpanded}
+            className="flex items-center gap-2 rounded text-left font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <span>{i.label}</span>
+            {methodCountLabel && <span className="text-xs font-normal text-muted-foreground">{methodCountLabel}</span>}
+          </button>
+        ) : (
+          <span className="font-medium">{i.label}</span>
+        ),
+    },
     {
       header: "Calls",
       key: "calls",
@@ -235,12 +289,8 @@ function LlmUsagePage() {
       key: "cost_usd",
       sortable: true,
       sortValue: (i) => i.cost_usd,
-      cell: (i) => (
-        <span className="tabular-nums font-semibold">
-          {formatUsd(i.cost_usd)}
-          {i.cost_is_partial && <span className="ml-1 text-xs font-normal text-amber-500">partial</span>}
-        </span>
-      ),
+      description: hasPartialCost ? PARTIAL_COST_HELP : undefined,
+      cell: (i) => <span className="tabular-nums font-semibold">{formatUsd(i.cost_usd)}</span>,
     },
     {
       header: "Avg / Call",
@@ -252,17 +302,7 @@ function LlmUsagePage() {
     {
       header: "Share",
       key: "share",
-      cell: (i) => {
-        const pct = totalItemCost > 0 ? (i.cost_usd / totalItemCost) * 100 : 0;
-        return (
-          <div className="flex items-center justify-end gap-2 tabular-nums">
-            <span className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
-              <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-            </span>
-            {pct.toFixed(1)}%
-          </div>
-        );
-      },
+      cell: (i) => <LlmUsageCostShare costUsd={i.cost_usd} totalCostUsd={totalItemCost} />,
     },
   ];
 
@@ -326,15 +366,15 @@ function LlmUsagePage() {
           subtitle="Token consumption and LLM spend across workflows and metric analysis"
         >
           <AnalyticsFilters
-            groups={showGroupFilter ? groups : undefined}
-            groupFilter={groupFilter}
-            onGroupFilterChange={setGroupFilter}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
             compareDateRange={compareDateRange}
             onCompareDateRangeChange={setCompareDateRange}
           >
             <LlmUsageFilterMenu
+              groups={showGroupFilter ? groups : undefined}
+              groupFilter={groupFilter}
+              onGroupFilterChange={setGroupFilter}
               agents={agents}
               agentFilter={agentFilter}
               onAgentFilterChange={setAgentFilter}
@@ -356,14 +396,22 @@ function LlmUsagePage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        {summary && summary.unpriced_calls > 0 && (
+        {summary && summary.unpriced_calls > 0 && coverageNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
               <span className="font-semibold">{unpricedTokenPct.toFixed(1)}% of tokens have no configured rate.</span>{" "}
-              Totals below are the priced subtotal — add rates under LLM Settings › LLM Providers to complete cost
+              Totals below are the priced subtotal, add rates under LLM Settings › LLM Providers to complete cost
               coverage.
             </span>
+            <button
+              type="button"
+              onClick={coverageNotice.dismiss}
+              aria-label="Dismiss pricing coverage notice"
+              className="ml-auto shrink-0 rounded p-0.5 opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
 
@@ -441,11 +489,43 @@ function LlmUsagePage() {
               emptyMessage="No LLM costs recorded for this period."
               keyExtractor={(item) => item.key}
               pageSize={10}
+              getRowProps={
+                dimension === "source"
+                  ? (i) =>
+                      isEvaluationRow(i)
+                        ? {
+                            onClick: () => setEvalExpanded((current) => !current),
+                            className: "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60",
+                          }
+                        : undefined
+                  : undefined
+              }
+              renderSubRows={
+                dimension === "source"
+                  ? (i) =>
+                      isEvaluationRow(i) && evalExpanded ? (
+                        <LlmUsageEvaluationMethods
+                          items={evalMethods.data?.items ?? []}
+                          totalCostUsd={totalItemCost}
+                          loading={evalMethods.isPending || evalMethods.isPlaceholderData}
+                          error={evalMethods.isError}
+                        />
+                      ) : null
+                  : undefined
+              }
             />
           </CardContent>
         </Card>
 
-        <LlmUsageBreakdownChart items={items} dimensionLabel={dimensionHeading} loading={tableLoading} />
+        {showNodePanel && (
+          <LlmUsageBreakdownChart
+            items={agentNodes.data?.items ?? []}
+            dimensionLabel="Node"
+            scopeNote="Workflow node calls only."
+            loading={agentNodes.isPending || agentNodes.isPlaceholderData}
+            error={agentNodes.error ? "Failed to load node costs for this agent." : null}
+          />
+        )}
       </div>
     </div>
   );

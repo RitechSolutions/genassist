@@ -35,11 +35,12 @@ export interface Workflow {
   settings?: WorkflowSettings;
 }
 
-// Lightweight workflow data (id, name, version only)
+// Lightweight workflow data (id, name, version, agent only)
 export interface WorkflowMinimal {
   id: string;
   name: string;
   version: string;
+  agent_id?: string | null;
 }
 
 export interface WorkflowSummary {

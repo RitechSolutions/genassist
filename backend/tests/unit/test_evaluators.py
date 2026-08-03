@@ -295,6 +295,88 @@ class TestTraceAwareEvaluators:
         )
         assert metrics["contains"]["passed"] is True
 
+    @pytest.mark.asyncio
+    async def test_no_errors_comment_names_failing_node(self):
+        trace = _sample_trace(node_error="ThreadScopedRAG: NoneType has no len()")
+        metrics = await self.registry.evaluate(
+            ["no_errors"],
+            inputs={},
+            outputs="ok",
+            reference_outputs=None,
+            execution_trace=trace,
+        )
+        m = metrics["no_errors"]
+        assert m["passed"] is False
+        assert "Knowledge Query" in m["comment"]
+        assert "NoneType has no len()" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_no_errors_comment_includes_state_level_errors(self):
+        trace = _sample_trace()
+        trace["state"]["errors"] = ["upstream provider unavailable"]
+        metrics = await self.registry.evaluate(
+            ["no_errors"],
+            inputs={},
+            outputs="ok",
+            reference_outputs=None,
+            execution_trace=trace,
+        )
+        m = metrics["no_errors"]
+        assert m["passed"] is False
+        assert "upstream provider unavailable" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_no_errors_renders_engine_error_dicts_readably(self):
+        """The engine's canonical {'message','type','timestamp'} error dicts show
+        only the message, with node ids swapped for their display labels."""
+        trace = _sample_trace()
+        trace["state"]["errors"] = [
+            {
+                "message": "Node n2: retrieval failed",
+                "type": "node_execution",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+            }
+        ]
+        metrics = await self.registry.evaluate(
+            ["no_errors"],
+            inputs={},
+            outputs="ok",
+            reference_outputs=None,
+            execution_trace=trace,
+        )
+        m = metrics["no_errors"]
+        assert m["passed"] is False
+        assert "Node Knowledge Query: retrieval failed" in m["comment"]
+        assert "timestamp" not in m["comment"]
+        assert "{" not in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_json_match_failure_names_differing_fields(self):
+        metrics = await self.registry.evaluate(
+            ["json_match"],
+            inputs={},
+            outputs={"amount": 450, "notes": "extra"},
+            reference_outputs={"amount": 500, "currency": "EUR"},
+        )
+        m = metrics["json_match"]
+        assert m["passed"] is False
+        comment = m["comment"]
+        assert "'amount'" in comment
+        assert "500" in comment and "450" in comment
+        assert "missing field 'currency'" in comment
+        assert "unexpected field 'notes'" in comment
+
+    @pytest.mark.asyncio
+    async def test_json_match_pass_has_no_comment(self):
+        metrics = await self.registry.evaluate(
+            ["json_match"],
+            inputs={},
+            outputs={"amount": 500},
+            reference_outputs={"amount": 500},
+        )
+        assert metrics["json_match"]["passed"] is True
+        assert metrics["json_match"]["comment"] is None
+
 
 class TestHumanInputPauseEvaluation:
     @pytest.mark.asyncio
@@ -650,6 +732,38 @@ def _agent_workflow():
     }
 
 
+def _two_router_trace(*, first_route="true", second_route="support"):
+    """Trace with two routers, for multi-rule route_taken assertions."""
+    return {
+        "output": "Sample response.",
+        "state": {
+            "input": {"message": "Sample user question?"},
+            "errors": [],
+            "nodeExecutionStatus": {
+                "router1": {
+                    "name": "Sample Router",
+                    "type": "routerNode",
+                    "input": {},
+                    "output": {"route": first_route, "next_nodes": []},
+                    "status": "success",
+                    "error": None,
+                },
+                "router2": {
+                    "name": "Second Router",
+                    "type": "routerNode",
+                    "input": {},
+                    "output": {"route": second_route, "next_nodes": []},
+                    "status": "success",
+                    "error": None,
+                },
+            },
+        },
+        "tool_events": [],
+        "token_usage": {},
+        "cost_usd": None,
+    }
+
+
 def _multi_agent_trace():
     """Two agents, each calling a different tool — for agent-scoped assertions."""
     return {
@@ -905,7 +1019,8 @@ class TestProcessCheckEvaluators:
 
     @pytest.mark.asyncio
     async def test_tool_used_scoped_required_tool_not_used_fails(self):
-        # other_tool is available to agent1 but never called; the scoped failure names the node.
+        # other_tool is available to agent1 but never called; the scoped failure
+        # names the agent by its display label, not its node id.
         metrics = await self.registry.evaluate(
             ["tool_used"],
             inputs={},
@@ -916,7 +1031,9 @@ class TestProcessCheckEvaluators:
             workflow=_agent_workflow(),
         )
         assert metrics["tool_used"]["passed"] is False
-        assert "by node" in (metrics["tool_used"]["comment"] or "")
+        comment = metrics["tool_used"]["comment"] or ""
+        assert "by agent 'Sample Agent'" in comment
+        assert "agent1" not in comment
 
     @pytest.mark.asyncio
     async def test_tool_used_must_not_use_uncalled_tool_passes(self):
@@ -1099,6 +1216,233 @@ class TestProcessCheckEvaluators:
         assert metrics["action_taken"]["passed"] is False
         assert "configured" in metrics["action_taken"]["comment"].lower()
 
+    @pytest.mark.asyncio
+    async def test_route_taken_multiple_rules_reports_each(self):
+        trace = _two_router_trace(first_route="true", second_route="billing")
+        metrics = await self.registry.evaluate(
+            ["route_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={
+                "route_taken": {
+                    "rules": [
+                        {"router": "router1", "expected": "true"},
+                        {"router": "router2", "expected": "support"},
+                    ]
+                }
+            },
+        )
+        m = metrics["route_taken"]
+        assert m["passed"] is False
+        assert m["score"] == 0.5
+        assert len(m["details"]) == 2
+        assert m["details"][0]["passed"] is True
+        assert m["details"][1]["passed"] is False
+        assert "1 of 2" in m["comment"]
+        assert "Second Router" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_route_taken_multiple_rules_all_pass(self):
+        trace = _two_router_trace(first_route="true", second_route="support")
+        metrics = await self.registry.evaluate(
+            ["route_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={
+                "route_taken": {
+                    "rules": [
+                        {"router": "router1", "expected": "true"},
+                        {"router": "router2", "expected": "support"},
+                    ]
+                }
+            },
+        )
+        m = metrics["route_taken"]
+        assert m["passed"] is True
+        assert m["score"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_route_taken_missing_router_names_it_from_workflow(self):
+        """A rule whose router never ran resolves its display name from the graph,
+        never showing the raw node id."""
+        metrics = await self.registry.evaluate(
+            ["route_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(route="true"),
+            technique_configs={
+                "route_taken": {
+                    "rules": [
+                        {
+                            "router": "8f2a4b6c-1d2e-4f5a-9b8c-7d6e5f4a3b2c",
+                            "expected": "true",
+                        }
+                    ]
+                }
+            },
+            workflow={
+                "id": "wf1",
+                "nodes": [
+                    {
+                        "id": "8f2a4b6c-1d2e-4f5a-9b8c-7d6e5f4a3b2c",
+                        "type": "routerNode",
+                        "data": {"name": "Escalation Router"},
+                    }
+                ],
+                "edges": [],
+            },
+        )
+        m = metrics["route_taken"]
+        assert m["passed"] is False
+        assert "Escalation Router" in m["comment"]
+        assert "8f2a4b6c" not in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_route_taken_unknown_router_id_never_prints_uuid(self):
+        metrics = await self.registry.evaluate(
+            ["route_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(route="true"),
+            technique_configs={
+                "route_taken": {
+                    "rules": [
+                        {
+                            "router": "8f2a4b6c-1d2e-4f5a-9b8c-7d6e5f4a3b2c",
+                            "expected": "true",
+                        }
+                    ]
+                }
+            },
+        )
+        m = metrics["route_taken"]
+        assert m["passed"] is False
+        assert "8f2a4b6c" not in m["comment"]
+        assert "unknown node" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_action_taken_multiple_rules(self):
+        """One node must fire (it did) and another must not (it did) — half pass."""
+        metrics = await self.registry.evaluate(
+            ["action_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(action_status="success"),
+            technique_configs={
+                "action_taken": {
+                    "rules": [
+                        {"node": "action1", "should_fire": True},
+                        {"node": "action1", "should_fire": False},
+                    ]
+                }
+            },
+        )
+        m = metrics["action_taken"]
+        assert m["passed"] is False
+        assert m["score"] == 0.5
+        assert len(m["details"]) == 2
+        assert "Sample Action Node" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_action_taken_comment_uses_label_not_id(self):
+        metrics = await self.registry.evaluate(
+            ["action_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(action_status="failed"),
+            technique_configs={"action_taken": {"node": "action1"}},
+        )
+        m = metrics["action_taken"]
+        assert m["passed"] is False
+        assert "Sample Action Node" in m["comment"]
+        assert "'action1'" not in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_action_taken_names_the_node_that_fired(self):
+        """A node_type rule matching several nodes must blame the node that actually
+        completed, not whichever candidate happens to come first in the trace."""
+        trace = {
+            "output": "out",
+            "state": {
+                "input": {},
+                "errors": [],
+                "nodeExecutionStatus": {
+                    "mail_a": {
+                        "name": "Mail A",
+                        "type": "emailNode",
+                        "output": {},
+                        "status": "failed",
+                        "error": "smtp down",
+                    },
+                    "mail_b": {
+                        "name": "Mail B",
+                        "type": "emailNode",
+                        "output": {},
+                        "status": "success",
+                        "error": None,
+                    },
+                },
+            },
+            "tool_events": [],
+        }
+        metrics = await self.registry.evaluate(
+            ["action_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=trace,
+            technique_configs={"action_taken": {"node_type": "emailNode", "should_fire": False}},
+        )
+        m = metrics["action_taken"]
+        assert m["passed"] is False
+        assert "Mail B" in m["comment"]
+        assert "Mail A" not in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_route_taken_actual_value_stays_plain(self):
+        metrics = await self.registry.evaluate(
+            ["route_taken"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(route="false"),
+            technique_configs={"route_taken": {"expected": "true"}},
+        )
+        m = metrics["route_taken"]
+        assert m["passed"] is False
+        assert m["actual"] == "false"
+        assert "'false'" in m["comment"]
+
+    @pytest.mark.asyncio
+    async def test_tool_used_forbidden_comment_uses_labels(self):
+        metrics = await self.registry.evaluate(
+            ["tool_used"],
+            inputs={},
+            outputs="",
+            reference_outputs=None,
+            execution_trace=_agent_trace(tool_name="lookup_tool"),
+            technique_configs={
+                "tool_used": {
+                    "rules": [
+                        {"id": "r1", "tool_ids": ["node_lookup_tool"], "operator": "none"}
+                    ]
+                }
+            },
+            workflow=_agent_workflow(),
+        )
+        m = metrics["tool_used"]
+        assert m["passed"] is False
+        assert "Lookup Tool" in m["comment"]
+        assert "node_lookup_tool" not in m["comment"]
+
 
 class TestLlmJudge:
     def setup_method(self):
@@ -1117,7 +1461,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_passes_above_threshold(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return 0.8, "professional and complete"
 
         self.registry._invoke_json_judge = fake_judge
@@ -1133,7 +1477,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_fails_below_threshold(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return 0.3, "curt"
 
         self.registry._invoke_json_judge = fake_judge
@@ -1147,10 +1491,103 @@ class TestLlmJudge:
         assert metrics["llm_judge"]["passed"] is False
 
     @pytest.mark.asyncio
+    async def test_multiple_rules_report_each(self):
+        """Two rubrics grade independently; the metric passes only when all do."""
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
+            if "polite" in system_prompt.lower():
+                return 0.9, "courteous"
+            return 0.2, "misses half the question"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={"message": "How do I reset my password and my email?"},
+            outputs="Click reset.",
+            reference_outputs=None,
+            technique_configs={
+                "llm_judge": {
+                    "rules": [
+                        {"label": "Politeness", "rubric": "Is the reply polite?", "min_score": 0.5},
+                        {"label": "Completeness", "rubric": "Does it answer everything?", "min_score": 0.5},
+                    ]
+                }
+            },
+        )
+        m = metrics["llm_judge"]
+        assert m["passed"] is False
+        assert m["score"] == 0.5
+        assert len(m["details"]) == 2
+        assert "1 of 2" in m["comment"]
+        assert "Completeness" in m["comment"]
+        assert m["details"][0]["passed"] is True
+        assert m["details"][1]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_multiple_rules_skip_rule_with_unavailable_source(self):
+        """A rule whose grounding source is missing is excluded, not failed."""
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
+            return 0.8, "fine"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs="Some answer.",
+            reference_outputs=None,
+            execution_trace={},
+            technique_configs={
+                "llm_judge": {
+                    "rules": [
+                        {"label": "Tone", "rubric": "Polite?", "min_score": 0.5, "source_type": "none"},
+                        {
+                            "label": "Relevance",
+                            "rubric": "Sources relevant?",
+                            "min_score": 0.5,
+                            "source_type": "kb_retrievals",
+                        },
+                    ]
+                }
+            },
+        )
+        m = metrics["llm_judge"]
+        assert m["passed"] is True
+        assert m["score"] == 1.0
+        assert "1 not evaluated" in m["comment"]
+        assert m["details"][1]["not_evaluated"] is True
+
+    @pytest.mark.asyncio
+    async def test_multiple_rules_error_surfaces_as_evaluator_error(self):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
+            if "polite" in system_prompt.lower():
+                return 0.9, "fine"
+            return None, "malformed judge output"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs="Answer.",
+            reference_outputs=None,
+            technique_configs={
+                "llm_judge": {
+                    "rules": [
+                        {"label": "Tone", "rubric": "Is it polite?", "min_score": 0.5},
+                        {"label": "Broken", "rubric": "Whatever.", "min_score": 0.5},
+                    ]
+                }
+            },
+        )
+        m = metrics["llm_judge"]
+        assert m.get("error") is True
+        assert m["passed"] is False
+        assert m["score"] is None
+        assert "Broken" in m["comment"]
+
+    @pytest.mark.asyncio
     async def test_source_field_feeds_kb_content_to_judge(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "grounded"
 
@@ -1176,7 +1613,7 @@ class TestLlmJudge:
     async def test_no_source_block_when_unconfigured(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "fine"
 
@@ -1195,7 +1632,7 @@ class TestLlmJudge:
     async def test_unresolved_selected_source_is_not_evaluated(self):
         called = False
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             nonlocal called
             called = True
             return 1.0, "ok"
@@ -1219,7 +1656,7 @@ class TestLlmJudge:
     async def test_explicit_kb_source_preset_feeds_judge(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "grounded"
 
@@ -1244,7 +1681,7 @@ class TestLlmJudge:
     async def test_auto_feeds_user_question_from_inputs(self):
         captured = {}
 
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             captured["user_content"] = user_content
             return 1.0, "ok"
 
@@ -1261,7 +1698,7 @@ class TestLlmJudge:
 
     @pytest.mark.asyncio
     async def test_malformed_judge_output_is_evaluator_error(self):
-        async def fake_judge(*, system_prompt, user_content, provider_id=None):
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
             return None, "LLM judge response could not be parsed"
 
         self.registry._invoke_json_judge = fake_judge
@@ -1851,7 +2288,13 @@ class TestSemanticEvaluators:
         assert metrics["provenance_eval"].get("not_evaluated") is True
 
     @pytest.mark.asyncio
-    async def test_provenance_overlap_default(self):
+    async def test_provenance_mode_less_config_defaults_to_embeddings(self):
+        """A config saved before the mode field existed grades with embeddings,
+        never the removed word-overlap heuristic."""
+        async def fake_embed(answer, context, config):
+            return 0.9
+
+        self.registry._embedding_provenance_score = fake_embed
         metrics = await self.registry.evaluate(
             ["provenance_eval"],
             inputs={},
@@ -1865,10 +2308,14 @@ class TestSemanticEvaluators:
         m = metrics["provenance_eval"]
         assert m.get("not_evaluated") is not True
         assert m["passed"] is True
-        assert "overlap" in m["comment"].lower()
+        assert "embedding" in m["comment"].lower()
 
     @pytest.mark.asyncio
     async def test_provenance_legacy_config_without_source_uses_expected_output(self):
+        async def fake_embed(answer, context, config):
+            return 0.9
+
+        self.registry._embedding_provenance_score = fake_embed
         metrics = await self.registry.evaluate(
             ["provenance_eval"],
             inputs={},
