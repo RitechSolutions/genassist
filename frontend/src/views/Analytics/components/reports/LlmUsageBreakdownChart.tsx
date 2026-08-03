@@ -9,6 +9,8 @@ interface LlmUsageBreakdownChartProps {
   items: LlmUsageBreakdownItem[];
   dimensionLabel: string;
   loading?: boolean;
+  error?: string | null;
+  scopeNote?: string;
 }
 
 const MAX_ROWS = 12;
@@ -19,7 +21,13 @@ const formatShare = (pct: number) => (pct > 0 && pct < 1 ? "<1%" : `${Math.round
 
 const railWidth = (pct: number) => `${Math.min(100, Math.max(pct > 0 ? 1.5 : 0, pct))}%`;
 
-export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUsageBreakdownChartProps) {
+export function LlmUsageBreakdownChart({
+  items,
+  dimensionLabel,
+  loading,
+  error = null,
+  scopeNote,
+}: LlmUsageBreakdownChartProps) {
   const rows = items.slice(0, MAX_ROWS);
   const total = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const peak = rows.reduce((max, i) => Math.max(max, i.cost_usd), 0);
@@ -36,7 +44,7 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
                 Top {MAX_ROWS} of {items.length}
               </span>
             )}
-            {!loading && rows.length > 0 && (
+            {!loading && !error && rows.length > 0 && (
               <span>
                 Total{" "}
                 <span className="ml-0.5 font-semibold tabular-nums text-foreground">{formatUsd(total, digits)}</span>
@@ -44,6 +52,7 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
             )}
           </div>
         </div>
+        {scopeNote && <p className="-mt-3 mb-4 text-xs text-muted-foreground">{scopeNote}</p>}
         {loading ? (
           <div className="space-y-4">
             {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -54,6 +63,8 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
               </div>
             ))}
           </div>
+        ) : error ? (
+          <div className="flex h-40 items-center justify-center text-sm text-destructive">{error}</div>
         ) : rows.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
             No usage recorded for this period.
@@ -77,7 +88,8 @@ export function LlmUsageBreakdownChart({ items, dimensionLabel, loading }: LlmUs
                       {item.label}
                     </span>
                     <div className="col-start-3 row-start-1 flex shrink-0 items-baseline justify-end gap-2 sm:col-start-4">
-                      {item.cost_is_partial && <span className="text-xs text-amber-500">partial</span>}
+                      {/* Muted, not amber: it explains history rather than warning about the number */}
+                      {item.removed && <span className="text-xs text-muted-foreground">removed</span>}
                       <span className="text-sm font-semibold tabular-nums text-foreground">
                         {formatUsd(item.cost_usd, digits)}
                       </span>

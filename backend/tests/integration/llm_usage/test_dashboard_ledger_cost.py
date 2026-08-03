@@ -314,7 +314,7 @@ async def test_get_agents_with_stats_reports_ledger_cost_and_per_conversation(db
 @pytest.mark.asyncio
 async def test_cost_explorer_summary_total_matches_dashboard_total(db):
     dashboard_repo = DashboardRepository(db)
-    read_service = LlmUsageReadService(LlmUsageReadRepository(db), None)
+    read_service = LlmUsageReadService(LlmUsageReadRepository(db), None, None)
     start, end = _today_range()
     params = LlmUsageQueryParams(from_date=start.date(), to_date=end.date())
 

@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 import json
 import re
@@ -29,6 +30,7 @@ from app.modules.workflow.engine.workflow_engine import (
 )
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
 from app.repositories.conversations import ConversationRepository
@@ -121,6 +123,9 @@ CASE_EXECUTION_TIMEOUT_SECONDS = 20 * 60
 EVALUATOR_TIMEOUT_SECONDS = 5 * 60
 NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
 
+# Metering runs outside the scoring budget; one hung flush must not stall a long run.
+EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS = 30
+
 
 class ResultStatus:
     """Why a case did or did not produce metrics."""
@@ -183,6 +188,26 @@ def _group_cases_into_conversations(
         group.sort(key=lambda case: (case.turn_index or 0, case.created_at))
 
     return list(conversations.values())
+
+
+# Rule 1 of any technique keeps the technique's own position as call_index,
+# unchanged from before multi-rule judging existed. A second+ rule on the same
+# technique would otherwise collide with that position (or another
+# technique's), so it's parked in a namespace disjoint from every possible
+# technique_index, still bucketed per technique so two techniques' overflow
+# rules never collide with each other either.
+_JUDGE_RULE_OVERFLOW_BASE = 1_000_000
+_JUDGE_RULE_OVERFLOW_SPAN = 1_000
+
+
+def _judge_rule_call_index(payload: Dict[str, Any], rule_number: int) -> int | None:
+    """call_index for one rule's real LLM call within a (possibly multi-rule) judge technique."""
+    technique_index = payload.get("_technique_index")
+    if technique_index is None:
+        return None
+    if rule_number <= 1:
+        return technique_index
+    return _JUDGE_RULE_OVERFLOW_BASE + technique_index * _JUDGE_RULE_OVERFLOW_SPAN + (rule_number - 1)
 
 
 def _read_path(data: Any, path: str) -> Any:
@@ -879,6 +904,16 @@ def build_tool_usage_resolvers(workflow: Any):
     return resolvers_from_agents(resolve_agents(workflow))
 
 
+@dataclasses.dataclass
+class EvaluationUsageRef:
+    """In-memory sink for one case's judge calls"""
+
+    execution_id: str
+    workflow_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None
+    entries: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
+
+
 class SimpleEvaluatorRegistry:
     """
     Lightweight evaluator registry inspired by OpenEvals.
@@ -925,6 +960,7 @@ class SimpleEvaluatorRegistry:
         execution_trace: Any = None,
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
+        usage_ref: "EvaluationUsageRef | None" = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -934,11 +970,13 @@ class SimpleEvaluatorRegistry:
             "trace": _build_grading_context(execution_trace),
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
+            "_usage_ref": usage_ref,
         }
-        for key in techniques:
+        for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
             if not fn:
                 continue
+            payload["_technique_index"] = technique_index
             config = (technique_configs or {}).get(key, {})
             if _is_waiting_for_human(outputs) and _requires_final_output(key, config):
                 results[key] = {
@@ -1461,6 +1499,8 @@ class SimpleEvaluatorRegistry:
                 context=context_text,
                 provider_id=config.get("llm_provider_id"),
                 system_prompt_suffix=config.get("llm_judge_system_prompt_suffix") or "",
+                usage_ref=payload.get("_usage_ref"),
+                call_index=payload.get("_technique_index"),
             )
             if score is None:
                 raise RuntimeError("Provenance LLM judge did not return a score.")
@@ -1551,6 +1591,8 @@ class SimpleEvaluatorRegistry:
         context: str,
         provider_id: str | None = None,
         system_prompt_suffix: str = "",
+        usage_ref: "EvaluationUsageRef | None" = None,
+        call_index: int | None = None,
     ) -> tuple[float | None, str | None]:
         """Grounding-locked judge used by provenance_eval; distinct from the rubric-based _llm_judge."""
         base_instructions = (
@@ -1575,7 +1617,12 @@ class SimpleEvaluatorRegistry:
         system_prompt = base_instructions + extra_instructions + json_format_requirement
         user_content = f"CONTEXT:\n{context}\n\nANSWER:\n{answer}\n"
         return await self._invoke_json_judge(
-            system_prompt=system_prompt, user_content=user_content, provider_id=provider_id
+            system_prompt=system_prompt,
+            user_content=user_content,
+            provider_id=provider_id,
+            usage_ref=usage_ref,
+            purpose="provenance_judge",
+            call_index=call_index,
         )
 
     async def _invoke_json_judge(
@@ -1584,6 +1631,9 @@ class SimpleEvaluatorRegistry:
         system_prompt: str,
         user_content: str,
         provider_id: str | None = None,
+        usage_ref: "EvaluationUsageRef | None" = None,
+        purpose: str | None = None,
+        call_index: int | None = None,
     ) -> tuple[float | None, str | None]:
         """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
         llm_provider = injector.get(LLMProvider)
@@ -1594,6 +1644,19 @@ class SimpleEvaluatorRegistry:
                 HumanMessage(content=user_content),
             ]
         )
+        if usage_ref is not None and call_index is not None:
+            try:
+                usage = extract_usage_from_aimessage(response)
+                usage_ref.entries.append(
+                    {
+                        "call_index": call_index,
+                        "provider_id": (usage or {}).get("provider_id") or provider_id,
+                        "purpose": purpose,
+                        "usage": usage,
+                    }
+                )
+            except Exception:
+                logger.warning("Collecting judge usage failed", exc_info=True)
         raw_content = getattr(response, "content", "")
         if isinstance(raw_content, list):
             raw_content = " ".join(str(part) for part in raw_content)
@@ -1707,6 +1770,9 @@ class SimpleEvaluatorRegistry:
             system_prompt=system_prompt,
             user_content="\n\n".join(user_parts),
             provider_id=provider_id,
+            usage_ref=payload.get("_usage_ref"),
+            purpose="llm_judge",
+            call_index=_judge_rule_call_index(payload, rule_number),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.
@@ -2026,6 +2092,67 @@ class TestSuiteService:
             ),
         )
 
+    async def _default_judge_provider_id(self) -> str | None:
+        """Judge configs may omit a provider, and ``get_model(None)`` serves the first row"""
+        try:
+            from app.services.llm_providers import LlmProviderService
+
+            providers = await injector.get(LlmProviderService).get_all()
+            return str(providers[0].id) if providers else None
+        except Exception:
+            logger.warning("Could not resolve the default judge LLM provider", exc_info=True)
+            return None
+
+    async def _persist_judge_usage(
+        self, usage_ref: EvaluationUsageRef, cache: Dict[str, Tuple[str, str]]
+    ) -> None:
+        """Resolve each judge call's provider identity, then record the case's batch."""
+        from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
+        from app.services.llm_usage_recorder import LlmUsageRecorder
+
+        default_id = None
+        if any(not collected.get("provider_id") for collected in usage_ref.entries):
+            default_id = await self._default_judge_provider_id()
+
+        entries: List[Dict[str, Any]] = []
+        for collected in usage_ref.entries:
+            effective_id = collected.get("provider_id") or default_id
+            provider, model = await resolve_provider_model(effective_id, cache)
+            entries.append(
+                {
+                    **collected,
+                    "provider": provider,
+                    "model": model,
+                    "llm_provider_id": coerce_uuid(effective_id),
+                }
+            )
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            usage_ref.execution_id,
+            entries,
+            workflow_id=usage_ref.workflow_id,
+            agent_id=usage_ref.agent_id,
+        )
+
+    async def _flush_judge_usage(
+        self,
+        usage_ref: Optional[EvaluationUsageRef],
+        cache: Dict[str, Tuple[str, str]],
+        metering_state: Dict[str, Any],
+    ) -> None:
+        if usage_ref is None or not usage_ref.entries or metering_state.get("timed_out"):
+            return
+        try:
+            await asyncio.wait_for(
+                self._persist_judge_usage(usage_ref, cache),
+                timeout=EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            metering_state["timed_out"] = True
+            logger.warning("Evaluation usage metering timed out; disabled for the rest of this run")
+        except Exception:
+            logger.warning("Recording evaluation LLM usage failed", exc_info=True)
+
     async def _execute_run(
         self,
         suite: TestSuiteModel,
@@ -2085,6 +2212,8 @@ class TestSuiteService:
         status_counts: Dict[str, int] = {}
         case_events: Dict[str, List[Dict[str, Any]]] = {}
         case_executed_agents: Dict[str, set] = {}
+        provider_name_cache: Dict[str, Tuple[str, str]] = {}
+        metering_state: Dict[str, Any] = {"timed_out": False}
 
         async def record_case_error(
             case: TestCaseInDB, error: str, status: str
@@ -2175,20 +2304,36 @@ class TestSuiteService:
                     node_status = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
                     case_events[str(case.id)] = execution_trace.get("tool_events") or []
                     case_executed_agents[str(case.id)] = set(node_status.keys())
-                metrics = await asyncio.wait_for(
-                    self.evaluators.evaluate(
-                        per_case_keys,
-                        inputs=merged_input,
-                        outputs=output,
-                        reference_outputs=case.expected_output,
-                        execution_trace=execution_trace,
-                        technique_configs=technique_configs,
-                        # Evaluators resolve node/tool ids to display labels from
-                        # the graph; without it comments degrade to "unknown node".
-                        workflow=workflow,
-                    ),
-                    timeout=EVALUATOR_TIMEOUT_SECONDS,
+                # The prefix keeps judge rows off the execution's own ledger key; without
+                # an execution id there is nothing to key on, so metering stays off
+                state_execution_id = getattr(state, "execution_id", None)
+                usage_ref = (
+                    EvaluationUsageRef(
+                        execution_id=f"eval:{state_execution_id}",
+                        workflow_id=coerce_uuid(engine.workflow_id),
+                        agent_id=coerce_uuid(workflow.agent_id),
+                    )
+                    if state_execution_id
+                    else None
                 )
+                try:
+                    metrics = await asyncio.wait_for(
+                        self.evaluators.evaluate(
+                            per_case_keys,
+                            inputs=merged_input,
+                            outputs=output,
+                            reference_outputs=case.expected_output,
+                            execution_trace=execution_trace,
+                            technique_configs=technique_configs,
+                            # Evaluators resolve node/tool ids to display labels from
+                            # the graph; without it comments degrade to "unknown node".
+                            workflow=workflow,
+                            usage_ref=usage_ref,
+                        ),
+                        timeout=EVALUATOR_TIMEOUT_SECONDS,
+                    )
+                finally:
+                    await self._flush_judge_usage(usage_ref, provider_name_cache, metering_state)
                 result = TestResultModel(
                     run_id=run.id,
                     case_id=case.id,
