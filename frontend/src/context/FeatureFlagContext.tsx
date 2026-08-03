@@ -7,6 +7,8 @@ import { isAuthenticated } from '@/services/auth';
 interface FeatureFlagContextType {
   flags: FeatureFlag[];
   loading: boolean;
+  /** Latches true once the first fetch settles; never returns to false. */
+  hydrated: boolean;
   error: string | null;
   isEnabled: (key: string) => boolean;
   getValue: (key: string) => string | null;
@@ -24,6 +26,7 @@ interface FeatureFlagProviderProps {
 export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ children }) => {
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchFlags = async () => {
@@ -36,6 +39,7 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
       setError('Failed to load feature flags');
     } finally {
       setLoading(false);
+      setHydrated(true);
     }
   };
 
@@ -43,7 +47,10 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
     // check if the user is authenticated
     if (isAuthenticated()) {
       fetchFlags();
+      return;
     }
+    // no fetch runs for anonymous visitors, so flag state is already final
+    setHydrated(true);
   }, []);
 
   const isEnabled = (key: string): boolean => {
@@ -69,6 +76,7 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
   const value = {
     flags,
     loading,
+    hydrated,
     error,
     isEnabled,
     getValue,
