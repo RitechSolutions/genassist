@@ -75,8 +75,13 @@ class DashboardService:
         """Get summary statistics for the dashboard header."""
         active_agents = await self.dashboard_repo.get_active_agents_count()
         workflow_runs = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
-        avg_response_time = await self.dashboard_repo.get_avg_response_time(from_date, to_date)
-        total_cost_usd = await self.dashboard_repo.get_total_cost_usd(from_date, to_date)
+        visible_agent_ids = await self.dashboard_repo.resolve_visible_agent_ids()
+        avg_response_time = await self.dashboard_repo.get_avg_response_time(
+            from_date, to_date, agent_ids=visible_agent_ids
+        )
+        total_cost_usd = await self.dashboard_repo.get_total_cost_usd(
+            from_date, to_date, agent_ids=visible_agent_ids
+        )
 
         return DashboardSummaryStats(
             active_agents=active_agents,

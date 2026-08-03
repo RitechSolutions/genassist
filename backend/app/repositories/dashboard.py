@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.core.utils.date_time_utils import utc_day_start
 from app.db.events.group_scope import get_group_scope_clause
 from app.db.models.agent import AgentModel
@@ -62,17 +63,29 @@ class DashboardRepository:
         result = await self.db.execute(query)
         return result.scalar() or 0
 
+    async def resolve_visible_agent_ids(self) -> list[UUID] | None:
+        """Caller's agent scope for the summary aggregates (None = unrestricted admin)"""
+        return await resolve_authorized_agent_ids(self.db)
+
     async def get_avg_response_time(
         self,
         from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None
+        to_date: Optional[datetime] = None,
+        *,
+        agent_ids: list[UUID] | None,
     ) -> int:
         """Get average response time in milliseconds from the pre-aggregated daily stats.
 
         Reads the twice-daily aggregated agent_execution_daily_stats table instead of
         recomputing from raw transcript messages on every request. Days are combined as
         an execution-count-weighted average, matching the analytics summary convention.
+
+        ``agent_ids`` is required because the stats table is not group-scoped: ``None``
+        is an explicit tenant-wide (admin) scope, ``[]`` short-circuits to zero.
         """
+        if agent_ids is not None and not agent_ids:
+            return 0
+
         weighted_sum = func.sum(
             AgentExecutionDailyStatsModel.avg_response_ms
             * AgentExecutionDailyStatsModel.execution_count
@@ -83,6 +96,8 @@ class DashboardRepository:
             weighted_sum / func.nullif(total_executions, 0)
         ).where(AgentExecutionDailyStatsModel.is_deleted == 0)
 
+        if agent_ids is not None:
+            query = query.where(AgentExecutionDailyStatsModel.agent_id.in_(agent_ids))
         if from_date:
             query = query.where(AgentExecutionDailyStatsModel.stat_date >= from_date)
         if to_date:
@@ -346,13 +361,20 @@ class DashboardRepository:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def get_total_cost_usd(self, from_date: datetime, to_date: datetime) -> float:
+    async def get_total_cost_usd(
+        self, from_date: datetime, to_date: datetime, *, agent_ids: list[UUID] | None
+    ) -> float:
         """Total priced LLM cost over the range from the usage ledger"""
+        if agent_ids is not None and not agent_ids:
+            return 0.0
+
         window_start, window_end = _ledger_window(from_date, to_date)
         query = select(func.coalesce(func.sum(LlmUsageEventModel.cost_usd), 0)).where(
             LlmUsageEventModel.is_deleted == 0,
             LlmUsageEventModel.occurred_at >= window_start,
             LlmUsageEventModel.occurred_at < window_end,
         )
+        if agent_ids is not None:
+            query = query.where(LlmUsageEventModel.agent_id.in_(agent_ids))
         result = await self.db.execute(query)
         return float(result.scalar() or 0.00)
