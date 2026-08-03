@@ -6,7 +6,7 @@ from sqlalchemy import Date, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.llm_pricing import PricingStatus
-from app.core.utils.analytics_agent_scope import resolve_scoped_agent_ids
+from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.repositories.db_repository import DbRepository
 
@@ -40,7 +40,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
         super().__init__(LlmUsageEventModel, db)
 
     async def resolve_scope(self, params) -> list[UUID] | None:
-        return await resolve_scoped_agent_ids(self.db, params.agent_id, params.group_id)
+        return await resolve_authorized_agent_ids(self.db, params.agent_id, params.group_id)
 
     @staticmethod
     def _conditions(params, scope: list[UUID] | None, *, use_provider: bool = True, use_model: bool = True) -> list:

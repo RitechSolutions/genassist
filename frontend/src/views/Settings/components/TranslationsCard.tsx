@@ -16,7 +16,6 @@ interface TranslationsCardProps {
     translation: Translation | null,
     mode: "create" | "edit"
   ) => void;
-  onRefresh: () => void;
   onAddTranslation: () => void;
 }
 
@@ -24,7 +23,6 @@ export function TranslationsCard({
   searchQuery,
   refreshKey = 0,
   onEditTranslation,
-  onRefresh,
   onAddTranslation,
 }: TranslationsCardProps) {
   const [translations, setTranslations] = useState<Translation[]>([]);
@@ -208,18 +206,6 @@ export function TranslationsCard({
 
   return (
     <>
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-lg font-semibold">Translations</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-1"
-          onClick={onRefresh}
-        >
-          Refresh
-        </Button>
-      </div>
-
       <DataTable
         data={filteredTranslations}
         columns={columns}

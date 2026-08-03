@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import { cn } from "@/helpers/utils";
+import type { UserGroup } from "@/interfaces/userGroup.interface";
 
 export const ALL_FILTER_VALUE = "all";
 
@@ -29,6 +30,10 @@ interface FilterGroup {
 }
 
 interface LlmUsageFilterMenuProps {
+  groups?: UserGroup[];
+  groupFilter?: string;
+  onGroupFilterChange?: (value: string) => void;
+
   agents: Array<{ id: string; name: string }>;
   agentFilter: string;
   onAgentFilterChange: (value: string) => void;
@@ -40,8 +45,11 @@ interface LlmUsageFilterMenuProps {
   onModelChange: (value: string) => void;
 }
 
-/** Agent, provider and model in one pill menu, matching the Transcripts quality filter */
+/** Group, agent, provider and model in one pill menu, matching the Transcripts quality filter */
 export function LlmUsageFilterMenu({
+  groups,
+  groupFilter,
+  onGroupFilterChange,
   agents,
   agentFilter,
   onAgentFilterChange,
@@ -52,7 +60,19 @@ export function LlmUsageFilterMenu({
   model,
   onModelChange,
 }: LlmUsageFilterMenuProps) {
-  const groups: FilterGroup[] = [
+  const filterGroups: FilterGroup[] = [
+    ...(groups && onGroupFilterChange
+      ? [
+          {
+            key: "group",
+            label: "Group",
+            allLabel: "All groups",
+            value: groupFilter ?? ALL_FILTER_VALUE,
+            options: groups.map((g) => ({ value: g.id, label: g.name })),
+            onChange: onGroupFilterChange,
+          },
+        ]
+      : []),
     {
       key: "agent",
       label: "Agent",
@@ -61,14 +81,15 @@ export function LlmUsageFilterMenu({
       options: agents.map((a) => ({ value: a.id, label: a.name })),
       onChange: onAgentFilterChange,
     },
-    {
-      key: "provider",
-      label: "Provider",
-      allLabel: "All providers",
-      value: provider,
-      options: providers.map((p) => ({ value: p, label: p })),
-      onChange: onProviderChange,
-    },
+ // Keep it in case we need it :)   
+ // {
+ //   key: "provider",
+ //   label: "Provider",
+ //   allLabel: "All providers",
+ //   value: provider,
+ //   options: providers.map((p) => ({ value: p, label: p })),
+ //   onChange: onProviderChange,
+ //   },
     {
       key: "model",
       label: "Model",
@@ -79,11 +100,13 @@ export function LlmUsageFilterMenu({
     },
   ];
 
-  const activeCount = groups.filter((g) => g.value !== ALL_FILTER_VALUE).length;
+  const activeCount = filterGroups.filter((g) => g.value !== ALL_FILTER_VALUE).length;
   const selectedLabel = (group: FilterGroup) =>
     group.options.find((o) => o.value === group.value)?.label ?? group.value;
 
   const clearAll = () => {
+    // Group first, so the agent reset it triggers cannot clobber the value set after it
+    onGroupFilterChange?.(ALL_FILTER_VALUE);
     onAgentFilterChange(ALL_FILTER_VALUE);
     onProviderChange(ALL_FILTER_VALUE);
     onModelChange(ALL_FILTER_VALUE);
@@ -113,7 +136,7 @@ export function LlmUsageFilterMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[14rem]">
-        {groups.map((group) => (
+        {filterGroups.map((group) => (
           <DropdownMenuSub key={group.key}>
             <DropdownMenuSubTrigger className="flex items-center gap-2">
               <span className="shrink-0">{group.label}</span>

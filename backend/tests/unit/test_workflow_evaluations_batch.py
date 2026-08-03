@@ -245,7 +245,7 @@ class TestStartWorkflowEvaluations:
         service = _service()
         service._evaluations_for_workflow = AsyncMock(return_value=evals)
 
-        async def fake_start(ev, dispatch):
+        async def fake_start(ev, dispatch, target_workflow_id=None):
             if ev is evals[1]:
                 raise RuntimeError("boom - secret internals")
             return SimpleNamespace(id=uuid4(), suite_id=ev.suite_id, status="queued")
@@ -274,6 +274,8 @@ class TestStartEvaluationRunOrphanCleanup:
         run = SimpleNamespace(id=uuid4(), suite_id=suite, status="queued")
         service.create_run = AsyncMock(return_value=run)
         service.append_run_to_evaluation = AsyncMock()
+        # Runs default to the agent's active version; this workflow has none.
+        service.workflow_service.get_active_version_id = AsyncMock(return_value=None)
 
         # the persisted row the cleanup path fetches and flips
         row = SimpleNamespace(id=run.id, status="queued", summary_metrics=None)

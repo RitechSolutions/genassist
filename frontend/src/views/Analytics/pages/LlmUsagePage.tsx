@@ -366,15 +366,15 @@ function LlmUsagePage() {
           subtitle="Token consumption and LLM spend across workflows and metric analysis"
         >
           <AnalyticsFilters
-            groups={showGroupFilter ? groups : undefined}
-            groupFilter={groupFilter}
-            onGroupFilterChange={setGroupFilter}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
             compareDateRange={compareDateRange}
             onCompareDateRangeChange={setCompareDateRange}
           >
             <LlmUsageFilterMenu
+              groups={showGroupFilter ? groups : undefined}
+              groupFilter={groupFilter}
+              onGroupFilterChange={setGroupFilter}
               agents={agents}
               agentFilter={agentFilter}
               onAgentFilterChange={setAgentFilter}

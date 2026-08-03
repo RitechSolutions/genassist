@@ -13,6 +13,9 @@ from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
 from app.services.llm_usage_read import _DIMENSION_COLUMNS, _EXTRA_BREAKDOWN_CONDITIONS
 
+WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
+WINDOW_END = datetime(2026, 1, 31, tzinfo=timezone.utc)
+
 
 class _Result:
     def scalar(self):
@@ -189,12 +192,58 @@ async def test_extra_conditions_compose_with_scope_date_and_provider_filters():
 async def test_dashboard_ledger_total_is_half_open_and_skips_deleted():
     db = CapturingDb()
     await DashboardRepository(db).get_total_cost_usd(
-        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc)
+        datetime(2026, 1, 1, tzinfo=timezone.utc), datetime(2026, 1, 31, tzinfo=timezone.utc), agent_ids=None
     )
     sql = _sql(db.statements[0])
     assert "occurred_at >= '2026-01-01 00:00:00+00:00'" in sql
     assert "occurred_at < '2026-02-01 00:00:00+00:00'" in sql
     assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_without_a_scope_has_no_agent_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=None)
+    assert "agent_id" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_restricts_to_the_visible_agents():
+    db = CapturingDb()
+    scope = [uuid4(), uuid4()]
+    await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=scope)
+    assert "agent_id IN" in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
+    db = CapturingDb()
+    total = await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=[])
+    assert total == 0.0
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_without_a_scope_has_no_agent_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=None)
+    assert "agent_id" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_restricts_to_the_visible_agents():
+    db = CapturingDb()
+    scope = [uuid4(), uuid4()]
+    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=scope)
+    assert "agent_id IN" in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_short_circuits_on_an_empty_scope():
+    db = CapturingDb()
+    avg = await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=[])
+    assert avg == 0
+    assert db.statements == []
 
 
 @pytest.mark.asyncio

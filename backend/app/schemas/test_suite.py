@@ -223,7 +223,10 @@ class TestRunInDB(TestRunBase):
 
 
 class TestRun(TestRunInDB):
-    pass
+    # Display metadata of the workflow version the run executed; populated on
+    # read paths, None on the create response.
+    workflow_name: Optional[str] = None
+    workflow_version: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +237,30 @@ class BatchRunsRequest(BaseModel):
     ids: List[str] = Field(
         ...,
         description="List of test run UUIDs to fetch.",
+    )
+
+
+class EvaluationRunRequest(BaseModel):
+    """Options for starting a single evaluation run."""
+
+    target_workflow_id: Optional[UUID] = Field(
+        default=None,
+        description=(
+            "Run against this workflow version instead of the evaluation's own. "
+            "Must be a version of the same workflow (same agent)."
+        ),
+    )
+
+
+class RunWorkflowEvaluationsRequest(BaseModel):
+    """Options for the workflow-wide Run all."""
+
+    target_workflow_id: Optional[UUID] = Field(
+        default=None,
+        description=(
+            "Run every evaluation against this workflow version instead of its "
+            "own. Must be a version of the same workflow (same agent)."
+        ),
     )
 
 
