@@ -12,7 +12,7 @@ export function LlmUsageCostShare({ costUsd, totalCostUsd }: LlmUsageCostSharePr
   const fillPercentage = Math.min(100, Math.max(0, percentage));
 
   return (
-    <div className="flex items-center justify-end gap-2 tabular-nums">
+    <div className="flex items-center gap-2 tabular-nums">
       <span className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
         <span className="block h-full rounded-full bg-primary" style={{ width: `${fillPercentage}%` }} />
       </span>
