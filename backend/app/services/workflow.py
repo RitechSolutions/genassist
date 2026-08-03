@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from injector import inject
@@ -41,6 +41,10 @@ class WorkflowService:
     # ---------- READ ----------
     async def get_all_minimal(self) -> List[WorkflowMinimal]:
         rows = await self.repository.get_all_minimal()
+        return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
+
+    async def get_minimal_by_ids(self, ids: List[UUID]) -> List[WorkflowMinimal]:
+        rows = await self.repository.get_minimal_by_ids(ids)
         return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
 
     async def get_summaries_by_agent(self, agent_id: UUID) -> List[WorkflowSummary]:
@@ -88,6 +92,26 @@ class WorkflowService:
             .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         )
         return {row.id: row.username for row in rows}
+
+    async def get_active_version_id(self, workflow_id: UUID) -> Optional[UUID]:
+        """The live version of the workflow's agent — what the builder marks Active.
+
+        ``None`` when the workflow has no agent or the agent points nowhere, so
+        callers can fall back to the version they already hold.
+
+        Agents are group-scoped but workflows are not; the scope filter is
+        bypassed so this pointer resolves to the same version for every caller
+        instead of silently falling back for some. Only the id is read.
+        """
+        workflow = await self.repository.get_by_id(workflow_id)
+        if not workflow or not workflow.agent_id:
+            return None
+        rows = await self.repository.db.execute(
+            select(AgentModel.workflow_id)
+            .where(AgentModel.id == workflow.agent_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
+        return rows.scalar_one_or_none()
 
     async def get_by_id(self, workflow_id: UUID) -> WorkflowInDB:
         orm_obj = await self.repository.get_by_id(workflow_id)
