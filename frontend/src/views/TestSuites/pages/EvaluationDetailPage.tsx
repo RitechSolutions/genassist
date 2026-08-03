@@ -53,6 +53,7 @@ import { ToolUsageResults } from "../components/ToolUsageResults";
 import { ToolUsageResultCard } from "../components/ToolUsageResultCard";
 import { RunAgainstVersionDialog } from "../components/RunAgainstVersionDialog";
 import { CompareRunsDialog } from "../components/CompareRunsDialog";
+import { MetricRuleBreakdown } from "../components/MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
 import {
   isResultFailed,
@@ -505,18 +506,23 @@ const EvaluationDetailPage: React.FC = () => {
                   tech,
                   evaluation?.technique_configs?.[tech],
                 );
-                if (!metricValue.comment && !sourceLabel) return null;
+                const ruleDetails =
+                  Array.isArray(metricValue.details) && metricValue.details.length > 1
+                    ? metricValue.details
+                    : null;
+                if (!metricValue.comment && !sourceLabel && !ruleDetails) return null;
                 return (
                   <div key={`${result.id}-${tech}-comment`} className="text-xs">
                     <span className="font-semibold text-muted-foreground">{methodLabel(tech)}:</span>{" "}
-                    {metricValue.comment && (
+                    {metricValue.comment && !ruleDetails && (
                       <span className="text-muted-foreground">{metricValue.comment}</span>
                     )}
                     {sourceLabel && (
                       <span className="text-muted-foreground">
-                        {metricValue.comment ? " — " : ""}checked against: {sourceLabel}
+                        {metricValue.comment && !ruleDetails ? " — " : ""}checked against: {sourceLabel}
                       </span>
                     )}
+                    {ruleDetails && <MetricRuleBreakdown details={ruleDetails} />}
                   </div>
                 );
               })}
