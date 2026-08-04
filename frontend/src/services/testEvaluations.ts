@@ -1,5 +1,10 @@
 import { apiRequest } from "@/config/api";
 import {
+  EvaluationBundle,
+  EvaluationImportPreview,
+  EvaluationImportResult,
+} from "@/interfaces/evalBundle.interface";
+import {
   EvaluationToolCatalog,
   PaginatedEvaluations,
   StartedEvaluationRun,
@@ -103,4 +108,31 @@ export const getToolRuleResults = (runId: string) =>
   apiRequest<TestToolRuleResult[]>(
     "GET",
     `${BASE}/runs/${runId}/tool-rule-results`,
+  );
+
+export const exportTestEvaluation = (id: string) =>
+  apiRequest<EvaluationBundle>("GET", `${BASE}/evaluations/${id}/export`);
+
+export interface EvaluationImportPayload {
+  bundle: EvaluationBundle;
+  target_workflow_id: string;
+  existing_suite_id?: string;
+  resolutions?: Record<string, string>;
+  drop_unresolved_rules?: boolean;
+}
+
+export const previewEvaluationImport = (
+  payload: Pick<EvaluationImportPayload, "bundle" | "target_workflow_id">,
+) =>
+  apiRequest<EvaluationImportPreview>(
+    "POST",
+    `${BASE}/evaluations/import/preview`,
+    payload as unknown as Record<string, unknown>,
+  );
+
+export const importEvaluation = (payload: EvaluationImportPayload) =>
+  apiRequest<EvaluationImportResult>(
+    "POST",
+    `${BASE}/evaluations/import`,
+    payload as unknown as Record<string, unknown>,
   );
