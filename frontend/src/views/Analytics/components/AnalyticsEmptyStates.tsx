@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BarChart2, Database, GitBranch, LineChart, Tags } from "lucide-react";
+import { BarChart2, Coins, Database, GitBranch, LineChart, PieChart, Tags } from "lucide-react";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { Card } from "@/components/card";
 import { analyticsFadeUpClass } from "../constants/animations";
@@ -122,6 +122,50 @@ export function AttributeBreakdownEmptyState() {
       icon={<Tags className="h-12 w-12 text-muted-foreground" />}
       title="No data for this attribute"
       description="This attribute has no values in the selected period. Try another attribute or expand the date range."
+    />
+  );
+}
+
+/** Cost Explorer — Spend Over Time chart with no usage in range. */
+export function LlmSpendChartEmptyState() {
+  return (
+    <ListEmptyState
+      icon={<LineChart className="h-12 w-12 text-muted-foreground" />}
+      title="No spend in this period"
+      description="Adjust the date range or filters to see LLM spend over time."
+    />
+  );
+}
+
+/** Cost Explorer — Cost by Provider donut with no priced spend in range. */
+export function LlmProviderChartEmptyState() {
+  return (
+    <ListEmptyState
+      icon={<PieChart className="h-12 w-12 text-muted-foreground" />}
+      title="No provider spend in this period"
+      description="Adjust the date range or filters to see cost by provider."
+    />
+  );
+}
+
+/** Cost Explorer — Usage by dimension breakdown table with no rows in range. */
+export function LlmUsageTableEmptyState() {
+  return (
+    <ListEmptyState
+      icon={<Coins className="h-12 w-12 text-muted-foreground" />}
+      title="No usage for this period"
+      description="Try a wider date range or adjusting the filters to see the breakdown."
+    />
+  );
+}
+
+/** Cost Explorer — Cost by Node chart with no node spend for the selected agent. */
+export function LlmNodeCostChartEmptyState() {
+  return (
+    <ListEmptyState
+      icon={<GitBranch className="h-12 w-12 text-muted-foreground" />}
+      title="No node costs for this agent"
+      description="This agent has no workflow node LLM spend in the selected period."
     />
   );
 }

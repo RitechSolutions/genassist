@@ -9,8 +9,8 @@ import {
   Coins,
   DollarSign,
   Info,
+  MessageSquare,
   Percent,
-  PhoneCall,
   TrendingDown,
   TrendingUp,
   X,
@@ -40,7 +40,8 @@ import type {
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { AnalyticsKpiStat, analyticsKpiGridClass } from "../components/AnalyticsKpiStat";
-import { ALL_FILTER_VALUE, LlmUsageFilterMenu } from "../components/LlmUsageFilterMenu";
+import { LlmUsageTableEmptyState } from "../components/AnalyticsEmptyStates";
+import { ALL_FILTER_VALUE, AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
@@ -86,7 +87,7 @@ interface KpiDeltaProps {
   tone?: "neutral" | "semantic";
 }
 
-function KpiDelta({ delta, unit = "%", tone = "neutral" }: KpiDeltaProps) {
+function KpiDelta({ delta, unit = "%", tone = "semantic" }: KpiDeltaProps) {
   if (delta === undefined || delta === null || delta === 0) return null;
   const rising = delta > 0;
   const Icon = rising ? TrendingUp : TrendingDown;
@@ -225,11 +226,6 @@ function LlmUsagePage() {
     if (model !== ALL && !options.models.includes(model)) setModel(ALL);
   }, [options, provider, model]);
 
-  const onProviderChange = (value: string) => {
-    setProvider(value);
-    setModel(ALL);
-  };
-
   const exportParams = useMemo(() => ({ ...queryFilters, dimension }), [queryFilters, dimension]);
 
   const activeDimension = DIMENSIONS.find((d) => d.value === dimension);
@@ -332,7 +328,7 @@ function LlmUsagePage() {
     {
       label: "Cost / Conversation",
       value: formatUsd(summary?.cost_per_conversation_usd),
-      icon: PhoneCall,
+      icon: MessageSquare,
       sub: summary?.agent_studio_test_cost_usd
         ? `${formatUsd(summary.agent_studio_test_cost_usd, 2)} agent studio tests`
         : undefined,
@@ -371,19 +367,23 @@ function LlmUsagePage() {
             compareDateRange={compareDateRange}
             onCompareDateRangeChange={setCompareDateRange}
           >
-            <LlmUsageFilterMenu
+            <AnalyticsFilterMenu
               groups={showGroupFilter ? groups : undefined}
               groupFilter={groupFilter}
               onGroupFilterChange={setGroupFilter}
               agents={agents}
               agentFilter={agentFilter}
               onAgentFilterChange={setAgentFilter}
-              providers={options?.providers ?? []}
-              provider={provider}
-              onProviderChange={onProviderChange}
-              models={options?.models ?? []}
-              model={model}
-              onModelChange={setModel}
+              extraGroups={[
+                {
+                  key: "model",
+                  label: "Model",
+                  allLabel: "All models",
+                  value: model,
+                  options: (options?.models ?? []).map((m) => ({ value: m, label: m })),
+                  onChange: setModel,
+                },
+              ]}
             />
             <ExportButton
               endpoint="/analytics/llm-usage/export"
@@ -486,7 +486,7 @@ function LlmUsagePage() {
               columns={columns}
               loading={tableLoading}
               error={error}
-              emptyMessage="No LLM costs recorded for this period."
+              emptyState={<LlmUsageTableEmptyState />}
               keyExtractor={(item) => item.key}
               pageSize={10}
               getRowProps={
