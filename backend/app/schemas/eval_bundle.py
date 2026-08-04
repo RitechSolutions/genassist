@@ -117,6 +117,47 @@ class EvaluationBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Bundle set: every evaluation of one workflow in a single file
+# ---------------------------------------------------------------------------
+
+EVALUATION_BUNDLE_SET_KIND = "genassist.evaluation-bundle-set"
+EVALUATION_BUNDLE_SET_SCHEMA_VERSION = 1
+
+MAX_SET_EVALUATIONS = 200
+MAX_SET_TOTAL_CASES = 20000
+# Datasets are not bounded by the evaluation count on their own: unreferenced
+# ones are rejected, but the cap keeps a crafted file from driving the
+# per-dataset lookups before that check can run.
+MAX_SET_DATASETS = 200
+
+
+class BundleSetDataset(BundleDataset):
+    """One dataset stored once for the whole set; items point at ``local_id``."""
+
+    local_id: int
+
+
+class BundleSetItem(BaseModel):
+    """One evaluation in a set; its dataset lives in the set's ``datasets``."""
+
+    evaluation: BundleEvaluation
+    dataset_local_id: int
+    references: BundleReferences = Field(default_factory=BundleReferences)
+    notes: List[str] = Field(default_factory=list)
+
+
+class EvaluationBundleSet(BaseModel):
+    # Plain str for the same reason as EvaluationBundle.kind: the runtime check
+    # gives a readable 400 where a Literal would fail with a raw 422.
+    kind: str = EVALUATION_BUNDLE_SET_KIND
+    schema_version: int = EVALUATION_BUNDLE_SET_SCHEMA_VERSION
+    source: BundleSource = Field(default_factory=BundleSource)
+    datasets: List[BundleSetDataset] = Field(default_factory=list)
+    evaluations: List[BundleSetItem] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Import preview / commit
 # ---------------------------------------------------------------------------
 
@@ -208,3 +249,84 @@ class EvaluationImportResult(BaseModel):
     reused_dataset: bool = False
     dropped_rules: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Set import preview / commit
+# ---------------------------------------------------------------------------
+
+SET_ITEM_IMPORTED = "imported"
+SET_ITEM_SKIPPED = "skipped"
+SET_ITEM_FAILED = "failed"
+
+
+class EvaluationSetItemPreview(BaseModel):
+    """How one evaluation of the set would land on the target workflow."""
+
+    name: str
+    dataset_name: str
+    case_count: int
+    # An evaluation with this name already exists on the target workflow, so
+    # the import skips it unless the caller opts out of skipping.
+    already_exists: bool = False
+    dropping_all_would_empty: bool = False
+    # The reference keys THIS evaluation uses, so the UI can judge each row on
+    # its own instead of on the set-wide unmatched count.
+    node_ref_keys: List[str] = Field(default_factory=list)
+
+
+class BundleSetDatasetPreview(BaseModel):
+    local_id: int
+    name: str
+    case_count: int
+    existing_dataset: Optional[BundleExistingDataset] = None
+
+
+class EvaluationSetImportPreviewRequest(BaseModel):
+    bundle_set: EvaluationBundleSet
+    target_workflow_id: UUID
+
+
+class EvaluationSetImportPreview(BaseModel):
+    workflow_name_matches: bool
+    evaluations: List[EvaluationSetItemPreview] = Field(default_factory=list)
+    datasets: List[BundleSetDatasetPreview] = Field(default_factory=list)
+    # The union of every item's references, resolved once — each ref appears a
+    # single time no matter how many evaluations use it.
+    node_refs: List[BundleNodeResolution] = Field(default_factory=list)
+    provider_refs: List[BundleProviderResolution] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    can_import: bool
+
+
+class EvaluationSetImportRequest(BaseModel):
+    bundle_set: EvaluationBundleSet
+    target_workflow_id: UUID
+    # Positions (0-based) of the evaluations to import; None imports all.
+    include: Optional[List[int]] = Field(default=None, max_length=MAX_SET_EVALUATIONS)
+    # Shared manual picks, applied to every evaluation in the set.
+    resolutions: Dict[str, str] = Field(
+        default_factory=dict, max_length=MAX_BUNDLE_RESOLUTIONS
+    )
+    drop_unresolved_rules: bool = False
+    skip_existing: bool = True
+
+
+class EvaluationSetItemResult(BaseModel):
+    name: str
+    status: str
+    evaluation_id: Optional[UUID] = None
+    suite_id: Optional[UUID] = None
+    case_count: int = 0
+    reused_dataset: bool = False
+    dropped_rules: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    # Why the item failed or was skipped, in one client-safe sentence.
+    detail: Optional[str] = None
+
+
+class EvaluationSetImportResult(BaseModel):
+    results: List[EvaluationSetItemResult] = Field(default_factory=list)
+    imported: int = 0
+    skipped: int = 0
+    failed: int = 0
