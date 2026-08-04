@@ -1,18 +1,24 @@
 import {
   EVALUATION_BUNDLE_KIND,
+  EVALUATION_BUNDLE_SET_KIND,
   BundleRefCandidate,
   EvaluationBundle,
+  EvaluationBundleSet,
 } from "@/interfaces/evalBundle.interface";
 import { EvaluationToolCatalog } from "@/interfaces/testEvaluation.interface";
 
-export const bundleFilename = (evaluationName: string): string => {
-  const slug = evaluationName
+const slugify = (value: string): string =>
+  value
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return `evaluation-${slug || "bundle"}.json`;
-};
+
+export const bundleFilename = (evaluationName: string): string =>
+  `evaluation-${slugify(evaluationName) || "bundle"}.json`;
+
+export const bundleSetFilename = (workflowName: string): string =>
+  `evaluations-${slugify(workflowName) || "workflow"}.json`;
 
 export const downloadJsonFile = (filename: string, data: unknown): void => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -26,6 +32,18 @@ export const downloadJsonFile = (filename: string, data: unknown): void => {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+};
+
+/** Prefer the specific reason over the generic message: bundle errors name the
+ * reference or limit that the user must act on. */
+export const apiErrorDetail = (error: unknown): string | undefined => {
+  const data = (
+    error as { response?: { data?: { error?: unknown; error_detail?: unknown } } }
+  )?.response?.data;
+  for (const candidate of [data?.error_detail, data?.error]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+  return undefined;
 };
 
 const dedupeById = (options: BundleRefCandidate[]): BundleRefCandidate[] => {
@@ -107,41 +125,87 @@ export const narrowToOriginalType = (
 export const nodeRefKey = (nodeRef: { ref: string; kind: string }): string =>
   `${nodeRef.kind}:${nodeRef.ref}`;
 
-export const parseBundleFile = (fileText: string): EvaluationBundle => {
+const normalizeReferences = (
+  references: EvaluationBundle["references"] | undefined,
+): EvaluationBundle["references"] => ({
+  nodes: references?.nodes ?? {},
+  llm_providers: references?.llm_providers ?? {},
+  cases: references?.cases ?? {},
+});
+
+const normalizeEvaluation = (
+  evaluation: EvaluationBundle["evaluation"],
+): EvaluationBundle["evaluation"] => ({
+  ...evaluation,
+  techniques: Array.isArray(evaluation.techniques) ? evaluation.techniques : [],
+});
+
+/** A hand-edited bundle may omit optional collections; normalize them so the
+ * dialog never renders against undefined. */
+const normalizeBundle = (bundle: EvaluationBundle): EvaluationBundle => {
+  const isBundle = Boolean(bundle?.evaluation?.name) && Boolean(bundle?.dataset?.name);
+  if (!isBundle) {
+    throw new Error("The file is not an evaluation bundle export.");
+  }
+  return {
+    ...bundle,
+    notes: Array.isArray(bundle.notes) ? bundle.notes : [],
+    evaluation: normalizeEvaluation(bundle.evaluation),
+    dataset: {
+      ...bundle.dataset,
+      cases: Array.isArray(bundle.dataset.cases) ? bundle.dataset.cases : [],
+    },
+    references: normalizeReferences(bundle.references),
+  };
+};
+
+const normalizeBundleSet = (bundleSet: EvaluationBundleSet): EvaluationBundleSet => {
+  const datasets = Array.isArray(bundleSet?.datasets) ? bundleSet.datasets : [];
+  const items = Array.isArray(bundleSet?.evaluations) ? bundleSet.evaluations : [];
+  const isValid =
+    items.length > 0 &&
+    items.every((item) => Boolean(item?.evaluation?.name)) &&
+    datasets.every((dataset) => Boolean(dataset?.name));
+  if (!isValid) {
+    throw new Error("The file is not an evaluation bundle export.");
+  }
+  return {
+    ...bundleSet,
+    notes: Array.isArray(bundleSet.notes) ? bundleSet.notes : [],
+    datasets: datasets.map((dataset) => ({
+      ...dataset,
+      cases: Array.isArray(dataset.cases) ? dataset.cases : [],
+    })),
+    evaluations: items.map((item) => ({
+      ...item,
+      notes: Array.isArray(item.notes) ? item.notes : [],
+      evaluation: normalizeEvaluation(item.evaluation),
+      references: normalizeReferences(item.references),
+    })),
+  };
+};
+
+export type ParsedBundleFile =
+  | { kind: "single"; bundle: EvaluationBundle }
+  | { kind: "set"; bundleSet: EvaluationBundleSet };
+
+/** Parse either bundle flavor; the file's ``kind`` field decides which. */
+export const parseBundleFile = (fileText: string): ParsedBundleFile => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(fileText);
   } catch {
     throw new Error("The file is not valid JSON.");
   }
-  const bundle = parsed as EvaluationBundle;
-  const isBundle =
-    bundle &&
-    bundle.kind === EVALUATION_BUNDLE_KIND &&
-    Boolean(bundle.evaluation?.name) &&
-    Boolean(bundle.dataset?.name);
-  if (!isBundle) {
-    throw new Error("The file is not an evaluation bundle export.");
+  const kind = (parsed as { kind?: unknown })?.kind;
+  if (kind === EVALUATION_BUNDLE_SET_KIND) {
+    return { kind: "set", bundleSet: normalizeBundleSet(parsed as EvaluationBundleSet) };
   }
-  // A hand-edited bundle may omit optional collections; normalize them so the
-  // dialog never renders against undefined.
-  return {
-    ...bundle,
-    notes: Array.isArray(bundle.notes) ? bundle.notes : [],
-    evaluation: {
-      ...bundle.evaluation,
-      techniques: Array.isArray(bundle.evaluation.techniques)
-        ? bundle.evaluation.techniques
-        : [],
-    },
-    dataset: {
-      ...bundle.dataset,
-      cases: Array.isArray(bundle.dataset.cases) ? bundle.dataset.cases : [],
-    },
-    references: {
-      nodes: bundle.references?.nodes ?? {},
-      llm_providers: bundle.references?.llm_providers ?? {},
-      cases: bundle.references?.cases ?? {},
-    },
-  };
+  if (kind === EVALUATION_BUNDLE_KIND) {
+    return { kind: "single", bundle: normalizeBundle(parsed as EvaluationBundle) };
+  }
+  throw new Error("The file is not an evaluation bundle export.");
 };
+
+export const bundleSetCaseCount = (bundleSet: EvaluationBundleSet): number =>
+  bundleSet.datasets.reduce((sum, dataset) => sum + dataset.cases.length, 0);
