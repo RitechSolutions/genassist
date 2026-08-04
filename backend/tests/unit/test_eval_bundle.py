@@ -10,7 +10,12 @@ import pytest
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.eval_bundle import (
+    EVALUATION_BUNDLE_KIND,
     EVALUATION_BUNDLE_SCHEMA_VERSION,
+    EVALUATION_BUNDLE_SET_KIND,
+    EVALUATION_BUNDLE_SET_SCHEMA_VERSION,
+    MAX_SET_DATASETS,
+    MAX_SET_EVALUATIONS,
     REF_KIND_ACTION,
     REF_KIND_AGENT,
     REF_KIND_ROUTER,
@@ -18,16 +23,24 @@ from app.schemas.eval_bundle import (
     REF_STATUS_AMBIGUOUS,
     REF_STATUS_MISSING,
     REF_STATUS_RESOLVED,
+    SET_ITEM_FAILED,
+    SET_ITEM_IMPORTED,
+    SET_ITEM_SKIPPED,
     BundleCase,
     BundleDataset,
     BundleEvaluation,
     BundleNodeRef,
     BundleProviderRef,
     BundleReferences,
+    BundleSetDataset,
+    BundleSetItem,
     BundleSource,
     EvaluationBundle,
+    EvaluationBundleSet,
     EvaluationImportPreviewRequest,
     EvaluationImportRequest,
+    EvaluationSetImportPreviewRequest,
+    EvaluationSetImportRequest,
 )
 from app.schemas.test_suite import (
     EvaluationToolCatalog,
@@ -35,6 +48,7 @@ from app.schemas.test_suite import (
     TestEvaluation,
     TestSuiteInDB,
 )
+from app.services import eval_bundle
 from app.services.eval_bundle import (
     EvalBundleService,
     UnresolvedRefError,
@@ -1277,3 +1291,938 @@ class TestRoundTrip:
         assert rule["tool_ids"] == ["tgt-tool-search"]
         assert created.technique_configs["route_taken"]["rules"][0]["router"] == "tgt-router"
         assert result.case_count == 1
+
+
+def _route_only_evaluation(name: str) -> BundleEvaluation:
+    return BundleEvaluation(
+        name=name,
+        techniques=["route_taken"],
+        technique_configs={
+            "route_taken": {"rules": [{"router": "src-router", "expected": "hr"}]}
+        },
+    )
+
+
+def _bundle_set(case_id: str, provider_id: str) -> EvaluationBundleSet:
+    """Two evaluations sharing one dataset: the full single-bundle evaluation
+    plus a route-only one."""
+    single = _bundle(case_id, provider_id)
+    return EvaluationBundleSet(
+        source=single.source,
+        datasets=[BundleSetDataset(local_id=1, **single.dataset.model_dump())],
+        evaluations=[
+            BundleSetItem(
+                evaluation=single.evaluation,
+                dataset_local_id=1,
+                references=single.references,
+            ),
+            BundleSetItem(
+                evaluation=_route_only_evaluation("Routing only"),
+                dataset_local_id=1,
+                references=single.references,
+            ),
+        ],
+    )
+
+
+def _set_import_service(target_provider_id):
+    service = _import_service(target_provider_id)
+    service.suites.list_evaluations.return_value = []
+    return service
+
+
+def _wire_batch_dataset_reuse(service, target_workflow_id):
+    """Make suites real enough that reusing the WRONG id fails.
+
+    Each create_suite call mints its own id; get_suite only knows ids this batch
+    created, so forwarding an evaluation id (or a stale one) raises instead of
+    quietly resolving to the single canned suite.
+    """
+    created = {}
+
+    async def create_suite(data):
+        suite = SimpleNamespace(
+            id=uuid4(), name=data.name, workflow_id=target_workflow_id
+        )
+        created[str(suite.id)] = suite
+        return suite
+
+    async def get_suite(suite_id):
+        suite = created.get(str(suite_id))
+        if not suite:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        return suite
+
+    async def list_cases_for_suite(suite_id):
+        assert str(suite_id) in created, f"unknown suite {suite_id}"
+        return [
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_id, input_data={"message": "hi"},
+                created_at=NOW, updated_at=NOW,
+            ),
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_id, input_data={"message": "bye"},
+                created_at=NOW, updated_at=NOW,
+            ),
+        ]
+
+    async def list_suites():
+        # A suite created earlier in the batch is visible to later lookups, as
+        # it would be in the database — without this, a name-collision test
+        # passes for the wrong reason.
+        return list(created.values())
+
+    service.suites.create_suite.side_effect = create_suite
+    service.suites.get_suite.side_effect = get_suite
+    service.suites.list_cases_for_suite.side_effect = list_cases_for_suite
+    service.suites.list_suites.side_effect = list_suites
+    return created
+
+
+def _stored_evaluation(name: str, suite_id, workflow_id) -> TestEvaluation:
+    return TestEvaluation(
+        id=uuid4(),
+        name=name,
+        description=None,
+        suite_id=suite_id,
+        workflow_id=workflow_id,
+        techniques=["route_taken"],
+        technique_configs={
+            "route_taken": {"rules": [{"router": "src-router", "expected": "hr"}]}
+        },
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+class TestBundleSetExport:
+    @pytest.mark.asyncio
+    async def test_export_set_dedupes_shared_datasets_and_sorts_by_name(self):
+        workflow_id, suite_a, suite_b = uuid4(), uuid4(), uuid4()
+        evaluations = [
+            _stored_evaluation("B checks", suite_a, workflow_id),
+            _stored_evaluation("A checks", suite_a, workflow_id),
+            _stored_evaluation("C checks", suite_b, workflow_id),
+        ]
+        suites = {
+            suite_a: TestSuiteInDB(
+                id=suite_a, name="Shared dataset", workflow_id=workflow_id,
+                created_at=NOW, updated_at=NOW,
+            ),
+            suite_b: TestSuiteInDB(
+                id=suite_b, name="Other dataset", workflow_id=workflow_id,
+                created_at=NOW, updated_at=NOW,
+            ),
+        }
+        service = _service()
+        service.suites.list_evaluations.return_value = evaluations
+        service.suites.get_evaluation.side_effect = lambda eid: next(
+            e for e in evaluations if e.id == eid
+        )
+        service.suites.get_suite.side_effect = lambda sid: suites[sid]
+        service.suites.list_cases_for_suite.return_value = [
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_a, input_data={"message": "hi"},
+                created_at=NOW, updated_at=NOW,
+            )
+        ]
+        service.suites.get_evaluation_tool_catalog.return_value = (
+            EvaluationToolCatalog(**_catalog("src"))
+        )
+        service.workflows.get_by_id.return_value = SimpleNamespace(
+            id=workflow_id, name="HR Assistant", version="1.0"
+        )
+        service.workflows.get_all_minimal.return_value = []
+        service.providers.get_all_minimal.return_value = []
+
+        bundle_set = await service.export_workflow_evaluations(workflow_id)
+
+        assert bundle_set.kind == EVALUATION_BUNDLE_SET_KIND
+        assert [i.evaluation.name for i in bundle_set.evaluations] == [
+            "A checks", "B checks", "C checks",
+        ]
+        assert len(bundle_set.datasets) == 2
+        shared, other = bundle_set.evaluations[0], bundle_set.evaluations[1]
+        assert shared.dataset_local_id == other.dataset_local_id
+        assert bundle_set.evaluations[2].dataset_local_id != shared.dataset_local_id
+
+    @pytest.mark.asyncio
+    async def test_export_set_with_no_evaluations_404s(self):
+        service = _service()
+        service.suites.list_evaluations.return_value = []
+        service.workflows.get_by_id.return_value = SimpleNamespace(
+            id=uuid4(), name="HR Assistant", version="1.0"
+        )
+        service.workflows.get_all_minimal.return_value = []
+
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(uuid4())
+        assert excinfo.value.status_code == 404
+
+
+class TestBundleSetPreview:
+    @pytest.mark.asyncio
+    async def test_preview_unions_refs_and_flags_existing_names(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        service.suites.list_evaluations.return_value = [
+            _stored_evaluation("Routing only", uuid4(), target_workflow_id)
+        ]
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+
+        preview = await service.preview_set_import(
+            EvaluationSetImportPreviewRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert preview.can_import is True
+        # Both items reference src-router; the union carries it exactly once.
+        router_rows = [r for r in preview.node_refs if r.ref == "src-router"]
+        assert len(router_rows) == 1
+        assert router_rows[0].resolved_id == "tgt-router"
+        assert [i.already_exists for i in preview.evaluations] == [False, True]
+        assert preview.datasets[0].existing_dataset is None
+
+    @pytest.mark.asyncio
+    async def test_single_bundle_file_is_rejected_with_a_clear_message(self):
+        service = _set_import_service(uuid4())
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+        bundle_set.kind = EVALUATION_BUNDLE_KIND
+
+        with pytest.raises(AppException) as excinfo:
+            await service.preview_set_import(
+                EvaluationSetImportPreviewRequest(
+                    bundle_set=bundle_set, target_workflow_id=uuid4()
+                )
+            )
+        assert excinfo.value.status_code == 400
+        assert "single-evaluation" in excinfo.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_dangling_dataset_reference_is_rejected(self):
+        service = _set_import_service(uuid4())
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+        bundle_set.evaluations[1].dataset_local_id = 99
+
+        with pytest.raises(AppException) as excinfo:
+            await service.preview_set_import(
+                EvaluationSetImportPreviewRequest(
+                    bundle_set=bundle_set, target_workflow_id=uuid4()
+                )
+            )
+        assert excinfo.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_empty_set_is_rejected(self):
+        service = _set_import_service(uuid4())
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+        bundle_set.evaluations = []
+
+        with pytest.raises(AppException) as excinfo:
+            await service.preview_set_import(
+                EvaluationSetImportPreviewRequest(
+                    bundle_set=bundle_set, target_workflow_id=uuid4()
+                )
+            )
+        assert excinfo.value.status_code == 400
+
+
+class TestBundleSetImport:
+    @pytest.mark.asyncio
+    async def test_batch_shares_created_dataset_and_skips_existing(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        service.suites.list_evaluations.return_value = [
+            _stored_evaluation("Third checks", uuid4(), target_workflow_id)
+        ]
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+        bundle_set.evaluations.append(
+            BundleSetItem(
+                evaluation=_route_only_evaluation("Third checks"),
+                dataset_local_id=1,
+                references=bundle_set.evaluations[0].references,
+            )
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert [r.status for r in result.results] == [
+            SET_ITEM_IMPORTED, SET_ITEM_IMPORTED, SET_ITEM_SKIPPED,
+        ]
+        assert (result.imported, result.skipped, result.failed) == (2, 1, 0)
+        service.suites.create_suite.assert_awaited_once()
+        assert result.results[1].reused_dataset is True
+        # Not just "a" reuse: the second item must land on the suite the first
+        # one created, which a wrong id in the batch map would not.
+        assert result.results[1].suite_id == result.results[0].suite_id
+
+    @pytest.mark.asyncio
+    async def test_one_failing_item_does_not_stop_the_batch(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+        broken = bundle_set.evaluations[0]
+        broken.evaluation.technique_configs["route_taken"]["rules"][0][
+            "router"
+        ] = "missing-node"
+        broken.references = BundleReferences()
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert [r.status for r in result.results] == [
+            SET_ITEM_FAILED, SET_ITEM_IMPORTED,
+        ]
+        assert result.results[0].detail
+        assert (result.imported, result.skipped, result.failed) == (1, 0, 1)
+
+    @pytest.mark.asyncio
+    async def test_include_imports_only_the_selected_items(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set,
+                target_workflow_id=target_workflow_id,
+                include=[1],
+            )
+        )
+
+        assert len(result.results) == 1
+        assert result.results[0].name == "Routing only"
+        assert result.results[0].status == SET_ITEM_IMPORTED
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_selection_is_rejected(self):
+        service = _set_import_service(uuid4())
+        bundle_set = _bundle_set(str(uuid4()), str(uuid4()))
+
+        with pytest.raises(AppException) as excinfo:
+            await service.import_bundle_set(
+                EvaluationSetImportRequest(
+                    bundle_set=bundle_set,
+                    target_workflow_id=uuid4(),
+                    include=[5],
+                )
+            )
+        assert excinfo.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_skip_existing_off_imports_duplicates(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        service.suites.list_evaluations.return_value = [
+            _stored_evaluation("Routing only", uuid4(), target_workflow_id)
+        ]
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=_bundle_set(str(uuid4()), str(uuid4())),
+                target_workflow_id=target_workflow_id,
+                skip_existing=False,
+            )
+        )
+
+        assert (result.imported, result.skipped, result.failed) == (2, 0, 0)
+
+
+def _dataset(local_id: int, name: str, case_count: int = 1) -> BundleSetDataset:
+    return BundleSetDataset(
+        local_id=local_id,
+        name=name,
+        cases=[
+            BundleCase(local_id=i, input_data={"message": f"m{i}"})
+            for i in range(1, case_count + 1)
+        ],
+    )
+
+
+def _item(name: str, dataset_local_id: int, references=None) -> BundleSetItem:
+    return BundleSetItem(
+        evaluation=_route_only_evaluation(name),
+        dataset_local_id=dataset_local_id,
+        references=references or BundleReferences(),
+    )
+
+
+def _router_references() -> BundleReferences:
+    return BundleReferences(
+        nodes={"src-router": BundleNodeRef(label="Intent Router", kind=REF_KIND_ROUTER)}
+    )
+
+
+class TestBundleSetSameNamedDatasets:
+    """Two source suites can legitimately share a name; the file keeps them
+    apart by local_id and the import must not collapse them."""
+
+    @pytest.mark.asyncio
+    async def test_same_named_datasets_stay_separate(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        created = _wire_batch_dataset_reuse(service, target_workflow_id)
+        bundle_set = EvaluationBundleSet(
+            source=BundleSource(workflow_name="HR Assistant"),
+            datasets=[_dataset(1, "Shared name", 2), _dataset(2, "Shared name", 3)],
+            evaluations=[
+                _item("First", 1, _router_references()),
+                _item("Second", 2, _router_references()),
+            ],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert (result.imported, result.failed) == (2, 0)
+        assert result.results[0].suite_id != result.results[1].suite_id
+        assert [r.reused_dataset for r in result.results] == [False, False]
+        assert len(created) == 2
+        # Both datasets' cases were created, not just the first one's.
+        assert service.case_repo.create_many.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_dataset_already_on_target_is_still_reused(self):
+        """The batch guard must not disable ordinary reuse of a PRE-EXISTING
+        dataset, only of one this same batch created."""
+        target_workflow_id = uuid4()
+        existing_suite_id = uuid4()
+        service = _set_import_service(uuid4())
+        service.suites.list_suites.return_value = [
+            SimpleNamespace(
+                id=existing_suite_id,
+                name="Shared name",
+                workflow_id=target_workflow_id,
+            )
+        ]
+        service.suites.get_suite.return_value = SimpleNamespace(
+            id=existing_suite_id, name="Shared name", workflow_id=target_workflow_id
+        )
+        service.suites.list_cases_for_suite.return_value = [
+            TestCaseInDB(
+                id=uuid4(), suite_id=existing_suite_id, input_data={"message": "hi"},
+                created_at=NOW, updated_at=NOW,
+            )
+        ]
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared name", 1)],
+            evaluations=[_item("First", 1, _router_references())],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert result.results[0].status == SET_ITEM_IMPORTED
+        assert result.results[0].reused_dataset is True
+        assert result.results[0].suite_id == existing_suite_id
+        service.suites.create_suite.assert_not_awaited()
+
+
+class TestBundleSetSharedResolution:
+    @pytest.mark.asyncio
+    async def test_label_from_a_later_item_resolves_the_whole_set(self):
+        """Items are exported against their own version, so only some record a
+        label. Resolution uses the best metadata any item has, and the import
+        replays it so no item disagrees with the preview."""
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset", 2)],
+            evaluations=[
+                _item("No label recorded", 1, BundleReferences()),
+                _item("Label recorded", 1, _router_references()),
+            ],
+        )
+
+        preview = await service.preview_set_import(
+            EvaluationSetImportPreviewRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert preview.can_import is True
+        assert preview.node_refs[0].resolved_id == "tgt-router"
+        # The label-less item must import too, on the preview's decision.
+        assert [r.status for r in result.results] == [
+            SET_ITEM_IMPORTED, SET_ITEM_IMPORTED,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_preview_reports_each_item_s_own_refs(self):
+        service = _set_import_service(uuid4())
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset")],
+            evaluations=[
+                _item("Uses the router", 1, _router_references()),
+                BundleSetItem(
+                    evaluation=BundleEvaluation(
+                        name="Uses nothing",
+                        techniques=["llm_judge"],
+                        technique_configs={"llm_judge": {"rules": []}},
+                    ),
+                    dataset_local_id=1,
+                ),
+            ],
+        )
+
+        preview = await service.preview_set_import(
+            EvaluationSetImportPreviewRequest(
+                bundle_set=bundle_set, target_workflow_id=uuid4()
+            )
+        )
+
+        assert preview.evaluations[0].node_ref_keys == ["router:src-router"]
+        assert preview.evaluations[1].node_ref_keys == []
+
+    @pytest.mark.asyncio
+    async def test_shared_provider_is_resolved_once(self):
+        provider_id = str(uuid4())
+        service = _set_import_service(uuid4())
+        judge = {
+            "llm_judge": {
+                "rules": [{"rubric": "Grade", "min_score": 0.5}],
+                "llm_provider_id": provider_id,
+            }
+        }
+        items = [
+            BundleSetItem(
+                evaluation=BundleEvaluation(
+                    name=name, techniques=["llm_judge"], technique_configs=judge
+                ),
+                dataset_local_id=1,
+                references=BundleReferences(
+                    llm_providers={provider_id: BundleProviderRef(model="gpt-4o")}
+                ),
+            )
+            for name in ("First", "Second")
+        ]
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset")], evaluations=items
+        )
+
+        preview = await service.preview_set_import(
+            EvaluationSetImportPreviewRequest(
+                bundle_set=bundle_set, target_workflow_id=uuid4()
+            )
+        )
+
+        assert len(preview.provider_refs) == 1
+        service.providers.get_all_minimal.assert_awaited_once()
+
+
+class TestBundleSetDuplicateNamesInFile:
+    @pytest.mark.asyncio
+    async def test_second_copy_of_a_name_inside_the_file_is_skipped(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset", 2)],
+            evaluations=[
+                _item("Same name", 1, _router_references()),
+                _item("Same name", 1, _router_references()),
+            ],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert [r.status for r in result.results] == [
+            SET_ITEM_IMPORTED, SET_ITEM_SKIPPED,
+        ]
+        assert (result.imported, result.skipped) == (1, 1)
+
+
+class TestBundleSetItemFailureDetail:
+    @pytest.mark.asyncio
+    async def test_only_bundle_messages_reach_the_client(self, monkeypatch):
+        """A batch result never passes the exception handler's gate, so an
+        internal detail would be returned verbatim inside a 201."""
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        leaked = "ValidationError: 3 validation errors for InternalModel"
+
+        async def explode(_request):
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.INVALID_REQUEST,
+                error_detail=leaked,
+            )
+
+        monkeypatch.setattr(service, "import_bundle", explode)
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset")],
+            evaluations=[_item("Boom", 1, _router_references())],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert result.results[0].status == SET_ITEM_FAILED
+        assert leaked not in (result.results[0].detail or "")
+        assert result.results[0].detail == "The evaluation could not be imported."
+
+    @pytest.mark.asyncio
+    async def test_bundle_invalid_detail_is_passed_through_and_capped(
+        self, monkeypatch
+    ):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+
+        async def explode(_request):
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_BUNDLE_INVALID,
+                error_detail="Every check was dropped. " + "x" * 500,
+            )
+
+        monkeypatch.setattr(service, "import_bundle", explode)
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset")],
+            evaluations=[_item("Boom", 1, _router_references())],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        detail = result.results[0].detail
+        assert detail.startswith("Every check was dropped.")
+        assert len(detail) <= 300
+
+
+class TestBundleSetHeaderLimits:
+    def _valid_set(self):
+        return EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset")],
+            evaluations=[_item("One", 1)],
+        )
+
+    async def _expect_400(self, bundle_set):
+        service = _set_import_service(uuid4())
+        with pytest.raises(AppException) as excinfo:
+            await service.preview_set_import(
+                EvaluationSetImportPreviewRequest(
+                    bundle_set=bundle_set, target_workflow_id=uuid4()
+                )
+            )
+        assert excinfo.value.status_code == 400
+        return excinfo.value
+
+    @pytest.mark.asyncio
+    async def test_newer_schema_version_is_rejected(self):
+        bundle_set = self._valid_set()
+        bundle_set.schema_version = EVALUATION_BUNDLE_SET_SCHEMA_VERSION + 1
+        await self._expect_400(bundle_set)
+
+    @pytest.mark.asyncio
+    async def test_duplicate_dataset_ids_are_rejected(self):
+        bundle_set = self._valid_set()
+        bundle_set.datasets.append(_dataset(1, "Another"))
+        await self._expect_400(bundle_set)
+
+    @pytest.mark.asyncio
+    async def test_datasets_no_evaluation_uses_are_rejected(self):
+        bundle_set = self._valid_set()
+        bundle_set.datasets.append(_dataset(2, "Unreferenced"))
+        error = await self._expect_400(bundle_set)
+        assert "no evaluation uses" in error.error_detail
+
+    @pytest.mark.asyncio
+    async def test_too_many_evaluations_is_rejected(self):
+        bundle_set = self._valid_set()
+        bundle_set.evaluations = [
+            _item(f"Eval {i}", 1) for i in range(MAX_SET_EVALUATIONS + 1)
+        ]
+        await self._expect_400(bundle_set)
+
+    @pytest.mark.asyncio
+    async def test_too_many_datasets_is_rejected(self):
+        bundle_set = self._valid_set()
+        bundle_set.datasets = [
+            _dataset(i, f"Dataset {i}") for i in range(1, MAX_SET_DATASETS + 2)
+        ]
+        await self._expect_400(bundle_set)
+
+    @pytest.mark.asyncio
+    async def test_oversized_dataset_is_rejected(self, monkeypatch):
+        monkeypatch.setattr(eval_bundle, "MAX_BUNDLE_CASES", 1)
+        bundle_set = self._valid_set()
+        bundle_set.datasets = [_dataset(1, "Big", case_count=2)]
+        error = await self._expect_400(bundle_set)
+        assert "test cases" in error.error_detail
+
+    @pytest.mark.asyncio
+    async def test_too_many_cases_in_total_is_rejected(self, monkeypatch):
+        monkeypatch.setattr(eval_bundle, "MAX_SET_TOTAL_CASES", 3)
+        bundle_set = self._valid_set()
+        bundle_set.datasets = [_dataset(1, "A", 2), _dataset(2, "B", 2)]
+        bundle_set.evaluations = [_item("One", 1), _item("Two", 2)]
+        error = await self._expect_400(bundle_set)
+        assert "in total" in error.error_detail
+
+
+class TestBundleSetExportLimits:
+    @pytest.mark.asyncio
+    async def test_export_refuses_a_dataset_the_import_would_reject(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(eval_bundle, "MAX_BUNDLE_CASES", 1)
+        workflow_id, suite_id = uuid4(), uuid4()
+        evaluation = _stored_evaluation("Only one", suite_id, workflow_id)
+        service = _service()
+        service.suites.list_evaluations.return_value = [evaluation]
+        service.suites.get_evaluation.return_value = evaluation
+        service.suites.get_suite.return_value = TestSuiteInDB(
+            id=suite_id, name="Big dataset", workflow_id=workflow_id,
+            created_at=NOW, updated_at=NOW,
+        )
+        service.suites.list_cases_for_suite.return_value = [
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_id, input_data={"message": "a"},
+                created_at=NOW, updated_at=NOW,
+            ),
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_id, input_data={"message": "b"},
+                created_at=NOW, updated_at=NOW,
+            ),
+        ]
+        service.suites.get_evaluation_tool_catalog.return_value = (
+            EvaluationToolCatalog(**_catalog("src"))
+        )
+        service.workflows.get_by_id.return_value = SimpleNamespace(
+            id=workflow_id, name="HR Assistant", version="1.0"
+        )
+        service.workflows.get_all_minimal.return_value = []
+        service.providers.get_all_minimal.return_value = []
+
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(workflow_id)
+        assert excinfo.value.status_code == 400
+        assert "Big dataset" in excinfo.value.error_detail
+
+
+class TestBundleSetResolutionSize:
+    @pytest.mark.asyncio
+    async def test_large_pick_map_does_not_fail_every_item(self):
+        """The union plus the caller's picks can exceed one item's resolution
+        cap; each item must only be sent the picks its own refs need."""
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset", 2)],
+            evaluations=[_item("One", 1, _router_references())],
+        )
+        # Filled to the cap with picks for refs this item does not use.
+        filler = {f"action:node-{i}": "tgt-escalation" for i in range(1000)}
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set,
+                target_workflow_id=target_workflow_id,
+                resolutions=filler,
+            )
+        )
+
+        assert result.results[0].status == SET_ITEM_IMPORTED
+
+
+class TestBundleSetVerdictIsShared:
+    """An item must reach the union's verdict, not its own. Replaying only the
+    union's successes let an item quietly resolve what the preview refused."""
+
+    @pytest.mark.asyncio
+    async def test_item_cannot_resolve_a_ref_the_preview_refused(self):
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        # Item 1 records a type that contradicts the target node, which
+        # downgrades the whole set's ref to "confirm this yourself".
+        typed = BundleReferences(
+            nodes={
+                "src-escalation": BundleNodeRef(
+                    label="Escalation Message", kind=REF_KIND_ACTION,
+                    node_type="httpNode",
+                )
+            }
+        )
+        untyped = BundleReferences(
+            nodes={
+                "src-escalation": BundleNodeRef(
+                    label="Escalation Message", kind=REF_KIND_ACTION
+                )
+            }
+        )
+        # A second check keeps each evaluation importable once the action rule
+        # is dropped, so the test observes the binding rather than the
+        # zero-checks refusal.
+        action_config = {
+            "action_taken": {"rules": [{"node": "src-escalation", "should_fire": True}]},
+            "llm_judge": {"rules": [{"rubric": "Grade", "min_score": 0.5}]},
+        }
+        items = [
+            BundleSetItem(
+                evaluation=BundleEvaluation(
+                    name=name,
+                    techniques=["action_taken", "llm_judge"],
+                    technique_configs=action_config,
+                ),
+                dataset_local_id=1,
+                references=references,
+            )
+            for name, references in (("Typed", typed), ("Untyped", untyped))
+        ]
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset", 2)], evaluations=items
+        )
+
+        preview = await service.preview_set_import(
+            EvaluationSetImportPreviewRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set,
+                target_workflow_id=target_workflow_id,
+                drop_unresolved_rules=True,
+            )
+        )
+
+        assert preview.can_import is False
+        assert preview.node_refs[0].status == REF_STATUS_AMBIGUOUS
+        # Neither item may bind the reference the user was told to confirm.
+        created = [
+            call.args[0] for call in service.suites.create_evaluation.await_args_list
+        ]
+        for evaluation in created:
+            assert evaluation.technique_configs.get("action_taken") is None
+        assert all(r.dropped_rules for r in result.results)
+
+    @pytest.mark.asyncio
+    async def test_item_is_not_failed_by_a_ref_the_preview_resolved(self):
+        """The other direction: the label-less item must still import."""
+        target_workflow_id = uuid4()
+        service = _set_import_service(uuid4())
+        _wire_batch_dataset_reuse(service, target_workflow_id)
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Shared dataset", 2)],
+            evaluations=[
+                _item("No metadata", 1, BundleReferences()),
+                _item("Has the label", 1, _router_references()),
+            ],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert [r.status for r in result.results] == [
+            SET_ITEM_IMPORTED, SET_ITEM_IMPORTED,
+        ]
+        assert all(not r.dropped_rules for r in result.results)
+
+
+class TestBundleSetSameNameWithPreexistingTarget:
+    @pytest.mark.asyncio
+    async def test_only_the_first_same_named_dataset_reuses_the_target_one(self):
+        """Two file datasets share a name AND the target already owns it. The
+        first attaches to the existing one; the second keeps its own cases."""
+        target_workflow_id = uuid4()
+        existing_suite_id = uuid4()
+        service = _set_import_service(uuid4())
+        existing = SimpleNamespace(
+            id=existing_suite_id, name="Regression", workflow_id=target_workflow_id
+        )
+        created = _wire_batch_dataset_reuse(service, target_workflow_id)
+        created[str(existing_suite_id)] = existing
+
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Regression", 1), _dataset(2, "Regression", 5)],
+            evaluations=[
+                _item("First", 1, _router_references()),
+                _item("Second", 2, _router_references()),
+            ],
+        )
+
+        result = await service.import_bundle_set(
+            EvaluationSetImportRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert (result.imported, result.failed) == (2, 0)
+        assert result.results[0].suite_id == existing_suite_id
+        assert result.results[0].reused_dataset is True
+        # The second dataset is a different dataset; its cases must exist.
+        assert result.results[1].suite_id != existing_suite_id
+        assert result.results[1].reused_dataset is False
+        service.case_repo.create_many.assert_awaited_once()
+
+
+class TestBundleSetPreviewMatchesImport:
+    @pytest.mark.asyncio
+    async def test_only_the_first_namesake_is_previewed_as_reused(self):
+        """Import gives every later namesake its own dataset, so the preview
+        must not promise reuse for all of them."""
+        target_workflow_id = uuid4()
+        existing_suite_id = uuid4()
+        service = _set_import_service(uuid4())
+        service.suites.list_suites.return_value = [
+            SimpleNamespace(
+                id=existing_suite_id, name="Regression",
+                workflow_id=target_workflow_id,
+            )
+        ]
+        service.suites.list_cases_for_suite.return_value = []
+        bundle_set = EvaluationBundleSet(
+            datasets=[_dataset(1, "Regression", 1), _dataset(2, "Regression", 5)],
+            evaluations=[
+                _item("First", 1, _router_references()),
+                _item("Second", 2, _router_references()),
+            ],
+        )
+
+        preview = await service.preview_set_import(
+            EvaluationSetImportPreviewRequest(
+                bundle_set=bundle_set, target_workflow_id=target_workflow_id
+            )
+        )
+
+        assert preview.datasets[0].existing_dataset is not None
+        assert preview.datasets[1].existing_dataset is None
