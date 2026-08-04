@@ -56,11 +56,27 @@ async def build_chat_model(
         if "base_url" not in cd:
             cd["base_url"] = "https://openrouter.ai/api/v1"
     elif provider == "bedrock":
+        if cd.pop("reasoning_enabled", False):
+            effort = cd.pop("reasoning_effort", "low")
+            extra_fields = dict(cd.get("additional_model_request_fields") or {})
+            extra_fields["reasoningConfig"] = {"type": "enabled", "maxReasoningEffort": effort}
+            cd["additional_model_request_fields"] = extra_fields
+        else:
+            cd.pop("reasoning_effort", None)
         # Use the Converse API instead of the legacy InvokeModel path so inference params
         # (max_tokens, temperature) are normalized into inferenceConfig across model
         # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles
         # it, and it's AWS's recommended API for Nova/Claude/Llama/custom models alike.
         provider = "bedrock_converse"
+    elif provider == "anthropic":
+        if cd.pop("thinking_enabled", False):
+            cd["thinking"] = {"type": "enabled", "budget_tokens": cd.pop("thinking_budget_tokens", 2000)}
+            cd["temperature"] = 1  # Anthropic requires temperature=1 when thinking is enabled
+        else:
+            cd.pop("thinking_budget_tokens", None)
+    elif provider == "openai":
+        if not cd.get("reasoning_effort"):
+            cd.pop("reasoning_effort", None)
 
     if provider == "openai" and original_provider == "openai":
         os.environ["OPENAI_API_KEY"] = cd.get("api_key", "")

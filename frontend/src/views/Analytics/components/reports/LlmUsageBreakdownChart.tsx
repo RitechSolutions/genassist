@@ -4,6 +4,7 @@ import { formatUsd } from "@/helpers/formatCurrency";
 import { cn } from "@/helpers/utils";
 import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 import { analyticsFadeUpClass } from "../../constants/animations";
+import { LlmNodeCostChartEmptyState } from "../AnalyticsEmptyStates";
 
 interface LlmUsageBreakdownChartProps {
   items: LlmUsageBreakdownItem[];
@@ -66,9 +67,7 @@ export function LlmUsageBreakdownChart({
         ) : error ? (
           <div className="flex h-40 items-center justify-center text-sm text-destructive">{error}</div>
         ) : rows.length === 0 ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-            No usage recorded for this period.
-          </div>
+          <LlmNodeCostChartEmptyState />
         ) : (
           <>
             <ul className="space-y-3.5">
