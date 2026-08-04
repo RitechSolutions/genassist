@@ -7,6 +7,7 @@ import { formatUsd } from "@/helpers/formatCurrency";
 import { cn } from "@/helpers/utils";
 import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 import { analyticsFadeUpClass } from "../../constants/animations";
+import { LlmProviderChartEmptyState } from "../AnalyticsEmptyStates";
 
 interface LlmUsageProviderDonutProps {
   items: LlmUsageBreakdownItem[];
@@ -110,8 +111,8 @@ export function LlmUsageProviderDonut({ items, loading }: LlmUsageProviderDonutP
             </div>
           </div>
         ) : slices.length === 0 ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-            No usage recorded for this period.
+          <div className={cn(RING_BOX, "flex items-center justify-center")}>
+            <LlmProviderChartEmptyState />
           </div>
         ) : (
           <div className={RING_BOX}>

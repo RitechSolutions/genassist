@@ -2,6 +2,7 @@ import { subDays } from "date-fns";
 import { usePersistedDateRange, COMPARE_DATE_RANGE_STORAGE_KEY } from "@/hooks/usePersistedDateRange";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { AnalyticsInsightsPageSkeleton } from "../components/skeletons";
 import { AttributeBreakdownChart } from "../components/reports/AttributeBreakdownChart";
@@ -44,17 +45,20 @@ const AnalyticsPage = () => {
                 subtitle="AI-generated metrics from conversation analysis"
               >
                 <AnalyticsFilters
-                  groups={showGroupFilter ? groups : undefined}
-                  groupFilter={groupFilter}
-                  onGroupFilterChange={setGroupFilter}
-                  agents={agents}
-                  agentFilter={agentFilter}
-                  onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                   compareDateRange={compareDateRange}
                   onCompareDateRangeChange={setCompareDateRange}
-                />
+                >
+                  <AnalyticsFilterMenu
+                    groups={showGroupFilter ? groups : undefined}
+                    groupFilter={groupFilter}
+                    onGroupFilterChange={setGroupFilter}
+                    agents={agents}
+                    agentFilter={agentFilter}
+                    onAgentFilterChange={setAgentFilter}
+                  />
+                </AnalyticsFilters>
               </AnalyticsPageHeader>
 
               {loading ? (

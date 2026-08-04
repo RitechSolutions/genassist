@@ -6,6 +6,7 @@ import { formatUsd } from "@/helpers/formatCurrency";
 import { cn, formatChartDate } from "@/helpers/utils";
 import type { LlmUsageTimeseriesItem } from "@/interfaces/llmUsage.interface";
 import { analyticsFadeUpClass } from "../../constants/animations";
+import { LlmSpendChartEmptyState } from "../AnalyticsEmptyStates";
 
 export type SpendMetric = "cost" | "tokens";
 
@@ -66,8 +67,8 @@ export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange
   const showStats = !loading && data.length > 0;
 
   return (
-    <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
-      <CardContent className="pt-6">
+    <Card className={cn("flex h-full flex-col bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
+      <CardContent className="flex flex-1 flex-col pt-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Spend Over Time</h3>
@@ -112,8 +113,8 @@ export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange
         {loading ? (
           <Skeleton className={cn("w-full rounded-lg", PLOT_HEIGHT)} />
         ) : data.length === 0 ? (
-          <div className={cn("flex items-center justify-center text-sm text-muted-foreground", PLOT_HEIGHT)}>
-            No usage recorded for this period.
+          <div className="flex flex-1 items-center justify-center">
+            <LlmSpendChartEmptyState />
           </div>
         ) : (
           <div className={cn("w-full", PLOT_HEIGHT)}>
