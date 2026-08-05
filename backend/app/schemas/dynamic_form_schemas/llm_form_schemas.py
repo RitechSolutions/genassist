@@ -6,7 +6,7 @@ All schemas use the unified TypeSchema structure from base.py.
 """
 
 from typing import Dict
-from .base import FieldSchema, TypeSchema, convert_typed_schemas_to_dict
+from .base import ConditionalField, FieldSchema, TypeSchema, convert_typed_schemas_to_dict
 from app.core.utils.gpt_utils import get_openai_model_options
 
 # Define LLM schemas using direct Pydantic models
@@ -56,6 +56,18 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=1,
                 step=1,
                 description="Maximum number of tokens to generate",
+            ),
+            FieldSchema(
+                name="reasoning_effort",
+                type="select",
+                label="Reasoning Effort",
+                required=False,
+                description="Only supported by reasoning models (o-series, GPT-5 family). Leave unset for other models.",
+                options=[
+                    {"value": "low", "label": "Low"},
+                    {"value": "medium", "label": "Medium"},
+                    {"value": "high", "label": "High"},
+                ],
             ),
             FieldSchema(
                 name="timeout",
@@ -324,6 +336,25 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 step=1,
                 description="Maximum number of tokens to generate",
             ),
+            FieldSchema(
+                name="thinking_enabled",
+                type="boolean",
+                label="Enable Extended Thinking",
+                required=False,
+                default=False,
+                description="Anthropic extended thinking. Forces Temperature to 1, as Anthropic requires when this is enabled.",
+            ),
+            FieldSchema(
+                name="thinking_budget_tokens",
+                type="number",
+                label="Thinking Budget (tokens)",
+                required=False,
+                default=2000,
+                min=1024,
+                step=1,
+                conditional=ConditionalField(field="thinking_enabled", value=True),
+                description="Token budget for the model's internal reasoning.",
+            ),
         ],
     ),
     "azure_openai": TypeSchema(
@@ -489,6 +520,28 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=1,
                 step=1,
                 description="Maximum number of tokens to generate",
+            ),
+            FieldSchema(
+                name="reasoning_enabled",
+                type="boolean",
+                label="Enable Reasoning",
+                required=False,
+                default=False,
+                description="Extended reasoning — supported by Amazon Nova 2 models only.",
+            ),
+            FieldSchema(
+                name="reasoning_effort",
+                type="select",
+                label="Reasoning Effort",
+                required=False,
+                default="low",
+                options=[
+                    {"value": "low", "label": "Low"},
+                    {"value": "medium", "label": "Medium"},
+                    {"value": "high", "label": "High"},
+                ],
+                conditional=ConditionalField(field="reasoning_enabled", value=True),
+                description="Maximum reasoning effort for Nova's reasoningConfig.",
             ),
         ],
     ),

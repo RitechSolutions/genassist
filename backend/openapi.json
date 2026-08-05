@@ -19264,6 +19264,210 @@
         ]
       }
     },
+    "/api/genagent/eval/evaluations/import/preview": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Preview Evaluation Import",
+        "description": "Resolve a bundle's references against a target workflow without importing.",
+        "operationId": "preview_evaluation_import_api_genagent_eval_evaluations_import_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationImportPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationImportPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/eval/evaluations/import": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Import Evaluation",
+        "description": "Create the bundle's dataset, cases and evaluation against a target workflow.",
+        "operationId": "import_evaluation_api_genagent_eval_evaluations_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/eval/evaluations/import-set/preview": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Preview Evaluation Set Import",
+        "description": "Resolve a bundle set's references against a target workflow without importing.",
+        "operationId": "preview_evaluation_set_import_api_genagent_eval_evaluations_import_set_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationSetImportPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationSetImportPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/eval/evaluations/import-set": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Import Evaluation Set",
+        "description": "Import the selected evaluations of a bundle set; one result per item.",
+        "operationId": "import_evaluation_set_api_genagent_eval_evaluations_import_set_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationSetImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationSetImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/genagent/eval/evaluations/{evaluation_id}": {
       "get": {
         "tags": [
@@ -19407,6 +19611,112 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/evaluations/{evaluation_id}/export": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Export Evaluation",
+        "description": "The evaluation, its dataset and reference labels as a portable bundle.",
+        "operationId": "export_evaluation_api_genagent_eval_evaluations__evaluation_id__export_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationBundle-Output"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/workflows/{workflow_id}/evaluations/export": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Export Workflow Evaluations",
+        "description": "Every evaluation of this workflow as one portable bundle set.",
+        "operationId": "export_workflow_evaluations_api_genagent_eval_workflows__workflow_id__evaluations_export_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationBundleSet-Output"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -29600,6 +29910,661 @@
         ],
         "title": "Body_upload_welcome_image_api_genagent_agents_configs__agent_id__welcome_image_post"
       },
+      "BundleCase": {
+        "properties": {
+          "local_id": {
+            "type": "integer",
+            "title": "Local Id"
+          },
+          "input_data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Input Data"
+          },
+          "expected_output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Output"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
+          "turn_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "local_id",
+          "input_data"
+        ],
+        "title": "BundleCase"
+      },
+      "BundleDataset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default_input_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Input Metadata"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/BundleCase"
+            },
+            "type": "array",
+            "title": "Cases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BundleDataset"
+      },
+      "BundleEvaluation": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "techniques": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques"
+          },
+          "technique_configs": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technique Configs"
+          },
+          "input_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BundleEvaluation"
+      },
+      "BundleExistingDataset": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "case_count"
+        ],
+        "title": "BundleExistingDataset",
+        "description": "A dataset in the target environment already using the bundle's name, so\nthe import can attach to it instead of creating a duplicate."
+      },
+      "BundleNodeRef": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "node_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "BundleNodeRef",
+        "description": "Label and node type recorded for one graph-node reference at export time.\n\n``node_type`` lets import refuse to bind a name match onto a node of a\ndifferent type. Absent on bundles exported before it was recorded."
+      },
+      "BundleNodeResolution": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "resolved_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Id"
+          },
+          "resolved_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Label"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/BundleRefCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "original_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "kind",
+          "status"
+        ],
+        "title": "BundleNodeResolution",
+        "description": "How one graph-node reference resolved against the target workflow."
+      },
+      "BundleProviderRef": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "title": "BundleProviderRef",
+        "description": "Display metadata recorded for one LLM provider reference at export time."
+      },
+      "BundleProviderResolution": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "resolved_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Id"
+          },
+          "resolved_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "status"
+        ],
+        "title": "BundleProviderResolution",
+        "description": "How one LLM provider reference resolved against the target environment."
+      },
+      "BundleRefCandidate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "BundleRefCandidate"
+      },
+      "BundleReferences": {
+        "properties": {
+          "nodes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BundleNodeRef"
+            },
+            "type": "object",
+            "title": "Nodes"
+          },
+          "llm_providers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BundleProviderRef"
+            },
+            "type": "object",
+            "title": "Llm Providers"
+          },
+          "cases": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Cases"
+          }
+        },
+        "type": "object",
+        "title": "BundleReferences",
+        "description": "Label maps for every environment-specific id embedded in the configs.\n\n``cases`` maps an exported test case id to its ``local_id`` inside the\nbundle, so turn-targeted rules can be re-pointed at the recreated cases."
+      },
+      "BundleSetDataset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default_input_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Input Metadata"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/BundleCase"
+            },
+            "type": "array",
+            "title": "Cases"
+          },
+          "local_id": {
+            "type": "integer",
+            "title": "Local Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "local_id"
+        ],
+        "title": "BundleSetDataset",
+        "description": "One dataset stored once for the whole set; items point at ``local_id``."
+      },
+      "BundleSetDatasetPreview": {
+        "properties": {
+          "local_id": {
+            "type": "integer",
+            "title": "Local Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count"
+          },
+          "existing_dataset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BundleExistingDataset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "local_id",
+          "name",
+          "case_count"
+        ],
+        "title": "BundleSetDatasetPreview"
+      },
+      "BundleSetItem-Input": {
+        "properties": {
+          "evaluation": {
+            "$ref": "#/components/schemas/BundleEvaluation"
+          },
+          "dataset_local_id": {
+            "type": "integer",
+            "title": "Dataset Local Id"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BundleReferences"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation",
+          "dataset_local_id"
+        ],
+        "title": "BundleSetItem",
+        "description": "One evaluation in a set; its dataset lives in the set's ``datasets``."
+      },
+      "BundleSetItem-Output": {
+        "properties": {
+          "evaluation": {
+            "$ref": "#/components/schemas/BundleEvaluation"
+          },
+          "dataset_local_id": {
+            "type": "integer",
+            "title": "Dataset Local Id"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BundleReferences"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation",
+          "dataset_local_id"
+        ],
+        "title": "BundleSetItem",
+        "description": "One evaluation in a set; its dataset lives in the set's ``datasets``."
+      },
+      "BundleSource": {
+        "properties": {
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "workflow_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version"
+          }
+        },
+        "type": "object",
+        "title": "BundleSource",
+        "description": "Where the bundle came from \u2014 display-only, never used for linking."
+      },
       "ConnectionStatus": {
         "properties": {
           "status": {
@@ -31319,6 +32284,338 @@
         ],
         "title": "EvaluationAgentInfo"
       },
+      "EvaluationBundle-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "genassist.evaluation-bundle"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/BundleSource"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/BundleEvaluation"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/BundleDataset"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BundleReferences"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation",
+          "dataset"
+        ],
+        "title": "EvaluationBundle"
+      },
+      "EvaluationBundle-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "genassist.evaluation-bundle"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/BundleSource"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/BundleEvaluation"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/BundleDataset"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BundleReferences"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation",
+          "dataset"
+        ],
+        "title": "EvaluationBundle"
+      },
+      "EvaluationBundleSet-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "genassist.evaluation-bundle-set"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/BundleSource"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/BundleSetDataset"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/BundleSetItem-Input"
+            },
+            "type": "array",
+            "title": "Evaluations"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "title": "EvaluationBundleSet"
+      },
+      "EvaluationBundleSet-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "genassist.evaluation-bundle-set"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/BundleSource"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/BundleSetDataset"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/BundleSetItem-Output"
+            },
+            "type": "array",
+            "title": "Evaluations"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "title": "EvaluationBundleSet"
+      },
+      "EvaluationImportPreview": {
+        "properties": {
+          "evaluation_name": {
+            "type": "string",
+            "title": "Evaluation Name"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count"
+          },
+          "existing_dataset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BundleExistingDataset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_name_matches": {
+            "type": "boolean",
+            "title": "Workflow Name Matches"
+          },
+          "node_refs": {
+            "items": {
+              "$ref": "#/components/schemas/BundleNodeResolution"
+            },
+            "type": "array",
+            "title": "Node Refs"
+          },
+          "provider_refs": {
+            "items": {
+              "$ref": "#/components/schemas/BundleProviderResolution"
+            },
+            "type": "array",
+            "title": "Provider Refs"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "can_import": {
+            "type": "boolean",
+            "title": "Can Import"
+          },
+          "dropping_all_would_empty": {
+            "type": "boolean",
+            "title": "Dropping All Would Empty",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_name",
+          "dataset_name",
+          "case_count",
+          "workflow_name_matches",
+          "can_import"
+        ],
+        "title": "EvaluationImportPreview"
+      },
+      "EvaluationImportPreviewRequest": {
+        "properties": {
+          "bundle": {
+            "$ref": "#/components/schemas/EvaluationBundle-Input"
+          },
+          "target_workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Workflow Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bundle",
+          "target_workflow_id"
+        ],
+        "title": "EvaluationImportPreviewRequest"
+      },
+      "EvaluationImportRequest": {
+        "properties": {
+          "bundle": {
+            "$ref": "#/components/schemas/EvaluationBundle-Input"
+          },
+          "target_workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Workflow Id"
+          },
+          "existing_suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Existing Suite Id"
+          },
+          "resolutions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "maxProperties": 1000,
+            "title": "Resolutions"
+          },
+          "drop_unresolved_rules": {
+            "type": "boolean",
+            "title": "Drop Unresolved Rules",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "bundle",
+          "target_workflow_id"
+        ],
+        "title": "EvaluationImportRequest"
+      },
+      "EvaluationImportResult": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Evaluation Id"
+          },
+          "suite_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Suite Id"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count"
+          },
+          "reused_dataset": {
+            "type": "boolean",
+            "title": "Reused Dataset",
+            "default": false
+          },
+          "dropped_rules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dropped Rules"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "suite_id",
+          "case_count"
+        ],
+        "title": "EvaluationImportResult"
+      },
       "EvaluationRouterBranch": {
         "properties": {
           "value": {
@@ -31395,6 +32692,274 @@
         "type": "object",
         "title": "EvaluationRunRequest",
         "description": "Options for starting a single evaluation run."
+      },
+      "EvaluationSetImportPreview": {
+        "properties": {
+          "workflow_name_matches": {
+            "type": "boolean",
+            "title": "Workflow Name Matches"
+          },
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationSetItemPreview"
+            },
+            "type": "array",
+            "title": "Evaluations"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/BundleSetDatasetPreview"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "node_refs": {
+            "items": {
+              "$ref": "#/components/schemas/BundleNodeResolution"
+            },
+            "type": "array",
+            "title": "Node Refs"
+          },
+          "provider_refs": {
+            "items": {
+              "$ref": "#/components/schemas/BundleProviderResolution"
+            },
+            "type": "array",
+            "title": "Provider Refs"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "can_import": {
+            "type": "boolean",
+            "title": "Can Import"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name_matches",
+          "can_import"
+        ],
+        "title": "EvaluationSetImportPreview"
+      },
+      "EvaluationSetImportPreviewRequest": {
+        "properties": {
+          "bundle_set": {
+            "$ref": "#/components/schemas/EvaluationBundleSet-Input"
+          },
+          "target_workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Workflow Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bundle_set",
+          "target_workflow_id"
+        ],
+        "title": "EvaluationSetImportPreviewRequest"
+      },
+      "EvaluationSetImportRequest": {
+        "properties": {
+          "bundle_set": {
+            "$ref": "#/components/schemas/EvaluationBundleSet-Input"
+          },
+          "target_workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Workflow Id"
+          },
+          "include": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array",
+                "maxItems": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include"
+          },
+          "resolutions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "maxProperties": 1000,
+            "title": "Resolutions"
+          },
+          "drop_unresolved_rules": {
+            "type": "boolean",
+            "title": "Drop Unresolved Rules",
+            "default": false
+          },
+          "skip_existing": {
+            "type": "boolean",
+            "title": "Skip Existing",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "bundle_set",
+          "target_workflow_id"
+        ],
+        "title": "EvaluationSetImportRequest"
+      },
+      "EvaluationSetImportResult": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationSetItemResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "imported": {
+            "type": "integer",
+            "title": "Imported",
+            "default": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "EvaluationSetImportResult"
+      },
+      "EvaluationSetItemPreview": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count"
+          },
+          "already_exists": {
+            "type": "boolean",
+            "title": "Already Exists",
+            "default": false
+          },
+          "dropping_all_would_empty": {
+            "type": "boolean",
+            "title": "Dropping All Would Empty",
+            "default": false
+          },
+          "node_ref_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Node Ref Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "dataset_name",
+          "case_count"
+        ],
+        "title": "EvaluationSetItemPreview",
+        "description": "How one evaluation of the set would land on the target workflow."
+      },
+      "EvaluationSetItemResult": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "evaluation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Id"
+          },
+          "suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suite Id"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count",
+            "default": 0
+          },
+          "reused_dataset": {
+            "type": "boolean",
+            "title": "Reused Dataset",
+            "default": false
+          },
+          "dropped_rules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dropped Rules"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "EvaluationSetItemResult"
       },
       "EvaluationToolCatalog": {
         "properties": {
@@ -43862,6 +45427,11 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "is_active_version": {
+            "type": "boolean",
+            "title": "Is Active Version",
+            "default": false
           }
         },
         "type": "object",

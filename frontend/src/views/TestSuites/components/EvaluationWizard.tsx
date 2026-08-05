@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +35,7 @@ import type {
   ToolUsagePerToolCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
+import { WorkflowVersionPicker } from "./WorkflowVersionPicker";
 import { getEvaluationToolCatalog } from "@/services/testEvaluations";
 import { listTestCases } from "@/services/testSuites";
 import type { TestCase } from "@/interfaces/testSuite.interface";
@@ -276,19 +277,6 @@ const STEPS: { key: WizardStep; label: string; icon: React.ElementType }[] = [
   { key: "configure", label: "Configure", icon: SlidersHorizontal },
 ];
 
-// Compare two workflow version strings numerically (e.g. "10" > "9", "1.2" > "1.1").
-// Returns a - b, so the highest version sorts last with a plain ascending sort.
-const compareVersions = (a: string, b: string): number => {
-  const parse = (v: string) => v.split(".").map((part) => parseInt(part.replace(/\D/g, ""), 10) || 0);
-  const pa = parse(a);
-  const pb = parse(b);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-};
 
 const MetricOption: React.FC<{
   metric: MetricDef;
@@ -381,25 +369,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Which workflow group's version list is expanded (only one at a time; collapsed
   // by default so the list stays short).
-  const [expandedWorkflowName, setExpandedWorkflowName] = useState<string | null>(null);
-
-  // Group workflows by name, newest version first, so each name shows its current
-  // version with older versions nested beneath it.
-  const workflowGroups = useMemo(() => {
-    const byName = new Map<string, WorkflowMinimal[]>();
-    for (const wf of workflows) {
-      if (!wf.id) continue;
-      const existing = byName.get(wf.name) ?? [];
-      existing.push(wf);
-      byName.set(wf.name, existing);
-    }
-    return Array.from(byName.entries())
-      .map(([wfName, versions]) => ({
-        name: wfName,
-        versions: [...versions].sort((a, b) => compareVersions(b.version, a.version)),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [workflows]);
 
   // Form state
   const [name, setName] = useState(initialData?.name ?? "");
@@ -717,7 +686,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setDescription("");
     setSuiteId("none");
     setWorkflowId(lockedWorkflowId ?? "none");
-    setExpandedWorkflowName(null);
     setMetrics(["exact_match"]);
     setInputMetadataText("{}");
     setIsMetadataValid(true);
@@ -761,8 +729,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
             <div>
               <Label className="text-sm font-medium">Select Workflow *</Label>
               <p className="text-xs text-muted-foreground">
-                Pick the workflow this evaluation runs against. The current version is shown
-                first, with older versions nested below it.
+                Pick the workflow this evaluation runs against. Expand a workflow to
+                choose a version; the one marked Current is what a plain run executes.
               </p>
             </div>
 
@@ -771,97 +739,27 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 {workflows.find((wf) => wf.id === lockedWorkflowId)?.name ?? "This workflow"}
               </div>
             ) : (
-              <div className="rounded-lg border p-2 space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => setWorkflowId("none")}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-                    workflowId === "none"
-                      ? "bg-primary/10 font-semibold text-primary"
-                      : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">Use dataset's default workflow</span>
-                  {workflowId === "none" && <Check className="ml-auto h-4 w-4 shrink-0" />}
-                </button>
-
-                {workflowGroups.map((group) => {
-                  const isExpanded = expandedWorkflowName === group.name;
-                  const selectedInGroup = group.versions.find((wf) => wf.id === workflowId);
-                  return (
-                    <div key={group.name}>
-                      {/* Workflow name = collapsible header; opening it selects the current
-                          version (collapsed by default to keep the list short). */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isExpanded) {
-                            setExpandedWorkflowName(null);
-                          } else {
-                            setExpandedWorkflowName(group.name);
-                            setWorkflowId(group.versions[0].id);
-                          }
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
-                          selectedInGroup ? "bg-primary/10" : "hover:bg-muted",
-                        )}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                            isExpanded && "rotate-90",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "truncate text-sm font-semibold",
-                            selectedInGroup ? "text-primary" : "text-foreground",
-                          )}
-                        >
-                          {group.name}
-                        </span>
-                        {!isExpanded && selectedInGroup && (
-                          <span className="ml-auto shrink-0 text-xs font-medium text-primary">
-                            v{selectedInGroup.version}
-                          </span>
-                        )}
-                      </button>
-                      {isExpanded && (
-                        <div className="relative py-0.5 pl-[30px]">
-                          <div className="absolute bottom-0 left-[18px] top-0 w-px bg-border" />
-                          {group.versions.map((wf, idx) => {
-                            const selected = workflowId === wf.id;
-                            return (
-                              <button
-                                key={wf.id}
-                                type="button"
-                                onClick={() => setWorkflowId(wf.id)}
-                                className={cn(
-                                  "flex w-full items-center gap-2 rounded-md px-2.5 py-[6px] text-sm transition-colors",
-                                  selected
-                                    ? "bg-primary/10 font-semibold text-primary"
-                                    : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
-                                )}
-                              >
-                                <span className="truncate">v{wf.version}</span>
-                                {idx === 0 && (
-                                  <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                                    Current
-                                  </span>
-                                )}
-                                {selected && <Check className="ml-auto h-4 w-4 shrink-0" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <WorkflowVersionPicker
+                workflows={workflows}
+                selectedWorkflowId={workflowId}
+                onSelect={setWorkflowId}
+                leadingOption={
+                  <button
+                    type="button"
+                    onClick={() => setWorkflowId("none")}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                      workflowId === "none"
+                        ? "bg-primary/10 font-semibold text-primary"
+                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">Use dataset's default workflow</span>
+                    {workflowId === "none" && <Check className="ml-auto h-4 w-4 shrink-0" />}
+                  </button>
+                }
+              />
             )}
           </div>
         );
