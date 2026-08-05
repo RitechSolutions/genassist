@@ -87,7 +87,9 @@ class ZendeskConnector:
         value = re.split(r"[/?#@:]", value, maxsplit=1)[0]
         label = value[: -len(".zendesk.com")] if value.endswith(".zendesk.com") else value
         if not cls._SUBDOMAIN_LABEL_RE.fullmatch(label):
-            logger.warning("Ignoring invalid Zendesk subdomain %r", raw)
+            logger.warning(
+                "Ignoring invalid Zendesk subdomain (must be a single *.zendesk.com label)"
+            )
             return ""
         return f"{label}.zendesk.com"
 
