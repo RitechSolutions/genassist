@@ -23,6 +23,10 @@ class ZendeskConnector:
         subdomain: Optional[str] = None,
         email: Optional[str] = None,
         api_token: Optional[str] = None,
+        auth_method: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        oauth_scope: Optional[str] = None,
     ):
         raw = (subdomain or settings.ZENDESK_SUBDOMAIN or "").strip()
         # Normalize subdomain: ensure it has .zendesk.com (matches connection_tester)
@@ -35,12 +39,153 @@ class ZendeskConnector:
 
         self.email = email or settings.ZENDESK_EMAIL
         self.api_token = api_token or settings.ZENDESK_API_TOKEN
+
+        # OAuth2 client-credentials fields. Zendesk is deprecating API tokens
+        # (fully removed 2027-04-30), so client credentials are the forward path.
+        self.client_id = client_id or settings.ZENDESK_CLIENT_ID
+        self.client_secret = client_secret or settings.ZENDESK_CLIENT_SECRET
+        self.oauth_scope = (
+            oauth_scope or settings.ZENDESK_OAUTH_SCOPE or "read write"
+        )
+
+        # Resolve the effective auth method. Precedence: an explicit auth_method wins;
+        # then explicit per-call client credentials imply OAuth; then the global
+        # settings default (used by the no-arg env-based callers); finally infer from
+        # whatever credentials ended up configured.
+        self.auth_method = self._resolve_auth_method(
+            auth_method,
+            has_param_client_creds=bool(client_id and client_secret),
+        )
+
         self.base_url = f"https://{self.subdomain}/api/v2"
         self.help_center_url = f"https://{self.subdomain}/api/v2/help_center"
+        self.token_url = f"https://{self.subdomain}/oauth/tokens"
         # Ensure api_token is not None for auth tuple
         token = self.api_token or ""
         self._auth: Tuple[str, str] = (f"{self.email}/token", token)
+        # Populated lazily after a successful client-credentials token exchange.
+        # The lock serializes the token fetch so a concurrent first-request burst
+        # (e.g. the category fan-out in fetch_articles) does one exchange, not N.
+        self._access_token: Optional[str] = None
+        self._token_lock = asyncio.Lock()
         self.page_size = 50
+
+    def _resolve_auth_method(
+        self, auth_method: Optional[str], has_param_client_creds: bool = False
+    ) -> str:
+        """Normalize the auth method to ``api_token`` or ``oauth_client_credentials``."""
+        known = ("api_token", "oauth_client_credentials")
+        # 1. An explicit, recognized method always wins.
+        method = (auth_method or "").strip()
+        if method in known:
+            return method
+        # 2. Explicit per-call client credentials imply OAuth.
+        if has_param_client_creds:
+            return "oauth_client_credentials"
+        # 3. The global settings default (for no-arg env-based callers).
+        settings_method = (getattr(settings, "ZENDESK_AUTH_METHOD", None) or "").strip()
+        if settings_method in known:
+            return settings_method
+        # 4. Last resort: infer from whatever credentials are configured.
+        if self.client_id and self.client_secret:
+            return "oauth_client_credentials"
+        return "api_token"
+
+    def _require_credentials(self) -> None:
+        """Validate that credentials for the active auth method are present."""
+        if self.auth_method == "oauth_client_credentials":
+            if not self.client_id or not self.client_secret:
+                raise ValueError("Zendesk client id and client secret are required")
+        else:
+            if not self.api_token:
+                raise ValueError("Zendesk API token is required")
+            if not self.email:
+                raise ValueError("Zendesk email is required")
+
+    async def _request_json(
+        self,
+        method: str,
+        url: str,
+        json: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        auth: Optional[Tuple[str, str]] = None,
+        timeout: float = 10.0,
+        context: str = "Zendesk API",
+    ) -> Dict[str, Any]:
+        """Perform a single HTTP request and return the parsed JSON.
+
+        Shared transport core for both the API calls and the OAuth token exchange.
+        Uses trust_env=True so HTTP_PROXY/HTTPS_PROXY from env are respected (e.g. in
+        the Celery worker), and wraps httpx errors in ``HTTPException``.
+        """
+        async with httpx.AsyncClient(
+            auth=auth,
+            timeout=timeout,
+            trust_env=True,  # Use HTTP_PROXY/HTTPS_PROXY from environment
+            follow_redirects=True,
+        ) as client:
+            try:
+                response = await client.request(
+                    method, url, json=json, params=params, headers=headers
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"{context} error [{e.response.status_code}]: {e.response.text}"
+                )
+                raise HTTPException(
+                    status_code=e.response.status_code,
+                    detail=e.response.text,
+                ) from e
+            except httpx.RequestError as e:
+                logger.error(
+                    "%s network error (check worker outbound access, proxy, DNS): %s",
+                    context,
+                    e,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"{context} network error: {type(e).__name__}: {e}",
+                ) from e
+
+    async def _get_access_token(self, force_refresh: bool = False) -> str:
+        """Authenticate via the OAuth2 **client-credentials** grant.
+
+        POSTs ``client_id``/``client_secret`` to ``/oauth/tokens`` and caches the
+        returned ``access_token`` on the instance. Unlike other flows this grant
+        returns no refresh token and needs no user authorization, so it is only
+        suitable for server-side/trusted use. Pass ``force_refresh=True`` to discard
+        a cached token (e.g. after a 401). The fetch is serialized under a lock with
+        a double-check so concurrent callers share a single token exchange.
+        """
+        if self._access_token and not force_refresh:
+            return self._access_token
+
+        async with self._token_lock:
+            if self._access_token and not force_refresh:
+                return self._access_token
+            if not self.client_id or not self.client_secret:
+                raise ValueError("Zendesk client id and client secret are required")
+
+            result = await self._request_json(
+                "POST",
+                self.token_url,
+                json={
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "scope": self.oauth_scope,
+                },
+                context="Zendesk OAuth token",
+            )
+            access_token = result.get("access_token")
+            if not access_token:
+                raise ValueError("Zendesk OAuth2 response did not include an access_token")
+            self._access_token = access_token
+            return access_token
 
     async def _make_request(
         self,
@@ -50,37 +195,33 @@ class ZendeskConnector:
         params: Optional[Dict[str, Any]] = None,
         timeout: float = 10.0,
     ) -> Dict[str, Any]:
-        """Internal method to make HTTP requests to Zendesk API.
-        Uses trust_env=True so HTTP_PROXY/HTTPS_PROXY from env are respected (e.g. in Celery worker).
+        """Make an authenticated HTTP request to the Zendesk API.
+
+        Authentication depends on ``self.auth_method``: ``api_token`` uses HTTP Basic
+        (``email/token``); ``oauth_client_credentials`` sends a Bearer access token,
+        refreshing it once and retrying if the cached token is rejected with a 401.
         """
-        async with httpx.AsyncClient(
-            auth=self._auth,
-            timeout=timeout,
-            trust_env=True,  # Use HTTP_PROXY/HTTPS_PROXY from environment
-            follow_redirects=True,
-        ) as client:
-            try:
-                response = await client.request(method, url, json=json, params=params)
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"Zendesk API error [{e.response.status_code}]: {e.response.text}"
-                )
-                raise HTTPException(
-                    status_code=e.response.status_code,
-                    detail=e.response.text,
-                ) from e
-            except httpx.RequestError as e:
-                logger.error(
-                    "Zendesk network error (check worker outbound access, proxy, DNS): %s",
-                    e,
-                    exc_info=True,
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Zendesk API network error: {type(e).__name__}: {e}",
-                ) from e
+        if self.auth_method != "oauth_client_credentials":
+            return await self._request_json(
+                method, url, json=json, params=params, auth=self._auth, timeout=timeout
+            )
+
+        token = await self._get_access_token()
+        try:
+            return await self._request_json(
+                method, url, json=json, params=params,
+                headers={"Authorization": f"Bearer {token}"}, timeout=timeout,
+            )
+        except HTTPException as e:
+            if e.status_code != 401:
+                raise
+            # A cached access token was rejected; refresh once and retry.
+            logger.info("Zendesk OAuth token rejected (401); refreshing and retrying")
+            token = await self._get_access_token(force_refresh=True)
+            return await self._request_json(
+                method, url, json=json, params=params,
+                headers={"Authorization": f"Bearer {token}"}, timeout=timeout,
+            )
 
     async def create_ticket(
         self,
@@ -96,10 +237,7 @@ class ZendeskConnector:
         Create a Zendesk ticket via the REST API.
         Returns the ticket ID on success, None on failure.
         """
-        if not self.api_token:
-            raise ValueError("Zendesk API token is required")
-        if not self.email:
-            raise ValueError("Zendesk email is required")
+        self._require_credentials()
 
         url = f"{self.base_url}/tickets.json"
         payload: Dict[str, Any] = {
@@ -302,6 +440,10 @@ class ZendeskConnector:
             subdomain=subdomain,
             email=cd.get("email"),
             api_token=cd.get("api_token"),
+            auth_method=cd.get("auth_method"),
+            client_id=cd.get("client_id"),
+            client_secret=cd.get("client_secret"),
+            oauth_scope=cd.get("oauth_scope"),
         )
         await connector._make_request("GET", f"{connector.base_url}/tickets/count.json")
         return {"success": True, "message": "Successfully connected to Zendesk."}

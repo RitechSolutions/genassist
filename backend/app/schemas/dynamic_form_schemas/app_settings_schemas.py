@@ -6,7 +6,12 @@ All schemas use the unified TypeSchema structure from base.py.
 """
 
 from typing import List, Dict, Optional
-from .base import FieldSchema, TypeSchema, convert_typed_schemas_to_dict
+from .base import (
+    ConditionalField,
+    FieldSchema,
+    TypeSchema,
+    convert_typed_schemas_to_dict,
+)
 
 # Define field schemas for each integration type
 APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
@@ -23,6 +28,25 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
                 encrypted=False,
             ),
             FieldSchema(
+                name="zendesk_auth_method",
+                label="Authentication Method",
+                type="select",
+                required=True,
+                default="oauth_client_credentials",
+                options=[
+                    {
+                        "value": "oauth_client_credentials",
+                        "label": "OAuth Client Credentials (Recommended)",
+                    },
+                    {"value": "api_token", "label": "API Token (Legacy)"},
+                ],
+                description=(
+                    "Zendesk is removing API tokens on 2027-04-30. Use OAuth client "
+                    "credentials for new connections."
+                ),
+                encrypted=False,
+            ),
+            FieldSchema(
                 name="zendesk_email",
                 label="Zendesk Email",
                 type="text",
@@ -30,6 +54,9 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
                 placeholder="admin@example.com",
                 description="Email address for API authentication",
                 encrypted=False,
+                conditional=ConditionalField(
+                    field="zendesk_auth_method", value="api_token"
+                ),
             ),
             FieldSchema(
                 name="zendesk_api_token",
@@ -39,6 +66,33 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
                 placeholder="Enter API token",
                 description="Zendesk API token for authentication",
                 encrypted=False,
+                conditional=ConditionalField(
+                    field="zendesk_auth_method", value="api_token"
+                ),
+            ),
+            FieldSchema(
+                name="zendesk_client_id",
+                label="Zendesk Client ID",
+                type="text",
+                required=True,
+                placeholder="Enter OAuth client ID",
+                description="OAuth client (unique identifier) from Zendesk Admin Center",
+                encrypted=False,
+                conditional=ConditionalField(
+                    field="zendesk_auth_method", value="oauth_client_credentials"
+                ),
+            ),
+            FieldSchema(
+                name="zendesk_client_secret",
+                label="Zendesk Client Secret",
+                type="password",
+                required=True,
+                placeholder="Enter OAuth client secret",
+                description="OAuth client secret (client-credentials flow)",
+                encrypted=True,
+                conditional=ConditionalField(
+                    field="zendesk_auth_method", value="oauth_client_credentials"
+                ),
             ),
         ],
     ),
