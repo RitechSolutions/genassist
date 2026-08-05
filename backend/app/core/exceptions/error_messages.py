@@ -12,6 +12,7 @@ class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
     TOOL_USAGE_CONFIG_INVALID = "tool_usage_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
+    EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
@@ -182,6 +183,7 @@ ERROR_MESSAGES = {
         ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
         ErrorKey.TOOL_USAGE_CONFIG_INVALID: "The tool usage configuration could not be resolved to canonical tool ids.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
+        ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",

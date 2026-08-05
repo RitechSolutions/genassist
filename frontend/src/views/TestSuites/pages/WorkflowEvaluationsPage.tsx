@@ -24,6 +24,7 @@ import { getTestRunsBatch, listTestSuites } from "@/services/testSuites";
 import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import {
   deleteTestEvaluation,
+  exportTestEvaluation,
   getWorkflowEvaluationsPage,
   runTestEvaluation,
   runWorkflowEvaluations,
@@ -37,6 +38,7 @@ import { EvaluationWizard, EvaluationWizardData } from "../components/Evaluation
 import { EvaluationListRow } from "../components/EvaluationListRow";
 import { RunAgainstVersionDialog } from "../components/RunAgainstVersionDialog";
 import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
+import { bundleFilename, downloadJsonFile } from "../helpers/evalBundle";
 
 const PAGE_SIZE = 20;
 const UNASSIGNED = "unassigned";
@@ -354,6 +356,21 @@ const WorkflowEvaluationsPage: React.FC = () => {
     }
   };
 
+  const handleExport = async (evaluation: TestEvaluationConfig) => {
+    if (!evaluation.id) return;
+    try {
+      const bundle = await exportTestEvaluation(evaluation.id);
+      if (!bundle) {
+        toast.error("You don't have permission to export evaluations.");
+        return;
+      }
+      downloadJsonFile(bundleFilename(evaluation.name), bundle);
+      toast.success("Evaluation exported");
+    } catch {
+      toast.error("Failed to export evaluation");
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await deleteTestEvaluation(id);
@@ -494,6 +511,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
                 }
                 onOpen={() => navigate(`/tests/evaluations/${evaluation.id}`)}
                 onEdit={() => setEditingEvaluation(evaluation)}
+                onExport={() => void handleExport(evaluation)}
                 onDelete={() => setDeletingEvaluationId(evaluation.id ?? null)}
                 onRun={(e) => handleQuickRun(evaluation, e)}
               />
