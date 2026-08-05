@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,14 +29,9 @@ class ZendeskConnector:
         client_secret: Optional[str] = None,
         oauth_scope: Optional[str] = None,
     ):
-        raw = (subdomain or settings.ZENDESK_SUBDOMAIN or "").strip()
-        # Normalize subdomain: ensure it has .zendesk.com (matches connection_tester)
-        if not raw:
-            self.subdomain = ""
-        elif raw.endswith(".zendesk.com"):
-            self.subdomain = raw
-        else:
-            self.subdomain = f"{raw}.zendesk.com"
+        # Validate/normalize into a safe ``<label>.zendesk.com`` host. The subdomain is
+        # operator-supplied and flows into the request URL, so this guards against SSRF.
+        self.subdomain = self._normalize_subdomain(subdomain or settings.ZENDESK_SUBDOMAIN)
 
         self.email = email or settings.ZENDESK_EMAIL
         self.api_token = api_token or settings.ZENDESK_API_TOKEN
@@ -69,6 +65,31 @@ class ZendeskConnector:
         self._access_token: Optional[str] = None
         self._token_lock = asyncio.Lock()
         self.page_size = 50
+
+    # A Zendesk subdomain is a single DNS label (letters, digits, internal hyphens).
+    _SUBDOMAIN_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+
+    @classmethod
+    def _normalize_subdomain(cls, raw: Optional[str]) -> str:
+        """Validate an operator-supplied subdomain into a safe ``<label>.zendesk.com`` host.
+
+        SSRF guard: this value ends up in the request URL, so we strip any
+        scheme/path/query/fragment/port/userinfo and require the remaining host to be a
+        single valid label (optionally already suffixed with ``.zendesk.com``). Anything
+        else returns "" — requests then fail locally instead of reaching an
+        attacker-chosen host (e.g. ``evil.com#`` -> host ``evil.com``).
+        """
+        value = (raw or "").strip().lower()
+        if not value:
+            return ""
+        # Keep only the host portion: drop scheme, then anything from the first / ? # @ :
+        value = re.sub(r"^https?://", "", value)
+        value = re.split(r"[/?#@:]", value, maxsplit=1)[0]
+        label = value[: -len(".zendesk.com")] if value.endswith(".zendesk.com") else value
+        if not cls._SUBDOMAIN_LABEL_RE.fullmatch(label):
+            logger.warning("Ignoring invalid Zendesk subdomain %r", raw)
+            return ""
+        return f"{label}.zendesk.com"
 
     def _resolve_auth_method(
         self, auth_method: Optional[str], has_param_client_creds: bool = False
@@ -433,11 +454,9 @@ class ZendeskConnector:
         Support product is inactive (expired trial), so it reported "connected"
         for accounts where ticket creation 403s.
         """
-        subdomain = cd.get("subdomain", "")
-        if not subdomain.endswith(".zendesk.com"):
-            subdomain = f"{subdomain}.zendesk.com"
+        # The connector validates/normalizes the subdomain (SSRF guard), so pass it raw.
         connector = ZendeskConnector(
-            subdomain=subdomain,
+            subdomain=cd.get("subdomain"),
             email=cd.get("email"),
             api_token=cd.get("api_token"),
             auth_method=cd.get("auth_method"),

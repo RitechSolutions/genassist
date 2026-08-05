@@ -91,6 +91,28 @@ def test_subdomain_and_token_url_normalized():
     assert c.token_url == "https://acme.zendesk.com/oauth/tokens"
 
 
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("acme", "acme.zendesk.com"),
+        ("acme.zendesk.com", "acme.zendesk.com"),
+        ("ACME", "acme.zendesk.com"),                    # lower-cased
+        ("https://acme.zendesk.com/agent", "acme.zendesk.com"),  # scheme + path stripped
+        ("acme:8080", "acme.zendesk.com"),               # port stripped
+        ("acme.zendesk.com@evil.com", "acme.zendesk.com"),  # userinfo trick neutralized
+        ("evil.com#", ""),                               # fragment trick -> host evil.com, rejected
+        ("evil.com", ""),                                # different host rejected
+        ("acme.zendesk.com.evil.com", ""),               # suffix spoof rejected
+        ("<enter-value-here>", ""),                      # unconfigured placeholder rejected
+        ("", ""),
+    ],
+)
+def test_subdomain_normalization_blocks_ssrf(raw, expected):
+    # The subdomain flows into the request URL; only a clean <label>.zendesk.com host
+    # is allowed, so attacker-crafted values cannot redirect requests to another host.
+    assert ZendeskConnector._normalize_subdomain(raw) == expected
+
+
 # --------------------------------------------------------------------------- #
 # Credential validation
 # --------------------------------------------------------------------------- #
