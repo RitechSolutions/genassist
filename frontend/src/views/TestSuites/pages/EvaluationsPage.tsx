@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ListChecks, Loader2, Plus } from "lucide-react";
+import { Activity, ListChecks, Loader2, Plus, Upload } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -21,6 +21,7 @@ import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { TestSuite } from "@/interfaces/testSuite.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import { EvaluationWizard, EvaluationWizardData } from "../components/EvaluationWizard";
+import { ImportEvaluationDialog } from "../components/ImportEvaluationDialog";
 import { EntityTitle } from "../components/EntityTitle";
 import { buildTechniqueConfigs, wizardMetadata } from "../helpers/evaluationForm";
 import { accuracyColorClass } from "../helpers/evaluationMetrics";
@@ -50,6 +51,7 @@ const EvaluationsPage: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   // Summaries carry the live health and running state. staleTime 0 makes
   // react-query refetch them when the tab regains focus; the interval only runs
@@ -201,6 +203,13 @@ const EvaluationsPage: React.FC = () => {
         searchPlaceholder="Search workflows..."
         actionButtonText="New Evaluation"
         onActionClick={() => setIsCreateDialogOpen(true)}
+        secondaryActionButtonText={
+          <>
+            <Upload className="w-4 h-4" />
+            Import
+          </>
+        }
+        onSecondaryActionClick={() => setIsImportDialogOpen(true)}
       />
 
       <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
@@ -261,6 +270,17 @@ const EvaluationsPage: React.FC = () => {
         workflows={workflows}
         providers={providers}
         mode="create"
+      />
+
+      <ImportEvaluationDialog
+        isOpen={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        workflows={workflows}
+        onImported={(result) => {
+          void refetchSummaries();
+          navigate(`/tests/evaluations/${result.evaluation_id}`);
+        }}
+        onSetImported={() => void refetchSummaries()}
       />
     </PageLayout>
   );

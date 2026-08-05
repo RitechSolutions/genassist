@@ -6,6 +6,8 @@ from injector import inject
 from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
+from app.db.models.agent import AgentModel
 from app.db.models.test_suite import (
     TestSuiteModel,
     TestCaseModel,
@@ -14,6 +16,7 @@ from app.db.models.test_suite import (
     TestEvaluationModel,
     TestToolRuleResultModel,
 )
+from app.db.models.workflow import WorkflowModel
 from app.repositories.db_repository import DbRepository
 
 
@@ -201,9 +204,39 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    @staticmethod
+    def _version_ids_of(workflow_id: UUID):
+        """Every live version of the workflow ``workflow_id`` belongs to.
+
+        Versions are separate ``workflows`` rows sharing an ``agent_id``, and an
+        evaluation is pinned to one of them. Users think in workflows, not
+        versions, so the overview and its drill-down span all of them. A
+        workflow with no agent matches only itself (comparing against a NULL
+        agent yields NULL, never true).
+        """
+        target_agent = (
+            select(WorkflowModel.agent_id)
+            .where(WorkflowModel.id == str(workflow_id))
+            .scalar_subquery()
+        )
+        return select(WorkflowModel.id).where(
+            WorkflowModel.is_deleted == 0,
+            or_(
+                WorkflowModel.id == str(workflow_id),
+                and_(
+                    WorkflowModel.agent_id.is_not(None),
+                    WorkflowModel.agent_id == target_agent,
+                ),
+            ),
+        )
+
     def _workflow_condition(self, workflow_id: Optional[UUID]):
         """Match evaluations by effective workflow: own ``workflow_id`` or, when
         absent, their dataset's default. ``workflow_id=None`` = unassigned.
+
+        A workflow id matches every version of that workflow, so evaluations
+        pinned to different versions appear under one row rather than splitting
+        into look-alike duplicates.
 
         An evaluation is unassigned when it has no ``workflow_id`` and its suite
         does not resolve to a live workflow — including evals whose suite was
@@ -225,13 +258,13 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
                 )
             )
         else:
-            workflow = str(workflow_id)
+            version_ids = self._version_ids_of(workflow_id)
             workflow_suites = select(suite.id).where(
-                suite.workflow_id == workflow, suite.is_deleted == 0
+                suite.workflow_id.in_(version_ids), suite.is_deleted == 0
             )
             conditions.append(
                 or_(
-                    evaluation.workflow_id == workflow,
+                    evaluation.workflow_id.in_(version_ids),
                     and_(
                         evaluation.workflow_id.is_(None),
                         evaluation.suite_id.in_(workflow_suites),
@@ -239,6 +272,36 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
                 )
             )
         return and_(*conditions)
+
+    def _grouped_effective_workflow(self):
+        """(group key expression, joins) collapsing versions onto one workflow.
+
+        The key is the agent's live version, so every evaluation of a workflow
+        lands in the same bucket whichever version it is pinned to; workflows
+        without an agent keep their own id. Agents are group-scoped while
+        workflows are not, so the scope filter is bypassed for the join —
+        otherwise the same workflow would bucket differently per caller.
+        """
+        evaluation = TestEvaluationModel
+        suite = TestSuiteModel
+        effective = func.coalesce(evaluation.workflow_id, suite.workflow_id)
+        return func.coalesce(AgentModel.workflow_id, effective), effective
+
+    def _grouped_select(self, *columns):
+        evaluation = TestEvaluationModel
+        suite = TestSuiteModel
+        _, effective = self._grouped_effective_workflow()
+        return (
+            select(*columns)
+            .select_from(evaluation)
+            .outerjoin(
+                suite, and_(suite.id == evaluation.suite_id, suite.is_deleted == 0)
+            )
+            .outerjoin(WorkflowModel, WorkflowModel.id == effective)
+            .outerjoin(AgentModel, AgentModel.id == WorkflowModel.agent_id)
+            .where(evaluation.is_deleted == 0)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        )
 
     def _search_condition(self, search: Optional[str]):
         if not search or not search.strip():
@@ -296,42 +359,30 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         return result.scalars().all()
 
     async def count_by_effective_workflow(self) -> List[Tuple[Optional[UUID], int]]:
-        """(effective_workflow_id, count) per workflow; ``None`` = unassigned bucket."""
-        evaluation = TestEvaluationModel
-        suite = TestSuiteModel
-        effective = func.coalesce(evaluation.workflow_id, suite.workflow_id)
-        stmt = (
-            select(effective.label("workflow_id"), func.count().label("count"))
-            .select_from(evaluation)
-            .outerjoin(
-                suite,
-                and_(suite.id == evaluation.suite_id, suite.is_deleted == 0),
-            )
-            .where(evaluation.is_deleted == 0)
-            .group_by(effective)
-        )
+        """(workflow_id, count) per workflow; ``None`` = unassigned bucket.
+
+        Versions collapse onto one row, so a workflow never appears twice.
+        """
+        group_key, _ = self._grouped_effective_workflow()
+        stmt = self._grouped_select(
+            group_key.label("workflow_id"), func.count().label("count")
+        ).group_by(group_key)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, int(row.count)) for row in result.all()]
 
     async def get_latest_run_pointers(
         self,
     ) -> List[Tuple[Optional[UUID], List[str]]]:
-        """(effective_workflow_id, run_ids) for every live evaluation.
+        """(workflow_id, run_ids) for every live evaluation.
 
         Used to compute per-workflow health: ``run_ids[0]`` is each evaluation's
-        latest run. Only the pointer lists are loaded here — not the runs.
+        latest run. Only the pointer lists are loaded here — not the runs. Keyed
+        the same way as ``count_by_effective_workflow`` so health lines up with
+        the row it is shown on.
         """
-        evaluation = TestEvaluationModel
-        suite = TestSuiteModel
-        effective = func.coalesce(evaluation.workflow_id, suite.workflow_id)
-        stmt = (
-            select(effective.label("workflow_id"), evaluation.run_ids)
-            .select_from(evaluation)
-            .outerjoin(
-                suite,
-                and_(suite.id == evaluation.suite_id, suite.is_deleted == 0),
-            )
-            .where(evaluation.is_deleted == 0)
+        group_key, _ = self._grouped_effective_workflow()
+        stmt = self._grouped_select(
+            group_key.label("workflow_id"), TestEvaluationModel.run_ids
         )
         result = await self.db.execute(stmt)
         return [(row.workflow_id, list(row.run_ids or [])) for row in result.all()]

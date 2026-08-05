@@ -40,6 +40,9 @@ class WorkflowMinimal(BaseModel):
     name: str
     version: str
     agent_id: Optional[UUID] = None
+    # True for the version its agent currently points at — what the builder
+    # marks Active and what a plain evaluation run executes.
+    is_active_version: bool = False
 
     model_config = ConfigDict(
         from_attributes=True
