@@ -1,21 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
 import { subDays } from "date-fns";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
-import { cn } from "@/helpers/utils";
 import { DateRange } from "react-day-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { NodeBreakdownChart } from "../components/reports/NodeBreakdownChart";
-import {
-  AnalyticsFilters,
-  analyticsFilterSelectTriggerClassName,
-} from "../components/AnalyticsFilters";
+import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { analyticsFadeUpClass } from "../constants/animations";
 import { NodeAnalyticsTableEmptyState } from "../components/AnalyticsEmptyStates";
@@ -201,28 +191,27 @@ const NodeAnalyticsPage = () => {
                 subtitle="Workflow node execution metrics by type and date"
               >
                 <AnalyticsFilters
-                  groups={showGroupFilter ? groups : undefined}
-                  groupFilter={groupFilter}
-                  onGroupFilterChange={setGroupFilter}
-                  agents={agents}
-                  agentFilter={agentFilter}
-                  onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                 >
-                  <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
-                    <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
-                      <SelectValue placeholder="All node types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All node types</SelectItem>
-                      {nodeTypeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {nodeTypeLabel(t)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AnalyticsFilterMenu
+                    groups={showGroupFilter ? groups : undefined}
+                    groupFilter={groupFilter}
+                    onGroupFilterChange={setGroupFilter}
+                    agents={agents}
+                    agentFilter={agentFilter}
+                    onAgentFilterChange={setAgentFilter}
+                    extraGroups={[
+                      {
+                        key: "nodeType",
+                        label: "Node type",
+                        allLabel: "All node types",
+                        value: nodeTypeFilter,
+                        options: nodeTypeOptions.map((t) => ({ value: t, label: nodeTypeLabel(t) })),
+                        onChange: setNodeTypeFilter,
+                      },
+                    ]}
+                  />
 
                   <ExportButton
                     endpoint="/analytics/nodes/export"

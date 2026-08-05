@@ -1,5 +1,5 @@
 import React from "react";
-import { Loader2, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
+import { Download, Loader2, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { Progress } from "@/components/progress";
@@ -22,6 +22,7 @@ interface EvaluationListRowProps {
   lastRunStatus?: string;
   onOpen: () => void;
   onEdit: () => void;
+  onExport: () => void;
   onDelete: () => void;
   onRun: (e: React.MouseEvent) => void;
 }
@@ -33,6 +34,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
   lastRunStatus,
   onOpen,
   onEdit,
+  onExport,
   onDelete,
   onRun,
 }) => (
@@ -106,6 +108,10 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
             >
               <Pencil className="h-4 w-4 mr-2" />
               Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onExport}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isRunning}

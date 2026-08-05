@@ -289,7 +289,12 @@ class ZendeskConnector:
 
     @staticmethod
     async def test_connection(cd: dict) -> dict:
-        """Test Zendesk connectivity using the /users/me endpoint."""
+        """Test Zendesk connectivity using the /tickets/count endpoint.
+
+        Not /users/me.json: that is identity-layer and still returns 200 when the
+        Support product is inactive (expired trial), so it reported "connected"
+        for accounts where ticket creation 403s.
+        """
         subdomain = cd.get("subdomain", "")
         if not subdomain.endswith(".zendesk.com"):
             subdomain = f"{subdomain}.zendesk.com"
@@ -298,7 +303,7 @@ class ZendeskConnector:
             email=cd.get("email"),
             api_token=cd.get("api_token"),
         )
-        await connector._make_request("GET", f"{connector.base_url}/users/me.json")
+        await connector._make_request("GET", f"{connector.base_url}/tickets/count.json")
         return {"success": True, "message": "Successfully connected to Zendesk."}
 
     async def _fetch_articles_paginated(

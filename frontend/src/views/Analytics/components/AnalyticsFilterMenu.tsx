@@ -15,21 +15,22 @@ import type { UserGroup } from "@/interfaces/userGroup.interface";
 
 export const ALL_FILTER_VALUE = "all";
 
-interface FilterOption {
+export interface AnalyticsFilterOption {
   value: string;
   label: string;
 }
 
-interface FilterGroup {
+export interface AnalyticsFilterGroup {
   key: string;
   label: string;
   allLabel: string;
   value: string;
-  options: FilterOption[];
+  options: AnalyticsFilterOption[];
   onChange: (value: string) => void;
 }
 
-interface LlmUsageFilterMenuProps {
+interface AnalyticsFilterMenuProps {
+  /** Group filter (admins) — omit `groups`/`onGroupFilterChange` to hide the Group submenu */
   groups?: UserGroup[];
   groupFilter?: string;
   onGroupFilterChange?: (value: string) => void;
@@ -37,30 +38,26 @@ interface LlmUsageFilterMenuProps {
   agents: Array<{ id: string; name: string }>;
   agentFilter: string;
   onAgentFilterChange: (value: string) => void;
-  providers: string[];
-  provider: string;
-  onProviderChange: (value: string) => void;
-  models: string[];
-  model: string;
-  onModelChange: (value: string) => void;
+
+  /** Page-specific filters rendered as submenus after Agent (e.g. Model, Node type). */
+  extraGroups?: AnalyticsFilterGroup[];
 }
 
-/** Group, agent, provider and model in one pill menu, matching the Transcripts quality filter */
-export function LlmUsageFilterMenu({
+/**
+ * Group, agent and any page-specific filters collapsed into a single pill menu with an
+ * active-count badge. The shared Analytics filter control used across Cost Explorer, AI
+ * Insights, Agent Performance and Node Analytics.
+ */
+export function AnalyticsFilterMenu({
   groups,
   groupFilter,
   onGroupFilterChange,
   agents,
   agentFilter,
   onAgentFilterChange,
-  providers,
-  provider,
-  onProviderChange,
-  models,
-  model,
-  onModelChange,
-}: LlmUsageFilterMenuProps) {
-  const filterGroups: FilterGroup[] = [
+  extraGroups = [],
+}: AnalyticsFilterMenuProps) {
+  const filterGroups: AnalyticsFilterGroup[] = [
     ...(groups && onGroupFilterChange
       ? [
           {
@@ -81,35 +78,17 @@ export function LlmUsageFilterMenu({
       options: agents.map((a) => ({ value: a.id, label: a.name })),
       onChange: onAgentFilterChange,
     },
- // Keep it in case we need it :)   
- // {
- //   key: "provider",
- //   label: "Provider",
- //   allLabel: "All providers",
- //   value: provider,
- //   options: providers.map((p) => ({ value: p, label: p })),
- //   onChange: onProviderChange,
- //   },
-    {
-      key: "model",
-      label: "Model",
-      allLabel: "All models",
-      value: model,
-      options: models.map((m) => ({ value: m, label: m })),
-      onChange: onModelChange,
-    },
+    ...extraGroups,
   ];
 
   const activeCount = filterGroups.filter((g) => g.value !== ALL_FILTER_VALUE).length;
-  const selectedLabel = (group: FilterGroup) =>
+  const selectedLabel = (group: AnalyticsFilterGroup) =>
     group.options.find((o) => o.value === group.value)?.label ?? group.value;
 
   const clearAll = () => {
-    // Group first, so the agent reset it triggers cannot clobber the value set after it
-    onGroupFilterChange?.(ALL_FILTER_VALUE);
-    onAgentFilterChange(ALL_FILTER_VALUE);
-    onProviderChange(ALL_FILTER_VALUE);
-    onModelChange(ALL_FILTER_VALUE);
+    // Reset in array order (group before agent) so a parent filter that also clears its
+    // dependants — setGroupFilter resets the agent — cannot clobber a value set after it.
+    for (const group of filterGroups) group.onChange(ALL_FILTER_VALUE);
   };
 
   return (

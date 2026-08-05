@@ -10,6 +10,18 @@ from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
+from app.schemas.eval_bundle import (
+    EvaluationBundle,
+    EvaluationBundleSet,
+    EvaluationImportPreview,
+    EvaluationImportPreviewRequest,
+    EvaluationImportRequest,
+    EvaluationImportResult,
+    EvaluationSetImportPreview,
+    EvaluationSetImportPreviewRequest,
+    EvaluationSetImportRequest,
+    EvaluationSetImportResult,
+)
 from app.schemas.test_suite import (
     EvaluationRunRequest,
     EvaluationToolCatalog,
@@ -22,6 +34,7 @@ from app.schemas.test_suite import (
     TestRun,
     WorkflowEvaluationSummary,
 )
+from app.services.eval_bundle import EvalBundleService
 from app.services.test_suite import TestSuiteService
 from app.tasks.test_suite_tasks import execute_test_suite_run_task
 
@@ -78,6 +91,64 @@ async def create_evaluation(
     return await service.create_evaluation(data)
 
 
+@router.post(
+    "/evaluations/import/preview",
+    response_model=EvaluationImportPreview,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def preview_evaluation_import(
+    data: EvaluationImportPreviewRequest,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Resolve a bundle's references against a target workflow without importing."""
+    return await service.preview_import(data)
+
+
+@router.post(
+    "/evaluations/import",
+    response_model=EvaluationImportResult,
+    status_code=status.HTTP_201_CREATED,
+    # Evaluation.UPDATE, matching every other evaluation and dataset route.
+    # Note: test_cases.py gates case reads/writes behind Workflow.* instead, so
+    # a supervisor can own datasets but not their cases — an inconsistency in
+    # that router, not something to resolve by locking supervisors out here.
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
+)
+async def import_evaluation(
+    data: EvaluationImportRequest,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Create the bundle's dataset, cases and evaluation against a target workflow."""
+    return await service.import_bundle(data)
+
+
+@router.post(
+    "/evaluations/import-set/preview",
+    response_model=EvaluationSetImportPreview,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def preview_evaluation_set_import(
+    data: EvaluationSetImportPreviewRequest,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Resolve a bundle set's references against a target workflow without importing."""
+    return await service.preview_set_import(data)
+
+
+@router.post(
+    "/evaluations/import-set",
+    response_model=EvaluationSetImportResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
+)
+async def import_evaluation_set(
+    data: EvaluationSetImportRequest,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Import the selected evaluations of a bundle set; one result per item."""
+    return await service.import_bundle_set(data)
+
+
 @router.get(
     "/evaluations/{evaluation_id}",
     response_model=TestEvaluation,
@@ -88,6 +159,32 @@ async def get_evaluation(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     return await service.get_evaluation(evaluation_id)
+
+
+@router.get(
+    "/evaluations/{evaluation_id}/export",
+    response_model=EvaluationBundle,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def export_evaluation(
+    evaluation_id: UUID,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """The evaluation, its dataset and reference labels as a portable bundle."""
+    return await service.export_evaluation(evaluation_id)
+
+
+@router.get(
+    "/workflows/{workflow_id}/evaluations/export",
+    response_model=EvaluationBundleSet,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def export_workflow_evaluations(
+    workflow_id: UUID,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Every evaluation of this workflow as one portable bundle set."""
+    return await service.export_workflow_evaluations(workflow_id)
 
 
 @router.patch(
@@ -204,7 +301,23 @@ async def run_workflow_evaluations(
         detail="This workflow already has running evaluations.",
     )
     redis = injector.get(RedisString)
-    lock_key = f"tenant:{get_tenant_context()}:eval-run-all:{workflow_id}"
+    # The batch spans every version of the workflow, so the lock must key on the
+    # workflow rather than whichever version the URL names — two callers holding
+    # different version ids would otherwise both start runs for the same set.
+    # A failed lookup falls back to the requested id: a narrower lock is worse
+    # than none at all, and must not turn a valid request into a 500.
+    try:
+        canonical_id = (
+            await service.workflow_service.get_active_version_id(workflow_id)
+        ) or workflow_id
+    except Exception:  # pylint: disable=broad-except
+        logger.warning(
+            "Could not resolve the live version of workflow %s for the Run-all "
+            "lock; locking on the requested version.",
+            workflow_id,
+        )
+        canonical_id = workflow_id
+    lock_key = f"tenant:{get_tenant_context()}:eval-run-all:{canonical_id}"
     lock_token = uuid4().hex
     acquired = await redis.set(
         lock_key, lock_token, nx=True, ex=RUN_ALL_LOCK_TTL_SECONDS

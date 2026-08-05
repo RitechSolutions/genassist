@@ -15,6 +15,7 @@ import { SummaryStatsCards } from "../components/reports/SummaryStatsCards";
 import { AgentExecutionChart } from "../components/reports/AgentExecutionChart";
 import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdownDialog";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { analyticsFadeUpClass } from "../constants/animations";
 import {
@@ -294,7 +295,7 @@ const AgentPerformancePage = () => {
         ),
       },
       {
-        header: <ThumbsUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
+        header: <ThumbsUp className="inline-block align-middle w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
         key: "thumbs_up_count",
         description: "Positive feedback from users.",
         cell: (item: AgentAggregated) => (
@@ -304,7 +305,7 @@ const AgentPerformancePage = () => {
         ),
       },
       {
-        header: <ThumbsDown className="w-4 h-4 text-rose-500" />,
+        header: <ThumbsDown className="inline-block align-middle w-4 h-4 text-rose-500" />,
         key: "thumbs_down_count",
         description: "Negative feedback from users.",
         cell: (item: AgentAggregated) => (
@@ -367,17 +368,19 @@ const AgentPerformancePage = () => {
                 subtitle="Daily performance metrics per agent"
               >
                 <AnalyticsFilters
-                  groups={showGroupFilter ? groups : undefined}
-                  groupFilter={groupFilter}
-                  onGroupFilterChange={setGroupFilter}
-                  agents={agents}
-                  agentFilter={agentFilter}
-                  onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                   compareDateRange={compareDateRange}
                   onCompareDateRangeChange={setCompareDateRange}
                 >
+                  <AnalyticsFilterMenu
+                    groups={showGroupFilter ? groups : undefined}
+                    groupFilter={groupFilter}
+                    onGroupFilterChange={setGroupFilter}
+                    agents={agents}
+                    agentFilter={agentFilter}
+                    onAgentFilterChange={setAgentFilter}
+                  />
                   <ExportButton
                     endpoint="/analytics/agents/export"
                     params={exportParams}

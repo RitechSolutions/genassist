@@ -13,13 +13,18 @@ from app.core.exceptions.exception_classes import AppException, UpstreamServiceE
 
 logger = logging.getLogger(__name__)
 
-_SSO_CLIENT_ERROR_KEYS = frozenset(
+# Errors whose detail is written for the end user and carries no internal
+# information, so it is returned outside dev too.
+_CLIENT_SAFE_DETAIL_KEYS = frozenset(
     {
         ErrorKey.SSO_MICROSOFT_OAUTH_ERROR,
         ErrorKey.SSO_MICROSOFT_USER_DENIED,
         ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED,
         ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED,
         ErrorKey.SSO_MICROSOFT_DISABLED,
+        # Says which reference could not be re-linked, or why the import was
+        # refused — the whole point is telling the user what to change.
+        ErrorKey.EVALUATION_BUNDLE_INVALID,
     }
 )
 
@@ -47,7 +52,7 @@ def _response_error_detail(error: AppException) -> str | None:
         return None
     if os.getenv("ENV") == "dev":
         return sanitized
-    if error.error_key in _SSO_CLIENT_ERROR_KEYS:
+    if error.error_key in _CLIENT_SAFE_DETAIL_KEYS:
         return sanitized
     return None
 
