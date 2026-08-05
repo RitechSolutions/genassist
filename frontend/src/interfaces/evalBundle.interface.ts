@@ -104,3 +104,76 @@ export interface EvaluationImportResult {
   dropped_rules: string[];
   warnings: string[];
 }
+
+export const EVALUATION_BUNDLE_SET_KIND = "genassist.evaluation-bundle-set";
+
+export interface BundleSetDataset {
+  local_id: number;
+  name: string;
+  description?: string | null;
+  default_input_metadata?: Record<string, unknown> | null;
+  cases: BundleCase[];
+}
+
+export interface BundleSetItem {
+  evaluation: EvaluationBundle["evaluation"];
+  dataset_local_id: number;
+  references: EvaluationBundle["references"];
+  notes?: string[];
+}
+
+export interface EvaluationBundleSet {
+  kind: string;
+  schema_version: number;
+  source: EvaluationBundle["source"];
+  datasets: BundleSetDataset[];
+  evaluations: BundleSetItem[];
+  notes: string[];
+}
+
+export interface EvaluationSetItemPreview {
+  name: string;
+  dataset_name: string;
+  case_count: number;
+  already_exists: boolean;
+  dropping_all_would_empty: boolean;
+  node_ref_keys?: string[];
+}
+
+export interface BundleSetDatasetPreview {
+  local_id: number;
+  name: string;
+  case_count: number;
+  existing_dataset?: BundleExistingDataset | null;
+}
+
+export interface EvaluationSetImportPreview {
+  workflow_name_matches: boolean;
+  evaluations: EvaluationSetItemPreview[];
+  datasets: BundleSetDatasetPreview[];
+  node_refs: BundleNodeResolution[];
+  provider_refs: BundleProviderResolution[];
+  warnings: string[];
+  can_import: boolean;
+}
+
+export type SetItemStatus = "imported" | "skipped" | "failed";
+
+export interface EvaluationSetItemResult {
+  name: string;
+  status: SetItemStatus | string;
+  evaluation_id?: string | null;
+  suite_id?: string | null;
+  case_count: number;
+  reused_dataset: boolean;
+  dropped_rules: string[];
+  warnings: string[];
+  detail?: string | null;
+}
+
+export interface EvaluationSetImportResult {
+  results: EvaluationSetItemResult[];
+  imported: number;
+  skipped: number;
+  failed: number;
+}

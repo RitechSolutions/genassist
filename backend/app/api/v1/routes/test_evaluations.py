@@ -12,10 +12,15 @@ from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
 from app.schemas.eval_bundle import (
     EvaluationBundle,
+    EvaluationBundleSet,
     EvaluationImportPreview,
     EvaluationImportPreviewRequest,
     EvaluationImportRequest,
     EvaluationImportResult,
+    EvaluationSetImportPreview,
+    EvaluationSetImportPreviewRequest,
+    EvaluationSetImportRequest,
+    EvaluationSetImportResult,
 )
 from app.schemas.test_suite import (
     EvaluationRunRequest,
@@ -117,6 +122,33 @@ async def import_evaluation(
     return await service.import_bundle(data)
 
 
+@router.post(
+    "/evaluations/import-set/preview",
+    response_model=EvaluationSetImportPreview,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def preview_evaluation_set_import(
+    data: EvaluationSetImportPreviewRequest,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Resolve a bundle set's references against a target workflow without importing."""
+    return await service.preview_set_import(data)
+
+
+@router.post(
+    "/evaluations/import-set",
+    response_model=EvaluationSetImportResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
+)
+async def import_evaluation_set(
+    data: EvaluationSetImportRequest,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Import the selected evaluations of a bundle set; one result per item."""
+    return await service.import_bundle_set(data)
+
+
 @router.get(
     "/evaluations/{evaluation_id}",
     response_model=TestEvaluation,
@@ -140,6 +172,19 @@ async def export_evaluation(
 ):
     """The evaluation, its dataset and reference labels as a portable bundle."""
     return await service.export_evaluation(evaluation_id)
+
+
+@router.get(
+    "/workflows/{workflow_id}/evaluations/export",
+    response_model=EvaluationBundleSet,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def export_workflow_evaluations(
+    workflow_id: UUID,
+    service: EvalBundleService = Injected(EvalBundleService),
+):
+    """Every evaluation of this workflow as one portable bundle set."""
+    return await service.export_workflow_evaluations(workflow_id)
 
 
 @router.patch(

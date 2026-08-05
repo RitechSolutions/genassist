@@ -280,6 +280,7 @@ const EvaluationsPage: React.FC = () => {
           void refetchSummaries();
           navigate(`/tests/evaluations/${result.evaluation_id}`);
         }}
+        onSetImported={() => void refetchSummaries()}
       />
     </PageLayout>
   );

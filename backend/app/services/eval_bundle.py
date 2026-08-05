@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -23,8 +24,13 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.eval_bundle import (
     EVALUATION_BUNDLE_KIND,
-    MAX_BUNDLE_CASES,
     EVALUATION_BUNDLE_SCHEMA_VERSION,
+    EVALUATION_BUNDLE_SET_KIND,
+    EVALUATION_BUNDLE_SET_SCHEMA_VERSION,
+    MAX_BUNDLE_CASES,
+    MAX_SET_DATASETS,
+    MAX_SET_EVALUATIONS,
+    MAX_SET_TOTAL_CASES,
     REF_KIND_ACTION,
     REF_KIND_AGENT,
     REF_KIND_ROUTER,
@@ -32,6 +38,9 @@ from app.schemas.eval_bundle import (
     REF_STATUS_AMBIGUOUS,
     REF_STATUS_MISSING,
     REF_STATUS_RESOLVED,
+    SET_ITEM_FAILED,
+    SET_ITEM_IMPORTED,
+    SET_ITEM_SKIPPED,
     BundleCase,
     BundleDataset,
     BundleEvaluation,
@@ -42,12 +51,22 @@ from app.schemas.eval_bundle import (
     BundleProviderResolution,
     BundleRefCandidate,
     BundleReferences,
+    BundleSetDataset,
+    BundleSetDatasetPreview,
+    BundleSetItem,
     BundleSource,
     EvaluationBundle,
+    EvaluationBundleSet,
     EvaluationImportPreview,
     EvaluationImportPreviewRequest,
     EvaluationImportRequest,
     EvaluationImportResult,
+    EvaluationSetImportPreview,
+    EvaluationSetImportPreviewRequest,
+    EvaluationSetImportRequest,
+    EvaluationSetImportResult,
+    EvaluationSetItemPreview,
+    EvaluationSetItemResult,
 )
 from app.db.models.test_suite import TestCaseModel
 from app.repositories.test_suite import TestCaseRepository
@@ -125,6 +144,40 @@ _MAX_METADATA_WARNINGS = 10
 
 def _normalize_name(value: Any) -> str:
     return str(value).strip().lower()
+
+
+_GENERIC_ITEM_FAILURE = "The evaluation could not be imported."
+_MAX_ITEM_DETAIL_CHARS = 300
+
+
+def _client_safe_item_detail(error: AppException) -> str:
+    """One item's failure reason, safe to return inside a 2xx batch result.
+
+    A batch result never reaches the exception handler, so it never passes that
+    gate on which error keys may expose ``error_detail`` outside dev. Only this
+    feature's own bundle messages are written for users; anything else could
+    carry internal text such as a raw validation error.
+    """
+    detail = (error.error_detail or "").strip()
+    if error.error_key != ErrorKey.EVALUATION_BUNDLE_INVALID or not detail:
+        return _GENERIC_ITEM_FAILURE
+    return detail[:_MAX_ITEM_DETAIL_CHARS]
+
+
+@dataclass
+class _BatchState:
+    """Bookkeeping shared by the items of one batch import."""
+
+    existing_names: set
+    # The caller's manual picks, applied to whichever items use those refs.
+    resolutions: Dict[str, str]
+    # Set-wide node metadata, so every item resolves as the preview did.
+    merged_nodes: Dict[str, BundleNodeRef]
+    suites_by_local: Dict[int, UUID] = field(default_factory=dict)
+    # Normalized dataset name -> the local id that already materialized it. A
+    # second dataset sharing that name is a different dataset and keeps its own
+    # cases, whether the first one was created here or already on the target.
+    dataset_owner_by_name: Dict[str, int] = field(default_factory=dict)
 
 
 class UnresolvedRefError(ValueError):
@@ -848,23 +901,37 @@ class EvalBundleService:
         Scoped to the workflow: two workflows can each own a "Regression set",
         and reusing the other one's would grade the wrong cases.
         """
+        found = await self._existing_datasets_by_name([name], target_workflow_id)
+        return found.get(_normalize_name(name))
+
+    async def _existing_datasets_by_name(
+        self, names: List[str], target_workflow_id: UUID
+    ) -> Dict[str, BundleExistingDataset]:
+        """Look several dataset names up in one pass, keyed by normalized name.
+
+        A set import asks about every dataset in the file, and scanning the
+        target's suites once per name turns a large file into a long run of
+        identical full scans.
+        """
+        wanted = {_normalize_name(name) for name in names}
+        if not wanted:
+            return {}
         version_ids = await self._workflow_version_ids(target_workflow_id)
-        suites = await self.suites.list_suites()
-        match = next(
-            (
-                s
-                for s in suites
-                if _normalize_name(s.name) == _normalize_name(name)
-                and str(s.workflow_id) in version_ids
-            ),
-            None,
-        )
-        if not match:
-            return None
-        cases = await self.suites.list_cases_for_suite(match.id)
-        return BundleExistingDataset(
-            id=match.id, name=match.name, case_count=len(cases)
-        )
+        matches: Dict[str, Any] = {}
+        for suite in await self.suites.list_suites():
+            key = _normalize_name(suite.name)
+            if key not in wanted or key in matches:
+                continue
+            if str(suite.workflow_id) in version_ids:
+                matches[key] = suite
+        return {
+            key: BundleExistingDataset(
+                id=suite.id,
+                name=suite.name,
+                case_count=len(await self.suites.list_cases_for_suite(suite.id)),
+            )
+            for key, suite in matches.items()
+        }
 
     def _dropping_all_would_empty(
         self, bundle: EvaluationBundle, resolution: Dict[str, Any]
@@ -1213,6 +1280,346 @@ class EvalBundleService:
             )
         return warnings
 
+    # ---- Set export / import ------------------------------------------------
+
+    async def export_workflow_evaluations(
+        self, workflow_id: UUID
+    ) -> EvaluationBundleSet:
+        """Every evaluation of the workflow (all versions) in one file, with
+        each shared dataset stored once."""
+        await self.workflows.get_by_id(workflow_id)
+        evaluations = await self._group_evaluations(workflow_id)
+        if not evaluations:
+            raise AppException(
+                status_code=404,
+                error_key=ErrorKey.NOT_FOUND,
+                error_detail="This workflow has no evaluations to export.",
+            )
+        if len(evaluations) > MAX_SET_EVALUATIONS:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_BUNDLE_INVALID,
+                error_detail=(
+                    f"This workflow has {len(evaluations)} evaluations; the "
+                    f"export limit is {MAX_SET_EVALUATIONS}."
+                ),
+            )
+
+        datasets: Dict[str, BundleSetDataset] = {}
+        items: List[BundleSetItem] = []
+        for evaluation in evaluations:
+            bundle = await self.export_evaluation(evaluation.id)
+            suite_key = str(evaluation.suite_id)
+            if suite_key not in datasets:
+                datasets[suite_key] = BundleSetDataset(
+                    local_id=len(datasets) + 1, **bundle.dataset.model_dump()
+                )
+            items.append(
+                BundleSetItem(
+                    evaluation=bundle.evaluation,
+                    dataset_local_id=datasets[suite_key].local_id,
+                    references=bundle.references,
+                    notes=bundle.notes,
+                )
+            )
+
+        # Both bounds match the import side: a file this export refuses to cap
+        # would be rejected wholesale on the way back in.
+        oversized = next(
+            (d for d in datasets.values() if len(d.cases) > MAX_BUNDLE_CASES),
+            None,
+        )
+        if oversized:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_BUNDLE_INVALID,
+                error_detail=(
+                    f"Dataset '{oversized.name}' has {len(oversized.cases)} "
+                    f"test cases; the limit is {MAX_BUNDLE_CASES}."
+                ),
+            )
+        total_cases = sum(len(d.cases) for d in datasets.values())
+        if total_cases > MAX_SET_TOTAL_CASES:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_BUNDLE_INVALID,
+                error_detail=(
+                    f"The datasets hold {total_cases} test cases in total; the "
+                    f"export limit is {MAX_SET_TOTAL_CASES}."
+                ),
+            )
+        return EvaluationBundleSet(
+            source=await self._bundle_source(workflow_id),
+            datasets=list(datasets.values()),
+            evaluations=items,
+        )
+
+    async def _group_evaluations(self, workflow_id: UUID) -> List[Any]:
+        """The workflow group's evaluations, ordered by name for a stable file."""
+        version_ids = await self._workflow_version_ids(workflow_id)
+        evaluations = await self.suites.list_evaluations()
+        matched = [e for e in evaluations if str(e.workflow_id) in version_ids]
+        return sorted(matched, key=lambda e: _normalize_name(e.name))
+
+    async def preview_set_import(
+        self, request: EvaluationSetImportPreviewRequest
+    ) -> EvaluationSetImportPreview:
+        bundle_set = request.bundle_set
+        _validate_set_header(bundle_set)
+        target_workflow = await self.workflows.get_by_id(request.target_workflow_id)
+        resolution = await self._resolve_set_refs(
+            bundle_set, request.target_workflow_id
+        )
+        existing_names = await self._existing_evaluation_names(
+            request.target_workflow_id
+        )
+
+        datasets_by_id = {d.local_id: d for d in bundle_set.datasets}
+        keys_by_item = resolution["keys_by_item"]
+        item_previews: List[EvaluationSetItemPreview] = []
+        warnings: List[str] = []
+        for index, item in enumerate(bundle_set.evaluations):
+            dataset = datasets_by_id[item.dataset_local_id]
+            item_bundle = _item_bundle(
+                bundle_set, item, resolution["merged_nodes"]
+            )
+            item_previews.append(
+                EvaluationSetItemPreview(
+                    name=item.evaluation.name,
+                    dataset_name=dataset.name,
+                    case_count=len(dataset.cases),
+                    already_exists=_normalize_name(item.evaluation.name)
+                    in existing_names,
+                    dropping_all_would_empty=self._dropping_all_would_empty(
+                        item_bundle, resolution
+                    ),
+                    node_ref_keys=keys_by_item[index],
+                )
+            )
+            warnings.extend(self._preview_warnings(item_bundle, resolution))
+
+        existing_by_name = await self._existing_datasets_by_name(
+            [d.name for d in bundle_set.datasets], request.target_workflow_id
+        )
+        # Only the first dataset of a given name can attach to the target's own
+        # copy; the import gives every later namesake its own, so promising
+        # reuse for all of them would contradict what actually happens.
+        claimed_names: set = set()
+        dataset_previews = []
+        for dataset in bundle_set.datasets:
+            name_key = _normalize_name(dataset.name)
+            existing = (
+                None if name_key in claimed_names else existing_by_name.get(name_key)
+            )
+            claimed_names.add(name_key)
+            dataset_previews.append(
+                BundleSetDatasetPreview(
+                    local_id=dataset.local_id,
+                    name=dataset.name,
+                    case_count=len(dataset.cases),
+                    existing_dataset=existing,
+                )
+            )
+        workflow_name_matches = bool(
+            bundle_set.source.workflow_name
+            and _normalize_name(bundle_set.source.workflow_name)
+            == _normalize_name(target_workflow.name)
+        )
+        return EvaluationSetImportPreview(
+            workflow_name_matches=workflow_name_matches,
+            evaluations=item_previews,
+            datasets=dataset_previews,
+            node_refs=resolution["node_refs"],
+            provider_refs=resolution["provider_refs"],
+            warnings=list(dict.fromkeys(warnings)),
+            can_import=all(
+                ref.status == REF_STATUS_RESOLVED
+                for ref in resolution["node_refs"]
+            ),
+        )
+
+    async def _resolve_set_refs(
+        self, bundle_set: EvaluationBundleSet, target_workflow_id: UUID
+    ) -> Dict[str, Any]:
+        """The union of every item's references, each resolved exactly once.
+
+        Items are exported against their own pinned version, so one ref can
+        carry a label in one item and nothing in another. Resolution therefore
+        uses the best metadata ANY item recorded, and ``import_bundle_set``
+        replays the outcome to every item — a per-item re-resolution could
+        otherwise disagree with the preview the user approved.
+        """
+        catalog = await self._workflow_catalog(target_workflow_id)
+        indexes = build_node_indexes(catalog)
+        metadata = _merge_set_node_metadata(bundle_set)
+        merged_nodes = metadata["nodes"]
+        node_refs = [
+            resolve_node_ref(
+                ref,
+                kind,
+                merged_nodes[ref].label,
+                indexes,
+                merged_nodes[ref].node_type,
+            )
+            for ref, kind in metadata["refs_by_key"].values()
+        ]
+
+        provider_refs: List[BundleProviderResolution] = []
+        provider_meta = _merge_set_provider_metadata(bundle_set)
+        if provider_meta:
+            providers = await self.providers.get_all_minimal()
+            provider_refs = [
+                resolve_provider_ref(provider_id, meta, providers)
+                for provider_id, meta in provider_meta.items()
+            ]
+        return {
+            "catalog": catalog,
+            "node_refs": node_refs,
+            "provider_refs": provider_refs,
+            "keys_by_item": metadata["keys_by_item"],
+            "merged_nodes": merged_nodes,
+        }
+
+    async def _existing_evaluation_names(self, target_workflow_id: UUID) -> set:
+        """Names already used by the target workflow group's evaluations."""
+        version_ids = await self._workflow_version_ids(target_workflow_id)
+        evaluations = await self.suites.list_evaluations()
+        return {
+            _normalize_name(e.name)
+            for e in evaluations
+            if str(e.workflow_id) in version_ids
+        }
+
+    async def import_bundle_set(
+        self, request: EvaluationSetImportRequest
+    ) -> EvaluationSetImportResult:
+        """Import the selected evaluations one by one; a failure is recorded on
+        its item and never stops the rest of the batch."""
+        bundle_set = request.bundle_set
+        _validate_set_header(bundle_set)
+        await self.workflows.get_by_id(request.target_workflow_id)
+        selected = _selected_items(bundle_set, request.include)
+        existing_names = (
+            await self._existing_evaluation_names(request.target_workflow_id)
+            if request.skip_existing
+            else set()
+        )
+
+        # Every item resolves from the set-wide merge the preview used, so none
+        # of them can reach a verdict the user was not shown.
+        resolution = await self._resolve_set_refs(
+            bundle_set, request.target_workflow_id
+        )
+        batch = _BatchState(
+            existing_names=existing_names,
+            resolutions=request.resolutions,
+            merged_nodes=resolution["merged_nodes"],
+        )
+        results = [
+            await self._import_set_item(bundle_set, item, request, batch)
+            for item in selected
+        ]
+        return EvaluationSetImportResult(
+            results=results,
+            imported=sum(r.status == SET_ITEM_IMPORTED for r in results),
+            skipped=sum(r.status == SET_ITEM_SKIPPED for r in results),
+            failed=sum(r.status == SET_ITEM_FAILED for r in results),
+        )
+
+    async def _import_set_item(
+        self,
+        bundle_set: EvaluationBundleSet,
+        item: BundleSetItem,
+        request: EvaluationSetImportRequest,
+        batch: "_BatchState",
+    ) -> EvaluationSetItemResult:
+        name = item.evaluation.name
+        if _normalize_name(name) in batch.existing_names:
+            return EvaluationSetItemResult(
+                name=name,
+                status=SET_ITEM_SKIPPED,
+                detail=(
+                    "An evaluation with this name already exists on the "
+                    "target workflow."
+                ),
+            )
+        try:
+            result = await self.import_bundle(
+                EvaluationImportRequest(
+                    bundle=_item_bundle(bundle_set, item, batch.merged_nodes),
+                    target_workflow_id=request.target_workflow_id,
+                    existing_suite_id=await self._suite_to_reuse(
+                        bundle_set, item, request, batch
+                    ),
+                    resolutions=_resolutions_for_item(item, batch.resolutions),
+                    drop_unresolved_rules=request.drop_unresolved_rules,
+                )
+            )
+        except AppException as error:
+            logger.warning(
+                "Importing evaluation '%s' from a bundle set failed: %s (%s)",
+                name,
+                error.error_key,
+                error.error_detail,
+            )
+            return EvaluationSetItemResult(
+                name=name,
+                status=SET_ITEM_FAILED,
+                detail=_client_safe_item_detail(error),
+            )
+        except Exception:  # pylint: disable=broad-except
+            logger.exception(
+                "Importing evaluation '%s' from a bundle set failed", name
+            )
+            return EvaluationSetItemResult(
+                name=name,
+                status=SET_ITEM_FAILED,
+                detail=_GENERIC_ITEM_FAILURE,
+            )
+
+        batch.suites_by_local[item.dataset_local_id] = result.suite_id
+        batch.dataset_owner_by_name.setdefault(
+            _normalize_name(_dataset_of(bundle_set, item).name),
+            item.dataset_local_id,
+        )
+        if request.skip_existing:
+            # A second copy of the same name inside the file must not slip past
+            # the check that only looked at the database.
+            batch.existing_names.add(_normalize_name(name))
+        return EvaluationSetItemResult(
+            name=name,
+            status=SET_ITEM_IMPORTED,
+            evaluation_id=result.evaluation_id,
+            suite_id=result.suite_id,
+            case_count=result.case_count,
+            reused_dataset=result.reused_dataset,
+            dropped_rules=result.dropped_rules,
+            warnings=result.warnings,
+        )
+
+    async def _suite_to_reuse(
+        self,
+        bundle_set: EvaluationBundleSet,
+        item: BundleSetItem,
+        request: EvaluationSetImportRequest,
+        batch: "_BatchState",
+    ) -> Optional[UUID]:
+        """The dataset this item should attach to, if one already exists."""
+        batch_suite_id = batch.suites_by_local.get(item.dataset_local_id)
+        if batch_suite_id:
+            return batch_suite_id
+        dataset = _dataset_of(bundle_set, item)
+        owner = batch.dataset_owner_by_name.get(_normalize_name(dataset.name))
+        if owner is not None and owner != item.dataset_local_id:
+            # Another dataset in this file already took that name. The file
+            # keeps the two apart, so this one gets its own copy rather than
+            # collapsing onto the first and losing its cases.
+            return None
+        found = await self._find_existing_dataset(
+            dataset.name, request.target_workflow_id
+        )
+        return found.id if found else None
+
 
 def _bundle_case(
     case: TestCaseInDB,
@@ -1279,6 +1686,195 @@ def _map_resolver(node_map: Dict[str, str]) -> Resolver:
         return mapped
 
     return resolve
+
+
+def _resolutions_for_item(
+    item: BundleSetItem, resolutions: Dict[str, str]
+) -> Dict[str, str]:
+    """Only the picks this item's own references need.
+
+    An item's request carries its own resolution cap, and the set's union plus
+    the caller's manual picks can together exceed it — sending the whole map
+    would fail every item on a size limit that none of them actually reach.
+    """
+    configs = item.evaluation.technique_configs or {}
+    keys = {ref_key(ref, kind) for ref, kind in collect_node_refs(configs)}
+    return {key: value for key, value in resolutions.items() if key in keys}
+
+
+def _merge_set_node_metadata(bundle_set: EvaluationBundleSet) -> Dict[str, Any]:
+    """Best label and type recorded for each ref across all items, the union of
+    ref keys, and the keys each item uses.
+
+    First non-empty value wins: an item pinned to a version where the node was
+    deleted records nothing, and that absence must not hide the label a sibling
+    item carries.
+    """
+    labels: Dict[str, str] = {}
+    types: Dict[str, str] = {}
+    kinds: Dict[str, str] = {}
+    refs_by_key: Dict[str, Tuple[str, str]] = {}
+    keys_by_item: List[List[str]] = []
+    for item in bundle_set.evaluations:
+        configs = item.evaluation.technique_configs or {}
+        item_keys: List[str] = []
+        for ref, kind in collect_node_refs(configs):
+            key = ref_key(ref, kind)
+            refs_by_key.setdefault(key, (ref, kind))
+            kinds.setdefault(ref, kind)
+            if key not in item_keys:
+                item_keys.append(key)
+            node = item.references.nodes.get(ref)
+            if not node:
+                continue
+            if node.label and ref not in labels:
+                labels[ref] = node.label
+            if node.node_type and ref not in types:
+                types[ref] = node.node_type
+        keys_by_item.append(item_keys)
+    return {
+        "refs_by_key": refs_by_key,
+        "keys_by_item": keys_by_item,
+        # The merged view every item resolves from, so no item can reach a
+        # different verdict than the set-wide one the user was shown.
+        "nodes": {
+            ref: BundleNodeRef(
+                label=labels.get(ref), kind=kind, node_type=types.get(ref)
+            )
+            for ref, kind in kinds.items()
+        },
+    }
+
+
+def _merge_set_provider_metadata(
+    bundle_set: EvaluationBundleSet,
+) -> Dict[str, Optional[BundleProviderRef]]:
+    """Each provider id once, described by the first item that recorded it."""
+    merged: Dict[str, Optional[BundleProviderRef]] = {}
+    for item in bundle_set.evaluations:
+        configs = item.evaluation.technique_configs or {}
+        for provider_id in collect_provider_ids(configs):
+            if merged.get(provider_id) is not None:
+                continue
+            merged[provider_id] = item.references.llm_providers.get(provider_id)
+    return merged
+
+
+def _dataset_of(
+    bundle_set: EvaluationBundleSet, item: BundleSetItem
+) -> BundleSetDataset:
+    return next(
+        d for d in bundle_set.datasets if d.local_id == item.dataset_local_id
+    )
+
+
+def _item_bundle(
+    bundle_set: EvaluationBundleSet,
+    item: BundleSetItem,
+    merged_nodes: Optional[Dict[str, BundleNodeRef]] = None,
+) -> EvaluationBundle:
+    """A self-contained single bundle for one set item, so every single-bundle
+    rule (validation, resolution, dataset reuse) applies unchanged.
+
+    ``merged_nodes`` swaps the item's own node metadata for the set-wide merge.
+    Resolution is deterministic in its inputs, so an item given the merged view
+    reaches exactly the union's verdict: it can neither fail on a ref the
+    preview resolved, nor quietly resolve one the preview refused.
+    """
+    dataset = _dataset_of(bundle_set, item)
+    references = item.references
+    if merged_nodes is not None:
+        references = BundleReferences(
+            nodes=merged_nodes,
+            llm_providers=item.references.llm_providers,
+            # Case ids are this item's own; only node metadata is shared.
+            cases=item.references.cases,
+        )
+    return EvaluationBundle(
+        source=bundle_set.source,
+        evaluation=item.evaluation,
+        dataset=BundleDataset(**dataset.model_dump(exclude={"local_id"})),
+        references=references,
+        notes=item.notes,
+    )
+
+
+def _selected_items(
+    bundle_set: EvaluationBundleSet, include: Optional[List[int]]
+) -> List[BundleSetItem]:
+    """The items the caller picked, in file order; ``None`` selects all."""
+    if include is None:
+        return list(bundle_set.evaluations)
+    items = []
+    for position in dict.fromkeys(include):
+        if position < 0 or position >= len(bundle_set.evaluations):
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.EVALUATION_BUNDLE_INVALID,
+                error_detail=f"Selection index {position} is out of range.",
+            )
+        items.append(bundle_set.evaluations[position])
+    return items
+
+
+def _validate_set_header(bundle_set: EvaluationBundleSet) -> None:
+    def invalid(detail: str) -> AppException:
+        return AppException(
+            status_code=400,
+            error_key=ErrorKey.EVALUATION_BUNDLE_INVALID,
+            error_detail=detail,
+        )
+
+    if bundle_set.kind != EVALUATION_BUNDLE_SET_KIND:
+        if bundle_set.kind == EVALUATION_BUNDLE_KIND:
+            raise invalid(
+                "The file is a single-evaluation bundle, not a bundle set."
+            )
+        raise invalid("The file is not an evaluation bundle set.")
+    if bundle_set.schema_version > EVALUATION_BUNDLE_SET_SCHEMA_VERSION:
+        raise invalid(
+            "The bundle set was exported by a newer version of the platform "
+            "and cannot be imported here."
+        )
+    if not bundle_set.evaluations:
+        raise invalid("The bundle set contains no evaluations.")
+    if len(bundle_set.evaluations) > MAX_SET_EVALUATIONS:
+        raise invalid(
+            f"This file has {len(bundle_set.evaluations)} evaluations; the "
+            f"import limit is {MAX_SET_EVALUATIONS}."
+        )
+    if len(bundle_set.datasets) > MAX_SET_DATASETS:
+        raise invalid(
+            f"This file has {len(bundle_set.datasets)} datasets; the import "
+            f"limit is {MAX_SET_DATASETS}."
+        )
+
+    local_ids = [d.local_id for d in bundle_set.datasets]
+    if len(set(local_ids)) != len(local_ids):
+        raise invalid("The file's datasets carry duplicate ids.")
+    known_ids = set(local_ids)
+    used_ids = {item.dataset_local_id for item in bundle_set.evaluations}
+    if used_ids - known_ids:
+        raise invalid(
+            "An evaluation in the file references a dataset that is not "
+            "part of the file."
+        )
+    if known_ids - used_ids:
+        # Unused datasets are pure payload: no evaluation would import them,
+        # but every one still costs a lookup in the preview.
+        raise invalid("The file contains datasets that no evaluation uses.")
+    for dataset in bundle_set.datasets:
+        if len(dataset.cases) > MAX_BUNDLE_CASES:
+            raise invalid(
+                f"Dataset '{dataset.name}' has {len(dataset.cases)} test "
+                f"cases; the import limit is {MAX_BUNDLE_CASES}."
+            )
+    total_cases = sum(len(d.cases) for d in bundle_set.datasets)
+    if total_cases > MAX_SET_TOTAL_CASES:
+        raise invalid(
+            f"The file holds {total_cases} test cases in total; the import "
+            f"limit is {MAX_SET_TOTAL_CASES}."
+        )
 
 
 def _validate_bundle_header(bundle: EvaluationBundle) -> None:
