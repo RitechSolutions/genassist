@@ -16,12 +16,13 @@ import { Loader2, Plus, X } from 'lucide-react';
 import { AppSetting } from '@/interfaces/app-setting.interface';
 import { useQuery } from '@tanstack/react-query';
 import { SchemaFormRenderer } from '@/components/SchemaFormRenderer';
+import { getSchemaDefaults, isFieldVisible } from '@/components/SchemaFormRenderer/schemaFormUtils';
 import { ConnectionTestPanel } from '@/components/ConnectionTestPanel';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { CredentialSetupGuidePanel } from './CredentialSetupGuidePanel';
 import { CREDENTIAL_SETUP_GUIDES } from './credentialSetupGuides';
 import type { ConnectionStatus } from '@/interfaces/connectionStatus.interface';
-import type { FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
+import type { FieldSchema, FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 
 interface AppSettingDialogProps {
   isOpen: boolean;
@@ -73,6 +74,22 @@ export function AppSettingDialog({
 
   const appSettingSchemas = data ?? {};
 
+  // Seed a type's schema-declared field defaults (e.g. Zendesk's auth_method) so that
+  // conditional fields keyed off a defaulted select are visible immediately.
+  const schemaDefaultsFor = (settingType: AppSetting['type']): Record<string, FieldValue> =>
+    getSchemaDefaults(appSettingSchemas[settingType]?.fields ?? []);
+
+  // Labels of required, currently-visible fields the user hasn't filled in — shared by
+  // the submit and test-connection validators.
+  const missingRequiredLabels = (schema: { fields?: FieldSchema[] }): string[] =>
+    (schema.fields ?? [])
+      .filter((field) => {
+        if (!field.required || !isFieldVisible(field, values)) return false;
+        const value = values[field.name];
+        return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+      })
+      .map((field) => field.label);
+
   useEffect(() => {
     if (isOpen) {
       resetForm();
@@ -80,9 +97,24 @@ export function AppSettingDialog({
         populateFormWithSetting(settingToEdit);
       } else if (mode === 'create' && initialType) {
         setType(initialType);
+        // Seed defaults here (not only in the schema-load effect below) so a preset
+        // type is populated on every open — including reopens where `type` is
+        // unchanged and the type-keyed effect would not re-fire.
+        setValues(schemaDefaultsFor(initialType));
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, settingToEdit, mode]);
+
+  // In create mode, seed the selected type's defaults once its schema is available.
+  // Covers the first open where the type is set before the schema query resolves.
+  // Only seeds when the user hasn't entered values yet.
+  useEffect(() => {
+    if (mode !== 'create' || type === 'Other') return;
+    if (!appSettingSchemas[type]?.fields) return;
+    setValues((prev) => (Object.keys(prev).length === 0 ? schemaDefaultsFor(type) : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, data, mode]);
 
   const resetForm = () => {
     setName('');
@@ -157,15 +189,7 @@ export function AppSettingDialog({
 
     // Validate schema-based fields
     if (type !== 'Other' && appSettingSchemas[type]) {
-      const schema = appSettingSchemas[type];
-      const schemaMissing = schema.fields
-        .filter((field) => {
-          if (!field.required) return false;
-          const value = values[field.name];
-          return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
-        })
-        .map((field) => field.label);
-
+      const schemaMissing = missingRequiredLabels(appSettingSchemas[type]);
       if (schemaMissing.length > 0) {
         if (schemaMissing.length === 1) {
           toast.error(`${schemaMissing[0]} is required.`);
@@ -226,14 +250,7 @@ export function AppSettingDialog({
     // Validate required schema fields before hitting the connector.
     const schema = appSettingSchemas[type];
     if (schema) {
-      const schemaMissing = schema.fields
-        .filter((field) => {
-          if (!field.required) return false;
-          const value = values[field.name];
-          return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
-        })
-        .map((field) => field.label);
-
+      const schemaMissing = missingRequiredLabels(schema);
       if (schemaMissing.length > 0) {
         toast.error(`Please provide: ${schemaMissing.join(', ')}.`);
         return;
@@ -303,7 +320,9 @@ export function AppSettingDialog({
                       setCustomFields([{ key: '', value: '' }]);
                     } else {
                       if (type === 'Other' || mode === 'create') {
-                        setValues({});
+                        // Seed schema defaults so conditional fields (e.g. Zendesk's
+                        // OAuth credentials under the default auth method) show at once.
+                        setValues(schemaDefaultsFor(newType));
                       }
                       setCustomFields([{ key: '', value: '' }]);
                     }

@@ -27,6 +27,7 @@ class DataSourceService:
         "refresh_token",
         "password",
         "api_token",
+        "client_secret",
         "private_key_passphrase",
         "smb_password",
         "connection_string",

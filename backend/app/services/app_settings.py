@@ -66,6 +66,9 @@ class AppSettingsService:
                         "subdomain": cd.get("zendesk_subdomain"),
                         "email": cd.get("zendesk_email"),
                         "api_token": cd.get("zendesk_api_token"),
+                        "auth_method": cd.get("zendesk_auth_method"),
+                        "client_id": cd.get("zendesk_client_id"),
+                        "client_secret": cd.get("zendesk_client_secret"),
                     }
                 )
             return {
@@ -151,8 +154,20 @@ class AppSettingsService:
                 error_detail=f"Unknown type: {setting_type}",
             )
 
-        # Validate required fields
-        required_fields = [field.name for field in schema.fields if field.required]
+        # Validate required fields. A field guarded by a ``conditional`` is only
+        # required when its controlling field currently holds the matching value
+        # (e.g. Zendesk's client_secret is required only for the OAuth auth method).
+        def _is_active(field) -> bool:
+            cond = getattr(field, "conditional", None)
+            if not cond:
+                return True
+            return (values or {}).get(cond.field) == cond.value
+
+        required_fields = [
+            field.name
+            for field in schema.fields
+            if field.required and _is_active(field)
+        ]
         missing_fields = [
             field
             for field in required_fields
