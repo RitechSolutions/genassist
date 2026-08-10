@@ -8,6 +8,7 @@ from uuid import UUID
 
 from ..base_node import BaseNode
 from ..node_result import node_failure
+from app.core.utils.encryption_utils import decrypt_key
 from app.modules.integration.zendesk import ZendeskConnector
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
@@ -50,15 +51,29 @@ class ZendeskToolNode(BaseNode):
             app_settings_service = injector.get(AppSettingsService)
             app_settings = await app_settings_service.get_by_id(UUID(app_settings_id))
 
-            # Extract subdomain, email, and api_token from app settings values
+            # Extract credentials from app settings values. Zendesk supports two auth
+            # methods: legacy API token (email + api_token) and OAuth client
+            # credentials (client_id + client_secret). The client secret is stored
+            # encrypted, so decrypt it before use.
             values = (
                 app_settings.values if isinstance(app_settings.values, dict) else {}
             )
-            subdomain = str(values.get("zendesk_subdomain"))
-            email = str(values.get("zendesk_email"))
-            api_token = str(values.get("zendesk_api_token"))
+            subdomain = values.get("zendesk_subdomain")
+            email = values.get("zendesk_email")
+            api_token = values.get("zendesk_api_token")
+            auth_method = values.get("zendesk_auth_method")
+            client_id = values.get("zendesk_client_id")
+            client_secret = values.get("zendesk_client_secret")
+            if client_secret:
+                client_secret = decrypt_key(client_secret)
             zendesk_connector = ZendeskConnector(
-                subdomain=subdomain, email=email, api_token=api_token)
+                subdomain=subdomain,
+                email=email,
+                api_token=api_token,
+                auth_method=auth_method,
+                client_id=client_id,
+                client_secret=client_secret,
+            )
             # Create the Zendesk ticket
             result = await zendesk_connector.create_ticket(
                 subject=subject,

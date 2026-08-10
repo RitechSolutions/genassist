@@ -9,6 +9,9 @@ interface LiveCallControlProps {
   onStop: () => void;
   theme?: {
     primaryColor?: string;
+    backgroundColor?: string;
+    inputBackgroundColor?: string;
+    textColor?: string;
   };
   disabled?: boolean;
   labels?: {
@@ -36,6 +39,9 @@ export const LiveCallControl: React.FC<LiveCallControlProps> = ({
   labels,
 }) => {
   const primaryColor = theme?.primaryColor || '#4f46e5';
+  // The active overlay covers the input wrapper, so it uses the same background.
+  const overlayBg = theme?.inputBackgroundColor || theme?.backgroundColor || '#fff';
+  const textColor = theme?.textColor || '#374151';
 
   if (!isActive && status !== 'connecting') {
     return (
@@ -87,7 +93,7 @@ export const LiveCallControl: React.FC<LiveCallControlProps> = ({
         alignItems: 'center',
         gap: 8,
         padding: '0 6px',
-        backgroundColor: '#fff',
+        backgroundColor: overlayBg,
         borderRadius: 24,
         zIndex: 10,
         overflow: 'hidden',
@@ -109,7 +115,7 @@ export const LiveCallControl: React.FC<LiveCallControlProps> = ({
             }}
           />
         )}
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#374151', fontFamily: 'inherit' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: textColor, fontFamily: 'inherit' }}>
           {statusLabel}
         </span>
       </div>

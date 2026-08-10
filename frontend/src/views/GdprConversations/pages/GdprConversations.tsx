@@ -388,7 +388,7 @@ export default function GdprConversations() {
           Search conversations by an end-user's email address and delete or
           anonymize them on request. The search matches the email captured by
           the Zendesk ticket node and falls back to full-text search over the
-          transcript content.
+          transcript content
         </p>
       </div>
 

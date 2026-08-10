@@ -1,5 +1,6 @@
 import { FieldSchema, FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 import { FormFieldRenderer } from '@/components/FormFieldRenderer';
+import { isFieldVisible } from './schemaFormUtils';
 
 interface SchemaFormRendererProps {
   schema: { fields: FieldSchema[] };
@@ -16,13 +17,8 @@ export function SchemaFormRenderer({
   showAdvanced,
   advancedOnly = false,
 }: SchemaFormRendererProps) {
-  const isFieldVisible = (field: FieldSchema): boolean => {
-    if (!field.conditional) return true;
-    return connectionData[field.conditional.field] === field.conditional.value;
-  };
-
-  const regularFields = schema.fields.filter((f) => f.required && isFieldVisible(f));
-  const advancedFields = schema.fields.filter((f) => !f.required && isFieldVisible(f));
+  const regularFields = schema.fields.filter((f) => f.required && isFieldVisible(f, connectionData));
+  const advancedFields = schema.fields.filter((f) => !f.required && isFieldVisible(f, connectionData));
 
   const fieldsToRender = advancedOnly ? advancedFields : [...regularFields, ...(showAdvanced ? advancedFields : [])];
 

@@ -1,10 +1,7 @@
-import { useState } from "react";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { ActionButtons } from "@/components/ActionButtons";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Column } from "@/components/ui/data-table";
+import { EntityTableCard } from "@/components/EntityTableCard";
 import { Badge } from "@/components/badge";
 import { AppSetting } from "@/interfaces/app-setting.interface";
-import { toast } from "react-hot-toast";
 import { formatDate } from "@/helpers/utils";
 
 interface AppSettingsCardProps {
@@ -16,6 +13,18 @@ interface AppSettingsCardProps {
   onDeleteSetting?: (id: string) => Promise<void>;
 }
 
+// Case-insensitive match across name/type/description (untrimmed query, matching
+// the original card's search behavior). Shared between EntityTableCard's filterFn
+// and the local grouping counts below so the two never diverge.
+const matchesQuery = (setting: AppSetting, query: string) => {
+  const q = query.toLowerCase();
+  return (
+    (setting.name?.toLowerCase() || "").includes(q) ||
+    (setting.type?.toLowerCase() || "").includes(q) ||
+    (setting.description?.toLowerCase() || "").includes(q)
+  );
+};
+
 export function AppSettingsCard({
   searchQuery,
   appSettings,
@@ -23,26 +32,17 @@ export function AppSettingsCard({
   onEditSetting,
   onDeleteSetting,
 }: AppSettingsCardProps) {
-  const [settingToDelete, setSettingToDelete] = useState<AppSetting | null>(
-    null
-  );
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const filteredSettings = appSettings.filter((setting) => {
-    const name = setting.name?.toLowerCase() || "";
-    const type = setting.type?.toLowerCase() || "";
-    const description = setting.description?.toLowerCase() || "";
-
-    return (
-      name.includes(searchQuery.toLowerCase()) ||
-      type.includes(searchQuery.toLowerCase()) ||
-      description.includes(searchQuery.toLowerCase())
-    );
-  });
+  // Recompute the filtered set exactly as EntityTableCard does internally, so the
+  // Type column's "blank when grouped" logic stays in sync with the group headers
+  // (EntityTableCard does not expose its filtered rows to the columns builder).
+  const trimmedQuery = searchQuery.trim();
+  const filteredForGrouping =
+    trimmedQuery.length === 0
+      ? appSettings
+      : appSettings.filter((setting) => matchesQuery(setting, searchQuery));
 
   // Count settings per type so types with 2+ settings render under a group header.
-  const typeCounts = filteredSettings.reduce<Record<string, number>>(
+  const typeCounts = filteredForGrouping.reduce<Record<string, number>>(
     (acc, setting) => {
       const type = setting.type || "Unknown";
       acc[type] = (acc[type] || 0) + 1;
@@ -51,27 +51,6 @@ export function AppSettingsCard({
     {}
   );
   const isGroupedType = (type: string) => (typeCounts[type] || 0) >= 2;
-
-  const handleDeleteClick = (setting: AppSetting) => {
-    setSettingToDelete(setting);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!settingToDelete?.id || !onDeleteSetting) return;
-
-    try {
-      setIsDeleting(true);
-      await onDeleteSetting(settingToDelete.id);
-      toast.success("App setting deleted successfully.");
-    } catch (error) {
-      toast.error("Failed to delete app setting.");
-    } finally {
-      setIsDeleting(false);
-      setSettingToDelete(null);
-      setIsDeleteDialogOpen(false);
-    }
-  };
 
   const columns: Column<AppSetting>[] = [
     {
@@ -123,42 +102,33 @@ export function AppSettingsCard({
       cell: (setting) =>
         setting.created_at ? formatDate(setting.created_at) : "No date",
     },
-    {
-      header: "Actions",
-      key: "actions",
-      cell: (setting) => (
-        <ActionButtons
-          onEdit={() => onEditSetting?.(setting)}
-          onDelete={() => handleDeleteClick(setting)}
-          editTitle="Edit App Setting"
-          deleteTitle="Delete App Setting"
-        />
-      ),
-    },
   ];
 
   return (
-    <>
-      <DataTable
-        data={filteredSettings}
-        columns={columns}
-        loading={loading}
-        error={null}
-        searchQuery={searchQuery}
-        groupBy={(setting) => setting.type || "Unknown"}
-        renderGroupHeader={(type, items) => (items.length >= 2 ? type : null)}
-        emptyMessage="No app settings found"
-        notFoundMessage="No app settings found matching your search"
-      />
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={settingToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete the app setting "${settingToDelete?.name}".`}
-      />
-    </>
+    <EntityTableCard<AppSetting>
+      entityName="app setting"
+      data={appSettings}
+      loading={loading}
+      searchQuery={searchQuery}
+      filterFn={matchesQuery}
+      deleteFn={(setting) => onDeleteSetting?.(setting.id) ?? Promise.resolve()}
+      getItemName={(setting) => setting.name}
+      deleteDescription={(setting) =>
+        `This action cannot be undone. This will permanently delete the app setting "${setting.name}".`
+      }
+      emptyMessage="No app settings found"
+      notFoundMessage="No app settings found matching your search"
+      // Preserve the original behavior of rendering all rows without pagination
+      // (DataTable treats a falsy pageSize as "no pagination").
+      pageSize={0}
+      groupBy={(setting) => setting.type || "Unknown"}
+      renderGroupHeader={(type, items) => (items.length >= 2 ? type : null)}
+      columns={columns}
+      rowActions={{
+        onEdit: (setting) => onEditSetting?.(setting),
+        editTitle: "Edit App Setting",
+        deleteTitle: "Delete App Setting",
+      }}
+    />
   );
 }

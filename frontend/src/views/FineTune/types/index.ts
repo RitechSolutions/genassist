@@ -1,3 +1,6 @@
+import type { Dispatch, SetStateAction } from "react";
+import type { FineTuneJob } from "@/interfaces/fineTune.interface";
+
 export type JobProgress = {
   job_id?: string;
   status?: string;
@@ -18,6 +21,9 @@ export type AccuracyPoint = { label: string; value: number };
 
 export type FineTuneJobsCardProps = {
   searchQuery: string;
-  refreshKey?: number;
+  jobs: FineTuneJob[];
+  setJobs: Dispatch<SetStateAction<FineTuneJob[]>>;
+  loading: boolean;
+  error: string | null;
   onNewFineTuneJob?: () => void;
 };

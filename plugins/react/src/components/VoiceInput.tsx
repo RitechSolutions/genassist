@@ -12,6 +12,9 @@ interface VoiceInputProps {
     primaryColor?: string;
     backgroundColor?: string;
     fontFamily?: string;
+    inputBackgroundColor?: string;
+    textColor?: string;
+    mutedTextColor?: string;
   };
   disabled?: boolean;
 }
@@ -87,6 +90,11 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
   }, []);
 
   const primaryColor = theme?.primaryColor || '#4f46e5';
+  // The recording/preview overlays cover the input wrapper, so they use the same
+  // background so the pill stays consistent in light and dark themes.
+  const overlayBg = theme?.inputBackgroundColor || theme?.backgroundColor || '#fff';
+  const textColor = theme?.textColor || '#374151';
+  const mutedTextColor = theme?.mutedTextColor || '#9ca3af';
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -137,7 +145,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
         alignItems: 'center',
         gap: 0,
         padding: '0 6px',
-        backgroundColor: '#fff',
+        backgroundColor: overlayBg,
         borderRadius: 24,
         zIndex: 10,
         overflow: 'hidden',
@@ -154,14 +162,14 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#9ca3af',
+            color: mutedTextColor,
             borderRadius: '50%',
             flexShrink: 0,
             transition: 'color 0.15s ease',
           }}
           title="Cancel"
           onMouseEnter={e => (e.currentTarget.style.color = '#6b7280')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
+          onMouseLeave={e => (e.currentTarget.style.color = mutedTextColor)}
         >
           <Trash2 size={18} />
         </button>
@@ -185,7 +193,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
           <span style={{
             fontSize: 13,
             fontWeight: 600,
-            color: '#374151',
+            color: textColor,
             fontVariantNumeric: 'tabular-nums',
             minWidth: 32,
             fontFamily: 'inherit',
@@ -294,7 +302,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
         }}
         title="Discard"
         onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
-        onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
+        onMouseLeave={e => (e.currentTarget.style.color = mutedTextColor)}
       >
         <Trash2 size={18} />
       </button>
@@ -305,7 +313,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
         minWidth: 0,
         padding: '0 4px',
       }}>
-        {blobUrl && <AudioPlayer blobUrl={blobUrl} primaryColor={primaryColor} compact />}
+        {blobUrl && <AudioPlayer blobUrl={blobUrl} primaryColor={primaryColor} mutedTextColor={mutedTextColor} compact />}
       </div>
 
       {/* Send */}

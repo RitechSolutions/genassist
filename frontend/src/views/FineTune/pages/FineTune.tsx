@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
+import { useFineTuneJobs } from "@/hooks/useFineTuneJobs";
 import { FineTuneJobsCard } from "@/views/FineTune/components/FineTuneJobsCard";
 import { FineTuneJobDialog } from "@/views/FineTune/components/FineTuneJobDialog";
 import { GenerateFromConversationsDialog } from "@/views/FineTune/components/GenerateFromConversationsDialog";
@@ -15,6 +17,8 @@ export default function FineTune() {
   const [validationFile, setValidationFile] = useState<{ id: string; name: string } | null>(null);
   const [generateTarget, setGenerateTarget] = useState<"training" | "validation" | null>(null);
   const [selectFileTarget, setSelectFileTarget] = useState<"training" | "validation" | null>(null);
+
+  const { jobs, setJobs, loading, syncing, error, sync } = useFineTuneJobs(refreshKey);
 
   const handleSetFile = (target: "training" | "validation", file: { id: string; name: string } | null) => {
     if (target === "training") setTrainingFile(file);
@@ -35,11 +39,26 @@ export default function FineTune() {
         searchPlaceholder="Search jobs..."
         actionButtonText="New Fine-Tune Job"
         onActionClick={() => setIsDialogOpen(true)}
+        secondaryActionButtonText={
+          <>
+            {syncing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            <span>Sync</span>
+          </>
+        }
+        onSecondaryActionClick={sync}
+        secondaryActionDisabled={syncing || loading}
       />
 
       <FineTuneJobsCard
         searchQuery={searchQuery}
-        refreshKey={refreshKey}
+        jobs={jobs}
+        setJobs={setJobs}
+        loading={loading}
+        error={error}
         onNewFineTuneJob={() => setIsDialogOpen(true)}
       />
 

@@ -1,11 +1,4 @@
 import { useEffect, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +26,8 @@ import {
 } from "@/components/select";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { FormField } from "@/components/ui/form-field";
+import { CRUDDialog, type FieldErrors } from "@/components/ui/crud-dialog";
 
 interface LLMAnalystDialogProps {
   isOpen: boolean;
@@ -42,6 +37,18 @@ interface LLMAnalystDialogProps {
   mode?: "create" | "edit";
 }
 
+type LLMAnalystFormValues = {
+  name: string;
+  llm_provider_id: string;
+  prompt: string;
+  is_active: boolean;
+};
+
+const ANALYST_TABS = [
+  { value: "general", label: "General" },
+  { value: "advanced", label: "Advanced" },
+];
+
 export function LLMAnalystDialog({
   isOpen,
   onOpenChange,
@@ -49,12 +56,6 @@ export function LLMAnalystDialog({
   analystToEdit = null,
   mode = "create",
 }: LLMAnalystDialogProps) {
-  const [name, setName] = useState("");
-  const [llmProviderId, setLlmProviderId] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [isActive, setIsActive] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [analystId, setAnalystId] = useState<string | undefined>();
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
@@ -62,22 +63,9 @@ export function LLMAnalystDialog({
   const [selectedEnrichments, setSelectedEnrichments] = useState<string[]>([]);
   const [availableNodeTypes, setAvailableNodeTypes] = useState<AvailableNodeType[]>([]);
   const [nodeTypeSearch, setNodeTypeSearch] = useState("");
-  const [settings, setSettings] = useState<Record<string, any>>({});
+  const [settings, setSettings] = useState<Record<string, unknown>>({});
   const [newFieldKey, setNewFieldKey] = useState("");
   const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      resetForm();
-      fetchProviders();
-      fetchEnrichments();
-      fetchNodeTypes();
-      if (analystToEdit && mode === "edit") {
-        populateFormWithAnalyst(analystToEdit);
-      }
-    }
-  }, [isOpen, analystToEdit, mode]);
 
   const fetchProviders = async () => {
     setIsLoadingProviders(true);
@@ -109,444 +97,402 @@ export function LLMAnalystDialog({
     }
   };
 
-  const populateFormWithAnalyst = (analyst: LLMAnalyst) => {
-    const enrichments = analyst.context_enrichments ?? [];
-    const settings = analyst.settings ?? {};
-    setAnalystId(analyst.id);
-    setName(analyst.name);
-    setLlmProviderId(analyst.llm_provider_id);
-    setPrompt(analyst.prompt);
-    setIsActive(analyst.is_active === 1);
-    setSelectedEnrichments(enrichments);
-    setSettings(settings);
-    setTagInputs({});
-    setNewFieldKey("");
-    setShowAdvanced(enrichments.length > 0 || Object.keys(settings).length > 0);
-  };
-
-  useEffect(() => {
-    if (selectedEnrichments.length > 0 || Object.keys(settings).length > 0) {
-      setShowAdvanced(true);
-    }
-  }, [selectedEnrichments, settings]);
-
-  const resetForm = () => {
-    setAnalystId(undefined);
-    setName("");
-    setLlmProviderId("");
-    setPrompt("");
-    setIsActive(true);
-    setShowAdvanced(false);
-    setSelectedEnrichments([]);
-    setNodeTypeSearch("");
-    setSettings({});
-    setTagInputs({});
-    setNewFieldKey("");
-  };
-
   const toggleEnrichment = (key: string) => {
     setSelectedEnrichments((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const normalizedPrompt = prompt.trim().replace(/\s+/g, " ");
-
-    const requiredFields = [
-      { label: "LLM Provider", isEmpty: !llmProviderId },
-      { label: "Name", isEmpty: !name },
-      { label: "Prompt", isEmpty: !normalizedPrompt },
-    ];
-
-    const missingFields = requiredFields
-      .filter((field) => field.isEmpty)
-      .map((field) => field.label);
-
-    if (missingFields.length > 0) {
-      if (missingFields.length === 1) {
-        toast.error(`${missingFields[0]} is required.`);
-      } else {
-        toast.error(`Please provide: ${missingFields.join(", ")}.`);
-      }
-      return;
+  // Extra (non form-value) state is reset/populated here; the scalar form
+  // values (name, llm_provider_id, prompt, is_active) are owned by CRUDDialog
+  // via initialValues/editValues keyed on resetKey.
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedEnrichments([]);
+    setNodeTypeSearch("");
+    setSettings({});
+    setTagInputs({});
+    setNewFieldKey("");
+    fetchProviders();
+    fetchEnrichments();
+    fetchNodeTypes();
+    if (analystToEdit && mode === "edit") {
+      setSelectedEnrichments(analystToEdit.context_enrichments ?? []);
+      setSettings(analystToEdit.settings ?? {});
     }
-
-    setIsSubmitting(true);
-    try {
-      const data = {
-        name,
-        llm_provider_id: llmProviderId,
-        prompt: normalizedPrompt,
-        is_active: isActive ? 1 : 0,
-        context_enrichments: selectedEnrichments,
-        settings: Object.keys(settings).length > 0 ? settings : null,
-      };
-
-      if (mode === "create") {
-        await createLLMAnalyst(data);
-        toast.success("LLM analyst created successfully.");
-      } else {
-        if (!analystId) {
-          toast.error("Analyst ID is required.");
-          return;
-        }
-        const { name: _, ...rest } = data;
-        await updateLLMAnalyst(analystId, rest);
-        toast.success("LLM analyst updated successfully.");
-      }
-
-      onAnalystSaved();
-      onOpenChange(false);
-      resetForm();
-    } catch (error) {
-      toast.error(
-        `Failed to ${mode === "create" ? "create" : "update"} LLM analyst${
-          error.status === 400
-            ? ": An LLM analyst with this name already exists"
-            : ""
-        }.`
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  }, [isOpen, analystToEdit, mode]);
 
   return (
-    <>
-      <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="sm:max-w-[600px] p-0 overflow-hidden"
-          aria-describedby="dialog-description"
-        >
-          <form
-            onSubmit={handleSubmit}
-            className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
-          >
-            <DialogHeader className="p-6 pb-4">
-              <DialogTitle>
-                {mode === "create" ? "Create LLM Analyst" : "Edit LLM Analyst"}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="px-6 pb-6 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="llm_provider">LLM Provider</Label>
-                {isLoadingProviders ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  <Select
-                    value={llmProviderId || ""}
-                    onValueChange={(value) => {
-                      if (value === "__create__") {
-                        setIsCreateProviderOpen(true);
-                        return;
-                      }
-                      setLlmProviderId(value);
-                    }}
+    <CRUDDialog<LLMAnalystFormValues>
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      mode={mode}
+      maxWidth="600px"
+      bodyClassName="space-y-4"
+      tabs={ANALYST_TABS}
+      resetKey={analystToEdit?.id ?? null}
+      initialValues={{ name: "", llm_provider_id: "", prompt: "", is_active: true }}
+      editValues={
+        analystToEdit
+          ? {
+              name: analystToEdit.name,
+              llm_provider_id: analystToEdit.llm_provider_id,
+              prompt: analystToEdit.prompt,
+              is_active: analystToEdit.is_active === 1,
+            }
+          : null
+      }
+      title={{ create: "Create LLM Analyst", edit: "Edit LLM Analyst" }}
+      submitLabel={{ create: "Create", edit: "Update" }}
+      loadingLabel={{ create: "Create", edit: "Update" }}
+      successMessage={{
+        create: "LLM analyst created successfully.",
+        edit: "LLM analyst updated successfully.",
+      }}
+      errorMessage={(err, m) => {
+        if ((err as { isGuard?: boolean } | null)?.isGuard) {
+          return "Analyst ID is required.";
+        }
+        const status = (err as { status?: number } | null)?.status;
+        return `Failed to ${m === "create" ? "create" : "update"} LLM analyst${
+          status === 400
+            ? ": An LLM analyst with this name already exists"
+            : ""
+        }.`;
+      }}
+      validate={(values) => {
+        const errors: FieldErrors<LLMAnalystFormValues> = {};
+        if (!values.llm_provider_id)
+          errors.llm_provider_id = "LLM Provider is required.";
+        if (!values.name) errors.name = "Name is required.";
+        if (!values.prompt.trim()) errors.prompt = "Prompt is required.";
+        return Object.keys(errors).length > 0 ? errors : null;
+      }}
+      onSubmit={async (values, { mode: m }) => {
+        const normalizedPrompt = values.prompt.trim().replace(/\s+/g, " ");
+        const base = {
+          llm_provider_id: values.llm_provider_id,
+          prompt: normalizedPrompt,
+          is_active: values.is_active ? 1 : 0,
+          context_enrichments: selectedEnrichments,
+          settings: Object.keys(settings).length > 0 ? settings : null,
+        };
+
+        if (m === "create") {
+          await createLLMAnalyst({ name: values.name, ...base });
+        } else {
+          if (!analystToEdit?.id) {
+            const guard = new Error("Analyst ID is required.");
+            (guard as { isGuard?: boolean }).isGuard = true;
+            throw guard;
+          }
+          await updateLLMAnalyst(analystToEdit.id, base);
+        }
+      }}
+      onSuccess={() => onAnalystSaved()}
+    >
+      {(form) => (
+        <>
+          {/* General tab */}
+          <div className={form.activeTab === "advanced" ? "hidden" : "space-y-4"}>
+          <div className="space-y-2">
+            <Label htmlFor="llm_provider">LLM Provider</Label>
+            {isLoadingProviders ? (
+              <Loader2 className="w-6 h-6 animate-spin" />
+            ) : (
+              <Select
+                value={form.values.llm_provider_id || ""}
+                onValueChange={(value) => {
+                  if (value === "__create__") {
+                    setIsCreateProviderOpen(true);
+                    return;
+                  }
+                  form.setField("llm_provider_id", value);
+                }}
+              >
+                <SelectTrigger className="w-full border border-input rounded-xl px-3 py-2">
+                  <SelectValue placeholder="Select a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {`${provider.name} -  (${provider.llm_model})`}
+                    </SelectItem>
+                  ))}
+                  <CreateNewSelectItem />
+                </SelectContent>
+              </Select>
+            )}
+            {form.errors.llm_provider_id && (
+              <p className="text-sm text-red-500 mt-1">
+                {form.errors.llm_provider_id}
+              </p>
+            )}
+          </div>
+
+          <FormField id="name" label="Name" error={form.errors.name}>
+            <Input
+              id="name"
+              value={form.values.name}
+              onChange={(e) => form.setField("name", e.target.value)}
+              placeholder="Analyst name"
+              disabled={form.mode === "edit"}
+            />
+          </FormField>
+
+          <FormField id="prompt" label="Prompt" error={form.errors.prompt}>
+            <Textarea
+              id="prompt"
+              value={form.values.prompt}
+              onChange={(e) => form.setField("prompt", e.target.value)}
+              placeholder="System prompt"
+              rows={6}
+            />
+          </FormField>
+
+          <div className="flex items-center gap-2 border-t pt-4">
+            <Label htmlFor="is_active">Active</Label>
+            <Switch
+              id="is_active"
+              checked={form.values.is_active}
+              onCheckedChange={(checked) => form.setField("is_active", checked)}
+            />
+          </div>
+
+          <LLMProviderDialog
+            isOpen={isCreateProviderOpen}
+            onOpenChange={setIsCreateProviderOpen}
+            onProviderSaved={async (provider) => {
+              try {
+                await fetchProviders();
+              } catch {
+                // ignore
+              }
+              if (provider?.id) {
+                form.setField("llm_provider_id", provider.id);
+              }
+            }}
+            mode="create"
+          />
+          </div>
+
+          {/* Advanced tab */}
+          <div className={form.activeTab === "advanced" ? "space-y-4" : "hidden"}>
+          {availableEnrichments.length > 0 && (
+            <div className="space-y-2">
+              <Label>Context Enrichments</Label>
+              <p className="text-xs text-muted-foreground">
+                Select additional conversation data to include when analyzing transcripts.
+              </p>
+              <div className="border rounded-lg p-2 space-y-1 overflow-y-auto max-h-40">
+                {availableEnrichments.map((enrichment) => (
+                  <div
+                    key={enrichment.key}
+                    className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50"
                   >
-                    <SelectTrigger className="w-full border border-input rounded-xl px-3 py-2">
-                      <SelectValue placeholder="Select a provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {providers.map((provider) => (
-                        <SelectItem key={provider.id} value={provider.id}>
-                          {`${provider.name} -  (${provider.llm_model})`}
-                        </SelectItem>
-                      ))}
-                      <CreateNewSelectItem />
-                    </SelectContent>
-                  </Select>
-                )}
+                    <Checkbox
+                      id={`enrichment-${enrichment.key}`}
+                      checked={selectedEnrichments.includes(enrichment.key)}
+                      onCheckedChange={() => toggleEnrichment(enrichment.key)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <label
+                        htmlFor={`enrichment-${enrichment.key}`}
+                        className="text-sm font-medium cursor-pointer"
+                      >
+                        {enrichment.name}
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {enrichment.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
+            </div>
+          )}
 
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Analyst name"
-                  disabled={mode === "edit"}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="prompt">Prompt</Label>
-                <Textarea
-                  id="prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="System prompt"
-                  rows={6}
-                />
-              </div>
-
-
-              <div className="flex items-center gap-2 border-t pt-4">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="is_active">Active</Label>
-                  <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
-                </div>
-                <div className="flex-1" />
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="show_advanced">Advanced</Label>
-                  <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
-                </div>
-              </div>
-
-              {showAdvanced && availableEnrichments.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Context Enrichments</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Select additional conversation data to include when analyzing transcripts.
-                  </p>
-                  <div className="border rounded-lg p-2 space-y-1 overflow-y-auto max-h-40">
-                    {availableEnrichments.map((enrichment) => (
+          {availableNodeTypes.length > 0 && (
+            <div className="space-y-2">
+              <Label>Node Enrichments</Label>
+              <p className="text-xs text-muted-foreground">
+                Appends "{`<Node> node used: Yes/No`}" to the prompt for each selected node. Reference this in your prompt instructions.
+              </p>
+              <Input
+                placeholder="Search nodes..."
+                value={nodeTypeSearch}
+                onChange={(e) => setNodeTypeSearch(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <ScrollArea className="border rounded-lg p-2 h-48">
+                <div className="space-y-1">
+                  {availableNodeTypes
+                    .filter((n) =>
+                      n.label.toLowerCase().includes(nodeTypeSearch.toLowerCase())
+                    )
+                    .map((n) => (
                       <div
-                        key={enrichment.key}
-                        className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50"
+                        key={n.node_type}
+                        className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50"
                       >
                         <Checkbox
-                          id={`enrichment-${enrichment.key}`}
-                          checked={selectedEnrichments.includes(enrichment.key)}
-                          onCheckedChange={() => toggleEnrichment(enrichment.key)}
-                          className="mt-0.5"
+                          id={`node-${n.node_type}`}
+                          checked={selectedEnrichments.includes(`node:${n.node_type}`)}
+                          onCheckedChange={() => toggleEnrichment(`node:${n.node_type}`)}
                         />
-                        <div className="flex-1 min-w-0">
-                          <label
-                            htmlFor={`enrichment-${enrichment.key}`}
-                            className="text-sm font-medium cursor-pointer"
-                          >
-                            {enrichment.name}
-                          </label>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {enrichment.description}
-                          </p>
-                        </div>
+                        <label
+                          htmlFor={`node-${n.node_type}`}
+                          className="text-sm cursor-pointer"
+                        >
+                          {n.label}
+                        </label>
                       </div>
                     ))}
-                  </div>
                 </div>
-              )}
+              </ScrollArea>
+            </div>
+          )}
 
-              {showAdvanced && availableNodeTypes.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Node Enrichments</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Appends "{`<Node> node used: Yes/No`}" to the prompt for each selected node. Reference this in your prompt instructions.
-                  </p>
-                  <Input
-                    placeholder="Search nodes..."
-                    value={nodeTypeSearch}
-                    onChange={(e) => setNodeTypeSearch(e.target.value)}
-                    className="h-8 text-sm"
-                  />
-                  <ScrollArea className="border rounded-lg p-2 h-48">
-                    <div className="space-y-1">
-                      {availableNodeTypes
-                        .filter((n) =>
-                          n.label.toLowerCase().includes(nodeTypeSearch.toLowerCase())
-                        )
-                        .map((n) => (
-                          <div
-                            key={n.node_type}
-                            className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50"
-                          >
-                            <Checkbox
-                              id={`node-${n.node_type}`}
-                              checked={selectedEnrichments.includes(`node:${n.node_type}`)}
-                              onCheckedChange={() => toggleEnrichment(`node:${n.node_type}`)}
-                            />
-                            <label
-                              htmlFor={`node-${n.node_type}`}
-                              className="text-sm cursor-pointer"
-                            >
-                              {n.label}
-                            </label>
-                          </div>
-                        ))}
-                    </div>
-                  </ScrollArea>
-                </div>
-              )}
-
-              {showAdvanced && <div className="space-y-2">
-                <Label>Analyst Settings</Label>
-                <p className="text-xs text-muted-foreground">
-                  Key-value settings passed to the analyst (e.g. topics list for conversation analysis).
-                </p>
-                <div className="border rounded-lg p-3 space-y-3">
-                  {Object.entries(settings).map(([key, value]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{key}</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                          onClick={() => {
-                            const next = { ...settings };
-                            delete next[key];
-                            setSettings(next);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                      {Array.isArray(value) ? (
-                        <div className="space-y-1.5">
-                          <div className="flex flex-wrap gap-1.5">
-                            {value.map((tag: string) => (
-                              <Badge key={tag} variant="secondary" className="gap-1 pr-1">
-                                {tag}
-                                <button
-                                  type="button"
-                                  className="ml-0.5 hover:text-destructive"
-                                  onClick={() =>
-                                    setSettings((prev) => ({
-                                      ...prev,
-                                      [key]: (prev[key] as string[]).filter((t) => t !== tag),
-                                    }))
-                                  }
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </Badge>
-                            ))}
-                          </div>
-                          <div className="flex gap-2">
-                            <Input
-                              className="h-7 text-sm"
-                              placeholder="Add item..."
-                              value={tagInputs[key] ?? ""}
-                              onChange={(e) =>
-                                setTagInputs((prev) => ({ ...prev, [key]: e.target.value }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  const val = (tagInputs[key] ?? "").trim();
-                                  if (val && !(value as string[]).includes(val)) {
-                                    setSettings((prev) => ({
-                                      ...prev,
-                                      [key]: [...(prev[key] as string[]), val],
-                                    }));
-                                    setTagInputs((prev) => ({ ...prev, [key]: "" }));
-                                  }
-                                }
-                              }}
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2"
-                              disabled={!(tagInputs[key] ?? "").trim()}
-                              onClick={() => {
-                                const val = (tagInputs[key] ?? "").trim();
-                                if (val && !(value as string[]).includes(val)) {
-                                  setSettings((prev) => ({
-                                    ...prev,
-                                    [key]: [...(prev[key] as string[]), val],
-                                  }));
-                                  setTagInputs((prev) => ({ ...prev, [key]: "" }));
-                                }
-                              }}
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <Input
-                          className="h-7 text-sm"
-                          value={String(value)}
-                          onChange={(e) =>
-                            setSettings((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
-                        />
-                      )}
-                    </div>
-                  ))}
-                  <div className={`flex gap-2 pt-1 ${Object.keys(settings).length > 0 ? 'border-t' : ''}`}>
-                    <Input
-                      className="h-7 text-sm"
-                      placeholder="New field name..."
-                      value={newFieldKey}
-                      onChange={(e) => setNewFieldKey(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const k = newFieldKey.trim();
-                          if (k && !(k in settings)) {
-                            setSettings((prev) => ({ ...prev, [k]: [] }));
-                            setNewFieldKey("");
-                          }
-                        }
-                      }}
-                    />
+          <div className="space-y-2">
+            <Label>Analyst Settings</Label>
+            <p className="text-xs text-muted-foreground">
+              Key-value settings passed to the analyst (e.g. topics list for conversation analysis).
+            </p>
+            <div className="border rounded-lg p-3 space-y-3">
+              {Object.entries(settings).map(([key, value]) => (
+                <div key={key} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{key}</span>
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2 shrink-0"
-                      disabled={!newFieldKey.trim()}
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
                       onClick={() => {
-                        const k = newFieldKey.trim();
-                        if (k && !(k in settings)) {
-                          setSettings((prev) => ({ ...prev, [k]: [] }));
-                          setNewFieldKey("");
-                        }
+                        const next = { ...settings };
+                        delete next[key];
+                        setSettings(next);
                       }}
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Field
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
+                  {Array.isArray(value) ? (
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {value.map((tag: string) => (
+                          <Badge key={tag} variant="secondary" className="gap-1 pr-1">
+                            {tag}
+                            <button
+                              type="button"
+                              className="ml-0.5 hover:text-destructive"
+                              onClick={() =>
+                                setSettings((prev) => ({
+                                  ...prev,
+                                  [key]: (prev[key] as string[]).filter((t) => t !== tag),
+                                }))
+                              }
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          className="h-7 text-sm"
+                          placeholder="Add item..."
+                          value={tagInputs[key] ?? ""}
+                          onChange={(e) =>
+                            setTagInputs((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const val = (tagInputs[key] ?? "").trim();
+                              if (val && !(value as string[]).includes(val)) {
+                                setSettings((prev) => ({
+                                  ...prev,
+                                  [key]: [...(prev[key] as string[]), val],
+                                }));
+                                setTagInputs((prev) => ({ ...prev, [key]: "" }));
+                              }
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2"
+                          disabled={!(tagInputs[key] ?? "").trim()}
+                          onClick={() => {
+                            const val = (tagInputs[key] ?? "").trim();
+                            if (val && !(value as string[]).includes(val)) {
+                              setSettings((prev) => ({
+                                ...prev,
+                                [key]: [...(prev[key] as string[]), val],
+                              }));
+                              setTagInputs((prev) => ({ ...prev, [key]: "" }));
+                            }
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Input
+                      className="h-7 text-sm"
+                      value={String(value)}
+                      onChange={(e) =>
+                        setSettings((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                    />
+                  )}
                 </div>
-              </div>}
-
-            </div>
-
-            <DialogFooter className="px-6 py-4 border-t">
-              <div className="flex justify-end gap-3 w-full">
+              ))}
+              <div className={`flex gap-2 pt-1 ${Object.keys(settings).length > 0 ? 'border-t' : ''}`}>
+                <Input
+                  className="h-7 text-sm"
+                  placeholder="New field name..."
+                  value={newFieldKey}
+                  onChange={(e) => setNewFieldKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const k = newFieldKey.trim();
+                      if (k && !(k in settings)) {
+                        setSettings((prev) => ({ ...prev, [k]: [] }));
+                        setNewFieldKey("");
+                      }
+                    }
+                  }}
+                />
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  disabled={isSubmitting}
+                  size="sm"
+                  className="h-7 px-2 shrink-0"
+                  disabled={!newFieldKey.trim()}
+                  onClick={() => {
+                    const k = newFieldKey.trim();
+                    if (k && !(k in settings)) {
+                      setSettings((prev) => ({ ...prev, [k]: [] }));
+                      setNewFieldKey("");
+                    }
+                  }}
                 >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : null}
-                  {mode === "create" ? "Create" : "Update"}
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Field
                 </Button>
               </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <LLMProviderDialog
-        isOpen={isCreateProviderOpen}
-        onOpenChange={setIsCreateProviderOpen}
-        onProviderSaved={async (provider) => {
-          try {
-            await fetchProviders();
-          } catch {
-            // ignore
-          }
-          if (provider?.id) {
-            setLlmProviderId(provider.id);
-          }
-        }}
-        mode="create"
-      />
-    </>
+            </div>
+          </div>
+          </div>
+        </>
+      )}
+    </CRUDDialog>
   );
 }

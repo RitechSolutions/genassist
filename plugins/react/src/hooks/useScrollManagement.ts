@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect, useEffect } from 'react';
+import { useRef, useLayoutEffect, useEffect, useState, useCallback } from 'react';
 import { ChatMessage } from '../types';
 
 interface UseScrollManagementOptions {
@@ -25,6 +25,30 @@ export function useScrollManagement({
   const hasAnchoredHistory = useRef(false);
   const isUserAtBottomRef = useRef(true);
   const prevIsFloatingOpenRef = useRef(isFloatingOpen);
+  // Reactive flag driving the "jump to latest" affordance — true when the conversation
+  // is scrollable and the user has scrolled up far enough from the newest message.
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const updateScrollButton = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) {
+      setShowScrollButton(false);
+      return;
+    }
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isScrollable = el.scrollHeight - el.clientHeight > 40;
+    setShowScrollButton(isScrollable && distanceFromBottom > 140);
+  }, []);
+
+  // Public jump-to-latest used by the scroll button. Forces a scroll regardless of the
+  // "is the user at the bottom" gate and immediately hides the affordance.
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    isUserAtBottomRef.current = true;
+    setShowScrollButton(false);
+  }, []);
 
   const anchorHistory = () => {
     const el = chatContainerRef.current;
@@ -141,8 +165,26 @@ export function useScrollManagement({
     };
   }, []);
 
+  // Scroll-button tracking. Kept separate from the isUserAtBottom listener above so it can
+  // (re)attach when the container mounts — the floating/input-bar panels only render their
+  // scroll container once opened, so depending on isFloatingOpen re-runs this on open.
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) {
+      setShowScrollButton(false);
+      return;
+    }
+    updateScrollButton();
+    container.addEventListener('scroll', updateScrollButton, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', updateScrollButton);
+    };
+  }, [isFloatingOpen, messages.length, isAgentTyping, updateScrollButton]);
+
   return {
     messagesEndRef,
     chatContainerRef,
+    showScrollButton,
+    scrollToLatest,
   };
 }

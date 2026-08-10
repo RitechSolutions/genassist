@@ -24,6 +24,16 @@ interface DynamicFormMessageProps {
   isSubmitted: boolean;
   primaryColor?: string;
   fontFamily?: string;
+  /** Card surface (inline/footer form background). Defaults to #ffffff. */
+  backgroundColor?: string;
+  /** Primary text (labels, message, input text). Defaults to #111827. */
+  textColor?: string;
+  /** Borders (card, inputs, dividers). Defaults to #e5e7eb. */
+  borderColor?: string;
+  /** Muted text (descriptions, skip button). Defaults to #6b7280. */
+  mutedTextColor?: string;
+  /** Input field background. Defaults to #ffffff. */
+  inputBackgroundColor?: string;
   /**
    * "card"       = inline chat bubble
    * "footer"     = compact footer layout
@@ -42,6 +52,11 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
   isSubmitted,
   primaryColor = '#2563eb',
   fontFamily = 'inherit',
+  backgroundColor = '#ffffff',
+  textColor = '#111827',
+  borderColor = '#e5e7eb',
+  mutedTextColor = '#6b7280',
+  inputBackgroundColor = '#ffffff',
   variant = 'card',
   title,
 }) => {
@@ -92,8 +107,8 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     : isFooter
     ? { width: '100%', fontFamily }
     : {
-        backgroundColor: '#ffffff',
-        border: '1px solid #e5e7eb',
+        backgroundColor,
+        border: `1px solid ${borderColor}`,
         borderRadius: '14px',
         padding: '16px',
         maxWidth: '100%',
@@ -103,7 +118,7 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
 
   const headerStyle: CSSProperties = {
     padding: isFullscreen ? '20px 22px 16px' : 0,
-    borderBottom: isFullscreen ? '1px solid #eef0f3' : 'none',
+    borderBottom: isFullscreen ? `1px solid ${borderColor}` : 'none',
     flexShrink: 0,
   };
 
@@ -119,7 +134,7 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
   const messageStyle: CSSProperties = {
     fontSize: isFullscreen ? '18px' : isFooter ? '13px' : '15px',
     lineHeight: 1.4,
-    color: isFullscreen ? '#111827' : '#374151',
+    color: textColor,
     marginBottom: isFullscreen ? 0 : isFooter ? '10px' : '14px',
     fontWeight: isFullscreen ? 700 : 500,
   };
@@ -134,13 +149,13 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     display: 'block',
     fontSize: '13px',
     fontWeight: 600,
-    color: '#1f2937',
+    color: textColor,
     marginBottom: '6px',
   };
 
   const descriptionStyle: CSSProperties = {
     fontSize: '12px',
-    color: '#6b7280',
+    color: mutedTextColor,
     marginTop: '-2px',
     marginBottom: '7px',
     lineHeight: 1.4,
@@ -150,12 +165,12 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     width: '100%',
     padding: '10px 12px',
     fontSize: '14px',
-    border: `1.5px solid ${focused === name ? primaryColor : '#e5e7eb'}`,
+    border: `1.5px solid ${focused === name ? primaryColor : borderColor}`,
     borderRadius: '10px',
     outline: 'none',
     boxSizing: 'border-box',
-    backgroundColor: disabled ? '#f3f4f6' : '#ffffff',
-    color: '#111827',
+    backgroundColor: disabled ? borderColor : inputBackgroundColor,
+    color: textColor,
     fontFamily,
     transition: 'border-color 120ms ease, box-shadow 120ms ease',
     boxShadow: focused === name ? `0 0 0 3px ${hexToSoftRing(primaryColor)}` : 'none',
@@ -172,7 +187,7 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     gap: '10px',
     flexShrink: 0,
     ...(isFullscreen
-      ? { padding: '16px 22px', borderTop: '1px solid #eef0f3' }
+      ? { padding: '16px 22px', borderTop: `1px solid ${borderColor}` }
       : { marginTop: isFooter ? '8px' : '14px' }),
   };
 
@@ -195,9 +210,9 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     padding: '11px 16px',
     fontSize: '14px',
     fontWeight: 600,
-    color: '#6b7280',
+    color: mutedTextColor,
     backgroundColor: 'transparent',
-    border: '1.5px solid #e5e7eb',
+    border: `1.5px solid ${borderColor}`,
     borderRadius: '10px',
     cursor: isSubmitting ? 'not-allowed' : 'pointer',
     fontFamily,
@@ -277,7 +292,7 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
             disabled={disabled}
             style={{ width: '17px', height: '17px', accentColor: primaryColor, cursor: 'inherit' }}
           />
-          <span style={{ fontSize: '14px', color: '#374151' }}>{field.placeholder || 'Yes'}</span>
+          <span style={{ fontSize: '14px', color: textColor }}>{field.placeholder || 'Yes'}</span>
         </label>
       )}
 

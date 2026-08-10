@@ -211,6 +211,12 @@ class ProjectSettings(BaseSettings):
     ZENDESK_SUBDOMAIN: Optional[str] = "<enter-value-here>"
     ZENDESK_EMAIL: Optional[str] = "<enter-value-here>"
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
+    # Zendesk is deprecating API tokens (removed 2027-04-30). OAuth2 client-credentials
+    # is the forward path; "api_token" stays the default for backward compatibility.
+    ZENDESK_AUTH_METHOD: Optional[str] = "api_token"
+    ZENDESK_CLIENT_ID: Optional[str] = None
+    ZENDESK_CLIENT_SECRET: Optional[str] = None
+    ZENDESK_OAUTH_SCOPE: Optional[str] = "read write"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
 
     SALESFORCE_INSTANCE_URL: Optional[str] = None

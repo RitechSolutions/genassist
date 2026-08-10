@@ -6,6 +6,12 @@ interface AudioPlayerProps {
   headers?: Record<string, string>;
   blobUrl?: string;
   primaryColor?: string;
+  /** Pill background (non-compact). Defaults to #f3f4f6. */
+  backgroundColor?: string;
+  /** Progress-track background. Defaults to #d1d5db. */
+  trackColor?: string;
+  /** Time labels. Defaults to #6b7280. */
+  mutedTextColor?: string;
   autoPlay?: boolean;
   compact?: boolean;
 }
@@ -21,6 +27,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   headers,
   blobUrl,
   primaryColor = '#4f46e5',
+  backgroundColor = '#f3f4f6',
+  trackColor = '#d1d5db',
+  mutedTextColor = '#6b7280',
   autoPlay = false,
   compact = false,
 }) => {
@@ -126,7 +135,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       gap: compact ? 8 : 10,
       padding: compact ? '4px 0' : '8px 12px',
       borderRadius: compact ? 0 : 20,
-      backgroundColor: compact ? 'transparent' : '#f3f4f6',
+      backgroundColor: compact ? 'transparent' : backgroundColor,
       minWidth: compact ? 0 : 200,
       maxWidth: compact ? 'none' : 280,
     }}>
@@ -161,7 +170,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           style={{
             height: 4,
             borderRadius: 2,
-            backgroundColor: '#d1d5db',
+            backgroundColor: trackColor,
             cursor: 'pointer',
             position: 'relative',
           }}
@@ -174,7 +183,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             transition: 'width 0.1s linear',
           }} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: mutedTextColor }}>
           <span>{formatTime(currentTime)}</span>
           <span>{duration > 0 ? formatTime(duration) : '--:--'}</span>
         </div>
