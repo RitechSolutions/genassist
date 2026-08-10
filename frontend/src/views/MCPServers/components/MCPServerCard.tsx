@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { LIST_PAGE_SIZE } from "@/constants/pagination";
+import { useState } from "react";
+import { Column } from "@/components/ui/data-table";
+import {
+  EntityTableCard,
+  EntityTableRenderHelpers,
+} from "@/components/EntityTableCard";
 import { ActionButtons } from "@/components/ActionButtons";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { MCPServer } from "@/interfaces/mcp-server.interface";
 import { getAllMCPServers, deleteMCPServer } from "@/services/mcpServer";
-import { toast } from "react-hot-toast";
 import { formatDate } from "@/helpers/utils";
 import { MCPServerDetailsDialog } from "./MCPServerDetailsDialog";
 import { Database, Plus } from "lucide-react";
@@ -27,79 +28,17 @@ export function MCPServerCard({
   onCreateServer,
   updatedServer = null,
 }: Props) {
-  const [servers, setServers] = useState<MCPServer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [serverToDelete, setServerToDelete] = useState<MCPServer | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-
-  useEffect(() => {
-    fetchData();
-  }, [refreshKey]);
-
-  useEffect(() => {
-    if (updatedServer) {
-      setServers((prevServers) =>
-        prevServers.map((server) =>
-          server.id === updatedServer.id ? updatedServer : server
-        )
-      );
-    }
-  }, [updatedServer]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const data = await getAllMCPServers();
-      setServers(data);
-    } catch (err) {
-      toast.error("Failed to fetch MCP servers.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!serverToDelete) return;
-    setIsDeleting(true);
-    try {
-      await deleteMCPServer(serverToDelete.id);
-      toast.success("MCP server deleted successfully.");
-      setServers((prev) => prev.filter((s) => s.id !== serverToDelete.id));
-    } catch {
-      toast.error("Failed to delete MCP server.");
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-    }
-  };
-
-  const filtered = servers.filter((s) => {
-    const q = searchQuery.toLowerCase();
-    const av = s.auth_values ?? {};
-    const issuer =
-      typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.toLowerCase() : "";
-    const scope =
-      typeof av.oauth2_scope === "string" ? av.oauth2_scope.toLowerCase() : "";
-    const cid =
-      typeof av.oauth2_client_id === "string" ? av.oauth2_client_id.toLowerCase() : "";
-    return (
-      s.name.toLowerCase().includes(q) ||
-      (s.description && s.description.toLowerCase().includes(q)) ||
-      (issuer && issuer.includes(q)) ||
-      (scope && scope.includes(q)) ||
-      (cid && cid.includes(q))
-    );
-  });
 
   const handleRowClick = (server: MCPServer) => {
     setSelectedServerId(server.id);
     setIsDetailsDialogOpen(true);
   };
 
-  const columns: Column<MCPServer>[] = [
+  const columns = ({
+    requestDelete,
+  }: EntityTableRenderHelpers<MCPServer>): Column<MCPServer>[] => [
     {
       header: "Name",
       key: "name",
@@ -148,10 +87,7 @@ export function MCPServerCard({
         <div onClick={(e) => e.stopPropagation()}>
           <ActionButtons
             onEdit={() => onEditServer(s)}
-            onDelete={() => {
-              setServerToDelete(s);
-              setIsDeleteDialogOpen(true);
-            }}
+            onDelete={() => requestDelete(s)}
             editTitle="Edit MCP Server"
             deleteTitle="Delete MCP Server"
           />
@@ -162,37 +98,58 @@ export function MCPServerCard({
 
   return (
     <>
-      <DataTable
-        data={filtered}
-        columns={columns}
-        loading={loading}
-        error={null}
+      <EntityTableCard<MCPServer>
+        entityName="MCP server"
         searchQuery={searchQuery}
-        pageSize={LIST_PAGE_SIZE}
-        onRowClick={handleRowClick}
+        filterFn={(s, query) => {
+          const q = query.toLowerCase();
+          const av = s.auth_values ?? {};
+          const issuer =
+            typeof av.oauth2_issuer_url === "string"
+              ? av.oauth2_issuer_url.toLowerCase()
+              : "";
+          const scope =
+            typeof av.oauth2_scope === "string"
+              ? av.oauth2_scope.toLowerCase()
+              : "";
+          const cid =
+            typeof av.oauth2_client_id === "string"
+              ? av.oauth2_client_id.toLowerCase()
+              : "";
+          return (
+            s.name.toLowerCase().includes(q) ||
+            Boolean(s.description && s.description.toLowerCase().includes(q)) ||
+            Boolean(issuer && issuer.includes(q)) ||
+            Boolean(scope && scope.includes(q)) ||
+            Boolean(cid && cid.includes(q))
+          );
+        }}
+        refreshKey={refreshKey}
+        updatedItem={updatedServer}
+        fetchFn={getAllMCPServers}
+        deleteFn={(s) => deleteMCPServer(s.id)}
+        getItemName={(s) => s.name}
+        deleteDescription={(s) =>
+          `This will permanently delete "${s.name}". This action cannot be undone.`
+        }
         emptyMessage="No MCP servers found"
         notFoundMessage="No matching MCP servers"
-        emptyState={
-          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-muted p-4">
-              <Database className="h-12 w-12 text-muted-foreground" />
-            </div>
-            <h3 className="font-medium text-lg">
-              {searchQuery ? "No matching MCP servers" : "No MCP servers found"}
-            </h3>
-            <p className="text-sm text-muted-foreground max-w-sm px-4">
-              {searchQuery
-                ? "Try adjusting your search query."
-                : "Add your first MCP server to connect external tools and capabilities."}
-            </p>
-            {!searchQuery && (
-              <Button onClick={onCreateServer} className="rounded-full">
-                <Plus className="h-4 w-4 mr-2" />
-                Create your first MCP server
-              </Button>
-            )}
-          </div>
-        }
+        emptyState={{
+          icon: <Database className="h-12 w-12 text-muted-foreground" />,
+          title: "No MCP servers found",
+          searchTitle: "No matching MCP servers",
+          description:
+            "Add your first MCP server to connect external tools and capabilities.",
+          searchDescription: "Try adjusting your search query.",
+          action: (
+            <Button onClick={onCreateServer} className="rounded-full">
+              <Plus className="h-4 w-4 mr-2" />
+              Create your first MCP server
+            </Button>
+          ),
+        }}
+        columns={columns}
+        onRowClick={handleRowClick}
       />
       <MCPServerDetailsDialog
         isOpen={isDetailsDialogOpen}
@@ -200,15 +157,6 @@ export function MCPServerCard({
         serverId={selectedServerId}
         onEdit={onEditServer}
       />
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDelete}
-        isInProgress={isDeleting}
-        itemName={serverToDelete?.name || ""}
-        description={`This will permanently delete "${serverToDelete?.name}". This action cannot be undone.`}
-      />
     </>
   );
 }
-

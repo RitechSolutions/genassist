@@ -1,14 +1,11 @@
-import { useEffect, useState } from "react";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { LIST_PAGE_SIZE } from "@/constants/pagination";
-import { ActionButtons } from "@/components/ActionButtons";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useState } from "react";
+import { Column } from "@/components/ui/data-table";
+import { EntityTableCard } from "@/components/EntityTableCard";
 import { Badge } from "@/components/badge";
 import { FallbackChain } from "@/interfaces/fallbackChain.interface";
 import { getAllFallbackChains, deleteFallbackChain } from "@/services/fallbackChains";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
-import { toast } from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface FallbackChainCardProps {
@@ -22,68 +19,19 @@ export function FallbackChainCard({
   refreshKey = 0,
   onEdit,
 }: FallbackChainCardProps) {
-  const [chains, setChains] = useState<FallbackChain[]>([]);
   const [providersById, setProvidersById] = useState<Record<string, LLMProvider>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [chainToDelete, setChainToDelete] = useState<FallbackChain | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    fetchChains();
-  }, [refreshKey]);
-
   const fetchChains = async () => {
-    try {
-      setLoading(true);
-      const [chainData, providerData] = await Promise.all([
-        getAllFallbackChains(),
-        getAllLLMProviders(),
-      ]);
-      setChains(chainData);
-      setProvidersById(
-        Object.fromEntries(providerData.map((p) => [p.id, p]))
-      );
-      setError(null);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch fallback chains"
-      );
-      toast.error("Failed to fetch fallback chains.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteClick = (chain: FallbackChain) => {
-    setChainToDelete(chain);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!chainToDelete) return;
-    try {
-      setIsDeleting(true);
-      await deleteFallbackChain(chainToDelete.id);
-      toast.success("Fallback chain deleted successfully.");
-      queryClient.invalidateQueries({ queryKey: ["fallbackChains"] });
-      setChains((prev) => prev.filter((c) => c.id !== chainToDelete.id));
-    } catch {
-      toast.error("Failed to delete fallback chain.");
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setChainToDelete(null);
-    }
+    const [chainData, providerData] = await Promise.all([
+      getAllFallbackChains(),
+      getAllLLMProviders(),
+    ]);
+    setProvidersById(Object.fromEntries(providerData.map((p) => [p.id, p])));
+    return chainData;
   };
 
   const providerLabel = (id: string) => providersById[id]?.name ?? id;
-
-  const filteredChains = chains.filter((c) =>
-    (c.name ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   const timeoutLabel = (chain: FallbackChain) => {
     const def = chain.retry_policy?.timeout_seconds ?? 0;
@@ -130,41 +78,31 @@ export function FallbackChainCard({
         </Badge>
       ),
     },
-    {
-      header: "Actions",
-      key: "actions",
-      cell: (chain) => (
-        <ActionButtons
-          onEdit={() => onEdit(chain)}
-          onDelete={() => handleDeleteClick(chain)}
-          editTitle="Edit"
-          deleteTitle="Delete"
-        />
-      ),
-    },
   ];
 
   return (
-    <>
-      <DataTable
-        data={filteredChains}
-        columns={columns}
-        loading={loading}
-        error={error}
-        searchQuery={searchQuery}
-        pageSize={LIST_PAGE_SIZE}
-        emptyMessage="No fallback chains found"
-        notFoundMessage="No fallback chains matching your search"
-      />
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={chainToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete the chain "${chainToDelete?.name}".`}
-      />
-    </>
+    <EntityTableCard<FallbackChain>
+      entityName="fallback chain"
+      searchQuery={searchQuery}
+      searchFields={["name"]}
+      refreshKey={refreshKey}
+      fetchFn={fetchChains}
+      deleteFn={(chain) => deleteFallbackChain(chain.id)}
+      getItemName={(chain) => chain.name}
+      deleteDescription={(chain) =>
+        `This action cannot be undone. This will permanently delete the chain "${chain.name}".`
+      }
+      onDeleted={() =>
+        queryClient.invalidateQueries({ queryKey: ["fallbackChains"] })
+      }
+      emptyMessage="No fallback chains found"
+      notFoundMessage="No fallback chains matching your search"
+      columns={columns}
+      rowActions={{
+        onEdit,
+        editTitle: "Edit",
+        deleteTitle: "Delete",
+      }}
+    />
   );
 }
