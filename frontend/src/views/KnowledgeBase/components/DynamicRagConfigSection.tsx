@@ -197,15 +197,15 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
         <div className="grid grid-cols-3 gap-6">
           <div>
             <h3 className="text-lg font-semibold">RAG Configuration</h3>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Loading configuration options...
             </p>
           </div>
           <div className="col-span-2">
             <div className="animate-pulse space-y-4">
-              <div className="h-20 bg-gray-200 rounded"></div>
-              <div className="h-20 bg-gray-200 rounded"></div>
-              <div className="h-20 bg-gray-200 rounded"></div>
+              <div className="h-20 bg-muted rounded"></div>
+              <div className="h-20 bg-muted rounded"></div>
+              <div className="h-20 bg-muted rounded"></div>
             </div>
           </div>
         </div>
@@ -219,7 +219,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
         <div className="grid grid-cols-3 gap-6">
           <div>
             <h3 className="text-lg font-semibold">RAG Configuration</h3>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Configure Retrieval Augmented Generation settings
             </p>
           </div>
@@ -244,7 +244,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">RAG Configuration</h3>
-              <p className="text-sm text-gray-500 mt-1">Configure Retrieval Augmented Generation settings</p>
+              <p className="text-sm text-muted-foreground mt-1">Configure Retrieval Augmented Generation settings</p>
             </div>
             {/* <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-lg">
               <Settings className="h-4 w-4 text-gray-500" />
@@ -285,7 +285,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
 
                   return (
                     <Collapsible key={section.name} open={isSectionOpen} onOpenChange={() => toggleSection(sectionKey)}>
-                      <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-muted rounded-lg hover:bg-muted transition-colors">
                         <h4 className="text-sm font-medium">{section.label}</h4>
                         {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </CollapsibleTrigger>

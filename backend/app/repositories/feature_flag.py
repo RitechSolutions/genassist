@@ -4,12 +4,13 @@ from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.db.models.feature_flag import FeatureFlagModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.feature_flag import FeatureFlagCreate, FeatureFlagUpdate
 
 @inject
-class FeatureFlagRepository:
+class FeatureFlagRepository(DbRepository[FeatureFlagModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(FeatureFlagModel, db)
 
     async def create(self, dto: FeatureFlagCreate) -> FeatureFlagModel:
         obj = FeatureFlagModel(**dto.model_dump())

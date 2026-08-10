@@ -2,7 +2,6 @@ import { apiRequest } from "@/config/api";
 import type {
   CreateTestCasePayload,
   CreateTestSuitePayload,
-  StartTestRunPayload,
   TestCase,
   TestResult,
   TestRun,
@@ -64,11 +63,10 @@ export const importCasesFromConversation = (suiteId: string, conversationId: str
     { conversation_id: conversationId, replace },
   );
 
-export const startTestRun = (suiteId: string, payload: StartTestRunPayload) =>
-  apiRequest<TestRun>(
-    "POST",
-    `${BASE}/suites/${suiteId}/runs`,
-    payload as unknown as Record<string, unknown>,
+export const removeConversationFromSuite = (suiteId: string, conversationId: string) =>
+  apiRequest<void>(
+    "DELETE",
+    `${BASE}/suites/${suiteId}/conversations/${conversationId}`,
   );
 
 export const listTestRunsForSuite = (suiteId: string) =>

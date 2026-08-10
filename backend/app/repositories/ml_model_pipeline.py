@@ -21,6 +21,7 @@ from app.schemas.ml_model_pipeline import (
     MLModelPipelineRunCreate,
     MLModelPipelineArtifactCreate
 )
+from app.repositories.db_repository import DbRepository
 from starlette_context import context
 from starlette_context.errors import ContextDoesNotExistError
 import logging
@@ -29,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 
 @inject
-class MLModelPipelineConfigRepository:
+class MLModelPipelineConfigRepository(DbRepository[MLModelPipelineConfig]):
     """Repository for ML model pipeline configuration database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(MLModelPipelineConfig, db)
 
     async def create(self, config_data: MLModelPipelineConfigCreate) -> MLModelPipelineConfig:
         """Create a new pipeline configuration."""
@@ -155,11 +156,11 @@ class MLModelPipelineConfigRepository:
 
 
 @inject
-class MLModelPipelineRunRepository:
+class MLModelPipelineRunRepository(DbRepository[MLModelPipelineRun]):
     """Repository for ML model pipeline run database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(MLModelPipelineRun, db)
 
     async def create(self, run_data: MLModelPipelineRunCreate) -> MLModelPipelineRun:
         """Create a new pipeline run."""
@@ -270,11 +271,11 @@ class MLModelPipelineRunRepository:
 
 
 @inject
-class MLModelPipelineArtifactRepository:
+class MLModelPipelineArtifactRepository(DbRepository[MLModelPipelineArtifact]):
     """Repository for ML model pipeline artifact database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(MLModelPipelineArtifact, db)
 
     async def create(self, artifact_data: MLModelPipelineArtifactCreate) -> MLModelPipelineArtifact:
         """Create a new pipeline artifact."""

@@ -9,19 +9,11 @@ logger = logging.getLogger(__name__)
 
 _service = PIIAnonymizer()
 
-# History-fetch methods that may exist on concrete nodes
 _HISTORY_METHOD_NAMES = ("_get_chat_history_for_agent", "_get_chat_history_for_context")
 
 
 def _wrap_history_method(method_name: str, original_fn: Any) -> Any:
-    """
-    Wraps a history-fetch method at class-definition time.
-
-    Reads piiMasking from config (same dict the node received) and, when
-    enabled, masks PII in the returned history and stores replacements in
-    self._pii_history_token_items so execute() can merge them into the
-    combined token map for unmasking the final result.
-    """
+    """Wraps a history-fetch method at class-definition time"""
 
     async def _wrapped(
         self: Any,
@@ -55,43 +47,19 @@ def _wrap_history_method(method_name: str, original_fn: Any) -> Any:
 
 
 class PIIAnonymizerMixin:
-    """
-    Transparent PII masking layer for LLM workflow nodes.
-
-    Apply as the first base class:
-
-        class LLMModelNode(PIIAnonymizerMixin, BaseNode): ...
-        class AgentNode(PIIAnonymizerMixin, BaseNode): ...
-
-    How it works:
-    - __init_subclass__ wraps _get_chat_history_for_agent /
-      _get_chat_history_for_context ONCE at class definition time (not per
-      execute() call), so there is no dynamic patching at runtime.
-    - execute() sets self._pii_history_token_items = [] before calling
-      super().execute(), then merges those items with the prompt token map
-      to unmask the final result.
-    - _pii_process (injected the same way as before) masks _PII_FIELDS
-      (userPrompt) before passing config to the real process().
-
-    systemPrompt is intentionally excluded — it is operator-authored.
-    The token map is local to each execute() call and never persisted.
-    """
+    """Transparent PII masking layer for LLM workflow nodes"""
 
     _PII_FIELDS: tuple[str, ...] = ("userPrompt",)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         for method_name in _HISTORY_METHOD_NAMES:
-            # Only wrap methods defined directly on this subclass, not
-            # inherited ones that may already be wrapped.
             if method_name in cls.__dict__:
                 original_fn = cls.__dict__[method_name]
                 setattr(cls, method_name, _wrap_history_method(method_name, original_fn))
 
     async def execute(self, direct_input: Any = None) -> Any:
-        # Per-execution accumulator read by the class-level history wrappers
         self._pii_history_token_items: list[dict[str, Any]] = []
-        # Per-execution accumulator for prompt token items, used by _unmask_for_tool
         self._pii_prompt_token_items: list[dict[str, Any]] = []
         original_process = self.process
 
@@ -126,20 +94,12 @@ class PIIAnonymizerMixin:
 
             result = await original_process(masked_config)
 
-            # Merge token items accumulated by the class-level history wrappers
-            if self._pii_history_token_items:
-                if combined_token_map is None:
-                    combined_token_map = {"items": []}
-                combined_token_map["items"].extend(self._pii_history_token_items)
-
-            if not combined_token_map:
+            final_items = [*self._pii_prompt_token_items, *self._pii_history_token_items]
+            if not final_items:
                 return result
 
-            unmasked = self._unmask_result(result, combined_token_map)
-            logger.debug(
-                "[PII] unmasked result using %d replacement(s)",
-                len(combined_token_map.get("items", [])),
-            )
+            unmasked = self._unmask_result(result, {"items": final_items})
+            logger.debug("[PII] unmasked result using %d replacement(s)", len(final_items))
             return unmasked
 
         self.process = _pii_process
@@ -150,13 +110,22 @@ class PIIAnonymizerMixin:
             del self._pii_history_token_items
             del self._pii_prompt_token_items
 
-    def _unmask_for_tool(self, text: str) -> str:
-        """Unmask PII tokens in a string using the current combined token map.
-
-        This is meant to be called during tool execution (inside process())
-        so that tools receive original PII values instead of anonymization
-        tokens like ``<EMAIL_ADDRESS_1>``.
+    def _mask_for_llm(self, text: str) -> str:
+        """Mask PII in text added to a prompt during a run.
+        Updates the prompt's token map so the final unmask step can
+        still restore the real values in the result.
         """
+        if not isinstance(text, str) or not text:
+            return text
+        existing = getattr(self, "_pii_prompt_token_items", []) + getattr(self, "_pii_history_token_items", [])
+        masked, token_map = _service.mask(text, existing_items=existing)
+        items = token_map.get("items", []) if token_map else []
+        if items:
+            getattr(self, "_pii_prompt_token_items", []).extend(items)
+        return masked
+
+    def _unmask_for_tool(self, text: str) -> str:
+        """Unmask PII tokens in a string using the current combined token map"""
         items = getattr(self, "_pii_prompt_token_items", []) + getattr(
             self, "_pii_history_token_items", []
         )
@@ -184,12 +153,7 @@ class PIIAnonymizerMixin:
 def _mask_history(
     history: Union[List[Dict[str, Any]], str],
 ) -> tuple[Union[List[Dict[str, Any]], str], dict[str, Any]]:
-    """
-    Mask PII in chat history (list or string format).
-
-    Returns:
-        Tuple of (masked_history, combined_token_map)
-    """
+    """Mask PII in chat history (list or string format)"""
     combined_token_map: dict[str, Any] = {"items": []}
 
     if isinstance(history, str):

@@ -3,8 +3,6 @@ import { subDays } from "date-fns";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { DateRange } from "react-day-picker";
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
 import {
   Select,
   SelectContent,
@@ -17,6 +15,7 @@ import { SummaryStatsCards } from "../components/reports/SummaryStatsCards";
 import { AgentExecutionChart } from "../components/reports/AgentExecutionChart";
 import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdownDialog";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { analyticsFadeUpClass } from "../constants/animations";
 import {
@@ -42,9 +41,9 @@ import { ExportButton } from "@/components/ui/ExportButton";
 const LS_KEY = (agentId: string) => `analytics_escalation_node_${agentId}`;
 
 function getResponseTimeColor(ms: number): string {
-  if (ms < 3000) return "text-emerald-600";
-  if (ms < 10000) return "text-amber-600";
-  return "text-rose-600";
+  if (ms < 3000) return "text-emerald-600 dark:text-emerald-400";
+  if (ms < 10000) return "text-amber-600 dark:text-amber-400";
+  return "text-rose-600 dark:text-rose-400";
 }
 
 function formatResponseTime(ms: number | null): string {
@@ -275,7 +274,7 @@ const AgentPerformancePage = () => {
           const hasErrors = item.error_count > 0;
           return (
             <div className="flex flex-col gap-0.5">
-              <span className={`font-medium ${hasErrors ? "text-amber-600" : "text-emerald-600"}`}>
+              <span className={`font-medium ${hasErrors ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
                 {rate}%
               </span>
               <span className="text-xs text-muted-foreground/70">
@@ -290,27 +289,27 @@ const AgentPerformancePage = () => {
         key: "avg_response_ms",
         description: "Average time from request to response.",
         cell: (item: AgentAggregated) => (
-          <span className={item.avg_response_ms != null ? getResponseTimeColor(item.avg_response_ms) + " font-medium" : "text-zinc-400"}>
+          <span className={item.avg_response_ms != null ? getResponseTimeColor(item.avg_response_ms) + " font-medium" : "text-muted-foreground"}>
             {formatResponseTime(item.avg_response_ms)}
           </span>
         ),
       },
       {
-        header: <ThumbsUp className="w-4 h-4 text-emerald-600" />,
+        header: <ThumbsUp className="inline-block align-middle w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
         key: "thumbs_up_count",
         description: "Positive feedback from users.",
         cell: (item: AgentAggregated) => (
-          <span className="text-emerald-600 font-medium">
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
             {item.thumbs_up_count.toLocaleString()}
           </span>
         ),
       },
       {
-        header: <ThumbsDown className="w-4 h-4 text-rose-500" />,
+        header: <ThumbsDown className="inline-block align-middle w-4 h-4 text-rose-500" />,
         key: "thumbs_down_count",
         description: "Negative feedback from users.",
         cell: (item: AgentAggregated) => (
-          <span className={item.thumbs_down_count > 0 ? "text-rose-500 font-medium" : "text-zinc-400"}>
+          <span className={item.thumbs_down_count > 0 ? "text-rose-500 font-medium" : "text-muted-foreground"}>
             {item.thumbs_down_count.toLocaleString()}
           </span>
         ),
@@ -323,7 +322,7 @@ const AgentPerformancePage = () => {
           header: "Agent",
           key: "agent_id",
           cell: (item: AgentAggregated) => (
-            <span className="text-sm font-medium text-zinc-700">
+            <span className="text-sm font-medium text-muted-foreground">
               {agentNameMap[item.agent_id] ?? item.agent_id.slice(0, 8) + "…"}
             </span>
           ),
@@ -338,7 +337,7 @@ const AgentPerformancePage = () => {
         header: "Date",
         key: "stat_date",
         cell: (item: AgentAggregated) => (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted-foreground">
             {new Date((item as unknown as AgentDailyStatsItem).stat_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
           </span>
         ),
@@ -360,11 +359,7 @@ const AgentPerformancePage = () => {
   const canExport = !loading && exportRowCount > 0;
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
@@ -373,17 +368,19 @@ const AgentPerformancePage = () => {
                 subtitle="Daily performance metrics per agent"
               >
                 <AnalyticsFilters
-                  groups={showGroupFilter ? groups : undefined}
-                  groupFilter={groupFilter}
-                  onGroupFilterChange={setGroupFilter}
-                  agents={agents}
-                  agentFilter={agentFilter}
-                  onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                   compareDateRange={compareDateRange}
                   onCompareDateRangeChange={setCompareDateRange}
                 >
+                  <AnalyticsFilterMenu
+                    groups={showGroupFilter ? groups : undefined}
+                    groupFilter={groupFilter}
+                    onGroupFilterChange={setGroupFilter}
+                    agents={agents}
+                    agentFilter={agentFilter}
+                    onAgentFilterChange={setAgentFilter}
+                  />
                   <ExportButton
                     endpoint="/analytics/agents/export"
                     params={exportParams}
@@ -414,7 +411,7 @@ const AgentPerformancePage = () => {
                 <div className={cn("space-y-3", analyticsFadeUpClass)}>
                   {/* Escalation node config */}
                   <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Settings2 className="w-3.5 h-3.5" />
                       <span>Escalation node:</span>
                     </div>
@@ -442,26 +439,26 @@ const AgentPerformancePage = () => {
                   {escalationRate !== null && (
                     <div className="grid grid-cols-2 gap-4">
                       {/* Trigger Rate */}
-                      <div className="bg-white rounded-xl border-t-2 border-orange-400 border-x border-b border-border p-4 flex flex-col gap-3">
+                      <div className="bg-card dark:bg-zinc-900 rounded-xl border-t-2 border-orange-400 border-x border-b border-border p-4 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-muted-foreground">Escalation Rate</p>
                           <TrendingDown className="w-3.5 h-3.5 text-orange-400" />
                         </div>
-                        <p className="text-3xl font-bold text-zinc-900 leading-none">
+                        <p className="text-3xl font-bold text-foreground leading-none">
                           {(escalationRate * 100).toFixed(1)}%
                         </p>
                         <div className="space-y-1">
-                          <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                          <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full bg-orange-400 rounded-full transition-all duration-500"
                               style={{ width: `${(escalationRate * 100).toFixed(1)}%` }}
                             />
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {escalatedConversations.toLocaleString()} of {totalConversations.toLocaleString()} conversations escalated to <span className="font-medium text-zinc-600">{nodeTypeLabel(escalationNode)}</span>
+                            {escalatedConversations.toLocaleString()} of {totalConversations.toLocaleString()} conversations escalated to <span className="font-medium text-muted-foreground">{nodeTypeLabel(escalationNode)}</span>
                           </p>
                           <div className="flex items-center gap-3 pt-1">
-                            <span className="flex items-center gap-1 text-xs text-emerald-600">
+                            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                               <ThumbsUp className="w-3 h-3" />
                               {escalationItem!.thumbs_up_count.toLocaleString()}
                             </span>
@@ -474,16 +471,16 @@ const AgentPerformancePage = () => {
                       </div>
 
                       {/* Containment Rate */}
-                      <div className="bg-white rounded-xl border-t-2 border-teal-400 border-x border-b border-border p-4 flex flex-col gap-3">
+                      <div className="bg-card dark:bg-zinc-900 rounded-xl border-t-2 border-teal-400 border-x border-b border-border p-4 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-muted-foreground">Containment Rate</p>
                           <ShieldCheck className="w-3.5 h-3.5 text-teal-500" />
                         </div>
-                        <p className="text-3xl font-bold text-zinc-900 leading-none">
+                        <p className="text-3xl font-bold text-foreground leading-none">
                           {(containmentRate! * 100).toFixed(1)}%
                         </p>
                         <div className="space-y-1">
-                          <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                          <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full bg-teal-400 rounded-full transition-all duration-500"
                               style={{ width: `${(containmentRate! * 100).toFixed(1)}%` }}
@@ -493,7 +490,7 @@ const AgentPerformancePage = () => {
                             Conversations resolved without escalation
                           </p>
                           <div className="flex items-center gap-3 pt-1">
-                            <span className="flex items-center gap-1 text-xs text-emerald-600">
+                            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                               <ThumbsUp className="w-3 h-3" />
                               {Math.max(0, (summary?.total_thumbs_up ?? 0) - escalationItem!.thumbs_up_count).toLocaleString()}
                             </span>
@@ -544,8 +541,6 @@ const AgentPerformancePage = () => {
 
             </div>
           </div>
-        </main>
-      </div>
 
       {selectedItem && (
         <AgentNodeBreakdownDialog
@@ -558,7 +553,7 @@ const AgentPerformancePage = () => {
           toDate={toExpandedUTCDateRange(dateRange).to_date}
         />
       )}
-    </SidebarProvider>
+    </>
   );
 };
 

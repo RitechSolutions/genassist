@@ -1,5 +1,3 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
 import { OperatorsCard } from "@/views/Operators/components/OperatorCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Plus } from "lucide-react";
@@ -51,11 +49,7 @@ export default function Operators() {
 
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6 w-full">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
@@ -84,8 +78,6 @@ export default function Operators() {
 
             </div>
           </div>
-        </main>
-      </div>
 
       <CreateOperator
         isOpen={isDialogOpen}
@@ -99,6 +91,6 @@ export default function Operators() {
         credentials={newOperatorCredentials}
       />
 
-    </SidebarProvider>
+    </>
   );
 }

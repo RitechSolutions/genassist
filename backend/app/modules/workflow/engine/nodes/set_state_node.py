@@ -6,6 +6,7 @@ from typing import Dict, Any
 import logging
 
 from ..base_node import BaseNode
+from ..node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class SetStateNode(BaseNode):
 
         if not states:
             logger.warning("SetStateNode %s has no states to update", self.node_id)
-            return {"updated": [], "error": "No states configured"}
+            return node_failure("No states configured", output={"updated": []})
 
         memory = self.get_memory()
         session = self.get_state().get_session()
@@ -85,8 +86,4 @@ class SetStateNode(BaseNode):
         except Exception as e:  # pylint: disable=broad-except
             error_msg = f"Error updating stateful values: {str(e)}"
             logger.error(f"SetStateNode {self.node_id}: {error_msg}", exc_info=True)
-            return {
-                "status": "error",
-                "error": error_msg,
-                "updated": updated_states
-            }
+            return node_failure(error_msg, output={"updated": updated_states})

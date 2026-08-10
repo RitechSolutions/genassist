@@ -12,6 +12,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.dependencies.injector import injector
 from app.modules.integration.database import db_provider_manager, translate_to_query
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.llm.provider import LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class SQLNode(BaseNode):
         try:
             db_manager = await db_provider_manager.get_database_manager(datasource_id)
         except Exception as e:
-            return {
+            output = {
                 "status": 500,
                 "data": {"error": str(e)},
                 "parameters": {
@@ -70,12 +71,13 @@ class SQLNode(BaseNode):
                     "datasource_id": datasource_id,
                 },
             }
+            return node_failure(str(e), code=500, output=output)
 
         if not db_manager:
             logger.error(
                 "Database manager not found for datasource_id: %s", datasource_id
             )
-            return {
+            output = {
                 "status": 500,
                 "data": {
                     "error": (
@@ -88,6 +90,7 @@ class SQLNode(BaseNode):
                     "datasource_id": datasource_id,
                 },
             }
+            return node_failure(output["data"]["error"], code=500, output=output)
 
         if node_parameters:
             logger.info("Node parameters: %s", node_parameters)
@@ -107,12 +110,23 @@ class SQLNode(BaseNode):
                     query_text = query_text + param_context
                     logger.info(f"Enhanced human query with parameters: {query_text}")
 
-                db_query = await translate_to_query(
-                    db_manager,
-                    llm_model=llm_model,
-                    natural_language_query=query_text,
-                    system_prompt=system_prompt,
-                )
+                usage_out: list = []
+                try:
+                    db_query = await translate_to_query(
+                        db_manager,
+                        llm_model=llm_model,
+                        natural_language_query=query_text,
+                        system_prompt=system_prompt,
+                        usage_out=usage_out,
+                    )
+                finally:
+                    # Translation parses the model's JSON/SQL after the call, so record first
+                    if usage_out:
+                        from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+
+                        await record_node_llm_usage(
+                            self.get_state(), usage_out[0], self.node_id, provider_id, "sql_translate"
+                        )
             else:
                 if node_parameters:
                     logger.info(
@@ -130,7 +144,7 @@ class SQLNode(BaseNode):
 
             if error_msg:
                 logger.error("Database query execution failed: %s", error_msg)
-                return {
+                output = {
                     "status": 500,
                     "data": {
                         "error": (f"Database query execution failed: {error_msg}")
@@ -141,6 +155,7 @@ class SQLNode(BaseNode):
                         "datasource_id": datasource_id,
                     },
                 }
+                return node_failure(output["data"]["error"], code=500, output=output)
             else:
                 return {
                     "status": 200,
@@ -154,7 +169,7 @@ class SQLNode(BaseNode):
 
         except Exception as e:
             logger.error("SQL node execution failed: %s", e)
-            return {
+            output = {
                 "status": 500,
                 "data": {
                     "error": (
@@ -167,3 +182,4 @@ class SQLNode(BaseNode):
                     "datasource_id": datasource_id,
                 },
             }
+            return node_failure(output["data"]["error"], code=500, output=output)

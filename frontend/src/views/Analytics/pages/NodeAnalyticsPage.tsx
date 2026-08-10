@@ -1,23 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
 import { subDays } from "date-fns";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
-import { cn } from "@/helpers/utils";
 import { DateRange } from "react-day-picker";
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { NodeBreakdownChart } from "../components/reports/NodeBreakdownChart";
-import {
-  AnalyticsFilters,
-  analyticsFilterSelectTriggerClassName,
-} from "../components/AnalyticsFilters";
+import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
 import { analyticsFadeUpClass } from "../constants/animations";
 import { NodeAnalyticsTableEmptyState } from "../components/AnalyticsEmptyStates";
@@ -137,7 +125,7 @@ const NodeAnalyticsPage = () => {
         header: "Agent",
         key: "agent_id",
         cell: (item) => (
-          <span className="text-xs text-zinc-600">
+          <span className="text-xs text-muted-foreground">
             {agentNameMap[item.agent_id] ?? item.agent_id.slice(0, 8) + "…"}
           </span>
         ),
@@ -159,7 +147,7 @@ const NodeAnalyticsPage = () => {
         key: "success_count",
         description: "Node runs that completed without errors.",
         cell: (item) => (
-          <span className="text-green-600 font-medium">
+          <span className="text-green-600 dark:text-green-400 font-medium">
             {item.success_count.toLocaleString()}
           </span>
         ),
@@ -169,7 +157,7 @@ const NodeAnalyticsPage = () => {
         key: "failure_count",
         description: "Node runs that threw an error or timed out.",
         cell: (item) => (
-          <span className={item.failure_count > 0 ? "text-red-500 font-medium" : "text-zinc-400"}>
+          <span className={item.failure_count > 0 ? "text-red-500 font-medium" : "text-muted-foreground"}>
             {item.failure_count.toLocaleString()}
           </span>
         ),
@@ -194,11 +182,7 @@ const NodeAnalyticsPage = () => {
   const canExport = !loading && agentBreakdown.length > 0;
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+    <>
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
@@ -207,28 +191,27 @@ const NodeAnalyticsPage = () => {
                 subtitle="Workflow node execution metrics by type and date"
               >
                 <AnalyticsFilters
-                  groups={showGroupFilter ? groups : undefined}
-                  groupFilter={groupFilter}
-                  onGroupFilterChange={setGroupFilter}
-                  agents={agents}
-                  agentFilter={agentFilter}
-                  onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                 >
-                  <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
-                    <SelectTrigger className={cn(analyticsFilterSelectTriggerClassName, "shrink-0")}>
-                      <SelectValue placeholder="All node types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All node types</SelectItem>
-                      {nodeTypeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {nodeTypeLabel(t)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AnalyticsFilterMenu
+                    groups={showGroupFilter ? groups : undefined}
+                    groupFilter={groupFilter}
+                    onGroupFilterChange={setGroupFilter}
+                    agents={agents}
+                    agentFilter={agentFilter}
+                    onAgentFilterChange={setAgentFilter}
+                    extraGroups={[
+                      {
+                        key: "nodeType",
+                        label: "Node type",
+                        allLabel: "All node types",
+                        value: nodeTypeFilter,
+                        options: nodeTypeOptions.map((t) => ({ value: t, label: nodeTypeLabel(t) })),
+                        onChange: setNodeTypeFilter,
+                      },
+                    ]}
+                  />
 
                   <ExportButton
                     endpoint="/analytics/nodes/export"
@@ -261,9 +244,7 @@ const NodeAnalyticsPage = () => {
 
             </div>
           </div>
-        </main>
-      </div>
-    </SidebarProvider>
+    </>
   );
 };
 

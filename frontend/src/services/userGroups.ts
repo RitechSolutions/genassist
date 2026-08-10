@@ -3,7 +3,10 @@ import { UserGroup } from "@/interfaces/userGroup.interface";
 
 export const getAllUserGroups = async (): Promise<UserGroup[]> => {
   const data = await apiRequest<UserGroup[]>("GET", "user-groups/");
-  return data || [];
+  // apiRequest returns null on 403. Failing loudly keeps that distinct from "no groups",
+  // so callers never cache a permission error as an empty list
+  if (!Array.isArray(data)) throw new Error("Failed to fetch user groups");
+  return data;
 };
 
 export const createUserGroup = async (data: Partial<UserGroup>): Promise<UserGroup> => {

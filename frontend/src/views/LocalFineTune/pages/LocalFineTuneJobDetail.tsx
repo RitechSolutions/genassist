@@ -289,9 +289,9 @@ export default function LocalFineTuneJobDetail() {
             />
           </div>
 
-          <Card className="rounded-lg border bg-white shadow-sm overflow-hidden animate-fade-up">
+          <Card className="rounded-lg border bg-card shadow-sm overflow-hidden animate-fade-up">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-zinc-700">
+              <CardTitle className="text-sm font-semibold text-muted-foreground">
                 Job events
               </CardTitle>
               <p className="text-xs text-muted-foreground font-normal">
@@ -317,7 +317,7 @@ export default function LocalFineTuneJobDetail() {
                     {events.map((ev, i) => (
                       <li
                         key={`${ev.timestamp}-${i}`}
-                        className="rounded-lg border border-border bg-zinc-50/80 px-3 py-2.5 text-sm"
+                        className="rounded-lg border border-border bg-muted/80 px-3 py-2.5 text-sm"
                       >
                         <div className="flex flex-wrap items-center gap-2 gap-y-1 mb-1">
                           <Badge
@@ -335,7 +335,7 @@ export default function LocalFineTuneJobDetail() {
                         </div>
                         <p className="text-foreground leading-snug">{ev.message}</p>
                         {ev.data && Object.keys(ev.data).length > 0 ? (
-                          <pre className="mt-2 max-h-36 overflow-auto rounded-md bg-white border border-border p-2 text-[11px] leading-relaxed font-mono text-zinc-700">
+                          <pre className="mt-2 max-h-36 overflow-auto rounded-md bg-card border border-border p-2 text-[11px] leading-relaxed font-mono text-muted-foreground">
                             {JSON.stringify(ev.data, null, 2)}
                           </pre>
                         ) : null}
@@ -348,9 +348,9 @@ export default function LocalFineTuneJobDetail() {
           </Card>
 
           {hyperEntries.length > 0 && (
-            <Card className="rounded-lg border text-card-foreground w-full shadow-sm bg-white animate-fade-up">
+            <Card className="rounded-lg border text-card-foreground w-full shadow-sm bg-card animate-fade-up">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-zinc-700">
+                <CardTitle className="text-sm font-semibold text-muted-foreground">
                   Hyperparameters
                 </CardTitle>
               </CardHeader>

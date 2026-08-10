@@ -1,355 +1,242 @@
-import React, {useEffect, useState} from "react";
-import {useNavigate} from "react-router-dom";
-import {PageLayout} from "@/components/PageLayout";
-import {PageHeader} from "@/components/PageHeader";
-import {getWorkflowsMinimal} from "@/services/workflows";
-import {getTestRun, getTestRunsBatch, listTestSuites, startTestRun} from "@/services/testSuites";
-import {WorkflowMinimal} from "@/interfaces/workflow.interface";
-import {TestRun, TestSuite} from "@/interfaces/testSuite.interface";
-import {Button} from "@/components/button";
-import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
-import {ListChecks, Pencil, Play, Plus, Trash2} from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Activity, ListChecks, Loader2, Plus, Upload } from "lucide-react";
+
+import { PageLayout } from "@/components/PageLayout";
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/button";
+import { Badge } from "@/components/badge";
+import { PageListSkeleton } from "@/components/skeletons";
+import { cn } from "@/lib/utils";
+
+import { getWorkflowsMinimal } from "@/services/workflows";
+import { listTestSuites } from "@/services/testSuites";
+import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import {
-  appendRunToEvaluation,
   createTestEvaluation,
-  deleteTestEvaluation,
-  listTestEvaluations,
-  updateTestEvaluation,
+  getWorkflowEvaluationSummaries,
 } from "@/services/testEvaluations";
-import {TestEvaluationConfig} from "@/interfaces/testEvaluation.interface";
-import {getLLMProvidersMinimal} from "@/services/llmProviders";
-import {LLMProviderMinimal} from "@/interfaces/llmProvider.interface";
-import {PageListSkeleton} from "@/components/skeletons";
-import {Progress} from "@/components/progress";
-import {Badge} from "@/components/badge";
-import {EvaluationWizard, EvaluationWizardData} from "../components/EvaluationWizard";
-import toast from "react-hot-toast";
+import { WorkflowMinimal } from "@/interfaces/workflow.interface";
+import { TestSuite } from "@/interfaces/testSuite.interface";
+import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+import { EvaluationWizard, EvaluationWizardData } from "../components/EvaluationWizard";
+import { ImportEvaluationDialog } from "../components/ImportEvaluationDialog";
+import { EntityTitle } from "../components/EntityTitle";
+import { buildTechniqueConfigs, wizardMetadata } from "../helpers/evaluationForm";
+import { accuracyColorClass } from "../helpers/evaluationMetrics";
+
+const UNASSIGNED = "unassigned";
+const SUMMARIES_QUERY_KEY = ["workflow-evaluation-summaries"];
+const RUNNING_POLL_MS = 5000;
+
+interface WorkflowRow {
+  key: string;
+  workflowId: string | null;
+  name: string;
+  count: number;
+  health: number | null;
+  finishedCount: number;
+  anyRunning: boolean;
+  isUnassigned: boolean;
+}
 
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
-  const [suites, setSuites] = useState<TestSuite[]>([]);
   const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
+  const [suites, setSuites] = useState<TestSuite[]>([]);
   const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
-  const [evaluations, setEvaluations] = useState<TestEvaluationConfig[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [runningEvalIds, setRunningEvalIds] = useState<Set<string>>(new Set());
-  const [lastRunsByEvaluationId, setLastRunsByEvaluationId] = useState<
-    Record<string, TestRun | null>
-  >({});
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
-  const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
+  const [isReferenceLoading, setIsReferenceLoading] = useState(true);
+  const [hasReferenceError, setHasReferenceError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+
+  // Summaries carry the live health and running state. staleTime 0 makes
+  // react-query refetch them when the tab regains focus; the interval only runs
+  // while a batch is active and react-query pauses it in a hidden tab.
+  const {
+    data: summaries = [],
+    isPending: isSummariesLoading,
+    isError: hasSummariesError,
+    refetch: refetchSummaries,
+  } = useQuery({
+    queryKey: SUMMARIES_QUERY_KEY,
+    queryFn: async () => (await getWorkflowEvaluationSummaries()) ?? [],
+    staleTime: 0,
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((summary) => summary.any_running)
+        ? RUNNING_POLL_MS
+        : false,
+  });
+
+  const isLoading = isSummariesLoading || isReferenceLoading;
+  const hasError = hasSummariesError || hasReferenceError;
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
-      setIsLoading(true);
+      setIsReferenceLoading(true);
+      setHasReferenceError(false);
       try {
-        const [suiteData, workflowData, providersData, evaluationData] = await Promise.all([
-          listTestSuites(),
+        const [workflowData, suiteData, providersData] = await Promise.all([
           getWorkflowsMinimal(),
+          listTestSuites(),
           getLLMProvidersMinimal(),
-          listTestEvaluations(),
         ]);
-        setSuites(suiteData ?? []);
+        if (cancelled) return;
         setWorkflows(workflowData ?? []);
-        const activeProviders = (providersData ?? []).filter((p) => p.is_active === 1);
-        setProviders(activeProviders);
-        setEvaluations(evaluationData ?? []);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
-  }, []);
-
-  useEffect(() => {
-    const loadLastRuns = async () => {
-      if (!evaluations.length) {
-        setLastRunsByEvaluationId({});
-        return;
-      }
-      const runIdToEvalId: Record<string, string> = {};
-      evaluations.forEach((evaluation) => {
-        const evalId = evaluation.id;
-        const lastRunId = evaluation.run_ids?.[0];
-        if (evalId && lastRunId) {
-          runIdToEvalId[lastRunId] = evalId;
-        }
-      });
-      const runIds = Object.keys(runIdToEvalId);
-      if (!runIds.length) {
-        setLastRunsByEvaluationId({});
-        return;
-      }
-      try {
-        const runs = await getTestRunsBatch(runIds);
-        const mapping: Record<string, TestRun | null> = {};
-        (runs ?? []).forEach((run) => {
-          const evalId = run.id ? runIdToEvalId[run.id] : undefined;
-          if (evalId) mapping[evalId] = run;
-        });
-        // Fill nulls for evaluations whose run wasn't returned
-        evaluations.forEach((evaluation) => {
-          if (evaluation.id && !(evaluation.id in mapping)) {
-            mapping[evaluation.id] = null;
-          }
-        });
-        setLastRunsByEvaluationId(mapping);
+        setSuites(suiteData ?? []);
+        setProviders((providersData ?? []).filter((p) => p.is_active === 1));
       } catch {
-        setLastRunsByEvaluationId({});
+        if (!cancelled) setHasReferenceError(true);
+      } finally {
+        if (!cancelled) setIsReferenceLoading(false);
       }
     };
-    void loadLastRuns();
-  }, [evaluations]);
-
-  const handleDeleteEvaluation = async (id: string) => {
-    await deleteTestEvaluation(id);
-    setEvaluations((prev) => prev.filter((e) => e.id !== id));
-    setDeletingEvaluationId(null);
-  };
-
-  const getEditInitialData = (evaluation: TestEvaluationConfig): Partial<EvaluationWizardData> => {
-    const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
-    const provCfg = evaluation.technique_configs?.["provenance_eval"] as Record<string, unknown> | undefined;
-    const metaWithoutMemory = evaluation.input_metadata
-      ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
-      : {};
-
-    return {
-      name: evaluation.name,
-      description: evaluation.description ?? "",
-      suiteId: evaluation.suite_id,
-      workflowId: evaluation.workflow_id ?? "none",
-      metrics: evaluation.techniques,
-      inputMetadataText: JSON.stringify(metaWithoutMemory, null, 2),
-      useMemory: Boolean(evaluation.input_metadata?.use_memory),
-      nliModelName: (nliCfg?.nli_model_name as string) ?? "cross-encoder/nli-deberta-v3-base",
-      nliMinEntailScore: String(nliCfg?.min_entail_score ?? "0.5"),
-      nliFailOnContradiction: Boolean(nliCfg?.fail_on_contradiction),
-      provMode: (provCfg?.provenance_mode as "embeddings" | "llm") ?? "embeddings",
-      provEmbeddingType: (provCfg?.embedding_type as "openai" | "huggingface" | "bedrock") ?? "huggingface",
-      provEmbeddingModelName: (provCfg?.embedding_model_name as string) ?? "all-MiniLM-L6-v2",
-      provMinScore: String(provCfg?.min_score ?? "0.5"),
-      provFailOnViolation: Boolean(provCfg?.fail_on_violation),
-      provLlmProviderId: (provCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
-      provLlmJudgeSystemPromptSuffix: (provCfg?.llm_judge_system_prompt_suffix as string) ?? "",
+    void load();
+    return () => {
+      cancelled = true;
     };
-  };
+  }, [reloadKey]);
 
-  const handleEditWizardSubmit = async (data: EvaluationWizardData) => {
-    if (!editingEvaluation?.id) return;
-
-    let parsedMetadata: Record<string, unknown> | undefined;
-    try {
-      const parsed = JSON.parse(data.inputMetadataText || "{}");
-      parsedMetadata = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
-    } catch {
-      parsedMetadata = undefined;
-    }
-    if (data.useMemory) {
-      parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
-    } else if (parsedMetadata) {
-      delete parsedMetadata["use_memory"];
-    }
-
-    const updated = await updateTestEvaluation(editingEvaluation.id, {
-      name: data.name.trim(),
-      description: data.description.trim() || undefined,
-      suite_id: data.suiteId,
-      workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
-      techniques: data.metrics,
-      technique_configs: {
-        ...(data.metrics.includes("nli_eval")
-          ? {
-              nli_eval: {
-                min_entail_score: Number(data.nliMinEntailScore || "0.5"),
-                fail_on_contradiction: data.nliFailOnContradiction,
-                ...(data.nliModelName.trim() ? { nli_model_name: data.nliModelName.trim() } : {}),
-              },
-            }
-          : {}),
-        ...(data.metrics.includes("provenance_eval")
-          ? {
-              provenance_eval: {
-                min_score: Number(data.provMinScore || "0.5"),
-                fail_on_violation: data.provFailOnViolation,
-                use_llm_judge: data.provMode === "llm",
-                ...(data.provMode === "llm" && data.provLlmProviderId.trim()
-                  ? { llm_provider_id: data.provLlmProviderId.trim() }
-                  : {}),
-                ...(data.provMode === "llm" && data.provLlmJudgeSystemPromptSuffix.trim()
-                  ? { llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim() }
-                  : {}),
-                ...(data.provMode === "embeddings"
-                  ? {
-                      embedding_type: data.provEmbeddingType,
-                      embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
-                    }
-                  : {}),
-                provenance_mode: data.provMode,
-              },
-            }
-          : {}),
-      },
-      input_metadata: parsedMetadata,
-    });
-
-    if (!updated) return;
-    setEvaluations((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    setEditingEvaluation(null);
-    toast.success("Evaluation updated successfully");
-  };
-
-  const handleQuickRun = async (evaluation: TestEvaluationConfig, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!evaluation.id) return;
-
-    setRunningEvalIds((prev) => new Set(prev).add(evaluation.id));
-    try {
-      let runMetadata = evaluation.input_metadata ?? undefined;
-      if (runMetadata?.use_memory) {
-        runMetadata = { ...runMetadata, thread_id: crypto.randomUUID() };
-      }
-      const created = await startTestRun(evaluation.suite_id, {
-        techniques: evaluation.techniques,
-        technique_configs: evaluation.technique_configs,
-        workflow_id: evaluation.workflow_id,
-        input_metadata: runMetadata,
+  const rows = useMemo<WorkflowRow[]>(() => {
+    const nameFor = (workflowId: string | null): string => {
+      if (workflowId === null) return "Unassigned evaluations";
+      return workflows.find((w) => w.id === workflowId)?.name ?? "Unknown workflow";
+    };
+    const query = searchQuery.trim().toLowerCase();
+    return summaries
+      .map((summary) => ({
+        key: summary.workflow_id ?? UNASSIGNED,
+        workflowId: summary.workflow_id,
+        name: nameFor(summary.workflow_id),
+        count: summary.eval_count,
+        health: summary.health,
+        finishedCount: summary.finished_count,
+        anyRunning: summary.any_running,
+        isUnassigned: summary.workflow_id === null,
+      }))
+      .filter((row) => !query || row.name.toLowerCase().includes(query))
+      .sort((a, b) => {
+        if (a.isUnassigned) return 1;
+        if (b.isUnassigned) return -1;
+        return a.name.localeCompare(b.name);
       });
-      if (created?.id) {
-        await appendRunToEvaluation(evaluation.id, created.id);
-        // Update the last run for this evaluation
-        setLastRunsByEvaluationId((prev) => ({ ...prev, [evaluation.id]: created }));
-        toast.success("Evaluation started successfully");
-        navigate(`/tests/evaluations/${evaluation.id}`);
-      }
-    } catch (err) {
-      toast.error("Failed to start evaluation");
-    } finally {
-      setRunningEvalIds((prev) => {
-        const next = new Set(prev);
-        next.delete(evaluation.id);
-        return next;
-      });
-    }
+  }, [summaries, workflows, searchQuery]);
+
+  const openWorkflow = (row: WorkflowRow) => {
+    navigate(`/tests/evaluations/workflows/${row.workflowId ?? UNASSIGNED}`);
   };
 
-  const handleWizardSubmit = async (data: EvaluationWizardData) => {
-    let parsedMetadata: Record<string, unknown> | undefined;
-    try {
-      const parsed = JSON.parse(data.inputMetadataText || "{}");
-      parsedMetadata =
-        parsed && typeof parsed === "object"
-          ? (parsed as Record<string, unknown>)
-          : undefined;
-    } catch {
-      parsedMetadata = undefined;
-    }
-    if (data.useMemory) {
-      parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
-    } else if (parsedMetadata) {
-      delete parsedMetadata["use_memory"];
-    }
-
+  const handleCreate = async (data: EvaluationWizardData) => {
     const created = await createTestEvaluation({
       name: data.name.trim(),
       description: data.description.trim() || undefined,
       suite_id: data.suiteId,
       workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
       techniques: data.metrics,
-      technique_configs: {
-        ...(data.metrics.includes("nli_eval")
-          ? {
-              nli_eval: {
-                min_entail_score: Number(data.nliMinEntailScore || "0.5"),
-                fail_on_contradiction: data.nliFailOnContradiction,
-                ...(data.nliModelName.trim()
-                  ? { nli_model_name: data.nliModelName.trim() }
-                  : {}),
-              },
-            }
-          : {}),
-        ...(data.metrics.includes("provenance_eval")
-          ? {
-              provenance_eval: {
-                min_score: Number(data.provMinScore || "0.5"),
-                fail_on_violation: data.provFailOnViolation,
-                use_llm_judge: data.provMode === "llm",
-                ...(data.provMode === "llm" && data.provLlmProviderId.trim()
-                  ? { llm_provider_id: data.provLlmProviderId.trim() }
-                  : {}),
-                ...(data.provMode === "llm" && data.provLlmJudgeSystemPromptSuffix.trim()
-                  ? { llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim() }
-                  : {}),
-                ...(data.provMode === "embeddings"
-                  ? {
-                      embedding_type: data.provEmbeddingType,
-                      embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
-                    }
-                  : {}),
-                provenance_mode: data.provMode,
-              },
-            }
-          : {}),
-      },
-      input_metadata: parsedMetadata,
+      technique_configs: buildTechniqueConfigs(data),
+      input_metadata: wizardMetadata(data),
     });
     if (!created) return;
     setIsCreateDialogOpen(false);
     navigate(`/tests/evaluations/${created.id}`);
   };
 
-  const getAverageAccuracy = (evaluation: TestEvaluationConfig): number | null => {
-    if (!evaluation.id) return null;
-    const lastRun = lastRunsByEvaluationId[evaluation.id];
-    if (!lastRun?.summary_metrics) return null;
-
-    const metrics = lastRun.summary_metrics as Record<
-      string,
-      { accuracy?: number; avg_score?: number; cases?: number }
-    >;
-    const accuracies = Object.values(metrics)
-      .map((m) => m.accuracy)
-      .filter((a): a is number => typeof a === "number");
-
-    if (accuracies.length === 0) return null;
-    return accuracies.reduce((sum, a) => sum + a, 0) / accuracies.length;
-  };
-
-  const filteredEvaluations = evaluations.filter((evaluation) => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return true;
+  const renderRow = (row: WorkflowRow) => {
+    const healthTooltip = row.anyRunning
+      ? row.health !== null
+        ? "Evaluations running; accuracy shown is from the previous completed runs."
+        : "Evaluations are running…"
+      : row.health !== null
+        ? `Accuracy from ${row.finishedCount} of ${row.count} evaluation${
+            row.count !== 1 ? "s" : ""
+          } (failed runs count as 0%)`
+        : "No evaluations scored yet";
     return (
-      evaluation.name.toLowerCase().includes(query) ||
-      (evaluation.description ?? "").toLowerCase().includes(query)
+      <tr
+        key={row.key}
+        onClick={() => openWorkflow(row)}
+        className="hover:bg-muted transition-colors cursor-pointer"
+      >
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <EntityTitle muted={row.isUnassigned}>{row.name}</EntityTitle>
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-1.5" title={healthTooltip}>
+            {row.anyRunning ? (
+              <Loader2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 animate-spin" />
+            ) : (
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+            {row.health !== null ? (
+              <span className={cn("font-medium", accuracyColorClass(row.health))}>
+                {Math.round(row.health * 100)}%
+              </span>
+            ) : row.anyRunning ? (
+              <span className="text-blue-600 dark:text-blue-400">Running…</span>
+            ) : (
+              <span className="text-muted-foreground">No scores yet</span>
+            )}
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <Badge variant="secondary">
+            {row.count} eval{row.count !== 1 ? "s" : ""}
+          </Badge>
+        </td>
+      </tr>
     );
-  });
+  };
 
   return (
     <PageLayout>
       <PageHeader
         title="Evaluations"
-        subtitle="Create and execute evaluations by linking dataset, workflow, metadata, and metrics."
+        subtitle="Grouped by workflow. Open a workflow to view and run its evaluations."
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="Search evaluations..."
+        searchPlaceholder="Search workflows..."
         actionButtonText="New Evaluation"
         onActionClick={() => setIsCreateDialogOpen(true)}
+        secondaryActionButtonText={
+          <>
+            <Upload className="w-4 h-4" />
+            Import
+          </>
+        }
+        onSecondaryActionClick={() => setIsImportDialogOpen(true)}
       />
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {isLoading ? (
           <PageListSkeleton variant="evaluation" bordered={false} />
-        ) : filteredEvaluations.length === 0 ? (
+        ) : hasError ? (
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground mb-3">Couldn't load evaluations.</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReloadKey((key) => key + 1);
+                void refetchSummaries();
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <ListChecks className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <ListChecks className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">No evaluations yet</h3>
-            <p className="text-sm text-gray-500 max-w-sm">
+            <p className="text-sm text-muted-foreground max-w-sm">
               {searchQuery
-                ? "No evaluations match your search. Try adjusting your query."
+                ? "No workflows match your search."
                 : "Evaluations help you test your AI agents against golden datasets. Create your first evaluation to get started."}
             </p>
             {!searchQuery && (
@@ -360,156 +247,43 @@ const EvaluationsPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {filteredEvaluations.map((evaluation) => {
-              const avgAccuracy = getAverageAccuracy(evaluation);
-              const isRunning = evaluation.id ? runningEvalIds.has(evaluation.id) : false;
-
-              return (
-                <div
-                  key={evaluation.id}
-                  className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/tests/evaluations/${evaluation.id}`)}
-                      className="flex-1 min-w-0 text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="text-lg font-semibold truncate">
-                          {evaluation.name}
-                        </div>
-                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5">
-                          EVAL
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
-                        {evaluation.description || "No description"}
-                      </p>
-
-                      {/* Accuracy progress bar */}
-                      {avgAccuracy !== null && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <Progress
-                            value={avgAccuracy * 100}
-                            className="h-2 w-32 bg-gray-100"
-                          />
-                          <span
-                            className={`text-xs font-medium ${
-                              avgAccuracy >= 0.9
-                                ? "text-green-600"
-                                : avgAccuracy >= 0.7
-                                ? "text-amber-600"
-                                : "text-red-600"
-                            }`}
-                          >
-                            {Math.round(avgAccuracy * 100)}% accuracy
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Metrics badges */}
-                      <div className="flex flex-wrap items-center gap-1 mt-2">
-                        <span className="text-xs text-gray-500 mr-1">Metrics:</span>
-                        {evaluation.techniques.map((tech) => (
-                          <Badge key={tech} variant="outline" className="text-[10px] px-1.5 py-0">
-                            {tech}
-                          </Badge>
-                        ))}
-                      </div>
-                    </button>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        aria-label="Edit evaluation"
-                        onClick={() => setEditingEvaluation(evaluation)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        aria-label="Delete evaluation"
-                        onClick={() => setDeletingEvaluationId(evaluation.id ?? null)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="ml-1"
-                        disabled={isRunning}
-                        onClick={(e) => handleQuickRun(evaluation, e)}
-                      >
-                        <Play className="h-3.5 w-3.5 mr-1" />
-                        {isRunning ? "Running..." : "Run"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted text-left text-xs font-medium text-muted-foreground">
+                  <th className="px-6 py-3 font-medium">Workflow</th>
+                  <th className="px-6 py-3 font-medium">Accuracy</th>
+                  <th className="px-6 py-3 font-medium">Evaluations</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">{rows.map(renderRow)}</tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Edit Wizard */}
-      {editingEvaluation && (
-        <EvaluationWizard
-          isOpen={!!editingEvaluation}
-          onOpenChange={(open) => { if (!open) setEditingEvaluation(null); }}
-          onSubmit={handleEditWizardSubmit}
-          suites={suites}
-          workflows={workflows}
-          providers={providers}
-          mode="edit"
-          initialData={getEditInitialData(editingEvaluation)}
-        />
-      )}
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deletingEvaluationId} onOpenChange={(open) => { if (!open) setDeletingEvaluationId(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete Evaluation</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-gray-600">
-            Are you sure you want to delete this evaluation? This will also permanently delete all
-            associated runs and their results. This action cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingEvaluationId(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deletingEvaluationId && handleDeleteEvaluation(deletingEvaluationId)}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <EvaluationWizard
         isOpen={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        onSubmit={handleWizardSubmit}
+        onSubmit={handleCreate}
         suites={suites}
         workflows={workflows}
         providers={providers}
         mode="create"
+      />
+
+      <ImportEvaluationDialog
+        isOpen={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        workflows={workflows}
+        onImported={(result) => {
+          void refetchSummaries();
+          navigate(`/tests/evaluations/${result.evaluation_id}`);
+        }}
+        onSetImported={() => void refetchSummaries()}
       />
     </PageLayout>
   );
 };
 
 export default EvaluationsPage;
-

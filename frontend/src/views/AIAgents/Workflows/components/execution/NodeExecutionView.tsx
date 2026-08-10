@@ -39,7 +39,7 @@ interface NodeExecutionViewProps {
 }
 
 const StateShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="flex h-[420px] items-center justify-center rounded-md border border-gray-200 bg-gray-50 p-6 text-center">
+  <div className="flex h-[420px] items-center justify-center rounded-md border border-border bg-muted p-6 text-center">
     {children}
   </div>
 );
@@ -58,7 +58,7 @@ const ToolbarButton: React.FC<{
     title={label}
     className={cn(
       'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-      active ? 'border-brand-600 bg-brand-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+      active ? 'border-brand-600 bg-brand-600 text-white' : 'border-border bg-card text-muted-foreground hover:bg-muted'
     )}
   >
     {children}
@@ -96,7 +96,7 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
   if (viewState === 'loading') {
     return (
       <StateShell>
-        <div className="space-y-2 text-gray-500">
+        <div className="space-y-2 text-muted-foreground">
           <Loader2 className="mx-auto h-6 w-6 animate-spin" aria-hidden="true" />
           <div className="text-sm">Running the workflow…</div>
         </div>
@@ -107,7 +107,7 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
   if (viewState === 'error') {
     return (
       <StateShell>
-        <div className="space-y-2 text-red-600">
+        <div className="space-y-2 text-red-600 dark:text-red-400">
           <AlertTriangle className="mx-auto h-6 w-6" aria-hidden="true" />
           <div className="text-sm font-medium">The test run failed</div>
           {error && <div className="text-xs text-red-500">{error}</div>}
@@ -119,7 +119,7 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
   if (viewState === 'empty') {
     return (
       <StateShell>
-        <div className="space-y-2 text-gray-500">
+        <div className="space-y-2 text-muted-foreground">
           <WorkflowIcon className="mx-auto h-6 w-6" aria-hidden="true" />
           <div className="text-sm font-medium">No execution yet</div>
           <div className="text-xs">Run a test to see what happened with each node.</div>
@@ -132,7 +132,7 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
   if (!model.totalNodes) {
     return (
       <StateShell>
-        <div className="space-y-2 text-gray-500">
+        <div className="space-y-2 text-muted-foreground">
           <WorkflowIcon className="mx-auto h-6 w-6" aria-hidden="true" />
           <div className="text-sm font-medium">No node execution data</div>
           <div className="text-xs">
@@ -181,7 +181,7 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
           is a bottom slide-up — both stay within the dialog so they scroll/interact natively. */}
       <div
         className={cn(
-          'relative overflow-hidden rounded-md border border-gray-200 transition-[height] duration-200',
+          'relative overflow-hidden rounded-md border border-border transition-[height] duration-200',
           expanded ? 'h-[82vh]' : 'h-[58vh] min-h-[420px]'
         )}
       >
@@ -210,7 +210,7 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
           aria-label="Node execution details"
           aria-hidden={!selectedNode}
           className={cn(
-            'absolute inset-y-0 right-0 z-20 flex w-full max-w-[620px] transform flex-col border-l border-gray-200 bg-white shadow-xl transition-transform duration-200 ease-out sm:w-[62%]',
+            'absolute inset-y-0 right-0 z-20 flex w-full max-w-[620px] transform flex-col border-l border-border bg-card shadow-xl transition-transform duration-200 ease-out sm:w-[62%]',
             selectedNode ? 'translate-x-0' : 'pointer-events-none translate-x-full'
           )}
         >
@@ -220,17 +220,17 @@ const NodeExecutionView: React.FC<NodeExecutionViewProps> = ({ response, testing
         {/* Timeline — bottom slide-up. */}
         <div
           className={cn(
-            'absolute inset-x-0 bottom-0 z-30 h-[45%] max-h-[280px] transform border-t border-gray-200 bg-white/95 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur transition-transform duration-200 ease-out',
+            'absolute inset-x-0 bottom-0 z-30 h-[45%] max-h-[280px] transform border-t border-border bg-background/95 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur transition-transform duration-200 ease-out',
             showTimeline ? 'translate-y-0' : 'pointer-events-none translate-y-full'
           )}
           aria-hidden={!showTimeline}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <div className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Execution order
             <button
               type="button"
               onClick={() => setShowTimeline(false)}
-              className="rounded px-1.5 py-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-muted-foreground"
             >
               Hide
             </button>

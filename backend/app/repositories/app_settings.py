@@ -6,13 +6,14 @@ from sqlalchemy.future import select
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from app.db.models.app_settings import AppSettingsModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.app_settings import AppSettingsCreate, AppSettingsUpdate
 
 
 @inject
-class AppSettingsRepository:
+class AppSettingsRepository(DbRepository[AppSettingsModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(AppSettingsModel, db)
 
     async def create(self, dto: AppSettingsCreate) -> AppSettingsModel:
         # Exclude 'id' from model_dump if present, as it should be auto-generated

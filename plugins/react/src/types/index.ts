@@ -65,6 +65,8 @@ export interface AgentInfoResponse {
   live_voice_enabled?: boolean;
   /** True when live voice is usable (a Gemini provider with an API key is configured). */
   live_voice_ready?: boolean;
+  /** True when the agent greets the visitor on conversation start (drives the start trigger). */
+  greet_on_start?: boolean;
 }
 
 /** HITL form field strings for one locale; `options` maps option value -> label. */
@@ -175,7 +177,7 @@ export interface GenAgentChatProps {
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
   brandLogoUrl?: string; // Full brand logo/wordmark. When set, the header shows only this image instead of the small logo + title + description.
-  mode?: "embedded" | "floating" | "fullscreen";
+  mode?: "embedded" | "floating" | "fullscreen" | "inputbar";
   /** Called when the user presses Escape in `mode="fullscreen"`. Use this to switch the parent back to floating/embedded. */
   onExitFullscreen?: () => void;
   floatingConfig?: {

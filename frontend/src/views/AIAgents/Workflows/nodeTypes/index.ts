@@ -2,8 +2,12 @@ import nodeRegistry from "../registry/nodeRegistry";
 import ChatInputNode from "./chat/chatInputNode";
 import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
+import WebScraperNode from "./tools/webScraperNode";
+import WebSearchNode from "./tools/webSearchNode";
+import HtmlToImageNode from "./tools/htmlToImageNode";
 import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
+import SubAgentNode from "./llm/subAgentNode";
 import ExternalAgentNode from "./llm/externalAgentNode";
 import PythonCodeNode from "./tools/pythonCodeNode";
 import {
@@ -14,6 +18,9 @@ import {
 } from "./chat/definitions";
 import {
   API_TOOL_NODE_DEFINITION,
+  WEB_SCRAPER_NODE_DEFINITION,
+  WEB_SEARCH_NODE_DEFINITION,
+  HTML_TO_IMAGE_NODE_DEFINITION,
   OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
   CREATE_WORKFLOW_SCHEDULE_NODE_DEFINITION,
@@ -36,13 +43,16 @@ import ChatOutputNode from "./chat/chatOutputNode";
 import FinalizeConversationNode from "./chat/finalizeConversationNode";
 import {
   AGENT_NODE_DEFINITION,
+  SUB_AGENT_NODE_DEFINITION,
   EXTERNAL_AGENT_NODE_DEFINITION,
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
   VOICE_AGENT_NODE_DEFINITION,
+  NLP_NODE_DEFINITION,
 } from "./llm/definitions";
 import VoiceAgentNode from "./llm/voiceAgentNode";
+import NlpNode from "./llm/nlpNode";
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
@@ -103,6 +113,9 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TEMPLATE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WEB_SCRAPER_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WEB_SEARCH_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(HTML_TO_IMAGE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(OPEN_API_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(WHATSAPP_NODE_DEFINITION);
@@ -126,6 +139,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(SUB_AGENT_NODE_DEFINITION);
   nodeRegistry.registerNodeType(VOICE_AGENT_NODE_DEFINITION);
   nodeRegistry.registerNodeType(EXTERNAL_AGENT_NODE_DEFINITION);
 
@@ -139,7 +153,10 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(ROUTER_NODE_DEFINITION);
 
+
   nodeRegistry.registerNodeType(AGGREGATOR_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(NLP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(CALENDAR_EVENT_NODE_DEFINITION);
 
@@ -170,8 +187,12 @@ export const getNodeTypes = () => {
     chatOutputNode: ChatOutputNode,
     finalizeConversationNode: FinalizeConversationNode,
     apiToolNode: APIToolNode,
+    webScraperNode: WebScraperNode,
+    webSearchNode: WebSearchNode,
+    htmlToImageNode: HtmlToImageNode,
     openApiNode: OpenApiNode,
     agentNode: AgentNode,
+    subAgentNode: SubAgentNode,
     voiceAgentNode: VoiceAgentNode,
     externalAgentNode: ExternalAgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
@@ -190,6 +211,7 @@ export const getNodeTypes = () => {
     toolBuilderNode: ToolBuilderNode,
     routerNode: RouterNode,
     aggregatorNode: AggregatorNode,
+    nlpNode: NlpNode,
     dataMapperNode: DataMapperNode,
     guardrailProvenanceNode: GuardrailProvenanceNode,
     guardrailNliNode: GuardrailNliNode,

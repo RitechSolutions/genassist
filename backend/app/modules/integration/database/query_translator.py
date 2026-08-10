@@ -23,6 +23,7 @@ async def translate_to_query(
     llm_model: BaseChatModel,
     natural_language_query: str,
     system_prompt: Optional[str] = None,
+    usage_out: Optional[list] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     """
@@ -56,6 +57,8 @@ async def translate_to_query(
             timeout=60,
         )
         raw_output = getattr(response, "content", str(response)).strip()
+        if usage_out is not None:
+            usage_out.append(response)
     except asyncio.TimeoutError:
         raise TimeoutError("Model translation timed out (60s).")
     except Exception as e:

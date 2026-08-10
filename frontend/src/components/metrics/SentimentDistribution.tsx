@@ -10,13 +10,13 @@ export function SentimentDistribution({ positive = 0, neutral = 0, negative = 0 
   const total = positive + neutral + negative || 1;
 
   const sentiments = [
-    { name: "Positive", value: (positive / total) * 100, color: "bg-green-500", textColor: "text-green-600" },
-    { name: "Neutral", value: (neutral / total) * 100, color: "bg-yellow-500", textColor: "text-yellow-600" },
-    { name: "Negative", value: (negative / total) * 100, color: "bg-red-500", textColor: "text-red-600" }
+    { name: "Positive", value: (positive / total) * 100, color: "bg-success", textColor: "text-success" },
+    { name: "Neutral", value: (neutral / total) * 100, color: "bg-warning", textColor: "text-warning" },
+    { name: "Negative", value: (negative / total) * 100, color: "bg-destructive", textColor: "text-destructive" }
   ];
 
   return (
-    <div className="bg-gray-100 p-4 rounded-lg">
+    <div className="bg-muted p-4 rounded-lg">
       <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
         <BarChart3 className="w-4 h-4" />
         Sentiment Distribution
@@ -30,7 +30,7 @@ export function SentimentDistribution({ positive = 0, neutral = 0, negative = 0 
               </span>
               <span>{Math.round(sentiment.value)}%</span>
             </div>
-            <div className="h-2 bg-gray-200 rounded-full">
+            <div className="h-2 bg-muted-foreground/20 rounded-full">
               <div
                 className={`h-full ${sentiment.color} rounded-full`}
                 style={{ width: `${Math.max(sentiment.value, 2)}%` }}

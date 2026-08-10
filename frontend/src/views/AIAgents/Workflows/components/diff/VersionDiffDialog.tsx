@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Loader2, AlertTriangle, RefreshCw, List, Network } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/tabs';
 import { Button } from '@/components/button';
 import { cn } from '@/helpers/utils';
@@ -72,24 +72,24 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
       <span
         className={cn(
           'inline-flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5',
-          isTarget ? 'border-brand-600/25 bg-brand-50' : 'border-slate-200 bg-slate-50'
+          isTarget ? 'border-brand-600/25 bg-brand-50' : 'border-border bg-muted'
         )}
       >
         <span
           className={cn(
             'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider',
-            isTarget ? 'bg-brand-600/10 text-brand-600' : 'bg-slate-200/70 text-slate-500'
+            isTarget ? 'bg-brand-600/10 text-brand-600' : 'bg-muted/70 text-muted-foreground'
           )}
         >
           {isTarget ? 'Target · newer' : 'Base · older'}
         </span>
-        <span className="truncate text-sm font-medium text-slate-800" title={workflow.name}>
+        <span className="truncate text-sm font-medium text-foreground" title={workflow.name}>
           {workflow.name}
         </span>
         <span
           className={cn(
             'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
-            isTarget ? 'border-brand-600/25 bg-white text-brand-600' : 'border-slate-200 bg-white text-slate-500'
+            isTarget ? 'border-brand-600/25 bg-card text-brand-600' : 'border-border bg-card text-muted-foreground'
           )}
         >
           v{workflow.version}
@@ -104,19 +104,19 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
         <DialogHeader>
           <DialogTitle>Compare versions</DialogTitle>
           <DialogDescription>
-            Read-only comparison of two saved versions — added, removed, and modified nodes and connections.
+            Read-only comparison of two saved versions added, removed, and modified nodes and connections.
           </DialogDescription>
         </DialogHeader>
 
         {/* Base vs target identity (FR-2) */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border py-3">
           {versionChip(base, 'base')}
-          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           {versionChip(target, 'target')}
         </div>
 
         {loading && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-slate-500">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin text-brand-600" aria-hidden="true" />
             Loading versions…
           </div>
@@ -124,10 +124,10 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
 
         {!loading && error && (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center" role="alert">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 ring-1 ring-rose-100">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 dark:bg-rose-500/15 ring-1 ring-rose-100">
               <AlertTriangle className="h-5 w-5 text-rose-500" aria-hidden="true" />
             </span>
-            <p className="text-sm text-slate-700">{error}</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
             <Button variant="outline" size="sm" onClick={loadVersions} className="gap-1.5">
               <RefreshCw className="h-4 w-4" />
               Retry

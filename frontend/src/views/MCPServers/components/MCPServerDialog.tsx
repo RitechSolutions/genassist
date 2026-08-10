@@ -427,7 +427,7 @@ export function MCPServerDialog({
                   <SelectItem value="oauth2">OAuth 2.0 / OIDC — inbound JWT (discovery)</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {authType === "api_key"
                   ? `MCP clients send Authorization: Bearer <api_key>.`
                   : `Inbound auth: callers send Authorization: Bearer <JWT access_token>. Provide the full OIDC issuer URL (…/.well-known/openid-configuration); JWKS and issuer checks use that document. Client ID must match the application id in the token (e.g. azp, client_id, appid). Optional scope (space-separated) requires matching scope/scp claims in the token.`}
@@ -455,14 +455,14 @@ export function MCPServerDialog({
               </div>
 
               {isApiKeyGenerated && (
-                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 dark:bg-yellow-500/15 dark:border-yellow-500/30 rounded-md">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="text-xs font-medium text-yellow-800 mb-1">
+                      <p className="text-xs font-medium text-yellow-800 dark:text-yellow-400 mb-1">
                         Important: Copy this API key now
                       </p>
-                      <p className="text-xs text-yellow-700">
+                      <p className="text-xs text-yellow-700 dark:text-yellow-400">
                         This API key can only be viewed once. Make sure to copy and save it securely before continuing.
                       </p>
                     </div>
@@ -494,14 +494,14 @@ export function MCPServerDialog({
                     title="Copy API key"
                   >
                     {isApiKeyCopied ? (
-                      <Check className="h-4 w-4 text-green-600" />
+                      <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                     ) : (
                       <Copy className="h-4 w-4" />
                     )}
                   </Button>
                 )}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {isApiKeyGenerated
                   ? "API key generated. Copy it now - you won't be able to see it again after saving."
                   : "API key for authenticating MCP client requests"}
@@ -511,39 +511,39 @@ export function MCPServerDialog({
 
             {authType === "oauth2" && (
               <div className="space-y-3 rounded-md border p-3">
-                <p className="text-xs font-medium text-gray-700">
+                <p className="text-xs font-medium text-muted-foreground">
                   OAuth 2.0 + OpenID Connect — inbound JWT validation
                 </p>
-                <p className="text-xs text-gray-600 -mt-2">
+                <p className="text-xs text-muted-foreground -mt-2">
                   This form configures how Genassist <strong>verifies</strong> tokens clients send to{" "}
                   <strong>this</strong> hosted MCP server. It is not used to fetch tokens (that is the workflow
                   MCP node when it calls an external server).
                 </p>
 
                 <div
-                  className="rounded-md border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-700"
+                  className="rounded-md border border-border bg-muted/90 px-3 py-2.5 text-xs text-muted-foreground"
                   role="region"
                   aria-label="Inbound OIDC fields reference"
                 >
-                  <p className="font-semibold text-slate-800 mb-2">Hosted MCP — OIDC discovery configuration</p>
+                  <p className="font-semibold text-foreground mb-2">Hosted MCP — OIDC discovery configuration</p>
                   <dl className="space-y-1.5">
                     <div className="flex flex-col sm:flex-row sm:gap-2">
-                      <dt className="shrink-0 text-slate-500 sm:w-32">Issuer URL</dt>
-                      <dd className="font-mono text-[11px] text-slate-800 break-all">
+                      <dt className="shrink-0 text-muted-foreground sm:w-32">Issuer URL</dt>
+                      <dd className="font-mono text-[11px] text-foreground break-all">
                         …/.well-known/openid-configuration
                       </dd>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:gap-2">
-                      <dt className="shrink-0 text-slate-500 sm:w-32">Client ID</dt>
-                      <dd className="text-slate-800">Must match the app id embedded in callers&apos; JWTs</dd>
+                      <dt className="shrink-0 text-muted-foreground sm:w-32">Client ID</dt>
+                      <dd className="text-foreground">Must match the app id embedded in callers&apos; JWTs</dd>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:gap-2">
-                      <dt className="shrink-0 text-slate-500 sm:w-32">Client secret</dt>
-                      <dd className="text-slate-800">Stored encrypted (aligned with your IdP registration)</dd>
+                      <dt className="shrink-0 text-muted-foreground sm:w-32">Client secret</dt>
+                      <dd className="text-foreground">Stored encrypted (aligned with your IdP registration)</dd>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:gap-2">
-                      <dt className="shrink-0 text-slate-500 sm:w-32">Scope</dt>
-                      <dd className="text-slate-800">
+                      <dt className="shrink-0 text-muted-foreground sm:w-32">Scope</dt>
+                      <dd className="text-foreground">
                         Optional — if set, JWT <code className="text-[10px]">scope</code> /{" "}
                         <code className="text-[10px]">scp</code> must include these values
                       </dd>
@@ -551,8 +551,8 @@ export function MCPServerDialog({
                   </dl>
                 </div>
 
-                <details className="rounded-md border border-dashed border-amber-200/80 bg-amber-50/50 p-3 text-xs text-gray-700">
-                  <summary className="cursor-pointer font-medium text-gray-800 select-none">
+                <details className="rounded-md border border-dashed border-amber-200/80 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-500/15 p-3 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer font-medium text-foreground select-none">
                     Don&apos;t know the issuer URL yet?
                   </summary>
                   <div className="mt-3 space-y-3">
@@ -591,31 +591,31 @@ export function MCPServerDialog({
                 </details>
 
                 {mode === "edit" && serverToEdit?.auth_type === "oauth2" && (
-                  <div className="rounded-md bg-slate-50 border border-slate-200 p-3 space-y-2 mb-1">
-                    <p className="text-xs font-semibold text-slate-800">
+                  <div className="rounded-md bg-muted border border-border p-3 space-y-2 mb-1">
+                    <p className="text-xs font-semibold text-foreground">
                       Current configuration (from server)
                     </p>
-                    <dl className="grid gap-2 text-xs text-slate-700">
+                    <dl className="grid gap-2 text-xs text-muted-foreground">
                       <div>
-                        <dt className="text-slate-500 font-normal">OIDC issuer URL</dt>
+                        <dt className="text-muted-foreground font-normal">OIDC issuer URL</dt>
                         <dd className="font-mono break-all mt-0.5">
                           {oauth2IssuerUrl.trim() || "—"}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-normal">Client ID (must match token)</dt>
+                        <dt className="text-muted-foreground font-normal">Client ID (must match token)</dt>
                         <dd className="font-mono break-all mt-0.5">
                           {oauth2ClientId.trim() || "—"}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-normal">Scope</dt>
+                        <dt className="text-muted-foreground font-normal">Scope</dt>
                         <dd className="font-mono break-all mt-0.5">
                           {oauth2Scope.trim() ? oauth2Scope : "None — scope/scp not enforced"}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-normal">Client secret</dt>
+                        <dt className="text-muted-foreground font-normal">Client secret</dt>
                         <dd className="mt-0.5">
                           {serverToEdit.auth_values?.oauth2_client_secret_set
                             ? "Stored (hidden) — enter a new secret below to replace it"
@@ -623,7 +623,7 @@ export function MCPServerDialog({
                         </dd>
                       </div>
                     </dl>
-                    <p className="text-xs text-slate-600 pt-1 border-t border-slate-200">
+                    <p className="text-xs text-muted-foreground pt-1 border-t border-border">
                       Edit the fields below to change values. Leave Client secret empty to keep the current
                       secret. Use the same Client ID as in your IdP; inbound JWTs are matched by hashing this id
                       (case-insensitive).
@@ -640,7 +640,7 @@ export function MCPServerDialog({
                     placeholder="http://localhost:8000/.well-known/openid-configuration"
                     className="font-mono text-sm"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Full URL to the OpenID configuration document. The JWT{" "}
                     <code className="text-xs">iss</code> must match the <code className="text-xs">issuer</code>{" "}
                     field from this document. JWKS comes from <code className="text-xs">jwks_uri</code> in the
@@ -660,7 +660,7 @@ export function MCPServerDialog({
                     className="font-mono text-sm"
                     autoComplete="off"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Same id you use at the IdP. The token should include it as{" "}
                     <code className="text-xs">azp</code>, <code className="text-xs">client_id</code>, or on
                     Azure often <code className="text-xs">appid</code>.
@@ -684,7 +684,7 @@ export function MCPServerDialog({
                     className="font-mono text-sm"
                     autoComplete="new-password"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Stored encrypted. Required when you first create an OAuth2 server. Inbound callers are
                     validated with JWKS; the secret is for management and IdP-aligned features.
                   </p>
@@ -699,7 +699,7 @@ export function MCPServerDialog({
                     placeholder="openid mcp"
                     className="font-mono text-sm"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Optional. Space-separated values that must all appear in the token&apos;s{" "}
                     <code className="text-xs">scope</code> or <code className="text-xs">scp</code> claims. Leave
                     empty to skip scope checks (signature and issuer are still validated).
@@ -716,7 +716,7 @@ export function MCPServerDialog({
                     className="font-mono text-sm"
                     autoComplete="off"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Optional. Comma-separated allowlist for JWT <code className="text-xs">aud</code>. Leave
                     empty to skip audience checks.
                   </p>
@@ -737,12 +737,12 @@ export function MCPServerDialog({
 
             <div>
               <Label>Workflows *</Label>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-muted-foreground mb-3">
                 Select workflows to expose as MCP tools. Each workflow will be available as a tool with a custom name and description.
               </p>
 
               {selectedWorkflows.length === 0 && availableWorkflows.length === 0 ? (
-                <div className="text-sm text-gray-500 text-center py-8 border-2 border-dashed rounded-md bg-gray-50">
+                <div className="text-sm text-muted-foreground text-center py-8 border-2 border-dashed rounded-md bg-muted">
                   <p className="mb-1">No workflows available</p>
                   <p className="text-xs">Create workflows first to expose them as MCP tools</p>
                 </div>
@@ -753,7 +753,7 @@ export function MCPServerDialog({
                     return (
                       <div
                         key={sw.workflow_id}
-                        className="border rounded-lg p-4 space-y-3 bg-white shadow-sm"
+                        className="border rounded-lg p-4 space-y-3 bg-card shadow-sm"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
@@ -761,7 +761,7 @@ export function MCPServerDialog({
                               {workflow?.name || "Unknown Workflow"}
                             </p>
                             {workflow?.description && (
-                              <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
                                 {workflow.description}
                               </p>
                             )}
@@ -792,7 +792,7 @@ export function MCPServerDialog({
                               placeholder="e.g., execute_my_workflow"
                               className="text-sm mt-1"
                             />
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-xs text-muted-foreground mt-1">
                               Name to expose this workflow as in MCP (use lowercase with underscores)
                             </p>
                           </div>
@@ -814,7 +814,7 @@ export function MCPServerDialog({
                               rows={2}
                               className="text-sm mt-1"
                             />
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-xs text-muted-foreground mt-1">
                               Description that will be shown to MCP clients
                             </p>
                           </div>
@@ -830,7 +830,7 @@ export function MCPServerDialog({
                         disabled={isLoadingWorkflows}
                       >
                         <SelectTrigger className="w-full border-2 border-dashed rounded-lg p-4 hover:border-primary hover:bg-primary/5 transition-colors h-auto">
-                          <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                             <Plus className="h-4 w-4" />
                             <span>Add Workflow</span>
                           </div>

@@ -18,6 +18,16 @@ class AgentPermissions:
     SWITCH = "switch:agent"
 
 
+class TemplatePermissions:
+    """Template Marketplace permissions"""
+    READ = "read:template"
+    CREATE = "create:template"
+    INSTALL = "install:template"
+    DELETE = "delete:template"
+    PUBLISH = "publish:template"
+    APPROVE = "approve:template"
+
+
 class ApiKeyPermissions:
     """API Key CRUD permissions"""
     CREATE = "create:api_key"
@@ -196,6 +206,16 @@ class OpenAIPermissions:
     DELETE_FINE_TUNED_MODEL = "delete:openai_fine_tuned_model"
 
 
+class BedrockPermissions:
+    """Bedrock (Amazon Nova) fine-tuning permissions"""
+    WRITE_TRAINING_DATA = "write:bedrock_training_data"
+    WRITE_JOB = "write:bedrock_job"
+    READ_JOB = "read:bedrock_job"
+    READ_FINE_TUNABLE_MODELS = "read:bedrock_fine_tunable_models"
+    DEPLOY_MODEL = "deploy:bedrock_model"
+    UNDEPLOY_MODEL = "undeploy:bedrock_model"
+
+
 class LocalFineTuningPermissions:
     """Local fine-tuning proxy permissions"""
     READ = "read:local_fine_tuning"
@@ -238,6 +258,7 @@ class Permissions:
             ...
     """
     Agent = AgentPermissions
+    Template = TemplatePermissions
     ApiKey = ApiKeyPermissions
     AppSettings = AppSettingsPermissions
     AuditLog = AuditLogPermissions
@@ -260,6 +281,7 @@ class Permissions:
     Workflow = WorkflowPermissions
     Evaluation = EvaluationPermissions
     OpenAI = OpenAIPermissions
+    Bedrock = BedrockPermissions
     LocalFineTuning = LocalFineTuningPermissions
     Customer = CustomerPermissions
     Dashboard = DashboardPermissions
@@ -283,14 +305,14 @@ def get_all_permission_constants() -> set[str]:
 
     # Get all permission classes
     permission_classes = [
-        AgentPermissions, ApiKeyPermissions, AppSettingsPermissions,
+        AgentPermissions, TemplatePermissions, ApiKeyPermissions, AppSettingsPermissions,
         AuditLogPermissions, ConversationPermissions, DataSourcePermissions,
         FeatureFlagPermissions, KnowledgeBasePermissions, LlmAnalystPermissions,
         LlmProviderPermissions, MlModelPermissions, OperatorPermissions,
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
         UserGroupPermissions, UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
-        LocalFineTuningPermissions, CustomerPermissions, DashboardPermissions,
+        BedrockPermissions, LocalFineTuningPermissions, CustomerPermissions, DashboardPermissions,
         LegacyPermissions, FileManagerPermissions, EvaluationPermissions
     ]
 

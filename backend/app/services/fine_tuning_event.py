@@ -209,8 +209,8 @@ class FineTuningEventService:
                     }
 
             # Get latest event with metrics
-            latest_event = await self.event_repository.get_latest_event_by_job_id(job_id)
-            latest_step_event = await self.event_repository.get_latest_step_event_by_job_id(job_id)
+            latest_event = await self.event_repository.get_latest_event_by_job_id(job.id)
+            latest_step_event = await self.event_repository.get_latest_step_event_by_job_id(job.id)
 
             if not latest_event or not latest_step_event or not latest_step_event.metrics:
                 return {

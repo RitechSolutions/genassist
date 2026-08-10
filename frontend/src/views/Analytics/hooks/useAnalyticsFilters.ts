@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { currentUserIsAdmin } from "@/services/auth";
 import { getAllUserGroups } from "@/services/userGroups";
@@ -9,15 +9,27 @@ import { useAgentsList } from "./useAgentsList";
 
 export function useAnalyticsFilters() {
   const isAdmin = currentUserIsAdmin();
-  const [groupFilter, setGroupFilterState] = useState("all");
-  const [agentFilter, setAgentFilter] = useState("all");
-  const { agents: allAgents, agentNameMap: allAgentNameMap } = useAgentsList();
+  const [selectedGroup, setSelectedGroup] = useState("all");
+  const [selectedAgent, setSelectedAgent] = useState("all");
+  const {
+    agents: allAgents,
+    agentNameMap: allAgentNameMap,
+    loaded: allAgentsLoaded,
+  } = useAgentsList();
 
-  const { data: groups = [] } = useQuery<UserGroup[]>({
+  const { data: groupsData } = useQuery<UserGroup[]>({
     queryKey: ["user-groups"],
     queryFn: getAllUserGroups,
     enabled: isAdmin,
   });
+  const groupsLoaded = Array.isArray(groupsData);
+  const groups = groupsLoaded ? groupsData : [];
+  const groupExists = groups.some((g) => g.id === selectedGroup);
+  const groupFilter = isAdmin && groupExists ? selectedGroup : "all";
+  const groupWasDeleted = selectedGroup !== "all" && groupsLoaded && !groupExists;
+  useEffect(() => {
+    if (groupWasDeleted) setSelectedGroup("all");
+  }, [groupWasDeleted]);
 
   const { data: groupAgents } = useQuery({
     queryKey: ["analytics-group-agents", groupFilter],
@@ -30,6 +42,16 @@ export function useAnalyticsFilters() {
     return groupAgents ?? [];
   }, [isAdmin, groupFilter, allAgents, groupAgents]);
 
+  const agentsLoaded =
+    isAdmin && groupFilter !== "all" ? groupAgents !== undefined : allAgentsLoaded;
+  const agentExists = agents.some((a) => a.id === selectedAgent);
+  const agentFilter = agentExists ? selectedAgent : "all";
+
+  const agentWasDeleted = selectedAgent !== "all" && agentsLoaded && !agentExists;
+  useEffect(() => {
+    if (agentWasDeleted) setSelectedAgent("all");
+  }, [agentWasDeleted]);
+
   const agentNameMap = useMemo(() => {
     const map = { ...allAgentNameMap };
     for (const a of groupAgents ?? []) {
@@ -39,8 +61,8 @@ export function useAnalyticsFilters() {
   }, [allAgentNameMap, groupAgents]);
 
   const setGroupFilter = useCallback((value: string) => {
-    setGroupFilterState(value);
-    setAgentFilter("all");
+    setSelectedGroup(value);
+    setSelectedAgent("all");
   }, []);
 
   const filterParams: Pick<AnalyticsFilterParams, "agent_id" | "group_id"> = useMemo(
@@ -62,7 +84,7 @@ export function useAnalyticsFilters() {
     groupFilter,
     setGroupFilter,
     agentFilter,
-    setAgentFilter,
+    setAgentFilter: setSelectedAgent,
     agents,
     agentNameMap,
     filterParams,

@@ -112,16 +112,16 @@ export const LoginForm = ({ onSubmit, isLoading }: LoginFormProps) => {
         <>
           <div className="relative py-2">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-zinc-200" />
+              <span className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-zinc-500">Or</span>
+              <span className="bg-card px-2 text-muted-foreground">Or</span>
             </div>
           </div>
           <Button
             type="button"
             variant="outline"
-            className="w-full border-zinc-300"
+            className="w-full border-border"
             disabled={isLoading}
             onClick={() => void handleMicrosoftSignIn()}
           >

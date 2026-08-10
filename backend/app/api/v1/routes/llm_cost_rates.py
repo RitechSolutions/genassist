@@ -8,9 +8,14 @@ from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
-from app.schemas.llm_cost_rate import LlmCostRateImportResult, LlmCostRateRead
-from app.services.llm_cost_rates import LlmCostRateService
 from app.core.utils.cache_headers import no_store_headers
+from app.schemas.llm_cost_rate import (
+    LlmCostRateCreate,
+    LlmCostRateImportResult,
+    LlmCostRateRead,
+    LlmCostRateUpdate,
+)
+from app.services.llm_cost_rates import LlmCostRateService
 
 router = APIRouter()
 
@@ -30,6 +35,35 @@ async def list_cost_rates(service: LlmCostRateService = Injected(LlmCostRateServ
         LlmCostRateRead.model_validate(r, from_attributes=True)
         for r in rows
     ]
+
+
+@router.post(
+    "",
+    response_model=LlmCostRateRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.UPDATE))],
+)
+async def create_cost_rate(
+    body: LlmCostRateCreate,
+    service: LlmCostRateService = Injected(LlmCostRateService),
+):
+    return await service.create_rate(body)
+
+
+@router.put(
+    "/{rate_id}",
+    response_model=LlmCostRateRead,
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.UPDATE))],
+)
+async def update_cost_rate(
+    rate_id: UUID,
+    body: LlmCostRateUpdate,
+    service: LlmCostRateService = Injected(LlmCostRateService),
+):
+    updated = await service.update_rate(rate_id, body)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Cost rate not found")
+    return updated
 
 
 @router.post(

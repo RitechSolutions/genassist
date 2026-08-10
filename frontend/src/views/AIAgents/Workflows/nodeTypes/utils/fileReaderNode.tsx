@@ -24,10 +24,15 @@ const FileReaderNode: React.FC<NodeProps<FileReaderNodeData>> = ({
     }
   };
 
+  const isChatAttachment = data.fileSource === "chatAttachment";
+  const fileValue = isChatAttachment
+    ? "Chat document(s)"
+    : data.fileName || "No file uploaded";
+
   const nodeContent: NodeContentRow[] = [
     {
       label: "File",
-      value: data.fileName || "No file uploaded",
+      value: fileValue,
     },
   ];
 

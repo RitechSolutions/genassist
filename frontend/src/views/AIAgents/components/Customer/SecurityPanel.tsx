@@ -245,7 +245,7 @@ export const SecurityPanel = ({
     return (
       <Card className="p-8">
         <div className="flex justify-center items-center py-12">
-          <div className="text-sm text-gray-500">Loading security settings...</div>
+          <div className="text-sm text-muted-foreground">Loading security settings...</div>
         </div>
       </Card>
     );
@@ -254,12 +254,12 @@ export const SecurityPanel = ({
   return (
     <Card className="overflow-hidden">
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+        <div className="flex items-center justify-between border-b border-border pb-4">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-foreground">
               {configName ? `Security Settings for ${configName}` : "Security Settings"}
             </h3>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Configure authentication, CORS, rate limiting, and reCAPTCHA settings
             </p>
           </div>
@@ -279,12 +279,12 @@ export const SecurityPanel = ({
         </div>
 
         {/* Token-based Authentication */}
-        <div className="space-y-4 border-b border-gray-200 pb-6">
+        <div className="space-y-4 border-b border-border pb-6">
           <div>
-            <h4 className="text-base font-semibold text-gray-900 mb-1">
+            <h4 className="text-base font-semibold text-foreground mb-1">
               Token-based Authentication
             </h4>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Configure JWT token authentication for secure API access
             </p>
           </div>
@@ -292,7 +292,7 @@ export const SecurityPanel = ({
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="token-based-auth">Enable Token-based Auth</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Require JWT token for conversation updates instead of API key
                 </p>
               </div>
@@ -315,7 +315,7 @@ export const SecurityPanel = ({
                   onChange={(e) => setTokenExpirationMinutes(e.target.value)}
                   placeholder="60 (default)"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Leave empty to use global default (60 minutes)
                 </p>
               </div>
@@ -324,10 +324,10 @@ export const SecurityPanel = ({
         </div>
 
         {/* CORS Settings */}
-        <div className="space-y-4 border-b border-gray-200 pb-6">
+        <div className="space-y-4 border-b border-border pb-6">
           <div>
-            <h4 className="text-base font-semibold text-gray-900 mb-1">CORS Settings</h4>
-            <p className="text-sm text-gray-500">
+            <h4 className="text-base font-semibold text-foreground mb-1">CORS Settings</h4>
+            <p className="text-sm text-muted-foreground">
               Configure allowed origins for cross-origin requests
             </p>
           </div>
@@ -340,7 +340,7 @@ export const SecurityPanel = ({
               placeholder="https://example.com, https://app.example.com"
               rows={3}
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Comma-separated list of allowed CORS origins. Leave empty to use
               global default.
             </p>
@@ -348,10 +348,10 @@ export const SecurityPanel = ({
         </div>
 
         {/* Rate Limiting */}
-        <div className="space-y-4 border-b border-gray-200 pb-6">
+        <div className="space-y-4 border-b border-border pb-6">
           <div>
-            <h4 className="text-base font-semibold text-gray-900 mb-1">Rate Limiting</h4>
-            <p className="text-sm text-gray-500">
+            <h4 className="text-base font-semibold text-foreground mb-1">Rate Limiting</h4>
+            <p className="text-sm text-muted-foreground">
               Set rate limits for conversation endpoints per agent
             </p>
           </div>
@@ -409,7 +409,7 @@ export const SecurityPanel = ({
               />
             </div>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Leave empty to use global defaults. These limits apply per
             conversation/agent.
           </p>
@@ -418,8 +418,8 @@ export const SecurityPanel = ({
         {/* reCAPTCHA Settings */}
         <div className="space-y-4">
           <div>
-            <h4 className="text-base font-semibold text-gray-900 mb-1">reCAPTCHA Settings</h4>
-            <p className="text-sm text-gray-500">
+            <h4 className="text-base font-semibold text-foreground mb-1">reCAPTCHA Settings</h4>
+            <p className="text-sm text-muted-foreground">
               Configure Google reCAPTCHA Enterprise for bot protection
             </p>
           </div>
@@ -427,7 +427,7 @@ export const SecurityPanel = ({
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="recaptcha-enabled">Enable reCAPTCHA</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Enable Google reCAPTCHA Enterprise verification
                 </p>
               </div>
@@ -476,14 +476,14 @@ export const SecurityPanel = ({
                   <div className="space-y-2">
                     <label
                       htmlFor="gcp-file-upload"
-                      className="flex items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-gray-400 hover:bg-muted transition-colors"
                     >
                       <div className="flex flex-col items-center gap-2">
-                        <Upload className="h-6 w-6 text-gray-400" />
-                        <span className="text-sm font-medium text-gray-600">
+                        <Upload className="h-6 w-6 text-muted-foreground" />
+                        <span className="text-sm font-medium text-muted-foreground">
                           {gcpSvcAccountFileName || "Upload JSON file"}
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           Click to select a JSON file
                         </span>
                       </div>
@@ -497,10 +497,10 @@ export const SecurityPanel = ({
                     </label>
                     
                     {gcpSvcAccountFileName && (
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
                         <div className="flex items-center gap-2">
-                          <FileJson className="h-5 w-5 text-gray-600" />
-                          <span className="text-sm font-medium text-gray-700">
+                          <FileJson className="h-5 w-5 text-muted-foreground" />
+                          <span className="text-sm font-medium text-muted-foreground">
                             {gcpSvcAccountFileName}
                           </span>
                         </div>
@@ -520,10 +520,10 @@ export const SecurityPanel = ({
                   {/* Or JSON Text Input */}
                   <div className="relative">
                     <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-gray-300"></div>
+                      <div className="w-full border-t border-border"></div>
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-white px-2 text-gray-500">Or paste JSON</span>
+                      <span className="bg-card px-2 text-muted-foreground">Or paste JSON</span>
                     </div>
                   </div>
 
@@ -535,7 +535,7 @@ export const SecurityPanel = ({
                     rows={8}
                     className="font-mono text-sm"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Paste your GCP service account JSON content here, or upload a JSON file above
                   </p>
                 </div>

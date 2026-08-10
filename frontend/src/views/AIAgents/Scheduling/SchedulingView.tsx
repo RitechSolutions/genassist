@@ -171,8 +171,8 @@ const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId, onBack }) => {
             </Button>
           )}
           <div className="min-w-0">
-            <h2 className="text-3xl font-bold">Scheduling</h2>
-            <p className="text-zinc-400 font-normal mt-1">
+            <h2 className="text-3xl font-bold animate-fade-down">Scheduling</h2>
+            <p className="text-muted-foreground font-normal mt-1 animate-fade-up">
               Schedule recurring runs of this workflow
             </p>
           </div>
@@ -199,13 +199,13 @@ const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId, onBack }) => {
           <PageListSkeleton variant="rich" rows={4} bordered={false} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <div className="rounded-full bg-gray-100 p-4">
-              <CalendarClock className="h-12 w-12 text-gray-400" />
+            <div className="rounded-full bg-muted p-4">
+              <CalendarClock className="h-12 w-12 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-lg">
               {searchTerm ? "No matching schedules" : "No schedules yet"}
             </h3>
-            <p className="text-sm text-gray-500 max-w-sm px-4">
+            <p className="text-sm text-muted-foreground max-w-sm px-4">
               {searchTerm
                 ? "Try adjusting your search query."
                 : "Create a schedule to run an agent's workflow automatically on a recurring basis."}

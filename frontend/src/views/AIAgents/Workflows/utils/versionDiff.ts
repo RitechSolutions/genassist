@@ -10,6 +10,7 @@ import {
   WorkflowDiff,
 } from '@/interfaces/workflow-diff.interface';
 import nodeRegistry from '../registry/nodeRegistry';
+import { stripTransientGraphFields } from './graphNormalization';
 
 /**
  * Pure diff engine for the Workflow Version Diff Checker (feature 005).
@@ -42,19 +43,14 @@ const asRecord = (value: unknown): UnknownRecord =>
  */
 export const normalizeForDiff = (workflow: Workflow): NormalizedWorkflow => {
   const clone = JSON.parse(JSON.stringify(workflow ?? {})) as Workflow;
+  const { nodes: baseNodes, edges } = stripTransientGraphFields(clone.nodes ?? [], clone.edges ?? []);
 
-  const nodes: Node[] = (clone.nodes ?? []).map((node) => {
-    const { selected, dragging, width, height, position, positionAbsolute, ...rest } = node as Node & {
-      positionAbsolute?: unknown;
-    };
+  // Diff also treats a node move (position) and the injected updateNodeData as non-meaningful
+  const nodes: Node[] = baseNodes.map((node) => {
+    const { position, ...rest } = node;
     const data = { ...asRecord(rest.data) };
     delete data.updateNodeData;
     return { ...rest, data } as Node;
-  });
-
-  const edges: Edge[] = (clone.edges ?? []).map((edge) => {
-    const { selected, className, ...rest } = edge as Edge & { className?: string };
-    return rest as Edge;
   });
 
   return { nodes, edges };

@@ -1,8 +1,7 @@
-import { useState, useMemo } from "react";
-import { DataTable } from "@/components/DataTable";
+import { useState } from "react";
+import { DataTable, Column } from "@/components/ui/data-table";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { toast } from "react-hot-toast";
@@ -42,61 +41,16 @@ export function AppSettingsCard({
     );
   });
 
-  // Define display item interface
-  interface DisplayItem {
-    type: 'setting';
-    data: AppSetting;
-    groupName?: string;
-    isGrouped?: boolean;
-  }
-
-  // Group settings by type and create a flattened structure for rendering
-  const displayData = useMemo<DisplayItem[]>(() => {
-    const typeCount: Record<string, number> = {};
-    
-    // Count occurrences of each type
-    filteredSettings.forEach((setting) => {
+  // Count settings per type so types with 2+ settings render under a group header.
+  const typeCounts = filteredSettings.reduce<Record<string, number>>(
+    (acc, setting) => {
       const type = setting.type || "Unknown";
-      typeCount[type] = (typeCount[type] || 0) + 1;
-    });
-
-    // Group settings by type
-    const groups: Record<string, AppSetting[]> = {};
-    filteredSettings.forEach((setting) => {
-      const type = setting.type || "Unknown";
-      if (!groups[type]) {
-        groups[type] = [];
-      }
-      groups[type].push(setting);
-    });
-
-    // Create flattened display data with group markers
-    const flatData: DisplayItem[] = [];
-    Object.entries(groups).forEach(([type, settings]) => {
-      const shouldGroup = typeCount[type] >= 2;
-      
-      if (shouldGroup) {
-        settings.forEach((setting, index) => {
-          flatData.push({
-            type: 'setting',
-            data: setting,
-            groupName: index === 0 ? type : undefined,
-            isGrouped: true,
-          });
-        });
-      } else {
-        settings.forEach((setting) => {
-          flatData.push({
-            type: 'setting',
-            data: setting,
-            isGrouped: false,
-          });
-        });
-      }
-    });
-
-    return flatData;
-  }, [filteredSettings]);
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    },
+    {}
+  );
+  const isGroupedType = (type: string) => (typeCounts[type] || 0) >= 2;
 
   const handleDeleteClick = (setting: AppSetting) => {
     setSettingToDelete(setting);
@@ -119,77 +73,82 @@ export function AppSettingsCard({
     }
   };
 
-  const headers = ["Name", "Type", "Values", "Status", "Created", "Actions"];
-
-  const renderRow = (item: DisplayItem) => {
-    const { data: setting, groupName, isGrouped } = item;
-    
-    const rows: JSX.Element[] = [];
-    
-    // Add group header if this is the first item in a group
-    if (groupName) {
-      rows.push(
-        <TableRow key={`group-${groupName}`} className="bg-gray-50/50 hover:bg-gray-50/50 border-t-2 border-gray-200">
-          <TableCell colSpan={6} className="font-semibold text-gray-700 py-3">
-            {groupName}
-          </TableCell>
-        </TableRow>
-      );
-    }
-    
-    // Add the setting row
-    rows.push(
-      <TableRow key={setting.id}>
-        <TableCell className="font-medium break-all">{setting.name}</TableCell>
-        <TableCell className="truncate">{isGrouped ? "" : setting.type}</TableCell>
-        <TableCell>
-          <div className="flex flex-col gap-1 max-w-md">
-            {Object.entries(setting.values || {}).map(([key, value]) => (
-              <div key={key} className="text-sm">
-                <span className="font-medium text-gray-600">{key}:</span>{" "}
-                <span className="font-mono text-xs">
-                  {String(value).length > 0 ? "••••••••" : "—"}
-                </span>
-              </div>
-            ))}
-            {Object.keys(setting.values || {}).length === 0 && (
-              <span className="text-gray-400">—</span>
-            )}
-          </div>
-        </TableCell>
-        <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-          <Badge variant={setting.is_active === 1 ? "default" : "secondary"}>
-            {setting.is_active === 1 ? "Active" : "Inactive"}
-          </Badge>
-        </TableCell>
-        <TableCell className="truncate">
-          {setting.created_at ? formatDate(setting.created_at) : "No date"}
-        </TableCell>
-        <TableCell>
-          <ActionButtons
-            onEdit={() => onEditSetting?.(setting)}
-            onDelete={() => handleDeleteClick(setting)}
-            editTitle="Edit App Setting"
-            deleteTitle="Delete App Setting"
-          />
-        </TableCell>
-      </TableRow>
-    );
-    
-    return rows;
-  };
+  const columns: Column<AppSetting>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (setting) => setting.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Type",
+      key: "type",
+      className: "truncate",
+      // Blank for grouped types (shown in the group header); inline otherwise.
+      cell: (setting) => (isGroupedType(setting.type || "Unknown") ? "" : setting.type),
+    },
+    {
+      header: "Values",
+      key: "values",
+      cell: (setting) => (
+        <div className="flex flex-col gap-1 max-w-md">
+          {Object.entries(setting.values || {}).map(([key, value]) => (
+            <div key={key} className="text-sm">
+              <span className="font-medium text-muted-foreground">{key}:</span>{" "}
+              <span className="font-mono text-xs">
+                {String(value).length > 0 ? "••••••••" : "—"}
+              </span>
+            </div>
+          ))}
+          {Object.keys(setting.values || {}).length === 0 && (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (setting) => (
+        <Badge variant={setting.is_active === 1 ? "default" : "secondary"}>
+          {setting.is_active === 1 ? "Active" : "Inactive"}
+        </Badge>
+      ),
+    },
+    {
+      header: "Created",
+      key: "created_at",
+      className: "truncate",
+      cell: (setting) =>
+        setting.created_at ? formatDate(setting.created_at) : "No date",
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (setting) => (
+        <ActionButtons
+          onEdit={() => onEditSetting?.(setting)}
+          onDelete={() => handleDeleteClick(setting)}
+          editTitle="Edit App Setting"
+          deleteTitle="Delete App Setting"
+        />
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
-        data={displayData}
+        data={filteredSettings}
+        columns={columns}
         loading={loading}
         error={null}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        groupBy={(setting) => setting.type || "Unknown"}
+        renderGroupHeader={(type, items) => (items.length >= 2 ? type : null)}
         emptyMessage="No app settings found"
-        searchEmptyMessage="No app settings found matching your search"
+        notFoundMessage="No app settings found matching your search"
       />
 
       <ConfirmDialog

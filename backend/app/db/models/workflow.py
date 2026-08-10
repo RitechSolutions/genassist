@@ -21,6 +21,7 @@ class WorkflowModel(Base):
         JSONB, nullable=True)  # JSON configuration for the workflow
     executionState: Mapped[List[dict] | None] = mapped_column(
         JSONB, nullable=True)  # JSON configuration for the workflow
+    settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     version = Column(String, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     agent_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=True)

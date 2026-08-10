@@ -22,7 +22,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -372,7 +372,7 @@ function FileManagerFileBlock({
 
   if (layout === "thumbnails") {
     return (
-      <Card className="overflow-hidden border bg-white shadow-sm transition-shadow hover:shadow-md">
+      <Card className="overflow-hidden border bg-card dark:bg-zinc-900 shadow-sm transition-shadow hover:shadow-md">
         <FileThumb fileId={f.id} mimeType={f.mime_type} />
         <div className="p-4">{details}</div>
       </Card>
@@ -380,7 +380,7 @@ function FileManagerFileBlock({
   }
 
   return (
-    <Card className="overflow-hidden border bg-white shadow-sm transition-shadow hover:shadow-md">
+    <Card className="overflow-hidden border bg-card dark:bg-zinc-900 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
         <FileThumb compact fileId={f.id} mimeType={f.mime_type} />
         <div className="min-w-0 flex-1">{details}</div>
@@ -674,7 +674,7 @@ export function FileManagerFiles() {
   if (!fmEnabled) {
     return (
       <PageLayout>
-        <Card className="p-8">
+        <Card className="dark:bg-zinc-900 p-8">
           <h1 className="text-xl font-semibold mb-2">Manage Files</h1>
           <p className="text-sm text-muted-foreground">
             File manager is not enabled or is disabled. Please contact your
@@ -689,8 +689,8 @@ export function FileManagerFiles() {
     <PageLayout>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
         <div className="min-w-0">
-          <h1 className="text-2xl md:text-3xl font-bold mb-1">Manage Files</h1>
-          <p className="text-sm md:text-base text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">Manage Files</h1>
+          <p className="text-sm md:text-base text-muted-foreground animate-fade-up">
             Browse uploads, preview images, and manage metadata
           </p>
         </div>
@@ -788,7 +788,7 @@ export function FileManagerFiles() {
             "flex h-[90vh] max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:w-full",
           )}
         >
-          <DialogHeader className="shrink-0 space-y-0 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+          <DialogHeader className="shrink-0 space-y-0 border-b border-border px-6 pb-4 pt-6 pr-14">
             <DialogTitle>Upload file</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
@@ -966,7 +966,7 @@ export function FileManagerFiles() {
             </div>
           </div>
           </div>
-          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 border-t border-gray-100 px-6 py-4 sm:flex-col">
+          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 border-t border-border px-6 py-4 sm:flex-col">
             {uploading && (
               <div className="w-full space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">

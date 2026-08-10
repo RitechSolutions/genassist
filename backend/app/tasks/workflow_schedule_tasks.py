@@ -22,10 +22,12 @@ from app.core.utils.enums.workflow_schedule_enum import (
     WorkflowScheduleRunStatus,
     ThreadIdMode,
 )
+from app.core.utils.uuid_utils import coerce_uuid
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.agent import AgentRepository
 from app.repositories.workflow_schedule import WorkflowScheduleRepository
 from app.repositories.workflow_schedule_run import WorkflowScheduleRunRepository
@@ -135,7 +137,13 @@ async def execute_workflow_run_async(run_id: UUID):
                 workflow_engine = WorkflowEngine(workflow_config)
 
                 state = await workflow_engine.execute_from_node(
-                    input_data=input_data, thread_id=thread_id
+                    input_data=input_data,
+                    thread_id=thread_id,
+                    usage_context=WorkflowUsageContext(
+                        source="schedule",
+                        agent_id=coerce_uuid(schedule.agent_id),
+                        workflow_id=coerce_uuid(workflow.id),
+                    ),
                 )
                 # Redact cardholder data from the output before persisting it to
                 # the run history (it is stored raw/JSONB otherwise).
