@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, Column } from "@/components/ui/data-table";
 import { LIST_PAGE_SIZE } from "@/constants/pagination";
@@ -7,15 +7,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import { formatCallDuration } from "@/helpers/formatters";
-import {
-  Loader2,
-  Trash2,
-  Sparkles,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import { Loader2, Trash2, Sparkles, Plus } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { listFineTuneJobs, syncFineTuneJobs } from "@/services/openaiFineTune";
 import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import {
   formatStatusLabel,
@@ -28,50 +21,16 @@ import type { FineTuneJobsCardProps, JobProgress } from "@/views/FineTune/types"
 
 export function FineTuneJobsCard({
   searchQuery,
-  refreshKey = 0,
+  jobs,
+  setJobs,
+  loading,
+  error,
   onNewFineTuneJob,
 }: FineTuneJobsCardProps) {
   const navigate = useNavigate();
-  const [jobs, setJobs] = useState<FineTuneJob[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [jobToDelete, setJobToDelete] = useState<FineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    fetchJobs();
-  }, [refreshKey]);
-
-  const fetchJobs = async () => {
-    try {
-      setLoading(true);
-      // Fast cached load — no sync. Press "Sync" to refresh status from OpenAI.
-      const data = await listFineTuneJobs();
-      setJobs(data);
-      setError(null);
-    } catch (err) {
-      setError("Failed to fetch jobs");
-      toast.error("Failed to fetch jobs");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSync = async () => {
-    try {
-      setSyncing(true);
-      const data = await syncFineTuneJobs();
-      setJobs(data);
-      setError(null);
-      toast.success("Jobs synced");
-    } catch (err) {
-      toast.error("Failed to sync jobs");
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -312,22 +271,6 @@ export function FineTuneJobsCard({
 
   return (
     <>
-      <div className="flex justify-end mb-3">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSync}
-          disabled={syncing || loading}
-        >
-          {syncing ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          Sync
-        </Button>
-      </div>
-
       <DataTable
         data={filtered}
         columns={columns}
