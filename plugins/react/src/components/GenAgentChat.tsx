@@ -11,7 +11,7 @@ import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle, Fullscreen, ChevronDown } from 'lucide-react';
+import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, ArrowDown, Maximize2, Minimize2, AlertCircle, Fullscreen, ChevronDown } from 'lucide-react';
 import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
@@ -66,6 +66,7 @@ import {
   getInputBarReplyCardStyle,
   getInputBarPanelStyle,
   getInputBarPanelHeaderStyle,
+  getScrollToBottomButtonStyle,
   CSS_KEYFRAMES,
 } from '../styles/genAgentChatStyles';
 
@@ -260,7 +261,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     translations,
   });
 
-  const { messagesEndRef, chatContainerRef } = useScrollManagement({
+  const { messagesEndRef, chatContainerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
     isAgentTyping,
     currentThinkingPartIndex,
@@ -1843,7 +1844,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         ref={inputBarRootRef}
         data-genassist-root="true"
         data-genassist-container="inputbar"
-        style={{ ...getInputBarRootStyle(fontFamily), ['--ga-hover' as string]: menuHoverBg }}
+        style={{
+          // Dock the bar to the bottom-center of the viewport so it stays visible on
+          // scroll. Always centered — the input bar ignores floatingConfig corners.
+          ...getInputBarRootStyle(fontFamily, offsetY),
+          ['--ga-hover' as string]: menuHoverBg,
+        }}
       >
         <style>{CSS_KEYFRAMES}</style>
 
@@ -1998,6 +2004,21 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   WebkitMaskImage: 'linear-gradient(to bottom, #000 40%, transparent 100%)',
                 }}
               />
+
+              {/* Jump-to-latest: appears when the visitor scrolls up in a scrollable
+                  conversation; clicking snaps back to the newest message. */}
+              {showScrollButton && (
+                <button
+                  type="button"
+                  className="ga-scroll-bottom-btn"
+                  style={getScrollToBottomButtonStyle(backgroundColor)}
+                  onClick={() => scrollToLatest()}
+                  title={t('inputbar.scrollToBottom', 'Scroll to latest')}
+                  aria-label={t('inputbar.scrollToBottom', 'Scroll to latest')}
+                >
+                  <ArrowDown size={18} color={textColor} />
+                </button>
+              )}
 
               {fileErrorToast && (
                 <div

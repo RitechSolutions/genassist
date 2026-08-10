@@ -623,13 +623,23 @@ export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSS
 
 /* ===== Input-bar variant styles ===== */
 
-// Outer wrapper: relative so the FAQ list / conversation panel can float above the bar.
-export function getInputBarRootStyle(fontFamily: string): React.CSSProperties {
+// Outer wrapper: fixed to the viewport so the bar stays docked and visible on scroll
+// (like the floating launcher), regardless of where the host places the component in the
+// page. It's still a positioned element, so the FAQ list / conversation panel keep floating
+// above the bar. Always docked bottom-center — the input bar ignores floatingConfig corners.
+// Margin-auto centering (rather than a transform) keeps the element from becoming a
+// containing block for any fixed-position descendants.
+export function getInputBarRootStyle(fontFamily: string, offsetY: number = 24): React.CSSProperties {
   return {
-    position: 'relative',
-    width: '100%',
+    position: 'fixed',
+    zIndex: 1000,
+    bottom: offsetY,
+    left: 0,
+    right: 0,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    width: 'calc(100vw - 40px)',
     maxWidth: '680px',
-    margin: '0 auto',
     boxSizing: 'border-box',
     fontFamily,
   };
@@ -745,8 +755,36 @@ export function getInputBarPanelHeaderStyle(backgroundColor: string): React.CSSP
   };
 }
 
+// Circular "jump to latest" button, docked bottom-center over the message list. Uses the
+// panel background so it stays theme-aware; keep the translateX(-50%) in sync with the
+// .ga-scroll-bottom-btn CSS below (hover/entrance transforms must preserve the centering).
+export function getScrollToBottomButtonStyle(backgroundColor: string): React.CSSProperties {
+  return {
+    position: 'absolute',
+    bottom: '14px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 20,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '34px',
+    height: '34px',
+    borderRadius: '50%',
+    background: backgroundColor || '#ffffff',
+    border: '1px solid #e5e7eb',
+    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.16)',
+    color: '#374151',
+    cursor: 'pointer',
+    padding: 0,
+  };
+}
+
 export const CSS_KEYFRAMES = `
   @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
+  @keyframes ga-scroll-btn-in { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  .ga-scroll-bottom-btn { animation: ga-scroll-btn-in 180ms ease; transition: transform 160ms ease, box-shadow 160ms ease; }
+  .ga-scroll-bottom-btn:hover { transform: translateX(-50%) translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22); }
   .ga-textarea-nosb {
     scrollbar-width: none;
     -ms-overflow-style: none;
