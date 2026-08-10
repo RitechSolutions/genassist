@@ -1166,24 +1166,8 @@ function App() {
           />
         );
 
-        // The input-bar variant renders inline where it is placed — dock it to the
-        // bottom-center of the viewport for the demo. Embedded gets a sized box.
-        if (chatMode === "inputbar") {
-          return (
-            <div
-              style={{
-                position: "fixed",
-                left: "50%",
-                transform: "translateX(-50%)",
-                bottom: 28,
-                width: "min(680px, calc(100vw - 40px))",
-                zIndex: 1000,
-              }}
-            >
-              {chatWidget}
-            </div>
-          );
-        }
+        // The input-bar variant docks itself to the bottom-center of the viewport
+        // (fixed positioning) — no wrapper needed. Embedded gets a sized box.
         if (chatMode === "embedded") {
           return (
             <div style={{ position: "fixed", right: 24, bottom: 24, width: 384, height: 620, zIndex: 1000 }}>
