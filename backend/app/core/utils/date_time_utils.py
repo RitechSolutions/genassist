@@ -19,6 +19,11 @@ def utc_now() -> datetime:
     """Timezone-aware replacement for datetime.utcnow()."""
     return datetime.now(timezone.utc)
 
+def utc_day_start(value: date | datetime) -> datetime:
+    if isinstance(value, datetime):
+        value = (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).date()
+    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+
 def shift_datetime(unit: str, amount: int, operation: str = 'add', base_time: datetime = None) -> datetime:
     """
     Shift the given datetime by a specified amount of time units.

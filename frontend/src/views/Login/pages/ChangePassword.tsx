@@ -142,7 +142,7 @@ export default function ChangePassword() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50/90 flex flex-col">
+    <div className="min-h-screen bg-muted/90 flex flex-col">
       <div className="flex-1 space-y-4 p-8 pt-6">
         <div className="flex items-center justify-between space-y-2">
           <div>

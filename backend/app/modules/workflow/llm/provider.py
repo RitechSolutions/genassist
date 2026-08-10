@@ -12,9 +12,14 @@ if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls to
     from langchain_core.language_models import BaseChatModel
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
+from app.core.utils.enums.bedrock_fine_tuning_enum import (
+    BedrockDeploymentStatus,
+    BedrockJobStatus,
+)
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
 from app.services.llm_providers import LlmProviderService
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+from app.services.bedrock_fine_tuning import BedrockFineTuningService
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +32,12 @@ async def build_chat_model(
     cd = dict(connection_data)
     original_provider = (provider_name or "").lower()
     provider = original_provider
+
+    # Bedrock ARN model ids (custom / fine-tuned / provisioned / inference-profile) don't
+    # encode their foundation-model family, so langchain_aws requires an explicit
+    # `provider`. Pull the user-selected family out of connection_data here so it never
+    # collides with init_chat_model's own `model_provider` routing kwarg in the spread below.
+    bedrock_model_provider = cd.pop("model_provider", None)
 
     if provider == "vllm":
         provider = "openai"
@@ -44,6 +55,28 @@ async def build_chat_model(
         provider = "openai"
         if "base_url" not in cd:
             cd["base_url"] = "https://openrouter.ai/api/v1"
+    elif provider == "bedrock":
+        if cd.pop("reasoning_enabled", False):
+            effort = cd.pop("reasoning_effort", "low")
+            extra_fields = dict(cd.get("additional_model_request_fields") or {})
+            extra_fields["reasoningConfig"] = {"type": "enabled", "maxReasoningEffort": effort}
+            cd["additional_model_request_fields"] = extra_fields
+        else:
+            cd.pop("reasoning_effort", None)
+        # Use the Converse API instead of the legacy InvokeModel path so inference params
+        # (max_tokens, temperature) are normalized into inferenceConfig across model
+        # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles
+        # it, and it's AWS's recommended API for Nova/Claude/Llama/custom models alike.
+        provider = "bedrock_converse"
+    elif provider == "anthropic":
+        if cd.pop("thinking_enabled", False):
+            cd["thinking"] = {"type": "enabled", "budget_tokens": cd.pop("thinking_budget_tokens", 2000)}
+            cd["temperature"] = 1  # Anthropic requires temperature=1 when thinking is enabled
+        else:
+            cd.pop("thinking_budget_tokens", None)
+    elif provider == "openai":
+        if not cd.get("reasoning_effort"):
+            cd.pop("reasoning_effort", None)
 
     if provider == "openai" and original_provider == "openai":
         os.environ["OPENAI_API_KEY"] = cd.get("api_key", "")
@@ -55,6 +88,24 @@ async def build_chat_model(
         **cd,
         "model": model_name,
     }
+
+    # A full ARN needs the foundation-model family passed through to ChatBedrockConverse
+    # as `provider`; plain base model ids infer it themselves and must not receive it.
+    if original_provider == "bedrock" and isinstance(model_name, str) and model_name.startswith("arn:"):
+        if not bedrock_model_provider:
+            raise ValueError(
+                "Select a Model Provider (e.g. amazon, anthropic) when using a Bedrock model ARN."
+            )
+        model_kwargs["provider"] = bedrock_model_provider
+
+    # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
+    # invocation of this model (including nested agent loops) is traced. No-op unless
+    # USE_OPIK is enabled.
+    from app.modules.workflow.llm.opik_tracing import get_opik_callbacks
+
+    callbacks = get_opik_callbacks()
+    if callbacks:
+        model_kwargs["callbacks"] = callbacks
 
     # Imported here, not at module top level: langchain.chat_models transitively pulls
     # torch/transformers, which must not be loaded into a Celery prefork master process.
@@ -90,6 +141,17 @@ class LLMProvider:
             for job in successful_jobs
         ]
 
+        # Deployed Bedrock (Nova) custom models — only those with a deployment ARN are
+        # invokable, so surface those as suggestions on the bedrock model field.
+        bedrock_service = injector.get(BedrockFineTuningService)
+        bedrock_completed = await bedrock_service.get_all_by_statuses([BedrockJobStatus.COMPLETED])
+        bedrock_options = [
+            {"value": job.deployment_arn, "label": "fine-tuned:" + (job.suffix or job.custom_model_name)}
+            for job in bedrock_completed
+            if job.deployment_arn
+            and job.deployment_status == BedrockDeploymentStatus.ACTIVE
+        ]
+
         schemas = copy.deepcopy(LLM_FORM_SCHEMAS_DICT)
 
         # Inject OpenAI fine-tuned models into the openai schema
@@ -98,6 +160,15 @@ class LLMProvider:
                 if field.get("name") == "model":
                     if "options" in field:
                         field["options"].extend(fine_tuned_options)
+                    break
+
+        # Inject deployed Bedrock fine-tuned models as suggestions on the bedrock model
+        # field. The field stays free-text (type="text"); the frontend renders a datalist
+        # so a user can pick a deployed model ARN or type any base model id.
+        if bedrock_options and "bedrock" in schemas and "fields" in schemas["bedrock"]:
+            for field in schemas["bedrock"]["fields"]:
+                if field.get("name") == "model":
+                    field["options"] = [*(field.get("options") or []), *bedrock_options]
                     break
 
         # Inject running vLLM deployments into the vllm schema

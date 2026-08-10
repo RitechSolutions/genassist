@@ -143,7 +143,7 @@ export function GdprDeleteDialog({
           </div>
 
           {mode === "hard" && hardDeleteBlockedCount > 0 ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400">
               {hardDeleteBlockedCount} finalized conversation
               {hardDeleteBlockedCount === 1 ? "" : "s"} selected. Finalized conversations cannot be
               hard-deleted and will be skipped.

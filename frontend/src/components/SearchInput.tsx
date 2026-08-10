@@ -50,14 +50,14 @@ export const SearchInput = ({
     <div className={cn("w-full sm:w-[260px]", className)}>
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
           <input
             type="text"
             placeholder={placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full pl-10 pr-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            className="w-full pl-10 pr-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-primary bg-card"
           />
         </div>
         {onSearch && (
@@ -72,7 +72,7 @@ export const SearchInput = ({
         )}
       </div>
       {showMinHint && (
-        <p className="mt-1 pl-3 text-xs text-gray-500">
+        <p className="mt-1 pl-3 text-xs text-muted-foreground">
           Enter at least {minLength} characters to search.
         </p>
       )}

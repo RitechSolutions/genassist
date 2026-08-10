@@ -451,7 +451,7 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
                   </Popover>
                 )}
                 {selectedTrainingFile && (
-                  <div className="text-sm text-green-700">
+                  <div className="text-sm text-green-700 dark:text-green-400">
                     Selected: {selectedTrainingFile.name}{' '}
                     <span className="text-muted-foreground font-mono text-xs">({selectedTrainingFile.id})</span>
                   </div>

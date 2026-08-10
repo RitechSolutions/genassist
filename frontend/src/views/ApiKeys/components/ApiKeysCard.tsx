@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { DataTable } from '@/components/DataTable';
-import { TableCell, TableRow } from '@/components/table';
+import { DataTable, Column } from '@/components/ui/data-table';
+import { LIST_PAGE_SIZE } from '@/constants/pagination';
 import { Button } from '@/components/button';
 import { Badge } from '@/components/badge';
 import { Pencil, RefreshCw, Trash } from 'lucide-react';
@@ -65,12 +65,18 @@ export function ApiKeysCard({
 
   const filteredApiKeys = apiKeys.filter((apiKey) => apiKey.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const headers = ['Name', 'Roles', 'Created', 'Status', 'Validity', 'Actions'];
-
-  const renderRow = (apiKey: ApiKey) => (
-    <TableRow key={apiKey.id}>
-      <TableCell className="font-medium break-all">{apiKey.name}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<ApiKey>[] = [
+    {
+      header: 'Name',
+      key: 'name',
+      cell: (apiKey) => apiKey.name,
+      className: 'font-medium break-all',
+    },
+    {
+      header: 'Roles',
+      key: 'roles',
+      className: 'overflow-hidden whitespace-nowrap text-clip',
+      cell: (apiKey) => (
         <div className="flex flex-wrap gap-1">
           {apiKey.roles && apiKey.roles.length > 0 ? (
             apiKey.roles.map((role) => (
@@ -82,52 +88,72 @@ export function ApiKeysCard({
             <span className="text-muted-foreground text-xs">No roles</span>
           )}
         </div>
-      </TableCell>
-      <TableCell className="truncate">{apiKey.created_at ? formatDate(apiKey.created_at) : 'No date'}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+      ),
+    },
+    {
+      header: 'Created',
+      key: 'created_at',
+      className: 'truncate',
+      cell: (apiKey) => (apiKey.created_at ? formatDate(apiKey.created_at) : 'No date'),
+    },
+    {
+      header: 'Status',
+      key: 'status',
+      className: 'overflow-hidden whitespace-nowrap text-clip',
+      cell: (apiKey) => (
         <Badge variant={apiKey.is_active === 1 ? 'default' : 'secondary'}>
           {apiKey.is_active === 1 ? 'Active' : 'Revoked'}
         </Badge>
-      </TableCell>
-      <TableCell className="max-w-[220px]">
-        <ApiKeyExpiryLines apiKey={apiKey} />
-      </TableCell>
-      <TableCell className="space-x-1">
-        <TooltipButton
-          button={
-            <Button variant="ghost" size="sm" onClick={() => setRotateTarget({ key: apiKey, overlap: '0' })}>
-              <RefreshCw className="w-4 h-4 text-black" />
-            </Button>
-          }
-          tooltipContent={{ side: 'top', align: 'center', children: <p>Rotate secret</p> }}
-        />
-        <TooltipButton
-          button={<Button variant="ghost" size="sm" onClick={() => onEditApiKey(apiKey)} title="Edit API Key">
-            <Pencil className="w-4 h-4 text-black" />
-          </Button>}
-          tooltipContent={{ side: 'top', align: 'center', children: <p>Edit API Key</p> }}
-        />
-        <TooltipButton
-          button={<Button variant="ghost" size="sm" onClick={() => onDeleteApiKey(apiKey)} title="Delete API Key">
-            <Trash className="w-4 h-4 text-red-500" />
-          </Button>}
-          tooltipContent={{ side: 'top', align: 'center', children: <p>Delete API Key</p> }}
-        />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+    {
+      header: 'Validity',
+      key: 'validity',
+      className: 'max-w-[220px]',
+      cell: (apiKey) => <ApiKeyExpiryLines apiKey={apiKey} />,
+    },
+    {
+      header: 'Actions',
+      key: 'actions',
+      className: 'space-x-1',
+      cell: (apiKey) => (
+        <>
+          <TooltipButton
+            button={
+              <Button variant="ghost" size="sm" onClick={() => setRotateTarget({ key: apiKey, overlap: '0' })}>
+                <RefreshCw className="w-4 h-4 text-foreground" />
+              </Button>
+            }
+            tooltipContent={{ side: 'top', align: 'center', children: <p>Rotate secret</p> }}
+          />
+          <TooltipButton
+            button={<Button variant="ghost" size="sm" onClick={() => onEditApiKey(apiKey)} title="Edit API Key">
+              <Pencil className="w-4 h-4 text-foreground" />
+            </Button>}
+            tooltipContent={{ side: 'top', align: 'center', children: <p>Edit API Key</p> }}
+          />
+          <TooltipButton
+            button={<Button variant="ghost" size="sm" onClick={() => onDeleteApiKey(apiKey)} title="Delete API Key">
+              <Trash className="w-4 h-4 text-destructive" />
+            </Button>}
+            tooltipContent={{ side: 'top', align: 'center', children: <p>Delete API Key</p> }}
+          />
+        </>
+      ),
+    },
+  ];
 
   return (
     <>
       <DataTable
         data={filteredApiKeys}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
         emptyMessage="No API keys found"
-        searchEmptyMessage="No API keys found matching your search"
+        notFoundMessage="No API keys found matching your search"
       />
       <RotateApiKeyDialog
         open={rotateTarget !== null}

@@ -3,11 +3,12 @@ Enhanced workflow state management for execution tracking and performance metric
 """
 
 import copy
+import json
 import logging
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
@@ -15,6 +16,50 @@ from app.modules.workflow.agents.memory import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cap the size of tool arguments/results stored on an event so a large tool
+# result cannot bloat the persisted trace.
+_MAX_EVENT_VALUE_CHARS = 8000
+
+
+def _bound_event_value(value: Any) -> Any:
+    """Return a JSON-safe copy of the value, truncated when it serializes too large.
+
+    Serializing with default=str collapses custom objects (and cyclic graphs,
+    which raise) to strings, so no live object leaks into tool_events — a leak
+    would later blow up the recursive JSON sanitizer walking their __dict__.
+    """
+    if isinstance(value, str):
+        serialized = safe_value = value
+    else:
+        try:
+            serialized = json.dumps(value, default=str)
+            safe_value = json.loads(serialized)
+        except (TypeError, ValueError):
+            safe_value = serialized = str(value)
+    if len(serialized) <= _MAX_EVENT_VALUE_CHARS:
+        return safe_value
+    return {
+        "_truncated": True,
+        "chars": len(serialized),
+        "preview": serialized[:_MAX_EVENT_VALUE_CHARS],
+    }
+
+
+def _strip_live_tool_refs(node_execution_status: dict) -> dict:
+    """Drop live ``tools_reference`` tool objects from node inputs before serialization.
+
+    Each tool holds a back-reference to this WorkflowState, so leaving them in a
+    serialized trace creates a reference cycle. Returns a shallow copy; the live
+    state the agent is still using is left untouched.
+    """
+    cleaned = {}
+    for node_id, entry in node_execution_status.items():
+        node_input = entry.get("input") if isinstance(entry, dict) else None
+        if isinstance(node_input, dict) and "tools_reference" in node_input:
+            entry = {**entry, "input": {k: v for k, v in node_input.items() if k != "tools_reference"}}
+        cleaned[node_id] = entry
+    return cleaned
 
 
 class WorkflowPausedException(BaseException):
@@ -38,6 +83,7 @@ class WorkflowState:
         workflow: dict,
         initial_values: dict = None,
         thread_id: str = str(uuid.uuid4()),
+        registry_managed: bool = False,
     ):
         """Initialize the workflow state
 
@@ -45,8 +91,13 @@ class WorkflowState:
             thread_id: Unique identifier for the thread
             workflow: Workflow dictionary
             initial_values: Dictionary with dot notation for nested initialization
+            registry_managed: True only on the interactive registry path that can
+                persist and resume sub-agent frames; other entry points may run
+                single_turn delegations but not the persistent (task/chat) ones
         """
         self.thread_id = thread_id
+        self.registry_managed = registry_managed
+        self.sub_agent_persistent_claimed = False
         if initial_values is None:
             initial_values = {}
         self.initial_values = initial_values
@@ -90,6 +141,9 @@ class WorkflowState:
 
         # LLM token usage and cost tracking (per request)
         self.llm_usage: list[dict] = []
+
+        # Normalized tool-execution events, one per tool call.
+        self.tool_events: list[dict] = []
 
         # Edge data and execution context
         self.source_edges = workflow.get("source_edges", {}) if workflow else {}
@@ -234,20 +288,67 @@ class WorkflowState:
         provider: str = "",
         model: str = "",
         node_id: str = "",
+        purpose: Optional[str] = None,
+        token_details: Optional[dict] = None,
+        llm_provider_id: Optional[str] = None,
+        total_tokens: Optional[int] = None,
     ) -> None:
-        """Append LLM token usage for this workflow execution."""
+        """Append LLM token usage for this workflow execution"""
         self.llm_usage.append({
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "total_tokens": max(int(total_tokens or 0), input_tokens + output_tokens),
             "provider": provider,
             "model": model,
             "node_id": node_id,
+            "purpose": purpose,
+            "token_details": token_details,
+            "llm_provider_id": llm_provider_id,
         })
+
+    def add_tool_event(
+        self,
+        *,
+        agent_id: str | None,
+        tool_id: str | None,
+        tool_name: str,
+        arguments: Any,
+        result: Any,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        """Record a single tool call. Arguments/result are redacted before storing."""
+        from app.core.utils.sensitive_data_utils import redact_structure
+
+        self.tool_events.append({
+            "event_id": str(uuid.uuid4()),
+            "agent_id": agent_id,
+            "tool_id": tool_id,
+            "tool_name": tool_name,
+            "arguments": _bound_event_value(redact_structure(arguments)),
+            "result": _bound_event_value(redact_structure(result)),
+            "status": status,
+            "error": error,
+            "sequence": len(self.tool_events),
+            "workflow_path": [self.workflow_id] if self.workflow_id else [],
+        })
+
+    def absorb_tool_events(self, child_state: "WorkflowState") -> None:
+        """Merge a sub-workflow's tool events, prepending this workflow to their path."""
+        parent = [self.workflow_id] if self.workflow_id else []
+        for event in child_state.tool_events:
+            self.tool_events.append(
+                {**event, "workflow_path": parent + event.get("workflow_path", [])}
+            )
 
     def get_total_llm_usage(self) -> dict:
         """Sum token usage and compute total cost in USD."""
         total_input = sum(u.get("input_tokens", 0) for u in self.llm_usage)
         total_output = sum(u.get("output_tokens", 0) for u in self.llm_usage)
+        total_tokens = sum(
+            max(u.get("total_tokens") or 0, u.get("input_tokens", 0) + u.get("output_tokens", 0))
+            for u in self.llm_usage
+        )
         total_cost_usd = 0.0
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
@@ -261,7 +362,7 @@ class WorkflowState:
         return {
             "input_tokens": total_input,
             "output_tokens": total_output,
-            "total_tokens": total_input + total_output,
+            "total_tokens": total_tokens,
             "cost_usd": round(total_cost_usd, 6),
             "calls": len(self.llm_usage),
         }
@@ -279,6 +380,7 @@ class WorkflowState:
         self.execution_history.clear()
         self.errors.clear()
         self.llm_usage.clear()
+        self.tool_events.clear()
         self.performance_metrics = {
             "totalExecutionTime": 0,
             "averageNodeExecutionTime": 0,
@@ -464,12 +566,18 @@ class WorkflowState:
         any metadata the pre-pause nodes saw) would be lost. node_outputs is captured
         separately by the pausing node.
         """
+        from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
+
+        # The sub-agent resume marker is re-supplied on every resume; capturing it would
+        # nest each prior payload into the next frame until the size guard trips.
+        initial = {k: v for k, v in (self.initial_values or {}).items() if k != SUB_AGENT_RESUME_KEY}
+        session = {k: v for k, v in (self.get_session() or {}).items() if k != SUB_AGENT_RESUME_KEY}
         # Deep copy so a later resume (which restores this) can't alias and mutate the
         # values this execution is still using; also matches the JSON round-trip the Redis
         # memory backend performs, keeping behaviour identical across backends.
         return copy.deepcopy({
-            "initial_values": self.initial_values,
-            "session": self.get_session(),
+            "initial_values": initial,
+            "session": session,
         })
 
     def restore_resume_context(
@@ -565,7 +673,9 @@ class WorkflowState:
         }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
-        self.llm_usage = [*self.llm_usage, *state.llm_usage]
+        # Usage is not merged here: nested engines append into the parent usage_sink,
+        # so merging again would double-count.
+        self.absorb_tool_events(state)
 
         # Merge stateful values from sub-workflow session into parent session
         # This ensures stateful values updated in sub-workflows propagate to parent
@@ -601,11 +711,39 @@ class WorkflowState:
             "execution_end_time": self.execution_end_time,
         }
 
+    def _collect_failed_nodes(self) -> list[dict]:
+        """Collect the nodes that failed in this run, latest run per node only.
+
+        Re-run nodes are archived under prefixed keys (e.g. ``node_id_0``); only
+        the latest run keeps the un-suffixed ``node_id`` key. We ignore archived
+        keys so a node that failed once and later succeeded is not reported as
+        failed (mirrors the frontend's `stripArchivedKeys`).
+        """
+        import re
+
+        keys = set(self.node_execution_status.keys())
+        failed: list[dict] = []
+        for node_id, entry in self.node_execution_status.items():
+            # Skip archived earlier runs: "<base>_<n>" where <base> is also a key.
+            match = re.match(r"^(.+)_(\d+)$", node_id)
+            if match and match.group(1) in keys:
+                continue
+            if not isinstance(entry, dict) or entry.get("status") != "failed":
+                continue
+            failed.append({
+                "node_id": node_id,
+                "name": entry.get("name") or "",
+                "type": entry.get("type") or "",
+                "error": entry.get("error") or "",
+            })
+        return failed
+
     def format_state_as_response(self):
         """
         Format the workflow state as a response and sanitize for JSON compliance.
         """
         state = self.get_full_state()
+        state["nodeExecutionStatus"] = _strip_live_tool_refs(state.get("nodeExecutionStatus", {}))
         summary = self.get_execution_summary()
 
         _input = (
@@ -631,15 +769,26 @@ class WorkflowState:
         else:
             status = "success"
 
+        # Surface node-level failures at the run level. This is ADDITIVE: the
+        # top-level `status` stays "success" (the workflow still completed and
+        # produced a response), but `has_failures`/`failed_nodes` let callers and
+        # the UI know a node did not do its job (e.g. a Zendesk ticket that was
+        # never created despite a 200-style flow). See node_result.is_node_failure.
+        failed_nodes = self._collect_failed_nodes()
+
         token_usage = self.get_total_llm_usage()
         response = {
             "status": status,
+            "has_failures": len(failed_nodes) > 0,
+            "failed_nodes": failed_nodes,
             "input": _input,
             "output": output,
             "performance_metrics": performance_metrics,
             "state": state,
             "token_usage": token_usage,
             "cost_usd": token_usage.get("cost_usd", 0.0),
+            "execution_id": self.execution_id,
+            "tool_events": self.tool_events,
         }
 
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DataTable } from "@/components/DataTable";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ListEmptyState } from "@/components/ListEmptyState";
-import { TableCell, TableRow } from "@/components/table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
@@ -12,9 +12,10 @@ import {
   Trash2,
   Sparkles,
   Plus,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { listFineTuneJobs } from "@/services/openaiFineTune";
+import { listFineTuneJobs, syncFineTuneJobs } from "@/services/openaiFineTune";
 import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import {
   formatStatusLabel,
@@ -33,6 +34,7 @@ export function FineTuneJobsCard({
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<FineTuneJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobToDelete, setJobToDelete] = useState<FineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -45,6 +47,7 @@ export function FineTuneJobsCard({
   const fetchJobs = async () => {
     try {
       setLoading(true);
+      // Fast cached load — no sync. Press "Sync" to refresh status from OpenAI.
       const data = await listFineTuneJobs();
       setJobs(data);
       setError(null);
@@ -53,6 +56,20 @@ export function FineTuneJobsCard({
       toast.error("Failed to fetch jobs");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      setSyncing(true);
+      const data = await syncFineTuneJobs();
+      setJobs(data);
+      setError(null);
+      toast.success("Jobs synced");
+    } catch (err) {
+      toast.error("Failed to sync jobs");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -65,14 +82,6 @@ export function FineTuneJobsCard({
         .some((s) => s.includes(q))
     );
   }, [jobs, searchQuery]);
-
-  const headers = [
-    "Name",
-    "Model",
-    "Status",
-    "Accuracy",
-    { label: "Action", className: "text-center pr-4" },
-  ];
 
   const handleDelete = (job: FineTuneJob) => {
     setJobToDelete(job);
@@ -222,44 +231,51 @@ export function FineTuneJobsCard({
     );
   };
 
-  const renderRow = (job: FineTuneJob) => {
-    const jobIdentifier = job.id || job.openai_job_id;
-    const handleRowClick = () => {
-      if (!jobIdentifier) return;
-      navigate(`/fine-tune/${jobIdentifier}`);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
-      if (!jobIdentifier) return;
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        navigate(`/fine-tune/${jobIdentifier}`);
-      }
-    };
-
-    return (
-      <TableRow
-        key={job.id}
-        className="text-sm cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60"
-        onClick={handleRowClick}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-      >
-        <TableCell className="font-medium text-foreground">
-          {job.suffix || job.fine_tuned_model || job.id || "—"}
-        </TableCell>
-        <TableCell className="text-muted-foreground">{job.model || "—"}</TableCell>
-        <TableCell className="min-w-[180px]">{renderStatus(job)}</TableCell>
-        <TableCell className="min-w-[140px]">{renderAccuracy(job)}</TableCell>
-        <TableCell
-          className="w-[72px] text-center"
+  const columns: Column<FineTuneJob>[] = [
+    {
+      header: "Name",
+      key: "name",
+      className: "font-medium text-foreground",
+      cell: (job) => job.suffix || job.fine_tuned_model || job.id || "—",
+    },
+    {
+      header: "Model",
+      key: "model",
+      className: "text-muted-foreground",
+      cell: (job) => job.model || "—",
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "min-w-[180px]",
+      cell: (job) => renderStatus(job),
+    },
+    {
+      header: "Accuracy",
+      key: "accuracy",
+      className: "min-w-[140px]",
+      cell: (job) => renderAccuracy(job),
+    },
+    {
+      header: "Action",
+      key: "action",
+      headerClassName: "text-center pr-4 whitespace-nowrap",
+      className: "w-[72px] text-center",
+      cell: (job) => (
+        <div
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
           {renderActions(job)}
-        </TableCell>
-      </TableRow>
-    );
+        </div>
+      ),
+    },
+  ];
+
+  const handleRowClick = (job: FineTuneJob) => {
+    const jobIdentifier = job.id || job.openai_job_id;
+    if (!jobIdentifier) return;
+    navigate(`/fine-tune/${jobIdentifier}`);
   };
 
   const isSearchActive = searchQuery.trim().length > 0;
@@ -267,7 +283,7 @@ export function FineTuneJobsCard({
   const emptyState = useMemo(
     () => (
       <ListEmptyState
-        icon={<Sparkles className="h-12 w-12 text-gray-400" />}
+        icon={<Sparkles className="h-12 w-12 text-muted-foreground" />}
         title={
           isSearchActive
             ? "No matching fine-tune jobs"
@@ -296,15 +312,32 @@ export function FineTuneJobsCard({
 
   return (
     <>
+      <div className="flex justify-end mb-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSync}
+          disabled={syncing || loading}
+        >
+          {syncing ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Sync
+        </Button>
+      </div>
+
       <DataTable
         data={filtered}
+        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
+        pageSize={LIST_PAGE_SIZE}
+        onRowClick={handleRowClick}
         emptyMessage="No Fine-Tune jobs found"
-        searchEmptyMessage="No jobs matching your search"
+        notFoundMessage="No jobs matching your search"
         emptyState={emptyState}
       />
 

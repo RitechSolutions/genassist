@@ -1,9 +1,15 @@
-import { useState } from "react";
-import { DataTable } from "@/components/DataTable";
+import { useEffect, useRef, useState } from "react";
+import { DataTable, Column } from "@/components/ui/data-table";
+import { LIST_PAGE_SIZE } from "@/constants/pagination";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/RadixTooltip";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { toast } from "react-hot-toast";
 
@@ -13,6 +19,37 @@ interface LLMAnalystCardProps {
   loading?: boolean;
   onEdit: (analyst: LLMAnalyst) => void;
   onDelete: (id: string) => Promise<void>;
+}
+
+// Reveals the full prompt on hover only when the cell text is truncated
+function PromptCell({ prompt }: { prompt: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setIsTruncated(el.scrollWidth > el.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [prompt]);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span ref={ref} className="block truncate">
+          {prompt}
+        </span>
+      </TooltipTrigger>
+      {isTruncated && (
+        <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
+          {prompt}
+        </TooltipContent>
+      )}
+    </Tooltip>
+  );
 }
 
 export function LLMAnalystCard({
@@ -58,42 +95,63 @@ export function LLMAnalystCard({
     }
   };
 
-  const headers = ["Name", "Provider", "Prompt", "Status", "Actions"];
-
-  const renderRow = (analyst: LLMAnalyst) => (
-    <TableRow key={analyst.id}>
-      <TableCell className="font-medium break-all">{analyst.name}</TableCell>
-      <TableCell className="truncate">{analyst.llm_provider?.name}</TableCell>
-      <TableCell>
-        <span className="line-clamp-2">{analyst.prompt}</span>
-      </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+  const columns: Column<LLMAnalyst>[] = [
+    {
+      header: "Name",
+      key: "name",
+      cell: (analyst) => analyst.name,
+      className: "font-medium break-all",
+    },
+    {
+      header: "Provider",
+      key: "provider",
+      cell: (analyst) => analyst.llm_provider?.name,
+      className: "truncate",
+    },
+    {
+      header: "Prompt",
+      key: "prompt",
+      headerClassName: "w-[360px]",
+      className: "max-w-[360px]",
+      cell: (analyst) => <PromptCell prompt={analyst.prompt} />,
+    },
+    {
+      header: "Status",
+      key: "status",
+      className: "overflow-hidden whitespace-nowrap text-clip",
+      cell: (analyst) => (
         <Badge variant={analyst.is_active ? "default" : "secondary"}>
           {analyst.is_active ? "Active" : "Inactive"}
         </Badge>
-      </TableCell>
-      <TableCell>
+      ),
+    },
+    {
+      header: "Actions",
+      key: "actions",
+      cell: (analyst) => (
         <ActionButtons
           onEdit={() => onEdit(analyst)}
           onDelete={() => handleDeleteClick(analyst)}
           editTitle="Edit"
           deleteTitle="Delete"
         />
-      </TableCell>
-    </TableRow>
-  );
+      ),
+    },
+  ];
 
   return (
     <>
-      <DataTable
-        data={filtered}
-        loading={loading}
-        searchQuery={searchQuery}
-        headers={headers}
-        renderRow={renderRow}
-        emptyMessage="No LLM Analysts found"
-        searchEmptyMessage="No LLM Analysts found matching your search"
-      />
+      <TooltipProvider delayDuration={200}>
+        <DataTable
+          data={filtered}
+          columns={columns}
+          loading={loading}
+          searchQuery={searchQuery}
+          pageSize={LIST_PAGE_SIZE}
+          emptyMessage="No LLM Analysts found"
+          notFoundMessage="No LLM Analysts found matching your search"
+        />
+      </TooltipProvider>
 
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}

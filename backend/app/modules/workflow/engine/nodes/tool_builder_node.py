@@ -7,6 +7,7 @@ import json
 from typing import Dict, Any
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException
 
 logger = logging.getLogger(__name__)
@@ -40,13 +41,12 @@ class ToolBuilderNode(BaseNode):
             template = json.loads(template_str)
         except Exception as e:
             logger.error(f"Error loading template: {e}")
-            return {
-                "status": 500,
-                "data": {
-                    "template": template_str,
-                    "error": f"Error loading tool builder parameters: {e}",
-                },
-            }
+            error_msg = f"Error loading tool builder parameters: {e}"
+            return node_failure(
+                error_msg,
+                code=500,
+                output={"status": 500, "data": {"template": template_str, "error": error_msg}},
+            )
         source_input = self.get_state().get_session_flat()
 
         next_node = self.get_connected_nodes("starter")
@@ -79,6 +79,7 @@ class ToolBuilderNode(BaseNode):
             input_data={**template, **source_input, **temp_data},
             thread_id=self.get_state().get_thread_id(),
             persist=False,
+            usage_sink=self.get_state().llm_usage,
         )
         self.get_state().update_nodes_from_another_state(state)
 

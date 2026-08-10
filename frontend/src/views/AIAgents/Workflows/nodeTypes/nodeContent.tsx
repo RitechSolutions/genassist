@@ -87,7 +87,7 @@ export const NodeContent: React.FC<NodeContentProps> = ({ data }) => {
         .join("\n");
       return (
         <div
-          className="px-2 py-1 text-accent-foreground bg-zinc-100 rounded-sm overflow-hidden"
+          className="px-2 py-1 text-accent-foreground bg-muted rounded-sm overflow-hidden"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: maxLines,
@@ -117,7 +117,7 @@ export const NodeContent: React.FC<NodeContentProps> = ({ data }) => {
   };
 
   return (
-    <div className="p-4 mx-0.5 mb-0.5 bg-white rounded-sm">
+    <div className="p-4 mx-0.5 mb-0.5 bg-card rounded-sm">
       <div className="space-y-4">
         {data.map((row, index) => {
           return (

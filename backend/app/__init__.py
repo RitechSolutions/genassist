@@ -11,6 +11,7 @@ from fastapi_injector import InjectorMiddleware, RequestScopeOptions, attach_inj
 
 from app.core.config.logging import init_logging
 from app.core.config.settings import settings
+from app.core.utils.background_tasks import drain
 
 # NOTE: Only logging + settings are imported at module top level. Everything else
 # (routers, the DI injector, middleware, multi-tenant DB) is imported lazily inside
@@ -62,6 +63,10 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
 
     register_routers(app)
+
+    from app.core.observability.otel import init_opentelemetry
+
+    init_opentelemetry(app)
 
     return app
 
@@ -240,9 +245,15 @@ async def _lifespan(app: FastAPI):
     try:
         yield  # Application runs here
     finally:
+        from app.core.observability.otel import shutdown_opentelemetry
+
+        shutdown_opentelemetry()
+
         logger.info("Starting application shutdown...")
 
-        # Clean up services in reverse dependency order
+        # Clean up services in reverse dependency order. Background work drains
+        # first so in-flight writes finish while the DB pools are still open
+        await drain()
         await _cleanup_websocket_services()
         await _cleanup_redis_services(app, redis_string, redis_binary)
         await multi_tenant_manager.close_all()
@@ -281,9 +292,11 @@ def create_celery():
         "app.tasks.audio_tasks",
         "app.tasks.sharepoint_tasks",
         "app.tasks.fine_tune_job_sync_tasks",
+        "app.tasks.bedrock_fine_tune_sync_tasks",
         "app.tasks.share_folder_tasks",
         "app.tasks.kb_batch_tasks",
         "app.tasks.analytics_aggregation_tasks",
+        "app.tasks.backfill_llm_usage_tasks",
         "app.tasks.file_upload_session_tasks",
         "app.tasks.email_tasks",
         "app.tasks.support_ticket_tasks",
@@ -342,6 +355,7 @@ def create_celery():
             "execute_workflow_run": {"queue": "ml"},
             "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs": {"queue": "ml"},
             "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs": {"queue": "ml"},
+            "app.tasks.test_suite_tasks.reconcile_stuck_test_runs": {"queue": "ml"},
         },
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
@@ -457,7 +471,13 @@ def create_celery():
     if settings.CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK:
         beat_schedule["sync-active-fine-tuning-jobs"] = {
             "task": "app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs",
-            "schedule": 120.0,  # Every 2 minutes (120 seconds)
+            "schedule": 600.0,  # Every 10 minutes (600 seconds)
+        }
+
+    if settings.CELERY_ENABLE_SYNC_ACTIVE_BEDROCK_FINE_TUNING_JOBS_TASK:
+        beat_schedule["sync-active-bedrock-fine-tuning-jobs"] = {
+            "task": "app.tasks.bedrock_fine_tune_sync_tasks.sync_active_bedrock_fine_tuning_jobs",
+            "schedule": 600.0,  # Every 10 minutes (600 seconds)
         }
 
     # Check for scheduled ML model pipeline runs every minute
@@ -478,6 +498,12 @@ def create_celery():
     if settings.CELERY_ENABLE_RECONCILE_STUCK_WORKFLOW_RUNS_TASK:
         beat_schedule["reconcile-stuck-workflow-runs"] = {
             "task": "app.tasks.workflow_schedule_tasks.reconcile_stuck_workflow_runs",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        }
+
+    if settings.CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK:
+        beat_schedule["reconcile-stuck-test-runs"] = {
+            "task": "app.tasks.test_suite_tasks.reconcile_stuck_test_runs",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
         }
 

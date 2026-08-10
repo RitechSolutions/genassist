@@ -413,7 +413,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
             <SelectItem value="stdio">STDIO (Local Process)</SelectItem>
           </SelectContent>
         </Select>
-        <div className="text-xs text-gray-500 break-words">
+        <div className="text-xs text-muted-foreground break-words">
           {connectionType === "stdio" && "Run a local MCP server as a child process"}
           {connectionType === "sse" && "Connect to a remote MCP server using Server-Sent Events"}
           {connectionType === "http" && "Connect to a remote MCP server using standard HTTP"}
@@ -431,7 +431,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               placeholder="python"
               className="w-full"
             />
-            <div className="text-xs text-gray-500 break-words">
+            <div className="text-xs text-muted-foreground break-words">
               Command to run the MCP server (e.g., "python", "node", "/usr/bin/mcp-server")
             </div>
           </div>
@@ -445,7 +445,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               placeholder="-m, mcp_server"
               className="w-full"
             />
-            <div className="text-xs text-gray-500 break-words">
+            <div className="text-xs text-muted-foreground break-words">
               Command arguments separated by commas (e.g., "-m", "mcp_server")
             </div>
           </div>
@@ -460,7 +460,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               className="w-full font-mono text-sm"
               rows={4}
             />
-            <div className="text-xs text-gray-500 break-words">
+            <div className="text-xs text-muted-foreground break-words">
               Environment variables as JSON object (e.g., {"{"}"API_KEY": "secret"{"}"})
             </div>
           </div>
@@ -476,7 +476,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               placeholder="https://mcp-server.example.com"
               className="w-full"
             />
-            <div className="text-xs text-gray-500 break-words">
+            <div className="text-xs text-muted-foreground break-words">
               {connectionType === "sse"
                 ? "Enter the SSE endpoint URL of your MCP server"
                 : "Enter the URL of your MCP server"}
@@ -498,7 +498,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                 <SelectItem value="none">None</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500 break-words">
+            <p className="text-xs text-muted-foreground break-words">
               {authType === "api_key" &&
                 "Static bearer secret sent to the MCP server URL above."}
               {authType === "oauth2" &&
@@ -518,7 +518,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                 placeholder="Enter API key"
                 className="w-full"
               />
-              <div className="text-xs text-gray-500 break-words">
+              <div className="text-xs text-muted-foreground break-words">
                 Sent as <code>Authorization: Bearer &lt;key&gt;</code>
               </div>
             </div>
@@ -526,10 +526,10 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
           {authType === "oauth2" && (
             <div className="space-y-3 rounded-md border p-3">
-              <p className="text-xs font-medium text-gray-700">
+              <p className="text-xs font-medium text-muted-foreground">
                 OAuth 2.0 / OpenID Connect — client credentials (outbound)
               </p>
-              <p className="text-xs text-gray-600 -mt-2 break-words">
+              <p className="text-xs text-muted-foreground -mt-2 break-words">
                 Genassist fetches <code className="text-xs">token_endpoint</code> from the discovery document
                 whenever it needs a new access token (nothing hard-coded except your issuer URL). This differs
                 from <em>MCP Servers</em> in Settings, which define how <strong>this app&apos;s</strong> hosted
@@ -537,29 +537,29 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               </p>
 
               <div
-                className="rounded-md border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-700"
+                className="rounded-md border border-border bg-muted/90 px-3 py-2.5 text-xs text-muted-foreground"
                 role="region"
                 aria-label="OIDC fields reference"
               >
-                <p className="font-semibold text-slate-800 mb-2">Typical OIDC client-credentials setup</p>
+                <p className="font-semibold text-foreground mb-2">Typical OIDC client-credentials setup</p>
                 <dl className="space-y-1.5">
                   <div className="flex flex-col sm:flex-row sm:gap-2">
-                    <dt className="shrink-0 text-slate-500 sm:w-32">Issuer URL</dt>
-                    <dd className="font-mono text-[11px] text-slate-800 break-all">
+                    <dt className="shrink-0 text-muted-foreground sm:w-32">Issuer URL</dt>
+                    <dd className="font-mono text-[11px] text-foreground break-all">
                       …/.well-known/openid-configuration
                     </dd>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:gap-2">
-                    <dt className="shrink-0 text-slate-500 sm:w-32">Client ID</dt>
-                    <dd className="text-slate-800">M2M / service client at your IdP</dd>
+                    <dt className="shrink-0 text-muted-foreground sm:w-32">Client ID</dt>
+                    <dd className="text-foreground">M2M / service client at your IdP</dd>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:gap-2">
-                    <dt className="shrink-0 text-slate-500 sm:w-32">Client secret</dt>
-                    <dd className="text-slate-800">Matching secret for the client</dd>
+                    <dt className="shrink-0 text-muted-foreground sm:w-32">Client secret</dt>
+                    <dd className="text-foreground">Matching secret for the client</dd>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:gap-2">
-                    <dt className="shrink-0 text-slate-500 sm:w-32">Scope</dt>
-                    <dd className="font-mono text-[11px] text-slate-800">e.g. openid mcp</dd>
+                    <dt className="shrink-0 text-muted-foreground sm:w-32">Scope</dt>
+                    <dd className="font-mono text-[11px] text-foreground">e.g. openid mcp</dd>
                   </div>
                 </dl>
               </div>
@@ -573,7 +573,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                   placeholder="http://localhost:8000/.well-known/openid-configuration"
                   className="w-full"
                 />
-                <div className="text-xs text-gray-500 break-words">
+                <div className="text-xs text-muted-foreground break-words">
                   Full URL to <code className="text-xs">openid-configuration</code> — client id, secret, and
                   scopes below are sent to the discovered token endpoint.
                 </div>
@@ -611,7 +611,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                   placeholder="openid mcp"
                   className="w-full"
                 />
-                <div className="text-xs text-gray-500 break-words">
+                <div className="text-xs text-muted-foreground break-words">
                   Space-separated; sent as the <code className="text-xs">scope</code> parameter on the token
                   request. Many MCP / OIDC setups use something like{" "}
                   <code className="text-xs">openid mcp</code>.
@@ -627,7 +627,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                   placeholder="https://api.example.com"
                   className="w-full"
                 />
-                <div className="text-xs text-gray-500 break-words">
+                <div className="text-xs text-muted-foreground break-words">
                   Optional. Some providers require an <code className="text-xs">audience</code> parameter on
                   the token request (e.g., Auth0). Leave empty if your IdP does not use it.
                 </div>
@@ -646,7 +646,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               className="w-full"
               min="1"
             />
-            <div className="text-xs text-gray-500 break-words">
+            <div className="text-xs text-muted-foreground break-words">
               Request timeout in seconds (default: 30)
             </div>
           </div>
@@ -661,7 +661,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               className="w-full font-mono text-sm"
               rows={4}
             />
-            <div className="text-xs text-gray-500 break-words">
+            <div className="text-xs text-muted-foreground break-words">
               Custom HTTP headers as JSON object (e.g., {"{"}"X-Custom-Header": "value"{"}"})
             </div>
           </div>
@@ -684,7 +684,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           </Button>
         </div>
         {connectionType === "stdio" && (
-          <div className="text-xs text-gray-500 mb-2">
+          <div className="text-xs text-muted-foreground mb-2">
             Tools will be discovered automatically when the workflow runs for STDIO connections.
           </div>
         )}
@@ -710,7 +710,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         )}
         <ScrollArea className="h-60 border rounded-md p-2 w-full">
           {availableTools.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-4">
+            <div className="text-sm text-muted-foreground text-center py-4">
               {connectionType === "stdio"
                 ? "Tools will be discovered automatically when the workflow runs"
                 : connectionType === "sse"
@@ -724,7 +724,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               {availableTools.map((tool) => (
                 <div
                   key={tool.name}
-                  className="flex items-start space-x-2 w-full p-2 hover:bg-gray-50 rounded"
+                  className="flex items-start space-x-2 w-full p-2 hover:bg-muted rounded"
                 >
                   <Checkbox
                     id={`tool-${tool.name}`}
@@ -740,7 +740,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                       {tool.name}
                     </Label>
                     {tool.description && (
-                      <p className="text-xs text-gray-500 mt-1 break-words">
+                      <p className="text-xs text-muted-foreground mt-1 break-words">
                         {tool.description}
                       </p>
                     )}
@@ -750,7 +750,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
             </div>
           )}
         </ScrollArea>
-        <p className="text-xs text-gray-500 break-words">
+        <p className="text-xs text-muted-foreground break-words">
           Select which tools to expose to your agent. Only whitelisted tools will
           be available for the agent to use.
         </p>

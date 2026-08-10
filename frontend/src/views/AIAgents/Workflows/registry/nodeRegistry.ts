@@ -1,5 +1,5 @@
 import { Node } from 'reactflow';
-import { NodeTypeDefinition, createNode, NodeData } from '../types/nodes';
+import { BaseNodeData, NodeHandler, NodeTypeDefinition, createNode, NodeData } from '../types/nodes';
 
 // Registry for all node types
 class NodeRegistry {
@@ -54,6 +54,25 @@ class NodeRegistry {
       "mcpNode",
     ];
     return Array.from(this.nodeTypes.keys()).filter(type => toolTypes.includes(type));
+  }
+
+  hydrateNode(node: Node): Node {
+    const definition = node.type ? this.getNodeType(node.type) : undefined;
+    const defaultHandlers = (definition?.defaultData as BaseNodeData | undefined)?.handlers;
+    if (!defaultHandlers?.length) return node;
+
+    const existing = ((node.data as BaseNodeData)?.handlers ?? []) as NodeHandler[];
+    const existingIds = new Set(existing.map((handler) => handler.id));
+    const missing = defaultHandlers.filter((handler) => !existingIds.has(handler.id));
+    if (missing.length === 0) return node;
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        handlers: [...existing, ...missing],
+      },
+    };
   }
 
   // Create a new node instance

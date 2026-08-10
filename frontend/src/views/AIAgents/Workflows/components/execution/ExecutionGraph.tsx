@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
+  Panel,
   Edge,
   MarkerType,
   Node,
@@ -9,8 +10,10 @@ import ReactFlow, {
   NodeTypes,
   ReactFlowInstance,
   ReactFlowProvider,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/helpers/utils';
 import { ExecutionViewModel } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
@@ -68,18 +71,79 @@ const OrderedFallbackList: React.FC<{
             selectedNodeId === node.nodeId && 'ring-2 ring-brand-600 ring-offset-1'
           )}
         >
-          <span className="w-5 text-xs tabular-nums text-gray-400">{(node.order ?? 0) + 1}</span>
+          <span className="w-5 text-xs tabular-nums text-muted-foreground">{(node.order ?? 0) + 1}</span>
           <Icon
             className={cn('h-4 w-4 shrink-0', style.accentClass, style.spin && 'animate-spin')}
             aria-hidden="true"
           />
-          <span className="flex-1 truncate font-medium text-gray-800">{node.name}</span>
-          <span className="text-xs tabular-nums text-gray-500">{formatDuration(node.durationMs)}</span>
+          <span className="flex-1 truncate font-medium text-foreground">{node.name}</span>
+          <span className="text-xs tabular-nums text-muted-foreground">{formatDuration(node.durationMs)}</span>
         </button>
       );
     })}
   </div>
 );
+
+/**
+ * Bottom-left path stepper: walks the executed nodes in run order (1 → 2 → 3 …), centering and
+ * zooming the viewport onto each one. Rendered inside <ReactFlow> so it can drive the viewport via
+ * useReactFlow; sits just to the right of the zoom controls.
+ */
+const PathStepper: React.FC<{ orderedNodeIds: string[] }> = ({ orderedNodeIds }) => {
+  const reactFlow = useReactFlow();
+  const [index, setIndex] = useState(-1);
+  const total = orderedNodeIds.length;
+
+  // A fresh run swaps the node list — restart the walk.
+  useEffect(() => setIndex(-1), [orderedNodeIds]);
+
+  const focusNode = useCallback(
+    (nextIndex: number) => {
+      const id = orderedNodeIds[nextIndex];
+      const node = id ? reactFlow.getNode(id) : undefined;
+      if (!node) return;
+      // Frame just this node so it lands centered and zoomed in.
+      reactFlow.fitView({ nodes: [node], padding: 0.3, minZoom: 0.4, maxZoom: 1.5, duration: 400 });
+      setIndex(nextIndex);
+    },
+    [orderedNodeIds, reactFlow]
+  );
+
+  if (total < 2) return null;
+
+  const atStart = index <= 0;
+  const atEnd = index >= total - 1;
+
+  return (
+    <Panel position="bottom-right">
+      <div className="flex items-center gap-0.5 rounded-full border border-border bg-card px-1 shadow-[0_0_2px_1px_rgba(0,0,0,0.08)]">
+        <button
+          type="button"
+          onClick={() => focusNode(index < 0 ? 0 : index - 1)}
+          disabled={atStart}
+          title="Previous node"
+          aria-label="Previous node"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <span className="min-w-[2.75rem] select-none text-center text-xs font-medium tabular-nums text-muted-foreground">
+          {index < 0 ? '–' : index + 1}/{total}
+        </span>
+        <button
+          type="button"
+          onClick={() => focusNode(index < 0 ? 0 : index + 1)}
+          disabled={atEnd}
+          title="Next node"
+          aria-label="Next node"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </Panel>
+  );
+};
 
 const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   workflow,
@@ -142,6 +206,15 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
   const displayEdges = useMemo<Edge[]>(() => sourceEdges.map((edge) => ({ ...edge, animated: false })), [sourceEdges]);
 
+  // Executed nodes in run order (1 → 2 → 3 …) for the bottom-right path stepper.
+  const orderedNodeIds = useMemo(
+    () =>
+      [...model.nodes]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((n) => n.nodeId),
+    [model.nodes]
+  );
+
   const handleNodeClick = useMemo<NodeMouseHandler>(() => (_event, node) => onSelectNode(node.id), [onSelectNode]);
 
   // In the full view, frame the executed nodes (not the whole sparse canvas) so the run is
@@ -160,20 +233,20 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   if (!hasGraph) {
     if (!model.nodes.length) {
       return (
-        <div className="flex h-full items-center justify-center rounded-md border border-dashed border-gray-200 text-sm text-gray-500">
+        <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
           No node execution data to display.
         </div>
       );
     }
     return (
-      <div className="h-full rounded-md border border-gray-200 bg-white">
+      <div className="h-full rounded-md border border-border bg-card">
         <OrderedFallbackList model={model} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+    <div className="h-full overflow-hidden rounded-md border border-border bg-muted">
       <ReactFlowProvider>
         <ReactFlow
           nodes={displayNodes}
@@ -193,6 +266,7 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         >
           <Background />
           <Controls showInteractive={false} />
+          <PathStepper orderedNodeIds={orderedNodeIds} />
         </ReactFlow>
       </ReactFlowProvider>
     </div>

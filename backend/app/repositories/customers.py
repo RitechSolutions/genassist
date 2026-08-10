@@ -7,6 +7,7 @@ from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.customer import CustomerModel
+from app.repositories.db_repository import DbRepository
 from app.schemas.customer import CustomerCreate, CustomerUpdate
 
 
@@ -14,11 +15,11 @@ customer_key_builder = make_key_builder("customer")
 
 
 @inject
-class CustomersRepository:
+class CustomersRepository(DbRepository[CustomerModel]):
     """Repository for customer-related database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(CustomerModel, db)
 
     async def create(self, customer_create: CustomerCreate) -> CustomerModel:
         if customer_create.external_id:
@@ -37,12 +38,6 @@ class CustomersRepository:
         await self.db.commit()
         await self.db.refresh(new_customer)
         return new_customer
-
-    async def get_by_id(self, customer_id: UUID) -> CustomerModel:
-        result = await self.db.execute(
-            select(CustomerModel).where(CustomerModel.id == customer_id)
-        )
-        return result.scalars().first()
 
     async def _get_by_external_id(self, external_id: str) -> CustomerModel:
         result = await self.db.execute(

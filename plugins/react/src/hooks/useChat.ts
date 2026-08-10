@@ -92,6 +92,7 @@ export const useChat = ({
   const [agentId, setAgentId] = useState<string | null>(null);
   const [agentLiveVoiceEnabled, setAgentLiveVoiceEnabled] = useState<boolean>(false);
   const [agentLiveVoiceReady, setAgentLiveVoiceReady] = useState<boolean>(false);
+  const [agentGreetOnStart, setAgentGreetOnStart] = useState<boolean>(false);
   const [availableLanguages, setAvailableLanguages] = useState<string[] | null>(
     null,
   );
@@ -368,6 +369,7 @@ export const useChat = ({
         }
         setAgentLiveVoiceEnabled(info?.live_voice_enabled === true);
         setAgentLiveVoiceReady(info?.live_voice_ready === true);
+        setAgentGreetOnStart(info?.greet_on_start === true);
 
         if (cancelled) return;
         if (info && Array.isArray(info.agent_available_languages)) {
@@ -1111,5 +1113,6 @@ export const useChat = ({
     agentId,
     agentLiveVoiceEnabled,
     agentLiveVoiceReady,
+    agentGreetOnStart,
   };
 };

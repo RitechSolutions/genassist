@@ -9,6 +9,7 @@ import logging
 import uuid
 from uuid import UUID
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.node_result import node_failure
 from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class WorkflowExecutorNode(BaseNode):
         if not workflow_id_str:
             error_msg = "workflowId is required for workflow executor node"
             logger.error(error_msg)
-            return {"error": error_msg, "status": "error"}
+            return node_failure(error_msg, output={"error": error_msg, "status": "error"})
 
         try:
             # Convert workflow_id to UUID if it's a string
@@ -46,7 +47,7 @@ class WorkflowExecutorNode(BaseNode):
             except (ValueError, AttributeError, TypeError) as e:
                 error_msg = f"Invalid workflowId format: {workflow_id_str}"
                 logger.error(error_msg)
-                return {"error": error_msg, "status": "error"}
+                return node_failure(error_msg, output={"error": error_msg, "status": "error"})
 
             # Get workflow service to fetch workflow details
             from app.dependencies.injector import injector
@@ -58,7 +59,7 @@ class WorkflowExecutorNode(BaseNode):
             if not workflow:
                 error_msg = f"Workflow with id {workflow_id} not found"
                 logger.error(error_msg)
-                return {"error": error_msg, "status": "error"}
+                return node_failure(error_msg, output={"error": error_msg, "status": "error"})
 
             # Build workflow configuration
             workflow_config = {
@@ -75,11 +76,19 @@ class WorkflowExecutorNode(BaseNode):
             workflow_engine = WorkflowEngine(workflow_config)
 
             # Execute the workflow with provided parameters
-            state = await workflow_engine.execute_from_node(
-                input_data=params,
-                thread_id=thread_id,
-                persist=False  # Don't persist nested workflow executions
-            )
+            child_usage: list = []
+            try:
+                state = await workflow_engine.execute_from_node(
+                    input_data=params,
+                    thread_id=thread_id,
+                    persist=False,
+                    usage_sink=child_usage,
+                )
+            finally:
+                self.get_state().llm_usage.extend({**entry, "node_id": self.node_id} for entry in child_usage)
+
+            # Nested runs use a separate state; carry their tool events up for evaluation.
+            self.get_state().absorb_tool_events(state)
 
             # Format and return the response
             result = state.format_state_as_response()
@@ -99,8 +108,11 @@ class WorkflowExecutorNode(BaseNode):
         except Exception as e:
             error_msg = f"Error executing workflow {workflow_id_str}: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {
-                "error": error_msg,
-                "status": "error",
-                "workflow_id": str(workflow_id_str) if workflow_id_str else None,
-            }
+            return node_failure(
+                error_msg,
+                output={
+                    "error": error_msg,
+                    "status": "error",
+                    "workflow_id": str(workflow_id_str) if workflow_id_str else None,
+                },
+            )

@@ -20,7 +20,7 @@ export function AnalyticsMetricsCardsSkeleton({
   return (
     <Card
       className={cn(
-        "w-full bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-6",
+        "w-full bg-card dark:bg-zinc-900 px-4 py-4 shadow-sm sm:px-6 sm:py-6",
         analyticsFadeUpClass,
         className,
       )}

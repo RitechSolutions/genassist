@@ -207,20 +207,20 @@ export default function HelpCenterManager() {
         </div>
 
         {duplicates.length > 0 && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-4">
             <p className="font-medium text-sm mb-2">Possible duplicates</p>
             {duplicateCheckLoading && (
-              <p className="text-xs text-gray-500 mb-2">Checking for similar issues...</p>
+              <p className="text-xs text-muted-foreground mb-2">Checking for similar issues...</p>
             )}
             <ul className="space-y-2">
               {duplicates.map((d) => (
                 <li
                   key={d.id}
-                  className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm bg-white/60 rounded-md p-2"
+                  className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm bg-background/60 rounded-md p-2"
                 >
                   <span className="flex-1 truncate font-medium">{d.title}</span>
                   <TicketStatusBadge status={d.status} />
-                  <span className="text-gray-500">{d.vote_count} reports</span>
+                  <span className="text-muted-foreground">{d.vote_count} reports</span>
                   <Button
                     type="button"
                     size="sm"
@@ -253,12 +253,12 @@ export default function HelpCenterManager() {
           }}
         >
           <div className="space-y-6">
-            <div className="rounded-lg border bg-white">
+            <div className="rounded-lg border bg-card dark:bg-zinc-900">
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <h3 className="text-lg font-semibold">Issue details</h3>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       Summary and type. The engineering team picks it up after you submit.
                     </p>
                   </div>
@@ -294,7 +294,7 @@ export default function HelpCenterManager() {
                 </div>
               </div>
 
-              <div className="border-t border-gray-200" />
+              <div className="border-t border-border" />
 
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -306,14 +306,14 @@ export default function HelpCenterManager() {
                           ? "Feature details"
                           : "Task details"}
                     </h3>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {ticketType === "bug"
                         ? "Repro steps, system info and acceptance criteria help the team reproduce and fix it."
                         : ticketType === "feature"
                           ? "Describe the feature and what done looks like."
                           : "Describe what needs to be done."}
                     </p>
-                    <p className="text-xs text-gray-400 mt-2">
+                    <p className="text-xs text-muted-foreground mt-2">
                       Use the toolbar to format text, add links, and attach images.
                     </p>
                   </div>
@@ -416,14 +416,14 @@ export default function HelpCenterManager() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 shrink-0">
-            <h2 className="text-2xl sm:text-3xl font-bold whitespace-nowrap">Help Center</h2>
-            <p className="text-zinc-400 font-normal text-sm mt-0.5 hidden sm:block">
+            <h2 className="text-2xl sm:text-3xl font-bold whitespace-nowrap animate-fade-down">Help Center</h2>
+            <p className="text-muted-foreground font-normal text-sm mt-0.5 hidden sm:block animate-fade-up">
               Report bugs and feature requests and track their status
             </p>
           </div>
           <div className="flex flex-nowrap items-center gap-2 min-w-0 overflow-x-auto pb-0.5 lg:overflow-visible">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[8.5rem] shrink-0 bg-white">
+              <SelectTrigger className="w-[8.5rem] shrink-0 bg-card">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -436,7 +436,7 @@ export default function HelpCenterManager() {
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[7rem] shrink-0 bg-white">
+              <SelectTrigger className="w-[7rem] shrink-0 bg-card">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
@@ -469,20 +469,20 @@ export default function HelpCenterManager() {
           </div>
         )}
 
-        <div className="rounded-lg border bg-white overflow-hidden">
+        <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
           {loading ? (
             <PageListSkeleton variant="rich" bordered={false} />
           ) : filteredTickets.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-              <div className="rounded-full bg-gray-100 p-4">
-                <LifeBuoy className="h-12 w-12 text-gray-400" />
+              <div className="rounded-full bg-muted p-4">
+                <LifeBuoy className="h-12 w-12 text-muted-foreground" />
               </div>
               <h3 className="font-medium text-lg">
                 {searchQuery || statusFilter !== "all" || typeFilter !== "all"
                   ? "No tickets found"
                   : "No tickets yet"}
               </h3>
-              <p className="text-sm text-gray-500 max-w-md px-4">
+              <p className="text-sm text-muted-foreground max-w-md px-4">
                 {searchQuery || statusFilter !== "all" || typeFilter !== "all"
                   ? "Try adjusting your search or filters."
                   : "Report bugs and feature requests here. Each submission is routed to the engineering team."}
@@ -492,13 +492,13 @@ export default function HelpCenterManager() {
               </Button>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-border">
               {filteredTickets.map((ticket) => {
                 const preview = ticketPreview(ticket);
                 return (
                   <div
                     key={ticket.id}
-                    className="group px-4 py-4 sm:px-6 hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="group px-4 py-4 sm:px-6 hover:bg-muted cursor-pointer transition-colors"
                     onClick={() => navigate(`/help-center/${ticket.id}`)}
                   >
                     <div className="flex items-start justify-between gap-4">
@@ -510,10 +510,10 @@ export default function HelpCenterManager() {
                           <TicketStatusBadge status={ticket.status} />
                         </div>
                         {preview && (
-                          <p className="text-sm text-gray-500 line-clamp-1">{preview}</p>
+                          <p className="text-sm text-muted-foreground line-clamp-1">{preview}</p>
                         )}
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-400">
-                          <span className="font-medium text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                          <span className="font-medium text-muted-foreground">
                             {TICKET_TYPE_LABELS[ticket.ticket_type] ?? ticket.ticket_type}
                           </span>
                           {ticket.vote_count > 1 && (

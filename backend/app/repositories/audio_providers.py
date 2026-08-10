@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.db.models.audio_provider import AudioProvidersModel
+from app.repositories.db_repository import DbRepository
 
 
 @inject
-class AudioProviderRepository:
+class AudioProviderRepository(DbRepository[AudioProvidersModel]):
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(AudioProvidersModel, db)
 
     async def create(self, data) -> AudioProvidersModel:
         obj = AudioProvidersModel(**data.model_dump())

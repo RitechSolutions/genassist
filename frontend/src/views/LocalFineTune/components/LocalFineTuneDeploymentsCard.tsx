@@ -40,7 +40,7 @@ function renderDeploymentStatus(deployment: LocalFineTuneDeployment) {
   }
   if (s === "running") {
     return (
-      <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-teal-200 bg-teal-50 text-teal-800">
+      <Badge variant="outline" className="px-3 py-1 text-xs font-medium border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-500/30 dark:bg-teal-500/15 dark:text-teal-400">
         Running
       </Badge>
     );
@@ -199,7 +199,7 @@ export function LocalFineTuneDeploymentsCard({
           const modelSegment = d.model_path?.split("/").filter(Boolean).pop() ?? null;
           return (
             <div className="flex flex-col gap-0.5 min-w-0">
-              <span className="font-medium text-zinc-800 truncate font-mono text-sm">{d.id}</span>
+              <span className="font-medium text-foreground truncate font-mono text-sm">{d.id}</span>
               {modelSegment ? (
                 <span className="text-xs text-muted-foreground truncate">{modelSegment}</span>
               ) : null}
@@ -225,7 +225,7 @@ export function LocalFineTuneDeploymentsCard({
         header: "Created",
         key: "created_at",
         cell: (d) => (
-          <span className="text-xs text-zinc-500 tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {formatShortDate(d.created_at)}
           </span>
         ),

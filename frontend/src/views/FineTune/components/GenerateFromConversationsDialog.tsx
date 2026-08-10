@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
+import { Switch } from "@/components/switch";
 import { ChevronDown, ChevronRight, Download, Loader2, Upload } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { fetchConversationById, fetchTranscripts } from "@/services/transcripts";
@@ -46,6 +47,8 @@ export function GenerateFromConversationsDialog({
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
+  const [memoryConvIds, setMemoryConvIds] = useState<Set<string>>(new Set());
+  const [includeTools, setIncludeTools] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -109,6 +112,25 @@ export function GenerateFromConversationsDialog({
   const toggleSelectConv = (convId: string) => {
     setSelectedConvIds((prev) => {
       const next = new Set(prev);
+      if (next.has(convId)) {
+        next.delete(convId);
+        // Deselecting also clears any memory flag for this conversation.
+        setMemoryConvIds((mem) => {
+          if (!mem.has(convId)) return mem;
+          const nextMem = new Set(mem);
+          nextMem.delete(convId);
+          return nextMem;
+        });
+      } else {
+        next.add(convId);
+      }
+      return next;
+    });
+  };
+
+  const toggleMemoryConv = (convId: string) => {
+    setMemoryConvIds((prev) => {
+      const next = new Set(prev);
       if (next.has(convId)) next.delete(convId);
       else next.add(convId);
       return next;
@@ -124,6 +146,8 @@ export function GenerateFromConversationsDialog({
     try {
       const blob = await downloadGeneratedTrainingFile({
         conversation_ids: Array.from(selectedConvIds),
+        memory_conversation_ids: Array.from(memoryConvIds),
+        include_tools: includeTools,
       });
       // Trigger browser download
       const url = URL.createObjectURL(blob);
@@ -146,6 +170,8 @@ export function GenerateFromConversationsDialog({
     try {
       const result: OpenAIFileItem = await generateTrainingFileFromConversations({
         conversation_ids: Array.from(selectedConvIds),
+        memory_conversation_ids: Array.from(memoryConvIds),
+        include_tools: includeTools,
         upload_to_openai: true,
       });
       const fileLabel = fileType === "training" ? "Training" : "Validation";
@@ -166,6 +192,8 @@ export function GenerateFromConversationsDialog({
     setConversations([]);
     setConvTotal(0);
     setSelectedConvIds(new Set());
+    setMemoryConvIds(new Set());
+    setIncludeTools(true);
     setExpandedConvId(null);
     setExpandedMessages([]);
   };
@@ -195,6 +223,14 @@ export function GenerateFromConversationsDialog({
               maxLength={36}
             />
           </div>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2 shrink-0">
+            <Switch
+              checked={includeTools}
+              onCheckedChange={setIncludeTools}
+              disabled={isBusy}
+            />
+            Include tool calls
+          </label>
           {selectedConvIds.size > 0 && (
             <span className="text-xs text-muted-foreground pb-2">
               {selectedConvIds.size} selected
@@ -239,14 +275,28 @@ export function GenerateFromConversationsDialog({
                           </p>
                         </div>
                       </button>
-                      <Button
-                        size="sm"
-                        variant={isSelected ? "default" : "outline"}
-                        onClick={() => toggleSelectConv(conv.id)}
-                        disabled={isBusy}
-                      >
-                        {isSelected ? "Selected" : "Select"}
-                      </Button>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <label
+                          className={`flex items-center gap-1.5 text-xs ${
+                            isSelected ? "text-foreground" : "text-muted-foreground"
+                          }`}
+                        >
+                          <Switch
+                            checked={memoryConvIds.has(conv.id)}
+                            onCheckedChange={() => toggleMemoryConv(conv.id)}
+                            disabled={!isSelected || isBusy}
+                          />
+                          Memory
+                        </label>
+                        <Button
+                          size="sm"
+                          variant={isSelected ? "default" : "outline"}
+                          onClick={() => toggleSelectConv(conv.id)}
+                          disabled={isBusy}
+                        >
+                          {isSelected ? "Selected" : "Select"}
+                        </Button>
+                      </div>
                     </div>
 
                     {isExpanded && (

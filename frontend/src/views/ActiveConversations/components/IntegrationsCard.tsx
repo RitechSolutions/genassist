@@ -43,8 +43,8 @@ const transformApiIntegration = (item: ApiIntegrationItem): Integration => ({
   name: item.name,
   description: item.description || getDefaultDescription(item.type),
   icon: getIconTypeFromIntegrationType(item.type),
-  iconColor: "text-green-700",
-  bgColor: "bg-green-100",
+  iconColor: "text-green-700 dark:text-green-400",
+  bgColor: "bg-green-100 dark:bg-green-500/15",
   type: item.type,
 });
 
@@ -133,9 +133,9 @@ export function IntegrationsCard({
 
   return (
     <>
-      <Card className="bg-white border border-border rounded-xl overflow-hidden shadow-sm animate-fade-up">
+      <Card className="bg-card dark:bg-zinc-900 border border-border rounded-xl overflow-hidden shadow-sm animate-fade-up">
         {/* Header */}
-        <div className="bg-white flex items-center justify-between p-6">
+        <div className="bg-card dark:bg-zinc-900 flex items-center justify-between p-6">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-foreground">Integrations</h3>
           </div>

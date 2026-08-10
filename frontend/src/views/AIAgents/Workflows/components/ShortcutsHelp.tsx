@@ -17,11 +17,12 @@ const SHORTCUTS: ShortcutItem[] = [
   { label: "Commands & add a node", keys: ["/"] },
   { label: "Ask AI to edit workflow", keys: ["/agent"] },
   { label: "Toggle Available Nodes", keys: [MOD, "I"] },
+  { label: "Auto-arrange nodes", keys: [MOD, "M"] },
 ];
 
 /** A single keycap chip. */
 const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <kbd className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-1.5 text-xs font-medium text-gray-600 shadow-sm">
+  <kbd className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border border-border bg-muted px-1.5 text-xs font-medium text-muted-foreground shadow-sm">
     {children}
   </kbd>
 );
@@ -43,7 +44,7 @@ const ShortcutsHelp: React.FC = () => {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-md transition-colors hover:bg-gray-50"
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-md transition-colors hover:bg-muted"
         aria-label="Keyboard shortcuts"
         aria-expanded={open}
       >
@@ -51,16 +52,16 @@ const ShortcutsHelp: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute bottom-0 left-full z-50 ml-2 w-72 rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
-          <div className="px-2 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+        <div className="absolute bottom-0 left-full z-50 ml-2 w-72 rounded-xl border border-border bg-card p-2 shadow-xl">
+          <div className="px-2 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Keyboard shortcuts
           </div>
           {SHORTCUTS.map((shortcut) => (
             <div
               key={shortcut.label}
-              className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50"
+              className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-muted"
             >
-              <span className="text-sm text-gray-700">{shortcut.label}</span>
+              <span className="text-sm text-muted-foreground">{shortcut.label}</span>
               <span className="flex shrink-0 items-center gap-1">
                 {shortcut.keys.map((key) => (
                   <Kbd key={key}>{key}</Kbd>

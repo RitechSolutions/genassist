@@ -7,16 +7,17 @@ from typing import List
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.operator import OperatorModel
+from app.repositories.db_repository import DbRepository
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 @inject
-class OperatorRepository:
+class OperatorRepository(DbRepository[OperatorModel]):
     """Repository for operator-related database operations."""
 
     def __init__(self, db: AsyncSession):
-        self.db = db
+        super().__init__(OperatorModel, db)
     # def __init__(self, session_factory: async_sessionmaker):
     #     self.session_factory = session_factory
 

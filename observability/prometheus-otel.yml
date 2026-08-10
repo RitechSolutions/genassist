@@ -1,0 +1,11 @@
+# Prometheus — scrape OpenTelemetry Collector (docker-compose.dev.yml)
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: otel-collector-pipeline-metrics
+    static_configs:
+      - targets: ["otel-collector:8889"]
+  - job_name: otel-collector-internal
+    static_configs:
+      - targets: ["otel-collector:8888"]

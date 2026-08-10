@@ -20,7 +20,7 @@ import {
   FeedbackStatus,
   ReportedFeedbackItem,
 } from "@/services/reportedFeedback";
-import { formatDate } from "../constants";
+import { formatDateTime } from "@/helpers/utils";
 import { StatusSelect } from "./StatusSelect";
 
 type ReportedFeedbackDialogProps = {
@@ -86,7 +86,7 @@ export function ReportedFeedbackDialog({
       <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0">
         <DialogHeader className="space-y-0 border-b px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
               <Flag className="h-5 w-5" />
             </div>
             <div className="min-w-0">
@@ -137,12 +137,12 @@ export function ReportedFeedbackDialog({
             <Meta
               icon={Clock}
               label="Reported at"
-              value={formatDate(issue.reported_at)}
+              value={formatDateTime(issue.reported_at)}
             />
             <Meta
               icon={MessageCircle}
               label="Conversation"
-              value={`${issue.conversation_topic || "Untitled"} · ${formatDate(
+              value={`${issue.conversation_topic || "Untitled"} · ${formatDateTime(
                 issue.conversation_date,
               )}`}
             />

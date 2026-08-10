@@ -194,7 +194,7 @@ const Dashboard: React.FC = () => {
           <p className="text-sm font-medium">{error}</p>
         </div>
 
-        <div className="bg-white p-6 rounded-md shadow-sm">
+        <div className="bg-card dark:bg-zinc-900 p-6 rounded-md shadow-sm">
           <h2 className="text-xl font-semibold mb-4">
             Server Connection Error
           </h2>

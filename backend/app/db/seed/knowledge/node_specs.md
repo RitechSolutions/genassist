@@ -9,14 +9,15 @@ This document is the authoritative reference for every node type available in Ge
 Nodes connect via **handlers** (ports). Each handler has:
 - **type**: `source` (output) or `target` (input)
 - **position**: left, right, top, bottom
-- **compatibility**: `any`, `text`, `tools`
+- **compatibility**: `any`, `text`, `tools`, `sub_agents`
 
 **Compatibility rules:**
 - `any` ↔ `any`: allowed
 - `any` ↔ `text`: allowed
 - `text` ↔ `text`: allowed
 - `tools` ↔ `tools`: allowed (ONLY tools-to-tools)
-- `any` / `text` → `tools`: NOT allowed
+- `sub_agents` ↔ `sub_agents`: allowed (ONLY sub_agents-to-sub_agents — used for delegation)
+- `any` / `text` → `tools` / `sub_agents`: NOT allowed
 
 **CRITICAL — Single Input Rule:**
 Most nodes accept only ONE incoming edge to their `input` handler. You CANNOT connect two nodes to the same node's input (except `aggregatorNode`, which is specifically designed to receive multiple inputs). If a workflow has branches (e.g., after a routerNode), each branch MUST have its own separate `chatOutputNode`. Do NOT merge branches into a single chatOutputNode.
@@ -28,6 +29,7 @@ Most nodes accept only ONE incoming edge to their `input` handler. You CANNOT co
 Defaults: `sourceHandle = "output"`, `targetHandle = "input"`. Override for special connections:
 - Tool: `sourceHandle: "output_tool"`, `targetHandle: "input_tools"`
 - Tool sub-flow: `sourceHandle: "starter_processor"`, `targetHandle: "input"`
+- Sub-agent delegation: `sourceHandle: "output_sub_agent"`, `targetHandle: "input_sub_agents"`
 - Router true: `sourceHandle: "output_true"`
 - Router false: `sourceHandle: "output_false"`
 
@@ -63,6 +65,16 @@ Edges:
   4→5 (starter_processor → input)
   6→2 (output_tool → input_tools)
   6→7 (starter_processor → input)
+```
+
+### Chatbot with a Sub-Agent
+A `subAgentNode` is a specialist the agent delegates to; it hangs off the parent and is NOT in the main chain.
+```
+chatInputNode(1) → agentNode(2) → chatOutputNode(3)
+subAgentNode(4) "flight_search" (task mode)
+Edges:
+  1→2, 2→3
+  4→2 (output_sub_agent → input_sub_agents)
 ```
 
 ### Branching Workflow
@@ -148,6 +160,13 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
   - `{"from": "<toolBuilder_id>", "to": "<agent_id>", "sourceHandle": "output_tool", "targetHandle": "input_tools"}` — registers the tool with the agent
   - `{"from": "<toolBuilder_id>", "to": "<sub_node_id>", "sourceHandle": "starter_processor", "targetHandle": "input"}` — connects the tool's processor
 
+### Sub-Agent Delegation Rules
+- A `subAgentNode` is a specialist child that a parent `agentNode` (or another `subAgentNode`) delegates to. It NEVER goes in the main chain and has no `input`/`output` handle.
+- Attach it with a SINGLE edge from the child to the parent: `{"from": "<subAgent_id>", "to": "<parent_id>", "sourceHandle": "output_sub_agent", "targetHandle": "input_sub_agents"}`. The parent then gains a delegation tool named after the child.
+- Each child has exactly ONE parent. Depth is limited (parent → child → grandchild, up to 3). No cycles or self-links.
+- Choose a sub-agent over a tool for stateful, multi-step work that may need to clarify with the user; choose a plain `toolBuilderNode` tool for stateless, atomic operations.
+- The `mode` decides how control returns: `single_turn` answers once, `task` may ask one clarifying question then finishes, `chat` owns the conversation until it hands back. A `task` child must be a leaf (no further children).
+
 ### Integration Rules
 - Use dedicated nodes where available: `zendeskTicketNode` for Zendesk, `slackMessageNode` for Slack, `jiraNode` for Jira, `gmailNode` for Gmail, `knowledgeBaseNode` for document search, `calendarEventNode` for calendar, `readMailsNode` for reading emails, `whatsappToolNode` for WhatsApp. Only use `apiToolNode` for APIs without a dedicated node.
 - **ALL** integration nodes MUST be connected as tools of an `agentNode`. NEVER place them inline in the main flow.
@@ -174,6 +193,11 @@ Tool connections — both edges required:
 ```json
 {"from": "<toolBuilder_id>", "to": "<agent_id>", "sourceHandle": "output_tool", "targetHandle": "input_tools"}
 {"from": "<toolBuilder_id>", "to": "<sub_node_id>", "sourceHandle": "starter_processor", "targetHandle": "input"}
+```
+
+Sub-agent delegation — single edge from child to parent:
+```json
+{"from": "<subAgent_id>", "to": "<parent_agent_id>", "sourceHandle": "output_sub_agent", "targetHandle": "input_sub_agents"}
 ```
 
 ---
@@ -251,6 +275,49 @@ Tool connections — both edges required:
 | ragGroupSize | number | — | When memoryTrimmingMode=rag_retrieval |
 | ragGroupOverlap | number | — | When memoryTrimmingMode=rag_retrieval |
 | ragPassthroughThreshold | number | — | When memoryTrimmingMode=rag_retrieval |
+
+---
+
+### subAgentNode — Sub-Agent
+**Category:** AI
+**Purpose:** A specialist child agent that a parent `agentNode` (or another `subAgentNode`) delegates to. It never sits in the main flow — attach it by wiring its `output_sub_agent` port to the parent's `input_sub_agents` port, and the parent gains a delegation tool named after it. The `mode` controls how control returns: `single_turn` answers once and returns (like an agent-as-tool), `task` does a bounded job and may ask ONE clarifying question before calling `finish_task`, `chat` owns the conversation until it calls `return_to_parent`.
+**Use cases:** Flight-search specialist that asks "Is a layover okay?" before booking (task), billing-support agent that takes over the chat until resolved (chat), isolated summarizer the parent calls for one answer (single_turn). Prefer a plain `toolBuilderNode` tool for stateless, atomic work.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| output_sub_agent | source | top | sub_agents |
+| input_tools | target | bottom | tools |
+| input_sub_agents | target | bottom | sub_agents |
+
+**Required config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| providerId | select | — | LLM provider to use |
+| description | text | — | What this sub-agent handles — the parent reads this to decide when to delegate |
+| mode | select | "single_turn" | Collaboration mode: single_turn, task, chat |
+
+**Optional config:**
+| Field | Type | Default | Condition |
+|---|---|---|---|
+| name | text | — | Names the delegation tool the parent sees (e.g. "flight_search") |
+| systemPrompt | text | "You are a helpful specialist sub-agent." | Always |
+| type | select | "ToolSelector" | Agent pattern: ToolSelector, ReActAgent, ReActAgentLC |
+| maxIterations | number | 7 | Max reasoning cycles |
+| timeoutSeconds | number | 120 | Max seconds the parent waits for one delegated turn (5–300) |
+| memory | boolean | true | Enable the child's own conversation memory |
+| piiMasking | boolean | false | Mask PII before sending text to the LLM |
+| memoryTrimmingMode | select | "message_count" | When memory=true. Options: message_count, token_budget, message_compacting, rag_retrieval |
+| maxMessages | number | 20 | When memoryTrimmingMode=message_count |
+| tokenBudget | number | 10000 | When memoryTrimmingMode=token_budget |
+| conversationHistoryTokens | number | 5000 | When memoryTrimmingMode=token_budget |
+| compactingThreshold | number | 20 | When memoryTrimmingMode=message_compacting |
+| compactingKeepRecent | number | 10 | When memoryTrimmingMode=message_compacting |
+| compactingModel | select | — | When memoryTrimmingMode=message_compacting |
+| compactingImportantEntities | tags | — | When memoryTrimmingMode=message_compacting |
+| ragTopK / ragRecentMessages / ragMaxHistoryHours / ragQueryContextMessages / ragGroupSize / ragGroupOverlap / ragPassthroughThreshold | number | — | When memoryTrimmingMode=rag_retrieval |
+
+Memory sub-settings match agentNode. **Attachment:** single edge `subAgentNode.output_sub_agent` → `agentNode.input_sub_agents` (or another subAgentNode). The canvas assistant attaches one via the `as_sub_agent_for` action (target = the parent agent's id). A sub-agent is NOT wired into the main `input`/`output` flow.
 
 ---
 

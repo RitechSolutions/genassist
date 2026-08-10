@@ -69,20 +69,25 @@ class DashboardService:
 
     async def get_summary_stats(
         self,
-        from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None
+        from_date: datetime,
+        to_date: datetime
     ) -> DashboardSummaryStats:
         """Get summary statistics for the dashboard header."""
         active_agents = await self.dashboard_repo.get_active_agents_count()
         workflow_runs = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
-        avg_response_time = await self.dashboard_repo.get_avg_response_time(from_date, to_date)
-        total_cost_usd = await self.dashboard_repo.get_total_cost_usd(from_date, to_date)
+        visible_agent_ids = await self.dashboard_repo.resolve_visible_agent_ids()
+        avg_response_time = await self.dashboard_repo.get_avg_response_time(
+            from_date, to_date, agent_ids=visible_agent_ids
+        )
+        total_cost_usd = await self.dashboard_repo.get_total_cost_usd(
+            from_date, to_date, agent_ids=visible_agent_ids
+        )
 
         return DashboardSummaryStats(
             active_agents=active_agents,
             workflow_runs=workflow_runs,
             avg_response_time_ms=avg_response_time,
-            total_cost_usd=total_cost_usd
+            total_cost_usd=total_cost_usd,
         )
 
     async def get_active_conversations(
@@ -162,7 +167,7 @@ class DashboardService:
         agent_stats = await self.dashboard_repo.get_agents_with_stats(
             from_date=from_date,
             to_date=to_date,
-            limit=limit
+            limit=limit,
         )
 
         agent_items = [
@@ -172,7 +177,8 @@ class DashboardService:
                 conversations_today=agent["conversations_today"],
                 resolution_rate=Decimal(str(agent["resolution_rate"])) if agent["resolution_rate"] else Decimal("0.00"),
                 avg_response_time_ms=agent["avg_response_time_ms"],
-                cost=float(str(agent["cost"])) if agent["cost"] else 0.0,
+                cost=agent["cost"],
+                cost_per_conversation=agent["cost_per_conversation"],
                 is_active=agent["is_active"]
             )
             for agent in agent_stats

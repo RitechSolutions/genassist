@@ -13,7 +13,7 @@ interface TranscriptCardProps {
 export function TranscriptCard({ transcript, onClick, className = "" }: TranscriptCardProps) {
   if (!transcript || !transcript.metadata || !transcript.metrics) {
     return (
-      <div className={`p-4 rounded-lg bg-red-50 text-red-700 ${className}`}>
+      <div className={`p-4 rounded-lg bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-400 ${className}`}>
         Invalid transcript data
       </div>
     );
@@ -33,7 +33,7 @@ export function TranscriptCard({ transcript, onClick, className = "" }: Transcri
             {isCall ? "Call" : "Chat"} #{(transcript?.metadata?.title ?? "----").slice(0, 4)|| "Untitled"}{" "} 
           </span>
           {isLive && (
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 flex items-center gap-1 animate-pulse">
+            <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/30 flex items-center gap-1 animate-pulse">
               <Radio className="w-3 h-3" />
               <span>Live</span>
             </Badge>

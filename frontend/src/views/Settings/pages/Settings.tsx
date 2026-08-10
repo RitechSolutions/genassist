@@ -1,26 +1,39 @@
-import { SidebarProvider, SidebarTrigger } from '@/components/sidebar';
-import { AppSidebar } from '@/layout/app-sidebar';
 import { Card } from '@/components/card';
-import { Button } from '@/components/button';
-import { useIsMobile } from '@/hooks/useMobile';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/tabs';
 import { SettingSection } from '../components/SettingSection';
 import { useSettings } from '../hooks/useSettings';
 import { settingSections } from '../helpers/settingsData';
-import { Link } from 'react-router-dom';
 import { getAuthMe, hasPermission } from '@/services/auth';
 import { getFileManagerSettings, type FileManagerSettings } from '@/services/fileManager';
 import { getSecuritySettings, type SecuritySettings } from '@/services/appSettings';
 import { FileManagerSettingsCard } from '../components/FileManagerSettingsCard';
 import { SecuritySettingsCard } from '../components/SecuritySettingsCard';
+import { FeatureFlagsPanel } from '../panels/FeatureFlagsPanel';
+import { TranslationsPanel } from '../panels/TranslationsPanel';
+import { LanguagesPanel } from '../panels/LanguagesPanel';
+import { NotificationsPanel } from '../panels/NotificationsPanel';
+import { MaintenancePanel } from '../panels/MaintenancePanel';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { User } from '@/interfaces/user.interface';
+
+type TabKey =
+  | 'profile'
+  | 'notifications'
+  | 'feature-flags'
+  | 'translations'
+  | 'languages'
+  | 'file-manager'
+  | 'security'
+  | 'maintenance';
 
 const SettingsPage = () => {
   const { toggleStates, handleToggle } = useSettings();
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [fileManagerSettings, setFileManagerSettings] = useState<FileManagerSettings | null>(null);
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
-  const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -44,7 +57,7 @@ const SettingsPage = () => {
     fetchSecuritySettings();
   }, []);
 
-  const sectionsWithData = useMemo(() => {
+  const profileSection = useMemo(() => {
     const tenant = localStorage.getItem('tenant_id') || '-';
     const profileValues = {
       fullName: userProfile?.username || userProfile?.email || '',
@@ -54,157 +67,155 @@ const SettingsPage = () => {
       tenant,
     };
 
-    return settingSections.map((section) =>
-      section.title === 'Profile Settings'
-        ? {
-            ...section,
-            fields: section.fields.map((field) => ({
-              ...field,
-              readOnly: true,
-              className: 'w-1/2',
-              value: field.valueKey
-                ? (profileValues[field.valueKey as keyof typeof profileValues] ?? (field.type === 'tags' ? [] : ''))
-                : field.type === 'tags'
-                  ? []
-                  : '',
-            })),
-          }
-        : section
-    );
+    const base = settingSections.find((section) => section.title === 'Profile Settings');
+    if (!base) return null;
+    return {
+      ...base,
+      fields: base.fields.map((field) => ({
+        ...field,
+        readOnly: true,
+        className: 'w-1/2',
+        value: field.valueKey
+          ? (profileValues[field.valueKey as keyof typeof profileValues] ?? (field.type === 'tags' ? [] : ''))
+          : field.type === 'tags'
+            ? []
+            : '',
+      })),
+    };
   }, [userProfile]);
 
+  const fileManagerEnabled =
+    fileManagerSettings?.values.file_manager_enabled === true &&
+    fileManagerSettings.is_active === 1;
+
+  // Tabs available to this user, honoring the same permissions as the routes.
+  const tabs = useMemo(
+    () =>
+      (
+        [
+          { key: 'profile', label: 'Profile', show: true },
+          { key: 'notifications', label: 'Notifications', show: true },
+          { key: 'feature-flags', label: 'Feature Flags', show: hasPermission('read:feature_flag') },
+          { key: 'translations', label: 'Translations', show: hasPermission('read:app_setting') },
+          { key: 'languages', label: 'Languages', show: hasPermission('read:app_setting') },
+          { key: 'file-manager', label: 'File Manager', show: true },
+          { key: 'security', label: 'Security', show: true },
+          { key: 'maintenance', label: 'Maintenance', show: hasPermission('write:app_settings') },
+        ] as { key: TabKey; label: string; show: boolean }[]
+      ).filter((t) => t.show),
+    []
+  );
+
+  const validKeys = tabs.map((t) => t.key);
+  const requestedTab = searchParams.get('tab') as TabKey | null;
+  const activeTab: TabKey =
+    requestedTab && validKeys.includes(requestedTab) ? requestedTab : 'profile';
+
+  const handleTabChange = (value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', value);
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
-          <SidebarTrigger className="fixed top-6 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-          <div className="flex-1 p-4 sm:p-6 lg:p-8">
-            <div className="max-w-7xl mx-auto">
-              <header className="mb-8">
-                <h1 className="text-2xl sm:text-3xl font-bold mb-2 animate-fade-down">Settings</h1>
-                <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">
-                  Manage your account settings and preferences
-                </p>
-              </header>
-
-              <div className="grid grid-cols-1">
-                {sectionsWithData.map((section) => (
-                  <SettingSection
-                    key={section.title}
-                    section={section}
-                    toggleStates={toggleStates}
-                    onToggle={handleToggle}
-                  />
-                ))}
-
-                <Card className="md:col-span-2 mt-6">
-                  <div className="p-6">
-                    <h2 className="text-xl font-semibold mb-4 animate-fade-up">Advanced Configuration</h2>
-                    <div className="space-y-4">
-                      <div className="flex flex-col">
-                        <h3 className="font-medium animate-fade-up animate-delay-100">Feature Flags</h3>
-                        <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                          Configure feature flags to control application functionality
-                        </p>
-                        <Link to="/settings/feature-flags">
-                          <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
-                            Manage Feature Flags
-                          </Button>
-                        </Link>
-                      </div>
-                      <div className="flex flex-col">
-                        <h3 className="font-medium animate-fade-up animate-delay-100">Translations</h3>
-                        <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                          Manage application translations across supported languages
-                        </p>
-                        <Link to="/settings/translations">
-                          <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
-                            Manage Translations
-                          </Button>
-                        </Link>
-                      </div>
-                      <div className="flex flex-col">
-                        <h3 className="font-medium animate-fade-up animate-delay-100">Languages</h3>
-                        <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                          Manage supported languages for translations
-                        </p>
-                        <Link to="/settings/languages">
-                          <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
-                            Manage Languages
-                          </Button>
-                        </Link>
-                      </div>
-                      <div className="flex flex-col">
-                        <h3 className="font-medium animate-fade-up animate-delay-100">Notifications</h3>
-                        <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                          Configure how in-app notifications are shown to you
-                        </p>
-                        <Link to="/settings/notifications">
-                          <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
-                            Manage Notifications
-                          </Button>
-                        </Link>
-                      </div>
-                      {hasPermission("write:app_settings") && (
-                        <div className="flex flex-col">
-                          <h3 className="font-medium animate-fade-up animate-delay-100">Maintenance</h3>
-                          <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                            Run one-off background jobs and data maintenance tasks
-                          </p>
-                          <Link to="/settings/maintenance">
-                            <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
-                              Open Maintenance
-                            </Button>
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-
-                {(fileManagerSettings?.values.file_manager_enabled === true && fileManagerSettings.is_active === 1 && (
-                  <Card className="md:col-span-2 mt-6">
-                    <FileManagerSettingsCard settings={fileManagerSettings} />
-                  </Card>
-                )) || (
-                  <Card className="md:col-span-2 mt-6 animate-fade-up animate-delay-200">
-                    <div className="p-6">
-                      <h2 className="text-xl font-semibold mb-4 animate-fade-up">File Manager Settings</h2>
-                      <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                        File manager is not enabled or is disabled in the database. Please contact your administrator to
-                        enable it.
-                      </p>
-                    </div>
-                  </Card>
-                )}
-
-                <Card className="md:col-span-2 mt-6">
-                  <SecuritySettingsCard
-                    settings={securitySettings}
-                    onSaved={(updated) => setSecuritySettings(updated)}
-                  />
-                </Card>
-
-                {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
-                  <Button variant="outline">Cancel</Button>
-                  <Button onClick={handleSave} disabled={isSaving}>
-                    {isSaving ? "Saving..." : "Save Changes"}
-                  </Button>
-                </div> */}
-              </div>
-            </div>
-          </div>
-          <footer className="mt-4">
-            <div className="max-w-7xl mx-auto w-full">
-              <p className="text-right px-2 sm:px-4 text-xs sm:text-sm text-gray-500">
-                Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
+    <>
+      <div className="flex-1 p-4 sm:p-6 lg:p-8">
+        <div className="max-w-7xl mx-auto">
+          <header className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold mb-2 animate-fade-down">Settings</h1>
+              <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">
+                Manage your account settings and preferences
               </p>
             </div>
-          </footer>
-        </main>
+            <ThemeToggle className="shrink-0 animate-fade-down" />
+          </header>
+
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+            <div className="-mx-1 mb-6 overflow-x-auto px-1 pb-1">
+              <TabsList className="w-max">
+                {tabs.map((t) => (
+                  <TabsTrigger key={t.key} value={t.key}>
+                    {t.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+
+            <TabsContent value="profile" className="mt-0">
+              {profileSection && (
+                <SettingSection
+                  section={profileSection}
+                  toggleStates={toggleStates}
+                  onToggle={handleToggle}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="notifications" className="mt-0">
+              <NotificationsPanel variant="tab" />
+            </TabsContent>
+
+            {hasPermission('read:feature_flag') && (
+              <TabsContent value="feature-flags" className="mt-0">
+                <FeatureFlagsPanel variant="tab" />
+              </TabsContent>
+            )}
+
+            {hasPermission('read:app_setting') && (
+              <TabsContent value="translations" className="mt-0">
+                <TranslationsPanel variant="tab" />
+              </TabsContent>
+            )}
+
+            {hasPermission('read:app_setting') && (
+              <TabsContent value="languages" className="mt-0">
+                <LanguagesPanel variant="tab" />
+              </TabsContent>
+            )}
+
+            <TabsContent value="file-manager" className="mt-0">
+              {fileManagerEnabled && fileManagerSettings ? (
+                <FileManagerSettingsCard settings={fileManagerSettings} />
+              ) : (
+                <Card className="p-6 shadow-sm animate-fade-up bg-card dark:bg-zinc-900">
+                  <h2 className="text-base sm:text-lg font-semibold mb-2">File Manager Settings</h2>
+                  <p className="text-sm text-muted-foreground">
+                    File manager is not enabled or is disabled in the database. Please contact your
+                    administrator to enable it.
+                  </p>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="security" className="mt-0">
+              <SecuritySettingsCard
+                settings={securitySettings}
+                onSaved={(updated) => setSecuritySettings(updated)}
+              />
+            </TabsContent>
+
+            {hasPermission('write:app_settings') && (
+              <TabsContent value="maintenance" className="mt-0">
+                <MaintenancePanel variant="tab" />
+              </TabsContent>
+            )}
+          </Tabs>
+        </div>
       </div>
-    </SidebarProvider>
+      <footer className="mt-4">
+        <div className="max-w-7xl mx-auto w-full">
+          <p className="text-right px-2 sm:px-4 text-xs sm:text-sm text-muted-foreground">
+            Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
+          </p>
+        </div>
+      </footer>
+    </>
   );
 };
 

@@ -9,6 +9,7 @@ export interface AnalyticsKpiStatProps {
   sub?: string;
   description?: string;
   valueClassName?: string;
+  subClassName?: string;
   icon?: LucideIcon;
   iconColor?: string;
   delta?: ReactNode;
@@ -23,6 +24,7 @@ export function AnalyticsKpiStat({
   sub,
   description,
   valueClassName,
+  subClassName,
   icon: Icon,
   iconColor,
   delta,
@@ -60,7 +62,12 @@ export function AnalyticsKpiStat({
         )}
       </div>
       {sub && (
-        <p className="min-w-0 text-xs leading-snug text-muted-foreground/70 tabular-nums break-words">
+        <p
+          className={cn(
+            "min-w-0 leading-snug tabular-nums break-words",
+            subClassName ?? "text-xs text-muted-foreground/70",
+          )}
+        >
           {sub}
         </p>
       )}

@@ -456,11 +456,12 @@ async def process_conversation_update_with_agent(
                     conversation_id=updated_conversation.id,
                     transcript_message_id=last_message.id,
                     agent_response=agent_response,
+                    workflow_execution_id=agent_response.get("row_agent_response", {}).get("execution_id"),
                 )
                 # Fire incremental analytics update in background
                 _ = asyncio.create_task(update_stats_incrementally(agent_response))
         except Exception as e:
-            logger.warning(f"Failed to persist AgentResponseLog after update: {e}")
+            logger.warning(f"Failed to persist AgentResponseLog after update: {e}", exc_info=True)
 
     # 1:1 chat: notify dashboard a conversation is updated
     _ = asyncio.create_task(

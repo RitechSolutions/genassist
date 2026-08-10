@@ -85,6 +85,9 @@ services:
     networks:
       - genassist-network-dev
     restart: unless-stopped
+    # Must exceed the lifespan background-task drain plus the remaining cleanup;
+    # Docker's 10s default would SIGKILL mid-drain
+    stop_grace_period: 30s
 
   # UI service
   ui:

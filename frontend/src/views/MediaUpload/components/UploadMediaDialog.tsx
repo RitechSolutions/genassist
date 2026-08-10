@@ -136,7 +136,7 @@ export function UploadMediaDialog({
         </DialogHeader>
 
         <div
-          className="border-dashed border-2 border-gray-300 p-14 text-center rounded-lg cursor-pointer hover:bg-gray-100 transition"
+          className="border-dashed border-2 border-border p-14 text-center rounded-lg cursor-pointer hover:bg-muted transition"
           onDrop={handleFileDrop}
           onChange={handleFileSelect}
           onDragOver={(event) => event.preventDefault()}
@@ -159,7 +159,7 @@ export function UploadMediaDialog({
             </div>
           ) : (
             <p
-              className="text-sm text-gray-600"
+              className="text-sm text-muted-foreground"
               onClick={() => document.getElementById("file-input")?.click()}
             >
               Drag & Drop an audio file here or{" "}
@@ -191,7 +191,7 @@ export function UploadMediaDialog({
                       <img
                         src={operator.avatar}
                         alt={`${operator.firstName} ${operator.lastName}`}
-                        className="w-6 h-6 rounded-full object-cover border border-gray-300"
+                        className="w-6 h-6 rounded-full object-cover border border-border"
                         onError={() =>
                           setImageErrors((prev) =>
                             new Set(prev).add(operator.id)
@@ -199,11 +199,11 @@ export function UploadMediaDialog({
                         }
                       />
                     ) : (
-                      <div className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-700 font-bold">
+                      <div className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-300 text-muted-foreground font-bold">
                         {getInitials(operator.firstName, operator.lastName)}
                       </div>
                     )}
-                    <span className="text-sm text-gray-800">
+                    <span className="text-sm text-foreground">
                       {operator.firstName} {operator.lastName}
                     </span>
                   </div>

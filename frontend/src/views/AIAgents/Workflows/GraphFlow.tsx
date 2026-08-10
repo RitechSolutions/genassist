@@ -5,21 +5,24 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   Connection,
+  Edge,
   Node,
   Panel,
   ReactFlowInstance,
   NodeMouseHandler,
   MarkerType,
   reconnectEdge,
+  useStore,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { isEqual } from "lodash";
+import { stripTransientGraphFields } from "./utils/graphNormalization";
 import { getNodeTypes } from "./nodeTypes";
 import { getEdgeTypes } from "./edgeTypes";
 import nodeRegistry from "./registry/nodeRegistry";
 import { NodeData } from "./types/nodes";
 import { Workflow } from "@/interfaces/workflow.interface";
-import WorkflowTestDialog from "./components/WorkflowTestDialog";
+import WorkflowTestPanel, { TestRunRecord } from "./components/WorkflowTestPanel";
 import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
@@ -32,6 +35,7 @@ import { getWorkflowById, updateWorkflow } from "@/services/workflows";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
+import { NodeActionsContext } from "./context/NodeActionsContext";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import {
@@ -44,9 +48,14 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X, Plus } from "lucide-react";
+import { useSidebar } from "@/components/sidebar";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
+import { History, ChevronLeft, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
+import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
+import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import toast from "react-hot-toast";
 import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
 import { getAllAppSettings } from "@/services/appSettings";
@@ -55,6 +64,7 @@ import { getAllNodeSchemas } from "@/services/workflows";
 import type { AppSetting } from "@/interfaces/app-setting.interface";
 import type { DataSource } from "@/interfaces/dataSource.interface";
 import type { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import WorkflowMiniMap from "./components/WorkflowMiniMap";
 
 // Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
@@ -62,10 +72,64 @@ const edgeTypes = getEdgeTypes();
 
 const PRO_OPTIONS = { hideAttribution: true }; // remove React Flow watermark
 
+// Skip canvas undo/redo when focus is in a field the user is typing in
+const isEditableEventTarget = (target: HTMLElement): boolean =>
+  target.isContentEditable ||
+  !!target.closest("input, textarea, select, [contenteditable='true'], .ace_editor");
+
+// --- Level-of-detail (LOD) ---------------------------------------------------
+// When the canvas is zoomed out over a large graph, paint-heavy node/edge effects
+// (drop shadows, the spinning AI-agent gradient border, edge dash animations) make
+// panning/dragging janky — worst on Safari, but this helps every browser. We drop
+// those effects via a `.rf-low-detail` class on the flow root (see index.css) and
+// restore full detail automatically once the user zooms back in.
+const LOW_DETAIL_ZOOM = 0.7; // simplify below this zoom level
+const LOW_DETAIL_MIN_NODES = 15; // ...but only once the graph is big enough to matter
+
+// Reads zoom + node count straight from the React Flow store and reports whether we
+// should render in low-detail mode. Because the selector returns a boolean, this only
+// triggers a re-render when the mode actually flips — not on every zoom/pan frame.
+const LowDetailWatcher: React.FC<{ onChange: (lowDetail: boolean) => void }> = ({
+  onChange,
+}) => {
+  const lowDetail = useStore(
+    (s) =>
+      s.nodeInternals.size >= LOW_DETAIL_MIN_NODES &&
+      s.transform[2] < LOW_DETAIL_ZOOM
+  );
+  useEffect(() => {
+    onChange(lowDetail);
+  }, [lowDetail, onChange]);
+  return null;
+};
+
+// When replacing a node, pick which handle on the NEW node the old node's edges
+// should reconnect to. Prefer the standard "output"/"input" ids; otherwise fall
+// back to the first source/target handler the node defines (some nodes use
+// non-standard handle ids), and finally to the standard id as a last resort.
+const pickReplacementHandle = (
+  node: Node,
+  handleType: "source" | "target"
+): string | undefined => {
+  const handlers = (node.data?.handlers ?? []) as Array<{
+    id: string;
+    type: string;
+  }>;
+  const preferred = handleType === "source" ? "output" : "input";
+  if (handlers.some((h) => h.type === handleType && h.id === preferred)) {
+    return preferred;
+  }
+  return handlers.find((h) => h.type === handleType)?.id ?? preferred;
+};
+
 const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   const showChatInput = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CHAT_INPUT);
+
+  // Sidebar state — when collapsed, a floating toggle button sits at the
+  // top-left of the viewport; shift the tab switcher right to clear it.
+  const { state: sidebarState } = useSidebar();
 
   const [workflow, setWorkflow] = useState<Workflow>();
   const [agent, setAgent] = useState<AgentConfig>();
@@ -75,10 +139,21 @@ const GraphFlowContent: React.FC = () => {
 
   const [showNodePanel, setShowNodePanel] = useState(false);
   const [showWorkflowPanel, setShowWorkflowPanel] = useState(false);
+  // When set, the Available Nodes sidebar is in "replace" mode: picking a node
+  // there swaps this node instead of adding a new one.
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   const [currentTestConfig, setCurrentTestConfig] = useState<Workflow | null>(
     null
   );
-  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  // Which top-level view is showing: the graph editor or the executions/test page.
+  // (The Evaluations tab is disabled/"coming soon" and can't be selected.)
+  // Switching is a local toggle (not a route) so the live graph stays mounted.
+  const [activeTab, setActiveTab] = useState<"workflow" | "executions">(
+    "workflow"
+  );
+  // In-memory history of test runs (newest first). Lives here so it survives
+  // switching between the Workflow/Executions tabs; cleared on page leave/refresh.
+  const [testHistory, setTestHistory] = useState<TestRunRecord[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -90,6 +165,14 @@ const GraphFlowContent: React.FC = () => {
   const [nodesDraggable, setNodesDraggable] = useState(true);
   const [nodesConnectable, setNodesConnectable] = useState(true);
   const [elementsSelectable, setElementsSelectable] = useState(true);
+
+  // Level-of-detail: true when zoomed out over a large graph (see LowDetailWatcher)
+  const [lowDetail, setLowDetail] = useState(false);
+
+  // Minimap auto-reveal — the minimap stays hidden until the user moves around the
+  // canvas, then fades back out after a short idle (see revealMinimap below).
+  const [minimapVisible, setMinimapVisible] = useState(false);
+  const minimapHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -144,6 +227,16 @@ const GraphFlowContent: React.FC = () => {
     },
     [nodes, reactFlowInstance, setNodes]
   );
+
+  /** Arrange every node into a clean left-to-right layout (see utils/autoArrangeLayout). */
+  const handleAutoArrange = useCallback(() => {
+    const positions = computeAutoArrangeLayout({ nodes, edges });
+    setNodes((nds) =>
+      nds.map((n) => (positions[n.id] ? { ...n, position: positions[n.id] } : n))
+    );
+    // Fit the view after react-flow commits the new positions.
+    requestAnimationFrame(() => reactFlowInstance?.fitView({ padding: 0.2, duration: 400 }));
+  }, [nodes, edges, setNodes, reactFlowInstance]);
 
   // Smart defaults — dynamically auto-fill integration nodes using schemas + existing connections
   const smartDefaultsApplied = useRef(false);
@@ -240,14 +333,6 @@ const GraphFlowContent: React.FC = () => {
 
   const { validateConnection } = useSchemaValidation();
 
-  // Undo/Redo functionality
-  const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo(
-    nodes,
-    edges,
-    setNodes,
-    setEdges
-  );
-
   const { agentId } = useParams<{ agentId: string }>();
   const edgeReconnectSuccessful = useRef(true);
 
@@ -267,15 +352,11 @@ const GraphFlowContent: React.FC = () => {
       const cleanWorkflow = (workflow: Workflow) => {
         const workflowCopy = JSON.parse(JSON.stringify(workflow));
         const { created_at, updated_at, ...remainingProps } = workflowCopy;
-        return {
-          ...remainingProps,
-          nodes: (remainingProps.nodes || []).map(
-            ({ selected, dragging, width, height, ...rest }: Node) => rest
-          ),
-          edges: (remainingProps.edges || []).map(
-            ({ selected, className, ...rest }) => rest
-          ),
-        };
+        const { nodes, edges } = stripTransientGraphFields(
+          remainingProps.nodes || [],
+          remainingProps.edges || []
+        );
+        return { ...remainingProps, nodes, edges };
       };
 
       const cleanWorkflow1 = cleanWorkflow(workflow1);
@@ -293,10 +374,15 @@ const GraphFlowContent: React.FC = () => {
 
         setIsSettling(false);
         setHasUnsavedChanges(false);
+
+        // The <ReactFlow fitView> prop only fits at mount — before async-loaded nodes exist — so
+        // a freshly opened workflow (whose nodes can sit at large coordinates) renders off-screen.
+        // Frame it now that its nodes have loaded.
+        if (nodes.length > 0) reactFlowInstance?.fitView({ padding: 0.2 });
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isSettling, nodes, edges, workflow]);
+  }, [isSettling, nodes, edges, workflow, reactFlowInstance]);
 
   useEffect(() => {
     if (isSettling || !lastSavedWorkflowRef.current) return;
@@ -317,38 +403,23 @@ const GraphFlowContent: React.FC = () => {
   const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
 
-  const loadWorkflow = useCallback(async (workflowId: string) => {
-    const workflow = await getWorkflowById(workflowId);
-    setWorkflow(workflow);
-    handleWorkflowLoaded(workflow);
-  }, []);
-
-  const loadAgent = useCallback(
-    async (agentId: string) => {
-      const agent = await getAgentConfig(agentId);
-      setAgent(agent);
-      loadWorkflow(agent.workflow_id);
-    },
-    [loadWorkflow]
-  );
-  const handleAgentUpdated = useCallback(async () => {
-    const agent = await getAgentConfig(agentId);
-    setAgent(agent);
-  }, [agentId]);
-
-  const handleActiveWorkflowChange = useCallback(
-    async (workflow: Workflow) => {
-      if (agentId) {
-        try {
-          await updateAgentConfig(agentId, { workflow_id: workflow.id });
-          await handleAgentUpdated();
-        } catch (error) {
-          // ignore
-        }
-      }
-    },
-    [agentId, handleAgentUpdated]
-  );
+  // Always-current snapshot of nodes, so the per-node action callbacks below can
+  // read the latest node without listing `nodes` in their deps (which would
+  // change their identity on every drag and re-render every node).
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+  // Same trick for edges/workflow so canvas-level node actions (e.g. the Start
+  // node's inline Test) can read the latest graph without re-subscribing.
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+  const workflowRef = useRef(workflow);
+  useEffect(() => {
+    workflowRef.current = workflow;
+  }, [workflow]);
 
   // Update node data (used for saving input values)
   const updateNodeData = useCallback(
@@ -384,27 +455,37 @@ const GraphFlowContent: React.FC = () => {
   });
 
   // Restore functions to nodes after loading
-  const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
-    return loadedNodes.map((node) => {
-      // Create a deep copy to avoid modifying the original
-      const nodeCopy = { ...node, data: { ...node.data } };
+  const restoreNodeFunctions = useCallback(
+    (loadedNodes: Node[]): Node[] => {
+      return loadedNodes.map((node) => {
+        const hydrated = nodeRegistry.hydrateNode(node);
+        return {
+          ...hydrated,
+          data: {
+            ...hydrated.data,
+            updateNodeData,
+          },
+        };
+      });
+    },
+    [updateNodeData]
+  );
 
-      nodeCopy.data = {
-        ...nodeCopy.data,
-        updateNodeData,
-      };
-
-      return nodeCopy;
+  // Undo/Redo functionality
+  const { undo, redo, canUndo, canRedo, takeSnapshot, resetHistory } =
+    useUndoRedo(nodes, edges, setNodes, setEdges, {
+      hydrateNodes: restoreNodeFunctions,
     });
-  };
 
   // Handle graph data loaded from file
   const handleWorkflowLoaded = useCallback(
     (loadedWorkflow: Workflow, isUploaded = false) => {
-      const nodesWithFunctions = restoreNodeFunctions(loadedWorkflow.nodes);
+      const loadedNodes = loadedWorkflow.nodes || [];
+      const loadedEdges = loadedWorkflow.edges || [];
+      const nodesWithFunctions = restoreNodeFunctions(loadedNodes);
 
       // Add arrow markers to existing edges
-      const edgesWithMarkers = loadedWorkflow.edges.map((edge) => ({
+      const edgesWithMarkers = loadedEdges.map((edge) => ({
         ...edge,
         type: "default",
         markerEnd: {
@@ -420,6 +501,8 @@ const GraphFlowContent: React.FC = () => {
         },
       }));
 
+      // Reset undo baseline to the loaded graph and discard any existing history
+      resetHistory({ nodes: nodesWithFunctions, edges: edgesWithMarkers });
       setNodes(nodesWithFunctions);
       setEdges(edgesWithMarkers);
       setWorkflow(loadedWorkflow);
@@ -429,7 +512,44 @@ const GraphFlowContent: React.FC = () => {
         setHasUnsavedChanges(false);
       }
     },
-    [restoreNodeFunctions, setNodes, setEdges, setWorkflow]
+    [resetHistory, restoreNodeFunctions, setNodes, setEdges, setWorkflow]
+  );
+
+  const loadWorkflow = useCallback(
+    async (workflowId: string) => {
+      const workflow = await getWorkflowById(workflowId);
+      setWorkflow(workflow);
+      handleWorkflowLoaded(workflow);
+    },
+    [handleWorkflowLoaded, setWorkflow]
+  );
+
+  const loadAgent = useCallback(
+    async (agentId: string) => {
+      const agent = await getAgentConfig(agentId);
+      setAgent(agent);
+      loadWorkflow(agent.workflow_id);
+    },
+    [loadWorkflow]
+  );
+
+  const handleAgentUpdated = useCallback(async () => {
+    const agent = await getAgentConfig(agentId);
+    setAgent(agent);
+  }, [agentId]);
+
+  const handleActiveWorkflowChange = useCallback(
+    async (workflow: Workflow) => {
+      if (agentId) {
+        try {
+          await updateAgentConfig(agentId, { workflow_id: workflow.id });
+          await handleAgentUpdated();
+        } catch (error) {
+          // ignore
+        }
+      }
+    },
+    [agentId, handleAgentUpdated]
   );
 
   // Drag and drop handlers using helper functions
@@ -450,11 +570,24 @@ const GraphFlowContent: React.FC = () => {
     }
   }, [agentId, loadAgent]);
 
+  // One gate for connect, reconnect, and assistant edges
+  const checkConnection = useCallback(
+    (params: Connection, ignoreEdgeId?: string): { ok: boolean; reason?: string } => {
+      if (!validateConnection(params)) {
+        return { ok: false };
+      }
+      const scopedEdges = ignoreEdgeId ? edges.filter((e) => e.id !== ignoreEdgeId) : edges;
+      return validateSubAgentConnection(params, nodes, scopedEdges);
+    },
+    [validateConnection, nodes, edges]
+  );
+
   // Connection handler with special handling for connections
   const onConnect = useCallback(
     (params: Connection) => {
-      // Validate schema compatibility before allowing connection
-      if (!validateConnection(params)) {
+      const check = checkConnection(params);
+      if (!check.ok) {
+        if (check.reason) toast.error(check.reason);
         return;
       }
 
@@ -477,30 +610,69 @@ const GraphFlowContent: React.FC = () => {
 
       setEdges((eds) => addEdge(edgeWithMarker, eds));
     },
-    [setEdges, validateConnection]
+    [setEdges, checkConnection]
   );
 
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
   }, []);
- 
-  const onReconnect = useCallback((oldEdge, newConnection) => {
-    edgeReconnectSuccessful.current = true;
-    setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
-  }, []);
- 
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      const check = checkConnection(newConnection, oldEdge.id);
+      if (!check.ok) {
+        if (check.reason) toast.error(check.reason);
+        edgeReconnectSuccessful.current = true;
+        return;
+      }
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [setEdges, checkConnection]
+  );
+
   const onReconnectEnd = useCallback((_, edge) => {
     if (!edgeReconnectSuccessful.current) {
       setEdges((eds) => eds.filter((e) => e.id !== edge.id));
     }
- 
+
     edgeReconnectSuccessful.current = true;
   }, []);
+
+  // --- Minimap auto-reveal ---------------------------------------------------
+  // Show the minimap the moment the user moves around the canvas, then fade it
+  // back out ~1.5s after they stop. Keeps the corner clear while idle but gives
+  // an overview the instant you start navigating.
+  const revealMinimap = useCallback(() => {
+    setMinimapVisible(true);
+    if (minimapHideTimer.current) clearTimeout(minimapHideTimer.current);
+    minimapHideTimer.current = setTimeout(() => setMinimapVisible(false), 1500);
+  }, []);
+
+  // onMove also fires for programmatic viewport changes (initial fitView, auto-arrange,
+  // search focus, zoom buttons), which pass a null sourceEvent — ignore those so the
+  // minimap only reacts to real user pans/zooms and never flashes on load.
+  const handleCanvasMove = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      if (event) revealMinimap();
+    },
+    [revealMinimap]
+  );
+
+  // Clear any pending hide timer on unmount.
+  useEffect(
+    () => () => {
+      if (minimapHideTimer.current) clearTimeout(minimapHideTimer.current);
+    },
+    []
+  );
 
   // Toggle panel functions
   const toggleNodePanel = () => {
     setShowNodePanel(!showNodePanel);
     if (showWorkflowPanel) setShowWorkflowPanel(false);
+    // Leaving/reopening the panel manually exits replace mode.
+    if (replaceTargetId) setReplaceTargetId(null);
   };
 
   const toggleWorkflowPanel = () => {
@@ -511,7 +683,7 @@ const GraphFlowContent: React.FC = () => {
   // Add updateNodeData callback to all nodes that need it
   useEffect(() => {
     setNodes((nds) => restoreNodeFunctions(nds));
-  }, [setNodes]);
+  }, [restoreNodeFunctions, setNodes]);
 
   // Add a new node
   const addNewNode = (
@@ -563,11 +735,35 @@ const GraphFlowContent: React.FC = () => {
     setWorkflow({ ...workflow, testInput: inputs });
   };
 
-  // Handle test graph
-  const handleTestGraph = (graphData: Workflow) => {
+  // Cap the in-memory history so a long session doesn't grow unbounded.
+  const handleAddTestRun = useCallback((record: TestRunRecord) => {
+    setTestHistory((prev) => [record, ...prev].slice(0, 50));
+  }, []);
+  const handleClearTestHistory = useCallback(() => setTestHistory([]), []);
+
+  // Snapshot the current graph into the test config so the Executions page tests
+  // exactly what's on the canvas, then switch to the Executions tab.
+  const openExecutions = (graphData: Workflow) => {
     setCurrentTestConfig(graphData);
     setShowNodePanel(false);
-    setTestDialogOpen(true);
+    setShowWorkflowPanel(false);
+    setActiveTab("executions");
+  };
+
+  // "Test" buttons (bottom panel, setup wizard) now open the Executions page.
+  const handleTestGraph = (graphData: Workflow) => {
+    openExecutions(graphData);
+  };
+
+  // Tab switch between the graph editor and the executions/test page.
+  const handleTabChange = (tab: string) => {
+    if (tab === "executions") {
+      // Re-snapshot the live graph on entry so the test always reflects the
+      // current canvas, and close editor-only drawers.
+      openExecutions({ ...workflow, nodes, edges } as Workflow);
+    } else {
+      setActiveTab("workflow");
+    }
   };
 
   // Handle selection change — highlight edges connected to any selected node.
@@ -681,27 +877,160 @@ const GraphFlowContent: React.FC = () => {
     clipboardRef.current = null;
   }, [setNodes, setEdges]);
 
+  // --- Per-node actions (exposed to nodes via NodeActionsContext) ------------
+
+  // Copy a single node to the clipboard; paste it with Cmd/Ctrl+V.
+  const copyNode = useCallback((id: string) => {
+    const node = nodesRef.current.find((n) => n.id === id);
+    if (!node) return;
+    clipboardRef.current = { nodes: [{ ...node }], edges: [] };
+  }, []);
+
+  // Duplicate a single node in place (offset, without its edges) and select it.
+  const duplicateNode = useCallback(
+    (id: string) => {
+      setNodes((nds) => {
+        const original = nds.find((n) => n.id === id);
+        if (!original) return nds;
+        const offset = 40;
+        const { position } = original;
+        const clone: Node = {
+          ...original,
+          id: uuidv4(),
+          position: {
+            x: (position?.x || 0) + offset,
+            y: (position?.y || 0) + offset,
+          },
+          data: { ...original.data, updateNodeData },
+          selected: true,
+        };
+        return [
+          ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
+          clone,
+        ];
+      });
+    },
+    [setNodes, updateNodeData]
+  );
+
+  // Replace an existing node with a fresh node of `newType`, in place: keep the
+  // same position and reconnect the replaced node's incoming/outgoing edges to
+  // the new node's input/output handles. Config is not carried across types.
+  const replaceNode = useCallback(
+    (targetId: string, newType: string) => {
+      const target = nodesRef.current.find((n) => n.id === targetId);
+      if (!target) return;
+      const newId = uuidv4();
+      const created = nodeRegistry.createNode(newType, newId, target.position);
+      if (!created) return;
+      const [restored] = restoreNodeFunctions([created]);
+
+      const newSourceHandle = pickReplacementHandle(restored, "source");
+      const newTargetHandle = pickReplacementHandle(restored, "target");
+
+      setNodes((nds) => nds.map((n) => (n.id === targetId ? restored : n)));
+      setEdges((eds) =>
+        eds.map((edge) => {
+          if (edge.source === targetId) {
+            return { ...edge, source: newId, sourceHandle: newSourceHandle };
+          }
+          if (edge.target === targetId) {
+            return { ...edge, target: newId, targetHandle: newTargetHandle };
+          }
+          return edge;
+        })
+      );
+    },
+    [setNodes, setEdges, restoreNodeFunctions]
+  );
+
+  // Open the Available Nodes sidebar in "replace" mode for a node.
+  const requestReplaceNode = useCallback((id: string) => {
+    setReplaceTargetId(id);
+    setShowWorkflowPanel(false);
+    setShowNodePanel(true);
+  }, []);
+
+  // The sidebar's add handler: in replace mode swap the target node; otherwise
+  // add a new node as usual.
+  const handlePanelAddNode = useCallback(
+    (nodeType: string) => {
+      if (replaceTargetId) {
+        replaceNode(replaceTargetId, nodeType);
+        setReplaceTargetId(null);
+        setShowNodePanel(false);
+      } else {
+        addNewNode(nodeType);
+      }
+    },
+    [replaceTargetId, replaceNode]
+  );
+
+  // Run the full workflow from the Executions panel. Stable (reads the latest
+  // graph through refs) so the NodeActionsContext value doesn't churn on every
+  // drag/edit. Mirrors openExecutions(); inlined so the deps can stay empty.
+  const testWorkflowFromCanvas = useCallback(() => {
+    setCurrentTestConfig({
+      ...(workflowRef.current || {}),
+      nodes: nodesRef.current,
+      edges: edgesRef.current,
+    } as Workflow);
+    setShowNodePanel(false);
+    setShowWorkflowPanel(false);
+    setActiveTab("executions");
+  }, []);
+
+  const nodeActionsValue = useMemo(
+    () => ({
+      duplicateNode,
+      copyNode,
+      requestReplaceNode,
+      testWorkflow: testWorkflowFromCanvas,
+    }),
+    [duplicateNode, copyNode, requestReplaceNode, testWorkflowFromCanvas]
+  );
+
   // Keyboard shortcuts for canvas interactions
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
+
+      // Compare lowercase keys 
+      const isUndo =
+        (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey;
+      const isRedo =
+        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z";
+
+      // Skip undo/redo if typing or inside an open dialog
+      if (isUndo || isRedo) {
+        if (isEditableEventTarget(target) || target.closest('[role="dialog"]')) return;
+        e.preventDefault();
+        if (isUndo) undo();
+        else redo();
+        return;
+      }
+
+      // Never hijack copy/paste while typing in a field or inside a dialog.
+      if (isEditableEventTarget(target) || target.closest('[role="dialog"]'))
+        return;
+
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
         target.closest(".react-flow__pane") ||
         target.closest(".react-flow__renderer");
 
-      if (!isReactFlowCanvas) return;
-
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
-        e.preventDefault();
-        redo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        // ⌘C copies the current selection — keep it scoped to the canvas so it
+        // doesn't swallow a normal text copy elsewhere on the page.
+        if (!isReactFlowCanvas) return;
         e.preventDefault();
         copySelectedNodes();
       } else if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        // ⌘V pastes clipboard nodes. Allow it from anywhere on the builder (not
+        // only when the canvas has focus) so a node copied via its 3-dots menu
+        // pastes even though the menu moved focus off the canvas. Only act when
+        // there is actually something to paste.
+        if (!clipboardRef.current) return;
         e.preventDefault();
         pasteFromClipboard();
       }
@@ -932,9 +1261,7 @@ const GraphFlowContent: React.FC = () => {
   useEffect(() => {
     const handleSearchKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      const isTyping = !!target.closest(
-        "input, textarea, select, [contenteditable='true'], .ace_editor"
-      );
+      const isTyping = isEditableEventTarget(target);
 
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
@@ -965,6 +1292,19 @@ const GraphFlowContent: React.FC = () => {
     return () => window.removeEventListener("keydown", handleSearchKey);
   }, [nodeSearchOpen, closeNodeSearch, showNodePanel]);
 
+  // Shortcut: ⌘M/Ctrl+M auto-arranges (cleans up) the node layout on the canvas.
+  useEffect(() => {
+    const handleArrangeKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "m" || e.key === "M")) {
+        if (isEditableEventTarget(e.target as HTMLElement)) return;
+        e.preventDefault();
+        handleAutoArrange();
+      }
+    };
+    window.addEventListener("keydown", handleArrangeKey);
+    return () => window.removeEventListener("keydown", handleArrangeKey);
+  }, [handleAutoArrange]);
+
   // Close search on any canvas click (pane or node)
   const handleCanvasClickClose = useCallback(() => {
     if (nodeSearchOpen) closeNodeSearch();
@@ -980,6 +1320,7 @@ const GraphFlowContent: React.FC = () => {
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
+        <NodeActionsContext.Provider value={nodeActionsValue}>
         <div className="h-full w-full flex flex-col">
           <div className="flex-1 relative">
             <CanvasContextMenu
@@ -995,6 +1336,7 @@ const GraphFlowContent: React.FC = () => {
                 className="h-full w-full"
               >
                 <ReactFlow
+                  className={lowDetail ? "rf-low-detail" : undefined}
                   nodes={displayNodes}
                   edges={displayEdges}
                   onNodesChange={onNodesChange}
@@ -1014,13 +1356,18 @@ const GraphFlowContent: React.FC = () => {
                   onReconnect={onReconnect}
                   onReconnectStart={onReconnectStart}
                   onReconnectEnd={onReconnectEnd}
+                  onMove={handleCanvasMove}
+                  onNodeDrag={revealMinimap}
+                  onSelectionDrag={revealMinimap}
                   nodesDraggable={nodesDraggable}
                   nodesConnectable={nodesConnectable}
                   elementsSelectable={elementsSelectable}
                   proOptions={PRO_OPTIONS}
                   onlyRenderVisibleElements
                 >
+                  <LowDetailWatcher onChange={setLowDetail} />
                   <Background />
+                  <WorkflowMiniMap visible={minimapVisible} />
                   <CustomControls
                     nodesDraggable={nodesDraggable}
                     nodesConnectable={nodesConnectable}
@@ -1028,6 +1375,7 @@ const GraphFlowContent: React.FC = () => {
                     onNodesDraggableChange={setNodesDraggable}
                     onNodesConnectableChange={setNodesConnectable}
                     onElementsSelectableChange={setElementsSelectable}
+                    onAutoArrange={handleAutoArrange}
                   />
                   <Panel position="top-center" className="mt-4">
                     <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
@@ -1036,9 +1384,59 @@ const GraphFlowContent: React.FC = () => {
               </div>
             </CanvasContextMenu>
 
-            {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons) */}
+            {/* Top-left view switcher: graph editor vs. executions/test page.
+                The sidebar's floating toggle button sits at the top-left corner
+                when collapsed (far left, ~44px) and at the sidebar's right edge
+                when expanded (overlapping the canvas edge), so keep a consistent
+                gap after it in both states. */}
             <div
-              className={`fixed top-2 z-20 flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
+              className={`absolute top-2 z-30 transition-[left] duration-200 ${
+                sidebarState === "collapsed" ? "left-16" : "left-8"
+              }`}
+            >
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                {/* h-11 (44px) + glassy background matches the Save/Test pill and the
+                    workflow-details card so all three top controls read as one family. */}
+                <TabsList className="h-11 rounded-full bg-background/80 shadow-sm backdrop-blur-sm">
+                  <TabsTrigger value="workflow" className="gap-1.5 px-3 text-xs">
+                    <WorkflowIcon className="h-3.5 w-3.5" />
+                    Workflow
+                  </TabsTrigger>
+                  <TabsTrigger value="executions" className="gap-1.5 px-3 text-xs">
+                    <Play className="h-3.5 w-3.5" />
+                    Executions
+                  </TabsTrigger>
+                  {/* Evaluations isn't built yet — disabled, with a "Coming soon"
+                      tooltip on hover. The disabled trigger has pointer-events-none
+                      (from the base styles), so hover falls through to this group
+                      wrapper and the CSS tooltip shows even though the button is off. */}
+                  <span className="group relative inline-flex cursor-not-allowed">
+                    <TabsTrigger
+                      value="evaluations"
+                      disabled
+                      className="gap-1.5 px-3 text-xs"
+                    >
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                      Evaluations
+                    </TabsTrigger>
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+                    >
+                      Coming soon
+                    </span>
+                  </span>
+                </TabsList>
+              </Tabs>
+            </div>
+
+            {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons).
+                Kept mounted (hidden on the Executions tab) so BottomPanel's unsaved-changes
+                navigation guard and live execution mirroring stay active. */}
+            <div
+              className={`fixed top-2 z-20 flex flex-row flex-wrap items-start justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
+                activeTab !== "workflow" ? "hidden" : ""
+              } ${
                 (() => {
                   if (showNodePanel && showWorkflowPanel) {
                     return "right-[calc(360px+20rem+1rem)]";
@@ -1059,26 +1457,54 @@ const GraphFlowContent: React.FC = () => {
                 onTestWorkflow={handleTestGraph}
                 onSaveWorkflow={handleSaveWorkflow}
                 onExecutionStateChange={setExecutionState}
-                onToggleWorkflowPanel={toggleWorkflowPanel}
               />
 
-              <Button
-                onClick={toggleNodePanel}
-                size="icon"
-                variant="ghost"
-                className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
-              >
-                {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                <span className="sr-only">
-                  {showNodePanel ? "Close Node Panel" : "Open Node Panel"}
-                </span>
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={toggleNodePanel}
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-full h-10 w-10 shadow-md bg-card hover:bg-muted border border-border"
+                >
+                  {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  <span className="sr-only">
+                    {showNodePanel ? "Close Node Panel" : "Open Node Panel"}
+                  </span>
+                </Button>
+
+                <Button
+                  onClick={toggleWorkflowPanel}
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-full h-10 w-10 shadow-md bg-card hover:bg-muted border border-border"
+                >
+                  {showWorkflowPanel ? (
+                    <X className="h-4 w-4" />
+                  ) : (
+                    <History className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">
+                    {showWorkflowPanel
+                      ? "Close Saved Versions"
+                      : "Open Saved Versions"}
+                  </span>
+                </Button>
+              </div>
             </div>
 
             <NodePanel
               isOpen={showNodePanel}
               onClose={toggleNodePanel}
-              onAddNode={addNewNode}
+              onAddNode={handlePanelAddNode}
+              replaceMode={!!replaceTargetId}
+              replaceNodeName={
+                replaceTargetId
+                  ? (nodes.find((n) => n.id === replaceTargetId)?.data?.name as
+                      | string
+                      | undefined)
+                  : undefined
+              }
+              onCancelReplace={() => setReplaceTargetId(null)}
               messages={assistant.messages}
               isThinking={assistant.isThinking}
               activeConversationalTab={conversationalTabActive}
@@ -1101,24 +1527,41 @@ const GraphFlowContent: React.FC = () => {
               onSaveWorkflow={handleSaveWorkflow}
             />
 
-            <WorkflowTestDialog
-              isOpen={testDialogOpen}
-              onClose={() => setTestDialogOpen(false)}
-              workflowName="Current Graph"
-              workflow={currentTestConfig}
-              onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
-            />
+            {/* Executions page — overlays the canvas (which stays mounted
+                underneath so the graph/viewport is preserved). */}
+            {activeTab === "executions" && (
+              <div className="absolute inset-0 z-20 flex flex-col bg-background">
+                {/* Title on the same row as the floating tabs (which sit at the
+                    left); the columns start immediately below with no extra gap. */}
+                <div className="flex h-14 shrink-0 items-center justify-center px-3">
+                  <h2 className="text-base font-semibold leading-none tracking-tight">
+                    Test Workflow: Current Graph
+                  </h2>
+                </div>
+                <div className="min-h-0 flex-1 px-3 pb-3">
+                  <WorkflowTestPanel
+                    active
+                    workflow={currentTestConfig}
+                    history={testHistory}
+                    onAddTestRun={handleAddTestRun}
+                    onClearHistory={handleClearTestHistory}
+                    onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
+                  />
+                </div>
+              </div>
+            )}
 
-            {showSetupWizard ? (
-              <SetupWizardPanel
-                nodes={nodes}
-                onNodeFocus={handleNodeFocus}
-                onClose={() => setShowSetupWizard(false)}
-                onTest={() => handleTestGraph({ ...workflow, nodes, edges } as Workflow)}
-              />
-            ) : wizardWasShown ? (
-              <SetupWizardReopenButton onClick={() => setShowSetupWizard(true)} />
-            ) : null}
+            {activeTab === "workflow" &&
+              (showSetupWizard ? (
+                <SetupWizardPanel
+                  nodes={nodes}
+                  onNodeFocus={handleNodeFocus}
+                  onClose={() => setShowSetupWizard(false)}
+                  onTest={() => handleTestGraph({ ...workflow, nodes, edges } as Workflow)}
+                />
+              ) : wizardWasShown ? (
+                <SetupWizardReopenButton onClick={() => setShowSetupWizard(true)} />
+              ) : null)}
 
             {nodeSearchOpen && (
               <WorkflowCommandPalette
@@ -1140,6 +1583,7 @@ const GraphFlowContent: React.FC = () => {
             )}
           </div>
         </div>
+        </NodeActionsContext.Provider>
       </WorkflowExecutionProvider>
     </WorkflowProvider>
   );

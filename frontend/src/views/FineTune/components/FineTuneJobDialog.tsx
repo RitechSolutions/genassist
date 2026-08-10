@@ -279,7 +279,7 @@ export function FineTuneJobDialog({
                     <Loader2 className="w-4 h-4 animate-spin" /> Uploading training file...
                   </div>
                 )}
-                {trainingFile && <div className="text-sm text-green-700">Uploaded: {trainingFile.name}</div>}
+                {trainingFile && <div className="text-sm text-green-700 dark:text-green-400">Uploaded: {trainingFile.name}</div>}
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -333,7 +333,7 @@ export function FineTuneJobDialog({
                     <Loader2 className="w-4 h-4 animate-spin" /> Uploading validation file...
                   </div>
                 )}
-                {validationFile && <div className="text-sm text-green-700">Uploaded: {validationFile.name}</div>}
+                {validationFile && <div className="text-sm text-green-700 dark:text-green-400">Uploaded: {validationFile.name}</div>}
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
