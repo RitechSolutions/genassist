@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, GitBranch, ListChecks, Loader2, Play, Search } from "lucide-react";
+import {
+  ChevronLeft,
+  Download,
+  GitBranch,
+  ListChecks,
+  Loader2,
+  Play,
+  Search,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 import { PageLayout } from "@/components/PageLayout";
@@ -24,6 +32,8 @@ import { getTestRunsBatch, listTestSuites } from "@/services/testSuites";
 import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import {
   deleteTestEvaluation,
+  exportTestEvaluation,
+  exportWorkflowEvaluations,
   getWorkflowEvaluationsPage,
   runTestEvaluation,
   runWorkflowEvaluations,
@@ -37,6 +47,12 @@ import { EvaluationWizard, EvaluationWizardData } from "../components/Evaluation
 import { EvaluationListRow } from "../components/EvaluationListRow";
 import { RunAgainstVersionDialog } from "../components/RunAgainstVersionDialog";
 import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
+import {
+  apiErrorDetail,
+  bundleFilename,
+  bundleSetFilename,
+  downloadJsonFile,
+} from "../helpers/evalBundle";
 
 const PAGE_SIZE = 20;
 const UNASSIGNED = "unassigned";
@@ -354,6 +370,38 @@ const WorkflowEvaluationsPage: React.FC = () => {
     }
   };
 
+  const handleExport = async (evaluation: TestEvaluationConfig) => {
+    if (!evaluation.id) return;
+    try {
+      const bundle = await exportTestEvaluation(evaluation.id);
+      if (!bundle) {
+        toast.error("You don't have permission to export evaluations.");
+        return;
+      }
+      downloadJsonFile(bundleFilename(evaluation.name), bundle);
+      toast.success("Evaluation exported");
+    } catch {
+      toast.error("Failed to export evaluation");
+    }
+  };
+
+  const handleExportAll = async () => {
+    try {
+      const bundleSet = await exportWorkflowEvaluations(workflowId);
+      if (!bundleSet) {
+        toast.error("You don't have permission to export evaluations.");
+        return;
+      }
+      downloadJsonFile(bundleSetFilename(workflowName), bundleSet);
+      const count = bundleSet.evaluations.length;
+      toast.success(`Exported ${count} evaluation${count !== 1 ? "s" : ""}`);
+    } catch (error) {
+      // The backend explains its export limits precisely; a generic message
+      // would hide both the limit and how far over it this workflow is.
+      toast.error(apiErrorDetail(error) ?? "Failed to export evaluations");
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await deleteTestEvaluation(id);
@@ -410,6 +458,21 @@ const WorkflowEvaluationsPage: React.FC = () => {
           </div>
           {!isUnassigned && (
             <div className="flex items-center gap-2">
+              <TooltipProvider delayDuration={200}>
+                <TooltipButton
+                  button={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => void handleExportAll()}
+                      aria-label="Export all evaluations"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  }
+                  tooltipContent={{ children: <p>Export all evaluations</p> }}
+                />
+              </TooltipProvider>
               {canRunAgainstVersion && (
                 <TooltipProvider delayDuration={200}>
                   <TooltipButton
@@ -494,6 +557,7 @@ const WorkflowEvaluationsPage: React.FC = () => {
                 }
                 onOpen={() => navigate(`/tests/evaluations/${evaluation.id}`)}
                 onEdit={() => setEditingEvaluation(evaluation)}
+                onExport={() => void handleExport(evaluation)}
                 onDelete={() => setDeletingEvaluationId(evaluation.id ?? null)}
                 onRun={(e) => handleQuickRun(evaluation, e)}
               />
