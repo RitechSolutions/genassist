@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { createFeatureFlag, updateFeatureFlag } from "@/services/featureFlags";
 
 interface FeatureFlagDialogProps {
@@ -56,7 +57,9 @@ export function FeatureFlagDialog({
         create: "Feature flag created successfully.",
         edit: "Feature flag updated successfully.",
       }}
-      errorMessage={(_err, m) => `Failed to ${m} feature flag`}
+      errorMessage={(err, m) =>
+        extractErrorMessage(err, `Failed to ${m} feature flag`)
+      }
       errorDisplay="both"
       validate={(values) => {
         if (!values.key.trim()) return { key: "Feature flag key is required" };

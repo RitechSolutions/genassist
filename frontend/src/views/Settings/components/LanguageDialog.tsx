@@ -4,6 +4,7 @@ import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { createLanguage, updateLanguage } from "@/services/translations";
 
 interface LanguageDialogProps {
@@ -51,7 +52,7 @@ export function LanguageDialog({
         create: "Language created successfully.",
         edit: "Language updated successfully.",
       }}
-      errorMessage={(_err, m) => `Failed to ${m} language`}
+      errorMessage={(err, m) => extractErrorMessage(err, `Failed to ${m} language`)}
       errorDisplay="both"
       validate={(values) => {
         if (!values.code.trim()) return { code: "Language code is required" };

@@ -244,16 +244,13 @@ export function AppSettingDialog({
           return { _error: 'invalid' };
         }
 
-        // Validate schema-based fields
+        // Validate schema-based fields. Use the shared, visibility-aware helper so
+        // conditionally-hidden required fields (e.g. Zendesk's OAuth creds under a
+        // non-selected auth method) aren't flagged as missing for a field the user
+        // can't see.
         if (type !== 'Other' && appSettingSchemas[type]) {
           const schema = appSettingSchemas[type];
-          const schemaMissing = schema.fields
-            .filter((field) => {
-              if (!field.required) return false;
-              const value = values[field.name];
-              return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
-            })
-            .map((field) => field.label);
+          const schemaMissing = missingRequiredLabels(schema);
 
           if (schemaMissing.length > 0) {
             toast.error(
