@@ -1,11 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
@@ -17,8 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { FormField } from "@/components/ui/form-field";
+import { CRUDDialog } from "@/components/ui/crud-dialog";
 import {
   createTranslation,
   updateTranslation,
@@ -69,6 +64,15 @@ interface TranslationDialogProps {
   languages?: Language[];
 }
 
+/**
+ * CRUDDialog owns the top-level scalar `key` field; the dynamic per-language
+ * translation rows (and their default selection) are managed as component-body
+ * state and rendered through the render prop (see rule 13 of the migration).
+ */
+type TranslationFormValues = {
+  key: string;
+};
+
 export function TranslationDialog({
   isOpen,
   onOpenChange,
@@ -79,14 +83,15 @@ export function TranslationDialog({
   initialDefaultValue,
   languages: languagesFromParent,
 }: TranslationDialogProps) {
+  // The dialog's effective mode can differ from the `mode` prop: when an
+  // `initialKey` already exists, it flips to "edit" after the async lookup.
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
-  const [key, setKey] = useState("");
+  // Seed for the CRUDDialog-owned `key` field (props/async decide it).
+  const [resolvedKey, setResolvedKey] = useState("");
   const [defaultLangCode, setDefaultLangCode] = useState<string | null>(null);
   const [rows, setRows] = useState<TranslationRow[]>([]);
   const [originalLangCodes, setOriginalLangCodes] = useState<string[]>([]);
   const [fetchedLanguages, setFetchedLanguages] = useState<Language[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
 
   const languages =
     languagesFromParent !== undefined ? languagesFromParent : fetchedLanguages;
@@ -98,7 +103,7 @@ export function TranslationDialog({
       .catch(() => toast.error("Failed to load languages."));
   }, [languagesFromParent]);
 
-  const languagesRef = React.useRef(languages);
+  const languagesRef = useRef(languages);
   languagesRef.current = languages;
 
   useEffect(() => {
@@ -115,11 +120,9 @@ export function TranslationDialog({
 
     let cancelled = false;
     const init = async () => {
-      setError("");
-
       if (translationToEdit && mode === "edit") {
         setDialogMode("edit");
-        setKey(translationToEdit.key || "");
+        setResolvedKey(translationToEdit.key || "");
         const builtRows = translationsToRows(translationToEdit.translations);
         setRows(builtRows);
         setOriginalLangCodes(builtRows.map((r) => r.langCode));
@@ -137,7 +140,7 @@ export function TranslationDialog({
 
         if (existing) {
           setDialogMode("edit");
-          setKey(existing.key || "");
+          setResolvedKey(existing.key || "");
           const builtRows = translationsToRows(existing.translations);
           let defaultLang = findDefaultLangCode(existing.default, builtRows);
           if (defaultLang === null && builtRows.length > 0) {
@@ -159,12 +162,10 @@ export function TranslationDialog({
           setDefaultLangCode(defaultLang);
         } else {
           setDialogMode("create");
-          setKey(initialKey);
+          setResolvedKey(initialKey);
           setOriginalLangCodes([]);
           const firstLang =
-            langs.find((l) => l.code === "en")?.code ??
-            langs[0]?.code ??
-            "en";
+            langs.find((l) => l.code === "en")?.code ?? langs[0]?.code ?? "en";
           setRows(
             initialDefaultValue
               ? [
@@ -201,7 +202,7 @@ export function TranslationDialog({
   ]);
 
   const resetForm = () => {
-    setKey("");
+    setResolvedKey("");
     setDefaultLangCode(null);
     setRows([]);
     setOriginalLangCodes([]);
@@ -269,213 +270,172 @@ export function TranslationDialog({
     );
   }, []);
 
-  const title =
-    dialogMode === "create" ? "Add Translation" : "Edit Translation";
-  const submitLabel = dialogMode === "create" ? "Create" : "Update";
-  const loadingLabel = dialogMode === "create" ? "Creating..." : "Updating...";
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    setError("");
-
-    if (!key.trim()) {
-      setError("Key is required");
-      return;
-    }
-
-    const hasTranslation = rows.some(
-      (r) => r.langCode && r.value.trim().length > 0
-    );
-    if (!hasTranslation) {
-      setError("At least one translation is required");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-
-      const cleanTranslations: Record<string, string> = {};
-      for (const row of rows) {
-        const trimmed = row.value.trim();
-        if (trimmed && row.langCode) {
-          cleanTranslations[row.langCode] = trimmed;
+  return (
+    <CRUDDialog<TranslationFormValues>
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      mode={dialogMode}
+      maxWidth="860px"
+      resetKey={`${dialogMode}:${resolvedKey}`}
+      initialValues={{ key: resolvedKey }}
+      title={{ create: "Add Translation", edit: "Edit Translation" }}
+      submitLabel={{ create: "Create", edit: "Update" }}
+      loadingLabel={{ create: "Creating...", edit: "Updating..." }}
+      successMessage={{
+        create: "Translation created successfully.",
+        edit: "Translation updated successfully.",
+      }}
+      errorMessage="Failed to save translation."
+      errorDisplay="both"
+      validate={(values) => {
+        if (!values.key.trim()) return { key: "Key is required" };
+        const hasTranslation = rows.some(
+          (r) => r.langCode && r.value.trim().length > 0
+        );
+        if (!hasTranslation) {
+          return { key: "At least one translation is required" };
         }
-      }
-
-      if (dialogMode === "edit") {
-        for (const code of originalLangCodes) {
-          if (!(code in cleanTranslations)) {
-            cleanTranslations[code] = "";
+        return null;
+      }}
+      onSubmit={async (values, { mode: m }) => {
+        const cleanTranslations: Record<string, string> = {};
+        for (const row of rows) {
+          const trimmed = row.value.trim();
+          if (trimmed && row.langCode) {
+            cleanTranslations[row.langCode] = trimmed;
           }
         }
-      }
 
-      const defaultRow = rows.find((r) => r.langCode === defaultLangCode);
-      const defaultValue = defaultRow?.value.trim() || null;
-
-      let saved: Translation;
-      if (dialogMode === "create") {
-        saved = await createTranslation({
-          key: key.trim(),
-          default: defaultValue,
-          translations: cleanTranslations,
-        });
-        toast.success("Translation created successfully.");
-      } else {
-        const updateKey = translationToEdit?.key || key.trim();
-        if (!updateKey) {
-          setError("Translation key is missing for update");
-          return;
+        if (m === "edit") {
+          for (const code of originalLangCodes) {
+            if (!(code in cleanTranslations)) {
+              cleanTranslations[code] = "";
+            }
+          }
         }
 
-        saved = await updateTranslation(updateKey, {
-          default: defaultValue,
-          translations: cleanTranslations,
-        });
-        toast.success("Translation updated successfully.");
-      }
+        const defaultRow = rows.find((r) => r.langCode === defaultLangCode);
+        const defaultValue = defaultRow?.value.trim() || null;
 
-      onTranslationSaved(saved);
-      onOpenChange(false);
-      resetForm();
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to save translation.";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[860px] p-0 overflow-hidden">
-        <form onSubmit={handleSubmit} className="max-h-[90vh] flex flex-col">
-          <DialogHeader className="p-6 pb-4">
-            <DialogTitle className="text-xl">{title}</DialogTitle>
-          </DialogHeader>
-
-          <div className="px-6 pb-6 space-y-4 overflow-y-auto">
-            {error && (
-              <div className="text-sm font-medium text-red-500">{error}</div>
-            )}
-
-            <div className="grid gap-2">
-              <Label htmlFor="translation-key">Key</Label>
-              <Input
-                id="translation-key"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="translation.key"
-                disabled={dialogMode === "edit" || !!initialKey}
-                autoFocus
-              />
+        if (m === "create") {
+          const saved = await createTranslation({
+            key: values.key.trim(),
+            default: defaultValue,
+            translations: cleanTranslations,
+          });
+          onTranslationSaved(saved);
+        } else {
+          const updateKey = translationToEdit?.key || values.key.trim();
+          if (!updateKey) {
+            throw new Error("Translation key is missing for update");
+          }
+          const saved = await updateTranslation(updateKey, {
+            default: defaultValue,
+            translations: cleanTranslations,
+          });
+          onTranslationSaved(saved);
+        }
+      }}
+    >
+      {({ values, setField, errors, mode: m }) => (
+        <>
+          {/* Validation errors ("Key is required" / "At least one translation
+              is required") surfaced in one top-level inline div, matching the
+              original single error banner. */}
+          {errors.key ? (
+            <div className="text-sm font-medium text-red-500">
+              {errors.key}
             </div>
+          ) : null}
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Translations</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddRow}
-                  disabled={!canAddRow}
-                  className="flex items-center gap-1"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Translation
-                </Button>
-              </div>
+          <FormField id="translation-key" label="Key">
+            <Input
+              id="translation-key"
+              value={values.key}
+              onChange={(e) => setField("key", e.target.value)}
+              placeholder="translation.key"
+              disabled={m === "edit" || !!initialKey}
+              autoFocus
+            />
+          </FormField>
 
-              {rows.length > 0 && (
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <span className="w-[50px] shrink-0 text-center">Default</span>
-                  <span className="w-[160px] shrink-0">Language</span>
-                  <span className="flex-1">Value</span>
-                  <span className="w-9 shrink-0" />
-                </div>
-              )}
-
-              {rows.map((row, index) => (
-                <div key={row.id} className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="default-lang"
-                    checked={defaultLangCode === row.langCode}
-                    onChange={() => setDefaultLangCode(row.langCode)}
-                    title="Set as default"
-                    className="mt-3 w-[50px] shrink-0 cursor-pointer accent-primary"
-                  />
-                  <Select
-                    value={row.langCode}
-                    onValueChange={(val) => handleLangChange(index, val)}
-                  >
-                    <SelectTrigger className="w-[160px] shrink-0 rounded-md">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(availableByRow[index] ?? []).map((lang) => (
-                        <SelectItem key={lang.code} value={lang.code}>
-                          {lang.name} ({lang.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Textarea
-                    value={row.value}
-                    onChange={(e) => handleValueChange(index, e.target.value)}
-                    placeholder="Translation value"
-                    rows={1}
-                    className="flex-1 min-h-[40px]"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveRow(index)}
-                    className="shrink-0 mt-0.5"
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              ))}
-
-              {rows.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No translations added yet. Click "Add Translation" to start.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter className="px-6 py-4 border-t">
-            <div className="flex justify-end gap-3 w-full">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>Translations</Label>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
+                size="sm"
+                onClick={handleAddRow}
+                disabled={!canAddRow}
+                className="flex items-center gap-1"
               >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {loadingLabel}
-                  </>
-                ) : (
-                  submitLabel
-                )}
+                <Plus className="h-3.5 w-3.5" />
+                Add Translation
               </Button>
             </div>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+
+            {rows.length > 0 && (
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <span className="w-[50px] shrink-0 text-center">Default</span>
+                <span className="w-[160px] shrink-0">Language</span>
+                <span className="flex-1">Value</span>
+                <span className="w-9 shrink-0" />
+              </div>
+            )}
+
+            {rows.map((row, index) => (
+              <div key={row.id} className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="default-lang"
+                  checked={defaultLangCode === row.langCode}
+                  onChange={() => setDefaultLangCode(row.langCode)}
+                  title="Set as default"
+                  className="mt-3 w-[50px] shrink-0 cursor-pointer accent-primary"
+                />
+                <Select
+                  value={row.langCode}
+                  onValueChange={(val) => handleLangChange(index, val)}
+                >
+                  <SelectTrigger className="w-[160px] shrink-0 rounded-md">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(availableByRow[index] ?? []).map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code}>
+                        {lang.name} ({lang.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Textarea
+                  value={row.value}
+                  onChange={(e) => handleValueChange(index, e.target.value)}
+                  placeholder="Translation value"
+                  rows={1}
+                  className="flex-1 min-h-[40px]"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemoveRow(index)}
+                  className="shrink-0 mt-0.5"
+                >
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                </Button>
+              </div>
+            ))}
+
+            {rows.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No translations added yet. Click "Add Translation" to start.
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </CRUDDialog>
   );
 }

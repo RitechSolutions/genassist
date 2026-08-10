@@ -11,7 +11,7 @@ import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle, Fullscreen, ChevronDown } from 'lucide-react';
+import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, ArrowDown, Maximize2, Minimize2, AlertCircle, Fullscreen, ChevronDown } from 'lucide-react';
 import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
@@ -42,8 +42,8 @@ import {
   getMenuPopupStyle,
   getMenuItemStyle,
   chatContainerStyle,
-  inputContainerStyle,
-  inputWrapperStyle,
+  getInputContainerStyle,
+  getInputWrapperStyle,
   getTextAreaStyle,
   getLiveVoiceHintStyle,
   attachButtonStyle,
@@ -66,6 +66,7 @@ import {
   getInputBarReplyCardStyle,
   getInputBarPanelStyle,
   getInputBarPanelHeaderStyle,
+  getScrollToBottomButtonStyle,
   CSS_KEYFRAMES,
 } from '../styles/genAgentChatStyles';
 
@@ -260,7 +261,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     translations,
   });
 
-  const { messagesEndRef, chatContainerRef } = useScrollManagement({
+  const { messagesEndRef, chatContainerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
     isAgentTyping,
     currentThinkingPartIndex,
@@ -1025,7 +1026,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   // Resolve theme values
   const themeParams = resolveTheme(theme);
-  const { primaryColor, backgroundColor, textColor, fontFamily, fontSize } = themeParams;
+  const { primaryColor, secondaryColor, backgroundColor, textColor, fontFamily, fontSize, borderColor, mutedTextColor, inputBackgroundColor } = themeParams;
   const fontSizeNumber = typeof fontSize === 'string' ? parseInt(fontSize, 10) : (typeof fontSize === 'number' ? fontSize : 14);
 
   const position = floatingConfig.position || 'bottom-right';
@@ -1038,14 +1039,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // Computed styles
   const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams });
   const headerStyle = getHeaderStyle(themeParams);
-  const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily);
-  const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily);
+  const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily, textColor);
+  const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily, mutedTextColor);
   const headerDescription = (description ?? t('header.subtitle') ?? '').trim();
   const brandLogo = brandLogoUrl?.trim() ?? '';
   const hasBrandLogo = brandLogo.length > 0;
   // Description reveal only applies to the small-logo layout; the full brand logo replaces the text.
   const hasHeaderDescription = !hasBrandLogo && headerDescription.length > 0;
-  const menuPopupStyle = getMenuPopupStyle(backgroundColor);
+  const menuPopupStyle = getMenuPopupStyle(backgroundColor, borderColor);
   const menuItemStyle = getMenuItemStyle(themeParams);
   // Hover fill for menu items / outline buttons — theme-aware, matches the web app's bg-accent.
   const menuHoverBg = theme?.secondaryColor || '#f4f4f5';
@@ -1055,7 +1056,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const queryButtonStyle = getQueryButtonStyle(themeParams);
   const confirmOverlayStyle = getConfirmOverlayStyle(showResetConfirm);
   const confirmDialogStyle = getConfirmDialogStyle(themeParams);
-  const disclaimerStyle = getDisclaimerStyle(fontFamily);
+  const disclaimerStyle = getDisclaimerStyle(fontFamily, mutedTextColor);
+  const inputContainerStyle = getInputContainerStyle(inputBackgroundColor);
+  const inputWrapperStyle = getInputWrapperStyle(inputBackgroundColor, borderColor);
 
   const textAreaFontSize = useMemo(() => {
     if (windowWidth <= 768) {
@@ -1251,7 +1254,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               const isPending = !isFormAnswered(originalIndex);
               return (
                 <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
+                  <div style={{ fontSize: '14px', color: textColor, fontWeight: 600, marginBottom: 4 }}>
                     {agentName || 'Agent'}
                   </div>
                   {formDisplay === 'inline' && isPending ? (
@@ -1263,15 +1266,20 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                       isSubmitted={false}
                       primaryColor={primaryColor}
                       fontFamily={fontFamily}
+                      backgroundColor={backgroundColor}
+                      textColor={textColor}
+                      borderColor={borderColor}
+                      mutedTextColor={mutedTextColor}
+                      inputBackgroundColor={inputBackgroundColor}
                       variant="card"
                     />
                   ) : (
                     <div style={{
-                      backgroundColor: '#f3f4f6',
+                      backgroundColor: secondaryColor,
                       borderRadius: '12px',
                       padding: '10px 14px',
                       fontSize: '14px',
-                      color: '#374151',
+                      color: textColor,
                       fontFamily,
                     }}>
                       {formSchema.message || 'Please fill the form below.'}
@@ -1340,7 +1348,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               style={{
                 animation: 'ga-think-change 220ms ease',
                 willChange: 'transform, opacity',
-                color: '#6b7280',
+                color: mutedTextColor,
                 fontSize: '13px',
               }}
             >
@@ -1385,9 +1393,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               aria-label={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
             >
               {isExpanded ? (
-                <Minimize2 size={20} color="#111111" />
+                <Minimize2 size={20} color={textColor} />
               ) : (
-                <Maximize2 size={20} color="#111111" />
+                <Maximize2 size={20} color={textColor} />
               )}
             </button>
           )}
@@ -1429,7 +1437,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             onClick={handleMenuClick}
             title={t('menu.title')}
           >
-            <MoreHorizontal size={22} color="#111111" />
+            <MoreHorizontal size={22} color={textColor} />
           </button>
           {mode === 'floating' && (
             <button
@@ -1438,7 +1446,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               onClick={() => setIsFloatingOpen(false)}
               title="Close chat"
             >
-              <X size={22} color="#111111" />
+              <X size={22} color={textColor} />
             </button>
           )}
         </div>
@@ -1507,7 +1515,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     marginTop: '4px',
                     backgroundColor: backgroundColor,
                     borderRadius: '10px',
-                    border: '1px solid #e4e4e7',
+                    border: `1px solid ${borderColor}`,
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
                     padding: '4px',
                     minWidth: '180px',
@@ -1646,6 +1654,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 file={att.file}
                 onRemove={() => handleRemoveAttachment(att.file.name)}
                 uploading={uploadingFiles.has(att.file.name)}
+                backgroundColor={secondaryColor}
+                textColor={textColor}
+                mutedTextColor={mutedTextColor}
               />
             ))}
           </div>
@@ -1668,7 +1679,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           <div style={inputContainerStyle}>
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
               <div style={inputWrapperStyle}>
-                <span style={getLiveVoiceHintStyle(textAreaFontSize, fontFamily)}>
+                <span style={getLiveVoiceHintStyle(textAreaFontSize, fontFamily, mutedTextColor)}>
                   {liveVoiceReady
                     ? t('liveVoice.tapToStart', 'Tap to start a voice conversation')
                     : t('liveVoice.unavailable', 'Voice is currently unavailable')}
@@ -1701,7 +1712,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     title="Attach"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <Paperclip size={22} color="#757575" />
+                    <Paperclip size={22} color={mutedTextColor} />
                   </button>
                   <input
                     type="file"
@@ -1791,6 +1802,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               isSubmitted={false}
               primaryColor={primaryColor}
               fontFamily={fontFamily}
+              backgroundColor={backgroundColor}
+              textColor={textColor}
+              borderColor={borderColor}
+              mutedTextColor={mutedTextColor}
+              inputBackgroundColor={inputBackgroundColor}
               variant="fullscreen"
               title={agentName || undefined}
             />
@@ -1801,7 +1817,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
           <h3 style={{ fontFamily, margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('dialog.resetConversation.title')}</h3>
-          <p style={{ fontFamily, fontSize: '14px', color: '#71717a', margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
+          <p style={{ fontFamily, fontSize: '14px', color: mutedTextColor, margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
           <div style={confirmButtonsStyle}>
             <button className="ga-confirm-btn--cancel" style={{ ...getConfirmButtonStyle(false, themeParams), color: textColor }} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
             <button className="ga-confirm-btn--danger" style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
@@ -1843,7 +1859,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         ref={inputBarRootRef}
         data-genassist-root="true"
         data-genassist-container="inputbar"
-        style={{ ...getInputBarRootStyle(fontFamily), ['--ga-hover' as string]: menuHoverBg }}
+        style={{
+          // Dock the bar to the bottom-center of the viewport so it stays visible on
+          // scroll. Always centered — the input bar ignores floatingConfig corners.
+          ...getInputBarRootStyle(fontFamily, offsetY),
+          ['--ga-hover' as string]: menuHoverBg,
+        }}
       >
         <style>{CSS_KEYFRAMES}</style>
 
@@ -1855,7 +1876,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               if (e.target !== e.currentTarget) return;
               if (barPanelClosing) setBarPanelMounted(false);
             }}
-            style={getInputBarPanelStyle(backgroundColor)}
+            style={getInputBarPanelStyle(backgroundColor, borderColor)}
             data-genassist-container="inputbar-panel"
           >
             <div style={getInputBarPanelHeaderStyle(backgroundColor)} ref={headerRef}>
@@ -1882,7 +1903,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 title={t('menu.title')}
                 aria-label={t('menu.title')}
               >
-                <MoreHorizontal size={22} color="#111111" />
+                <MoreHorizontal size={22} color={textColor} />
               </button>
               <button
                 className="ga-header-btn"
@@ -1891,7 +1912,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 title={t('menu.collapse', 'Collapse')}
                 aria-label={t('menu.collapse', 'Collapse')}
               >
-                <ChevronDown size={20} color="#111111" />
+                <ChevronDown size={20} color={textColor} />
               </button>
 
               {/* Same 3-dots menu as the standard chat, minus fullscreen/maximize. */}
@@ -1921,7 +1942,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                             marginTop: '4px',
                             backgroundColor: backgroundColor,
                             borderRadius: '10px',
-                            border: '1px solid #e4e4e7',
+                            border: `1px solid ${borderColor}`,
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
                             padding: '4px',
                             minWidth: '180px',
@@ -1999,6 +2020,21 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 }}
               />
 
+              {/* Jump-to-latest: appears when the visitor scrolls up in a scrollable
+                  conversation; clicking snaps back to the newest message. */}
+              {showScrollButton && (
+                <button
+                  type="button"
+                  className="ga-scroll-bottom-btn"
+                  style={getScrollToBottomButtonStyle(backgroundColor)}
+                  onClick={() => scrollToLatest()}
+                  title={t('inputbar.scrollToBottom', 'Scroll to latest')}
+                  aria-label={t('inputbar.scrollToBottom', 'Scroll to latest')}
+                >
+                  <ArrowDown size={18} color={textColor} />
+                </button>
+              )}
+
               {fileErrorToast && (
                 <div
                   style={{
@@ -2040,6 +2076,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     isSubmitted={false}
                     primaryColor={primaryColor}
                     fontFamily={fontFamily}
+                    backgroundColor={backgroundColor}
+                    textColor={textColor}
+                    borderColor={borderColor}
+                    mutedTextColor={mutedTextColor}
+                    inputBackgroundColor={inputBackgroundColor}
                     variant="fullscreen"
                     title={agentName || undefined}
                   />
@@ -2050,7 +2091,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <div style={confirmOverlayStyle}>
               <div style={confirmDialogStyle}>
                 <h3 style={{ fontFamily, margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('dialog.resetConversation.title')}</h3>
-                <p style={{ fontFamily, fontSize: '14px', color: '#71717a', margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
+                <p style={{ fontFamily, fontSize: '14px', color: mutedTextColor, margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
                 <div style={confirmButtonsStyle}>
                   <button className="ga-confirm-btn--cancel" style={{ ...getConfirmButtonStyle(false, themeParams), color: textColor }} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
                   <button className="ga-confirm-btn--danger" style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
@@ -2067,7 +2108,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             type="button"
             className="ga-inbar-reply"
             style={{
-              ...getInputBarReplyCardStyle(backgroundColor),
+              ...getInputBarReplyCardStyle(backgroundColor, borderColor),
               width: isBarActive ? '100%' : 'min(400px, 100%)',
               margin: '0 auto',
               transition: 'width 280ms cubic-bezier(0.16, 1, 0.3, 1)',
@@ -2094,7 +2135,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               >
                 {barReplyPreview}
               </span>
-              <span style={{ fontSize: '13px', color: '#6b7280', fontFamily, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ fontSize: '13px', color: mutedTextColor, fontFamily, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {(headerTitle || agentName || t('labels.agent')) + ' · ' + t('inputbar.justNow', 'Just now')}
               </span>
             </div>
@@ -2127,7 +2168,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           className="ga-inbar-bar"
           onSubmit={(e) => { e.preventDefault(); submitBarMessage(); }}
           style={{
-            ...getInputBarBarStyle(),
+            ...getInputBarBarStyle(inputBackgroundColor, borderColor),
             flexDirection: 'column',
             alignItems: 'stretch',
             gap: attachments.length > 0 ? '6px' : '0px',
@@ -2158,6 +2199,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   file={att.file}
                   onRemove={() => handleRemoveAttachment(att.file.name)}
                   uploading={uploadingFiles.has(att.file.name)}
+                  backgroundColor={secondaryColor}
+                  textColor={textColor}
+                  mutedTextColor={mutedTextColor}
                 />
               ))}
             </div>
@@ -2191,7 +2235,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => { e.stopPropagation(); handleBarAttachClick(); }}
                 >
-                  <Paperclip size={20} color="#757575" />
+                  <Paperclip size={20} color={mutedTextColor} />
                 </button>
                 <input
                   type="file"
@@ -2264,6 +2308,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             placeholder={inputPlaceholder}
             fontFamily={fontFamily}
             fontSize={fontSize}
+            inputBackgroundColor={inputBackgroundColor}
+            borderColor={borderColor}
+            textColor={textColor}
             chatBubbleIcon={theme?.chatBubbleIcon}
             showQuickInput={quickInput && !quickInputDismissed && Boolean(conversationId) && !isFinalized}
             onOpen={() => setIsFloatingOpen(true)}

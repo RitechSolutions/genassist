@@ -8,6 +8,7 @@ interface ThemeLike {
   fontSize?: string;
   backgroundColor?: string;
   textColor?: string;
+  mutedTextColor?: string;
 }
 
 export interface WelcomeCardProps {
@@ -29,7 +30,8 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
   onQuickQuery,
   isAgentTyping = false,
 }) => {
-  const agentTextColor = '#000000';
+  const agentTextColor = theme?.textColor || '#000000';
+  const mutedTextColor = theme?.mutedTextColor || '#6b7280';
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
 
   const isClickable = onQuickQuery && !isAgentTyping;
@@ -63,7 +65,7 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
 
   const welcomeSubtitleStyle: React.CSSProperties = {
     fontSize: '14px',
-    color: '#6b7280',
+    color: mutedTextColor,
     margin: 0,
     fontFamily,
   };

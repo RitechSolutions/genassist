@@ -13,6 +13,7 @@ interface PageHeaderProps {
   onActionClick?: () => void;
   secondaryActionButtonText?: React.ReactNode;
   onSecondaryActionClick?: () => void;
+  secondaryActionDisabled?: boolean;
 }
 
 export function PageHeader({
@@ -25,6 +26,7 @@ export function PageHeader({
   onActionClick,
   secondaryActionButtonText,
   onSecondaryActionClick,
+  secondaryActionDisabled,
 }: PageHeaderProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
@@ -45,6 +47,7 @@ export function PageHeader({
               variant="outline"
               className="flex items-center gap-2 w-full sm:w-auto justify-center rounded-full"
               onClick={onSecondaryActionClick}
+              disabled={secondaryActionDisabled}
             >
               {secondaryActionButtonText}
             </Button>
