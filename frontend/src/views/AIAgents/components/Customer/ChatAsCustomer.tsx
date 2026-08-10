@@ -30,6 +30,10 @@ export default function ChatAsCustomer() {
     textColor: "#000000",
     fontFamily: "Inter, sans-serif",
     fontSize: "15px",
+    userBubbleColor: "#E4E4E7",
+    inputBackgroundColor: "#ffffff",
+    borderColor: "#e5e7eb",
+    mutedTextColor: "#6b7280",
   });
   const [chatSettings, setChatSettings] = useState<ChatSettingsConfig>({
     name: "Genassist",

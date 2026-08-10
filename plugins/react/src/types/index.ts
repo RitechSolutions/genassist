@@ -169,6 +169,14 @@ export interface GenAgentChatProps {
     fontSize?: string;
     backgroundColor?: string;
     textColor?: string;
+    /** Background of the visitor's (customer) message bubble. Defaults to #E4E4E7. */
+    userBubbleColor?: string;
+    /** Background of the input field / docked bar / voice overlay. Defaults to #ffffff. */
+    inputBackgroundColor?: string;
+    /** Border color across the container, inputs, menus and dialogs. Defaults to #e5e7eb. */
+    borderColor?: string;
+    /** Secondary/muted text (timestamps, descriptions, disclaimers). Defaults to #6b7280. */
+    mutedTextColor?: string;
     chatBubbleIcon?: 'message' | 'sparkles' | 'x';
   };
   headerTitle?: string;
