@@ -261,8 +261,9 @@ class ProjectSettings(BaseSettings):
     TEST_USERNAME: Optional[str] = "test"
     TEST_PASSWORD: Optional[str] = "test"
 
-    # Check if inside celery container
-    BACKGROUND_TASK: bool = False
+    # NOTE: the former mutable ``BACKGROUND_TASK`` global was removed. Background-task
+    # state is now context-local — see ``app.core.tenant_scope.background_task_context``
+    # / ``is_background_task`` (avoids the cross-task race under concurrency).
     BEDROCK_MAX_RETRY_QUERY_EMBEDDING: int = 3
     BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 

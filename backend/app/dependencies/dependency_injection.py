@@ -193,9 +193,12 @@ class Dependencies(Module):
         Returns an AsyncSession instance managed by fastapi-injector's request scope.
         Note: Sessions must be properly closed via middleware or cleanup mechanism.
         """
-        from app.core.tenant_scope import get_tenant_context
+        from app.core.tenant_scope import require_tenant_context
 
-        tenant_id = get_tenant_context()
+        # Fail closed: a missing tenant context must not silently route this
+        # session to the master database. Intentional master access sets the
+        # context explicitly (set_tenant_context("master") / clear_tenant_context()).
+        tenant_id = require_tenant_context()
         logger.debug(f"DI: Tenant context: {tenant_id}")
 
         session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
