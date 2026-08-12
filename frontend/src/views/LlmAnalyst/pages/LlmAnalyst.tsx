@@ -18,15 +18,17 @@ export default function LLMAnalysts() {
 
   const [llmAnalysts, setLlmAnalysts] = useState<LLMAnalyst[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchLLMAnalysts = async () => {
       try {
         setIsLoading(true);
+        setError(null);
         const data = await getAllLLMAnalysts();
         setLlmAnalysts(data);
       } catch (error) {
-        // ignore
+        setError("We couldn't load your LLM analysts. Please try again.");
       } finally {
         setIsLoading(false);
       }
@@ -34,6 +36,8 @@ export default function LLMAnalysts() {
 
     fetchLLMAnalysts();
   }, [refreshKey]);
+
+  const handleRetry = () => setRefreshKey((prevKey) => prevKey + 1);
 
   const handleLLMAnalystSaved = () => {
     setRefreshKey((prevKey) => prevKey + 1);
@@ -77,6 +81,9 @@ export default function LLMAnalysts() {
         searchQuery={searchQuery}
         analysts={llmAnalysts}
         loading={isLoading}
+        error={error}
+        onRetry={handleRetry}
+        onCreate={handleCreateLLMAnalyst}
         onEdit={handleEditLLMAnalyst}
         onDelete={handleDeleteLLMAnalyst}
       />

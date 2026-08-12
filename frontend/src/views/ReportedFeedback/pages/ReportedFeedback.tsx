@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MessageSquare } from "lucide-react";
+import { MessageSquareDot } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { useQuery } from "@tanstack/react-query";
@@ -259,9 +259,9 @@ export default function ReportedFeedback() {
         searchQuery={statusFilter === "all" ? "" : statusFilter}
         emptyState={
           <ListEmptyState
-            icon={<MessageSquare className="h-12 w-12 text-muted-foreground" />}
+            icon={<MessageSquareDot className="h-12 w-12 text-muted-foreground" />}
             title={
-              hasActiveFilters ? "No matching feedback" : "No reported feedback yet"
+              hasActiveFilters ? "No matching feedback yet" : "No reported feedback yet"
             }
             description={
               hasActiveFilters
