@@ -28,10 +28,7 @@ function localEndOfDayUTC(d: Date): string {
 }
 
 /**
- * Convert a local date range to expanded UTC date strings (yyyy-MM-dd).
- * Used for daily-stats endpoints that filter on a Date column bucketed by UTC.
- * The local start/end-of-day may span two UTC dates, so we take the date
- * component of each converted boundary.
+ * Legacy date-string params (yyyy-MM-dd) for the menus that still send day filters.
  */
 export function toExpandedUTCDateRange(
   dateRange: DateRange | undefined,

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -41,36 +41,14 @@ class DashboardRepository:
         result = await self.db.execute(query)
         return result.scalar() or 0
 
-    async def get_workflow_runs_count(
-        self,
-        from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None
-    ) -> int:
-        """
-        Get count of workflow runs (conversations) within date range.
-        Workflow runs are tracked via conversations since each conversation
-        typically triggers a workflow execution.
-        """
-        query = select(func.count(ConversationModel.id)).where(
-            ConversationModel.is_deleted == 0
-        )
-
-        if from_date:
-            query = query.where(ConversationModel.conversation_date >= from_date)
-        if to_date:
-            query = query.where(ConversationModel.conversation_date <= to_date)
-
-        result = await self.db.execute(query)
-        return result.scalar() or 0
-
     async def resolve_visible_agent_ids(self) -> list[UUID] | None:
         """Caller's agent scope for the summary aggregates (None = unrestricted admin)"""
         return await resolve_authorized_agent_ids(self.db)
 
     async def get_avg_response_time(
         self,
-        from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
         *,
         agent_ids: list[UUID] | None,
     ) -> int:
@@ -82,6 +60,8 @@ class DashboardRepository:
 
         ``agent_ids`` is required because the stats table is not group-scoped: ``None``
         is an explicit tenant-wide (admin) scope, ``[]`` short-circuits to zero.
+
+        Bounds are UTC bucket dates, matching the ``stat_date`` column.
         """
         if agent_ids is not None and not agent_ids:
             return 0
@@ -367,6 +347,7 @@ class DashboardRepository:
         to_date: Optional[datetime] = None,
         *,
         agent_ids: list[UUID] | None,
+        exact: bool = False,
     ) -> float:
         """Total priced LLM cost over the range from the usage ledger"""
         if (from_date is None) != (to_date is None):
@@ -378,7 +359,9 @@ class DashboardRepository:
             LlmUsageEventModel.is_deleted == 0,
         )
         if from_date is not None and to_date is not None:
-            window_start, window_end = _ledger_window(from_date, to_date)
+            window_start, window_end = (
+                (from_date, to_date) if exact else _ledger_window(from_date, to_date)
+            )
             query = query.where(
                 LlmUsageEventModel.occurred_at >= window_start,
                 LlmUsageEventModel.occurred_at < window_end,

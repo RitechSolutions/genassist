@@ -14,35 +14,37 @@ NAIVE_FROM = datetime(2026, 8, 1)
 NAIVE_TO = datetime(2026, 8, 8)
 
 
-def _rolling_days(bounds: tuple[datetime, datetime]) -> float:
-    from_date, to_date = bounds
-    return (to_date - from_date) / timedelta(days=1)
+def _rolling_days(resolved) -> float:
+    return (resolved.to_date - resolved.from_date) / timedelta(days=1)
 
 
 def test_no_range_arguments_fall_back_to_the_legacy_rolling_window():
-    bounds = resolve_summary_range(None, None, None, False)
-    assert _rolling_days(bounds) == DEFAULT_SUMMARY_DAYS
-    assert all(bound.utcoffset() is not None for bound in bounds)
+    resolved = resolve_summary_range(None, None, None, False)
+    assert _rolling_days(resolved) == DEFAULT_SUMMARY_DAYS
+    assert resolved.exact is False
+    assert resolved.from_date.utcoffset() is not None and resolved.to_date.utcoffset() is not None
 
 
 def test_days_keeps_the_legacy_rolling_duration():
-    assert _rolling_days(resolve_summary_range(7, None, None, False)) == 7
+    resolved = resolve_summary_range(7, None, None, False)
+    assert _rolling_days(resolved) == 7
+    assert resolved.exact is False
 
 
 def test_exact_pair_passes_through_unchanged():
-    assert resolve_summary_range(None, EXACT_FROM, EXACT_TO, False) == (EXACT_FROM, EXACT_TO)
+    assert resolve_summary_range(None, EXACT_FROM, EXACT_TO, False) == (EXACT_FROM, EXACT_TO, True)
 
 
 def test_exact_pair_keeps_a_non_utc_offset():
-    assert resolve_summary_range(None, OFFSET_FROM, EXACT_TO, False) == (OFFSET_FROM, EXACT_TO)
+    assert resolve_summary_range(None, OFFSET_FROM, EXACT_TO, False) == (OFFSET_FROM, EXACT_TO, True)
 
 
 def test_all_time_drops_both_bounds():
-    assert resolve_summary_range(None, None, None, True) == (None, None)
+    assert resolve_summary_range(None, None, None, True) == (None, None, False)
 
 
 def test_all_time_false_stays_inactive_beside_another_mode():
-    assert resolve_summary_range(None, EXACT_FROM, EXACT_TO, False) == (EXACT_FROM, EXACT_TO)
+    assert resolve_summary_range(None, EXACT_FROM, EXACT_TO, False) == (EXACT_FROM, EXACT_TO, True)
     assert _rolling_days(resolve_summary_range(7, None, None, False)) == 7
 
 

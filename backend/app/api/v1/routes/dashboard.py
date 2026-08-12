@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_injector import Injected
@@ -27,6 +27,13 @@ router = APIRouter()
 DEFAULT_SUMMARY_DAYS = 30
 
 
+class SummaryRange(NamedTuple):
+    """Resolved summary bounds"""
+    from_date: datetime | None
+    to_date: datetime | None
+    exact: bool
+
+
 def parse_date_range(days: int = 30) -> tuple[datetime, datetime]:
     """Parse days parameter into date range."""
     to_date = datetime.now(timezone.utc)
@@ -39,7 +46,7 @@ def resolve_summary_range(
     from_datetime: datetime | None,
     to_datetime: datetime | None,
     all_time: bool,
-) -> tuple[datetime | None, datetime | None]:
+) -> SummaryRange:
     """Resolve the summary range into bounds, rejecting mixed modes with a 422"""
     has_exact_boundary = from_datetime is not None or to_datetime is not None
 
@@ -49,7 +56,7 @@ def resolve_summary_range(
                 status_code=422,
                 detail="all_time cannot be combined with days, from_datetime or to_datetime",
             )
-        return None, None
+        return SummaryRange(None, None, exact=False)
 
     if has_exact_boundary:
         if days is not None:
@@ -72,9 +79,10 @@ def resolve_summary_range(
                 status_code=422,
                 detail="from_datetime must be earlier than to_datetime",
             )
-        return from_datetime, to_datetime
+        return SummaryRange(from_datetime, to_datetime, exact=True)
 
-    return parse_date_range(days if days is not None else DEFAULT_SUMMARY_DAYS)
+    rolling_from, rolling_to = parse_date_range(days if days is not None else DEFAULT_SUMMARY_DAYS)
+    return SummaryRange(rolling_from, rolling_to, exact=False)
 
 
 @router.get(
@@ -150,8 +158,10 @@ async def get_summary_stats(
     - Average response time in milliseconds
     - Total cost in USD
     """
-    from_date, to_date = resolve_summary_range(days, from_datetime, to_datetime, all_time)
-    return await dashboard_service.get_summary_stats(from_date, to_date)
+    summary_range = resolve_summary_range(days, from_datetime, to_datetime, all_time)
+    return await dashboard_service.get_summary_stats(
+        summary_range.from_date, summary_range.to_date, exact=summary_range.exact
+    )
 
 
 @router.get(
