@@ -216,6 +216,23 @@ async def test_dashboard_ledger_total_restricts_to_the_visible_agents():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_ledger_total_without_bounds_has_no_date_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(agent_ids=None)
+    sql = _sql(db.statements[0])
+    assert "occurred_at" not in sql
+    assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_rejects_a_half_supplied_range():
+    db = CapturingDb()
+    with pytest.raises(ValueError):
+        await DashboardRepository(db).get_total_cost_usd(WINDOW_START, None, agent_ids=None)
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
 async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
     db = CapturingDb()
     total = await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=[])

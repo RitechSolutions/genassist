@@ -362,18 +362,27 @@ class DashboardRepository:
         return list(result.scalars().all())
 
     async def get_total_cost_usd(
-        self, from_date: datetime, to_date: datetime, *, agent_ids: list[UUID] | None
+        self,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        *,
+        agent_ids: list[UUID] | None,
     ) -> float:
         """Total priced LLM cost over the range from the usage ledger"""
+        if (from_date is None) != (to_date is None):
+            raise ValueError("get_total_cost_usd needs both bounds or neither")
         if agent_ids is not None and not agent_ids:
             return 0.0
 
-        window_start, window_end = _ledger_window(from_date, to_date)
         query = select(func.coalesce(func.sum(LlmUsageEventModel.cost_usd), 0)).where(
             LlmUsageEventModel.is_deleted == 0,
-            LlmUsageEventModel.occurred_at >= window_start,
-            LlmUsageEventModel.occurred_at < window_end,
         )
+        if from_date is not None and to_date is not None:
+            window_start, window_end = _ledger_window(from_date, to_date)
+            query = query.where(
+                LlmUsageEventModel.occurred_at >= window_start,
+                LlmUsageEventModel.occurred_at < window_end,
+            )
         if agent_ids is not None:
             query = query.where(LlmUsageEventModel.agent_id.in_(agent_ids))
         result = await self.db.execute(query)

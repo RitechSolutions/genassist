@@ -25,12 +25,16 @@ class FakeDashboardRepo:
         self.scope_calls = 0
         self.response_time_scope = _UNSET
         self.total_cost_scope = _UNSET
+        self.workflow_runs_bounds = _UNSET
+        self.response_time_bounds = _UNSET
+        self.total_cost_bounds = _UNSET
         self.agents_kwargs = None
 
     async def get_active_agents_count(self):
         return 3
 
     async def get_workflow_runs_count(self, from_date, to_date):
+        self.workflow_runs_bounds = (from_date, to_date)
         return 7
 
     async def resolve_visible_agent_ids(self):
@@ -39,11 +43,13 @@ class FakeDashboardRepo:
 
     async def get_avg_response_time(self, from_date, to_date, *, agent_ids):
         self.response_time_scope = agent_ids
+        self.response_time_bounds = (from_date, to_date)
         return 0 if agent_ids == [] else 250
 
     async def get_total_cost_usd(self, from_date, to_date, *, agent_ids):
         self.total_cost_calls += 1
         self.total_cost_scope = agent_ids
+        self.total_cost_bounds = (from_date, to_date)
         return 0.0 if agent_ids == [] else TOTAL_COST
 
     async def get_agents_with_stats(self, from_date, to_date, limit):
@@ -89,6 +95,33 @@ async def test_summary_resolves_visible_scope_once_and_passes_it_to_both_reads()
     assert repo.scope_calls == 1
     assert repo.response_time_scope == scope
     assert repo.total_cost_scope == scope
+
+
+@pytest.mark.asyncio
+async def test_summary_serialises_workflow_runs_as_a_mirror_of_conversations():
+    service, _ = _service()
+    summary = await service.get_summary_stats(FROM_DATE, TO_DATE)
+    assert summary.conversations == summary.workflow_runs == 7
+    assert summary.model_dump()["workflow_runs"] == 7
+
+
+@pytest.mark.asyncio
+async def test_summary_forwards_the_requested_bounds_to_every_read():
+    service, repo = _service()
+    await service.get_summary_stats(FROM_DATE, TO_DATE)
+    bounds = (FROM_DATE, TO_DATE)
+    assert repo.workflow_runs_bounds == bounds
+    assert repo.response_time_bounds == bounds
+    assert repo.total_cost_bounds == bounds
+
+
+@pytest.mark.asyncio
+async def test_summary_without_bounds_reads_all_time():
+    service, repo = _service()
+    await service.get_summary_stats()
+    assert repo.workflow_runs_bounds == (None, None)
+    assert repo.response_time_bounds == (None, None)
+    assert repo.total_cost_bounds == (None, None)
 
 
 @pytest.mark.asyncio

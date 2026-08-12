@@ -69,12 +69,12 @@ class DashboardService:
 
     async def get_summary_stats(
         self,
-        from_date: datetime,
-        to_date: datetime
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None
     ) -> DashboardSummaryStats:
         """Get summary statistics for the dashboard header."""
         active_agents = await self.dashboard_repo.get_active_agents_count()
-        workflow_runs = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
+        conversations = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
         visible_agent_ids = await self.dashboard_repo.resolve_visible_agent_ids()
         avg_response_time = await self.dashboard_repo.get_avg_response_time(
             from_date, to_date, agent_ids=visible_agent_ids
@@ -85,7 +85,7 @@ class DashboardService:
 
         return DashboardSummaryStats(
             active_agents=active_agents,
-            workflow_runs=workflow_runs,
+            conversations=conversations,
             avg_response_time_ms=avg_response_time,
             total_cost_usd=total_cost_usd,
         )
