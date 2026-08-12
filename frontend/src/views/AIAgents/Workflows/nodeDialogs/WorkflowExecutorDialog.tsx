@@ -17,18 +17,23 @@ import { getAllWorkflows } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { RichInput } from "@/components/richInput";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 export const WorkflowExecutorDialog: React.FC<
   BaseNodeDialogProps<WorkflowExecutorNodeData, WorkflowExecutorNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [workflowId, setWorkflowId] = useState(data.workflowId || "");
-  const [workflowName, setWorkflowName] = useState(data.workflowName || "");
-  const [inputParameters, setInputParameters] = useState<Record<string, string>>(
-    data.inputParameters || {}
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      workflowId: data.workflowId || "",
+      workflowName: data.workflowName || "",
+      inputParameters: data.inputParameters || {},
+    })
   );
+
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedWorkflowInputSchema, setSelectedWorkflowInputSchema] = useState<NodeSchema | null>(null);
@@ -40,26 +45,20 @@ export const WorkflowExecutorDialog: React.FC<
     }
   }, [isOpen]);
 
-  // Update local state when data changes
-  useEffect(() => {
-    setName(data.name || "");
-    setWorkflowId(data.workflowId || "");
-    setWorkflowName(data.workflowName || "");
-    setInputParameters(data.inputParameters || {});
-  }, [isOpen, data]);
-
   // Update input schema when workflow is selected
   useEffect(() => {
-    if (workflowId && workflows.length > 0) {
-      const selectedWorkflow = workflows.find((w) => w.id === workflowId);
+    if (values.workflowId && workflows.length > 0) {
+      const selectedWorkflow = workflows.find(
+        (w) => w.id === values.workflowId
+      );
       if (selectedWorkflow) {
-        setWorkflowName(selectedWorkflow.name);
+        setField("workflowName", selectedWorkflow.name);
         extractInputSchema(selectedWorkflow);
       }
     } else {
       setSelectedWorkflowInputSchema(null);
     }
-  }, [workflowId, workflows]);
+  }, [values.workflowId, workflows, setField]);
 
   const fetchWorkflows = async () => {
     setLoading(true);
@@ -91,43 +90,32 @@ export const WorkflowExecutorDialog: React.FC<
       // Initialize input parameters with empty values for all schema fields
       const newInputParameters: Record<string, string> = {};
       Object.keys(schema).forEach((key) => {
-        if (!(key in inputParameters)) {
+        if (!(key in values.inputParameters)) {
           newInputParameters[key] = "";
         } else {
-          newInputParameters[key] = inputParameters[key];
+          newInputParameters[key] = values.inputParameters[key];
         }
       });
-      setInputParameters(newInputParameters);
+      setField("inputParameters", newInputParameters);
     } else {
       setSelectedWorkflowInputSchema(null);
     }
   };
 
   const handleWorkflowChange = (newWorkflowId: string) => {
-    setWorkflowId(newWorkflowId);
+    setField("workflowId", newWorkflowId);
     const selectedWorkflow = workflows.find((w) => w.id === newWorkflowId);
     if (selectedWorkflow) {
-      setWorkflowName(selectedWorkflow.name);
+      setField("workflowName", selectedWorkflow.name);
       extractInputSchema(selectedWorkflow);
     }
   };
 
   const handleParameterChange = (key: string, value: string) => {
-    setInputParameters({
-      ...inputParameters,
+    setField("inputParameters", {
+      ...values.inputParameters,
       [key]: value,
     });
-  };
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      workflowId,
-      workflowName,
-      inputParameters,
-    });
-    onClose();
   };
 
   return (
@@ -144,20 +132,14 @@ export const WorkflowExecutorDialog: React.FC<
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        workflowId,
-        workflowName,
-        inputParameters,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="Workflow Executor"
           className="break-all w-full"
         />
@@ -166,7 +148,7 @@ export const WorkflowExecutorDialog: React.FC<
       <div className="space-y-2">
         <Label htmlFor="workflow">Select Workflow</Label>
         <Select
-          value={workflowId}
+          value={values.workflowId}
           onValueChange={handleWorkflowChange}
           disabled={loading}
         >
@@ -181,9 +163,9 @@ export const WorkflowExecutorDialog: React.FC<
             ))}
           </SelectContent>
         </Select>
-        {workflowName && (
+        {values.workflowName && (
           <p className="text-xs text-muted-foreground">
-            Selected: {workflowName}
+            Selected: {values.workflowName}
           </p>
         )}
       </div>
@@ -206,7 +188,7 @@ export const WorkflowExecutorDialog: React.FC<
                 </Label>
                 <DraggableInput
                   id={`param-${key}`}
-                  value={inputParameters[key] || ""}
+                  value={values.inputParameters[key] || ""}
                   onChange={(e) => handleParameterChange(key, e.target.value)}
                   placeholder={`Enter ${key}${field.required ? " (required)" : ""}`}
                   className="text-sm"
@@ -220,13 +202,13 @@ export const WorkflowExecutorDialog: React.FC<
         </div>
       )}
 
-      {workflowId && selectedWorkflowInputSchema && Object.keys(selectedWorkflowInputSchema).length === 0 && (
+      {values.workflowId && selectedWorkflowInputSchema && Object.keys(selectedWorkflowInputSchema).length === 0 && (
         <div className="text-sm text-muted-foreground text-center py-4">
           This workflow has no input parameters defined.
         </div>
       )}
 
-      {!workflowId && (
+      {!values.workflowId && (
         <div className="text-sm text-muted-foreground text-center py-4">
           Select a workflow to configure input parameters.
         </div>

@@ -16,6 +16,7 @@ import {
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useNodeDialogState } from "./useNodeDialogState";
 import { getAllAudioProviders } from "@/services/audioProviders";
 
 type VoiceAgentDialogProps = BaseNodeDialogProps<
@@ -56,9 +57,12 @@ const LIVE_VOICES = [
 ];
 
 export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [config, setConfig] = useState<VoiceAgentNodeData>(data);
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => data
+  );
 
   const hasAdvanced = (d: VoiceAgentNodeData) =>
     d.temperature != null ||
@@ -70,10 +74,10 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
     !!d.contextCompression;
   const [showAdvanced, setShowAdvanced] = useState(() => hasAdvanced(data));
 
-  // Reset state when the dialog is opened to reflect the current node data
+  // Reset advanced-panel visibility when the dialog is opened to reflect the
+  // current node data (config re-seeding is handled by useNodeDialogState).
   useEffect(() => {
     if (isOpen) {
-      setConfig(data);
       setShowAdvanced(hasAdvanced(data));
     }
   }, [isOpen, data]);
@@ -90,18 +94,10 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
   // Flag a configured-but-keyless provider so the operator fixes it before it
   // silently fails at runtime (the widget only ever shows a neutral "unavailable").
   const selectedProvider = geminiProviders?.find(
-    (p) => p.id === config.voiceProviderId
+    (p) => p.id === values.voiceProviderId
   );
   const selectedProviderMissingKey =
     !!selectedProvider && !selectedProvider.connection_data?.api_key;
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      ...config,
-    });
-    onClose();
-  };
 
   return (
     <NodeConfigPanel
@@ -114,20 +110,15 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        ...config,
-      }}
+      data={merged}
     >
       <div className="space-y-4">
         <div>
           <Label htmlFor="name">Node Name</Label>
           <RichInput
             id="name"
-            value={config.name || "Voice Agent"}
-            onChange={(e) =>
-              setConfig((prev) => ({ ...prev, name: e.target.value }))
-            }
+            value={values.name || "Voice Agent"}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="e.g., Voice Agent"
             className="w-full"
           />
@@ -140,10 +131,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
             Gemini audio provider under Settings → Audio Providers.
           </p>
           <Select
-            value={config.voiceProviderId || ""}
-            onValueChange={(value) =>
-              setConfig((prev) => ({ ...prev, voiceProviderId: value }))
-            }
+            value={values.voiceProviderId || ""}
+            onValueChange={(value) => setField("voiceProviderId", value)}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a Gemini audio provider" />
@@ -172,10 +161,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="model">Live Model</Label>
           <Select
-            value={config.model || LIVE_MODELS[0].value}
-            onValueChange={(value) =>
-              setConfig((prev) => ({ ...prev, model: value }))
-            }
+            value={values.model || LIVE_MODELS[0].value}
+            onValueChange={(value) => setField("model", value)}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select model" />
@@ -193,10 +180,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="voice">Voice</Label>
           <Select
-            value={config.voice || "Kore"}
-            onValueChange={(value) =>
-              setConfig((prev) => ({ ...prev, voice: value }))
-            }
+            value={values.voice || "Kore"}
+            onValueChange={(value) => setField("voice", value)}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select voice" />
@@ -218,10 +203,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           </p>
           <RichInput
             id="language"
-            value={config.language || ""}
-            onChange={(e) =>
-              setConfig((prev) => ({ ...prev, language: e.target.value }))
-            }
+            value={values.language || ""}
+            onChange={(e) => setField("language", e.target.value)}
             placeholder="e.g., en-US"
             className="w-full"
           />
@@ -231,10 +214,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           <Label htmlFor="systemPrompt">System Prompt</Label>
           <DraggableTextArea
             id="systemPrompt"
-            value={config.systemPrompt || ""}
-            onChange={(e) =>
-              setConfig((prev) => ({ ...prev, systemPrompt: e.target.value }))
-            }
+            value={values.systemPrompt || ""}
+            onChange={(e) => setField("systemPrompt", e.target.value)}
             placeholder="Instructions for how the voice agent should behave"
             className="h-24 text-sm"
             rows={4}
@@ -248,10 +229,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           </p>
           <DraggableTextArea
             id="userPrompt"
-            value={config.userPrompt || ""}
-            onChange={(e) =>
-              setConfig((prev) => ({ ...prev, userPrompt: e.target.value }))
-            }
+            value={values.userPrompt || ""}
+            onChange={(e) => setField("userPrompt", e.target.value)}
             placeholder="{{session.message}}"
             className="h-16 font-mono text-sm"
             rows={2}
@@ -266,11 +245,11 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           <RichInput
             id="maxToolCalls"
             type="number"
-            value={String(config.maxToolCalls ?? 10)}
+            value={String(values.maxToolCalls ?? 10)}
             onChange={(e) => {
               const val = parseInt(e.target.value, 10);
               if (!isNaN(val) && val >= 1) {
-                setConfig((prev) => ({ ...prev, maxToolCalls: val }));
+                setField("maxToolCalls", val);
               }
             }}
             min={1}
@@ -283,26 +262,22 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           <Label htmlFor="voice-agent-memory">Enable Memory</Label>
           <Switch
             id="voice-agent-memory"
-            checked={config.memory}
-            onCheckedChange={(checked) =>
-              setConfig((prev) => ({ ...prev, memory: checked }))
-            }
+            checked={values.memory}
+            onCheckedChange={(checked) => setField("memory", checked)}
           />
         </div>
 
-        {config.memory && (
+        {values.memory && (
           <>
             <div className="space-y-2">
               <Label htmlFor="memoryTrimmingMode">Memory Trimming Mode</Label>
               <Select
-                value={config.memoryTrimmingMode || "message_count"}
+                value={values.memoryTrimmingMode || "message_count"}
                 onValueChange={(value) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    memoryTrimmingMode: value as
-                      | "message_count"
-                      | "rag_retrieval",
-                  }))
+                  setField(
+                    "memoryTrimmingMode",
+                    value as "message_count" | "rag_retrieval"
+                  )
                 }
               >
                 <SelectTrigger id="memoryTrimmingMode" className="w-full">
@@ -315,18 +290,18 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
               </Select>
             </div>
 
-            {(config.memoryTrimmingMode === "message_count" ||
-              !config.memoryTrimmingMode) && (
+            {(values.memoryTrimmingMode === "message_count" ||
+              !values.memoryTrimmingMode) && (
               <div>
                 <Label htmlFor="maxMessages">Max Messages</Label>
                 <RichInput
                   id="maxMessages"
                   type="number"
-                  value={String(config.maxMessages ?? 10)}
+                  value={String(values.maxMessages ?? 10)}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     if (!isNaN(val) && val >= 1) {
-                      setConfig((prev) => ({ ...prev, maxMessages: val }));
+                      setField("maxMessages", val);
                     }
                   }}
                   min={1}
@@ -348,10 +323,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           </div>
           <Switch
             id="voice-agent-pii"
-            checked={config.piiMasking || false}
-            onCheckedChange={(checked) =>
-              setConfig((prev) => ({ ...prev, piiMasking: checked }))
-            }
+            checked={values.piiMasking || false}
+            onCheckedChange={(checked) => setField("piiMasking", checked)}
           />
         </div>
 
@@ -378,13 +351,10 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                   <RichInput
                     id="temperature"
                     type="number"
-                    value={config.temperature != null ? String(config.temperature) : ""}
+                    value={values.temperature != null ? String(values.temperature) : ""}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setConfig((prev) => ({
-                        ...prev,
-                        temperature: toNumberOrUndef(v, parseFloat),
-                      }));
+                      setField("temperature", toNumberOrUndef(v, parseFloat));
                     }}
                     min={0}
                     max={2}
@@ -398,13 +368,13 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                   <RichInput
                     id="maxOutputTokens"
                     type="number"
-                    value={config.maxOutputTokens != null ? String(config.maxOutputTokens) : ""}
+                    value={values.maxOutputTokens != null ? String(values.maxOutputTokens) : ""}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setConfig((prev) => ({
-                        ...prev,
-                        maxOutputTokens: toNumberOrUndef(v, (s) => parseInt(s, 10)),
-                      }));
+                      setField(
+                        "maxOutputTokens",
+                        toNumberOrUndef(v, (s) => parseInt(s, 10))
+                      );
                     }}
                     min={1}
                     step={1}
@@ -422,13 +392,13 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                 <RichInput
                   id="vadSilenceMs"
                   type="number"
-                  value={config.vadSilenceMs != null ? String(config.vadSilenceMs) : ""}
+                  value={values.vadSilenceMs != null ? String(values.vadSilenceMs) : ""}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setConfig((prev) => ({
-                      ...prev,
-                      vadSilenceMs: toNumberOrUndef(v, (s) => parseInt(s, 10)),
-                    }));
+                    setField(
+                      "vadSilenceMs",
+                      toNumberOrUndef(v, (s) => parseInt(s, 10))
+                    );
                   }}
                   min={0}
                   step={50}
@@ -441,15 +411,14 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                 <div className="space-y-1">
                   <Label>Start Sensitivity</Label>
                   <Select
-                    value={config.vadStartSensitivity || "default"}
+                    value={values.vadStartSensitivity || "default"}
                     onValueChange={(value) =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        vadStartSensitivity:
-                          value === "default"
-                            ? undefined
-                            : (value as VoiceAgentNodeData["vadStartSensitivity"]),
-                      }))
+                      setField(
+                        "vadStartSensitivity",
+                        value === "default"
+                          ? undefined
+                          : (value as VoiceAgentNodeData["vadStartSensitivity"])
+                      )
                     }
                   >
                     <SelectTrigger className="w-full">
@@ -465,15 +434,14 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                 <div className="space-y-1">
                   <Label>End Sensitivity</Label>
                   <Select
-                    value={config.vadEndSensitivity || "default"}
+                    value={values.vadEndSensitivity || "default"}
                     onValueChange={(value) =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        vadEndSensitivity:
-                          value === "default"
-                            ? undefined
-                            : (value as VoiceAgentNodeData["vadEndSensitivity"]),
-                      }))
+                      setField(
+                        "vadEndSensitivity",
+                        value === "default"
+                          ? undefined
+                          : (value as VoiceAgentNodeData["vadEndSensitivity"])
+                      )
                     }
                   >
                     <SelectTrigger className="w-full">
@@ -492,9 +460,9 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                 <Label htmlFor="voice-agent-proactive">Proactive Audio</Label>
                 <Switch
                   id="voice-agent-proactive"
-                  checked={config.proactiveAudio || false}
+                  checked={values.proactiveAudio || false}
                   onCheckedChange={(checked) =>
-                    setConfig((prev) => ({ ...prev, proactiveAudio: checked }))
+                    setField("proactiveAudio", checked)
                   }
                 />
               </div>
@@ -508,9 +476,9 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
                 </div>
                 <Switch
                   id="voice-agent-compression"
-                  checked={config.contextCompression || false}
+                  checked={values.contextCompression || false}
                   onCheckedChange={(checked) =>
-                    setConfig((prev) => ({ ...prev, contextCompression: checked }))
+                    setField("contextCompression", checked)
                   }
                 />
               </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { PythonCodeNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
@@ -19,6 +19,7 @@ import {
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { RichInput } from "@/components/richInput";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type PythonCodeDialogProps = BaseNodeDialogProps<
   PythonCodeNodeData,
@@ -26,40 +27,27 @@ type PythonCodeDialogProps = BaseNodeDialogProps<
 >;
 
 export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
-  const [code, setCode] = useState(data.code || "");
-  const [loading, setLoading] = useState(false);
+  const { onClose, data } = props;
 
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      code: data.code || "",
+      unwrap: data.unwrap || false,
+    })
+  );
+
+  const [loading, setLoading] = useState(false);
   const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
   const [templatePrompt, setTemplatePrompt] = useState("");
-  const [name, setName] = useState(data.name || "");
-  const [unwrap, setUnwrap] = useState(data.unwrap || false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "");
-      setCode(data.code || "");
-      setUnwrap(data.unwrap || false);
-    }
-  }, [isOpen, data]);
-
-  // Handle save
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      code,
-      name,
-      unwrap,
-    });
-    onClose();
-  };
 
   const handleGenerateTemplate = async (prompt?: string) => {
     try {
       setLoading(true);
       const result = await generatePythonTemplate({}, prompt);
       if (result && typeof result === "object" && "template" in result) {
-        setCode(result.template as string);
+        setField("code", result.template as string);
         toast.success("Template generated successfully.");
       }
     } catch (err) {
@@ -84,20 +72,16 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          code,
-          unwrap,
-        }}
+        data={merged}
         showUnwrap={true}
-        onUnwrapChange={setUnwrap}
+        onUnwrapChange={(val) => setField("unwrap", val)}
       >
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
           <RichInput
             id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="API Tool"
             className="break-all w-full"
           />
@@ -123,8 +107,8 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
             name="python-editor"
             mode="python"
             theme="twilight"
-            value={code}
-            onChange={(value: string) => setCode(value)}
+            value={values.code}
+            onChange={(value: string) => setField("code", value)}
             width="100%"
             height="100%"
             setOptions={{
