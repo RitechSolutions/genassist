@@ -31,6 +31,7 @@ from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.app_settings import AppSettingsRepository
 from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
+from app.repositories.conversation_read_receipt import ConversationReadReceiptRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.datasources import DataSourcesRepository
 from app.repositories.feature_flag import FeatureFlagRepository
@@ -260,6 +261,7 @@ class Dependencies(Module):
 
         binder.bind(ConversationService, scope=request_scope)
         binder.bind(ConversationRepository, scope=request_scope)
+        binder.bind(ConversationReadReceiptRepository, scope=request_scope)
 
         binder.bind(ConversationAnalysisService, scope=request_scope)
         binder.bind(ConversationAnalysisRepository, scope=request_scope)
