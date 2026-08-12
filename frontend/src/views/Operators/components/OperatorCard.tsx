@@ -1,22 +1,31 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Card } from "@/components/card";
-import { ThumbsUp, Clock, Star } from "lucide-react";
+import { ThumbsUp, Clock, Star, Users } from "lucide-react";
 import { OperatorDetailsDialog } from "./OperatorDetailsDialog";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { fetchOperators } from "@/services/operators";
 import { Operator } from "@/interfaces/operator.interface";
 import { formatCallDuration } from "@/helpers/formatters";
 import { CardHeader } from "@/components/CardHeader";
+import { Button } from "@/components/button";
 import { PageListSkeleton } from "@/components/skeletons";
+import { ListEmptyState } from "@/components/ListEmptyState";
+import { ListErrorState } from "@/components/ListErrorState";
 
 interface OperatorsCardProps {
   searchQuery: string;
   refreshKey: number;
+  onCreate?: () => void;
 }
 
-export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
+export function OperatorsCard({
+  searchQuery,
+  refreshKey,
+  onCreate,
+}: OperatorsCardProps) {
   const [operators, setOperators] = useState<Operator[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Operator | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [imageErrors, setImageErrors] = useState(new Set<string | number>());
@@ -36,35 +45,37 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
     }
   };
 
-  useEffect(() => {
-    const getOperators = async () => {
-      setLoading(true);
-      try {
-        const rawData = await fetchOperators();
+  const loadOperators = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const rawData = await fetchOperators();
 
-        const sortedOperators = rawData.sort((a, b) => {
-          const sentimentA = a.operator_statistics?.positive ?? 0;
-          const sentimentB = b.operator_statistics?.positive ?? 0;
+      const sortedOperators = rawData.sort((a, b) => {
+        const sentimentA = a.operator_statistics?.positive ?? 0;
+        const sentimentB = b.operator_statistics?.positive ?? 0;
 
-          if (sentimentB !== sentimentA) {
-            return sentimentB - sentimentA;
-          }
-          return (
-            (b.operator_statistics?.score ?? 0) -
-            (a.operator_statistics?.score ?? 0)
-          );
-        });
-
-        setOperators(
-          isDashboard ? sortedOperators.slice(0, 5) : sortedOperators
+        if (sentimentB !== sentimentA) {
+          return sentimentB - sentimentA;
+        }
+        return (
+          (b.operator_statistics?.score ?? 0) -
+          (a.operator_statistics?.score ?? 0)
         );
-      } finally {
-        setLoading(false);
-      }
-    };
+      });
 
-    getOperators();
-  }, [isDashboard, refreshKey]);
+      setOperators(isDashboard ? sortedOperators.slice(0, 5) : sortedOperators);
+    } catch (err) {
+      console.error("Failed to load operators:", err);
+      setError("We couldn't load your operators. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [isDashboard]);
+
+  useEffect(() => {
+    loadOperators();
+  }, [loadOperators, refreshKey]);
 
   // Open the profile dialog when a matching ?operator=<id> is present.
   useEffect(() => {
@@ -115,6 +126,8 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
         <div className="space-y-2">
           {loading ? (
             <PageListSkeleton variant="operator" rows={5} bordered={false} />
+          ) : error ? (
+            <ListErrorState message={error} onRetry={loadOperators} />
           ) : filteredAgents.length > 0 ? (
             filteredAgents.map((agent, index) => (
               <div
@@ -170,11 +183,24 @@ export function OperatorsCard({ searchQuery, refreshKey }: OperatorsCardProps) {
               </div>
             ))
           ) : (
-            <p className="text-center text-muted-foreground text-sm py-8">
-              {isSearchActive
-                ? "No operators match your search."
-                : "No operators found"}
-            </p>
+            <ListEmptyState
+              icon={<Users className="h-12 w-12 text-muted-foreground" />}
+              title={
+                isSearchActive ? "No matching operators" : "No operators yet"
+              }
+              description={
+                isSearchActive
+                  ? "No operators match your search. Try a different name."
+                  : "Operators are the people who handle escalated conversations. They'll appear here once they're added."
+              }
+              action={
+                !isDashboard && !isSearchActive && onCreate ? (
+                  <Button className="rounded-full" onClick={onCreate}>
+                    Create your first operator
+                  </Button>
+                ) : undefined
+              }
+            />
           )}
         </div>
       </Card>

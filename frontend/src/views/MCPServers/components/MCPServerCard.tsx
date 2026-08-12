@@ -11,7 +11,7 @@ import { MCPServer } from "@/interfaces/mcp-server.interface";
 import { getAllMCPServers, deleteMCPServer } from "@/services/mcpServer";
 import { formatDate } from "@/helpers/utils";
 import { MCPServerDetailsDialog } from "./MCPServerDetailsDialog";
-import { Database, Plus } from "lucide-react";
+import { Plus, ServerCog } from "lucide-react";
 
 interface Props {
   searchQuery: string;
@@ -132,11 +132,11 @@ export function MCPServerCard({
         deleteDescription={(s) =>
           `This will permanently delete "${s.name}". This action cannot be undone.`
         }
-        emptyMessage="No MCP servers found"
+        emptyMessage="No MCP servers yet"
         notFoundMessage="No matching MCP servers"
         emptyState={{
-          icon: <Database className="h-12 w-12 text-muted-foreground" />,
-          title: "No MCP servers found",
+          icon: <ServerCog className="h-12 w-12 text-muted-foreground" />,
+          title: "No MCP servers yet",
           searchTitle: "No matching MCP servers",
           description:
             "Add your first MCP server to connect external tools and capabilities.",
