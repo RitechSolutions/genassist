@@ -1154,10 +1154,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       <div style={{ flex: 1, height: 1, backgroundColor: primaryColor, opacity: 0.35 }} />
       <span
         style={{
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 0.5,
-          textTransform: 'uppercase',
+          fontSize: 12,
+          fontWeight: 600,
           color: primaryColor,
           whiteSpace: 'nowrap',
         }}
