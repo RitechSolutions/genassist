@@ -125,10 +125,16 @@ def test_background_context_nested_restores_to_outer():
 def test_background_context_restores_on_exception():
     def body():
         assert is_background_task() is False
-        with pytest.raises(RuntimeError):
+        raised = False
+        try:
             with background_task_context():
                 assert is_background_task() is True
                 raise RuntimeError("boom")
+        except RuntimeError:
+            raised = True
+        # exception must propagate out of the context manager...
+        assert raised is True
+        # ...and the flag must still be restored on the way out
         assert is_background_task() is False
 
     _in_fresh_context(body)
