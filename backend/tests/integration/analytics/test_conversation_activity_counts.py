@@ -23,6 +23,7 @@ from app.db.models.user_group import UserGroupModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.analytics_read import AnalyticsReadRepository
 from app.repositories.dashboard import DashboardRepository
+from app.services.analytics_read import AnalyticsReadService
 from app.services.dashboard import DashboardService
 
 PROBE_START = date(2097, 3, 1)
@@ -42,6 +43,12 @@ CONVERSATIONS = (
 IN_EXACT_WINDOW = {"multi_log", "at_start", "other_agent"}
 IN_WHOLE_DAY = IN_EXACT_WINDOW | {"at_end"}
 PER_AGENT_IN_WINDOW = {"a1": 2, "a2": 1}
+
+COUNTER_KEYS = (
+    ("unique_conversations", "total_unique_conversations"),
+    ("finalized_conversations", "total_finalized_conversations"),
+    ("in_progress_conversations", "total_in_progress_conversations"),
+)
 
 
 @contextmanager
@@ -319,7 +326,27 @@ async def test_per_agent_rows_sum_to_the_summary_total(world):
 
     by_agent = {row["agent_id"]: row["unique_conversations"] for row in grouped}
     assert by_agent == {world.agent_id(key): count for key, count in PER_AGENT_IN_WINDOW.items()}
-    assert sum(by_agent.values()) == ungrouped[0]["total_unique_conversations"]
+    for per_agent_key, total_key in COUNTER_KEYS:
+        assert sum(row[per_agent_key] for row in grouped) == ungrouped[0][total_key]
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_the_summary_totals_match_the_ungrouped_counts_they_replaced(world):
+    bounds = {
+        "activity_from_datetime": world.window_start,
+        "activity_to_datetime": world.window_end,
+    }
+    async with world.maker() as session:
+        repo = AnalyticsReadRepository(session)
+        with caller(user_id=uuid4(), admin=True):
+            ungrouped = await repo.get_conversation_status_counts(**bounds)
+            summary = await AnalyticsReadService(repo).get_agent_stats_summary(
+                from_date=world.day, to_date=world.day, **bounds
+            )
+
+    for _, total_key in COUNTER_KEYS:
+        assert getattr(summary, total_key) == ungrouped[0][total_key]
+    assert summary.total_unique_conversations == len(IN_EXACT_WINDOW)
 
 
 @pytest.mark.asyncio(loop_scope="module")
