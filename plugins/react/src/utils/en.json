@@ -36,6 +36,12 @@
     "thumbsUp": "Thumbs up",
     "thumbsDown": "Thumbs down"
   },
+  "receipts": {
+    "sent": "Sent",
+    "delivered": "Delivered",
+    "seen": "Seen",
+    "newMessages": "New messages"
+  },
   "thinking": {
     "messages": [
       "Thinking…",

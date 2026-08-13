@@ -15,6 +15,8 @@ from app.services.llm_usage_read import _DIMENSION_COLUMNS, _EXTRA_BREAKDOWN_CON
 
 WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 WINDOW_END = datetime(2026, 1, 31, tzinfo=timezone.utc)
+BUCKET_FROM = date(2026, 1, 1)
+BUCKET_TO = date(2026, 1, 31)
 
 
 class _Result:
@@ -216,6 +218,37 @@ async def test_dashboard_ledger_total_restricts_to_the_visible_agents():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_ledger_total_in_exact_mode_keeps_the_caller_instants():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(
+        datetime(2026, 1, 1, 15, 30, tzinfo=timezone.utc),
+        datetime(2026, 1, 31, 9, 0, tzinfo=timezone.utc),
+        agent_ids=None,
+        exact=True,
+    )
+    sql = _sql(db.statements[0])
+    assert "occurred_at >= '2026-01-01 15:30:00+00:00'" in sql
+    assert "occurred_at < '2026-01-31 09:00:00+00:00'" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_without_bounds_has_no_date_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(agent_ids=None)
+    sql = _sql(db.statements[0])
+    assert "occurred_at" not in sql
+    assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_rejects_a_half_supplied_range():
+    db = CapturingDb()
+    with pytest.raises(ValueError):
+        await DashboardRepository(db).get_total_cost_usd(WINDOW_START, None, agent_ids=None)
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
 async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
     db = CapturingDb()
     total = await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=[])
@@ -226,22 +259,39 @@ async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
 @pytest.mark.asyncio
 async def test_dashboard_response_time_without_a_scope_has_no_agent_predicate():
     db = CapturingDb()
-    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=None)
+    await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=None)
     assert "agent_id" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_filters_on_inclusive_bucket_dates():
+    db = CapturingDb()
+    await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=None)
+    sql = _sql(db.statements[0])
+    assert "stat_date >= '2026-01-01'" in sql
+    assert "stat_date <= '2026-01-31'" in sql
+    assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_without_bounds_has_no_date_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_avg_response_time(agent_ids=None)
+    assert "stat_date" not in _sql(db.statements[0])
 
 
 @pytest.mark.asyncio
 async def test_dashboard_response_time_restricts_to_the_visible_agents():
     db = CapturingDb()
     scope = [uuid4(), uuid4()]
-    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=scope)
+    await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=scope)
     assert "agent_id IN" in _sql(db.statements[0])
 
 
 @pytest.mark.asyncio
 async def test_dashboard_response_time_short_circuits_on_an_empty_scope():
     db = CapturingDb()
-    avg = await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=[])
+    avg = await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=[])
     assert avg == 0
     assert db.statements == []
 

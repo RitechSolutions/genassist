@@ -72,11 +72,11 @@ export function WebhookCard({
       deleteDescription={(w) =>
         `This will permanently delete "${w.name}". This action cannot be undone.`
       }
-      emptyMessage="No webhooks found"
+      emptyMessage="No webhooks yet"
       notFoundMessage="No matching webhooks"
       emptyState={{
         icon: <Radio className="h-12 w-12 text-muted-foreground" />,
-        title: "No webhooks found",
+        title: "No webhooks yet",
         searchTitle: "No matching webhooks",
         description:
           "Create your first webhook to start sending events to external systems.",

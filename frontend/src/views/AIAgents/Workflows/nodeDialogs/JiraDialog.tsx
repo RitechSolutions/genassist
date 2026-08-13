@@ -19,33 +19,37 @@ import { getAllAppSettings } from "@/services/appSettings";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type JiraDialogProps = BaseNodeDialogProps<JiraNodeData, JiraNodeData>;
 
 export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
-  const [name, setName] = useState(data.name);
-  const [spaceKey, setSpaceKey] = useState(data.spaceKey || "");
-  const [taskName, setTaskName] = useState(data.taskName || "");
-  const [taskDescription, setTaskDescription] = useState(
-    data.taskDescription || ""
+  const { isOpen, onClose, data } = props;
+
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name,
+      spaceKey: data.spaceKey || "",
+      taskName: data.taskName || "",
+      taskDescription: data.taskDescription || "",
+      app_settings_id: data.app_settings_id || "",
+    }),
+    (v) => ({
+      name: v.name,
+      spaceKey: v.spaceKey,
+      taskName: v.taskName,
+      taskDescription: v.taskDescription,
+      app_settings_id: v.app_settings_id || undefined,
+    })
   );
-  const [appSettingsId, setAppSettingsId] = useState(
-    data.app_settings_id || ""
-  );
+
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingAppSettings, setIsLoadingAppSettings] = useState(false);
   const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name);
-      setSpaceKey(data.spaceKey || "");
-      setTaskName(data.taskName || "");
-      setTaskDescription(data.taskDescription || "");
-
-      setAppSettingsId(data.app_settings_id || "");
-
       const fetchAppSettings = async () => {
         setIsLoadingAppSettings(true);
         try {
@@ -62,18 +66,6 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      spaceKey,
-      taskName,
-      taskDescription,
-      app_settings_id: appSettingsId || undefined,
-    });
-    onClose();
-  };
-
   return (
     <>
       <NodeConfigPanel
@@ -89,21 +81,14 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          spaceKey,
-          taskName,
-          taskDescription,
-          app_settings_id: appSettingsId || undefined,
-        }}
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="name">Tool Name</Label>
           <RichInput
             id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter tool name"
             className="w-full"
           />
@@ -111,13 +96,13 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="app-settings-id">Configuration Vars (Optional)</Label>
           <Select
-            value={appSettingsId || ""}
+            value={values.app_settings_id || ""}
             onValueChange={(value) => {
               if (value === "__create__") {
                 setIsCreateSettingOpen(true);
                 return;
               }
-              setAppSettingsId(value || "");
+              setField("app_settings_id", value || "");
             }}
             disabled={isLoadingAppSettings}
           >
@@ -143,8 +128,8 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
           <Label htmlFor="name">Space Key</Label>
           <DraggableInput
             id="space_key"
-            value={spaceKey}
-            onChange={(e) => setSpaceKey(e.target.value)}
+            value={values.spaceKey}
+            onChange={(e) => setField("spaceKey", e.target.value)}
             placeholder="Enter project name"
             className="w-full"
           />
@@ -153,8 +138,8 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
           <Label htmlFor="name">Task Name</Label>
           <DraggableInput
             id="task_name"
-            value={taskName}
-            onChange={(e) => setTaskName(e.target.value)}
+            value={values.taskName}
+            onChange={(e) => setField("taskName", e.target.value)}
             placeholder="Enter task name"
             className="w-full"
           />
@@ -164,8 +149,8 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
           <DraggableTextArea
             id="task_description"
             rows={6}
-            value={taskDescription}
-            onChange={(e) => setTaskDescription(e.target.value)}
+            value={values.taskDescription}
+            onChange={(e) => setField("taskDescription", e.target.value)}
             placeholder="Enter task description"
             className="w-full resize-none"
           />
@@ -184,7 +169,7 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
           } catch (e) {
             // ignore
           }
-          if (created?.id) setAppSettingsId(created.id);
+          if (created?.id) setField("app_settings_id", created.id);
         }}
       />
     </>

@@ -60,6 +60,12 @@ export interface Translations {
   fileUpload?: {
     fileTypeNotSupported: string;
   };
+  receipts?: {
+    sent: string;
+    delivered: string;
+    seen: string;
+    newMessages: string;
+  };
 }
 
 // Default English translations loaded from JSON file

@@ -1,5 +1,7 @@
 """Unit tests proving the analytics reads are wired to the authorization resolver"""
 
+import re
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -21,6 +23,9 @@ class _Result:
 
     def mappings(self):
         return self
+
+    def one(self):
+        return {}
 
 
 class CapturingDb:
@@ -45,6 +50,20 @@ def _repo_with_scope(monkeypatch, scope):
 
     monkeypatch.setattr(analytics_read, "resolve_authorized_agent_ids", _resolver)
     return AnalyticsReadRepository(db), db
+
+
+def _repo_with_conversation_scope(monkeypatch, scope):
+    db = CapturingDb()
+
+    async def _resolver(_db, agent_id=None, group_id=None):
+        return scope
+
+    monkeypatch.setattr(analytics_read, "resolve_scoped_agent_ids", _resolver)
+    return AnalyticsReadRepository(db), db
+
+
+def _logged_at_predicates(sql: str) -> list[str]:
+    return sorted(re.findall(r"agent_response_logs\.logged_at [<>=]+ '[^']+'", sql))
 
 
 @pytest.mark.asyncio
@@ -128,7 +147,7 @@ async def test_agent_stats_summary_keeps_the_conversation_tier_on_a_group_reques
     repo, db = _repo_with_scope(monkeypatch, [])
     seen = {}
 
-    async def _conversation_counts(agent_id=None, group_id=None, from_date=None, to_date=None, *, group_by_agent=False):
+    async def _conversation_counts(agent_id=None, group_id=None, from_date=None, to_date=None, **kwargs):
         seen.update(agent_id=agent_id, group_id=group_id)
         return [
             {
@@ -155,3 +174,96 @@ async def test_agent_stats_summary_zeroes_everything_when_no_group_was_requested
     assert summary["total_executions"] == 0
     assert summary["total_unique_conversations"] == 0
     assert db.statements == []
+
+
+ACTIVITY_FROM = datetime(2026, 8, 1, 15, 0, tzinfo=timezone.utc)
+ACTIVITY_TO = datetime(2026, 8, 8, tzinfo=timezone.utc)
+LEGACY_FROM = date(2026, 8, 1)
+LEGACY_TO = date(2026, 8, 7)
+
+
+@pytest.mark.asyncio
+async def test_conversation_counts_apply_the_exact_activity_window_half_open(monkeypatch):
+    repo, db = _repo_with_conversation_scope(monkeypatch, None)
+    await repo.get_conversation_status_counts(
+        activity_from_datetime=ACTIVITY_FROM, activity_to_datetime=ACTIVITY_TO
+    )
+    sql = _sql(db.statements[0])
+    assert "logged_at >= '2026-08-01 15:00:00+00:00'" in sql
+    assert "logged_at < '2026-08-08 00:00:00+00:00'" in sql
+
+
+@pytest.mark.asyncio
+async def test_conversation_counts_keep_the_legacy_inclusive_utc_day_window(monkeypatch):
+    repo, db = _repo_with_conversation_scope(monkeypatch, None)
+    await repo.get_conversation_status_counts(from_date=LEGACY_FROM, to_date=LEGACY_TO)
+    sql = _sql(db.statements[0])
+    assert "logged_at >= '2026-08-01 00:00:00+00:00'" in sql
+    assert "logged_at <= '2026-08-07 23:59:59.999999+00:00'" in sql
+
+
+@pytest.mark.asyncio
+async def test_exact_activity_bounds_replace_the_legacy_dates(monkeypatch):
+    repo, db = _repo_with_conversation_scope(monkeypatch, None)
+    await repo.get_conversation_status_counts(
+        from_date=LEGACY_FROM,
+        to_date=LEGACY_TO,
+        activity_from_datetime=ACTIVITY_FROM,
+        activity_to_datetime=ACTIVITY_TO,
+    )
+    sql = _sql(db.statements[0])
+    assert "logged_at >= '2026-08-01 15:00:00+00:00'" in sql
+    assert "logged_at < '2026-08-08 00:00:00+00:00'" in sql
+    assert "23:59:59.999999" not in sql
+
+
+@pytest.mark.asyncio
+async def test_grouped_and_ungrouped_counts_share_the_same_activity_bounds(monkeypatch):
+    repo, db = _repo_with_conversation_scope(monkeypatch, None)
+    bounds = {"activity_from_datetime": ACTIVITY_FROM, "activity_to_datetime": ACTIVITY_TO}
+    await repo.get_conversation_status_counts(group_by_agent=False, **bounds)
+    await repo.get_conversation_status_counts(group_by_agent=True, **bounds)
+    ungrouped, grouped = (_sql(stmt) for stmt in db.statements)
+    assert _logged_at_predicates(ungrouped) == _logged_at_predicates(grouped)
+    assert "GROUP BY" in grouped
+
+
+@pytest.mark.asyncio
+async def test_conversation_counts_only_exclude_deleted_response_logs(monkeypatch):
+    repo, db = _repo_with_conversation_scope(monkeypatch, None)
+    await repo.get_conversation_status_counts(
+        activity_from_datetime=ACTIVITY_FROM, activity_to_datetime=ACTIVITY_TO
+    )
+    sql = _sql(db.statements[0])
+    assert "agent_response_logs.is_deleted = 0" in sql
+    for table in ("conversations", "agents", "operators"):
+        assert f"{table}.is_deleted" not in sql
+
+
+@pytest.mark.asyncio
+async def test_conversation_counts_reject_a_half_supplied_activity_range(monkeypatch):
+    repo, db = _repo_with_conversation_scope(monkeypatch, None)
+    with pytest.raises(ValueError):
+        await repo.get_conversation_status_counts(activity_from_datetime=ACTIVITY_FROM)
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
+async def test_agent_stats_summary_forwards_activity_bounds_to_the_conversation_query(monkeypatch):
+    repo, _ = _repo_with_scope(monkeypatch, None)
+    seen = {}
+
+    async def _conversation_counts(**kwargs):
+        seen.update(kwargs)
+        return [{"total_unique_conversations": 2}]
+
+    monkeypatch.setattr(repo, "get_conversation_status_counts", _conversation_counts)
+    await repo.get_agent_stats_summary(
+        from_date=LEGACY_FROM,
+        to_date=LEGACY_TO,
+        activity_from_datetime=ACTIVITY_FROM,
+        activity_to_datetime=ACTIVITY_TO,
+    )
+    assert seen["activity_from_datetime"] == ACTIVITY_FROM
+    assert seen["activity_to_datetime"] == ACTIVITY_TO
+    assert (seen["from_date"], seen["to_date"]) == (LEGACY_FROM, LEGACY_TO)

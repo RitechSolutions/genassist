@@ -42,6 +42,10 @@ def _build_service(conversation_repo, transcript_repo=None):
         operator_statistics_service=MagicMock(),
         conversation_repo=conversation_repo,
         transcript_message_repo=transcript_repo or AsyncMock(spec=TranscriptMessageRepository),
+        audit_log_repo=AsyncMock(),
+        recordings_repo=AsyncMock(),
+        conversation_read_receipt_repo=AsyncMock(),
+        thread_rag=AsyncMock(),
         gpt_kpi_analyzer_service=MagicMock(),
         conversation_analysis_service=MagicMock(),
         llm_analyst_service=MagicMock(),
@@ -52,6 +56,10 @@ def _build_conversation(*, with_messages=False, custom_attributes=None):
     conversation = MagicMock()
     conversation.id = uuid4()
     conversation.is_deleted = 0
+    # Real string/None fields the File Manager attachment sweep reads, so its regex
+    # scan doesn't choke on a bare MagicMock.
+    conversation.transcription = None
+    conversation.recording_id = None
     conversation.custom_attributes = custom_attributes or {
         "region": "EU",
         "pii": {

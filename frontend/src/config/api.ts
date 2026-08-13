@@ -34,7 +34,7 @@ const processQueue = (error: unknown, token: string | null = null) => {
 const ensureTrailingSlash = (url: string): string =>
   url.endsWith("/") ? url : `${url}/`;
 
-/** Default HTTP client timeout for JSON/API calls (not used for large file uploads — see uploadConstants). */
+/** Default HTTP client timeout for JSON/API calls (not used for large file uploads — see uploadConstants) */
 export const API_DEFAULT_TIMEOUT_MS = 120000;
 
 const api = axios.create({

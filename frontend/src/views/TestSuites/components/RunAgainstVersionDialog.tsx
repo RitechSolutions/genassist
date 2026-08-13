@@ -112,8 +112,7 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
         <div className="mt-2 space-y-4">
           <p className="text-sm text-muted-foreground">
             Execute against another saved version of{" "}
-            {workflowName ?? "this workflow"} — for example a draft you are
-            still working on.
+            {workflowName ?? "this workflow"}
           </p>
           <div className="space-y-1.5">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

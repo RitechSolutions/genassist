@@ -7,16 +7,20 @@ import { getAllFallbackChains, deleteFallbackChain } from "@/services/fallbackCh
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { useQueryClient } from "@tanstack/react-query";
+import { Waypoints } from "lucide-react";
+import { Button } from "@/components/button";
 
 interface FallbackChainCardProps {
   searchQuery: string;
   refreshKey?: number;
+  onCreate?: () => void;
   onEdit: (chain: FallbackChain) => void;
 }
 
 export function FallbackChainCard({
   searchQuery,
   refreshKey = 0,
+  onCreate,
   onEdit,
 }: FallbackChainCardProps) {
   const [providersById, setProvidersById] = useState<Record<string, LLMProvider>>({});
@@ -95,8 +99,20 @@ export function FallbackChainCard({
       onDeleted={() =>
         queryClient.invalidateQueries({ queryKey: ["fallbackChains"] })
       }
-      emptyMessage="No fallback chains found"
-      notFoundMessage="No fallback chains matching your search"
+      emptyState={{
+        icon: <Waypoints className="h-12 w-12 text-muted-foreground" />,
+        title: "No fallback chains yet",
+        description:
+          "Fallback chains route requests across providers so a failure automatically retries the next one. Add one to improve resilience.",
+        searchTitle: "No matching fallback chains",
+        searchDescription:
+          "No fallback chains match your search. Try a different name.",
+        action: onCreate ? (
+          <Button className="rounded-full" onClick={onCreate}>
+            Create your first fallback chain
+          </Button>
+        ) : undefined,
+      }}
       columns={columns}
       rowActions={{
         onEdit,

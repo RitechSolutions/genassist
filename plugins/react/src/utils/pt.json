@@ -33,6 +33,12 @@
     "thumbsUp": "Polegar para cima",
     "thumbsDown": "Polegar para baixo"
   },
+  "receipts": {
+    "sent": "Enviado",
+    "delivered": "Entregue",
+    "seen": "Visto",
+    "newMessages": "Novas mensagens"
+  },
   "thinking": {
     "messages": [
       "Pensando…",

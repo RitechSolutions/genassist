@@ -31,6 +31,7 @@ from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.app_settings import AppSettingsRepository
 from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
+from app.repositories.conversation_read_receipt import ConversationReadReceiptRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.datasources import DataSourcesRepository
 from app.repositories.feature_flag import FeatureFlagRepository
@@ -193,9 +194,12 @@ class Dependencies(Module):
         Returns an AsyncSession instance managed by fastapi-injector's request scope.
         Note: Sessions must be properly closed via middleware or cleanup mechanism.
         """
-        from app.core.tenant_scope import get_tenant_context
+        from app.core.tenant_scope import require_tenant_context
 
-        tenant_id = get_tenant_context()
+        # Fail closed: a missing tenant context must not silently route this
+        # session to the master database. Intentional master access sets the
+        # context explicitly (set_tenant_context("master") / clear_tenant_context()).
+        tenant_id = require_tenant_context()
         logger.debug(f"DI: Tenant context: {tenant_id}")
 
         session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
@@ -260,6 +264,7 @@ class Dependencies(Module):
 
         binder.bind(ConversationService, scope=request_scope)
         binder.bind(ConversationRepository, scope=request_scope)
+        binder.bind(ConversationReadReceiptRepository, scope=request_scope)
 
         binder.bind(ConversationAnalysisService, scope=request_scope)
         binder.bind(ConversationAnalysisRepository, scope=request_scope)
