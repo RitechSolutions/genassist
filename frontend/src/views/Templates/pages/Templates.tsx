@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { Plus } from "lucide-react";
+import { Plus, LayoutTemplate, ClipboardCheck } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Button } from "@/components/button";
+import { ListEmptyState } from "@/components/ListEmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Dialog,
@@ -132,11 +133,13 @@ export default function TemplatesPage() {
     : filtered;
   const showSaveTile =
     (tab === "all" || tab === "mine") && selectedCats.size === 0 && !search.trim();
+  const isSearchingOrFiltering = search.trim() !== "" || selectedCats.size > 0;
 
   const toggleCat = (name: string) => {
     setSelectedCats((prev) => {
       const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   };
@@ -250,7 +253,7 @@ export default function TemplatesPage() {
     <PageLayout>
       <PageHeader
         title="Templates"
-        subtitle="Start from a prebuilt workflow — drop it in as a draft and make it yours."
+        subtitle="Start from a prebuilt workflow. Drop it in as a draft and make it yours."
         searchQuery={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search templates…"
@@ -319,13 +322,12 @@ export default function TemplatesPage() {
               ))}
             </div>
           ) : reviewItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <h3 className="text-lg font-medium text-foreground">
-                Nothing to review
-              </h3>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                Published templates awaiting approval will appear here.
-              </p>
+            <div className="rounded-md border bg-card dark:bg-zinc-900 shadow-sm overflow-hidden">
+              <ListEmptyState
+                icon={<ClipboardCheck className="h-12 w-12 text-muted-foreground" />}
+                title="Nothing to review"
+                description="Published templates awaiting approval will appear here."
+              />
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -361,18 +363,44 @@ export default function TemplatesPage() {
             />
           ) : null}
 
-          {gridItems.length === 0 && !showSaveTile ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <h3 className="text-lg font-medium text-foreground">
-                No templates found
-              </h3>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                {tab === "mine"
-                  ? "Save an agent as a template from Agent Studio to see it here."
-                  : tab === "community"
-                    ? "No community templates yet — publish one to share it with every tenant."
-                    : "Try adjusting your search or filters."}
-              </p>
+          {gridItems.length === 0 && !featured ? (
+            <div className="rounded-md border bg-card dark:bg-zinc-900 shadow-sm overflow-hidden">
+            <ListEmptyState
+              icon={<LayoutTemplate className="h-12 w-12 text-muted-foreground" />}
+              title={
+                isSearchingOrFiltering
+                  ? "No templates found"
+                  : tab === "mine"
+                    ? "No templates of your own yet"
+                    : tab === "community"
+                      ? "No community templates yet"
+                      : tab === "official"
+                        ? "No official templates yet"
+                        : "No templates yet"
+              }
+              description={
+                isSearchingOrFiltering
+                  ? "No templates match your search or filters. Try a different query or clearing a filter."
+                  : tab === "mine"
+                    ? "Save an agent you've built as a template from Agent Studio to reuse it or publish it to every tenant."
+                    : tab === "community"
+                      ? "No community templates yet — publish one of yours to share it with every tenant."
+                      : tab === "official"
+                        ? "Official templates curated for your workspace will appear here."
+                        : "Start from a prebuilt workflow, or save an agent you've built as your own template."
+              }
+              action={
+                showSaveTile ? (
+                  <Button
+                    className="rounded-full"
+                    onClick={() => navigate("/ai-agents")}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Save your own
+                  </Button>
+                ) : undefined
+              }
+            />
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

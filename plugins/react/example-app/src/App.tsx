@@ -106,6 +106,7 @@ function App() {
     useWs: false,
     usePoll: false,
     quickInput: true,
+    readReceipts: true,
   });
 
   // Which presentation of the chat to render (see GenAgentChat `mode`).
@@ -1196,6 +1197,15 @@ function App() {
                   />
                 </div>
                 <div style={formGroupStyle}>
+                  <label style={labelStyle}>Read Receipts</label>
+                  <input
+                    type="checkbox"
+                    checked={!!featureFlags.readReceipts}
+                    onChange={(e) => handleFeatureFlagChange("readReceipts", e.target.checked)}
+                    style={{ width: 20, height: 20, cursor: "pointer" }}
+                  />
+                </div>
+                <div style={formGroupStyle}>
                   <label style={labelStyle}>Quick Message Input</label>
                   <input
                     type="checkbox"
@@ -1306,6 +1316,7 @@ function App() {
             useWs={featureFlags.useWs}
             usePoll={featureFlags.usePoll}
             quickInput={featureFlags.quickInput}
+            readReceipts={featureFlags.readReceipts}
             serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
             serverUnavailableContactUrl="https://www.ritech.co/"
             serverUnavailableContactLabel="Contact Support"

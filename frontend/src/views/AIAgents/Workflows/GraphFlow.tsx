@@ -23,6 +23,7 @@ import nodeRegistry from "./registry/nodeRegistry";
 import { NodeData } from "./types/nodes";
 import { Workflow } from "@/interfaces/workflow.interface";
 import WorkflowTestPanel, { TestRunRecord } from "./components/WorkflowTestPanel";
+import WorkflowEvaluationsTab from "./components/WorkflowEvaluationsTab";
 import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
@@ -38,6 +39,7 @@ import { WorkflowProvider } from "./context/WorkflowContext";
 import { NodeActionsContext } from "./context/NodeActionsContext";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { usePermissions } from "@/context/PermissionContext";
 import {
   WorkflowExecutionProvider,
   WorkflowExecutionState,
@@ -145,12 +147,17 @@ const GraphFlowContent: React.FC = () => {
   const [currentTestConfig, setCurrentTestConfig] = useState<Workflow | null>(
     null
   );
-  // Which top-level view is showing: the graph editor or the executions/test page.
-  // (The Evaluations tab is disabled/"coming soon" and can't be selected.)
+  // Which top-level view is showing: the graph editor, the executions/test page,
+  // or the evaluations list for this workflow.
   // Switching is a local toggle (not a route) so the live graph stays mounted.
-  const [activeTab, setActiveTab] = useState<"workflow" | "executions">(
-    "workflow"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "workflow" | "executions" | "evaluations"
+  >("workflow");
+  // The evaluations API needs test:workflow (the builder itself only needs
+  // read:llm_analyst), so a workflow editor may still lack eval access.
+  const permissions = usePermissions();
+  const canEvaluate =
+    permissions.includes("*") || permissions.includes("test:workflow");
   // In-memory history of test runs (newest first). Lives here so it survives
   // switching between the Workflow/Executions tabs; cleared on page leave/refresh.
   const [testHistory, setTestHistory] = useState<TestRunRecord[]>([]);
@@ -755,12 +762,16 @@ const GraphFlowContent: React.FC = () => {
     openExecutions(graphData);
   };
 
-  // Tab switch between the graph editor and the executions/test page.
+  // Tab switch between the graph editor, executions/test page, and evaluations.
   const handleTabChange = (tab: string) => {
     if (tab === "executions") {
       // Re-snapshot the live graph on entry so the test always reflects the
       // current canvas, and close editor-only drawers.
       openExecutions({ ...workflow, nodes, edges } as Workflow);
+    } else if (tab === "evaluations") {
+      setShowNodePanel(false);
+      setShowWorkflowPanel(false);
+      setActiveTab("evaluations");
     } else {
       setActiveTab("workflow");
     }
@@ -1317,6 +1328,14 @@ const GraphFlowContent: React.FC = () => {
     [workflow, nodes, edges]
   );
 
+  // Evaluations tab is available only with eval access and once the workflow is
+  // saved (so there's a workflow_id to scope its evaluations to).
+  const evaluationsDisabledReason = !canEvaluate
+    ? "Requires evaluation access"
+    : !agent?.workflow_id
+      ? "Save the workflow to add evaluations"
+      : null;
+
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
@@ -1406,26 +1425,39 @@ const GraphFlowContent: React.FC = () => {
                     <Play className="h-3.5 w-3.5" />
                     Executions
                   </TabsTrigger>
-                  {/* Evaluations isn't built yet — disabled, with a "Coming soon"
-                      tooltip on hover. The disabled trigger has pointer-events-none
-                      (from the base styles), so hover falls through to this group
-                      wrapper and the CSS tooltip shows even though the button is off. */}
-                  <span className="group relative inline-flex cursor-not-allowed">
-                    <TabsTrigger
-                      value="evaluations"
-                      disabled
-                      className="gap-1.5 px-3 text-xs"
-                    >
+                  {/* Evaluations tab. Disabled (with a reason tooltip) until the
+                      user has eval access and the workflow is saved; a disabled
+                      trigger has pointer-events-none, so hover falls through to the
+                      group wrapper and the CSS tooltip shows. */}
+                  {evaluationsDisabledReason ? (
+                    <span className="group relative inline-flex cursor-not-allowed">
+                      <TabsTrigger
+                        value="evaluations"
+                        disabled
+                        className="gap-1.5 px-3 text-xs"
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        Evaluations
+                        <span className="ml-0.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold uppercase leading-none text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                          New
+                        </span>
+                      </TabsTrigger>
+                      <span
+                        role="tooltip"
+                        className="pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+                      >
+                        {evaluationsDisabledReason}
+                      </span>
+                    </span>
+                  ) : (
+                    <TabsTrigger value="evaluations" className="gap-1.5 px-3 text-xs">
                       <ClipboardCheck className="h-3.5 w-3.5" />
                       Evaluations
+                      <span className="ml-0.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold uppercase leading-none text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                        New
+                      </span>
                     </TabsTrigger>
-                    <span
-                      role="tooltip"
-                      className="pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
-                    >
-                      Coming soon
-                    </span>
-                  </span>
+                  )}
                 </TabsList>
               </Tabs>
             </div>
@@ -1548,6 +1580,14 @@ const GraphFlowContent: React.FC = () => {
                     onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Evaluations page — overlays the canvas (kept mounted underneath).
+                The tab handles its own list/detail navigation in-place. */}
+            {activeTab === "evaluations" && (
+              <div className="absolute inset-0 z-20 bg-background">
+                <WorkflowEvaluationsTab workflowId={agent?.workflow_id} />
               </div>
             )}
 

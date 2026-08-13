@@ -14,6 +14,7 @@ import { Save, ChevronDown, ChevronUp } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 // open the advanced section when any advanced option differs from its default
 const hasAdvancedOptions = (data: WebSearchNodeData): boolean =>
@@ -26,56 +27,29 @@ const hasAdvancedOptions = (data: WebSearchNodeData): boolean =>
 export const WebSearchDialog: React.FC<
   BaseNodeDialogProps<WebSearchNodeData, WebSearchNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [query, setQuery] = useState(data.query || "");
-  const [maxResults, setMaxResults] = useState<number>(data.maxResults ?? 5);
-  const [searchDepth, setSearchDepth] = useState<WebSearchDepth>(
-    data.searchDepth || "basic"
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      query: data.query || "",
+      maxResults: data.maxResults ?? 5,
+      searchDepth: data.searchDepth || "basic",
+      includeDomains: data.includeDomains || "",
+      excludeDomains: data.excludeDomains || "",
+      maxContentChars: data.maxContentChars ?? 2000,
+      maxTotalContentChars: data.maxTotalContentChars ?? 8000,
+      maxAge: data.maxAge ?? 600,
+    })
   );
-  const [includeDomains, setIncludeDomains] = useState(
-    data.includeDomains || ""
-  );
-  const [excludeDomains, setExcludeDomains] = useState(
-    data.excludeDomains || ""
-  );
-  const [maxContentChars, setMaxContentChars] = useState<number>(
-    data.maxContentChars ?? 2000
-  );
-  const [maxTotalContentChars, setMaxTotalContentChars] = useState<number>(
-    data.maxTotalContentChars ?? 8000
-  );
-  const [maxAge, setMaxAge] = useState<number>(data.maxAge ?? 600);
+
   const [showAdvanced, setShowAdvanced] = useState(hasAdvancedOptions(data));
   useEffect(() => {
-    setName(data.name || "");
-    setQuery(data.query || "");
-    setMaxResults(data.maxResults ?? 5);
-    setSearchDepth(data.searchDepth || "basic");
-    setIncludeDomains(data.includeDomains || "");
-    setExcludeDomains(data.excludeDomains || "");
-    setMaxContentChars(data.maxContentChars ?? 2000);
-    setMaxTotalContentChars(data.maxTotalContentChars ?? 8000);
-    setMaxAge(data.maxAge ?? 600);
-    setShowAdvanced(hasAdvancedOptions(data));
-  }, [isOpen]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      query,
-      maxResults,
-      searchDepth,
-      includeDomains,
-      excludeDomains,
-      maxContentChars,
-      maxTotalContentChars,
-      maxAge,
-    });
-    onClose();
-  };
+    if (isOpen) {
+      setShowAdvanced(hasAdvancedOptions(data));
+    }
+  }, [isOpen, data]);
 
   return (
     <NodeConfigPanel
@@ -91,25 +65,14 @@ export const WebSearchDialog: React.FC<
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        query,
-        maxResults,
-        searchDepth,
-        includeDomains,
-        excludeDomains,
-        maxContentChars,
-        maxTotalContentChars,
-        maxAge,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="Web Search"
           className="break-all w-full"
         />
@@ -119,8 +82,8 @@ export const WebSearchDialog: React.FC<
         <Label htmlFor="query">Query</Label>
         <DraggableInput
           id="query"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={values.query}
+          onChange={(e) => setField("query", e.target.value)}
           placeholder="Search the web for..."
           className="break-all w-full"
         />
@@ -134,9 +97,9 @@ export const WebSearchDialog: React.FC<
         <RichInput
           id="maxResults"
           type="number"
-          value={String(maxResults)}
+          value={String(values.maxResults)}
           onChange={(e) =>
-            setMaxResults(Math.max(1, parseInt(e.target.value) || 1))
+            setField("maxResults", Math.max(1, parseInt(e.target.value) || 1))
           }
           placeholder="5"
           className="w-full"
@@ -149,8 +112,10 @@ export const WebSearchDialog: React.FC<
       <div className="space-y-2">
         <Label htmlFor="searchDepth">Search Depth</Label>
         <Select
-          value={searchDepth}
-          onValueChange={(value) => setSearchDepth(value as WebSearchDepth)}
+          value={values.searchDepth}
+          onValueChange={(value) =>
+            setField("searchDepth", value as WebSearchDepth)
+          }
         >
           <SelectTrigger>
             <SelectValue placeholder="Select search depth" />
@@ -186,8 +151,8 @@ export const WebSearchDialog: React.FC<
               <Label htmlFor="includeDomains">Include Domain</Label>
               <DraggableInput
                 id="includeDomains"
-                value={includeDomains}
-                onChange={(e) => setIncludeDomains(e.target.value)}
+                value={values.includeDomains}
+                onChange={(e) => setField("includeDomains", e.target.value)}
                 placeholder="example.com"
                 className="break-all w-full"
               />
@@ -200,8 +165,8 @@ export const WebSearchDialog: React.FC<
               <Label htmlFor="excludeDomains">Exclude Domains</Label>
               <DraggableInput
                 id="excludeDomains"
-                value={excludeDomains}
-                onChange={(e) => setExcludeDomains(e.target.value)}
+                value={values.excludeDomains}
+                onChange={(e) => setField("excludeDomains", e.target.value)}
                 placeholder="reddit.com, pinterest.com"
                 className="break-all w-full"
               />
@@ -217,9 +182,12 @@ export const WebSearchDialog: React.FC<
               <RichInput
                 id="maxContentChars"
                 type="number"
-                value={String(maxContentChars)}
+                value={String(values.maxContentChars)}
                 onChange={(e) =>
-                  setMaxContentChars(Math.max(0, parseInt(e.target.value) || 0))
+                  setField(
+                    "maxContentChars",
+                    Math.max(0, parseInt(e.target.value) || 0)
+                  )
                 }
                 placeholder="2000"
                 className="w-full"
@@ -236,9 +204,10 @@ export const WebSearchDialog: React.FC<
               <RichInput
                 id="maxTotalContentChars"
                 type="number"
-                value={String(maxTotalContentChars)}
+                value={String(values.maxTotalContentChars)}
                 onChange={(e) =>
-                  setMaxTotalContentChars(
+                  setField(
+                    "maxTotalContentChars",
                     Math.max(0, parseInt(e.target.value) || 0)
                   )
                 }
@@ -255,9 +224,9 @@ export const WebSearchDialog: React.FC<
               <RichInput
                 id="maxAge"
                 type="number"
-                value={String(maxAge)}
+                value={String(values.maxAge)}
                 onChange={(e) =>
-                  setMaxAge(Math.max(0, parseInt(e.target.value) || 0))
+                  setField("maxAge", Math.max(0, parseInt(e.target.value) || 0))
                 }
                 placeholder="600"
                 className="w-full"

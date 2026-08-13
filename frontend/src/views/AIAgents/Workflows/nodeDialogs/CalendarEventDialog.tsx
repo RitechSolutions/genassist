@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { CalendarEventToolNodeData } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
@@ -17,6 +17,7 @@ import { DraggableInput } from "../components/custom/DraggableInput";
 import { BaseNodeDialogProps } from "./base";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 interface CalendarEventDialogProps
   extends BaseNodeDialogProps<
@@ -29,49 +30,23 @@ interface CalendarEventDialogProps
 export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
   props
 ) => {
-  const { isOpen, onClose, data, onUpdate, connectors } = props;
+  const { onClose, data, connectors } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [summary, setSummary] = useState(data.summary || "");
-  const [start, setStart] = useState(data.start || "");
-  const [end, setEnd] = useState(data.end || "");
-  const [operation, setOperation] = useState(data.operation || "");
-  const [dataSourceId, setDataSourceId] = useState(
-    data.dataSourceId?.toString() || ""
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      summary: data.summary || "",
+      start: data.start || "",
+      end: data.end || "",
+      operation: data.operation || "",
+      dataSourceId: data.dataSourceId?.toString() || "",
+      subjectContains: data.subjectContains || "",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    })
   );
-  const [subjectContains, setSubjectContains] = useState(
-    data.subjectContains || ""
-  );
-  const [timezone, setTimezone] = useState("");
+
   const [isCreateDataSourceOpen, setIsCreateDataSourceOpen] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "");
-      setSummary(data.summary || "");
-      setStart(data.start || "");
-      setEnd(data.end || "");
-      setOperation(data.operation || "");
-      setDataSourceId(data.dataSourceId?.toString() || "");
-      setSubjectContains(data.subjectContains || "");
-      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
-    }
-  }, [isOpen, data]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      summary,
-      start,
-      end,
-      operation,
-      dataSourceId,
-      subjectContains,
-      timezone,
-    });
-    onClose();
-  };
 
   return (
     <>
@@ -88,23 +63,14 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          summary,
-          start,
-          end,
-          operation,
-          dataSourceId,
-          subjectContains,
-        }}
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
           <RichInput
             id="node-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -113,13 +79,13 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
         <div className="space-y-2">
           <Label htmlFor="connector-select">Select Connector</Label>
           <Select
-            value={dataSourceId}
+            value={values.dataSourceId}
             onValueChange={(val) => {
               if (val === "__create__") {
                 setIsCreateDataSourceOpen(true);
                 return;
               }
-              setDataSourceId(val);
+              setField("dataSourceId", val);
             }}
           >
             <SelectTrigger id="connector-select">
@@ -143,8 +109,8 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
                 <DraggableInput
                   id="summary"
                   type="text"
-                  value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
+                  value={values.summary}
+                  onChange={(e) => setField("summary", e.target.value)}
                   placeholder="e.g., General assembly meeting"
                   className="w-full"
                 />
@@ -152,8 +118,8 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
               <div className="space-y-2">
                 <Label htmlFor="operation-select">Operation</Label>
                 <Select
-                  value={operation}
-                  onValueChange={(val) => setOperation(val)}
+                  value={values.operation}
+                  onValueChange={(val) => setField("operation", val)}
                 >
                   <SelectTrigger id="operation-select">
                     <SelectValue placeholder="Select operation" />
@@ -174,8 +140,8 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
                   <DraggableInput
                     id="start"
                     type="datetime"
-                    value={start}
-                    onChange={(e) => setStart(e.target.value)}
+                    value={values.start}
+                    onChange={(e) => setField("start", e.target.value)}
                     placeholder="e.g., 2025-07-22T19:41:00"
                     className="w-full"
                   />
@@ -185,8 +151,8 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
                   <DraggableInput
                     id="end"
                     type="datetime"
-                    value={end}
-                    onChange={(e) => setEnd(e.target.value)}
+                    value={values.end}
+                    onChange={(e) => setField("end", e.target.value)}
                     placeholder="e.g., 2025-07-22T19:51:00"
                     className="w-full"
                   />
@@ -197,8 +163,8 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
                 <DraggableInput
                   id="subjectContains"
                   type="text"
-                  value={subjectContains}
-                  onChange={(e) => setSubjectContains(e.target.value)}
+                  value={values.subjectContains}
+                  onChange={(e) => setField("subjectContains", e.target.value)}
                   placeholder="e.g., Fundraiser"
                   className="w-full"
                 />
@@ -211,7 +177,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
         isOpen={isCreateDataSourceOpen}
         onOpenChange={setIsCreateDataSourceOpen}
         onDataSourceSaved={(created) => {
-          if (created?.id) setDataSourceId(created.id);
+          if (created?.id) setField("dataSourceId", created.id);
         }}
         mode="create"
       />

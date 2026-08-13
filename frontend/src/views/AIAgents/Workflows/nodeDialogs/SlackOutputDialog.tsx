@@ -18,6 +18,7 @@ import { getAllAppSettings } from "@/services/appSettings";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type SlackOutputDialogProps = BaseNodeDialogProps<
   SlackOutputNodeData,
@@ -25,24 +26,30 @@ type SlackOutputDialogProps = BaseNodeDialogProps<
 >;
 
 export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
-  const [name, setName] = useState(data.name);
-  const [channel, setChannel] = useState(data.channel || "");
-  const [message, setMessage] = useState(data.message || "");
-  const [appSettingsId, setAppSettingsId] = useState(
-    data.app_settings_id || ""
+  const { isOpen, onClose, data } = props;
+
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name,
+      channel: data.channel || "",
+      message: data.message || "",
+      app_settings_id: data.app_settings_id || "",
+    }),
+    (v) => ({
+      name: v.name,
+      channel: v.channel,
+      message: v.message,
+      app_settings_id: v.app_settings_id || undefined,
+    })
   );
+
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingAppSettings, setIsLoadingAppSettings] = useState(false);
   const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name);
-      setChannel(data.channel || "");
-      setMessage(data.message || "");
-      setAppSettingsId(data.app_settings_id || "");
-
       // Fetch app settings
       const fetchAppSettings = async () => {
         setIsLoadingAppSettings(true);
@@ -60,17 +67,6 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      channel,
-      message,
-      app_settings_id: appSettingsId || undefined,
-    });
-    onClose();
-  };
-
   return (
     <>
       <NodeConfigPanel
@@ -86,20 +82,14 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          channel,
-          message,
-          app_settings_id: appSettingsId || undefined,
-        }}
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
           <RichInput
             id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="e.g., Slack Message"
             className="w-full"
           />
@@ -107,13 +97,13 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="app-settings-id">Configuration Vars (Optional)</Label>
           <Select
-            value={appSettingsId || ""}
+            value={values.app_settings_id || ""}
             onValueChange={(value) => {
               if (value === "__create__") {
                 setIsCreateSettingOpen(true);
                 return;
               }
-              setAppSettingsId(value || "");
+              setField("app_settings_id", value || "");
             }}
             disabled={isLoadingAppSettings}
           >
@@ -141,8 +131,8 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
           <Label htmlFor="channel">Channel ID</Label>
           <DraggableInput
             id="channel"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
+            value={values.channel}
+            onChange={(e) => setField("channel", e.target.value)}
             placeholder="e.g., C12345678 or user@example.com"
             className="w-full break-all"
           />
@@ -151,8 +141,8 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
           <Label htmlFor="message">Message</Label>
           <DraggableInput
             id="message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            value={values.message}
+            onChange={(e) => setField("message", e.target.value)}
             placeholder="e.g., Hello, how are you?"
             className="w-full"
           />
@@ -171,7 +161,7 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
           } catch (e) {
             // ignore
           }
-          if (created?.id) setAppSettingsId(created.id);
+          if (created?.id) setField("app_settings_id", created.id);
         }}
       />
     </>

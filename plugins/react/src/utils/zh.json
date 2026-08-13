@@ -33,6 +33,12 @@
     "thumbsUp": "赞",
     "thumbsDown": "踩"
   },
+  "receipts": {
+    "sent": "已发送",
+    "delivered": "已送达",
+    "seen": "已读",
+    "newMessages": "新消息"
+  },
   "thinking": {
     "messages": [
       "思考中…",

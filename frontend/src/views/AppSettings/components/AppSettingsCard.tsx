@@ -3,12 +3,17 @@ import { EntityTableCard } from "@/components/EntityTableCard";
 import { Badge } from "@/components/badge";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { formatDate } from "@/helpers/utils";
+import { SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/button";
 
 interface AppSettingsCardProps {
   appSettings: AppSetting[];
   searchQuery: string;
   refreshKey: number;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onCreateSetting?: () => void;
   onEditSetting?: (setting: AppSetting) => void;
   onDeleteSetting?: (id: string) => Promise<void>;
 }
@@ -29,6 +34,9 @@ export function AppSettingsCard({
   searchQuery,
   appSettings,
   loading = false,
+  error = null,
+  onRetry,
+  onCreateSetting,
   onEditSetting,
   onDeleteSetting,
 }: AppSettingsCardProps) {
@@ -109,6 +117,8 @@ export function AppSettingsCard({
       entityName="app setting"
       data={appSettings}
       loading={loading}
+      error={error}
+      onRetry={onRetry}
       searchQuery={searchQuery}
       filterFn={matchesQuery}
       deleteFn={(setting) => onDeleteSetting?.(setting.id) ?? Promise.resolve()}
@@ -116,8 +126,20 @@ export function AppSettingsCard({
       deleteDescription={(setting) =>
         `This action cannot be undone. This will permanently delete the app setting "${setting.name}".`
       }
-      emptyMessage="No app settings found"
-      notFoundMessage="No app settings found matching your search"
+      emptyState={{
+        icon: <SlidersHorizontal className="h-12 w-12 text-muted-foreground" />,
+        title: "No configuration variables yet",
+        description:
+          "Configuration variables let you tune application behavior without code changes.",
+        searchTitle: "No matching configuration",
+        searchDescription:
+          "No configuration variables match your search. Try a different name, type, or description.",
+        action: onCreateSetting ? (
+          <Button className="rounded-full" onClick={onCreateSetting}>
+            Create your first configuration variable
+          </Button>
+        ) : undefined,
+      }}
       // Preserve the original behavior of rendering all rows without pagination
       // (DataTable treats a falsy pageSize as "no pagination").
       pageSize={0}

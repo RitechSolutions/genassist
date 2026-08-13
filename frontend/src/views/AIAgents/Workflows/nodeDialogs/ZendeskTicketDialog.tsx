@@ -19,6 +19,7 @@ import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialo
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type ZendeskTicketDialogProps = BaseNodeDialogProps<
   ZendeskTicketNodeData,
@@ -28,45 +29,49 @@ type ZendeskTicketDialogProps = BaseNodeDialogProps<
 export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
   props
 ) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [subject, setSubject] = useState(data.subject || "");
-  const [description, setDescription] = useState(data.description || "");
-  const [requesterName, setRequesterName] = useState(data.requester_name || "");
-  const [requesterEmail, setRequesterEmail] = useState(
-    data.requester_email || ""
-  );
-  const [tagsCsv, setTagsCsv] = useState((data.tags || []).join(", "));
-  const [appSettingsId, setAppSettingsId] = useState(
-    data.app_settings_id || ""
-  );
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => ({
+        name: data.name || "",
+        subject: data.subject || "",
+        description: data.description || "",
+        requester_name: data.requester_name || "",
+        requester_email: data.requester_email || "",
+        tagsCsv: (data.tags || []).join(", "),
+        custom_fields: (data.custom_fields || []) as Array<{
+          id: string;
+          value: string | number;
+        }>,
+        app_settings_id: data.app_settings_id || "",
+      }),
+      (v) => {
+        const tagsArr = v.tagsCsv
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        return {
+          name: v.name,
+          subject: v.subject,
+          description: v.description,
+          requester_name: v.requester_name,
+          requester_email: v.requester_email,
+          tags: tagsArr,
+          custom_fields:
+            v.custom_fields.length > 0 ? v.custom_fields : undefined,
+          app_settings_id: v.app_settings_id || undefined,
+        };
+      }
+    );
+
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingAppSettings, setIsLoadingAppSettings] = useState(false);
   const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
-  const [customFields, setCustomFields] = useState<
-    Array<{ id: string; value: string | number }>
-  >(data.custom_fields || []);
-
-  const getTagsArr = () => {
-    return tagsCsv
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-  };
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setSubject(data.subject || "");
-      setDescription(data.description || "");
-      setRequesterName(data.requester_name || "");
-      setRequesterEmail(data.requester_email || "");
-      setTagsCsv((data.tags || []).join(", "));
-      setCustomFields(data.custom_fields || []);
-
-      setAppSettingsId(data.app_settings_id || "");
-
       const fetchAppSettings = async () => {
         setIsLoadingAppSettings(true);
         try {
@@ -83,27 +88,18 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
     }
   }, [isOpen, data]);
 
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      subject,
-      description,
-      requester_name: requesterName,
-      requester_email: requesterEmail,
-      tags: getTagsArr(),
-      custom_fields: customFields.length > 0 ? customFields : undefined,
-      app_settings_id: appSettingsId || undefined,
-    });
-    onClose();
-  };
-
   const addCustomField = () => {
-    setCustomFields((prev) => [...prev, { id: "", value: "" }]);
+    setValues((v) => ({
+      ...v,
+      custom_fields: [...v.custom_fields, { id: "", value: "" }],
+    }));
   };
 
   const removeCustomField = (index: number) => {
-    setCustomFields((prev) => prev.filter((_, i) => i !== index));
+    setValues((v) => ({
+      ...v,
+      custom_fields: v.custom_fields.filter((_, i) => i !== index),
+    }));
   };
 
   const updateCustomField = (
@@ -111,14 +107,14 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
     field: "id" | "value",
     value: string | number
   ) => {
-    setCustomFields((prev) => {
-      const updated = [...prev];
+    setValues((v) => {
+      const updated = [...v.custom_fields];
       if (field === "id") {
         updated[index] = { ...updated[index], id: String(value) };
       } else {
         updated[index] = { ...updated[index], value };
       }
-      return updated;
+      return { ...v, custom_fields: updated };
     });
   };
 
@@ -137,26 +133,14 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
           </>
         }
         {...props}
-        data={
-          {
-            ...data,
-            name,
-            subject,
-            description,
-            requester_name: requesterName,
-            requester_email: requesterEmail,
-            tags: getTagsArr(),
-            custom_fields: customFields.length > 0 ? customFields : undefined,
-            app_settings_id: appSettingsId || undefined,
-          } as ZendeskTicketNodeData
-        }
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
           <RichInput
             id="node-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -165,13 +149,13 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
         <div className="space-y-2">
           <Label htmlFor="app-settings-id">Configuration Vars (Optional)</Label>
           <Select
-            value={appSettingsId || ""}
+            value={values.app_settings_id || ""}
             onValueChange={(value) => {
               if (value === "__create__") {
                 setIsCreateSettingOpen(true);
                 return;
               }
-              setAppSettingsId(value || "");
+              setField("app_settings_id", value || "");
             }}
             disabled={isLoadingAppSettings}
           >
@@ -203,8 +187,8 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
               <Label htmlFor="subject">Subject</Label>
               <DraggableInput
                 id="subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                value={values.subject}
+                onChange={(e) => setField("subject", e.target.value)}
                 placeholder="Enter ticket subject"
                 className="w-full"
               />
@@ -214,8 +198,8 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
               <DraggableTextArea
                 id="description"
                 rows={4}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={values.description}
+                onChange={(e) => setField("description", e.target.value)}
                 placeholder="Enter the issue or request description"
                 className="w-full resize-none"
               />
@@ -230,8 +214,8 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
               <Label htmlFor="requester_name">Requester Name</Label>
               <DraggableInput
                 id="requester_name"
-                value={requesterName}
-                onChange={(e) => setRequesterName(e.target.value)}
+                value={values.requester_name}
+                onChange={(e) => setField("requester_name", e.target.value)}
                 placeholder="e.g., Alice Smith"
                 className="w-full"
               />
@@ -241,8 +225,8 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
               <DraggableInput
                 id="requester_email"
                 type="email"
-                value={requesterEmail}
-                onChange={(e) => setRequesterEmail(e.target.value)}
+                value={values.requester_email}
+                onChange={(e) => setField("requester_email", e.target.value)}
                 placeholder="e.g., alice@example.com"
                 className="w-full break-all"
               />
@@ -257,8 +241,8 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
               <Label htmlFor="tags">Tags</Label>
               <DraggableInput
                 id="tags"
-                value={tagsCsv}
-                onChange={(e) => setTagsCsv(e.target.value)}
+                value={values.tagsCsv}
+                onChange={(e) => setField("tagsCsv", e.target.value)}
                 placeholder="e.g., support, urgent, follow-up"
                 className="w-full"
               />
@@ -280,7 +264,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
             </Button>
           </div>
           <div className="space-y-2">
-            {customFields.map((field, index) => (
+            {values.custom_fields.map((field, index) => (
               <div key={index} className="flex gap-2 items-end">
                 <div className="flex-1 space-y-2">
                   <Label htmlFor={`custom-field-id-${index}`}>Field ID</Label>
@@ -317,7 +301,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
                 </Button>
               </div>
             ))}
-            {customFields.length === 0 && (
+            {values.custom_fields.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 No custom fields added. Click "Add Field" to add one.
               </p>
@@ -339,7 +323,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
           } catch (e) {
             // ignore
           }
-          if (created?.id) setAppSettingsId(created.id);
+          if (created?.id) setField("app_settings_id", created.id);
         }}
       />
     </>

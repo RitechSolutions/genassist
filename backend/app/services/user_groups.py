@@ -1,14 +1,10 @@
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import delete, select
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.db.models.role import RoleModel
 from app.db.models.user_group import UserGroupModel
-from app.db.models.user_role import UserRoleModel
-from app.db.models.user_supervised_group import UserSupervisedGroupModel
 from app.repositories.user_groups import UserGroupRepository
 from app.schemas.user_group import UserGroupCreate, UserGroupRead, UserGroupUpdate
 
@@ -54,51 +50,26 @@ class UserGroupService:
         if not group:
             raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
         # Verify the user has the supervisor role
-        role_check = await self.repository.db.execute(
-            select(UserRoleModel).join(RoleModel, RoleModel.id == UserRoleModel.role_id).where(
-                UserRoleModel.user_id == user_id,
-                RoleModel.name == "supervisor",
-            )
-        )
-        if not role_check.scalars().first():
+        if not await self.repository.user_has_supervisor_role(user_id):
             raise AppException(
                 error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE,
                 status_code=400,
             )
         # Check not already assigned
-        existing = await self.repository.db.execute(
-            select(UserSupervisedGroupModel).where(
-                UserSupervisedGroupModel.group_id == group_id,
-                UserSupervisedGroupModel.user_id == user_id,
-            )
-        )
-        if existing.scalars().first():
+        if await self.repository.is_supervisor(group_id, user_id):
             return {"message": "User is already a supervisor of this group"}
-        obj = UserSupervisedGroupModel(group_id=group_id, user_id=user_id)
-        self.repository.db.add(obj)
-        await self.repository.db.commit()
+        await self.repository.add_supervisor(group_id, user_id)
         return {"message": f"User {user_id} added as supervisor of group {group_id}"}
 
     async def remove_supervisor(self, group_id: UUID, user_id: UUID) -> dict:
         group = await self.repository.get_by_id(group_id)
         if not group:
             raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
-        await self.repository.db.execute(
-            delete(UserSupervisedGroupModel).where(
-                UserSupervisedGroupModel.group_id == group_id,
-                UserSupervisedGroupModel.user_id == user_id,
-            )
-        )
-        await self.repository.db.commit()
+        await self.repository.remove_supervisor(group_id, user_id)
         return {"message": f"User {user_id} removed as supervisor of group {group_id}"}
 
     async def get_supervisors(self, group_id: UUID) -> list[UUID]:
         group = await self.repository.get_by_id(group_id)
         if not group:
             raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
-        result = await self.repository.db.execute(
-            select(UserSupervisedGroupModel.user_id).where(
-                UserSupervisedGroupModel.group_id == group_id
-            )
-        )
-        return list(result.scalars().all())
+        return await self.repository.get_supervisor_user_ids(group_id)

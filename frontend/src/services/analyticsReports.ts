@@ -40,7 +40,10 @@ export const fetchAgentDailyStats = async (
 };
 
 export const fetchAgentStatsSummary = async (
-  params?: Pick<AnalyticsFilterParams, "agent_id" | "group_id" | "from_date" | "to_date">
+  params?: Pick<
+    AnalyticsFilterParams,
+    "agent_id" | "group_id" | "from_date" | "to_date" | "activity_from_datetime" | "activity_to_datetime"
+  >
 ): Promise<AgentStatsSummaryResponse | null> => {
   try {
     const qs = buildQueryString({
@@ -48,6 +51,8 @@ export const fetchAgentStatsSummary = async (
       group_id: params?.group_id,
       from_date: params?.from_date,
       to_date: params?.to_date,
+      activity_from_datetime: params?.activity_from_datetime,
+      activity_to_datetime: params?.activity_to_datetime,
     });
     return await apiRequest<AgentStatsSummaryResponse>("get", `/analytics/agents/summary${qs}`);
   } catch (error) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { RouterNodeData } from "../types/nodes";
+import { useNodeDialogState } from "./useNodeDialogState";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -55,23 +56,39 @@ function isSmartModeEnabledValue(
 type RouterDialogProps = BaseNodeDialogProps<RouterNodeData, RouterNodeData>;
 
 export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [smartModeEnabled, setSmartModeEnabled] = useState(
-    data.smartModeEnabled ?? false,
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      smartModeEnabled: isSmartModeEnabledValue(data.smartModeEnabled),
+      providerId: data.providerId || "",
+      smartPrompt: data.smartPrompt || "",
+      systemPrompt: data.systemPrompt || "",
+      fallbackRoute: data.fallbackRoute === "true" ? "true" : "false",
+      firstValue: data.first_value ?? "",
+      compareCondition: (data.compare_condition as ConditionType) ?? "contains",
+      secondValue: data.second_value ?? "",
+    }),
+    (v) => {
+      const normalizedFallback =
+        v.fallbackRoute === "true" || v.fallbackRoute === "false"
+          ? v.fallbackRoute
+          : "false";
+      return {
+        name: v.name,
+        smartModeEnabled: v.smartModeEnabled,
+        providerId: v.providerId,
+        smartPrompt: v.smartPrompt,
+        systemPrompt: v.systemPrompt,
+        fallbackRoute: normalizedFallback,
+        first_value: v.firstValue,
+        compare_condition: v.compareCondition,
+        second_value: v.secondValue,
+      };
+    },
   );
-  const [providerId, setProviderId] = useState(data.providerId || "");
-  const [smartPrompt, setSmartPrompt] = useState(data.smartPrompt || "");
-  const [systemPrompt, setSystemPrompt] = useState(data.systemPrompt || "");
-  const [fallbackRoute, setFallbackRoute] = useState(
-    data.fallbackRoute === "true" ? "true" : "false",
-  );
-  const [compareCondition, setCompareCondition] =
-    useState<ConditionType>("contains");
-  const [firstValue, setFirstValue] = useState("");
-
-  const [secondValue, setSecondValue] = useState("");
 
   const [availableProviders, setAvailableProviders] = useState<LLMProvider[]>(
     [],
@@ -95,40 +112,9 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setSmartModeEnabled(isSmartModeEnabledValue(data.smartModeEnabled));
-      setProviderId(data.providerId || "");
-      setSmartPrompt(data.smartPrompt || "");
-      setSystemPrompt(data.systemPrompt || "");
-      setFallbackRoute(data.fallbackRoute === "true" ? "true" : "false");
-      setFirstValue(data.first_value ?? "");
-      setCompareCondition(
-        (data.compare_condition as ConditionType) ?? "contains",
-      );
-      setSecondValue(data.second_value ?? "");
       void loadProviders();
     }
   }, [isOpen, data]);
-
-  const handleSave = () => {
-    const normalizedFallback =
-      fallbackRoute === "true" || fallbackRoute === "false"
-        ? fallbackRoute
-        : "false";
-    onUpdate({
-      ...data,
-      name: name,
-      smartModeEnabled,
-      providerId,
-      smartPrompt,
-      systemPrompt,
-      fallbackRoute: normalizedFallback,
-      first_value: firstValue,
-      compare_condition: compareCondition,
-      second_value: secondValue,
-    });
-    onClose();
-  };
 
   return (
     <>
@@ -145,28 +131,14 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          smartModeEnabled,
-          providerId,
-          smartPrompt,
-          systemPrompt,
-          fallbackRoute:
-            fallbackRoute === "true" || fallbackRoute === "false"
-              ? fallbackRoute
-              : "false",
-          first_value: firstValue,
-          compare_condition: compareCondition,
-          second_value: secondValue,
-        }}
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
           <RichInput
             id="node-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -182,19 +154,21 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
           </div>
           <Switch
             id="smart-mode"
-            checked={smartModeEnabled}
-            onCheckedChange={(checked) => setSmartModeEnabled(Boolean(checked))}
+            checked={values.smartModeEnabled}
+            onCheckedChange={(checked) =>
+              setField("smartModeEnabled", Boolean(checked))
+            }
           />
         </div>
 
-        {!smartModeEnabled && (
+        {!values.smartModeEnabled && (
           <>
             <div className="space-y-2">
               <Label htmlFor="path_name">First Value</Label>
               <DraggableInput
                 id="path_name"
-                value={firstValue}
-                onChange={(e) => setFirstValue(e.target.value)}
+                value={values.firstValue}
+                onChange={(e) => setField("firstValue", e.target.value)}
                 placeholder="first value to compare"
                 className="w-full"
               />
@@ -203,9 +177,9 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
             <div className="space-y-2">
               <Label htmlFor="compare_condition">Compare Condition</Label>
               <Select
-                value={compareCondition}
+                value={values.compareCondition}
                 onValueChange={(value) =>
-                  setCompareCondition(value as ConditionType)
+                  setField("compareCondition", value as ConditionType)
                 }
               >
                 <SelectTrigger id="compare_condition">
@@ -225,8 +199,8 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
               <Label htmlFor="value_condition">Second Value</Label>
               <DraggableInput
                 id="value_condition"
-                value={secondValue}
-                onChange={(e) => setSecondValue(e.target.value)}
+                value={values.secondValue}
+                onChange={(e) => setField("secondValue", e.target.value)}
                 placeholder="second value to compare"
                 className="w-full"
               />
@@ -234,18 +208,18 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
           </>
         )}
 
-        {smartModeEnabled && (
+        {values.smartModeEnabled && (
           <>
             <div className="space-y-2">
               <Label htmlFor="router-provider">LLM Provider</Label>
               <Select
-                value={providerId || ""}
+                value={values.providerId || ""}
                 onValueChange={(value) => {
                   if (value === "__create__") {
                     setIsCreateProviderOpen(true);
                     return;
                   }
-                  setProviderId(value);
+                  setField("providerId", value);
                 }}
               >
                 <SelectTrigger id="router-provider" className="w-full">
@@ -273,16 +247,16 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
                     promptField="systemPrompt"
-                    currentValue={systemPrompt}
-                    onPromptChange={(val) => setSystemPrompt(val)}
-                    defaultProviderId={providerId}
+                    currentValue={values.systemPrompt}
+                    onPromptChange={(val) => setField("systemPrompt", val)}
+                    defaultProviderId={values.providerId}
                   />
                 )}
               </div>
               <DraggableTextArea
                 id="router-system-prompt"
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
+                value={values.systemPrompt}
+                onChange={(e) => setField("systemPrompt", e.target.value)}
                 placeholder="Optional. Leave empty to use the built-in routing instructions."
                 className="w-full min-h-[100px] text-sm"
               />
@@ -296,16 +270,16 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
                     promptField="smartPrompt"
-                    currentValue={smartPrompt}
-                    onPromptChange={(val) => setSmartPrompt(val)}
-                    defaultProviderId={providerId}
+                    currentValue={values.smartPrompt}
+                    onPromptChange={(val) => setField("smartPrompt", val)}
+                    defaultProviderId={values.providerId}
                   />
                 )}
               </div>
               <DraggableTextArea
                 id="router-smart-prompt"
-                value={smartPrompt}
-                onChange={(e) => setSmartPrompt(e.target.value)}
+                value={values.smartPrompt}
+                onChange={(e) => setField("smartPrompt", e.target.value)}
                 placeholder="Describe when the workflow should take the true branch. The model must answer only true or false."
                 className="w-full min-h-[120px] text-sm"
               />
@@ -314,9 +288,9 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
             <div className="space-y-2">
               <Label htmlFor="router-fallback">Fallback route</Label>
               <Select
-                value={fallbackRoute}
+                value={values.fallbackRoute}
                 onValueChange={(v) =>
-                  setFallbackRoute(v === "true" ? "true" : "false")
+                  setField("fallbackRoute", v === "true" ? "true" : "false")
                 }
               >
                 <SelectTrigger id="router-fallback" className="w-full">
@@ -344,7 +318,7 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
         onProviderSaved={async (provider) => {
           await loadProviders();
           if (provider?.id) {
-            setProviderId(provider.id);
+            setField("providerId", provider.id);
           }
         }}
         mode="create"

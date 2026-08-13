@@ -20,6 +20,8 @@ interface BubbleDockProps {
   chatBubbleIcon?: 'message' | 'sparkles' | 'x';
   /** When false, only the launcher bubble is rendered (quick input hidden/dismissed). */
   showQuickInput: boolean;
+  /** Count of unseen agent/supervisor messages, shown as a badge on the launcher. */
+  unreadCount?: number;
   onOpen: () => void;
   onSend: (text: string) => void;
   onDismissQuickInput: () => void;
@@ -44,6 +46,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
   textColor = '#111111',
   chatBubbleIcon,
   showQuickInput,
+  unreadCount = 0,
   onOpen,
   onSend,
   onDismissQuickInput,
@@ -154,6 +157,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
         primaryColor={primaryColor}
         style={bubbleStyle}
         chatBubbleIcon={chatBubbleIcon}
+        unreadCount={unreadCount}
       />
 
       {showQuickInput && (

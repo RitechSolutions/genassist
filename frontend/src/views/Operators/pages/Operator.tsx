@@ -74,7 +74,8 @@ export default function Operators() {
               </div>
               <OperatorsCard
                 searchQuery={searchQuery}
-                refreshKey={refreshKey} />
+                refreshKey={refreshKey}
+                onCreate={handleCreateOperator} />
 
             </div>
           </div>

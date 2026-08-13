@@ -13,9 +13,10 @@ interface StatMetric {
 interface StatsOverviewCardProps {
   metrics: StatMetric[];
   loading?: boolean;
+  error?: string | null;
 }
 
-export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCardProps) => {
+export const StatsOverviewCard = ({ metrics, loading = false, error = null }: StatsOverviewCardProps) => {
   const getChangeIcon = (changeType: "increase" | "decrease" | "neutral") => {
     switch (changeType) {
       case "increase":
@@ -45,6 +46,19 @@ export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCar
               )}
             </div>
           ))}
+        </div>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-card dark:bg-zinc-900 animate-fade-up">
+        <div className="flex flex-col gap-1 py-2">
+          <div className="text-sm sm:text-base font-medium text-foreground">
+            Statistics unavailable
+          </div>
+          <div className="text-xs text-muted-foreground">{error}</div>
         </div>
       </Card>
     );

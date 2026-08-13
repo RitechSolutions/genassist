@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Save, HelpCircle } from "lucide-react";
@@ -15,6 +15,7 @@ import "ace-builds/src-noconflict/theme-twilight";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableAceEditor } from "../components/custom/DraggableAceEditor";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type DataMapperDialogProps = BaseNodeDialogProps<
   DataMapperNodeData,
@@ -22,27 +23,15 @@ type DataMapperDialogProps = BaseNodeDialogProps<
 >;
 
 export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { onClose, data } = props;
 
-  const [name, setName] = useState(data.name);
-  const [pythonScript, setPythonScript] = useState(data.pythonScript);
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name);
-      setPythonScript(data.pythonScript);
-    }
-  }, [isOpen, data]);
-
-  const handleSave = () => {
-    const updatedData = {
-      ...data,
-      name,
-      pythonScript,
-    };
-    onUpdate(updatedData);
-    onClose();
-  };
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name,
+      pythonScript: data.pythonScript,
+    })
+  );
 
   return (
     <NodeConfigPanel
@@ -58,18 +47,14 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        pythonScript,
-      }}
+      data={merged}
     >
       <div className="space-y-4">
         <div>
           <Label>Node Name</Label>
           <RichInput
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -112,8 +97,8 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
             name="python-editor"
             mode="python"
             theme="twilight"
-            value={pythonScript}
-            onChange={setPythonScript}
+            value={values.pythonScript}
+            onChange={(value) => setField("pythonScript", value)}
             width="100%"
             height="100%"
             placeholder="Enter your Python transformation script here..."

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import toast from "react-hot-toast";
 import { BaseLLMNodeData, SubAgentMode, SubAgentNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
@@ -15,6 +15,7 @@ import {
 import { ModelConfiguration } from "../components/ModelConfiguration";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useNodeDialogState } from "./useNodeDialogState";
 import { clampToolName } from "../utils/subAgentGraph";
 
 type SubAgentDialogProps = BaseNodeDialogProps<SubAgentNodeData, SubAgentNodeData>;
@@ -26,24 +27,28 @@ const MODE_HELP: Record<SubAgentMode, string> = {
 };
 
 export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { onClose, data } = props;
 
-  const [config, setConfig] = useState<SubAgentNodeData>(data);
-
-  useEffect(() => {
-    if (isOpen) {
-      setConfig(data);
-    }
-  }, [isOpen, data]);
+  const { values, setValues, setField, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => data,
+      (v) => {
+        const name = (v.name || "").trim();
+        const description = (v.description || "").trim();
+        const timeout = Number(v.timeoutSeconds ?? 120);
+        return { ...v, name, description, timeoutSeconds: timeout };
+      }
+    );
 
   // ModelConfiguration edits the shared LLM fields
   const handleModelConfigChange = (updated: BaseLLMNodeData) => {
-    setConfig((prev) => ({ ...prev, ...updated }) as SubAgentNodeData);
+    setValues((prev) => ({ ...prev, ...updated }) as SubAgentNodeData);
   };
 
-  const handleSave = () => {
-    const name = (config.name || "").trim();
-    const description = (config.description || "").trim();
+  const handleSaveClick = () => {
+    const name = (values.name || "").trim();
+    const description = (values.description || "").trim();
     if (!name) {
       toast.error("Give the sub-agent a name.");
       return;
@@ -52,7 +57,7 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
       toast.error("Sub-agent name must contain at least one letter or number.");
       return;
     }
-    if (!config.providerId) {
+    if (!values.providerId) {
       toast.error("Select an LLM provider for the sub-agent.");
       return;
     }
@@ -60,20 +65,13 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
       toast.error("Add a description so the parent agent knows when to delegate.");
       return;
     }
-    const timeout = Number(config.timeoutSeconds ?? 120);
+    const timeout = Number(values.timeoutSeconds ?? 120);
     if (!Number.isFinite(timeout) || timeout < 5 || timeout > 300) {
       toast.error("Timeout must be between 5 and 300 seconds.");
       return;
     }
 
-    onUpdate({
-      ...data,
-      ...config,
-      name,
-      description,
-      timeoutSeconds: timeout,
-    });
-    onClose();
+    handleSave();
   };
 
   return (
@@ -83,18 +81,15 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>Save Changes</Button>
+          <Button onClick={handleSaveClick}>Save Changes</Button>
         </>
       }
       {...props}
-      data={{
-        ...data,
-        ...config,
-      }}
+      data={merged}
     >
       <ModelConfiguration
         id="sub-agent-config"
-        config={config}
+        config={values}
         onConfigChange={handleModelConfigChange}
         typeSelect="agent"
         allowedAgentTypes={["ToolSelector", "ReActAgent", "ReActAgentLC"]}
@@ -103,13 +98,8 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
             <div className="space-y-2">
               <Label htmlFor="sub-agent-mode">Collaboration Mode</Label>
               <Select
-                value={config.mode}
-                onValueChange={(mode) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    mode: mode as SubAgentMode,
-                  }))
-                }
+                value={values.mode}
+                onValueChange={(mode) => setField("mode", mode as SubAgentMode)}
               >
                 <SelectTrigger id="sub-agent-mode" className="w-full">
                   <SelectValue placeholder="Select a mode" />
@@ -121,7 +111,7 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {MODE_HELP[config.mode]}
+                {MODE_HELP[values.mode]}
               </p>
             </div>
 
@@ -131,13 +121,8 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
               </Label>
               <Textarea
                 id="sub-agent-description"
-                value={config.description || ""}
-                onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
+                value={values.description || ""}
+                onChange={(e) => setField("description", e.target.value)}
                 placeholder="What this sub agent handles, e.g. searches flights and checks fares"
               />
             </div>
@@ -150,12 +135,9 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
                 min={5}
                 max={300}
                 step={5}
-                value={config.timeoutSeconds ?? 120}
+                value={values.timeoutSeconds ?? 120}
                 onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    timeoutSeconds: parseInt(e.target.value) || 120,
-                  }))
+                  setField("timeoutSeconds", parseInt(e.target.value) || 120)
                 }
                 placeholder="120"
               />

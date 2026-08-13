@@ -48,24 +48,24 @@ function parseDate(value: string | undefined): Date | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
-function deserialize(raw: string | null): DateRange | undefined {
-  if (!raw) return undefined;
+export function parseStoredDateRange(raw: string | null): { value: DateRange | undefined } | null {
+  if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredDateRange;
     const from = parseDate(parsed.from);
     const to = parseDate(parsed.to);
-    if (!from && !to) return undefined;
-    return { from, to };
+    if (!from && !to) return { value: undefined };
+    return { value: { from, to } };
   } catch {
-    return undefined;
+    return null;
   }
 }
 
-function readStored(storageKey: string): DateRange | undefined {
+function readStored(storageKey: string): { value: DateRange | undefined } | null {
   try {
-    return deserialize(localStorage.getItem(storageKey));
+    return parseStoredDateRange(localStorage.getItem(storageKey));
   } catch {
-    return undefined;
+    return null;
   }
 }
 
@@ -75,7 +75,7 @@ export function usePersistedDateRange(
 ): [DateRange | undefined, (value: DateRange | undefined) => void] {
   const [value, setValue] = useState<DateRange | undefined>(() => {
     const stored = readStored(storageKey);
-    return stored ?? defaultValue;
+    return stored ? stored.value : defaultValue;
   });
 
   const setPersisted = useCallback(
@@ -97,7 +97,7 @@ export function usePersistedDateRange(
   // Keep this instance in sync when its range is changed elsewhere — either in
   // another tab (`storage`) or by another consumer in this tab (custom event).
   useEffect(() => {
-    const sync = () => setValue(readStored(storageKey) ?? undefined);
+    const sync = () => setValue(readStored(storageKey)?.value);
 
     const onStorage = (event: StorageEvent) => {
       if (event.key === storageKey) sync();

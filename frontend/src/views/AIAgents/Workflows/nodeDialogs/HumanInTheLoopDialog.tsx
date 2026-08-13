@@ -26,6 +26,7 @@ import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { TranslationTrigger } from "../../components/TranslationTrigger";
 import { getLanguages } from "@/services/translations";
 import { Language } from "@/interfaces/translation.interface";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 const FIELD_TYPES = [
   { value: "text", label: "Text" },
@@ -55,7 +56,7 @@ interface FieldDialogState {
 export const HumanInTheLoopDialog: React.FC<
   BaseNodeDialogProps<HumanInTheLoopNodeData, HumanInTheLoopNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate, nodeId } = props;
+  const { isOpen, onClose, data, nodeId } = props;
   const { agentId } = useParams<{ agentId: string }>();
 
   // Active languages, loaded once per open so each per-field trigger reuses the same list.
@@ -69,29 +70,29 @@ export const HumanInTheLoopDialog: React.FC<
   const fieldKey = (fieldName: string, attr: string) =>
     `${nodePrefix}.fields.${fieldName}.${attr}`;
 
-  const [name, setName] = useState(data.name || "");
-  const [message, setMessage] = useState(
-    data.message || "Please provide the following information:"
-  );
-  const [askOnce, setAskOnce] = useState(data.ask_once !== false);
-  const [formFields, setFormFields] = useState<HumanInTheLoopFormField[]>(
-    data.form_fields || []
-  );
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => ({
+        name: data.name || "",
+        message: data.message || "Please provide the following information:",
+        askOnce: data.ask_once !== false,
+        formFields: data.form_fields || [],
+      }),
+      (v) => ({
+        name: v.name,
+        message: v.message,
+        ask_once: v.askOnce,
+        form_fields: v.formFields,
+      })
+    );
+
   const [fieldDialog, setFieldDialog] = useState<FieldDialogState>({
     isOpen: false,
     mode: "add",
     editIndex: null,
     field: { ...emptyField },
   });
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "");
-      setMessage(data.message || "Please provide the following information:");
-      setAskOnce(data.ask_once !== false);
-      setFormFields(data.form_fields || []);
-    }
-  }, [isOpen, data]);
 
   // Load the active language list once when the panel opens (only when translations are
   // actually usable, i.e. the agent/node context is known), shared by every trigger.
@@ -104,17 +105,6 @@ export const HumanInTheLoopDialog: React.FC<
         });
     }
   }, [isOpen, nodePrefix, languages.length]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      message,
-      ask_once: askOnce,
-      form_fields: formFields,
-    });
-    onClose();
-  };
 
   // Field CRUD
   const openAddFieldDialog = () => {
@@ -131,7 +121,7 @@ export const HumanInTheLoopDialog: React.FC<
       isOpen: true,
       mode: "edit",
       editIndex: index,
-      field: { ...formFields[index] },
+      field: { ...values.formFields[index] },
     });
   };
 
@@ -140,17 +130,23 @@ export const HumanInTheLoopDialog: React.FC<
     if (!field.name || !field.label) return;
 
     if (fieldDialog.mode === "add") {
-      setFormFields((prev) => [...prev, field]);
+      setValues((prev) => ({ ...prev, formFields: [...prev.formFields, field] }));
     } else if (fieldDialog.editIndex !== null) {
-      setFormFields((prev) =>
-        prev.map((f, i) => (i === fieldDialog.editIndex ? field : f))
-      );
+      setValues((prev) => ({
+        ...prev,
+        formFields: prev.formFields.map((f, i) =>
+          i === fieldDialog.editIndex ? field : f
+        ),
+      }));
     }
     setFieldDialog((prev) => ({ ...prev, isOpen: false }));
   };
 
   const handleDeleteField = (index: number) => {
-    setFormFields((prev) => prev.filter((_, i) => i !== index));
+    setValues((prev) => ({
+      ...prev,
+      formFields: prev.formFields.filter((_, i) => i !== index),
+    }));
   };
 
   const updateDialogField = (
@@ -202,20 +198,14 @@ export const HumanInTheLoopDialog: React.FC<
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        message,
-        ask_once: askOnce,
-        form_fields: formFields,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="Human In The Loop"
           className="break-all w-full"
         />
@@ -224,18 +214,18 @@ export const HumanInTheLoopDialog: React.FC<
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Label htmlFor="message">Message</Label>
-          {nodePrefix && message.trim() && (
+          {nodePrefix && values.message.trim() && (
             <TranslationTrigger
               translationKey={`${nodePrefix}.message`}
-              currentValue={message}
+              currentValue={values.message}
               languages={languages}
             />
           )}
         </div>
         <DraggableTextArea
           id="message"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          value={values.message}
+          onChange={(e) => setField("message", e.target.value)}
           placeholder="Message shown above the form..."
           className="text-sm h-20 resize-none w-full"
         />
@@ -248,14 +238,14 @@ export const HumanInTheLoopDialog: React.FC<
         </div>
         <Switch
           id="ask_once"
-          checked={askOnce}
-          onCheckedChange={(val) => setAskOnce(val)}
+          checked={values.askOnce}
+          onCheckedChange={(val) => setField("askOnce", val)}
         />
       </div>
 
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-          <Label>Form Fields ({formFields.length})</Label>
+          <Label>Form Fields ({values.formFields.length})</Label>
           <Button
             size="sm"
             variant="outline"
@@ -267,7 +257,7 @@ export const HumanInTheLoopDialog: React.FC<
         </div>
 
         <div className="space-y-2">
-          {formFields.map((field, index) => (
+          {values.formFields.map((field, index) => (
             <div
               key={index}
               className="p-2.5 bg-muted rounded-lg border space-y-2"
@@ -351,7 +341,7 @@ export const HumanInTheLoopDialog: React.FC<
             </div>
           ))}
 
-          {formFields.length === 0 && (
+          {values.formFields.length === 0 && (
             <div className="text-sm text-muted-foreground italic text-center py-4 border border-dashed rounded-lg">
               No fields configured. Click &quot;Add Field&quot; to get started.
             </div>

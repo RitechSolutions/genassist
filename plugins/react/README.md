@@ -102,6 +102,7 @@ export default App;
 | useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
 | useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
 | quickInput | boolean | No | false | Opt-in. In floating mode, shows a quick-message input beside the launcher bubble during an ongoing conversation while the chat panel is closed |
+| readReceipts | boolean | No | false | Opt-in. Shows read/seen receipts under the visitor's own messages (Sent → Delivered → Seen, where "Seen" means a human supervisor has viewed the message; the AI bot only yields "Delivered"), and reports the visitor's read state upstream so a supervisor's console can see when their reply was read. Also surfaces unread indicators while the chat is closed: an unread count badge on the floating launcher bubble, and a "New messages" divider in the thread |
 | reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
 | mode | string | true | flotaing | Chat presentation: `embedded`, `floating`, `fullscreen`, or `inputbar` (a docked "Chat Input" bar that reveals FAQs on focus and expands a conversation panel above itself) |
 | allowedExtensions | string[] | false | undefined | 'Look for type AllowedExtension and see the supported list of extensions' |

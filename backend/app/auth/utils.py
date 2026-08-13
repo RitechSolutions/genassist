@@ -51,6 +51,12 @@ def get_current_user_id() -> UUID:
 def get_current_operator_id() -> UUID:
     return context.get("operator_id") if context.exists() else None
 
+def get_current_auth_mode() -> Optional[str]:
+    """The auth mode the auth chain selected for this request:
+    'token' (a logged-in staff JWT), 'api_key', or 'guest_token' (an embedded
+    widget visitor). None when no auth context is set."""
+    return context.get("auth_mode") if context.exists() else None
+
 def current_user_is_supervisor() -> bool:
      roles = context.get("user_roles") if context.exists() else None
      if roles:

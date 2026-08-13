@@ -76,6 +76,7 @@ export default function ApiKeys() {
       <ApiKeysCard
         searchQuery={searchQuery}
         refreshKey={refreshKey}
+        onCreateApiKey={handleCreateApiKey}
         onEditApiKey={handleEditApiKey}
         updatedApiKey={updatedApiKey}
         onApiKeyRotated={handleApiKeyUpdated}

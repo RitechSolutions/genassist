@@ -9,6 +9,7 @@ import { RichTextarea } from "@/components/richTextarea";
 import { Save, RefreshCw } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useNodeDialogState } from "./useNodeDialogState";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import {
   Select,
@@ -43,8 +44,6 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
     }
   };
 
-  const [name, setName] = useState(data.name || "");
-  const [description, setDescription] = useState(data.description || "");
   const [connectionType, setConnectionType] = useState<MCPConnectionType>(
     getInitialConnectionType()
   );
@@ -60,6 +59,26 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
     data.whitelistedTools || []
   );
   const [isLoadingTools, setIsLoadingTools] = useState(false);
+
+  // `name`/`description` are the only saved fields not driven by the async
+  // tool-discovery handlers or the connection-config builder effect below, so the
+  // hook owns their seed/re-seed. The remaining saved fields stay as their own
+  // state (mutated by those effects) and are folded into `merged` via toPayload.
+  const { values, setField, merged } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      description: data.description || "",
+    }),
+    (v) => ({
+      name: v.name,
+      description: v.description,
+      connectionType,
+      connectionConfig,
+      availableTools,
+      whitelistedTools,
+    })
+  );
 
   // STDIO-specific state
   const [stdioCommand, setStdioCommand] = useState(
@@ -136,8 +155,6 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setDescription(data.description || "");
       setConnectionType(data.connectionType || "http");
 
       if (data.connectionConfig) {
@@ -282,15 +299,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       }
     }
 
-    onUpdate({
-      ...data,
-      name,
-      description,
-      connectionType,
-      connectionConfig,
-      availableTools,
-      whitelistedTools,
-    });
+    onUpdate(merged);
     onClose();
   };
 
@@ -366,22 +375,14 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        description,
-        connectionType,
-        connectionConfig,
-        availableTools,
-        whitelistedTools,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Node Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="MCP Server"
           className="w-full"
         />
@@ -391,8 +392,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         <Label htmlFor="description">Description</Label>
         <RichInput
           id="description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          value={values.description}
+          onChange={(e) => setField("description", e.target.value)}
           placeholder="MCP server tool connector"
           className="w-full"
         />

@@ -107,11 +107,11 @@ export function AudioProviderCard({
       onDeleted={() =>
         queryClient.invalidateQueries({ queryKey: ["audioProviders"] })
       }
-      emptyMessage="No Audio Providers found"
+      emptyMessage="No Audio Providers yet"
       notFoundMessage="No Audio Providers matching your search"
       emptyState={{
         icon: <Volume2 className="h-12 w-12 text-muted-foreground" />,
-        title: "No Audio Providers found",
+        title: "No Audio Providers yet",
         searchTitle: "No Audio Providers matching your search",
         description:
           "Add your first audio provider to enable TTS and STT capabilities.",

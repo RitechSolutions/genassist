@@ -5,6 +5,8 @@ from typing import Optional
 
 from injector import inject
 
+from app.core.utils.date_time_utils import exact_interval_bucket_dates, rolling_window_bucket_dates
+from app.repositories.analytics_read import AnalyticsReadRepository
 from app.repositories.dashboard import DashboardRepository
 from app.schemas.dashboard import (
     ActiveConversationItem,
@@ -35,8 +37,9 @@ INTEGRATION_DESCRIPTIONS = {
 @inject
 class DashboardService:
 
-    def __init__(self, dashboard_repo: DashboardRepository):
+    def __init__(self, dashboard_repo: DashboardRepository, analytics_repo: AnalyticsReadRepository):
         self.dashboard_repo = dashboard_repo
+        self.analytics_repo = analytics_repo
 
     def _get_date_range(self, days: int = 30) -> tuple[datetime, datetime]:
         """Get date range from now going back specified days."""
@@ -69,26 +72,54 @@ class DashboardService:
 
     async def get_summary_stats(
         self,
-        from_date: datetime,
-        to_date: datetime
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        *,
+        exact: bool = False,
     ) -> DashboardSummaryStats:
         """Get summary statistics for the dashboard header."""
         active_agents = await self.dashboard_repo.get_active_agents_count()
-        workflow_runs = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
+        conversations = await self._count_conversations(from_date, to_date, exact=exact)
         visible_agent_ids = await self.dashboard_repo.resolve_visible_agent_ids()
+
+        bucket_from, bucket_to = None, None
+        if from_date is not None and to_date is not None:
+            converter = exact_interval_bucket_dates if exact else rolling_window_bucket_dates
+            bucket_from, bucket_to = converter(from_date, to_date)
+
         avg_response_time = await self.dashboard_repo.get_avg_response_time(
-            from_date, to_date, agent_ids=visible_agent_ids
+            bucket_from, bucket_to, agent_ids=visible_agent_ids
         )
         total_cost_usd = await self.dashboard_repo.get_total_cost_usd(
-            from_date, to_date, agent_ids=visible_agent_ids
+            from_date, to_date, agent_ids=visible_agent_ids, exact=exact
         )
 
         return DashboardSummaryStats(
             active_agents=active_agents,
-            workflow_runs=workflow_runs,
+            conversations=conversations,
             avg_response_time_ms=avg_response_time,
             total_cost_usd=total_cost_usd,
         )
+
+    async def _count_conversations(
+        self,
+        from_date: Optional[datetime],
+        to_date: Optional[datetime],
+        *,
+        exact: bool,
+    ) -> int:
+        bounds: dict = {}
+        if from_date is not None and to_date is not None:
+            if exact:
+                bounds = {"activity_from_datetime": from_date, "activity_to_datetime": to_date}
+            else:
+                bounds = {
+                    "from_date": from_date.astimezone(timezone.utc).date(),
+                    "to_date": to_date.astimezone(timezone.utc).date(),
+                }
+
+        rows = await self.analytics_repo.get_conversation_status_counts(group_by_agent=False, **bounds)
+        return rows[0]["total_unique_conversations"] if rows else 0
 
     async def get_active_conversations(
         self,

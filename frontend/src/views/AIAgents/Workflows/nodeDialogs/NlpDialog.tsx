@@ -20,6 +20,7 @@ import { getAllLLMProviders } from "@/services/llmProviders";
 import { useToast } from "@/components/use-toast";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 const TASK_OPTIONS = [
   { value: "classify", label: "Classify" },
@@ -38,33 +39,56 @@ type StyleType = (typeof STYLE_OPTIONS)[number];
 type NlpDialogProps = BaseNodeDialogProps<NlpNodeData, NlpNodeData>;
 
 export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [providerId, setProviderId] = useState(data.providerId || "");
-  const [inputField, setInputField] = useState(
-    data.inputField ?? "{{source.message}}",
-  );
-  const [task, setTask] = useState<TaskType>(
-    (data.task as TaskType) ?? "classify",
-  );
-
-  // classify
-  const [categories, setCategories] = useState(
-    (data.categories ?? []).join(", "),
-  );
-  const [multiLabel, setMultiLabel] = useState(data.multiLabel ?? false);
-  // sentiment
-  const [scale, setScale] = useState<ScaleType>(
-    (data.scale as ScaleType) ?? "1-5",
-  );
-  // extract
-  const [schema, setSchema] = useState(data.schema ?? "");
-  // summarize
-  const [maxLength, setMaxLength] = useState<number>(data.maxLength ?? 200);
-  const [style, setStyle] = useState<StyleType>(
-    (data.style as StyleType) ?? "concise",
-  );
+  const { values, setField, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => ({
+        name: data.name || "",
+        providerId: data.providerId || "",
+        inputField: data.inputField ?? "{{source.message}}",
+        task: (data.task as TaskType) ?? "classify",
+        // classify
+        categories: (data.categories ?? []).join(", "),
+        multiLabel: data.multiLabel ?? false,
+        // sentiment
+        scale: (data.scale as ScaleType) ?? "1-5",
+        // extract
+        schema: data.schema ?? "",
+        // summarize
+        maxLength: data.maxLength ?? 200,
+        style: (data.style as StyleType) ?? "concise",
+      }),
+      (v) => {
+        const parsedCategories = v.categories
+          .split(",")
+          .map((c) => c.trim())
+          .filter((c) => c.length > 0);
+        const base = {
+          name: v.name,
+          providerId: v.providerId,
+          inputField: v.inputField,
+          task: v.task,
+        };
+        switch (v.task) {
+          case "classify":
+            return {
+              ...base,
+              categories: parsedCategories,
+              multiLabel: v.multiLabel,
+            };
+          case "sentiment":
+            return { ...base, scale: v.scale };
+          case "extract":
+            return { ...base, schema: v.schema };
+          case "summarize":
+            return { ...base, maxLength: v.maxLength, style: v.style };
+          default:
+            return base;
+        }
+      },
+    );
 
   const [availableProviders, setAvailableProviders] = useState<LLMProvider[]>(
     [],
@@ -87,51 +111,9 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setProviderId(data.providerId || "");
-      setInputField(data.inputField ?? "{{source.message}}");
-      setTask((data.task as TaskType) ?? "classify");
-      setCategories((data.categories ?? []).join(", "));
-      setMultiLabel(data.multiLabel ?? false);
-      setScale((data.scale as ScaleType) ?? "1-5");
-      setSchema(data.schema ?? "");
-      setMaxLength(data.maxLength ?? 200);
-      setStyle((data.style as StyleType) ?? "concise");
       void loadProviders();
     }
-  }, [isOpen, data]);
-
-  const parsedCategories = categories
-    .split(",")
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0);
-
-  const buildData = (): NlpNodeData => {
-    const base: NlpNodeData = {
-      ...data,
-      name,
-      providerId,
-      inputField,
-      task,
-    };
-    switch (task) {
-      case "classify":
-        return { ...base, categories: parsedCategories, multiLabel };
-      case "sentiment":
-        return { ...base, scale };
-      case "extract":
-        return { ...base, schema };
-      case "summarize":
-        return { ...base, maxLength, style };
-      default:
-        return base;
-    }
-  };
-
-  const handleSave = () => {
-    onUpdate(buildData());
-    onClose();
-  };
+  }, [isOpen]);
 
   return (
     <>
@@ -148,14 +130,14 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={buildData()}
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
           <RichInput
             id="node-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -164,13 +146,13 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="nlp-provider">LLM Provider</Label>
           <Select
-            value={providerId || ""}
+            value={values.providerId || ""}
             onValueChange={(value) => {
               if (value === "__create__") {
                 setIsCreateProviderOpen(true);
                 return;
               }
-              setProviderId(value);
+              setField("providerId", value);
             }}
           >
             <SelectTrigger id="nlp-provider" className="w-full">
@@ -189,7 +171,10 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
 
         <div className="space-y-2">
           <Label htmlFor="nlp-task">Task</Label>
-          <Select value={task} onValueChange={(v) => setTask(v as TaskType)}>
+          <Select
+            value={values.task}
+            onValueChange={(v) => setField("task", v as TaskType)}
+          >
             <SelectTrigger id="nlp-task" className="w-full">
               <SelectValue placeholder="Select a task" />
             </SelectTrigger>
@@ -210,8 +195,8 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
           <Label htmlFor="nlp-input-field">Input Field</Label>
           <DraggableInput
             id="nlp-input-field"
-            value={inputField}
-            onChange={(e) => setInputField(e.target.value)}
+            value={values.inputField}
+            onChange={(e) => setField("inputField", e.target.value)}
             placeholder="{{source.message}}"
             className="w-full"
           />
@@ -220,14 +205,14 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
           </p>
         </div>
 
-        {task === "classify" && (
+        {values.task === "classify" && (
           <>
             <div className="space-y-2">
               <Label htmlFor="nlp-categories">Categories</Label>
               <DraggableInput
                 id="nlp-categories"
-                value={categories}
-                onChange={(e) => setCategories(e.target.value)}
+                value={values.categories}
+                onChange={(e) => setField("categories", e.target.value)}
                 placeholder="billing, technical, general"
                 className="w-full"
               />
@@ -245,17 +230,22 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
               </div>
               <Switch
                 id="nlp-multi-label"
-                checked={multiLabel}
-                onCheckedChange={(checked) => setMultiLabel(Boolean(checked))}
+                checked={values.multiLabel}
+                onCheckedChange={(checked) =>
+                  setField("multiLabel", Boolean(checked))
+                }
               />
             </div>
           </>
         )}
 
-        {task === "sentiment" && (
+        {values.task === "sentiment" && (
           <div className="space-y-2">
             <Label htmlFor="nlp-scale">Scale</Label>
-            <Select value={scale} onValueChange={(v) => setScale(v as ScaleType)}>
+            <Select
+              value={values.scale}
+              onValueChange={(v) => setField("scale", v as ScaleType)}
+            >
               <SelectTrigger id="nlp-scale" className="w-full">
                 <SelectValue placeholder="Select scale" />
               </SelectTrigger>
@@ -273,13 +263,13 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
           </div>
         )}
 
-        {task === "extract" && (
+        {values.task === "extract" && (
           <div className="space-y-2">
             <Label htmlFor="nlp-schema">Schema</Label>
             <DraggableInput
               id="nlp-schema"
-              value={schema}
-              onChange={(e) => setSchema(e.target.value)}
+              value={values.schema}
+              onChange={(e) => setField("schema", e.target.value)}
               placeholder="order_number, email, plan"
               className="w-full"
             />
@@ -289,7 +279,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
           </div>
         )}
 
-        {task === "summarize" && (
+        {values.task === "summarize" && (
           <>
             <div className="space-y-2">
               <Label htmlFor="nlp-max-length">Max Length</Label>
@@ -297,10 +287,10 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
                 id="nlp-max-length"
                 type="number"
                 min="1"
-                value={maxLength}
+                value={values.maxLength}
                 onChange={(e) => {
                   const parsed = parseInt(e.target.value, 10);
-                  setMaxLength(Number.isNaN(parsed) ? 200 : parsed);
+                  setField("maxLength", Number.isNaN(parsed) ? 200 : parsed);
                 }}
                 placeholder="200"
                 className="w-full"
@@ -313,8 +303,8 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
             <div className="space-y-2">
               <Label htmlFor="nlp-style">Style</Label>
               <Select
-                value={style}
-                onValueChange={(v) => setStyle(v as StyleType)}
+                value={values.style}
+                onValueChange={(v) => setField("style", v as StyleType)}
               >
                 <SelectTrigger id="nlp-style" className="w-full">
                   <SelectValue placeholder="Select style" />
@@ -337,7 +327,7 @@ export const NlpDialog: React.FC<NlpDialogProps> = (props) => {
         onProviderSaved={async (provider) => {
           await loadProviders();
           if (provider?.id) {
-            setProviderId(provider.id);
+            setField("providerId", provider.id);
           }
         }}
         mode="create"

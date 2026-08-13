@@ -23,6 +23,26 @@ export interface ChatMessage {
   linkLabel?: string;
   audio_format?: string;
   audioObjectUrl?: string;
+  /** Server-assigned ordering within the conversation. Anchored from the update
+   *  response for the visitor's own messages; drives read-receipt status. */
+  sequence_number?: number;
+  /** Client-only correlation id for an optimistic message, so its server
+   *  sequence_number/message_id can be attached once the send round-trips. */
+  client_id?: string;
+}
+
+/** Read/seen status shown under the visitor's own messages. */
+export type MessageReceiptStatus = "sent" | "delivered" | "seen";
+
+/** Aggregate per-reader read markers for a conversation (from the "read" WS event,
+ *  the poll response, or GET conversation). A message is "seen by role R" when its
+ *  sequence_number <= that role's last_read_sequence. */
+export interface ReadReceiptState {
+  customer_last_read_sequence?: number | null;
+  customer_last_read_at?: string | null;
+  supervisor_last_read_sequence?: number | null;
+  supervisor_last_read_at?: string | null;
+  supervisor_user_id?: string | null;
 }
 
 // Attachment type
@@ -209,6 +229,11 @@ export interface GenAgentChatProps {
   serverUnavailableContactLabel?: string; // Label for the contact link
   formDisplay?: 'inline' | 'footer'; // Where to render dynamic forms: 'inline' = chat bubble, 'footer' = replaces input. Defaults to 'footer'.
   onConfigLoaded?: (props: { chatInputMetadata?: Record<string, any> }) => void;
+  /** Show read/seen receipts under the visitor's messages, and report the visitor's
+   *  read state upstream (so a human supervisor sees when their reply was read).
+   *  "Seen" means a human supervisor has viewed the message; the AI bot only ever
+   *  yields "Delivered". Opt-in — defaults to false. */
+  readReceipts?: boolean;
 }
 
 // NOTE: These are the only file extensions that are supported by the chat.
@@ -242,4 +267,5 @@ export interface InProgressPollMessage {
 export interface InProgressPollResponse {
   status: string;
   messages: InProgressPollMessage[];
+  read_state?: ReadReceiptState | null;
 }

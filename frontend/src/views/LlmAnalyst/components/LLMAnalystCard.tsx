@@ -9,11 +9,16 @@ import {
   TooltipProvider,
 } from "@/components/RadixTooltip";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
+import { Brain } from "lucide-react";
+import { Button } from "@/components/button";
 
 interface LLMAnalystCardProps {
   analysts: LLMAnalyst[];
   searchQuery: string;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onCreate?: () => void;
   onEdit: (analyst: LLMAnalyst) => void;
   onDelete: (id: string) => Promise<void>;
 }
@@ -55,6 +60,9 @@ export function LLMAnalystCard({
   analysts,
   searchQuery,
   loading = false,
+  error = null,
+  onRetry,
+  onCreate,
   onEdit,
   onDelete,
 }: LLMAnalystCardProps) {
@@ -94,6 +102,8 @@ export function LLMAnalystCard({
     <EntityTableCard<LLMAnalyst>
       data={analysts}
       loading={loading}
+      error={error}
+      onRetry={onRetry}
       searchQuery={searchQuery}
       filterFn={(analyst, query) => {
         const q = query.toLowerCase();
@@ -108,8 +118,20 @@ export function LLMAnalystCard({
       }
       deleteSuccessMessage="LLM analyst deleted successfully."
       deleteErrorMessage="Failed to delete LLM analyst."
-      emptyMessage="No LLM Analysts found"
-      notFoundMessage="No LLM Analysts found matching your search"
+      emptyState={{
+        icon: <Brain className="h-12 w-12 text-muted-foreground" />,
+        title: "No LLM analysts yet",
+        description:
+          "LLM analysts evaluate and score conversations against your criteria. Add one to start analyzing.",
+        searchTitle: "No matching LLM analysts",
+        searchDescription:
+          "No LLM analysts match your search. Try a different name or provider.",
+        action: onCreate ? (
+          <Button className="rounded-full" onClick={onCreate}>
+            Create your first LLM analyst
+          </Button>
+        ) : undefined,
+      }}
       columns={columns}
       rowActions={{
         onEdit,

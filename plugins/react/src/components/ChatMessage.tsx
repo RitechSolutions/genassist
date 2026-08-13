@@ -1,7 +1,7 @@
 import React from 'react';
 import { WelcomeCard } from './WelcomeCard';
-import { ChatMessage, ScheduleItem, Translations } from '../types';
-import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic } from 'lucide-react';
+import { ChatMessage, MessageReceiptStatus, ScheduleItem, Translations } from '../types';
+import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic, Check, CheckCheck } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { formatTimestamp } from '../utils/time';
 import { InteractiveContent } from './InteractiveContent';
@@ -44,6 +44,9 @@ interface ChatMessageProps {
   audioUrlBuilder?: (messageId: string) => string;
   audioHeaders?: Record<string, string>;
   autoPlayAudioMessageId?: string | null;
+  /** Read-receipt status to show under this (visitor's) message. Only the latest
+   *  visitor message receives one; undefined hides the indicator entirely. */
+  receiptStatus?: MessageReceiptStatus;
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -67,6 +70,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   audioUrlBuilder,
   audioHeaders,
   autoPlayAudioMessageId,
+  receiptStatus,
 }) => {
   // Merge translations with defaults
   const translations = React.useMemo(
@@ -509,6 +513,36 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {/* Read receipt under the visitor's latest message (Sent / Delivered / Seen). */}
+      {isUser && receiptStatus && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            marginTop: '4px',
+            alignSelf: 'flex-end',
+          }}
+        >
+          {receiptStatus === 'seen' ? (
+            <CheckCheck size={13} style={{ color: primaryColor }} />
+          ) : receiptStatus === 'delivered' ? (
+            <CheckCheck size={13} style={{ color: mutedTextColor }} />
+          ) : (
+            <Check size={13} style={{ color: mutedTextColor }} />
+          )}
+          <span
+            style={{
+              fontSize: '11px',
+              lineHeight: 1,
+              color: receiptStatus === 'seen' ? primaryColor : mutedTextColor,
+            }}
+          >
+            {t(`receipts.${receiptStatus}`, receiptStatus.charAt(0).toUpperCase() + receiptStatus.slice(1))}
+          </span>
         </div>
       )}
     </div>

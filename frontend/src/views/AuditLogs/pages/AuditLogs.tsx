@@ -34,6 +34,7 @@ export default function AuditLogs() {
 
   const [filteredAuditLogs, setFilteredAuditLogs] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,6 +65,7 @@ export default function AuditLogs() {
 
     try {
       setIsRefreshing(true);
+      setError(null);
       const logs = await fetchAuditLogs(
         date_from,
         date_to,
@@ -89,7 +91,7 @@ export default function AuditLogs() {
       });
       setFilteredAuditLogs(filtered);
     } catch (error) {
-      // ignore
+      setError("We couldn't load your audit logs. Please try again.");
     } finally {
       setIsRefreshing(false);
     }
@@ -225,6 +227,8 @@ export default function AuditLogs() {
                 onViewDetails={handleViewDetails}
                 loading={isRefreshing && filteredAuditLogs.length === 0}
                 isRefreshing={isRefreshing && filteredAuditLogs.length > 0}
+                error={error}
+                onRetry={fetchFilteredAuditLogs}
               />
 
               <Pagination>

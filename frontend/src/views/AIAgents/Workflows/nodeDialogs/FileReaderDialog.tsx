@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { FileReaderNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -14,6 +14,7 @@ import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { FileUploader } from "@/components/FileUploader";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type FileReaderDialogProps = BaseNodeDialogProps<
   FileReaderNodeData,
@@ -23,42 +24,19 @@ type FileReaderDialogProps = BaseNodeDialogProps<
 type FileSource = "chatAttachment" | "upload";
 
 export const FileReaderDialog: React.FC<FileReaderDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "File Reader");
-  const [fileSource, setFileSource] = useState<FileSource>(
-    data.fileSource ?? "upload"
-  );
-  const [fileName, setFileName] = useState(data.fileName ?? "");
-  const [filePath, setFilePath] = useState(data.filePath ?? "");
-  const [fileUrl, setFileUrl] = useState(data.fileUrl ?? "");
-  const [fileId, setFileId] = useState(data.fileId ?? "");
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(props, () => ({
+      name: data.name || "File Reader",
+      fileSource: data.fileSource ?? "upload",
+      fileName: data.fileName ?? "",
+      filePath: data.filePath ?? "",
+      fileUrl: data.fileUrl ?? "",
+      fileId: data.fileId ?? "",
+    }));
 
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "File Reader");
-      setFileSource(data.fileSource ?? "upload");
-      setFileName(data.fileName ?? "");
-      setFilePath(data.filePath ?? "");
-      setFileUrl(data.fileUrl ?? "");
-      setFileId(data.fileId ?? "");
-    }
-  }, [isOpen, data]);
-
-  const isChatAttachment = fileSource === "chatAttachment";
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      fileSource,
-      fileName,
-      filePath,
-      fileUrl,
-      fileId,
-    });
-    onClose();
-  };
+  const isChatAttachment = values.fileSource === "chatAttachment";
 
   return (
     <NodeConfigPanel
@@ -74,15 +52,15 @@ export const FileReaderDialog: React.FC<FileReaderDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{ ...data, name, fileSource, fileName, filePath, fileUrl, fileId }}
+      data={merged}
     >
       <div className="space-y-4">
         <div>
           <Label htmlFor="name">Node Name</Label>
           <RichInput
             id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="e.g., File Reader"
             className="w-full"
           />
@@ -91,8 +69,8 @@ export const FileReaderDialog: React.FC<FileReaderDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="file-source">File Source</Label>
           <Select
-            value={fileSource}
-            onValueChange={(value) => setFileSource(value as FileSource)}
+            value={values.fileSource}
+            onValueChange={(value) => setField("fileSource", value as FileSource)}
           >
             <SelectTrigger id="file-source">
               <SelectValue placeholder="Select file source" />
@@ -114,20 +92,26 @@ export const FileReaderDialog: React.FC<FileReaderDialogProps> = (props) => {
         {!isChatAttachment && (
           <FileUploader
             label="File"
-            initialOriginalFileName={fileName}
-            initialServerFilePath={filePath}
-            initialServerFileUrl={fileUrl}
+            initialOriginalFileName={values.fileName}
+            initialServerFilePath={values.filePath}
+            initialServerFileUrl={values.fileUrl}
             onUploadComplete={(result) => {
-              setFileName(result.original_filename);
-              setFilePath(result.file_path ?? "");
-              setFileUrl(result.file_url ?? "");
-              setFileId(result.file_id ?? "");
+              setValues((v) => ({
+                ...v,
+                fileName: result.original_filename,
+                filePath: result.file_path ?? "",
+                fileUrl: result.file_url ?? "",
+                fileId: result.file_id ?? "",
+              }));
             }}
             onRemove={() => {
-              setFileName("");
-              setFilePath("");
-              setFileUrl("");
-              setFileId("");
+              setValues((v) => ({
+                ...v,
+                fileName: "",
+                filePath: "",
+                fileUrl: "",
+                fileId: "",
+              }));
             }}
           />
         )}
