@@ -12,6 +12,7 @@ import {
   FileUploadResponse,
   InProgressPollResponse,
   InProgressPollMessage,
+  ReadReceiptState,
 } from "../types";
 import {
   createWebSocket,
@@ -34,6 +35,10 @@ export class ChatService {
   private messageHandler: ((message: ChatMessage) => void) | null = null;
   private takeoverHandler: (() => void) | null = null;
   private finalizedHandler: (() => void) | null = null;
+  private readStateHandler: ((state: ReadReceiptState) => void) | null = null;
+  private messageMetaHandler:
+    | ((meta: { client_id?: string; message_id?: string; sequence_number?: number }) => void)
+    | null = null;
   private connectionStateHandler:
     | ((state: "connecting" | "connected" | "disconnected") => void)
     | null = null;
@@ -237,6 +242,18 @@ export class ChatService {
 
   setFinalizedHandler(handler: () => void) {
     this.finalizedHandler = handler;
+  }
+
+  setReadStateHandler(handler: ((state: ReadReceiptState) => void) | null) {
+    this.readStateHandler = handler;
+  }
+
+  setMessageMetaHandler(
+    handler:
+      | ((meta: { client_id?: string; message_id?: string; sequence_number?: number }) => void)
+      | null
+  ) {
+    this.messageMetaHandler = handler;
   }
 
   setConnectionStateHandler(
@@ -784,6 +801,9 @@ export class ChatService {
       speaker: "customer",
       text: safeMessage,
       attachments: attachments,
+      // Correlation id so the server-assigned sequence_number/message_id can be
+      // attached to this optimistic bubble once the send round-trips (read receipts).
+      client_id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
     };
 
     // `silent` suppresses the optimistic user bubble — used by the invisible start-form
@@ -826,6 +846,38 @@ export class ChatService {
           throw e;
         }
       });
+
+      // Anchor this optimistic visitor bubble to its server-assigned sequence_number
+      // and message_id (the saved copy is the newest 'customer' message in the
+      // response). This confirms "Delivered" and gives the sequence the read-receipt
+      // logic compares against the supervisor's last-read marker for "Seen".
+      if (!opts?.silent && this.messageMetaHandler) {
+        try {
+          const respMessages = (response?.data as any)?.messages;
+          if (Array.isArray(respMessages)) {
+            let newest: any = null;
+            for (const m of respMessages) {
+              if (
+                m &&
+                m.speaker === "customer" &&
+                typeof m.sequence_number === "number" &&
+                (!newest || m.sequence_number > newest.sequence_number)
+              ) {
+                newest = m;
+              }
+            }
+            if (newest) {
+              this.messageMetaHandler({
+                client_id: chatMessage.client_id,
+                message_id: newest.id || newest.message_id,
+                sequence_number: newest.sequence_number,
+              });
+            }
+          }
+        } catch {
+          // ignore — receipts are best-effort
+        }
+      }
 
       // If not using WebSocket, try to retrieve the response message from the update conversation response
       if (!this.useWs && this.messageHandler && (!this.useWs || !this.usePoll)) { // usePoll is true when using heartbeat polling
@@ -940,6 +992,7 @@ export class ChatService {
       text: "[Voice message]",
       type: "audio",
       audioObjectUrl: URL.createObjectURL(audioBlob),
+      client_id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
     };
 
     // Show user message in UI immediately
@@ -967,13 +1020,43 @@ export class ChatService {
     formData.append("audio_format", audioFormat);
 
     try {
-      await axios.patch(
+      const response = await axios.patch(
         `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
         formData,
         {
           headers: this.getHeaders("multipart/form-data"),
         },
       );
+
+      // Anchor the visitor's voice bubble to its server sequence_number for receipts
+      // (same as sendMessage — the saved copy is the newest 'customer' message).
+      if (this.messageMetaHandler) {
+        try {
+          const respMessages = (response?.data as any)?.messages;
+          if (Array.isArray(respMessages)) {
+            let newest: any = null;
+            for (const m of respMessages) {
+              if (
+                m &&
+                m.speaker === "customer" &&
+                typeof m.sequence_number === "number" &&
+                (!newest || m.sequence_number > newest.sequence_number)
+              ) {
+                newest = m;
+              }
+            }
+            if (newest) {
+              this.messageMetaHandler({
+                client_id: chatMessage.client_id,
+                message_id: newest.id || newest.message_id,
+                sequence_number: newest.sequence_number,
+              });
+            }
+          }
+        } catch {
+          // ignore — receipts are best-effort
+        }
+      }
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
         this.resetChatConversation();
@@ -1048,6 +1131,43 @@ export class ChatService {
       this.handleTakeover();
     } else if (data.type === "finalize") {
       this.handleConversationFinalized();
+    } else if (data.type === "read") {
+      this.handleReadEvent(data.payload);
+    }
+  }
+
+  /**
+   * Handle an inbound "read" event: the other party (a human supervisor, or the
+   * visitor as echoed to the dashboard) advanced their read marker. The payload
+   * carries the full aggregate read_state, which the UI uses to show Seen.
+   */
+  private handleReadEvent(payload: unknown): void {
+    if (!this.readStateHandler || !payload || typeof payload !== "object") return;
+    const readState = (payload as { read_state?: ReadReceiptState }).read_state;
+    if (readState && typeof readState === "object") {
+      this.readStateHandler(readState);
+    }
+  }
+
+  /**
+   * Report that the visitor has read the conversation up to a message sequence.
+   * The backend clamps the sequence to the conversation's true latest message, so
+   * a "read everything up to now" sentinel is sufficient even for WS-delivered
+   * messages (which omit sequence_number). Best-effort — receipts are non-critical.
+   */
+  async markRead(lastReadSequence: number): Promise<void> {
+    if (!this.conversationId) return;
+    try {
+      await axios.patch(
+        `${this.baseUrl}/api/conversations/in-progress/mark-read/${this.conversationId}`,
+        { last_read_sequence: lastReadSequence },
+        { headers: this.getHeaders() }
+      );
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+      }
+      // Swallow otherwise — a failed receipt must never disrupt the chat.
     }
   }
 
@@ -1260,6 +1380,7 @@ export class ChatService {
   async pollInProgressConversation(): Promise<{
     status: string;
     pollMessages: InProgressPollMessage[];
+    readState: ReadReceiptState | null;
   }> {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
@@ -1274,7 +1395,11 @@ export class ChatService {
       this.normalizePollMessageToChatMessage(m)
     );
 
-    return { status: response.data.status, pollMessages };
+    return {
+      status: response.data.status,
+      pollMessages,
+      readState: response.data.read_state ?? null,
+    };
   }
 
   private normalizePollMessageToChatMessage(m: InProgressPollMessage): InProgressPollMessage {
@@ -1305,6 +1430,7 @@ export class ChatService {
       speaker: m.speaker as "customer" | "agent" | "special",
       text: m.text,
       type: m.type,
+      sequence_number: m.sequence_number,
       feedback: m.feedback,
     };
   }

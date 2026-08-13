@@ -114,6 +114,7 @@ export interface FeatureFlags {
   useWs?: boolean;
   usePoll?: boolean;
   quickInput?: boolean;
+  readReceipts?: boolean;
 }
 
 type ParamType = 'string' | 'number' | 'boolean';

@@ -7,7 +7,63 @@ import {
   MessageFeedback,
   InProgressPollMessage,
   FormNodeLocale,
+  ReadReceiptState,
 } from "../types";
+
+/**
+ * Merge two read-state snapshots, keeping the furthest (monotonic) marker per role
+ * so an out-of-order WS/poll update can never move a reader's "Seen" backwards.
+ */
+export function mergeReadState(
+  prev: ReadReceiptState | null,
+  next: ReadReceiptState | null | undefined
+): ReadReceiptState | null {
+  if (!next) return prev;
+  if (!prev) return next;
+  const higher = (a?: number | null, b?: number | null): number | null => {
+    if (a == null) return b ?? null;
+    if (b == null) return a;
+    return Math.max(a, b);
+  };
+  const atFor = (
+    prevSeq?: number | null,
+    prevAt?: string | null,
+    nextSeq?: number | null,
+    nextAt?: string | null
+  ): string | null => {
+    if (nextSeq == null) return prevAt ?? null;
+    if (prevSeq == null) return nextAt ?? null;
+    return nextSeq >= prevSeq ? (nextAt ?? prevAt ?? null) : (prevAt ?? null);
+  };
+  const supervisorNextWins =
+    (next.supervisor_last_read_sequence ?? -1) >=
+    (prev.supervisor_last_read_sequence ?? -1);
+  return {
+    customer_last_read_sequence: higher(
+      prev.customer_last_read_sequence,
+      next.customer_last_read_sequence
+    ),
+    customer_last_read_at: atFor(
+      prev.customer_last_read_sequence,
+      prev.customer_last_read_at,
+      next.customer_last_read_sequence,
+      next.customer_last_read_at
+    ),
+    supervisor_last_read_sequence: higher(
+      prev.supervisor_last_read_sequence,
+      next.supervisor_last_read_sequence
+    ),
+    supervisor_last_read_at: atFor(
+      prev.supervisor_last_read_sequence,
+      prev.supervisor_last_read_at,
+      next.supervisor_last_read_sequence,
+      next.supervisor_last_read_at
+    ),
+    supervisor_user_id: supervisorNextWins
+      ? next.supervisor_user_id ?? prev.supervisor_user_id ?? null
+      : prev.supervisor_user_id ?? null,
+  };
+}
 
 export interface UseChatProps {
   baseUrl: string;
@@ -102,6 +158,7 @@ export const useChat = ({
   const [shouldTriggerStartForm, setShouldTriggerStartForm] = useState<boolean>(false);
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
+  const [readState, setReadState] = useState<ReadReceiptState | null>(null);
 
   const languageRef = useRef(language);
   languageRef.current = language;
@@ -130,6 +187,16 @@ export const useChat = ({
     (apiKeyVal: string, convId: string | null) => {
       if (!convId) return null;
       return `genassist_conversation_messages:${apiKeyVal}:${convId}`;
+    },
+    [],
+  );
+
+  // Scoped read-receipt state key, so Seen/Delivered survive reloads (WS mode has
+  // no read_state backfill on connect — the last known state is restored here).
+  const buildReadStateKey = useCallback(
+    (apiKeyVal: string, convId: string | null) => {
+      if (!convId) return null;
+      return `genassist_conversation_read_state:${apiKeyVal}:${convId}`;
     },
     [],
   );
@@ -172,6 +239,7 @@ export const useChat = ({
     setThinkingDelayMs(1000);
     setChatInputMetadata({});
     setMessages([]);
+    setReadState(null);
     lastServerCreateTimeRef.current = 0;
     const key = buildMessagesKey(apiKey, conversationId);
     if (key) {
@@ -181,7 +249,15 @@ export const useChat = ({
         // ignore
       }
     }
-  }, [apiKey, conversationId, buildMessagesKey]);
+    const readKey = buildReadStateKey(apiKey, conversationId);
+    if (readKey) {
+      try {
+        localStorage.removeItem(readKey);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [apiKey, conversationId, buildMessagesKey, buildReadStateKey]);
 
   // Deep compare metadata to prevent unnecessary re-initializations
   // Only re-initialize if metadata actually changes (by value, not reference)
@@ -328,6 +404,31 @@ export const useChat = ({
         if (onFinalizeRef.current) {
           onFinalizeRef.current();
         }
+      });
+
+      // Live read receipts: fold the aggregate read_state from the "read" WS event
+      // into local state (monotonic), and attach server sequence_number/message_id
+      // onto the matching optimistic visitor bubble once a send round-trips.
+      chatServiceRef.current.setReadStateHandler((state) => {
+        setReadState((prev) => mergeReadState(prev, state));
+      });
+
+      chatServiceRef.current.setMessageMetaHandler((meta) => {
+        if (!meta || !meta.client_id) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.client_id && m.client_id === meta.client_id
+              ? {
+                  ...m,
+                  message_id: m.message_id || meta.message_id,
+                  sequence_number:
+                    typeof meta.sequence_number === "number"
+                      ? meta.sequence_number
+                      : m.sequence_number,
+                }
+              : m
+          )
+        );
       });
 
       chatServiceRef.current.setConnectionStateHandler((state) => {
@@ -534,6 +635,32 @@ export const useChat = ({
     }
   }, [messages, apiKey, conversationId, buildMessagesKey]);
 
+  // Load persisted read-receipt state for the current pair (backfill on reload)
+  useEffect(() => {
+    const key = buildReadStateKey(apiKey, conversationId);
+    if (!key) {
+      setReadState(null);
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(key);
+      setReadState(stored ? (JSON.parse(stored) as ReadReceiptState) : null);
+    } catch {
+      setReadState(null);
+    }
+  }, [apiKey, conversationId, buildReadStateKey]);
+
+  // Persist read-receipt state for the current pair
+  useEffect(() => {
+    const key = buildReadStateKey(apiKey, conversationId);
+    if (!key || !readState) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(readState));
+    } catch {
+      // ignore
+    }
+  }, [readState, apiKey, conversationId, buildReadStateKey]);
+
   // Heartbeat long polling when WebSocket is disabled and we have an in-progress conversation.
   // - Starts with a short interval
   // - Increases the interval over time (every successful poll)
@@ -562,11 +689,17 @@ export const useChat = ({
     const poll = async () => {
       if (cancelled) return;
       try {
-        const { status, pollMessages } = await svc.pollInProgressConversation();
+        const { status, pollMessages, readState: polledReadState } =
+          await svc.pollInProgressConversation();
         if (cancelled) return;
 
         // Reset failure counter on success
         heartbeatFailureCountRef.current = 0;
+
+        // Fold in the read markers from the poll (heartbeat has no WS "read" event)
+        if (polledReadState) {
+          setReadState((prev) => mergeReadState(prev, polledReadState));
+        }
 
         // Only take messages newer than or equal to last seen create_time (seconds).
         // Use seconds consistently: poll messages are normalized to seconds in chatService.
@@ -718,6 +851,11 @@ export const useChat = ({
       if (key) {
         localStorage.removeItem(key);
       }
+      const readKey = buildReadStateKey(apiKey, conversationId);
+      if (readKey) {
+        localStorage.removeItem(readKey);
+      }
+      setReadState(null);
       setIsFinalized(false);
       setIsTakenOver(false);
       setIsAgentTyping(false);
@@ -979,6 +1117,11 @@ export const useChat = ({
         if (key) {
           localStorage.removeItem(key);
         }
+        const readKey = buildReadStateKey(apiKey, conversationId);
+        if (readKey) {
+          localStorage.removeItem(readKey);
+        }
+        setReadState(null);
         setIsFinalized(false);
         setIsTakenOver(false);
         setIsAgentTyping(false);
@@ -1083,6 +1226,13 @@ export const useChat = ({
     [],
   );
 
+  // Report that the visitor has read the conversation up to a sequence. The
+  // backend clamps to the true latest message, so callers can pass a "read
+  // everything" sentinel without knowing WS-delivered message sequences.
+  const markRead = useCallback((lastReadSequence: number) => {
+    void chatServiceRef.current?.markRead(lastReadSequence);
+  }, []);
+
   return {
     messages,
     isLoading,
@@ -1101,6 +1251,8 @@ export const useChat = ({
     isFinalized,
     isAgentTyping,
     addFeedback,
+    readState,
+    markRead,
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
