@@ -24,6 +24,21 @@ def utc_day_start(value: date | datetime) -> datetime:
         value = (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).date()
     return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
 
+def exact_interval_bucket_dates(start: datetime, end_exclusive: datetime) -> tuple[date, date]:
+    """Returns the first and last UTC calendar day the interval overlaps"""
+    first = start.astimezone(timezone.utc).date()
+    last = (end_exclusive - timedelta(microseconds=1)).astimezone(timezone.utc).date()
+    return first, last
+
+
+def rolling_window_bucket_dates(start: datetime, end: datetime) -> tuple[date, date]:
+    """Kept for old callers: stat dates whose UTC midnight lands inside [start, end]"""
+    first = utc_day_start(start)
+    if start > first:
+        first += timedelta(days=1)
+    return first.date(), utc_day_start(end).date()
+
+
 def shift_datetime(unit: str, amount: int, operation: str = 'add', base_time: datetime = None) -> datetime:
     """
     Shift the given datetime by a specified amount of time units.

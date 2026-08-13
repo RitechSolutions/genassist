@@ -1,5 +1,8 @@
 export interface DashboardSummaryStats {
   active_agents: number;
+  /** Unique chat sessions with agent activity in the selected period. */
+  conversations: number;
+  /** @deprecated Alias of `conversations`; always the same value. */
   workflow_runs: number;
   avg_response_time_ms: number;
   total_cost_usd: number;

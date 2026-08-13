@@ -46,9 +46,17 @@ class AnalyticsReadService:
         group_id: UUID | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+        *,
+        activity_from_datetime: datetime | None = None,
+        activity_to_datetime: datetime | None = None,
     ) -> AgentStatsSummaryResponse:
         summary = await self.repo.get_agent_stats_summary(
-            agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
+            agent_id=agent_id,
+            group_id=group_id,
+            from_date=from_date,
+            to_date=to_date,
+            activity_from_datetime=activity_from_datetime,
+            activity_to_datetime=activity_to_datetime,
         )
         by_agent: list[AgentConversationStatusByAgent] = []
         if agent_id is None:
@@ -58,6 +66,8 @@ class AnalyticsReadService:
                 from_date=from_date,
                 to_date=to_date,
                 group_by_agent=True,
+                activity_from_datetime=activity_from_datetime,
+                activity_to_datetime=activity_to_datetime,
             )
             by_agent = [AgentConversationStatusByAgent.model_validate(r) for r in rows]
         return self._dict_to_summary(
