@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config.settings import settings
+from app.core.tenant_scope import is_background_task
 from app.db import models  # noqa: F401
 from app.db.base import Base
 
@@ -46,7 +47,8 @@ class MultiTenantSessionManager:
         logger.debug(f"get_tenant_engine called with tenant_id: {tenant}")
         if tenant is None:
             tenant = "master"
-        ktenant = tenant if not settings.BACKGROUND_TASK else tenant + "_background"
+        background_task = is_background_task()
+        ktenant = tenant if not background_task else tenant + "_background"
 
         if ktenant not in self._engines:
             tenant_url = settings.get_tenant_database_url(tenant)
@@ -54,7 +56,7 @@ class MultiTenantSessionManager:
                     f"Creating new engine for tenant {tenant} with URL: {tenant_url}"
                     )
 
-            if settings.BACKGROUND_TASK:
+            if background_task:
                 # Use NullPool for Celery - no connection pooling
                 logger.debug(f"🔧 Creating NullPool engine for Celery, tenant: {tenant}")
                 self._engines[ktenant] = create_async_engine(
