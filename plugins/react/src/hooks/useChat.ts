@@ -14,7 +14,7 @@ import {
  * Merge two read-state snapshots, keeping the furthest (monotonic) marker per role
  * so an out-of-order WS/poll update can never move a reader's "Seen" backwards.
  */
-function mergeReadState(
+export function mergeReadState(
   prev: ReadReceiptState | null,
   next: ReadReceiptState | null | undefined
 ): ReadReceiptState | null {

@@ -33,7 +33,7 @@ function indexOfKey(messages: ChatMessage[], key: string | null): number {
 }
 
 /** Count inbound messages strictly after `key` (all inbound when key is null/absent). */
-function countInboundAfter(messages: ChatMessage[], key: string | null): number {
+export function countInboundAfter(messages: ChatMessage[], key: string | null): number {
   const idx = indexOfKey(messages, key);
   let count = 0;
   for (let i = idx + 1; i < messages.length; i++) {
@@ -43,7 +43,7 @@ function countInboundAfter(messages: ChatMessage[], key: string | null): number 
 }
 
 /** Identity of the first inbound message strictly after `key`, or null. */
-function firstInboundKeyAfter(messages: ChatMessage[], key: string | null): string | null {
+export function firstInboundKeyAfter(messages: ChatMessage[], key: string | null): string | null {
   const idx = indexOfKey(messages, key);
   for (let i = idx + 1; i < messages.length; i++) {
     if (messages[i].speaker === "agent") return messageIdentityKey(messages[i]);
