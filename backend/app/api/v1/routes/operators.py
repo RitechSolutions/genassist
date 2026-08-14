@@ -1,12 +1,15 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
-from app.core.permissions.constants import Permissions as P
+
 from app.auth.dependencies import auth, permissions
 from app.auth.utils import generate_password
-from app.schemas.operator import OperatorCreate, OperatorRead, OperatorReadAfterCreate
+from app.core.permissions.constants import Permissions as P
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import OperatorListFilter
+from app.schemas.operator import OperatorCreate, OperatorListItem, OperatorRead, OperatorReadAfterCreate
 from app.services.operators import OperatorService
-
 
 router = APIRouter()
 
@@ -22,7 +25,6 @@ async def create(operator: OperatorCreate, operator_service: OperatorService = I
     operator_read_after_create = OperatorReadAfterCreate.model_validate(created_operator)
     operator_read_after_create.user.password = generated_password
 
-    await operator_service.set_operator_latest_call(operator_read_after_create)
     return operator_read_after_create
 
 @router.get("", response_model=list[OperatorRead],
@@ -31,16 +33,19 @@ async def create(operator: OperatorCreate, operator_service: OperatorService = I
                          Depends(permissions(P.Operator.READ))
                          ])
 async def get_all(operator_service: OperatorService = Injected(OperatorService)):
-    operators =  await operator_service.get_all()
-    enriched = []
-    for operator in operators:
-        # Add the latest call only if operator has more than 1 call to not duplicate data in frontend
-        operator_read = OperatorRead.model_validate(operator)
-        await operator_service.set_operator_latest_call(operator_read)
+    return await operator_service.get_all()
 
-        enriched.append(operator)
 
-    return enriched
+# Declared before /{operator_id} so "list" is not matched as a UUID path param.
+@router.get("/list", response_model=PaginatedResponse[OperatorListItem],
+                     dependencies=[
+                         Depends(auth),
+                         Depends(permissions(P.Operator.READ))
+                         ])
+async def get_list(filter_obj: OperatorListFilter = Depends(),
+                   operator_service: OperatorService = Injected(OperatorService)):
+    """Paginated operator list ordered by positive sentiment, then score"""
+    return await operator_service.get_list_paginated(filter_obj)
 
 
 @router.get("/{operator_id}", response_model=OperatorRead,
@@ -49,6 +54,4 @@ async def get_all(operator_service: OperatorService = Injected(OperatorService))
                          Depends(permissions(P.Operator.READ))
                          ])
 async def get(operator_id: UUID, operator_service: OperatorService = Injected(OperatorService)):
-    operator = operator_service.get_by_id(operator_id)
-    operator_read = OperatorRead.model_validate(operator)
-    await operator_service.set_operator_latest_call(operator_read)
+    return await operator_service.get_by_id(operator_id)
