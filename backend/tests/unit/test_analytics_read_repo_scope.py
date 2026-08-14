@@ -62,6 +62,17 @@ def _repo_with_conversation_scope(monkeypatch, scope):
     return AnalyticsReadRepository(db), db
 
 
+def _repo_with_both_scopes(monkeypatch, scope):
+    db = CapturingDb()
+
+    async def _resolver(_db, agent_id=None, group_id=None):
+        return scope
+
+    monkeypatch.setattr(analytics_read, "resolve_authorized_agent_ids", _resolver)
+    monkeypatch.setattr(analytics_read, "resolve_scoped_agent_ids", _resolver)
+    return AnalyticsReadRepository(db), db
+
+
 def _logged_at_predicates(sql: str) -> list[str]:
     return sorted(re.findall(r"agent_response_logs\.logged_at [<>=]+ '[^']+'", sql))
 
@@ -267,3 +278,33 @@ async def test_agent_stats_summary_forwards_activity_bounds_to_the_conversation_
     assert seen["activity_from_datetime"] == ACTIVITY_FROM
     assert seen["activity_to_datetime"] == ACTIVITY_TO
     assert (seen["from_date"], seen["to_date"]) == (LEGACY_FROM, LEGACY_TO)
+
+
+@pytest.mark.asyncio
+async def test_agent_stats_summary_reads_the_response_logs_by_default(monkeypatch):
+    repo, db = _repo_with_both_scopes(monkeypatch, None)
+    await repo.get_agent_stats_summary()
+    statements = [_sql(stmt) for stmt in db.statements]
+    assert any("agent_execution_daily_stats" in sql for sql in statements)
+    assert any("agent_response_logs" in sql for sql in statements)
+
+
+@pytest.mark.asyncio
+async def test_agent_stats_summary_skips_the_response_logs_when_counts_are_excluded(monkeypatch):
+    repo, db = _repo_with_both_scopes(monkeypatch, None)
+    summary = await repo.get_agent_stats_summary(include_conversation_counts=False)
+    statements = [_sql(stmt) for stmt in db.statements]
+    assert len(statements) == 1
+    assert "agent_execution_daily_stats" in statements[0]
+    assert "agent_response_logs" not in statements[0]
+    assert "total_unique_conversations" not in summary
+
+
+@pytest.mark.asyncio
+async def test_denied_caller_keeps_hard_zero_totals_without_conversation_counts(monkeypatch):
+    repo, db = _repo_with_both_scopes(monkeypatch, [])
+    summary = await repo.get_agent_stats_summary(agent_id=uuid4(), include_conversation_counts=False)
+    assert summary["total_unique_conversations"] == 0
+    assert summary["total_finalized_conversations"] == 0
+    assert summary["total_in_progress_conversations"] == 0
+    assert db.statements == []
