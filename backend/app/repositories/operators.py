@@ -102,12 +102,12 @@ class OperatorRepository(DbRepository[OperatorModel]):
         if not search or not search.strip():
             return None
 
-        term = search.strip().lower()
+        term = search.strip()
         escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped}%"
         return or_(
-            func.lower(OperatorModel.first_name).like(pattern, escape="\\"),
-            func.lower(OperatorModel.last_name).like(pattern, escape="\\"),
+            OperatorModel.first_name.ilike(pattern, escape="\\"),
+            OperatorModel.last_name.ilike(pattern, escape="\\"),
         )
 
     async def get_list_paginated(self, filter_obj: OperatorListFilter) -> Tuple[List[OperatorModel], int]:

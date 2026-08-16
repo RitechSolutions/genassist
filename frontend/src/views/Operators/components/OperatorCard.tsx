@@ -99,9 +99,9 @@ export function OperatorsCard({
       const data = await fetchOperatorsPaginated(page, PAGE_SIZE, debouncedSearch);
       if (seq !== requestSeqRef.current) return;
 
-      // A stale ?page= beyond the current range: fall back to the last page.
-      if (data.total > 0 && data.items.length === 0 && page > 1) {
-        goToPageRef.current(Math.max(1, data.total_pages));
+      // A stale ?page= past the end: fall back to the last page.
+      if (data.total > 0 && data.items.length === 0 && page > data.total_pages) {
+        goToPageRef.current(data.total_pages);
         return;
       }
 

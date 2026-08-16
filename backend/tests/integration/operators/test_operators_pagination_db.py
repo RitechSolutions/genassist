@@ -21,7 +21,8 @@ from app.repositories.operators import OperatorRepository
 from app.schemas.filter import OperatorListFilter
 
 RANKED_COUNT = 21
-MATCHING_COUNT = RANKED_COUNT + 3
+MATCHING_COUNT = RANKED_COUNT + 4
+TURKISH_NAME = "İlkay"
 
 
 @pytest_asyncio.fixture
@@ -88,7 +89,13 @@ async def seeded_operators(db_session):
             operator_ids.append(operator.id)
             stats_ids.append(stats.id)
 
-        for name in (f"{prefix}be%ta", f"{prefix}back\\slash", f"{prefix}tie"):
+        tied_names = (
+            f"{prefix}be%ta",
+            f"{prefix}back\\slash",
+            f"{prefix}{TURKISH_NAME}",
+            f"{prefix}tie",
+        )
+        for name in tied_names:
             tied, tied_stats = await _add_operator(
                 session,
                 user_id=user.id,
@@ -255,6 +262,22 @@ async def test_like_wildcards_in_the_search_term_stay_literal(db_session, seeded
         OperatorListFilter(skip=0, limit=100, search=f"{prefix}backslash")
     )
     assert total_escape_eaten == 0
+
+
+@pytest.mark.asyncio
+async def test_search_casefolds_the_way_the_database_does(db_session, seeded_operators):
+    repo = OperatorRepository(db_session)
+    prefix = seeded_operators["prefix"]
+    stored = f"{prefix}{TURKISH_NAME}"
+
+    pasted, total_pasted = await repo.get_list_paginated(OperatorListFilter(skip=0, limit=100, search=stored))
+    assert total_pasted == 1 and pasted[0].first_name == stored
+
+    _, total_lower = await repo.get_list_paginated(OperatorListFilter(skip=0, limit=100, search=f"{prefix}ilkay"))
+    assert total_lower == 1
+
+    _, total_upper = await repo.get_list_paginated(OperatorListFilter(skip=0, limit=100, search=f"{prefix}ILKAY"))
+    assert total_upper == 1
 
 
 @pytest.mark.asyncio
