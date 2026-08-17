@@ -206,8 +206,9 @@ class LlmProviderService:
         cd.pop("masked_api_key", None)
 
         try:
-            from langchain_core.messages import HumanMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
 
+            from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
             from app.modules.workflow.llm.provider import build_chat_model
 
             llm = await build_chat_model(
@@ -215,7 +216,14 @@ class LlmProviderService:
                 connection_data=cd,
                 model_name=cd.get("model"),
             )
-            await llm.ainvoke([HumanMessage(content="ping")])
+            if model_has_prompt_caching(llm):
+                probe = [
+                    SystemMessage(content=[{"type": "text", "text": "Connection test."}]),
+                    HumanMessage(content="ping"),
+                ]
+            else:
+                probe = [HumanMessage(content="ping")]
+            await llm.ainvoke(probe)
             return {"success": True, "message": "Connection successful."}
 
         except Exception as e:

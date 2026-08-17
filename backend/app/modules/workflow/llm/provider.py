@@ -39,6 +39,8 @@ async def build_chat_model(
     # collides with init_chat_model's own `model_provider` routing kwarg in the spread below.
     bedrock_model_provider = cd.pop("model_provider", None)
 
+    prompt_caching_enabled = cd.pop("prompt_caching_enabled", None) is True
+
     if provider == "vllm":
         provider = "openai"
         cd["api_key"] = "EMPTY"
@@ -111,7 +113,16 @@ async def build_chat_model(
     # torch/transformers, which must not be loaded into a Celery prefork master process.
     from langchain.chat_models import init_chat_model
 
-    return init_chat_model(**model_kwargs)
+    llm = init_chat_model(**model_kwargs)
+
+    # Wrap outside init_chat_model so the Opik callbacks stay attached to the inner
+    # model and every invocation is still traced.
+    if prompt_caching_enabled and provider in ("anthropic", "bedrock_converse"):
+        from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+
+        return PromptCachingChatModel(inner=llm, cache_style=provider)
+
+    return llm
 
 
 @inject
