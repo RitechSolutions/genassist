@@ -15,6 +15,7 @@ from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
+from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
 
@@ -128,6 +129,19 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             max_messages = config.get("maxMessages", 10)
             return await memory.get_chat_history(as_string=True, max_messages=max_messages)
 
+    def _system_prompt_is_cacheable(self, llm: Any, system_prompt: Any) -> bool:
+        """Whether the system prompt is stable enough across requests to cache"""
+
+        if not isinstance(system_prompt, str) or not system_prompt.strip():
+            return False
+
+        from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
+
+        if not model_has_prompt_caching(llm):
+            return False
+
+        return not has_volatile_template_vars(self.node_data.get("systemPrompt"))
+
     async def _perform_compaction(self, memory, config: Dict[str, Any], provider_id: str) -> None:
         """
         Perform message compaction using configured settings.
@@ -226,11 +240,23 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                     result = {k: v for k, v in result.items() if k != "llm_usage"}
                 return result
 
+            cacheable_prefix = self._system_prompt_is_cacheable(llm, system_prompt)
+
+            chat_history = ""
             if memory:
                 chat_history = await self._get_chat_history_for_context(
                     memory, config, provider_id, system_prompt, prompt
                 )
-                system_prompt = system_prompt + "\n\n" + chat_history
+
+            if cacheable_prefix:
+                stable_text = (system_prompt + "\n\n") if memory else system_prompt
+                system_content: Any = [{"type": "text", "text": stable_text}]
+                if chat_history:
+                    system_content.append({"type": "text", "text": chat_history})
+            elif memory:
+                system_content = system_prompt + "\n\n" + chat_history
+            else:
+                system_content = system_prompt
 
             # default message content
             message_content = [{"type": "text", "text": prompt}]
@@ -243,7 +269,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 message_content.extend(attachments_message_content)
 
             # Process the input through the model
-            response = await llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=message_content)])
+            response = await llm.ainvoke([SystemMessage(content=system_content), HumanMessage(content=message_content)])
 
             from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 

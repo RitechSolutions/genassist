@@ -1,0 +1,287 @@
+"""Unit tests for the LLM node's prompt-caching opt-in"""
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+
+from app.modules.workflow.engine.nodes.llm_model_node import LLMModelNode
+from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
+from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+from app.modules.workflow.llm.provider import LLMProvider
+
+_BASE = "You are a helpful assistant with a long stable prefix."
+_HISTORY = "User: hi\nAssistant: hello"
+_STYLES = ["anthropic", "bedrock_converse"]
+
+
+class _CapturingModel(BaseChatModel):
+
+    seen: list = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "capturing"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        self.seen.append(list(messages))
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="ok"))])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return self._generate(messages, stop, run_manager, **kwargs)
+
+
+class _FakeMemory:
+    def __init__(self, history: str):
+        self._history = history
+
+    async def get_chat_history(self, as_string: bool = False, max_messages: int = 10) -> str:
+        return self._history
+
+
+class _FakeState:
+    def __init__(self, memory=None):
+        self._memory = memory
+        self.llm_usage: list = []
+
+    def get_memory(self):
+        return self._memory
+
+    def get_value(self, key, default=None):
+        return default
+
+    def add_llm_usage(self, **kwargs):
+        self.llm_usage.append(kwargs)
+
+
+def _patch_injector(llm):
+    provider = MagicMock()
+    provider.get_model_for_node = AsyncMock(return_value=llm)
+    service = MagicMock()
+    service.get_by_id = AsyncMock(
+        return_value=SimpleNamespace(llm_model_provider="anthropic", llm_model="claude-sonnet-4-5")
+    )
+    inj = MagicMock()
+    inj.get = MagicMock(side_effect=lambda cls: provider if cls is LLMProvider else service)
+    return patch("app.dependencies.injector.injector", inj)
+
+
+def _caching_llm(style: str = "anthropic"):
+    inner = _CapturingModel()
+    return PromptCachingChatModel(inner=inner, cache_style=style), inner
+
+
+def _plain_llm():
+    inner = _CapturingModel()
+    return inner, inner
+
+
+async def _run(llm, *, raw=_BASE, resolved=None, history=None, node_data=None):
+    memory = _FakeMemory(history) if history is not None else None
+    data = node_data if node_data is not None else {"systemPrompt": raw}
+    node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": data}, _FakeState(memory=memory))
+
+    config = {
+        "providerId": "p1",
+        "systemPrompt": _BASE if resolved is None else resolved,
+        "userPrompt": "hello",
+        "memory": memory is not None,
+    }
+    with _patch_injector(llm):
+        return await node.process(config)
+
+
+def _sent(inner: _CapturingModel) -> list:
+    return inner.seen[-1]
+
+
+def _system_content(inner: _CapturingModel):
+    return _sent(inner)[0].content
+
+
+def _rendered(content) -> str:
+    # Assumes the provider joins system blocks with no separator; only an E2E call proves it.
+    if isinstance(content, str):
+        return content
+    return "".join(block.get("text", "") for block in content)
+
+
+def _text_blocks(content) -> list:
+    return [block for block in content if "text" in block]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("style", _STYLES)
+class TestRenderingIsByteIdentical:
+
+    async def test_memory_on_with_history(self, style):
+        cached, cached_inner = _caching_llm(style)
+        plain, plain_inner = _plain_llm()
+
+        await _run(cached, history=_HISTORY)
+        await _run(plain, history=_HISTORY)
+
+        assert _rendered(_system_content(cached_inner)) == _BASE + "\n\n" + _HISTORY
+        assert _rendered(_system_content(cached_inner)) == _system_content(plain_inner)
+
+    async def test_memory_on_with_empty_first_turn_history(self, style):
+        cached, cached_inner = _caching_llm(style)
+        plain, plain_inner = _plain_llm()
+
+        await _run(cached, history="")
+        await _run(plain, history="")
+
+        assert _rendered(_system_content(cached_inner)) == _BASE + "\n\n"
+        assert _rendered(_system_content(cached_inner)) == _system_content(plain_inner)
+
+    async def test_memory_off(self, style):
+        cached, cached_inner = _caching_llm(style)
+        plain, plain_inner = _plain_llm()
+
+        await _run(cached)
+        await _run(plain)
+
+        assert _rendered(_system_content(cached_inner)) == _BASE
+        assert _rendered(_system_content(cached_inner)) == _system_content(plain_inner)
+
+
+@pytest.mark.asyncio
+class TestBlockShapes:
+    async def test_anthropic_marks_only_the_stable_block(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, history=_HISTORY)
+
+        assert _system_content(inner) == [
+            {"type": "text", "text": _BASE + "\n\n", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": _HISTORY},
+        ]
+
+    async def test_bedrock_cache_point_sits_between_prefix_and_history(self):
+        llm, inner = _caching_llm("bedrock_converse")
+
+        await _run(llm, history=_HISTORY)
+
+        assert _system_content(inner) == [
+            {"type": "text", "text": _BASE + "\n\n"},
+            {"cachePoint": {"type": "default"}},
+            {"type": "text", "text": _HISTORY},
+        ]
+
+    async def test_memory_off_sends_a_single_block(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm)
+
+        assert _system_content(inner) == [{"type": "text", "text": _BASE, "cache_control": {"type": "ephemeral"}}]
+
+    @pytest.mark.parametrize("style", _STYLES)
+    async def test_empty_history_emits_no_blank_block(self, style):
+        llm, inner = _caching_llm(style)
+
+        await _run(llm, history="")
+
+        blocks = _text_blocks(_system_content(inner))
+        assert len(blocks) == 1
+        assert blocks[0]["text"].strip()
+
+    async def test_user_turn_is_untouched_by_the_split(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, history=_HISTORY)
+
+        assert _sent(inner)[1].content == [{"type": "text", "text": "hello"}]
+
+    async def test_node_still_returns_the_model_content(self):
+        llm, _ = _caching_llm("anthropic")
+
+        assert await _run(llm, history=_HISTORY) == "ok"
+
+
+@pytest.mark.asyncio
+class TestStringPathIsPreserved:
+    async def test_model_without_caching_keeps_the_single_string(self):
+        llm, inner = _plain_llm()
+
+        await _run(llm, history=_HISTORY)
+
+        assert _system_content(inner) == _BASE + "\n\n" + _HISTORY
+
+    @pytest.mark.parametrize("prompt", ["", "   \n "], ids=["empty", "whitespace"])
+    async def test_blank_prompt_keeps_the_single_string(self, prompt):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, raw=prompt, resolved=prompt, history=_HISTORY)
+
+        assert _system_content(inner) == prompt + "\n\n" + _HISTORY
+
+    async def test_blank_prompt_without_memory_keeps_the_single_string(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, raw="", resolved="")
+
+        assert _system_content(inner) == ""
+
+    @pytest.mark.parametrize(
+        "var",
+        [
+            "{{source}}",
+            "{{source.text}}",
+            "{{sourceLanguage}}",
+            "{{direct_input}}",
+            "{{direct_input.query}}",
+            "{{node_outputs.node-1.result}}",
+            "{{timestamp}}",
+            "{{execution_id}}",
+            "{{session.message}}",
+            "{{session}}",
+            "{{message}}",
+            "{{output}}",
+            "{{current_step}}",
+        ],
+    )
+    async def test_volatile_template_var_keeps_the_single_string(self, var):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, raw=f"Summarize this: {var}", resolved="Summarize this: a bug report", history=_HISTORY)
+
+        assert _system_content(inner) == "Summarize this: a bug report" + "\n\n" + _HISTORY
+
+    async def test_per_conversation_var_stays_eligible(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, raw="Reply in {{session.language}}.", resolved="Reply in German.", history=_HISTORY)
+
+        assert _text_blocks(_system_content(inner))[0]["text"] == "Reply in German.\n\n"
+
+    async def test_raw_prompt_absent_from_node_data_still_opts_in(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, node_data={}, history=_HISTORY)
+
+        assert _system_content(inner)[0]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+class TestFallbackChain:
+    async def test_chain_with_a_cached_child_opts_in_chain_wide(self):
+        primary = _CapturingModel()
+        cached, _ = _caching_llm("anthropic")
+        chain = FallbackChatModel(models=[primary, cached])
+
+        await _run(chain, history=_HISTORY)
+        assert _system_content(primary) == [
+            {"type": "text", "text": _BASE + "\n\n"},
+            {"type": "text", "text": _HISTORY},
+        ]
+
+    async def test_chain_without_a_cached_child_keeps_the_single_string(self):
+        primary = _CapturingModel()
+        chain = FallbackChatModel(models=[primary, _CapturingModel()])
+
+        await _run(chain, history=_HISTORY)
+
+        assert _system_content(primary) == _BASE + "\n\n" + _HISTORY
