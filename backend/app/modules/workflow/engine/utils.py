@@ -49,6 +49,7 @@ def find_all_vars(obj_str: str) -> list:
     """
     return re.findall(r"{{[^\s{}]+}}", obj_str)
 
+
 VOLATILE_VAR_PREFIXES = (
     "current_step",
     "direct_input",

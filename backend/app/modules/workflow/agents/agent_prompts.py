@@ -156,22 +156,18 @@ Always respond with a JSON object in this format:
     return base_prompt + no_tools_guidance
 
 
-def create_tool_agent_no_tools_query_prompt(enhanced_prompt: str, context: str, query: str) -> str:
-    """Create query prompt for ToolAgent when no tools are available"""
-    return f"""{enhanced_prompt}
-
-{context}
+def create_tool_agent_no_tools_query_portion(context: str, query: str) -> str:
+    """The part of the no-tools query prompt that follows the system prompt"""
+    return f"""{context}
 
 User Query: {query}
 
 Since no tools are available, provide a direct response based on your knowledge using the JSON format specified above."""
 
 
-def create_tool_agent_tools_query_prompt(enhanced_prompt: str, context: str, query: str) -> str:
-    """Create query prompt for ToolAgent when tools are available"""
-    return f"""{enhanced_prompt}
-
-{context}
+def create_tool_agent_tools_query_portion(context: str, query: str) -> str:
+    """The part of the tools query prompt that follows the system prompt"""
+    return f"""{context}
 
 User Query: {query}
 
@@ -180,6 +176,16 @@ Analyze the query and decide if you need to use any tools. Respond using the JSO
 - If you can answer directly, use the "direct_response" action format
 - Make sure to include all required parameters and follow the parameter types specified
 - Always include your reasoning for the decision"""
+
+
+def create_tool_agent_no_tools_query_prompt(enhanced_prompt: str, context: str, query: str) -> str:
+    """Create query prompt for ToolAgent when no tools are available"""
+    return enhanced_prompt + "\n\n" + create_tool_agent_no_tools_query_portion(context, query)
+
+
+def create_tool_agent_tools_query_prompt(enhanced_prompt: str, context: str, query: str) -> str:
+    """Create query prompt for ToolAgent when tools are available"""
+    return enhanced_prompt + "\n\n" + create_tool_agent_tools_query_portion(context, query)
 
 
 def create_tool_agent_iteration_continuation_prompt(last_tool_name: str, last_tool_result: str) -> str:

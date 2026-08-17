@@ -39,7 +39,8 @@ class ToolAgent(BaseToolAgent):
         system_prompt: str,
         tools: List[BaseTool],
         verbose: bool = False,
-        max_iterations: int = 6
+        max_iterations: int = 6,
+        volatile_system_suffix: Optional[str] = None
     ):
         """Initialize a Tool agent
 
@@ -49,9 +50,12 @@ class ToolAgent(BaseToolAgent):
             tools: List of tools the agent can use to accomplish tasks
             verbose: Whether to enable verbose logging of tool execution
             max_iterations: Maximum number of tool execution iterations
+            volatile_system_suffix: Trailing part of ``system_prompt`` that changes every
+                request. Set only when the rest of the prompt is stable enough to cache
         """
         super().__init__(llm_model, system_prompt, tools,
                          verbose=verbose, max_iterations=max_iterations)
+        self.volatile_system_suffix = volatile_system_suffix
 
     # ==================== PROMPT GENERATION ====================
 

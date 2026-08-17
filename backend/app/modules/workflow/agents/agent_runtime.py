@@ -42,6 +42,7 @@ async def run_agent_once(
     max_iterations: int,
     chat_history: Optional[List[Any]] = None,
     llm_model: Any = None,
+    volatile_system_suffix: Optional[str] = None,
 ) -> AgentRunResult:
     """Pick the LLM if needed, create the agent for ``agent_type``, run it once,
     add its token usage to ``state``, and return a normalized result"""
@@ -78,6 +79,7 @@ async def run_agent_once(
             system_prompt=system_prompt,
             tools=tools,
             max_iterations=max_iterations,
+            volatile_system_suffix=volatile_system_suffix,
         )
 
     result = await agent.invoke(user_prompt, chat_history=chat_history or [])

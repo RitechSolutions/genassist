@@ -184,4 +184,34 @@ async def test_supplied_llm_model_skips_provider_resolution():
     injector.get.assert_not_called()
     assert run.llm_model == "reused-model"
     cls, _ = classes["ToolAgent"]
-    cls.assert_called_once_with(llm_model="reused-model", system_prompt="sys", tools=[], max_iterations=7)
+    cls.assert_called_once_with(
+        llm_model="reused-model", system_prompt="sys", tools=[], max_iterations=7, volatile_system_suffix=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_receives_the_volatile_suffix():
+    stack, classes, _, _ = _patch_runtime({"response": "ok"})
+    with stack:
+        await run_agent_once(**_base_kwargs(volatile_system_suffix=" Current time: X"))
+
+    cls, _ = classes["ToolAgent"]
+    assert cls.call_args.kwargs["volatile_system_suffix"] == " Current time: X"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "agent_type,expected",
+    [
+        ("ReActAgent", "ReActAgent"),
+        ("ReActAgentLC", "ReActAgentLC"),
+        ("SimpleToolExecutor", "SimpleToolAgent"),
+    ],
+)
+async def test_other_agents_never_receive_the_suffix(agent_type, expected):
+    stack, classes, _, _ = _patch_runtime({"response": "ok"})
+    with stack:
+        await run_agent_once(**_base_kwargs(agent_type=agent_type, volatile_system_suffix=" Current time: X"))
+
+    cls, _ = classes[expected]
+    assert "volatile_system_suffix" not in cls.call_args.kwargs

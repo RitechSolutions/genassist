@@ -6,13 +6,14 @@ import asyncio
 import datetime
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.agents.agent_runtime import run_agent_once
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
+from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
 
@@ -349,6 +350,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     async def _run_agent_with_delegations(
         self, *, config, provider_id, fallback_chain_id, agent_type,
         system_prompt, prompt, all_tools, delegation_map, max_iterations, chat_history,
+        volatile_system_suffix: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Invoke the agent, resolving delegation tool calls, until it answers or pauses"""
         from app.modules.workflow.agents.sub_agents import orchestrator
@@ -380,6 +382,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 system_prompt=system_prompt, user_prompt=current_prompt,
                 tools=active_tools, max_iterations=max_iterations,
                 chat_history=chat_history, llm_model=llm_model,
+                volatile_system_suffix=volatile_system_suffix,
             )
             llm_model = run.llm_model
             steps.extend(run.steps)
@@ -596,7 +599,14 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             self._wrap_tools_for_pii_unmask(all_tools)
 
         # Add current time to system prompt
-        system_prompt += f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        timestamp_suffix = f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        system_prompt += timestamp_suffix
+
+        # A forwarded suffix means "the prefix before it may be cached", so a prompt built
+        # from per-request template variables withholds it.
+        volatile_system_suffix = (
+            None if has_volatile_template_vars(self.node_data.get("systemPrompt")) else timestamp_suffix
+        )
 
         # Set input for tracking
         self.set_node_input({
@@ -630,6 +640,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     delegation_map=delegation_map,
                     max_iterations=max_iterations,
                     chat_history=chat_history,
+                    volatile_system_suffix=volatile_system_suffix,
                 )
 
             run = await run_agent_once(
@@ -643,6 +654,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 tools=tools,
                 max_iterations=max_iterations,
                 chat_history=chat_history,
+                volatile_system_suffix=volatile_system_suffix,
             )
 
             # The agent caught an error internally and returned a standardized error response
