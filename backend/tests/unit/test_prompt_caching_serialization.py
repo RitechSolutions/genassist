@@ -94,3 +94,48 @@ class TestBedrockConverseSerialization:
         assert system == [{"text": _STABLE}]
         assert not _contains_key(system, "cachePoint")
         assert not _contains_key(messages, "cachePoint")
+
+
+_AGENT_SUFFIX = " Current time: 2026-08-17 12:00:00"
+_HISTORY = "User: hi\nAssistant: hello"
+
+_SPLITS = [
+    pytest.param(
+        [{"type": "text", "text": _STABLE}, {"type": "text", "text": _AGENT_SUFFIX}],
+        _STABLE + _AGENT_SUFFIX,
+        id="agent_split",
+    ),
+    pytest.param(
+        [{"type": "text", "text": _STABLE + "\n\n"}, {"type": "text", "text": _HISTORY}],
+        _STABLE + "\n\n" + _HISTORY,
+        id="llm_node_split",
+    ),
+]
+
+
+@pytest.mark.parametrize("blocks,rendered", _SPLITS)
+class TestUncachedChildrenInAMixedChain:
+    def test_openai_passes_the_blocks_through_as_content_parts(self, blocks, rendered):
+        from langchain_openai.chat_models.base import _convert_message_to_dict
+
+        assert _convert_message_to_dict(SystemMessage(content=blocks)) == {"role": "system", "content": blocks}
+
+    def test_google_keeps_one_part_per_block(self, blocks, rendered):
+        from langchain_google_genai.chat_models import _parse_chat_history
+
+        system, _ = _parse_chat_history(
+            [SystemMessage(content=blocks), HumanMessage(content="hi")], convert_system_message_to_human=False
+        )
+        assert [part.text for part in system.parts] == [block["text"] for block in blocks]
+
+    def test_ollama_injects_a_newline_per_block(self, blocks, rendered):
+        """Known deviation: langchain_ollama joins blocks with \\n, so a mixed chain
+        sends this child two extra newlines. Delete this test if that formatter changes."""
+        from langchain_ollama import ChatOllama
+
+        content = ChatOllama(model="llama3")._convert_messages_to_ollama_messages(
+            [SystemMessage(content=blocks), HumanMessage(content="hi")]
+        )[0]["content"]
+
+        assert content == "".join("\n" + block["text"] for block in blocks)
+        assert content != rendered
