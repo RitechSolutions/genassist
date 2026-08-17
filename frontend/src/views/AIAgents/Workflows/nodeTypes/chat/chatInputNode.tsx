@@ -86,7 +86,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
       {/* Inline "Test" affordance for the Start node. It's the workflow entry
           point, so testing straight from here runs the whole graph (opens the
           Executions panel). Shown when the node is selected and sits to the LEFT
-          of the node — the node's only handle is the output on the right. */}
+          of the node — the node's only handle is the output on the right */}
       {selected && nodeActions?.testWorkflow && (
         <div className="absolute right-full top-1/2 z-30 -translate-y-1/2 pr-3 nodrag nopan pointer-events-auto">
           <Button
