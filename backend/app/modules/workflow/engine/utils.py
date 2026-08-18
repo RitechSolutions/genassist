@@ -50,46 +50,11 @@ def find_all_vars(obj_str: str) -> list:
     return re.findall(r"{{[^\s{}]+}}", obj_str)
 
 
-VOLATILE_VAR_PREFIXES = (
-    "current_step",
-    "direct_input",
-    "errors",
-    "execution_end_time",
-    "execution_history",
-    "execution_id",
-    "execution_path",
-    "execution_start_time",
-    "initial_values",
-    "is_executing",
-    "llm_usage",
-    "memory",
-    "message",
-    "node_execution_status",
-    "node_inputs",
-    "node_outputs",
-    "output",
-    "performance_metrics",
-    "session.message",
-    "source",
-    "status",
-    "time_taken",
-    "timestamp",
-    "tool_events",
-    "total_steps",
-)
-
-VOLATILE_VAR_NAMES = ("session",)
-
-
 def has_volatile_template_vars(template: Any) -> bool:
-    """Whether a raw template references per-request variables"""
+    """Whether a raw template contains any substitutable {{var}}"""
     if not isinstance(template, str) or not template:
         return False
-    for var_pattern in find_all_vars(template):
-        var_name = var_pattern[2:-2]
-        if var_name in VOLATILE_VAR_NAMES or var_name.startswith(VOLATILE_VAR_PREFIXES):
-            return True
-    return False
+    return bool(find_all_vars(template))
 
 
 def find_code_param_vars(code_string: str) -> list:

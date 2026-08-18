@@ -75,20 +75,21 @@ class TestHasVolatileTemplateVars:
             "{{llm_usage}}",
             "{{tool_events}}",
             "{{memory}}",
+            "Reply in {{session.language}}.",
+            "Greet {{session.customer_name}}.",
+            "Greet {{customer_name}}.",
+            "{{thread_id}}",
+            "{{workflow_id}}",
         ],
+        ids=repr,
     )
-    def test_per_request_vars_are_volatile(self, template):
+    def test_any_template_var_is_treated_as_volatile(self, template):
         assert has_volatile_template_vars(template) is True
 
     @pytest.mark.parametrize(
         "template",
         [
             "You are a helpful assistant.",
-            "Reply in {{session.language}}.",
-            "Greet {{session.customer_name}}.",
-            "Greet {{customer_name}}.",
-            "{{thread_id}}",
-            "{{workflow_id}}",
             "{{ source }}",
             "",
             None,
@@ -96,27 +97,8 @@ class TestHasVolatileTemplateVars:
         ],
         ids=repr,
     )
-    def test_stable_or_unresolvable_templates_are_not_volatile(self, template):
+    def test_var_free_or_unresolvable_templates_are_not_volatile(self, template):
         assert has_volatile_template_vars(template) is False
 
-    def test_every_workflow_state_field_is_classified(self):
-        """A field added to WorkflowState is volatile until it is listed as stable here"""
-        stable_fields = {
-            "registry_managed",
-            "sub_agent_persistent_claimed",
-            "target_edges",
-            "thread_id",
-            "workflow",
-            "workflow_id",
-        }
-        state = WorkflowState(workflow={"nodes": [], "edges": []})
-
-        unclassified = {
-            name
-            for name in vars(state)
-            if not name.startswith("_")
-            and name not in stable_fields
-            and not has_volatile_template_vars("{{%s}}" % name)
-        }
-
-        assert unclassified == set()
+    def test_unrecognized_var_is_over_blocked_by_design(self):
+        assert has_volatile_template_vars("{{some_future_state_field}}") is True

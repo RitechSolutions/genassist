@@ -238,6 +238,9 @@ class TestStringPathIsPreserved:
             "{{execution_id}}",
             "{{session.message}}",
             "{{session}}",
+            "{{session.language}}",
+            "{{thread_id}}",
+            "{{customer_name}}",
             "{{message}}",
             "{{output}}",
             "{{current_step}}",
@@ -249,13 +252,6 @@ class TestStringPathIsPreserved:
         await _run(llm, raw=f"Summarize this: {var}", resolved="Summarize this: a bug report", history=_HISTORY)
 
         assert _system_content(inner) == "Summarize this: a bug report" + "\n\n" + _HISTORY
-
-    async def test_per_conversation_var_stays_eligible(self):
-        llm, inner = _caching_llm("anthropic")
-
-        await _run(llm, raw="Reply in {{session.language}}.", resolved="Reply in German.", history=_HISTORY)
-
-        assert _text_blocks(_system_content(inner))[0]["text"] == "Reply in German.\n\n"
 
     async def test_raw_prompt_absent_from_node_data_still_opts_in(self):
         llm, inner = _caching_llm("anthropic")

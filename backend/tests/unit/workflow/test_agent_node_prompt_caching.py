@@ -13,7 +13,14 @@ _AGENT_NODE = "app.modules.workflow.engine.nodes.agent_node"
 _SUB_NODE = "app.modules.workflow.engine.nodes.sub_agent_node"
 
 _STABLE = "You are a helpful assistant with a long stable prefix."
-_VOLATILE_VARS = ["{{session.message}}", "{{message}}", "{{source.text}}", "{{node_outputs.n1}}", "{{timestamp}}"]
+_VOLATILE_VARS = [
+    "{{session.message}}",
+    "{{session.language}}",
+    "{{message}}",
+    "{{source.text}}",
+    "{{node_outputs.n1}}",
+    "{{timestamp}}",
+]
 
 _AGENT_CONFIG = {"providerId": "prov-1", "type": "ToolSelector", "memory": False}
 _SUB_CONFIG = {"providerId": "prov-1", "mode": "single_turn", "timeoutSeconds": 120}
@@ -77,18 +84,6 @@ class TestVolatilityGate:
         assert kwargs["volatile_system_suffix"] is None
         assert kwargs["system_prompt"].startswith("Answer about a bug report")
         assert " Current time: " in kwargs["system_prompt"]
-
-    async def test_per_conversation_var_stays_eligible(self, node_cls, module, config):
-        kwargs = await _run(
-            node_cls,
-            module,
-            config,
-            node_data={"systemPrompt": "Reply in {{session.language}}."},
-            resolved="Reply in German.",
-        )
-
-        assert kwargs["volatile_system_suffix"] is not None
-        assert kwargs["system_prompt"].startswith("Reply in German.")
 
     async def test_absent_raw_prompt_forwards_the_suffix(self, node_cls, module, config):
         kwargs = await _run(node_cls, module, config, node_data={"name": "Agent"})
