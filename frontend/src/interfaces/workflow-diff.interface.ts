@@ -11,6 +11,12 @@ import { Workflow } from '@/interfaces/workflow.interface';
 /** How a node changed between the two compared versions. */
 export type NodeDiffStatus = 'added' | 'removed' | 'modified' | 'unchanged';
 
+/** Rules for what counts as a meaningful change. */
+export interface DiffOptions {
+  /** Drop record-reference ids (provider, KB, connector, data source) from both sides. */
+  ignoreIdReferences?: boolean;
+}
+
 /** A single configuration field that differs between base and target for a modified node. */
 export interface FieldChange {
   /** Field key within the node's `data` (or the synthetic `type` key when the node type changed). */
