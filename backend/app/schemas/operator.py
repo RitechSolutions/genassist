@@ -1,9 +1,11 @@
-from uuid import UUID, uuid4
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.schemas.conversation import ConversationRead
-from app.schemas.operator_statistics import OperatorStatisticsRead, OperatorStatisticsCreate
+from app.schemas.operator_statistics import OperatorStatisticsCreate, OperatorStatisticsRead
 from app.schemas.user_minimal import UserCreateMinimal, UserReadMinimal
 
 
@@ -43,3 +45,18 @@ class OperatorReadMinimal(BaseModel):
 
 class OperatorReadAfterCreate(OperatorRead):
     user: UserReadMinimal
+
+
+class OperatorListItem(BaseModel):
+    """Row of the paginated operator list"""
+    id: UUID
+    first_name: str = Field(..., alias="firstName")
+    last_name: str = Field(..., alias="lastName")
+    avatar: Optional[bytes] = None
+    created_at: datetime
+    operator_statistics: Optional[OperatorStatisticsRead] = None
+
+    model_config = ConfigDict(
+            from_attributes=True,
+            populate_by_name=True
+            )

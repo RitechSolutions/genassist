@@ -57,6 +57,7 @@ class AnalyticsReadService:
             to_date=to_date,
             activity_from_datetime=activity_from_datetime,
             activity_to_datetime=activity_to_datetime,
+            include_conversation_counts=agent_id is not None,
         )
         by_agent: list[AgentConversationStatusByAgent] = []
         if agent_id is None:
@@ -70,6 +71,13 @@ class AnalyticsReadService:
                 activity_to_datetime=activity_to_datetime,
             )
             by_agent = [AgentConversationStatusByAgent.model_validate(r) for r in rows]
+            derived = {
+                "total_unique_conversations": sum(r["unique_conversations"] for r in rows),
+                "total_finalized_conversations": sum(r["finalized_conversations"] for r in rows),
+                "total_in_progress_conversations": sum(r["in_progress_conversations"] for r in rows),
+            }
+            for key, value in derived.items():
+                summary.setdefault(key, value)
         return self._dict_to_summary(
             summary, agent_id, from_date, to_date, conversation_status_by_agent=by_agent
         )

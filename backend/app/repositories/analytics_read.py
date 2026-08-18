@@ -242,7 +242,9 @@ class AnalyticsReadRepository:
         *,
         activity_from_datetime: datetime | None = None,
         activity_to_datetime: datetime | None = None,
+        include_conversation_counts: bool = True,
     ) -> dict:
+        """Daily-stat totals for the period, plus the conversation counts for the same window"""
         agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
         if agent_ids is not None and not agent_ids and group_id is None:
             return {
@@ -298,16 +300,17 @@ class AnalyticsReadRepository:
             result = await self.db.execute(stmt)
             row = dict(result.mappings().one())
 
-        conv_rows = await self.get_conversation_status_counts(
-            agent_id=agent_id,
-            group_id=group_id,
-            from_date=from_date,
-            to_date=to_date,
-            group_by_agent=False,
-            activity_from_datetime=activity_from_datetime,
-            activity_to_datetime=activity_to_datetime,
-        )
-        row.update(conv_rows[0])
+        if include_conversation_counts:
+            conv_rows = await self.get_conversation_status_counts(
+                agent_id=agent_id,
+                group_id=group_id,
+                from_date=from_date,
+                to_date=to_date,
+                group_by_agent=False,
+                activity_from_datetime=activity_from_datetime,
+                activity_to_datetime=activity_to_datetime,
+            )
+            row.update(conv_rows[0])
         return row
 
     async def get_agent_stats_summary_with_comparison(

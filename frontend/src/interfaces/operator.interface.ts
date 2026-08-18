@@ -64,6 +64,11 @@ export type Operator = {
   };
 };
 
+export type OperatorListItem = Pick<
+  Operator,
+  "firstName" | "lastName" | "avatar" | "created_at" | "operator_statistics"
+> & { id: string };
+
 export interface OperatorDetailsDialogProps {
   operator: Operator | null;
   isOpen: boolean;
