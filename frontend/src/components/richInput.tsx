@@ -16,11 +16,12 @@ const INPUT_BASE_CLASS =
 
 const INPUT_TYPO_CLASS = "text-base md:text-sm leading-normal whitespace-pre"
 const OVERLAY_BASE_CLASS =
-  "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 text-foreground"
+  "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 overflow-hidden text-foreground"
 
 const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
+  ({ className, type, value, onFocus, onChange, onMouseUp, onScroll, ...props }, ref) => {
     const inputRef = React.useRef<HTMLInputElement | null>(null)
+    const overlayRef = React.useRef<HTMLDivElement | null>(null)
     const pendingCursorRef = React.useRef<number | null>(null)
     const useOverlay = hasVariableSyntax(value)
 
@@ -91,6 +92,25 @@ const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input
       [useOverlay, value, onMouseUp]
     )
 
+    // The overlay is clipped to the field, so it has to follow the input's own
+    // horizontal scroll — otherwise the highlighted text stays pinned to the
+    // start while the caret moves on. Same approach as RichTextarea.
+    const syncScroll = () => {
+      if (!inputRef.current || !overlayRef.current) return
+      overlayRef.current.scrollLeft = inputRef.current.scrollLeft
+    }
+
+    const handleScroll: React.UIEventHandler<HTMLInputElement> = (event) => {
+      syncScroll()
+      onScroll?.(event)
+    }
+
+    // Covers scrolling caused by a value change (typing, paste, drag & drop),
+    // which doesn't emit a scroll event before the re-render.
+    React.useLayoutEffect(() => {
+      syncScroll()
+    })
+
     return (
       <div className="relative w-full">
         <input
@@ -103,6 +123,7 @@ const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input
           ref={setRef}
           value={value ?? ""}
           onFocus={handleFocus}
+          onScroll={handleScroll}
           onKeyDown={handleKeyDown}
           onKeyUp={handleKeyUp}
           onMouseUp={handleMouseUp}
@@ -111,6 +132,7 @@ const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input
         />
         {useOverlay && segments.length > 0 && (
           <div
+            ref={overlayRef}
             className={cn(OVERLAY_BASE_CLASS, INPUT_TYPO_CLASS)}
             aria-hidden
           >

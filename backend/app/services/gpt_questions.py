@@ -4,9 +4,12 @@ import os
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 
+# NOTE: `opik` (and opik.integrations.langchain) transitively import the ML stack
+# (sklearn / torch / transformers) at import time. This service is eagerly instantiated
+# by the DI container at Celery boot, so importing opik at module top level loads those
+# native-thread libs into the prefork *master* -> fork() SIGSEGV (see run_celery.py and
+# the two-pool split). Import opik lazily, only when USE_OPIK is actually enabled.
 # from opik.integrations.openai import track_openai
-from opik import track
-from opik.integrations.langchain import OpikTracer
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
@@ -34,6 +37,8 @@ class QuestionAnswerer:
             from langchain_openai import ChatOpenAI
 
             if USE_OPIK:
+                from opik.integrations.langchain import OpikTracer
+
                 self.opik_tracer = OpikTracer()
                 self._llm = ChatOpenAI(model=self.llm_model, temperature=self.temperature, stream_usage=True, callbacks=[self.opik_tracer])
             else:
@@ -72,6 +77,8 @@ class QuestionAnswerer:
 
 # Conditionally assign the method after class definition
 if USE_OPIK:
+    from opik import track
+
     QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
 else:
     QuestionAnswerer.answer_question = QuestionAnswerer.answer_question

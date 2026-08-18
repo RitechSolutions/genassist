@@ -1,19 +1,19 @@
 from datetime import datetime, timezone
 from uuid import UUID
-from fastapi import Depends
-from fastapi_injector import Injected
+
 from injector import inject
 
 from app.auth.utils import generate_unique_username, get_password_hash
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models import OperatorModel, OperatorStatisticsModel, UserModel, UserRoleModel
-from app.repositories.conversations import ConversationRepository
 from app.repositories.operators import OperatorRepository
 from app.repositories.roles import RolesRepository
 from app.repositories.user_types import UserTypesRepository
 from app.repositories.users import UserRepository
-from app.schemas.operator import OperatorCreate, OperatorRead
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import OperatorListFilter
+from app.schemas.operator import OperatorCreate, OperatorListItem
 
 
 @inject
@@ -23,11 +23,9 @@ class OperatorService:
                  operator_repository: OperatorRepository,
                  user_repository: UserRepository,
                  user_types_repository: UserTypesRepository,
-                 roles_repository: RolesRepository,
-                 conversation_repository: ConversationRepository
+                 roles_repository: RolesRepository
                  ):  # Auto-inject repository
         self.operator_repo = operator_repository
-        self.conversation_repo = conversation_repository
         self.user_repository = user_repository
         self.user_types_repository = user_types_repository
         self.roles_repository = roles_repository
@@ -126,10 +124,10 @@ class OperatorService:
     async def get_all(self) -> list[OperatorModel]:
         return  await self.operator_repo.get_all()
 
-    async def set_operator_latest_call(self, operator: OperatorRead):
-        latest_conversation = await self.conversation_repo.get_latest_conversation_with_analysis_for_operator(
-                operator.id)
-        operator.latest_conversation_analysis = latest_conversation
+    async def get_list_paginated(self, filter_obj: OperatorListFilter) -> PaginatedResponse[OperatorListItem]:
+        rows, total = await self.operator_repo.get_list_paginated(filter_obj)
+        items = [OperatorListItem.model_validate(operator) for operator in rows]
+        return PaginatedResponse.from_filter(items, total, filter_obj)
 
     async def get_by_id(self, operator_id: UUID) -> OperatorModel:
         # Step 1: Fetch operator with stats
