@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { BarChart3, Loader2, Scale, Trash2 } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { BarChart3, FileUp, Loader2, Scale, Trash2 } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,7 +10,12 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/dialog";
 import { PageListSkeleton } from "@/components/skeletons";
 
-import { deleteMLModel, getAllMLModels } from "@/services/mlModels";
+import {
+  deleteMLModel,
+  evaluateMLModelWithCSV,
+  getAllMLModels,
+  MLModelEvaluationResult,
+} from "@/services/mlModels";
 import { getModelPipelineRuns } from "@/services/mlModelPipelines";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { getMLModelTypeLabel as getModelTypeLabel } from "@/constants/mlModelTypes";
@@ -114,6 +119,11 @@ function QualityBadge({ label }: { label: QualityLabel }) {
   return <Badge className={styles[label]}>{label}</Badge>;
 }
 
+interface CsvEvaluationResult {
+  model: MLModel;
+  result: MLModelEvaluationResult;
+}
+
 interface RankedModel {
   model: MLModel;
   taskType: TaskType;
@@ -138,6 +148,10 @@ const MLModelEvaluationsPage: React.FC = () => {
   const [modelPendingDelete, setModelPendingDelete] = useState<MLModel | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [isCsvEvaluating, setIsCsvEvaluating] = useState(false);
+  const [csvEvalResult, setCsvEvalResult] = useState<CsvEvaluationResult | null>(null);
+  const [csvEvalError, setCsvEvalError] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,6 +243,7 @@ const MLModelEvaluationsPage: React.FC = () => {
       setSelectedIds((prev) => prev.filter((id) => id !== modelPendingDelete.id));
       setRankings((prev) => prev.filter((r) => r.model.id !== modelPendingDelete.id));
       if (result?.model.id === modelPendingDelete.id) setResult(null);
+      if (csvEvalResult?.model.id === modelPendingDelete.id) setCsvEvalResult(null);
       setModelPendingDelete(null);
     } finally {
       setIsDeleting(false);
@@ -255,6 +270,27 @@ const MLModelEvaluationsPage: React.FC = () => {
       setEvaluateError(error instanceof Error ? error.message : "Failed to fetch pipeline runs for this model.");
     } finally {
       setIsEvaluating(false);
+    }
+  };
+
+  const handleCsvFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const model = models.find((m) => m.id === selectedIds[0]);
+    if (!model) return;
+
+    setIsCsvEvaluating(true);
+    setCsvEvalError(null);
+    setCsvEvalResult(null);
+    try {
+      const result = await evaluateMLModelWithCSV(model.id, file);
+      setCsvEvalResult({ model, result });
+    } catch (error) {
+      setCsvEvalError(error instanceof Error ? error.message : "Failed to evaluate model against the uploaded CSV.");
+    } finally {
+      setIsCsvEvaluating(false);
     }
   };
 
@@ -343,6 +379,30 @@ const MLModelEvaluationsPage: React.FC = () => {
               </>
             ) : (
               "Evaluate model"
+            )}
+          </Button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleCsvFileSelected}
+          />
+          <Button
+            variant="outline"
+            onClick={() => csvInputRef.current?.click()}
+            disabled={selectedIds.length !== 1 || isCsvEvaluating}
+          >
+            {isCsvEvaluating ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Scoring…
+              </>
+            ) : (
+              <>
+                <FileUp className="h-4 w-4 mr-2" />
+                Evaluate with new CSV
+              </>
             )}
           </Button>
         </div>
@@ -456,6 +516,40 @@ const MLModelEvaluationsPage: React.FC = () => {
           {result.taskType === null && (
             <div className="px-6 py-4 text-sm text-muted-foreground">
               No training metrics available for this model — it has no completed training pipeline run yet.
+            </div>
+          )}
+        </div>
+      )}
+
+      {csvEvalError && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-6 py-4 text-sm text-destructive">
+          Couldn't evaluate against the uploaded CSV: {csvEvalError}
+        </div>
+      )}
+
+      {csvEvalResult && (
+        <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
+          <div className="px-6 py-3 border-b bg-muted text-sm font-semibold flex flex-wrap items-center gap-2">
+            {csvEvalResult.model.name}
+            <Badge variant="secondary">{getModelTypeLabel(csvEvalResult.model.model_type)}</Badge>
+            <span className="text-xs font-normal text-muted-foreground">
+              scored against uploaded CSV · {csvEvalResult.result.row_count} rows · target: {csvEvalResult.result.target_column}
+            </span>
+          </div>
+
+          {csvEvalResult.result.task_type === "regression" ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
+              <MetricTile label="RMSE" value={formatMetric(csvEvalResult.result.metrics.rmse)} />
+              <MetricTile label="MAE" value={formatMetric(csvEvalResult.result.metrics.mae)} />
+              <MetricTile label="R²" value={formatMetric(csvEvalResult.result.metrics.r2_score)} />
+              <MetricTile label="MSE" value={formatMetric(csvEvalResult.result.metrics.mse)} />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
+              <MetricTile label="Accuracy" value={formatMetric(csvEvalResult.result.metrics.accuracy)} />
+              <MetricTile label="Precision" value={formatMetric(csvEvalResult.result.metrics.precision)} />
+              <MetricTile label="Recall" value={formatMetric(csvEvalResult.result.metrics.recall)} />
+              <MetricTile label="F1" value={formatMetric(csvEvalResult.result.metrics.f1_score)} />
             </div>
           )}
         </div>

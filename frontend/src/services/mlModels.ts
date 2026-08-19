@@ -141,3 +141,48 @@ export const analyzeCSV = async (
     throw error;
   }
 };
+
+export interface MLModelEvaluationResult {
+  task_type: "regression" | "classification";
+  row_count: number;
+  target_column: string;
+  metrics: Record<string, number>;
+}
+
+/** Scores an existing model's .pkl against a freshly uploaded CSV (not the original training data). */
+export const evaluateMLModelWithCSV = async (
+  modelId: string,
+  file: File,
+  targetColumn?: string,
+): Promise<MLModelEvaluationResult> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (targetColumn) {
+    formData.append("target_column", targetColumn);
+  }
+
+  const baseURL = await getApiUrl();
+  const token = localStorage.getItem("access_token");
+  const tokenType = localStorage.getItem("token_type");
+  const tenantId = localStorage.getItem("tenant_id");
+
+  const headers: Record<string, string> = {};
+  if (token && tokenType) {
+    headers["Authorization"] = `${tokenType} ${token}`;
+  }
+  if (tenantId) {
+    headers["x-tenant-id"] = tenantId;
+  }
+
+  const response = await fetch(`${baseURL}${BASE}/${modelId}/evaluate`, {
+    method: "POST",
+    body: formData,
+    headers,
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `API error: ${response.status}`);
+  }
+
+  return await response.json() as MLModelEvaluationResult;
+};
