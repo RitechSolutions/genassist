@@ -2,9 +2,9 @@ import React, { useState, useRef, useEffect, useContext, createContext } from "r
 import { ChevronDown, ChevronRight, Copy, Check, ChevronsDownUp } from "lucide-react";
 import { Button } from "@/components/button";
 
-type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
-type JsonObject = { [key: string]: JsonValue };
-type JsonArray = JsonValue[];
+export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+export type JsonObject = { [key: string]: JsonValue };
+export type JsonArray = JsonValue[];
 
 interface JsonViewerProps {
   data: JsonValue;

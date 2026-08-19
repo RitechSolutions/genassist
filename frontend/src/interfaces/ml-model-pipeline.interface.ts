@@ -37,6 +37,15 @@ export interface PipelineArtifact {
   created_at?: string;
 }
 
+/** What the backend changed when a run was promoted. */
+export interface PipelineRunPromoteResult {
+  message: string;
+  /** True when the run's output replaced the model's file/target/features. */
+  model_updated: boolean;
+  /** The pipeline config that is now the model's default. */
+  default_config_id: string;
+}
+
 export interface PipelineRunCreatePayload {
   model_id: string;
   pipeline_config_id: string;
