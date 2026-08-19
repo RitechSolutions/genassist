@@ -10,6 +10,7 @@ from app.modules.workflow.engine.llm_usage_tracking import (
     merge_llm_usage_from_result,
     record_compaction_usage,
     record_node_llm_usage,
+    resolve_provider_attribution,
     resolve_provider_model,
 )
 
@@ -40,8 +41,11 @@ def _patch_provider_service(providers=None, error=None):
     return patch("app.dependencies.injector.injector", inj), service
 
 
-def _provider(provider="OpenAI", model="gpt-4o"):
-    return SimpleNamespace(llm_model_provider=provider, llm_model=model)
+def _provider(provider="OpenAI", model="gpt-4o", prompt_caching_enabled=None):
+    connection_data = {"api_key": "k"}
+    if prompt_caching_enabled is not None:
+        connection_data["prompt_caching_enabled"] = prompt_caching_enabled
+    return SimpleNamespace(llm_model_provider=provider, llm_model=model, connection_data=connection_data)
 
 
 class TestResolveProviderModel:
@@ -63,6 +67,26 @@ class TestResolveProviderModel:
         with ctx:
             assert await resolve_provider_model(None) == ("", "")
         service.get_by_id.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reads_the_prompt_caching_toggle(self):
+        ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
+        with ctx:
+            assert await resolve_provider_attribution("p1") == ("anthropic", "claude-3-opus", True)
+
+    @pytest.mark.asyncio
+    async def test_absent_or_non_boolean_toggle_reads_as_off(self):
+        providers = {"p1": _provider(), "p2": _provider(prompt_caching_enabled="true")}
+        ctx, _ = _patch_provider_service(providers)
+        with ctx:
+            assert (await resolve_provider_attribution("p1"))[2] is False
+            assert (await resolve_provider_attribution("p2"))[2] is False
+
+    @pytest.mark.asyncio
+    async def test_lookup_failure_reads_as_off(self):
+        ctx, _ = _patch_provider_service(error=RuntimeError("provider table down"))
+        with ctx:
+            assert await resolve_provider_attribution("p1") == ("", "", False)
 
     @pytest.mark.asyncio
     async def test_memoizes_per_id(self):
@@ -89,6 +113,16 @@ class TestMergeLlmUsageFromResult:
         assert entry["total_tokens"] == 20
         assert entry["purpose"] == "chat" and entry["node_id"] == "node-1"
         assert entry["llm_provider_id"] == "p1"
+        assert entry["prompt_caching_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_marks_entries_from_a_caching_enabled_provider(self):
+        state = FakeState()
+        ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
+        with ctx:
+            await merge_llm_usage_from_result(state, {"llm_usage": [{"input_tokens": 1}]}, "node-1", "p1")
+
+        assert state.llm_usage[0]["prompt_caching_enabled"] is True
 
     @pytest.mark.asyncio
     async def test_per_item_provider_id_overrides_the_node_primary(self):

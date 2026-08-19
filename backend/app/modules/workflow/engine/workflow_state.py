@@ -293,6 +293,7 @@ class WorkflowState:
         token_details: Optional[dict] = None,
         llm_provider_id: Optional[str] = None,
         total_tokens: Optional[int] = None,
+        prompt_caching_enabled: bool = False,
     ) -> None:
         """Append LLM token usage for this workflow execution"""
         self.llm_usage.append({
@@ -305,6 +306,7 @@ class WorkflowState:
             "purpose": purpose,
             "token_details": token_details,
             "llm_provider_id": llm_provider_id,
+            "prompt_caching_enabled": prompt_caching_enabled,
         })
 
     def add_tool_event(
@@ -367,7 +369,7 @@ class WorkflowState:
                 cache_read,
                 cache_creation,
             )
-        return {
+        totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
             "total_tokens": total_tokens,
@@ -376,6 +378,14 @@ class WorkflowState:
             "cost_usd": round(total_cost_usd, 6),
             "calls": len(self.llm_usage),
         }
+        if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):
+            del totals["cache_read_tokens"]
+            del totals["cache_creation_tokens"]
+        return totals
+
+    def _prompt_caching_requested(self) -> bool:
+        """Whether any call this run ran against a provider with the caching toggle on"""
+        return any(u.get("prompt_caching_enabled") for u in self.llm_usage)
 
     def reset_execution_state(self) -> None:
         """Reset execution state to initial values"""

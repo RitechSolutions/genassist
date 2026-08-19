@@ -18,28 +18,41 @@ from app.services.llm_providers import LlmProviderService
 logger = logging.getLogger(__name__)
 
 
-async def resolve_provider_model(
+async def resolve_provider_attribution(
     provider_id: Any,
-    cache: Optional[Dict[str, tuple[str, str]]] = None,
-) -> tuple[str, str]:
-    """Resolve provider/model names for pricing, memoized per id when ``cache`` is given"""
+    cache: Optional[Dict[str, tuple[str, str, bool]]] = None,
+) -> tuple[str, str, bool]:
+    """Provider/model names plus the record's prompt-caching opt-in, memoized per id when ``cache`` is given"""
     key = str(provider_id) if provider_id else ""
     if cache is not None and key in cache:
         return cache[key]
 
-    resolved = ("", "")
+    resolved = ("", "", False)
     if key:
         try:
             from app.dependencies.injector import injector
 
             info = await injector.get(LlmProviderService).get_by_id(provider_id)
-            resolved = ((info.llm_model_provider or "").lower(), info.llm_model or "")
+            resolved = (
+                (info.llm_model_provider or "").lower(),
+                info.llm_model or "",
+                (getattr(info, "connection_data", None) or {}).get("prompt_caching_enabled") is True,
+            )
         except Exception:
             logger.warning("Could not resolve LLM provider %s for usage attribution", key, exc_info=True)
 
     if cache is not None:
         cache[key] = resolved
     return resolved
+
+
+async def resolve_provider_model(
+    provider_id: Any,
+    cache: Optional[Dict[str, tuple[str, str, bool]]] = None,
+) -> tuple[str, str]:
+    """Resolve provider/model names for pricing, memoized per id when ``cache`` is given"""
+    provider, model, _ = await resolve_provider_attribution(provider_id, cache)
+    return provider, model
 
 
 async def merge_llm_usage_from_result(
@@ -65,13 +78,13 @@ async def merge_llm_usage_from_result(
         if not llm_usage_list:
             return
 
-        resolved: Dict[str, tuple[str, str]] = {}
+        resolved: Dict[str, tuple[str, str, bool]] = {}
 
         for u in llm_usage_list:
             if not isinstance(u, dict):
                 continue
             pid = u.get("provider_id") or provider_id
-            provider, model = await resolve_provider_model(pid, resolved)
+            provider, model, prompt_caching_enabled = await resolve_provider_attribution(pid, resolved)
             state.add_llm_usage(
                 input_tokens=u.get("input_tokens", 0),
                 output_tokens=u.get("output_tokens", 0),
@@ -82,6 +95,7 @@ async def merge_llm_usage_from_result(
                 purpose=u.get("purpose"),
                 token_details=u.get("token_details"),
                 llm_provider_id=pid,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
     except Exception:
         logger.warning("Failed merging LLM usage for node %s", node_id, exc_info=True)

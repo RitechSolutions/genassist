@@ -31,15 +31,45 @@ class TestAddLlmUsage:
         assert entry["purpose"] is None
         assert entry["token_details"] is None
         assert entry["llm_provider_id"] is None
+        assert entry["prompt_caching_enabled"] is False
 
 
 class TestTotalLlmUsageCacheTokens:
-    def test_entries_without_details_report_zero(self):
+    def test_cache_keys_are_omitted_when_caching_is_off(self):
         s = _state()
-        s.add_llm_usage(10, 5, provider="openai", model="gpt-4o")
+        s.add_llm_usage(10, 5, provider="anthropic", model="claude-3-5-sonnet")
+        usage = s.get_total_llm_usage()
+        assert "cache_read_tokens" not in usage
+        assert "cache_creation_tokens" not in usage
+        assert usage["input_tokens"] == 10 and usage["calls"] == 1
+
+    def test_toggle_on_but_nothing_cached_still_reports_zeros(self):
+        s = _state()
+        s.add_llm_usage(10, 5, provider="anthropic", model="claude-3-5-sonnet", prompt_caching_enabled=True)
         usage = s.get_total_llm_usage()
         assert usage["cache_read_tokens"] == 0
         assert usage["cache_creation_tokens"] == 0
+
+    def test_reported_cache_activity_surfaces_without_a_toggle(self):
+        s = _state()
+        details = {"input_token_details": {"cache_read": 1200}}
+        s.add_llm_usage(10, 5, provider="openai", model="gpt-4o", token_details=details)
+        usage = s.get_total_llm_usage()
+        assert usage["cache_read_tokens"] == 1200
+        assert usage["cache_creation_tokens"] == 0
+
+    def test_one_caching_provider_surfaces_the_keys_for_the_run(self):
+        s = _state()
+        s.add_llm_usage(10, 5, provider="openai", model="gpt-4o")
+        s.add_llm_usage(10, 5, provider="anthropic", model="claude-3-5-sonnet", prompt_caching_enabled=True)
+        assert "cache_read_tokens" in s.get_total_llm_usage()
+
+    def test_toggle_on_with_cache_activity_reports_real_counts(self):
+        s = _state()
+        details = {"input_token_details": {"cache_read": 300, "cache_creation": 20}}
+        s.add_llm_usage(10, 5, provider="anthropic", token_details=details, prompt_caching_enabled=True)
+        usage = s.get_total_llm_usage()
+        assert (usage["cache_read_tokens"], usage["cache_creation_tokens"]) == (300, 20)
 
     def test_cache_counts_are_summed_across_entries(self):
         s = _state()

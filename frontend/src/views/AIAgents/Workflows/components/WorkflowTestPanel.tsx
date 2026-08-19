@@ -524,9 +524,6 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     }
   };
 
-  const tokenUsage = response?.token_usage;
-  const cachedTokens = (tokenUsage?.cache_read_tokens ?? 0) + (tokenUsage?.cache_creation_tokens ?? 0);
-
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       {/* Three-column layout: history | inputs | results. The page title lives
@@ -1197,20 +1194,6 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                       ) : (
                         <div className="border border-red-200 rounded-md p-3 bg-red-50 text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400">
                           Error processing workflow
-                        </div>
-                      )}
-
-                      {tokenUsage && (
-                        <div className="mt-2 text-xs text-muted-foreground tabular-nums">
-                          Tokens: {(tokenUsage.input_tokens ?? 0).toLocaleString()} in ·{" "}
-                          {(tokenUsage.output_tokens ?? 0).toLocaleString()} out
-                          {cachedTokens > 0 && (
-                            <span>
-                              {" · "}Cached: {(tokenUsage.cache_read_tokens ?? 0).toLocaleString()} read ·{" "}
-                              {(tokenUsage.cache_creation_tokens ?? 0).toLocaleString()} written
-                            </span>
-                          )}
-                          {" · "}Cost: ${(tokenUsage.cost_usd ?? 0).toFixed(6)}
                         </div>
                       )}
 
