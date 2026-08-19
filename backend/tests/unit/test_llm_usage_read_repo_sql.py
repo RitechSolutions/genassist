@@ -95,6 +95,24 @@ async def test_summary_counts_each_pricing_status():
 
 
 @pytest.mark.asyncio
+async def test_summary_sums_the_cache_token_buckets():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
+    sql = _sql(db.statements[0])
+    assert "sum(llm_usage_events.cache_read_tokens)" in sql
+    assert "sum(llm_usage_events.cache_creation_tokens)" in sql
+
+
+@pytest.mark.asyncio
+async def test_summary_adds_cache_buckets_back_for_providers_that_exclude_them():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
+    sql = _sql(db.statements[0])
+    assert "CASE WHEN (llm_usage_events.provider_key IN ('bedrock'))" in sql
+    assert "llm_usage_events.cache_read_tokens + llm_usage_events.cache_creation_tokens ELSE 0" in sql
+
+
+@pytest.mark.asyncio
 async def test_summary_scopes_agent_studio_cost_to_the_two_studio_test_sources():
     db = CapturingDb()
     await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)

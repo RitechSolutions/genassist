@@ -7,9 +7,12 @@ export interface LlmUsageSummaryResponse {
   cost_is_partial: boolean;
   cost_per_conversation_usd: number | null;
   agent_studio_test_cost_usd: number;
+  /** Prompt tokens sent, normalized across providers */
   total_input_tokens: number;
   total_output_tokens: number;
   total_tokens: number;
+  total_cache_read_tokens?: number;
+  total_cache_creation_tokens?: number;
   total_calls: number;
   configured_calls: number;
   fallback_calls: number;

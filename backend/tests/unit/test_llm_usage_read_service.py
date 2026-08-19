@@ -143,6 +143,8 @@ def _row(
     conv_cost="0.80",
     studio_cost="0.20",
     conversations=4,
+    cache_read=0,
+    cache_creation=0,
 ):
     return (
         Decimal(cost),
@@ -158,6 +160,8 @@ def _row(
         Decimal(conv_cost),
         Decimal(studio_cost),
         conversations,
+        cache_read,
+        cache_creation,
     )
 
 
@@ -170,6 +174,20 @@ async def test_cost_per_conversation_divides_by_distinct():
     assert summ.agent_studio_test_cost_usd == 0.20
     assert summ.cost_is_partial is False
     assert summ.priced_token_coverage_pct == 100.0
+
+
+@pytest.mark.asyncio
+async def test_cache_token_totals_are_carried_from_the_summary_row():
+    service, *_ = _service(summary_row=_row(cache_read=3697, cache_creation=120))
+    summ = await service.get_summary(_params())
+    assert (summ.total_cache_read_tokens, summ.total_cache_creation_tokens) == (3697, 120)
+
+
+@pytest.mark.asyncio
+async def test_empty_scope_summary_reports_zero_cache_tokens():
+    service, *_ = _service(summary_row=_row(cache_read=3697, cache_creation=120), scope=[])
+    summ = await service.get_summary(_params(group_id=uuid4()))
+    assert (summ.total_cache_read_tokens, summ.total_cache_creation_tokens) == (0, 0)
 
 
 @pytest.mark.asyncio

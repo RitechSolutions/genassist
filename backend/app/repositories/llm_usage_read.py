@@ -2,10 +2,10 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import Date, cast, distinct, func, select
+from sqlalchemy import Date, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.llm_pricing import PricingStatus
+from app.core.config.llm_pricing import CACHE_EXCLUSIVE_PROVIDERS, PricingStatus
 from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.repositories.db_repository import DbRepository
@@ -15,6 +15,14 @@ _CONV = LlmUsageEventModel.conversation_id
 _TOKENS = LlmUsageEventModel.total_tokens
 _STATUS = LlmUsageEventModel.pricing_status
 _SOURCE = LlmUsageEventModel.source
+_CACHE_READ = LlmUsageEventModel.cache_read_tokens
+_CACHE_WRITE = LlmUsageEventModel.cache_creation_tokens
+
+# Prompt tokens sent. Exclusive providers store input_tokens without cache, so add those buckets back
+_PROMPT_TOKENS = LlmUsageEventModel.input_tokens + case(
+    (LlmUsageEventModel.provider_key.in_(sorted(CACHE_EXCLUSIVE_PROVIDERS)), _CACHE_READ + _CACHE_WRITE),
+    else_=0,
+)
 
 AGENT_STUDIO_TEST_SOURCES = ("workflow_test", "node_test")
 
@@ -63,7 +71,7 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
     async def summary(self, params, scope: list[UUID] | None):
         stmt = select(
             func.coalesce(func.sum(_COST), 0),
-            func.coalesce(func.sum(LlmUsageEventModel.input_tokens), 0),
+            func.coalesce(func.sum(_PROMPT_TOKENS), 0),
             func.coalesce(func.sum(LlmUsageEventModel.output_tokens), 0),
             func.coalesce(func.sum(_TOKENS), 0),
             func.count(),
@@ -75,6 +83,8 @@ class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
             func.coalesce(func.sum(_COST).filter(_CONV.isnot(None)), 0),
             func.coalesce(func.sum(_COST).filter(_SOURCE.in_(AGENT_STUDIO_TEST_SOURCES)), 0),
             func.count(distinct(_CONV)),
+            func.coalesce(func.sum(_CACHE_READ), 0),
+            func.coalesce(func.sum(_CACHE_WRITE), 0),
         ).where(*self._conditions(params, scope))
         return (await self.db.execute(stmt)).one()
 

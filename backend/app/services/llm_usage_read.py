@@ -167,6 +167,8 @@ class LlmUsageReadService:
             conversation_cost,
             agent_studio_test_cost,
             distinct_conversations,
+            cache_read_tokens,
+            cache_creation_tokens,
         ) = row
         return LlmUsageSummaryResponse(
             from_date=params.from_date,
@@ -180,6 +182,8 @@ class LlmUsageReadService:
             total_input_tokens=int(input_tokens),
             total_output_tokens=int(output_tokens),
             total_tokens=int(total_tokens),
+            total_cache_read_tokens=int(cache_read_tokens),
+            total_cache_creation_tokens=int(cache_creation_tokens),
             total_calls=int(total_calls),
             configured_calls=int(configured_calls),
             fallback_calls=int(fallback_calls),
