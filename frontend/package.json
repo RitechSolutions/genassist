@@ -51,6 +51,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
+    "diff": "^9.0.0",
     "embla-carousel-react": "^8.3.0",
     "genassist-chat-react": "^1.0.41",
     "input-otp": "^1.2.4",
@@ -76,7 +77,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
-    "vitest": "^3.2.4",
     "@tailwindcss/typography": "^0.5.15",
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.3",
@@ -93,6 +93,7 @@
     "tailwindcss": "^3.4.11",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.4"
   }
 }

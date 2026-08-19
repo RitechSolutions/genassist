@@ -1,6 +1,7 @@
+import re
 import time
 import uuid
-from typing import Dict
+from typing import Dict, Pattern
 
 from loguru import logger
 from starlette.middleware import Middleware
@@ -73,6 +74,49 @@ def _get_static_origins() -> set[str]:
     return _static_allowed_origins
 
 
+# Sentinel distinguishes "not yet compiled" from "compiled to None" (no/invalid regex).
+_UNCOMPILED: object = object()
+_agent_origin_regex: Pattern[str] | None | object = _UNCOMPILED
+
+
+def _get_agent_origin_regex() -> Pattern[str] | None:
+    """
+    Compile (once) the optional regex that a dynamic per-agent Origin must match
+    before AgentCORSMiddleware will reflect it. Returns None when unconfigured or
+    invalid, in which case dynamic origins are reflected unrestricted.
+    """
+    global _agent_origin_regex
+    if _agent_origin_regex is _UNCOMPILED:
+        pattern = settings.CORS_AGENT_ALLOWED_ORIGIN_REGEX
+        compiled: Pattern[str] | None = None
+        if pattern:
+            try:
+                compiled = re.compile(pattern)
+            except re.error as exc:
+                logger.error(f"Invalid CORS_AGENT_ALLOWED_ORIGIN_REGEX, ignoring it: {exc}")
+        else:
+            logger.info(
+                "CORS_AGENT_ALLOWED_ORIGIN_REGEX is not set; AgentCORSMiddleware will reflect "
+                "any non-static Origin. Set it to restrict dynamic agent origins."
+            )
+        _agent_origin_regex = compiled
+    return _agent_origin_regex  # type: ignore[return-value]
+
+
+def _is_allowed_dynamic_origin(origin: str) -> bool:
+    """
+    Whether a non-static Origin may be reflected with credentials. When no regex is
+    configured we preserve the historical reflect-any behavior; when one is configured
+    the Origin must match it.
+    """
+    regex = _get_agent_origin_regex()
+    if regex is None:
+        return True
+    # fullmatch (not match) so a pattern for "https://app.example.com" cannot be
+    # bypassed by a suffixed origin like "https://app.example.com.attacker.com".
+    return regex.fullmatch(origin) is not None
+
+
 class AgentCORSMiddleware(BaseHTTPMiddleware):
     """
     Dynamic CORS for origins not in the global static list.
@@ -83,12 +127,22 @@ class AgentCORSMiddleware(BaseHTTPMiddleware):
     otherwise it reflects the Origin so per-agent origins work.
 
     Security: all endpoints authenticate via API key / JWT (not cookies),
-    so reflecting the origin does not enable CSRF.
+    so reflecting the origin does not enable CSRF today. As defense in depth
+    against a future shift to cookie auth, a non-static Origin is only reflected
+    when it passes ``CORS_AGENT_ALLOWED_ORIGIN_REGEX`` (when configured).
     """
 
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin")
         if not origin or origin in _get_static_origins():
+            return await call_next(request)
+
+        # Unknown (per-agent) origin: only reflect it if it passes the configured
+        # allowlist/regex. Otherwise fall through without credentialed CORS headers
+        # so the browser blocks the cross-origin request.
+        if not _is_allowed_dynamic_origin(origin):
+            if request.method == "OPTIONS":
+                return Response(status_code=400)
             return await call_next(request)
 
         if request.method == "OPTIONS":
