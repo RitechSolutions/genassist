@@ -2,6 +2,7 @@ import csv
 import io
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from injector import inject
@@ -24,7 +25,12 @@ from app.services.llm_pricing_cache import invalidate_llm_cost_rates_cache
 
 logger = logging.getLogger(__name__)
 
+# Cache rate columns stay optional so files written for the 4-column format still import
 _REQUIRED_COLUMNS = frozenset({"provider", "model", "input_per_1k", "output_per_1k"})
+
+
+def _optional_rate(value: Decimal | None) -> str:
+    return "" if value is None else format_rate(value)
 
 
 @inject
@@ -37,12 +43,15 @@ class LlmCostRateService:
 
     async def export_csv(self) -> str:
         """
-        Export the current rates in the same 4-column format the importer accepts.
+        Export the current rates in the same 6-column format the importer accepts.
+        Unconfigured cache rates export blank, so a round-trip keeps them unset.
         """
         rows = await self.repo.list_active()
         out = io.StringIO()
         writer = csv.writer(out, lineterminator="\n")
-        writer.writerow(["provider", "model", "input_per_1k", "output_per_1k"])
+        writer.writerow(
+            ["provider", "model", "input_per_1k", "output_per_1k", "cache_read_per_1k", "cache_creation_per_1k"]
+        )
         for r in rows:
             writer.writerow(
                 [
@@ -50,6 +59,8 @@ class LlmCostRateService:
                     (r.model_key or "").strip(),
                     format_rate(r.input_per_1k),
                     format_rate(r.output_per_1k),
+                    _optional_rate(r.cache_read_per_1k),
+                    _optional_rate(r.cache_creation_per_1k),
                 ]
             )
         return out.getvalue()
@@ -68,6 +79,8 @@ class LlmCostRateService:
                 model_key=model,
                 input_per_1k=dto.input_per_1k,
                 output_per_1k=dto.output_per_1k,
+                cache_read_per_1k=dto.cache_read_per_1k,
+                cache_creation_per_1k=dto.cache_creation_per_1k,
                 updated_at=datetime.now(timezone.utc),
             )
         )
@@ -82,6 +95,8 @@ class LlmCostRateService:
             return None
         row.input_per_1k = dto.input_per_1k
         row.output_per_1k = dto.output_per_1k
+        row.cache_read_per_1k = dto.cache_read_per_1k
+        row.cache_creation_per_1k = dto.cache_creation_per_1k
         row.updated_at = datetime.now(timezone.utc)
         updated = await self.repo.update(row)
         invalidate_llm_cost_rates_cache(tenant)
@@ -130,9 +145,11 @@ class LlmCostRateService:
                     model=col(row, "model"),
                     input_per_1k=col(row, "input_per_1k"),
                     output_per_1k=col(row, "output_per_1k"),
+                    cache_read_per_1k=col(row, "cache_read_per_1k"),
+                    cache_creation_per_1k=col(row, "cache_creation_per_1k"),
                 )
             except ValidationError:
-                errors.append(f"Row {i}: invalid provider, model, input_per_1k or output_per_1k")
+                errors.append(f"Row {i}: invalid provider, model or rate value")
                 continue
 
             key = (dto.provider, dto.model)
@@ -145,6 +162,8 @@ class LlmCostRateService:
             if existing:
                 existing.input_per_1k = dto.input_per_1k
                 existing.output_per_1k = dto.output_per_1k
+                existing.cache_read_per_1k = dto.cache_read_per_1k
+                existing.cache_creation_per_1k = dto.cache_creation_per_1k
                 # Defensive: older schema/model mismatch could leave this NULL.
                 existing.updated_at = datetime.now(timezone.utc)
                 self.repo.db.add(existing)
@@ -156,6 +175,8 @@ class LlmCostRateService:
                         model_key=dto.model,
                         input_per_1k=dto.input_per_1k,
                         output_per_1k=dto.output_per_1k,
+                        cache_read_per_1k=dto.cache_read_per_1k,
+                        cache_creation_per_1k=dto.cache_creation_per_1k,
                         updated_at=datetime.now(timezone.utc),
                     )
                 )

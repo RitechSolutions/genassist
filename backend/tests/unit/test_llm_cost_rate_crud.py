@@ -152,3 +152,87 @@ def test_create_schema_normalizes_keys():
     dto = LlmCostRateCreate(provider="  OpenAI ", model=" GPT-4o ", input_per_1k="0.001", output_per_1k="0.002")
     assert dto.provider == "openai"
     assert dto.model == "gpt-4o"
+
+
+@pytest.mark.asyncio
+async def test_create_carries_cache_rates_to_the_row():
+    service = LlmCostRateService(FakeRateRepo(existing_by_pm=None))
+
+    read = await service.create_rate(
+        LlmCostRateCreate(
+            provider="bedrock",
+            model="eu.amazon.nova-2-lite-v1:0",
+            input_per_1k="0.0001",
+            output_per_1k="0.0004",
+            cache_read_per_1k="0.000025",
+            cache_creation_per_1k="0",
+        )
+    )
+
+    assert read.cache_read_per_1k == Decimal("0.000025")
+    assert read.cache_creation_per_1k == Decimal("0"), "free writes are a configured rate, not an unset one"
+
+
+@pytest.mark.asyncio
+async def test_update_clears_cache_rates_the_payload_leaves_blank():
+    row = LlmCostRateModel(
+        id=uuid4(),
+        provider_key="bedrock",
+        model_key="nova",
+        input_per_1k=Decimal("0.0001"),
+        output_per_1k=Decimal("0.0004"),
+        cache_read_per_1k=Decimal("0.000025"),
+        cache_creation_per_1k=Decimal("0"),
+    )
+    service = LlmCostRateService(FakeRateRepo(existing_by_id=row))
+
+    read = await service.update_rate(
+        uuid4(),
+        LlmCostRateUpdate(input_per_1k="0.0001", output_per_1k="0.0004", cache_read_per_1k="  "),
+    )
+
+    assert row.cache_read_per_1k is None and row.cache_creation_per_1k is None
+    assert read.cache_read_per_1k is None
+
+
+@pytest.mark.parametrize("field", ["cache_read_per_1k", "cache_creation_per_1k"])
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_blank_cache_rate_means_not_configured(field, blank):
+    dto = LlmCostRateCreate(
+        provider="openai", model="gpt-4o", input_per_1k="0.0025", output_per_1k="0.01", **{field: blank}
+    )
+
+    assert getattr(dto, field) is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("cache_read_per_1k", "-0.001"),
+        ("cache_creation_per_1k", "-0.001"),
+        ("cache_read_per_1k", "NaN"),
+        ("cache_creation_per_1k", "Infinity"),
+        ("cache_read_per_1k", "abc"),
+    ],
+)
+def test_create_rejects_unusable_cache_rates(field, value):
+    payload = {"provider": "openai", "model": "gpt-4o", "input_per_1k": "0.001", "output_per_1k": "0.002"}
+    payload[field] = value
+    with pytest.raises(ValidationError):
+        LlmCostRateCreate(**payload)
+
+
+def test_read_serializes_unset_cache_rates_as_null():
+    read = LlmCostRateRead(
+        id=uuid4(),
+        provider_key="bedrock",
+        model_key="nova",
+        input_per_1k=Decimal("0.0001"),
+        output_per_1k=Decimal("0.0004"),
+        cache_creation_per_1k=Decimal("0.0000000"),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    dumped = read.model_dump(mode="json")
+    assert dumped["cache_read_per_1k"] is None
+    assert dumped["cache_creation_per_1k"] == "0"

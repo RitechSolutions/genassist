@@ -41,13 +41,14 @@ import { formatTimeAgo } from "@/helpers/formatters";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Example CSV matching the import API (UTF-8, header row required). */
-const CSV_MODEL = `provider,model,input_per_1k,output_per_1k
-openai,gpt-4o,0.0025,0.01
-openai,gpt-4o-mini,0.00015,0.0006
-anthropic,claude-3-5-sonnet,0.003,0.015
-bedrock,eu.amazon.nova-2-lite-v1:0,0.0001,0.0004
-openrouter,_default,0.001,0.002
-vllm,_default,0,0`;
+const CSV_MODEL = `provider,model,input_per_1k,output_per_1k,cache_read_per_1k,cache_creation_per_1k
+openai,gpt-4o,0.0025,0.01,,
+openai,gpt-4o-mini,0.00015,0.0006,,
+anthropic,claude-3-5-sonnet,0.003,0.015,0.0003,0.00375
+bedrock,eu.amazon.nova-2-lite-v1:0,0.0001,0.0004,0.000025,0
+bedrock,eu.anthropic.claude-3-5-sonnet-20241022-v2:0,0.003,0.015,0.0003,0.00375
+openrouter,_default,0.001,0.002,,
+vllm,_default,0,0,,`;
 
 interface LlmCostRatesDialogProps {
   open: boolean;
@@ -59,6 +60,8 @@ interface RateForm {
   model: string;
   input_per_1k: string;
   output_per_1k: string;
+  cache_read_per_1k: string;
+  cache_creation_per_1k: string;
 }
 
 const EMPTY_FORM: RateForm = {
@@ -66,6 +69,8 @@ const EMPTY_FORM: RateForm = {
   model: "",
   input_per_1k: "",
   output_per_1k: "",
+  cache_read_per_1k: "",
+  cache_creation_per_1k: "",
 };
 
 function backendErrorMessage(err: unknown, fallback: string): string {
@@ -199,6 +204,8 @@ export function LlmCostRatesDialog({
       model: row.model_key,
       input_per_1k: row.input_per_1k,
       output_per_1k: row.output_per_1k,
+      cache_read_per_1k: row.cache_read_per_1k ?? "",
+      cache_creation_per_1k: row.cache_creation_per_1k ?? "",
     });
   };
 
@@ -211,6 +218,8 @@ export function LlmCostRatesDialog({
         await updateLlmCostRate(editingId, {
           input_per_1k: form.input_per_1k.trim(),
           output_per_1k: form.output_per_1k.trim(),
+          cache_read_per_1k: form.cache_read_per_1k.trim() || null,
+          cache_creation_per_1k: form.cache_creation_per_1k.trim() || null,
         });
         toast.success("Cost rate updated.");
       } else {
@@ -219,6 +228,8 @@ export function LlmCostRatesDialog({
           model: form.model.trim(),
           input_per_1k: form.input_per_1k.trim(),
           output_per_1k: form.output_per_1k.trim(),
+          cache_read_per_1k: form.cache_read_per_1k.trim() || null,
+          cache_creation_per_1k: form.cache_creation_per_1k.trim() || null,
         });
         toast.success("Cost rate added.");
       }
@@ -294,7 +305,7 @@ export function LlmCostRatesDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col gap-4 z-50">
+      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col gap-4 z-50">
         <DialogHeader>
           <DialogTitle>LLM cost rates</DialogTitle>
           <DialogDescription>
@@ -368,7 +379,7 @@ export function LlmCostRatesDialog({
 
         {form && (
           <div className="rounded-md border p-3 space-y-3 shrink-0">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <label className="space-y-1">
                 <span className="text-xs text-muted-foreground">Provider</span>
                 <Input
@@ -412,6 +423,34 @@ export function LlmCostRatesDialog({
                   placeholder="0.0006"
                   onChange={(e) =>
                     setForm({ ...form, output_per_1k: e.target.value })
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">
+                  Cache read / 1K
+                </span>
+                <Input
+                  value={form.cache_read_per_1k}
+                  disabled={saving}
+                  inputMode="decimal"
+                  placeholder="optional"
+                  onChange={(e) =>
+                    setForm({ ...form, cache_read_per_1k: e.target.value })
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">
+                  Cache write / 1K
+                </span>
+                <Input
+                  value={form.cache_creation_per_1k}
+                  disabled={saving}
+                  inputMode="decimal"
+                  placeholder="optional"
+                  onChange={(e) =>
+                    setForm({ ...form, cache_creation_per_1k: e.target.value })
                   }
                 />
               </label>
@@ -467,6 +506,12 @@ export function LlmCostRatesDialog({
                   <TableHead>Model</TableHead>
                   <TableHead className="text-right">Input / 1K</TableHead>
                   <TableHead className="text-right">Output / 1K</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">
+                    Cache read / 1K
+                  </TableHead>
+                  <TableHead className="text-right whitespace-nowrap">
+                    Cache write / 1K
+                  </TableHead>
                   <TableHead className="whitespace-nowrap">Updated</TableHead>
                   <TableHead className="w-[104px] text-right">Actions</TableHead>
                 </TableRow>
@@ -477,7 +522,7 @@ export function LlmCostRatesDialog({
                     <TableCell className="font-mono text-xs">
                       {r.provider_key}
                     </TableCell>
-                    <TableCell className="font-mono text-xs max-w-[240px] truncate" title={r.model_key}>
+                    <TableCell className="font-mono text-xs max-w-[200px] truncate" title={r.model_key}>
                       {r.model_key}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -485,6 +530,12 @@ export function LlmCostRatesDialog({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {r.output_per_1k}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.cache_read_per_1k ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.cache_creation_per_1k ?? "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground"
                       title={r.updated_at}
@@ -613,6 +664,20 @@ export function LlmCostRatesDialog({
                     output_per_1k
                   </code>
                   . Values are USD per 1K tokens.
+                </p>
+                <p>
+                  Optional:{" "}
+                  <code className="text-xs bg-muted px-1 rounded">
+                    cache_read_per_1k
+                  </code>{" "}
+                  and{" "}
+                  <code className="text-xs bg-muted px-1 rounded">
+                    cache_creation_per_1k
+                  </code>
+                  . Files without them still import. Leave a value blank for the
+                  provider default, or enter{" "}
+                  <code className="text-xs bg-muted px-1 rounded">0</code> where
+                  the model charges nothing (Amazon Nova cache writes).
                 </p>
                 <p>
                   Use{" "}

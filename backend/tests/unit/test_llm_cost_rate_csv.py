@@ -55,18 +55,21 @@ def _no_cache_calls(monkeypatch):
     monkeypatch.setattr(rate_module, "get_tenant_context", lambda: "tenant-1")
 
 
-def _row(provider, model, inp, outp):
+def _row(provider, model, inp, outp, cache_read=None, cache_creation=None):
     return LlmCostRateModel(
         id=uuid4(),
         provider_key=provider,
         model_key=model,
         input_per_1k=inp,
         output_per_1k=outp,
+        cache_read_per_1k=cache_read,
+        cache_creation_per_1k=cache_creation,
         updated_at=datetime.now(timezone.utc),
     )
 
 
 HEADER = "provider,model,input_per_1k,output_per_1k\n"
+CACHE_HEADER = "provider,model,input_per_1k,output_per_1k,cache_read_per_1k,cache_creation_per_1k\n"
 
 
 @pytest.mark.asyncio
@@ -164,10 +167,83 @@ async def test_export_round_trips_small_rates_losslessly():
 
     csv_text = await service.export_csv()
 
-    assert csv_text.splitlines()[1] == "openai,gpt-4o-mini,0.00015,0.0000001"
+    assert csv_text.splitlines()[1] == "openai,gpt-4o-mini,0.00015,0.0000001,,"
 
     reimport_repo = FakeRateRepo()
     result = await LlmCostRateService(reimport_repo).import_csv(csv_text)
     assert result.inserted == 1
     assert reimport_repo.db.added[0].input_per_1k == Decimal("0.00015")
     assert reimport_repo.db.added[0].output_per_1k == Decimal("0.0000001")
+    assert reimport_repo.db.added[0].cache_read_per_1k is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_four_column_file_still_imports_without_cache_rates():
+    repo = FakeRateRepo()
+    service = LlmCostRateService(repo)
+
+    result = await service.import_csv(HEADER + "anthropic,claude-3-5-sonnet,0.003,0.015\n")
+
+    assert (result.inserted, result.errors) == (1, [])
+    added = repo.db.added[0]
+    assert added.cache_read_per_1k is None and added.cache_creation_per_1k is None
+
+
+@pytest.mark.asyncio
+async def test_import_reads_cache_rates_and_keeps_zero_distinct_from_blank():
+    repo = FakeRateRepo()
+    service = LlmCostRateService(repo)
+
+    result = await service.import_csv(
+        CACHE_HEADER
+        + "bedrock,eu.amazon.nova-2-lite-v1:0,0.0001,0.0004,0.000025,0\n"
+        + "bedrock,eu.anthropic.claude-3-5-sonnet-20241022-v2:0,0.003,0.015,,\n"
+    )
+
+    assert (result.inserted, result.errors) == (2, [])
+    nova, claude = repo.db.added
+    assert nova.cache_read_per_1k == Decimal("0.000025")
+    assert nova.cache_creation_per_1k == Decimal("0"), "free writes are configured, not unset"
+    assert claude.cache_read_per_1k is None and claude.cache_creation_per_1k is None
+
+
+@pytest.mark.asyncio
+async def test_import_clears_cache_rates_a_row_no_longer_lists():
+    existing = _row("bedrock", "nova", Decimal("0.0001"), Decimal("0.0004"), Decimal("0.000025"), Decimal("0"))
+    service = LlmCostRateService(FakeRateRepo(existing={("bedrock", "nova"): existing}))
+
+    result = await service.import_csv(CACHE_HEADER + "bedrock,nova,0.0001,0.0004,,\n")
+
+    assert (result.inserted, result.updated) == (0, 1)
+    assert existing.cache_read_per_1k is None and existing.cache_creation_per_1k is None
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_a_negative_cache_rate_row():
+    repo = FakeRateRepo()
+    service = LlmCostRateService(repo)
+
+    result = await service.import_csv(CACHE_HEADER + "openai,gpt-4o,0.0025,0.01,-0.001,0.001\n")
+
+    assert result.inserted == 0
+    assert result.errors == ["Row 2: invalid provider, model or rate value"]
+
+
+@pytest.mark.asyncio
+async def test_export_round_trips_cache_rates():
+    repo = FakeRateRepo()
+    repo._listed = [
+        _row("bedrock", "nova", Decimal("0.0001"), Decimal("0.0004"), Decimal("0.000025"), Decimal("0")),
+    ]
+
+    csv_text = await LlmCostRateService(repo).export_csv()
+
+    assert csv_text.splitlines()[0] == (
+        "provider,model,input_per_1k,output_per_1k,cache_read_per_1k,cache_creation_per_1k"
+    )
+    assert csv_text.splitlines()[1] == "bedrock,nova,0.0001,0.0004,0.000025,0"
+
+    reimport_repo = FakeRateRepo()
+    await LlmCostRateService(reimport_repo).import_csv(csv_text)
+    assert reimport_repo.db.added[0].cache_read_per_1k == Decimal("0.000025")
+    assert reimport_repo.db.added[0].cache_creation_per_1k == Decimal("0")
