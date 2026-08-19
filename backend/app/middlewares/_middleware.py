@@ -74,8 +74,9 @@ def _get_static_origins() -> set[str]:
     return _static_allowed_origins
 
 
-_agent_origin_regex: Pattern[str] | None = None
-_agent_origin_regex_ready: bool = False
+# Sentinel distinguishes "not yet compiled" from "compiled to None" (no/invalid regex).
+_UNCOMPILED: object = object()
+_agent_origin_regex: Pattern[str] | None | object = _UNCOMPILED
 
 
 def _get_agent_origin_regex() -> Pattern[str] | None:
@@ -84,22 +85,22 @@ def _get_agent_origin_regex() -> Pattern[str] | None:
     before AgentCORSMiddleware will reflect it. Returns None when unconfigured or
     invalid, in which case dynamic origins are reflected unrestricted.
     """
-    global _agent_origin_regex, _agent_origin_regex_ready
-    if not _agent_origin_regex_ready:
+    global _agent_origin_regex
+    if _agent_origin_regex is _UNCOMPILED:
         pattern = settings.CORS_AGENT_ALLOWED_ORIGIN_REGEX
+        compiled: Pattern[str] | None = None
         if pattern:
             try:
-                _agent_origin_regex = re.compile(pattern)
+                compiled = re.compile(pattern)
             except re.error as exc:
                 logger.error(f"Invalid CORS_AGENT_ALLOWED_ORIGIN_REGEX, ignoring it: {exc}")
-                _agent_origin_regex = None
         else:
             logger.info(
                 "CORS_AGENT_ALLOWED_ORIGIN_REGEX is not set; AgentCORSMiddleware will reflect "
                 "any non-static Origin. Set it to restrict dynamic agent origins."
             )
-        _agent_origin_regex_ready = True
-    return _agent_origin_regex
+        _agent_origin_regex = compiled
+    return _agent_origin_regex  # type: ignore[return-value]
 
 
 def _is_allowed_dynamic_origin(origin: str) -> bool:
