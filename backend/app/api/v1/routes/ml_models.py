@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import tempfile
@@ -5,7 +6,8 @@ import uuid
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+import pandas as pd
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -18,6 +20,7 @@ from app.schemas.file import FileBase, FileUploadResponse
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
 from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
+from app.services.ml_model_evaluation import MLModelEvaluationService
 from app.services.ml_model_manager import get_ml_model_manager
 from app.services.ml_models import MLModelsService
 
@@ -173,6 +176,45 @@ async def upload_pkl_file(
             status_code=500,
             detail=f"Error uploading file: {str(e)}"
         ) from e
+
+
+@router.post("/{ml_model_id}/evaluate", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def evaluate_ml_model(
+    ml_model_id: UUID,
+    file: UploadFile = File(...),
+    target_column: Optional[str] = Form(None),
+    service: MLModelEvaluationService = Injected(MLModelEvaluationService),
+):
+    """
+    Evaluate an existing ML model's .pkl file against an uploaded CSV.
+
+    The CSV must contain the model's feature columns plus a target column
+    (defaults to the model's configured target_variable) with the actual
+    values to score predictions against. Returns RMSE/MAE/R2 for regression
+    models or Accuracy/Precision/Recall/F1 for classification models.
+    """
+    try:
+        contents = await file.read()
+        try:
+            df = pd.read_csv(io.BytesIO(contents))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not parse uploaded CSV: {e}") from e
+
+        return await service.evaluate_csv(ml_model_id, df, target_column)
+    except HTTPException:
+        raise
+    except AppException as e:
+        if e.error_key == ErrorKey.ML_MODEL_NOT_FOUND:
+            raise HTTPException(status_code=404, detail=str(e))
+        if e.error_key == ErrorKey.FILE_NOT_FOUND:
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error evaluating ML model {ml_model_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error evaluating model: {str(e)}") from e
 
 
 @router.get("/cache/stats", dependencies=[

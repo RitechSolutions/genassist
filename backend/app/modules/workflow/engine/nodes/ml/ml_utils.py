@@ -24,6 +24,35 @@ logger = logging.getLogger(__name__)
 _MAX_SANITIZE_DEPTH = 200
 _MAX_SANITIZE_NODES = 1_000_000
 
+# Model types that only support one task type, regardless of the target variable
+_CLASSIFICATION_ONLY_MODEL_TYPES = {"logistic_regression"}
+_REGRESSION_ONLY_MODEL_TYPES = {"linear_regression"}
+
+
+def is_classification_task(y: pd.Series, model_type: str) -> bool:
+    """
+    Determine whether a target column represents a classification or regression task.
+
+    Args:
+        y: Target variable series
+        model_type: Type of model (e.g. "logistic_regression", "linear_regression")
+
+    Returns:
+        True if classification, False if regression
+    """
+    if model_type in _CLASSIFICATION_ONLY_MODEL_TYPES:
+        return True
+    if model_type in _REGRESSION_ONLY_MODEL_TYPES:
+        return False
+
+    # For others (e.g. xgboost, random_forest), infer from target variable
+    if y.dtype in ["int64", "int32"] and y.nunique() <= 20:
+        return True
+    if y.dtype == "object":
+        return True
+
+    return False
+
 
 def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budget: list | None = None) -> Any:
     """

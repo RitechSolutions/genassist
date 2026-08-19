@@ -1,8 +1,10 @@
+import { MLModelTypeValue } from '@/constants/mlModelTypes';
+
 export interface MLModel {
   id: string;
   name: string;
   description: string;
-  model_type: 'xgboost' | 'random_forest' | 'linear_regression' | 'logistic_regression' | 'other';
+  model_type: MLModelTypeValue;
   pkl_file?: string | null;
   pkl_file_id?: string | null;
   features: string[];
