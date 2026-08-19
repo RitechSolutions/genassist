@@ -184,6 +184,19 @@ class TestResolvePricingBedrockRegions:
     def test_bedrock_unknown_model_still_unpriced(self):
         assert resolve_pricing("bedrock", "eu.amazon.titan-text-v1", {}).status is PricingStatus.UNPRICED
 
+    def test_configured_region_less_key_beats_bundled_exact_hit(self):
+        configured = {"bedrock": {"amazon.nova-2-lite-v1:0": {"input_per_1k": "0.009", "output_per_1k": "0.02"}}}
+        res = resolve_pricing("bedrock", "us.amazon.nova-2-lite-v1:0", configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.matched_model_key == "amazon.nova-2-lite-v1:0"
+        assert res.input_per_1k == Decimal("0.009")
+
+    def test_bundled_exact_hit_still_beats_a_configured_default(self):
+        configured = {"bedrock": {"_default": {"input_per_1k": "9", "output_per_1k": "9"}}}
+        res = resolve_pricing("bedrock", "us.amazon.nova-2-lite-v1:0", configured)
+        assert res.status is PricingStatus.FALLBACK
+        assert res.input_per_1k == Decimal("0.0001")
+
     def test_bedrock_region_retry_prefers_configured_over_bundled(self):
         configured = {"bedrock": {"us.amazon.nova-2-lite-v1:0": {"input_per_1k": "0.009", "output_per_1k": "0.02"}}}
         res = resolve_pricing("bedrock", "eu.amazon.nova-2-lite-v1:0", configured)
@@ -207,6 +220,67 @@ class TestResolvePricingBedrockRegions:
         for _ in range(20):
             matches.add(resolve_pricing("bedrock", "apac.amazon.nova-2-lite-v1:0", configured).matched_model_key)
         assert len(matches) == 1
+
+
+class TestResolvePricingCacheRates:
+    def test_configured_cache_rates_are_carried(self):
+        configured = {
+            "openai": {
+                "gpt-4o": {
+                    "input_per_1k": "0.005",
+                    "output_per_1k": "0.02",
+                    "cache_read_per_1k": "0.0005",
+                    "cache_creation_per_1k": "0.00625",
+                }
+            }
+        }
+        res = resolve_pricing("openai", "gpt-4o", configured)
+        assert res.cache_read_per_1k == Decimal("0.0005")
+        assert res.cache_creation_per_1k == Decimal("0.00625")
+
+    def test_absent_cache_rates_resolve_to_none(self):
+        res = resolve_pricing("openai", "gpt-4o", {})
+        assert res.cache_read_per_1k is None
+        assert res.cache_creation_per_1k is None
+
+    def test_explicit_zero_stays_distinct_from_absent(self):
+        configured = {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": "0.0001",
+                    "output_per_1k": "0.0004",
+                    "cache_read_per_1k": "0.000025",
+                    "cache_creation_per_1k": "0",
+                }
+            }
+        }
+        res = resolve_pricing("bedrock", "us.amazon.nova-2-lite-v1:0", configured)
+        assert res.cache_creation_per_1k == Decimal("0")
+        assert res.cache_creation_per_1k is not None
+
+    @pytest.mark.parametrize("bad", ["abc", "-1", "NaN", "Infinity", None, [], True])
+    def test_unusable_cache_rate_becomes_none_without_touching_base_rates(self, bad):
+        configured = {
+            "openai": {"gpt-4o": {"input_per_1k": "0.005", "output_per_1k": "0.02", "cache_read_per_1k": bad}}
+        }
+        res = resolve_pricing("openai", "gpt-4o", configured)
+        assert res.cache_read_per_1k is None
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.input_per_1k == Decimal("0.005")
+
+    def test_cache_rates_are_carried_from_a_tenant_default_row(self):
+        configured = {
+            "openai": {"_default": {"input_per_1k": "0.5", "output_per_1k": "0.9", "cache_read_per_1k": "0.05"}}
+        }
+        res = resolve_pricing("openai", "brand-new-model", configured)
+        assert res.matched_model_key == "_default"
+        assert res.cache_read_per_1k == Decimal("0.05")
+        assert res.cache_creation_per_1k is None
+
+    def test_unpriced_carries_no_cache_rates(self):
+        res = resolve_pricing("openai", "totally-unknown-model", {})
+        assert res.cache_read_per_1k is None
+        assert res.cache_creation_per_1k is None
 
 
 class TestFindPricingLegacyContract:

@@ -5,7 +5,7 @@ DB rows override static defaults for the same provider/model keys.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -57,6 +57,10 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
 }
 
 DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
+CACHE_EXCLUSIVE_PROVIDERS = frozenset({"bedrock"})
+# Applied to the input rate when a tenant has configured no explicit cache rates
+ANTHROPIC_CACHE_READ_MULTIPLIER = Decimal("0.1")
+ANTHROPIC_CACHE_WRITE_MULTIPLIER = Decimal("1.25")
 
 
 class PricingStatus(str, Enum):
@@ -72,6 +76,8 @@ class PricingResolution:
     input_per_1k: Optional[Decimal]
     output_per_1k: Optional[Decimal]
     matched_model_key: Optional[str]
+    cache_read_per_1k: Optional[Decimal] = None
+    cache_creation_per_1k: Optional[Decimal] = None
 
 
 def _normalize_model_name(model: str) -> str:
@@ -126,6 +132,22 @@ def _rate_pair(row: Any) -> Optional[tuple[Decimal, Decimal]]:
     return rates
 
 
+def _cache_rate(row: Any, key: str) -> Optional[Decimal]:
+    """Coerce one optional cache rate to Decimal, or None if missing or invalid"""
+    if not isinstance(row, Mapping):
+        return None
+    value = row.get(key)
+    if value is None:
+        return None
+    try:
+        rate = Decimal(str(value))
+    except (TypeError, ArithmeticError, ValueError):
+        return None
+    if rate.is_nan() or rate.is_infinite() or rate < 0:
+        return None
+    return rate
+
+
 def _exact_or_longest_prefix(model_key: str, table: Mapping[str, Any]) -> Optional[str]:
     if not model_key:
         return None
@@ -151,6 +173,32 @@ def _match_bedrock_region_agnostic(model_key: str, table: Mapping[str, Any]) -> 
     return None
 
 
+def _matchers_for(provider_key: str) -> list[Callable[[str, Mapping[str, Any]], Optional[str]]]:
+    """Matchers to try within one layer. Bedrock adds a region-agnostic retry"""
+    if provider_key == "bedrock":
+        return [_exact_or_longest_prefix, _match_bedrock_region_agnostic]
+    return [_exact_or_longest_prefix]
+
+
+def _match_layers(
+    provider_key: str,
+    model_key: str,
+    layers: tuple[tuple[Mapping[str, Any], PricingStatus], ...],
+) -> Optional[tuple[PricingStatus, str, tuple[Decimal, Decimal], Mapping[str, Any]]]:
+    """Search the tenant-configured table first, then the bundled fallback"""
+    matchers = _matchers_for(provider_key)
+    for table, status in layers:
+        for matcher in matchers:
+            matched_key = matcher(model_key, table)
+            if matched_key is None:
+                continue
+            row = table[matched_key]
+            rates = _rate_pair(row)
+            if rates is not None:
+                return status, matched_key, rates, row
+    return None
+
+
 def resolve_pricing(
     provider: str,
     model: str,
@@ -164,21 +212,28 @@ def resolve_pricing(
     bundled_table = STATIC_LLM_PRICING_FALLBACK.get(provider_key, {})
     layers = ((configured_table, PricingStatus.CONFIGURED), (bundled_table, PricingStatus.FALLBACK))
 
-    matchers = [_exact_or_longest_prefix]
-    if provider_key == "bedrock":
-        matchers.append(_match_bedrock_region_agnostic)
+    match = _match_layers(provider_key, model_key, layers)
+    if match is not None:
+        status, matched_key, rates, row = match
+        return PricingResolution(
+            status,
+            rates[0],
+            rates[1],
+            matched_key,
+            cache_read_per_1k=_cache_rate(row, "cache_read_per_1k"),
+            cache_creation_per_1k=_cache_rate(row, "cache_creation_per_1k"),
+        )
 
-    for matcher in matchers:
-        for table, status in layers:
-            matched_key = matcher(model_key, table)
-            if matched_key is None:
-                continue
-            rates = _rate_pair(table[matched_key])
-            if rates is not None:
-                return PricingResolution(status, rates[0], rates[1], matched_key)
-
-    default_rates = _rate_pair(configured_table.get("_default"))
+    default_row = configured_table.get("_default")
+    default_rates = _rate_pair(default_row)
     if default_rates is not None:
-        return PricingResolution(PricingStatus.CONFIGURED, default_rates[0], default_rates[1], "_default")
+        return PricingResolution(
+            PricingStatus.CONFIGURED,
+            default_rates[0],
+            default_rates[1],
+            "_default",
+            cache_read_per_1k=_cache_rate(default_row, "cache_read_per_1k"),
+            cache_creation_per_1k=_cache_rate(default_row, "cache_creation_per_1k"),
+        )
 
     return PricingResolution(PricingStatus.UNPRICED, None, None, None)
