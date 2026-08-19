@@ -27,7 +27,12 @@ _SUB_CONFIG = {"providerId": "prov-1", "mode": "single_turn", "timeoutSeconds": 
 
 
 def _state():
-    return SimpleNamespace(set_node_input=MagicMock(), workflow={"nodes": [], "edges": []}, initial_values={})
+    return SimpleNamespace(
+        set_node_input=MagicMock(),
+        workflow={"nodes": [], "edges": []},
+        initial_values={},
+        get_memory=MagicMock(return_value=None),
+    )
 
 
 def _run_result():
@@ -42,14 +47,16 @@ def _run_result():
     )
 
 
-async def _run(node_cls, module, config, *, node_data, resolved=None):
+async def _run(node_cls, module, config, *, node_data, resolved=None, tools=()):
     node = node_cls("node-1", {"type": "agentNode", "data": node_data}, _state())
     merged = dict(config)
     if resolved is not None:
         merged["systemPrompt"] = resolved
 
     once = AsyncMock(return_value=_run_result())
-    with patch(f"{module}.run_agent_once", once), patch.object(node_cls, "get_connected_nodes", return_value=[]):
+    with patch(f"{module}.run_agent_once", once), patch.object(
+        node_cls, "get_connected_nodes", return_value=list(tools)
+    ):
         await node.process(merged)
     return once.await_args.kwargs
 
@@ -128,3 +135,54 @@ class TestDelegationPathThreading:
             await node._run_agent_with_delegations(**self._delegation_kwargs())
 
         assert once.await_args.kwargs["volatile_system_suffix"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("node_cls,module,config", _NODES)
+class TestSuffixInvariant:
+
+    @staticmethod
+    def _assert_prompt_ends_with_the_forwarded_suffix(kwargs):
+        suffix = kwargs["volatile_system_suffix"]
+        assert suffix, "a stable prompt must still forward one"
+        assert kwargs["system_prompt"].endswith(suffix)
+
+    async def test_holds_for_a_plain_run(self, node_cls, module, config):
+        kwargs = await _run(node_cls, module, config, node_data={"systemPrompt": _STABLE}, resolved=_STABLE)
+
+        self._assert_prompt_ends_with_the_forwarded_suffix(kwargs)
+
+    async def test_holds_with_memory_enabled(self, node_cls, module, config):
+        with patch.object(node_cls, "_get_chat_history_for_agent", AsyncMock(return_value=[])):
+            kwargs = await _run(
+                node_cls,
+                module,
+                {**config, "memory": True},
+                node_data={"systemPrompt": _STABLE},
+                resolved=_STABLE,
+            )
+
+        self._assert_prompt_ends_with_the_forwarded_suffix(kwargs)
+
+    async def test_holds_with_pii_masking_and_tools(self, node_cls, module, config):
+        kwargs = await _run(
+            node_cls,
+            module,
+            {**config, "piiMasking": True},
+            node_data={"systemPrompt": _STABLE},
+            resolved=_STABLE,
+            tools=[MagicMock(name="tool")],
+        )
+
+        self._assert_prompt_ends_with_the_forwarded_suffix(kwargs)
+
+    async def test_holds_on_the_delegation_branch(self, node_cls, module, config):
+        node = node_cls("node-1", {"type": "agentNode", "data": {"systemPrompt": _STABLE}}, _state())
+        delegating = AsyncMock(return_value={"message": "answer"})
+
+        with patch.object(node_cls, "get_connected_nodes", return_value=[]), patch.object(
+            node_cls, "_build_delegation_tools", return_value=([MagicMock(name="delegation")], {"child-1": {}})
+        ), patch.object(node_cls, "_run_agent_with_delegations", delegating):
+            await node.process({**config, "systemPrompt": _STABLE})
+
+        self._assert_prompt_ends_with_the_forwarded_suffix(delegating.await_args.kwargs)

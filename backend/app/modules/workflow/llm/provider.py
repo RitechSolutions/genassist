@@ -23,6 +23,18 @@ from app.services.bedrock_fine_tuning import BedrockFineTuningService
 
 logger = logging.getLogger(__name__)
 
+# Bedrock rejects a cachePoint on families that don't support it, failing every call
+_BEDROCK_CACHEABLE_FAMILIES = ("anthropic", "claude", "nova")
+
+
+def _bedrock_supports_prompt_caching(model_name: Optional[str], bedrock_model_provider: Optional[str]) -> bool:
+    """True if this Bedrock model accepts prompt caching. Unknown ARNs skip caching instead of failing"""
+    families = f"{model_name or ''} {bedrock_model_provider or ''}".lower()
+    supported = any(family in families for family in _BEDROCK_CACHEABLE_FAMILIES)
+    if not supported:
+        logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock family", model_name)
+    return supported
+
 
 async def build_chat_model(
     provider_name: Optional[str],
@@ -117,7 +129,10 @@ async def build_chat_model(
 
     # Wrap outside init_chat_model so the Opik callbacks stay attached to the inner
     # model and every invocation is still traced.
-    if prompt_caching_enabled and provider in ("anthropic", "bedrock_converse"):
+    if prompt_caching_enabled and (
+        provider == "anthropic"
+        or (provider == "bedrock_converse" and _bedrock_supports_prompt_caching(model_name, bedrock_model_provider))
+    ):
         from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
 
         return PromptCachingChatModel(inner=llm, cache_style=provider)

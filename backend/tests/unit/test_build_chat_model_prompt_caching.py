@@ -40,6 +40,67 @@ class TestWrappedProviders:
 
 
 @pytest.mark.asyncio
+class TestBedrockFamilyGuard:
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "eu.amazon.nova-2-lite-v1:0",
+            "eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "us.anthropic.claude-sonnet-4-5-v1:0",
+        ],
+    )
+    async def test_cacheable_families_wrap(self, model_name):
+        llm, _ = await _build("bedrock", {"prompt_caching_enabled": True}, model_name)
+        assert isinstance(llm, PromptCachingChatModel)
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "meta.llama3-3-70b-instruct-v1:0",
+            "mistral.mistral-large-2407-v1:0",
+            "amazon.titan-text-premier-v1:0",
+            "deepseek.r1-v1:0",
+        ],
+    )
+    async def test_families_without_cache_support_run_uncached(self, model_name):
+        llm, init = await _build("bedrock", {"prompt_caching_enabled": True}, model_name)
+        assert llm is init.return_value, "wrapping these fails every call with a ValidationException"
+
+    async def test_arn_wraps_on_the_selected_model_provider(self):
+        llm, _ = await _build(
+            "bedrock",
+            {"prompt_caching_enabled": True, "model_provider": "anthropic"},
+            "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/abc123",
+        )
+        assert isinstance(llm, PromptCachingChatModel)
+
+    async def test_arn_wraps_on_a_family_it_names_itself(self):
+        llm, _ = await _build(
+            "bedrock",
+            {"prompt_caching_enabled": True, "model_provider": "amazon"},
+            "arn:aws:bedrock:eu-central-1::foundation-model/amazon.nova-2-lite-v1:0",
+        )
+        assert isinstance(llm, PromptCachingChatModel)
+
+    async def test_family_less_arn_under_amazon_stays_uncached(self):
+        llm, init = await _build(
+            "bedrock",
+            {"prompt_caching_enabled": True, "model_provider": "amazon"},
+            "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/abc123",
+        )
+        assert llm is init.return_value
+
+    async def test_missing_model_name_stays_uncached(self):
+        llm, init = await _build("bedrock", {"prompt_caching_enabled": True}, None)
+        assert llm is init.return_value
+
+    async def test_anthropic_direct_is_unaffected_by_the_model_name(self):
+        llm, _ = await _build("anthropic", {"api_key": "k", "prompt_caching_enabled": True}, "some-model")
+        assert isinstance(llm, PromptCachingChatModel)
+
+
+@pytest.mark.asyncio
 class TestUnwrappedCases:
     async def test_openai_stale_flag_is_stripped_without_wrapping(self):
         llm, init = await _build("openai", {"api_key": "k", "prompt_caching_enabled": True})

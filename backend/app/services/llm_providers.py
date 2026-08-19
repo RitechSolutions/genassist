@@ -204,6 +204,7 @@ class LlmProviderService:
             cd = base
 
         cd.pop("masked_api_key", None)
+        caching_requested = cd.get("prompt_caching_enabled") is True
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
@@ -216,7 +217,8 @@ class LlmProviderService:
                 connection_data=cd,
                 model_name=cd.get("model"),
             )
-            if model_has_prompt_caching(llm):
+            caching_active = model_has_prompt_caching(llm)
+            if caching_active:
                 probe = [
                     SystemMessage(content=[{"type": "text", "text": "Connection test."}]),
                     HumanMessage(content="ping"),
@@ -224,7 +226,10 @@ class LlmProviderService:
             else:
                 probe = [HumanMessage(content="ping")]
             await llm.ainvoke(probe)
-            return {"success": True, "message": "Connection successful."}
+            message = "Connection successful."
+            if caching_requested and not caching_active:
+                message += " Note: prompt caching is not supported for this model and will be ignored."
+            return {"success": True, "message": message}
 
         except Exception as e:
             logger.error(f"LLM provider test connection failed: {e}")

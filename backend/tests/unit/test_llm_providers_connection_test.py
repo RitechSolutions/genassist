@@ -43,9 +43,9 @@ def service():
     )
 
 
-async def _test_connection(service, built_model):
+async def _test_connection(service, built_model, **connection_data):
     with patch(_BUILD, new=AsyncMock(return_value=built_model)):
-        return await service.test_connection("bedrock", {"model": "a-model"})
+        return await service.test_connection("bedrock", {"model": "a-model", **connection_data})
 
 
 def _system_content(sent: list):
@@ -104,3 +104,39 @@ class TestFailures:
             result = await service.test_connection("bedrock", {"model": "a-model"})
 
         assert result == {"success": False, "message": "bad region"}
+
+
+_NOT_SUPPORTED = " Note: prompt caching is not supported for this model and will be ignored."
+
+
+@pytest.mark.asyncio
+class TestPromptCachingNote:
+
+    async def test_requested_but_unsupported_model_says_so(self, service):
+        result = await _test_connection(service, _CapturingModel(), prompt_caching_enabled=True)
+
+        assert result["success"] is True
+        assert result["message"] == "Connection successful." + _NOT_SUPPORTED
+
+    async def test_supported_model_reports_plain_success(self, service):
+        wrapped = PromptCachingChatModel(inner=_CapturingModel(), cache_style="bedrock_converse")
+        result = await _test_connection(service, wrapped, prompt_caching_enabled=True)
+
+        assert result["message"] == "Connection successful."
+
+    @pytest.mark.parametrize("flag", [False, "true", 1, None], ids=repr)
+    async def test_no_note_when_caching_was_not_requested(self, service, flag):
+        result = await _test_connection(service, _CapturingModel(), prompt_caching_enabled=flag)
+
+        assert result["message"] == "Connection successful."
+
+    async def test_no_note_when_the_flag_is_absent(self, service):
+        result = await _test_connection(service, _CapturingModel())
+
+        assert result["message"] == "Connection successful."
+
+    async def test_a_failed_probe_still_reports_the_failure(self, service):
+        model = _CapturingModel(error=RuntimeError("no credentials"))
+        result = await _test_connection(service, model, prompt_caching_enabled=True)
+
+        assert result == {"success": False, "message": "no credentials"}
