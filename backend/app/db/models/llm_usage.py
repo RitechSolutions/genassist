@@ -99,9 +99,13 @@ class LlmUsageEventModel(Base):
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     token_details: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    cache_read_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    cache_creation_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
 
     input_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     output_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    cache_read_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    cache_creation_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     cost_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     pricing_status: Mapped[str] = mapped_column(String(20), nullable=False)
 
