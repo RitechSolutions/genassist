@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any
 
 from sqlalchemy import create_engine, select
@@ -20,7 +21,8 @@ from app.db.models.llm_cost_rate import LlmCostRateModel
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_cache: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+_TTL_SECONDS = 60.0
+_cache: dict[str, tuple[float, dict[str, dict[str, dict[str, float]]]]] = {}
 _sync_session_factories: dict[str, sessionmaker[Any]] = {}
 
 
@@ -57,6 +59,8 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
                     LlmCostRateModel.model_key,
                     LlmCostRateModel.input_per_1k,
                     LlmCostRateModel.output_per_1k,
+                    LlmCostRateModel.cache_read_per_1k,
+                    LlmCostRateModel.cache_creation_per_1k,
                 ).where(LlmCostRateModel.is_deleted == 0)
             ).all()
             for r in rows:
@@ -64,10 +68,16 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
                 mk = (r.model_key or "").lower().strip()
                 if not pk or not mk:
                     continue
-                nested.setdefault(pk, {})[mk] = {
+                rates = {
                     "input_per_1k": float(r.input_per_1k),
                     "output_per_1k": float(r.output_per_1k),
                 }
+                # Left out when unconfigured, so pricing falls back to its provider default
+                if r.cache_read_per_1k is not None:
+                    rates["cache_read_per_1k"] = float(r.cache_read_per_1k)
+                if r.cache_creation_per_1k is not None:
+                    rates["cache_creation_per_1k"] = float(r.cache_creation_per_1k)
+                nested.setdefault(pk, {})[mk] = rates
     except Exception as e:
         logger.warning("Failed loading llm_cost_rates for tenant %s: %s", tenant, e)
         return None
@@ -75,13 +85,14 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
 
 
 def get_db_pricing_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]]:
-    """Cached {provider: {model: {input_per_1k, output_per_1k}}} from llm_cost_rates."""
+    """Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS."""
     with _lock:
-        if tenant in _cache:
-            return _cache[tenant]
+        entry = _cache.get(tenant)
+        if entry is not None and time.monotonic() < entry[0]:
+            return entry[1]
     loaded = _load_db_nested(tenant)
     if loaded is None:
-        return {}
+        return entry[1] if entry is not None else {}
     with _lock:
-        _cache[tenant] = loaded
+        _cache[tenant] = (time.monotonic() + _TTL_SECONDS, loaded)
     return loaded

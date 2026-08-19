@@ -9,12 +9,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TypeVar
 
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
 
 _BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|us-gov)\.")
+# The ledger prices in Decimal and the display path in float; rate helpers serve both
+_Rate = TypeVar("_Rate", Decimal, float)
 
 # Static fallback when DB is empty or missing a row (also used before first migration).
 STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
@@ -86,37 +88,11 @@ def _normalize_model_name(model: str) -> str:
     return str(model).lower().strip()
 
 
-def _merged_provider_pricing(provider_key: str, tenant: str) -> Dict[str, Dict[str, float]]:
-    static = dict(STATIC_LLM_PRICING_FALLBACK.get(provider_key, {}))
-    db_nested = get_db_pricing_nested(tenant)
-    db_prov = db_nested.get(provider_key, {})
-    static.update(db_prov)
-    return static
-
-
-def find_pricing(provider: str, model: str) -> Dict[str, float]:
-    """Response-cost/display helper: float rates, DEFAULT_PRICING when unknown"""
-    tenant = get_tenant_context()
-    provider_key = (provider or "").lower()
-    model_key = _normalize_model_name(model)
-
-    provider_pricing = _merged_provider_pricing(provider_key, tenant)
-    if not provider_pricing:
-        return DEFAULT_PRICING.copy()
-
-    if model_key and model_key in provider_pricing:
-        return provider_pricing[model_key].copy()
-
-    for known_model, pricing in provider_pricing.items():
-        if known_model.startswith("_"):
-            continue
-        if model_key and model_key.startswith(known_model):
-            return pricing.copy()
-
-    default_row = provider_pricing.get("_default")
-    if default_row:
-        return default_row.copy()
-    return DEFAULT_PRICING.copy()
+def default_cache_rate(provider_key: str, input_per_1k: _Rate, anthropic_multiplier: _Rate) -> _Rate:
+    """Cache rate to use when the tenant configured none. Shared by both cost paths"""
+    if provider_key == "anthropic":
+        return input_per_1k * anthropic_multiplier
+    return input_per_1k
 
 
 def _rate_pair(row: Any) -> Optional[tuple[Decimal, Decimal]]:
@@ -199,6 +175,16 @@ def _match_layers(
     return None
 
 
+def _pricing_layers(
+    provider_key: str, configured: Optional[Mapping[str, Mapping[str, Any]]]
+) -> tuple[Mapping[str, Any], Mapping[str, Any], tuple[tuple[Mapping[str, Any], PricingStatus], ...]]:
+    """Tenant-configured table, bundled table, and the two as ordered match layers"""
+    configured_table = (configured or {}).get(provider_key) or {}
+    bundled_table = STATIC_LLM_PRICING_FALLBACK.get(provider_key, {})
+    layers = ((configured_table, PricingStatus.CONFIGURED), (bundled_table, PricingStatus.FALLBACK))
+    return configured_table, bundled_table, layers
+
+
 def resolve_pricing(
     provider: str,
     model: str,
@@ -208,9 +194,7 @@ def resolve_pricing(
     provider_key = (provider or "").strip().lower()
     model_key = _normalize_model_name(model)
 
-    configured_table = (configured or {}).get(provider_key) or {}
-    bundled_table = STATIC_LLM_PRICING_FALLBACK.get(provider_key, {})
-    layers = ((configured_table, PricingStatus.CONFIGURED), (bundled_table, PricingStatus.FALLBACK))
+    configured_table, _, layers = _pricing_layers(provider_key, configured)
 
     match = _match_layers(provider_key, model_key, layers)
     if match is not None:
@@ -237,3 +221,33 @@ def resolve_pricing(
         )
 
     return PricingResolution(PricingStatus.UNPRICED, None, None, None)
+
+
+def _float_rates(rates: tuple[Decimal, Decimal], row: Mapping[str, Any]) -> Dict[str, float]:
+    """Display-shaped rates. Cache keys appear only when the matched row carries them"""
+    pricing = {"input_per_1k": float(rates[0]), "output_per_1k": float(rates[1])}
+    for key in ("cache_read_per_1k", "cache_creation_per_1k"):
+        rate = _cache_rate(row, key)
+        if rate is not None:
+            pricing[key] = float(rate)
+    return pricing
+
+
+def find_pricing(provider: str, model: str) -> Dict[str, float]:
+    """Response-cost/display helper: float rates, DEFAULT_PRICING when unknown"""
+    tenant = get_tenant_context()
+    provider_key = (provider or "").strip().lower()
+    model_key = _normalize_model_name(model)
+
+    configured_table, bundled_table, layers = _pricing_layers(provider_key, get_db_pricing_nested(tenant))
+
+    match = _match_layers(provider_key, model_key, layers)
+    if match is not None:
+        return _float_rates(match[2], match[3])
+
+    for table in (configured_table, bundled_table):
+        default_row = table.get("_default")
+        default_rates = _rate_pair(default_row)
+        if default_rates is not None:
+            return _float_rates(default_rates, default_row)
+    return DEFAULT_PRICING.copy()

@@ -33,6 +33,35 @@ class TestAddLlmUsage:
         assert entry["llm_provider_id"] is None
 
 
+class TestTotalLlmUsageCacheTokens:
+    def test_entries_without_details_report_zero(self):
+        s = _state()
+        s.add_llm_usage(10, 5, provider="openai", model="gpt-4o")
+        usage = s.get_total_llm_usage()
+        assert usage["cache_read_tokens"] == 0
+        assert usage["cache_creation_tokens"] == 0
+
+    def test_cache_counts_are_summed_across_entries(self):
+        s = _state()
+        details = {"input_token_details": {"cache_read": 300, "cache_creation": 20}}
+        s.add_llm_usage(10, 5, provider="anthropic", model="claude-3-5-sonnet", token_details=details)
+        s.add_llm_usage(10, 5, provider="anthropic", model="claude-3-5-sonnet", token_details=details)
+        usage = s.get_total_llm_usage()
+        assert usage["cache_read_tokens"] == 600
+        assert usage["cache_creation_tokens"] == 40
+
+    def test_cache_reads_lower_the_run_cost(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+        details = {"input_token_details": {"cache_read": 900, "cache_creation": 0}}
+        cached = _state()
+        cached.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet", token_details=details)
+        plain = _state()
+        plain.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
+        assert cached.get_total_llm_usage()["cost_usd"] < plain.get_total_llm_usage()["cost_usd"]
+
+
 class TestFormatIncludesExecutionId:
     def test_execution_id_present_and_matches(self):
         s = _state()

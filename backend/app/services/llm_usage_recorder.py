@@ -15,6 +15,7 @@ from app.core.config.llm_pricing import (
     ANTHROPIC_CACHE_WRITE_MULTIPLIER,
     CACHE_EXCLUSIVE_PROVIDERS,
     PricingStatus,
+    default_cache_rate,
     resolve_pricing,
 )
 from app.core.utils.date_time_utils import utc_now
@@ -106,13 +107,6 @@ def _token_columns(entry: dict[str, Any], input_tokens: int, output_tokens: int,
     }
 
 
-def _default_cache_rate(provider_key: str, input_per_1k: Decimal, anthropic_multiplier: Decimal) -> Decimal:
-    """Cache rate to use when the tenant configured none"""
-    if provider_key == "anthropic":
-        return input_per_1k * anthropic_multiplier
-    return input_per_1k
-
-
 def _resolve_cost(
     provider: str,
     model: str,
@@ -149,10 +143,10 @@ def _resolve_cost(
     provider_key = (provider or "").strip().lower()
     read_rate = resolution.cache_read_per_1k
     if read_rate is None:
-        read_rate = _default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_READ_MULTIPLIER)
+        read_rate = default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_READ_MULTIPLIER)
     creation_rate = resolution.cache_creation_per_1k
     if creation_rate is None:
-        creation_rate = _default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_WRITE_MULTIPLIER)
+        creation_rate = default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_WRITE_MULTIPLIER)
 
     if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
         uncached = max(int(input_tokens), 0)
