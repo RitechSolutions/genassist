@@ -3,6 +3,7 @@ import { ArrowRight, Loader2, AlertTriangle, RefreshCw, List, Network } from 'lu
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/tabs';
 import { Button } from '@/components/button';
+import { Switch } from '@/components/switch';
 import { cn } from '@/helpers/utils';
 import { Workflow } from '@/interfaces/workflow.interface';
 import { getWorkflowById } from '@/services/workflows';
@@ -33,6 +34,7 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
   const [resolvedTarget, setResolvedTarget] = useState<Workflow | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ignoreIdReferences, setIgnoreIdReferences] = useState(false);
 
   const loadVersions = useCallback(async () => {
     setLoading(true);
@@ -58,13 +60,14 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
       setResolvedBase(undefined);
       setResolvedTarget(undefined);
       setError(null);
+      setIgnoreIdReferences(false);
     }
   }, [open, loadVersions]);
 
   const diff = useMemo(() => {
     if (!resolvedBase || !resolvedTarget) return null;
-    return computeWorkflowDiff(resolvedBase, resolvedTarget);
-  }, [resolvedBase, resolvedTarget]);
+    return computeWorkflowDiff(resolvedBase, resolvedTarget, { ignoreIdReferences });
+  }, [resolvedBase, resolvedTarget, ignoreIdReferences]);
 
   const versionChip = (workflow: Workflow, side: 'base' | 'target') => {
     const isTarget = side === 'target';
@@ -137,16 +140,32 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
 
         {!loading && !error && diff && (
           <Tabs defaultValue="list" className="flex min-h-0 flex-1 flex-col pt-3">
-            <TabsList className="w-fit">
-              <TabsTrigger value="list" className="gap-1.5">
-                <List className="h-4 w-4" aria-hidden="true" />
-                List
-              </TabsTrigger>
-              <TabsTrigger value="graph" className="gap-1.5">
-                <Network className="h-4 w-4" aria-hidden="true" />
-                Graph
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <TabsList className="w-fit">
+                <TabsTrigger value="list" className="gap-1.5">
+                  <List className="h-4 w-4" aria-hidden="true" />
+                  List
+                </TabsTrigger>
+                <TabsTrigger value="graph" className="gap-1.5">
+                  <Network className="h-4 w-4" aria-hidden="true" />
+                  Graph
+                </TabsTrigger>
+              </TabsList>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="ignore-id-references"
+                  checked={ignoreIdReferences}
+                  onCheckedChange={setIgnoreIdReferences}
+                />
+                <label
+                  htmlFor="ignore-id-references"
+                  className="cursor-pointer select-none text-sm font-medium text-muted-foreground"
+                >
+                  Ignore ID references
+                </label>
+              </div>
+            </div>
             <TabsContent value="list" className="min-h-0 flex-1 pt-3 data-[state=inactive]:hidden">
               <DiffListView diff={diff} />
             </TabsContent>

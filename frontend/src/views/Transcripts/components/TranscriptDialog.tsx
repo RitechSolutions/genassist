@@ -4,7 +4,6 @@ import {
   ThumbsDown,
   BotMessageSquare,
   MessageSquare,
-  User,
   Pencil,
   Coins,
   Megaphone,
@@ -12,7 +11,7 @@ import {
   Check,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getAudioUrl,
   submitConversationFeedback,
@@ -27,12 +26,11 @@ import { askAIQuestion } from '@/services/aiChat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/useToast';
-import { formatMessageTime, formatCallTimestamp, formatDateTime, getEffectiveSentiment } from '../helpers/formatting';
+import { getEffectiveSentiment } from '../helpers/formatting';
 import { MetricCards } from './MetricCard';
 import { ScoreCards } from './ScoreCard';
 import { TranscriptAudioPlayer } from './TranscriptAudioPlayer';
-import { MessageFeedbackPopover } from './MessageFeedbackPopover';
-import { ConversationEntryWrapper } from '@/views/ActiveConversations/common/ConversationEntryWrapper';
+import { TranscriptThread } from './TranscriptThread';
 import { AgentResponseLogDialog } from '@/components/AgentResponseLogDialog';
 import { Switch } from '@/components/switch';
 import { DollarSign } from 'lucide-react';
@@ -118,97 +116,6 @@ const isCallTranscript = (transcript: Transcript | null) => {
   return Boolean(transcript.recording_id) || Boolean(transcript.metadata?.isCall);
 };
 
-function MessageFeedbackButton({
-  messageId,
-  localTranscript,
-  setLocalTranscript,
-  onOpenChange,
-}: {
-  messageId: string;
-  localTranscript: Transcript | null;
-  setLocalTranscript: Dispatch<SetStateAction<Transcript | null>>;
-  onOpenChange?: (open: boolean) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [text, setText] = useState('');
-  const { toast } = useToast();
-
-  const handleOpenChange = (open: boolean) => {
-    setIsOpen(open);
-    onOpenChange?.(open);
-
-    if (open) {
-      const collection = (localTranscript?.messages ?? localTranscript?.messages) || [];
-      const message = collection.find((entry) => entry.message_id === messageId);
-      const feedbackArr = Array.isArray(message?.feedback) ? (message?.feedback as ConversationFeedbackEntry[]) : [];
-      const lastFeedback = feedbackArr.length > 0 ? feedbackArr[feedbackArr.length - 1] : null;
-      setText(lastFeedback?.feedback_message || '');
-    }
-  };
-
-  const message = (localTranscript?.messages ?? localTranscript?.messages)?.find(
-    (entry) => entry.message_id === messageId
-  );
-  const feedbackArr = Array.isArray(message?.feedback) ? (message?.feedback as ConversationFeedbackEntry[]) : [];
-  const lastFeedback = feedbackArr.length > 0 ? feedbackArr[feedbackArr.length - 1] : null;
-  const hasFeedbackMessage = Boolean(lastFeedback?.feedback_message?.trim());
-
-  const handleClose = () => {
-    handleOpenChange(false);
-    setText('');
-  };
-
-  const handleSave = async () => {
-    if (!messageId || !localTranscript) return;
-
-    // A comment must never create or change a thumbs rating, so don't send one.
-    const success = await submitMessageFeedback(messageId, undefined, text);
-
-    if (success) {
-      setLocalTranscript((currentTranscript) => {
-        if (!currentTranscript) return null;
-        const b = currentTranscript.messages || [];
-        const newTranscriptEntries = b.map((entry) => {
-          if (entry.message_id !== messageId) return entry;
-          const arr = Array.isArray(entry.feedback) ? [...entry.feedback] : [];
-          if (arr.length > 0) {
-            // Attach the comment to the latest feedback entry, keeping its rating.
-            const idx = arr.length - 1;
-            arr[idx] = { ...arr[idx], feedback_message: text };
-          } else {
-            // Comment with no rating yet (feedback "" => no thumbs).
-            arr.push({
-              feedback: '',
-              feedback_message: text,
-              feedback_timestamp: new Date().toISOString(),
-              feedback_user_id: '',
-            });
-          }
-          return { ...entry, feedback: arr };
-        });
-        return { ...currentTranscript, messages: newTranscriptEntries, transcript: newTranscriptEntries };
-      });
-
-      toast({ title: 'Success', description: 'Feedback message saved.' });
-      handleClose();
-    } else {
-      toast({ title: 'Error', description: 'Failed to save feedback.', variant: 'destructive' });
-    }
-  };
-
-  return (
-    <MessageFeedbackPopover
-      isOpen={isOpen}
-      hasFeedbackMessage={hasFeedbackMessage}
-      text={text}
-      onOpenChange={handleOpenChange}
-      onTextChange={setText}
-      onSave={handleSave}
-      onCancel={handleClose}
-    />
-  );
-}
-
 export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: agentNameProp }: TranscriptDialogProps) {
   const [audioSrc, setAudioSrc] = useState<string>('');
   const [chatInput, setChatInput] = useState<string>('');
@@ -225,7 +132,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const [isEditing, setIsEditing] = useState(false);
   const [userFeedback, setUserFeedback] = useState<ConversationFeedbackEntry | null>(null);
   const [localTranscript, setLocalTranscript] = useState<Transcript | null>(transcript);
-  const [openPopoverMessageId, setOpenPopoverMessageId] = useState<string | null>(null);
   const [debugLogOpen, setDebugLogOpen] = useState(false);
   const [debugMessageId, setDebugMessageId] = useState<string | null>(null);
   const [showCosts, setShowCosts] = useState(false);
@@ -734,177 +640,19 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
             </Tabs>
             <div className="flex-1 flex flex-col bg-secondary/30 rounded-lg overflow-hidden">
               {activeTab === 'transcript' ? (
-                <div
-                  className="p-3 overflow-y-auto text-[13px] sm:text-[12px]"
+                <TranscriptThread
+                  transcript={localTranscript}
+                  isCall={isCall}
+                  showCosts={showCosts}
+                  costsByMessageId={costsByMessageId}
+                  onMessageFeedback={handleMessageFeedback}
+                  onTranscriptChange={setLocalTranscript}
+                  onDebugMessage={(messageId) => {
+                    setDebugMessageId(messageId);
+                    setDebugLogOpen(true);
+                  }}
                   style={{ height: isCall ? '550px' : '460px' }}
-                >
-                  <div className="space-y-2">
-                    {localTranscript.timestamp && (
-                      <div className="flex justify-center mb-3">
-                        <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs">
-                          {formatDateTime(localTranscript.timestamp)}
-                        </div>
-                      </div>
-                    )}
-                    {(localTranscript.messages ?? localTranscript.messages)?.map((entry, index) => {
-                      const entryObj = typeof entry === 'string' ? JSON.parse(entry) : entry;
-                      const entryType = entryObj.type || '';
-
-                      if (
-                        entryType === 'takeover' ||
-                        (entryObj.speaker === 'Unknown' && entryObj.text === '' && entryObj.start_time === 0)
-                      ) {
-                        return (
-                          <div
-                            className="flex justify-center my-3"
-                            key={`takeover-${index}-${entryObj.create_time || index}`}
-                          >
-                            <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">
-                              <User className="w-3 h-3 mr-1" />
-                              Supervisor took over
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // Skip empty messages
-                      if ((entryObj.text === '' || !entryObj.text) && (entryObj.speaker === '' || !entryObj.speaker)) {
-                        return null;
-                      }
-
-                      const isAgent = ['Agent', 'agent'].includes(entryObj.speaker);
-                      const messageId = entryObj.message_id as string | undefined;
-                      const messageFeedbackArr = Array.isArray(entryObj.feedback)
-                        ? (entryObj.feedback as ConversationFeedbackEntry[])
-                        : [];
-                      const hasGood = messageFeedbackArr.some((f) => f.feedback === 'good');
-                      const hasBad = messageFeedbackArr.some((f) => f.feedback === 'bad');
-                      const hasComment = messageFeedbackArr.some(
-                        (f) => Boolean(f.feedback_message && f.feedback_message.trim())
-                      );
-                      // Keep the controls pinned once there's any feedback (rating or comment),
-                      // so the comment indicator doesn't vanish when the hover ends.
-                      const hasFeedback = hasGood || hasBad || hasComment;
-                      const speakerName = isAgent ? 'Operator' : 'Customer';
-
-                      return (
-                        <div
-                          key={index}
-                          className={`flex flex-col ${isAgent ? 'items-end' : 'items-start'} group relative`}
-                        >
-                          <span className="text-[11px] text-foreground font-medium mb-1">{speakerName}</span>
-                          <div className="relative">
-                            {isAgent && messageId && (
-                              <div
-                                className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 ${
-                                  hasFeedback || openPopoverMessageId === messageId
-                                    ? 'flex'
-                                    : 'hidden group-hover:flex'
-                                } items-center gap-2 z-10`}
-                              >
-                                {hasGood ? (
-                                  <div className="flex items-center bg-card rounded-lg shadow-sm border border-green-200 dark:border-green-500/30 p-2">
-                                    <ThumbsUp className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                  </div>
-                                ) : hasBad ? (
-                                  <div className="flex items-center bg-card rounded-lg shadow-sm border border-red-200 dark:border-red-500/30 p-2">
-                                    <ThumbsDown className="w-4 h-4 text-red-600 dark:text-red-400" />
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center bg-card rounded-lg shadow-sm border border-border">
-                                    <button
-                                      className="p-2 hover:bg-muted rounded-l-lg"
-                                      title="Good response"
-                                      onClick={() => handleMessageFeedback(messageId, 'good')}
-                                    >
-                                      <ThumbsUp className="w-4 h-4 text-yellow-500" />
-                                    </button>
-                                    <div className="h-4 w-px bg-muted" />
-                                    <button
-                                      className="p-2 hover:bg-muted rounded-r-lg"
-                                      title="Bad response"
-                                      onClick={() => handleMessageFeedback(messageId, 'bad')}
-                                    >
-                                      <ThumbsDown className="w-4 h-4 text-yellow-500" />
-                                    </button>
-                                  </div>
-                                )}
-                                <MessageFeedbackButton
-                                  messageId={messageId}
-                                  localTranscript={localTranscript}
-                                  setLocalTranscript={setLocalTranscript}
-                                  onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
-                                />
-                              </div>
-                            )}
-                            <div className={`p-2 flex flex-col gap-1`} style={{ maxWidth: '400px' }}>
-                              <div
-                                className={`p-2 rounded-lg leading-tight break-words inline-block z-10 ${
-                                  isAgent
-                                    ? 'bg-blue-600 text-white rounded-tl-lg rounded-tr-none'
-                                    : 'bg-muted text-foreground rounded-tr-lg rounded-tl-none'
-                                }`}
-                              >
-                                <ConversationEntryWrapper entry={entryObj} conversationId={localTranscript.id} />
-
-                                <div className="flex items-center justify-end">
-                                  <span
-                                    className={`block text-[10px] text-right mt-1 ${
-                                      isAgent ? 'text-white/80' : 'text-muted-foreground'
-                                    }`}
-                                  >
-                                    {isCall
-                                      ? formatCallTimestamp(entryObj.start_time)
-                                      : formatMessageTime(entryObj.create_time)}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {isAgent && messageId && (
-                                <div className="flex flex-row gap-1 px-3 py-2 pt-3 rounded-b-lg justify-between w-full bg-gray-300/50 text-black/80 -mt-3 z-9">
-                                  <button
-                                    type="button"
-                                    className="text-[10px] underline self-end"
-                                    onClick={() => {
-                                      setDebugMessageId(messageId);
-                                      setDebugLogOpen(true);
-                                    }}
-                                  >
-                                    Debug response
-                                  </button>
-                                  {showCosts && costsByMessageId[messageId] && (
-                                    <div className={`mt-1 text-[10px] ${isAgent ? 'text-black/80' : 'text-gray-600'}`}>
-                                      Tokens Input/Output:
-                                      <span className="font-bold">
-                                        {costsByMessageId[messageId].input_tokens ?? '—'}
-                                      </span>
-                                      /
-                                      <span className="font-bold">
-                                        {costsByMessageId[messageId].output_tokens ?? '—'}
-                                      </span>
-                                      ,
-                                      <Coins className="w-2 h-2 inline-block" /> Cost:{' '}
-                                      <span className="font-bold">
-                                        ${(costsByMessageId[messageId].cost_usd ?? 0).toFixed(6)}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {localTranscript.status === 'finalized' && (
-                      <div className="flex justify-center my-3">
-                        <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">
-                          Conversation Finalized
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                />
               ) : (
                 <div
                   ref={chatContainerRef}
