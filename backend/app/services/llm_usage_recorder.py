@@ -10,7 +10,13 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.llm_pricing import PricingStatus, resolve_pricing
+from app.core.config.llm_pricing import (
+    ANTHROPIC_CACHE_READ_MULTIPLIER,
+    ANTHROPIC_CACHE_WRITE_MULTIPLIER,
+    CACHE_EXCLUSIVE_PROVIDERS,
+    PricingStatus,
+    resolve_pricing,
+)
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.db_connection_utils import create_tenant_request_scope
 from app.core.utils.llm_usage_utils import is_usage_metadata_missing, usage_or_placeholder
@@ -35,6 +41,8 @@ logger = logging.getLogger(__name__)
 _UNPRICED = {
     "input_per_1k": None,
     "output_per_1k": None,
+    "cache_read_per_1k": None,
+    "cache_creation_per_1k": None,
     "cost_usd": None,
     "pricing_status": PricingStatus.UNPRICED.value,
 }
@@ -85,6 +93,13 @@ def _total_tokens(entry: dict[str, Any], input_tokens: int, output_tokens: int) 
     return max(reported, input_tokens + output_tokens)
 
 
+def _default_cache_rate(provider_key: str, input_per_1k: Decimal, anthropic_multiplier: Decimal) -> Decimal:
+    """Cache rate to use when the tenant configured none"""
+    if provider_key == "anthropic":
+        return input_per_1k * anthropic_multiplier
+    return input_per_1k
+
+
 def _resolve_cost(
     provider: str,
     model: str,
@@ -92,20 +107,56 @@ def _resolve_cost(
     output_tokens: int,
     configured_rates: Optional[dict[str, Any]] = None,
     usage_missing: bool = False,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
 ) -> dict[str, Any]:
-    """Snapshot the rate + cost for one call. No rate, or no reported usage → NULL cost"""
+    """Snapshot the rates + cost for one call. No rate, or no reported usage → NULL cost"""
     if usage_missing:
         return dict(_UNPRICED)
     resolution = resolve_pricing(provider, model, configured_rates)
     if resolution.status is PricingStatus.UNPRICED:
         return dict(_UNPRICED)
     thousand = Decimal(1000)
-    cost = (Decimal(int(input_tokens)) / thousand) * resolution.input_per_1k + (
-        Decimal(int(output_tokens)) / thousand
-    ) * resolution.output_per_1k
+    cache_read = max(int(cache_read_tokens), 0)
+    cache_creation = max(int(cache_creation_tokens), 0)
+
+    if not cache_read and not cache_creation:
+        cost = (Decimal(int(input_tokens)) / thousand) * resolution.input_per_1k + (
+            Decimal(int(output_tokens)) / thousand
+        ) * resolution.output_per_1k
+        return {
+            "input_per_1k": resolution.input_per_1k,
+            "output_per_1k": resolution.output_per_1k,
+            "cache_read_per_1k": None,
+            "cache_creation_per_1k": None,
+            "cost_usd": cost,
+            "pricing_status": resolution.status.value,
+        }
+
+    provider_key = (provider or "").strip().lower()
+    read_rate = resolution.cache_read_per_1k
+    if read_rate is None:
+        read_rate = _default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_READ_MULTIPLIER)
+    creation_rate = resolution.cache_creation_per_1k
+    if creation_rate is None:
+        creation_rate = _default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_WRITE_MULTIPLIER)
+
+    if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
+        uncached = max(int(input_tokens), 0)
+    else:
+        uncached = max(int(input_tokens) - cache_read - cache_creation, 0)
+
+    cost = (
+        (Decimal(uncached) / thousand) * resolution.input_per_1k
+        + (Decimal(int(output_tokens)) / thousand) * resolution.output_per_1k
+        + (Decimal(cache_read) / thousand) * read_rate
+        + (Decimal(cache_creation) / thousand) * creation_rate
+    )
     return {
         "input_per_1k": resolution.input_per_1k,
         "output_per_1k": resolution.output_per_1k,
+        "cache_read_per_1k": read_rate,
+        "cache_creation_per_1k": creation_rate,
         "cost_usd": cost,
         "pricing_status": resolution.status.value,
     }
