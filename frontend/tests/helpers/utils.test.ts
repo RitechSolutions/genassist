@@ -1,4 +1,4 @@
-import { vi, describe, expect, it } from "vitest";
+import { vi, describe, expect, it, afterEach } from "vitest";
 
 // `@/helpers/utils` re-imports the axios/env-backed api module purely for an
 // (unused) re-export. Mock it so these pure helpers stay hermetic and never
@@ -16,6 +16,7 @@ import {
   maskInput,
   escapeHtml,
   getFileDownloadUrl,
+  downloadBlob,
 } from "@/helpers/utils";
 
 describe("cn", () => {
@@ -122,5 +123,61 @@ describe("formatDateTime", () => {
     const out = formatDateTime("2026-02-17T09:05:00");
     expect(out).not.toBe("—");
     expect(out).toMatch(/\d/);
+  });
+});
+
+describe("downloadBlob", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const setup = () => {
+    const anchor = {
+      href: "",
+      download: "",
+      rel: "",
+      style: {} as Record<string, string>,
+      click: vi.fn(),
+      remove: vi.fn(),
+    };
+    const appendChild = vi.fn();
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:fake"),
+      revokeObjectURL,
+    });
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => anchor),
+      body: { appendChild },
+    });
+    return { anchor, appendChild, revokeObjectURL };
+  };
+
+  it("attaches the anchor before clicking so Firefox honours the download", () => {
+    vi.useFakeTimers();
+    const { anchor, appendChild } = setup();
+
+    downloadBlob(new Blob(["x"]), "model.pkl");
+
+    expect(appendChild).toHaveBeenCalledWith(anchor);
+    expect(appendChild.mock.invocationCallOrder[0]).toBeLessThan(
+      anchor.click.mock.invocationCallOrder[0]
+    );
+    expect(anchor.href).toBe("blob:fake");
+    expect(anchor.download).toBe("model.pkl");
+    expect(anchor.remove).toHaveBeenCalled();
+  });
+
+  it("defers revoking the object URL instead of racing the download", () => {
+    vi.useFakeTimers();
+    const { revokeObjectURL } = setup();
+
+    downloadBlob(new Blob(["x"]), "model.pkl");
+    // Revoking in the same tick cancels the download in Firefox/Safari.
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    vi.runAllTimers();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:fake");
   });
 });
