@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupByTechnique,
   hasMetrics,
+  ruleCheckSummary,
   isResultNotScored,
   isResultPassed,
   isResultFailed,
@@ -21,9 +23,11 @@ const metric = (passed: boolean) => ({ score: passed ? 1 : 0, passed });
 
 const toolResult = (
   status: TestToolRuleResult["status"],
+  technique: TestToolRuleResult["technique"] = "tool_used",
 ): TestToolRuleResult => ({
-  id: "t",
+  id: `${technique}-${status}`,
   run_id: "run",
+  technique,
   rule_id: "rule",
   scope: "conversation",
   status,
@@ -213,5 +217,80 @@ describe("runAvgAccuracy", () => {
 
   it("counts a zero accuracy as scored (returns 0, not null)", () => {
     expect(runAvgAccuracy(run({ a: { accuracy: 0 } }))).toBe(0);
+  });
+});
+
+describe("groupByTechnique", () => {
+  it("groups rule results per technique, in wizard order", () => {
+    const grouped = groupByTechnique([
+      toolResult("passed", "action_taken"),
+      toolResult("failed", "tool_used"),
+      toolResult("passed", "route_taken"),
+    ]);
+
+    expect(grouped.map(([technique]) => technique)).toEqual([
+      "tool_used",
+      "route_taken",
+      "action_taken",
+    ]);
+    expect(grouped[0][1]).toHaveLength(1);
+  });
+
+  it("treats a row without a technique as tool usage", () => {
+    const legacy = { ...toolResult("passed"), technique: undefined } as unknown as TestToolRuleResult;
+    expect(groupByTechnique([legacy]).map(([technique]) => technique)).toEqual(["tool_used"]);
+  });
+
+  it("returns nothing for an empty run", () => {
+    expect(groupByTechnique([])).toEqual([]);
+  });
+});
+
+describe("ruleCheckSummary", () => {
+  const check = (
+    status: TestToolRuleResult["status"],
+    ruleId: string,
+    scope: string,
+  ): TestToolRuleResult => ({
+    ...toolResult(status),
+    id: `${ruleId}-${scope}-${Math.random()}`,
+    rule_id: ruleId,
+    scope,
+  });
+
+  it("counts rule checks, not turns, and says how the count is made up", () => {
+    // Two every-turn rules over 12 turns: 24 checks, 15 of them passing.
+    const results = Array.from({ length: 12 }, (_, index) => [
+      check(index < 9 ? "passed" : "failed", "action-1", "every_turn"),
+      check(index < 6 ? "passed" : "failed", "action-2", "every_turn"),
+    ]).flat();
+
+    const { headline, subline } = ruleCheckSummary(results);
+
+    expect(headline).toBe("15 of 24 checks passed · 63% pass rate");
+    expect(subline).toBe("2 rules · 24 turn checks");
+  });
+
+  it("counts a specific-turn rule once per turn it targets", () => {
+    const results = [
+      ...Array.from({ length: 12 }, () => check("passed", "route-2", "every_turn")),
+      check("passed", "route-1", "specific_turn"),
+      check("failed", "route-1", "specific_turn"),
+    ];
+
+    expect(ruleCheckSummary(results).subline).toBe("2 rules · 14 turn checks");
+  });
+
+  it("separates conversation checks from turn checks", () => {
+    const results = [
+      check("passed", "r1", "conversation"),
+      check("failed", "r1", "conversation"),
+      check("passed", "r2", "every_turn"),
+    ];
+
+    const { headline, subline } = ruleCheckSummary(results);
+
+    expect(headline).toBe("2 of 3 checks passed · 67% pass rate");
+    expect(subline).toBe("2 rules · 1 turn check · 2 conversation checks");
   });
 });
