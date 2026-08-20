@@ -190,6 +190,19 @@ async def test_legacy_four_column_file_still_imports_without_cache_rates():
 
 
 @pytest.mark.asyncio
+async def test_legacy_four_column_file_leaves_configured_cache_rates_alone():
+    existing = _row("bedrock", "nova", Decimal("0.0001"), Decimal("0.0004"), Decimal("0.000025"), Decimal("0"))
+    service = LlmCostRateService(FakeRateRepo(existing={("bedrock", "nova"): existing}))
+
+    result = await service.import_csv(HEADER + "bedrock,nova,0.0002,0.0008\n")
+
+    assert (result.inserted, result.updated, result.errors) == (0, 1, [])
+    assert existing.input_per_1k == Decimal("0.0002")
+    assert existing.cache_read_per_1k == Decimal("0.000025")
+    assert existing.cache_creation_per_1k == Decimal("0"), "a file without the column cannot clear a rate"
+
+
+@pytest.mark.asyncio
 async def test_import_reads_cache_rates_and_keeps_zero_distinct_from_blank():
     repo = FakeRateRepo()
     service = LlmCostRateService(repo)

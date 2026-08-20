@@ -85,7 +85,11 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
 
 
 def get_db_pricing_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]]:
-    """Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS."""
+    """
+    Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS.
+    A failed refresh keeps serving the last good copy, so a DB blip cannot silently
+    revert a tenant to the bundled rates.
+    """
     with _lock:
         entry = _cache.get(tenant)
         if entry is not None and time.monotonic() < entry[0]:

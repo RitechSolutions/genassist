@@ -162,8 +162,12 @@ class LlmCostRateService:
             if existing:
                 existing.input_per_1k = dto.input_per_1k
                 existing.output_per_1k = dto.output_per_1k
-                existing.cache_read_per_1k = dto.cache_read_per_1k
-                existing.cache_creation_per_1k = dto.cache_creation_per_1k
+                # A 4-column file cannot express "clear", so it leaves configured rates alone;
+                # a blank cell under a cache header still clears
+                if "cache_read_per_1k" in headers:
+                    existing.cache_read_per_1k = dto.cache_read_per_1k
+                if "cache_creation_per_1k" in headers:
+                    existing.cache_creation_per_1k = dto.cache_creation_per_1k
                 # Defensive: older schema/model mismatch could leave this NULL.
                 existing.updated_at = datetime.now(timezone.utc)
                 self.repo.db.add(existing)

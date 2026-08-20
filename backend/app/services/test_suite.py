@@ -2104,7 +2104,7 @@ class TestSuiteService:
             return None
 
     async def _persist_judge_usage(
-        self, usage_ref: EvaluationUsageRef, cache: Dict[str, Tuple[str, str]]
+        self, usage_ref: EvaluationUsageRef, cache: Dict[str, Tuple[str, str, bool]]
     ) -> None:
         """Resolve each judge call's provider identity, then record the case's batch."""
         from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
@@ -2137,7 +2137,7 @@ class TestSuiteService:
     async def _flush_judge_usage(
         self,
         usage_ref: Optional[EvaluationUsageRef],
-        cache: Dict[str, Tuple[str, str]],
+        cache: Dict[str, Tuple[str, str, bool]],
         metering_state: Dict[str, Any],
     ) -> None:
         if usage_ref is None or not usage_ref.entries or metering_state.get("timed_out"):
@@ -2212,7 +2212,7 @@ class TestSuiteService:
         status_counts: Dict[str, int] = {}
         case_events: Dict[str, List[Dict[str, Any]]] = {}
         case_executed_agents: Dict[str, set] = {}
-        provider_name_cache: Dict[str, Tuple[str, str]] = {}
+        provider_name_cache: Dict[str, Tuple[str, str, bool]] = {}
         metering_state: Dict[str, Any] = {"timed_out": False}
 
         async def record_case_error(

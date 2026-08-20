@@ -213,7 +213,7 @@ class TestSplitMode:
 class TestSplitModeStillDrivesTheWorkflow:
     async def test_json_tool_call_parses_from_a_split_mode_response(self):
         tool = _weather_tool()
-        agent, inner = _agent(tools=[tool], replies=[_TOOL_CALL_JSON, _DIRECT_JSON])
+        agent, _ = _agent(tools=[tool], replies=[_TOOL_CALL_JSON, _DIRECT_JSON])
 
         result = await agent.invoke(_QUERY)
 

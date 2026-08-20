@@ -35,6 +35,8 @@ class RetryOnToolErrorMiddleware(AgentMiddleware):
 class ReActAgentLC(BaseToolAgent):
     """ReAct Agent implementation using LangGraph's prebuilt React agent"""
 
+    system_prompt: Union[str, SystemMessage]
+
     def __init__(
         self,
         llm_model: BaseChatModel,
@@ -223,7 +225,6 @@ class ReActAgentLC(BaseToolAgent):
 
         try:
             # Prepare the input for LangGraph
-            # Add system prompt as the first message if it exists
             messages: List[BaseMessage] = []
 
             # Add chat history if available
@@ -520,8 +521,7 @@ class ReActAgentLC(BaseToolAgent):
 
         try:
             # Prepare the input for LangGraph.
-            # No system message here: create_agent already injects self.system_prompt,
-            # so prepending it again sent two copies.
+            # No system message here: create_agent already injects self.system_prompt
             messages: List[BaseMessage] = []
 
             # Add chat history if available
