@@ -76,8 +76,8 @@ import {
   TrainingPipelineConfig,
 } from "@/interfaces/ml-model-pipeline.interface";
 import { Workflow, WorkflowCreatePayload } from "@/interfaces/workflow.interface";
-import { downloadFile, formatDateTime, getFileDownloadUrl } from "@/helpers/utils";
-import { getApiUrlString } from "@/config/api";
+import { formatDateTime } from "@/helpers/utils";
+import { downloadFileManagerFile } from "@/services/fileManager";
 import { modelTypeLabel } from "../helpers/modelTypes";
 import {
   CRON_PRESETS,
@@ -473,9 +473,7 @@ const MLModelDetail: React.FC = () => {
     if (!model?.pkl_file_id) return;
     try {
       setIsDownloadingModel(true);
-      const tenantId = localStorage.getItem("tenant_id");
-      const fileUrl = getFileDownloadUrl(model.pkl_file_id, getApiUrlString, tenantId || "");
-      await downloadFile(fileUrl, `${model.name || "model"}.pkl`);
+      await downloadFileManagerFile(model.pkl_file_id, `${model.name || "model"}.pkl`);
     } catch {
       toast.error("Failed to download the model file.");
     } finally {

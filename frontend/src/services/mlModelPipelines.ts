@@ -1,4 +1,5 @@
 import { apiRequest, api, getApiUrl } from "@/config/api";
+import { downloadBlob } from "@/helpers/utils";
 import {
   TrainingPipelineConfig,
   PipelineRun,
@@ -160,10 +161,5 @@ export const downloadPipelineArtifact = async (
     url: `${baseURL}${BASE}/${modelId}/pipeline-runs/${runId}/artifacts/${artifactId}/download`,
     responseType: "blob",
   });
-  const objectUrl = URL.createObjectURL(response.data);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(objectUrl);
+  downloadBlob(response.data, filename);
 };

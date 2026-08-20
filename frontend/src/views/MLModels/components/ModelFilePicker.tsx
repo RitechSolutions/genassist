@@ -4,8 +4,7 @@ import { Download, FileCode, Upload, X } from "lucide-react";
 
 import { Button } from "@/components/button";
 import { cn } from "@/lib/utils";
-import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
-import { getApiUrlString } from "@/config/api";
+import { downloadFileManagerFile } from "@/services/fileManager";
 import { formatFileSize } from "../helpers/pipelineRuns";
 
 export interface ModelFilePickerProps {
@@ -44,13 +43,7 @@ export const ModelFilePicker: React.FC<ModelFilePickerProps> = ({
 
   const handleDownload = async () => {
     try {
-      const tenantId = localStorage.getItem("tenant_id");
-      const fileUrl = getFileDownloadUrl(
-        existingFileId as string,
-        getApiUrlString,
-        tenantId || ""
-      );
-      await downloadFile(fileUrl, `${modelName || "model"}.pkl`);
+      await downloadFileManagerFile(existingFileId as string, `${modelName || "model"}.pkl`);
     } catch {
       toast.error("Failed to download model file.");
     }
