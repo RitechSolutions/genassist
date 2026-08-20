@@ -36,6 +36,8 @@ import { Switch } from '@/components/switch';
 import { DollarSign } from 'lucide-react';
 import { formatFeedbackDate } from '@/helpers/utils';
 import { useAgentsList } from '@/views/Analytics/hooks/useAgentsList';
+import { useFeatureFlagVisible } from '@/components/featureFlag';
+import { FeatureFlags } from '@/config/featureFlags';
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -151,6 +153,9 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const { toast } = useToast();
   const [linkCopied, setLinkCopied] = useState(false);
   const { agentNameMap } = useAgentsList();
+  const showAskGenAI = useFeatureFlagVisible(FeatureFlags.CONVERSATIONS.SHOW_ASK_GENAI);
+  // Without the flag the assistant is gone, so the transcript is the only pane left
+  const rightPanelTab = showAskGenAI ? activeTab : 'transcript';
 
   const headerAgentName = useMemo(() => {
     if (!localTranscript) return undefined;
@@ -268,7 +273,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   }, [isOpen, localTranscript?.id]);
 
   const handleSendMessage = async () => {
-    if (chatInput.trim() === '' || !localTranscript) return;
+    if (!showAskGenAI || chatInput.trim() === '' || !localTranscript) return;
 
     const userMessage = { role: 'Me', text: chatInput };
 
@@ -410,7 +415,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent className="max-w-5xl 2xl:max-w-[1120px] min-[1920px]:max-w-[1340px]">
         <DialogHeader>
           <DialogTitle className="flex flex-col gap-1.5 items-start">
             <span className="flex items-center gap-2">
@@ -629,17 +634,17 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
 
           <div className="flex flex-col">
             <Tabs
-              value={activeTab}
+              value={rightPanelTab}
               onValueChange={(value) => setActiveTab(value as 'transcript' | 'ai')}
               className="pb-1"
             >
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className={`grid w-full ${showAskGenAI ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <TabsTrigger value="transcript">Transcript</TabsTrigger>
-                <TabsTrigger value="ai">Ask GenAI</TabsTrigger>
+                {showAskGenAI && <TabsTrigger value="ai">Ask GenAI</TabsTrigger>}
               </TabsList>
             </Tabs>
             <div className="flex-1 flex flex-col bg-secondary/30 rounded-lg overflow-hidden">
-              {activeTab === 'transcript' ? (
+              {rightPanelTab === 'transcript' ? (
                 <TranscriptThread
                   transcript={localTranscript}
                   isCall={isCall}
@@ -651,13 +656,20 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                     setDebugMessageId(messageId);
                     setDebugLogOpen(true);
                   }}
-                  style={{ height: isCall ? '550px' : '460px' }}
+                  className={
+                    isCall
+                      ? 'h-[550px] 2xl:h-[min(70vh,660px)] min-[1920px]:h-[min(72vh,780px)]'
+                      : 'h-[460px] 2xl:h-[min(64vh,560px)] min-[1920px]:h-[min(68vh,680px)]'
+                  }
                 />
               ) : (
                 <div
                   ref={chatContainerRef}
-                  className="p-3 overflow-y-auto text-[13px] sm:text-[12px]"
-                  style={{ height: isCall ? '500px' : '400px' }}
+                  className={`p-3 overflow-y-auto text-[13px] sm:text-[12px] ${
+                    isCall
+                      ? 'h-[500px] 2xl:h-[min(64vh,600px)] min-[1920px]:h-[min(66vh,720px)]'
+                      : 'h-[400px] 2xl:h-[min(58vh,500px)] min-[1920px]:h-[min(62vh,620px)]'
+                  }`}
                 >
                   {aiMessagesByTranscript[localTranscript.id]?.length > 0 ? (
                     <div className="space-y-2">
@@ -691,7 +703,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                 </div>
               )}
             </div>
-            {activeTab === 'ai' && (
+            {rightPanelTab === 'ai' && (
               <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
                 <Input
                   className="flex-1"

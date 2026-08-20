@@ -287,7 +287,7 @@ export function TranscriptThread({
                     )}
                   </div>
                 )}
-                <div className={`p-2 flex flex-col gap-1`} style={{ maxWidth: '400px' }}>
+                <div className="p-2 flex flex-col gap-1 max-w-[400px] 2xl:max-w-[500px] min-[1920px]:max-w-[600px]">
                   <div
                     className={cn(
                       'p-2 rounded-lg leading-tight break-words inline-block z-10',
