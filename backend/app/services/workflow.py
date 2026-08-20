@@ -208,6 +208,10 @@ class WorkflowService:
             await self._invalidate_agent_caches(orm_obj.agent.id)
         await self.repository.delete(orm_obj)
 
+    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
+        """Retire every version of an agent's workflow when the agent is deleted."""
+        await self.repository.soft_delete_by_agent(agent_id, commit=commit)
+
     async def _invalidate_agent_caches(self, agent_id: UUID) -> None:
         """Best-effort bust of every agent cache that embeds the workflow.
 

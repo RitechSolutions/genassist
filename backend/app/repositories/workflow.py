@@ -2,7 +2,7 @@ from typing import List
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import case, select
+from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
@@ -46,6 +46,21 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         stmt = self._minimal_select().where(WorkflowModel.id.in_(ids))
         result = await self.db.execute(stmt)
         return result.all()
+
+    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
+        """Retire every version of an agent's workflow.
+
+        Each version is a separate row, so deleting the agent leaves them all
+        behind. Skip the commit to batch this with the agent's own delete.
+        """
+        await self.db.execute(
+            update(WorkflowModel)
+            .where(WorkflowModel.agent_id == agent_id)
+            .values(is_deleted=1)
+            .execution_options(synchronize_session="fetch")
+        )
+        if commit:
+            await self.db.commit()
 
     async def get_summaries_by_agent(self, agent_id: UUID) -> List:
         stmt = (
