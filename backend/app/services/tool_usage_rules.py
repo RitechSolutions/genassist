@@ -24,15 +24,29 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.services.rule_scopes import (
+    RULE_FAILED,
+    RULE_NOT_EVALUATED,
+    RULE_PASSED,
+    SCOPES,
+    ScopedRule,
+    plan_rule_results,
+    scope_phrase,
+    summarize_planned_results,
+)
+
 
 # ---- constants -------------------------------------------------------------
 
 OPERATORS = ("all", "any", "none", "only")
-SCOPES = ("specific_turn", "every_turn", "conversation")
 
-RULE_PASSED = "passed"
-RULE_FAILED = "failed"
-RULE_NOT_EVALUATED = "not_evaluated"
+# Re-exported so callers of this module keep one import for rules and their states.
+__all__ = [
+    "OPERATORS", "SCOPES", "RULE_PASSED", "RULE_FAILED", "RULE_NOT_EVALUATED",
+    "PerToolCheck", "ToolUsageRule", "ToolUsageConfig", "evaluate_rule", "evaluate_rules",
+    "plan_tool_rule_results", "summarize_planned_results", "describe_tool_rule",
+    "parse_tool_usage_config", "canonicalize_tool_usage_config",
+]
 
 # Operators that assert a tool WAS used (vs. forbidding/whitelisting usage).
 _REQUIRING_OPERATORS = ("all", "any")
@@ -52,21 +66,13 @@ class PerToolCheck(BaseModel):
     expected_args: Optional[Dict[str, Any]] = None
 
 
-class ToolUsageRule(BaseModel):
+class ToolUsageRule(ScopedRule):
     """One tool-usage assertion. See module docstring for operator semantics."""
 
-    id: str
     tool_ids: List[str] = Field(default_factory=list)
     operator: str = "all"
     agent_id: Optional[str] = None
     require_success: bool = False
-    scope: str = "every_turn"
-
-    # Stable turn targeting: imported turns use (source_conversation_id, turn_index)
-    # so a rule survives a conversation re-import; manual cases use case_id.
-    target_case_id: Optional[str] = None
-    target_source_conversation_id: Optional[str] = None
-    target_turn_index: Optional[int] = None
 
     min_calls: Optional[int] = None
     max_calls: Optional[int] = None
@@ -79,29 +85,11 @@ class ToolUsageRule(BaseModel):
             raise ValueError(f"operator must be one of {OPERATORS}, got {value!r}")
         return value
 
-    @field_validator("scope")
-    @classmethod
-    def _valid_scope(cls, value: str) -> str:
-        if value not in SCOPES:
-            raise ValueError(f"scope must be one of {SCOPES}, got {value!r}")
-        return value
-
     @model_validator(mode="after")
-    def _check_targets_and_tools(self) -> "ToolUsageRule":
+    def _check_tools_and_bounds(self) -> "ToolUsageRule":
         # "only" may forbid every tool (empty list); the others need a tool.
         if self.operator != "only" and not self.tool_ids:
             raise ValueError(f"rule {self.id!r}: operator {self.operator!r} requires at least one tool")
-        if self.scope == "specific_turn":
-            has_case = self.target_case_id is not None
-            has_turn = (
-                self.target_source_conversation_id is not None
-                and self.target_turn_index is not None
-            )
-            if not (has_case or has_turn):
-                raise ValueError(
-                    f"rule {self.id!r}: specific_turn scope requires target_case_id or "
-                    "(target_source_conversation_id + target_turn_index)"
-                )
         if self.min_calls is not None and self.min_calls < 0:
             raise ValueError(f"rule {self.id!r}: min_calls must be >= 0")
         if self.max_calls is not None and self.max_calls < 0:
@@ -448,97 +436,23 @@ def plan_tool_rule_results(
 ) -> List[Dict[str, Any]]:
     """Grade every rule over its scope and return placed results (no DB, no ORM).
 
-    ``turns`` are ``{"id", "source_conversation_id", "turn_index"}`` dicts;
-    ``conversation_groups`` lists turn ids grouped per conversation. Each planned
-    entry carries where the result belongs (``case_id`` / ``source_conversation_id``).
+    See :func:`app.services.rule_scopes.plan_rule_results` for the scope contract;
+    this adds the tool-usage grading of each scope slice.
     """
-    turns_by_id = {t["id"]: t for t in turns}
-    by_conversation_turn = {
-        (t["source_conversation_id"], t["turn_index"]): t["id"]
-        for t in turns
-        if t.get("source_conversation_id") is not None and t.get("turn_index") is not None
-    }
 
-    def place(rule, result, *, case_id=None, source_conversation_id=None):
-        return {
-            "rule_id": rule.id, "scope": rule.scope, "case_id": case_id,
-            "source_conversation_id": source_conversation_id, "result": result,
-        }
+    def grade(rule: ToolUsageRule, turn_ids: List[str]) -> Dict[str, Any]:
+        events: List[Dict[str, Any]] = []
+        executed: Set[str] = set()
+        for turn_id in turn_ids:
+            events.extend(events_by_turn.get(turn_id, []))
+            executed |= executed_by_turn.get(turn_id, set())
+        return evaluate_rule(rule, events, executed, label_of)
 
-    planned: List[Dict[str, Any]] = []
-    for rule in rules:
-        if rule.scope == "specific_turn":
-            target_id = None
-            if rule.target_case_id and rule.target_case_id in turns_by_id:
-                target_id = rule.target_case_id
-            elif rule.target_source_conversation_id is not None and rule.target_turn_index is not None:
-                target_id = by_conversation_turn.get(
-                    (rule.target_source_conversation_id, rule.target_turn_index)
-                )
-            if target_id is None:
-                planned.append(place(rule, _not_evaluated_result(rule, "Target turn not found in this run.")))
-                continue
-            result = evaluate_rule(
-                rule, events_by_turn.get(target_id, []), executed_by_turn.get(target_id, set()), label_of
-            )
-            planned.append(place(rule, result, case_id=target_id))
+    def missing_target(rule: ToolUsageRule, description: Optional[str] = None) -> Dict[str, Any]:
+        target = description or "turn"
+        return _not_evaluated_result(rule, f"Target {target} not found in this run.")
 
-        elif rule.scope == "every_turn":
-            for turn in turns:
-                tid = turn["id"]
-                result = evaluate_rule(
-                    rule, events_by_turn.get(tid, []), executed_by_turn.get(tid, set()), label_of
-                )
-                planned.append(place(rule, result, case_id=tid))
-
-        else:  # conversation: merge every turn's events and grade once
-            for group in conversation_groups:
-                merged_events: List[Dict[str, Any]] = []
-                merged_executed: Set[str] = set()
-                for tid in group:
-                    merged_events.extend(events_by_turn.get(tid, []))
-                    merged_executed |= executed_by_turn.get(tid, set())
-                representative = group[0] if group else None
-                conversation_id = turns_by_id.get(representative, {}).get("source_conversation_id")
-                result = evaluate_rule(rule, merged_events, merged_executed, label_of)
-                planned.append(place(
-                    rule, result,
-                    case_id=None if conversation_id is not None else representative,
-                    source_conversation_id=conversation_id,
-                ))
-
-    return planned
-
-
-def summarize_planned_results(planned: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Run-level Tool Usage summary (accuracy + coverage) from planned results."""
-    statuses = [entry["result"]["status"] for entry in planned]
-    passed = statuses.count(RULE_PASSED)
-    failed = statuses.count(RULE_FAILED)
-    not_evaluated = statuses.count(RULE_NOT_EVALUATED)
-    evaluated = passed + failed
-    accuracy = (passed / evaluated) if evaluated else 0.0
-
-    # How many checks ran at each scope, so the card can say e.g.
-    # "2 conversation checks · 13 turn checks".
-    by_scope: Dict[str, int] = {}
-    for entry in planned:
-        scope = entry.get("scope", "every_turn")
-        by_scope[scope] = by_scope.get(scope, 0) + 1
-
-    return {
-        "avg_score": accuracy,
-        "accuracy": accuracy,
-        "cases": evaluated,
-        "passed": passed,
-        "failed": failed,
-        "not_evaluated": not_evaluated,
-        "by_scope": by_scope,
-        "coverage": {
-            "passed": passed, "failed": failed, "not_evaluated": not_evaluated,
-            "evaluated": evaluated, "total": len(planned),
-        },
-    }
+    return plan_rule_results(rules, turns, conversation_groups, grade, missing_target)
 
 
 # ---- human-readable description --------------------------------------------
@@ -551,16 +465,6 @@ def _quote_join(items: List[str], conjunction: str) -> str:
     if len(quoted) == 1:
         return quoted[0]
     return f"{', '.join(quoted[:-1])} {conjunction} {quoted[-1]}"
-
-
-def _scope_phrase(rule: "ToolUsageRule") -> str:
-    if rule.scope == "conversation":
-        return "during the conversation"
-    if rule.scope == "specific_turn":
-        if rule.target_turn_index is not None:
-            return f"on turn {rule.target_turn_index + 1}"
-        return "on the selected turn"
-    return "on every turn"
 
 
 def describe_tool_rule(
@@ -577,17 +481,17 @@ def describe_tool_rule(
 
     subject = agent_labels.get(rule.agent_id, "The agent") if rule.agent_id else "Any agent"
     names = [tool_labels.get(tool_id, tool_id) for tool_id in rule.tool_ids]
-    scope_phrase = _scope_phrase(rule)
+    phrase = scope_phrase(rule)
 
     if rule.operator == "none":
-        return f"{subject} must not use {_quote_join(names, 'or')} {scope_phrase}."
+        return f"{subject} must not use {_quote_join(names, 'or')} {phrase}."
     if rule.operator == "only":
         if not names:
-            return f"{subject} must not use any tools {scope_phrase}."
-        return f"{subject} may only use {_quote_join(names, 'or')} {scope_phrase}."
+            return f"{subject} must not use any tools {phrase}."
+        return f"{subject} may only use {_quote_join(names, 'or')} {phrase}."
     conjunction = "and" if rule.operator == "all" else "or"
     successfully = "successfully " if rule.require_success else ""
-    return f"{subject} must {successfully}use {_quote_join(names, conjunction)} {scope_phrase}."
+    return f"{subject} must {successfully}use {_quote_join(names, conjunction)} {phrase}."
 
 
 # ---- config parsing + legacy conversion ------------------------------------

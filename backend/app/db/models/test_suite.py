@@ -180,7 +180,8 @@ class TestResultModel(Base):
 
 
 class TestToolRuleResultModel(Base):
-    """Canonical per-rule outcome for Tool Usage evaluation.
+    """Canonical per-rule outcome for a rule-based evaluation technique
+    (Tool Usage, Route Taken, Action Taken).
 
     One row per rule per scope unit: a specific/every-turn rule stores case_id; a
     conversation rule stores source_conversation_id. ``details`` snapshots the
@@ -193,6 +194,11 @@ class TestToolRuleResultModel(Base):
     )
 
     run_id: Mapped[UUID] = mapped_column(ForeignKey("test_runs.id"), nullable=False)
+    # Which technique the rule belongs to; rows written before route/action rules
+    # existed are all tool_used.
+    technique: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="tool_used", server_default="tool_used"
+    )
     rule_id: Mapped[str] = mapped_column(String(128), nullable=False)
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
 
