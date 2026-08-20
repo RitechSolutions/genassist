@@ -32,6 +32,7 @@ import type {
   EvaluationRouterInfo,
   JudgeRuleDraft,
   RouteRuleDraft,
+  RuleConversation,
   ToolUsagePerToolCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
@@ -39,7 +40,8 @@ import { WorkflowVersionPicker } from "./WorkflowVersionPicker";
 import { getEvaluationToolCatalog } from "@/services/testEvaluations";
 import { listTestCases } from "@/services/testSuites";
 import type { TestCase } from "@/interfaces/testSuite.interface";
-import { ToolUsageRuleBuilder, type RuleConversation } from "./ToolUsageRuleBuilder";
+import { ToolUsageRuleBuilder, newToolRule } from "./ToolUsageRuleBuilder";
+import { scopeTargetIncomplete } from "../helpers/ruleScope";
 import { RouteRulesBuilder, newRouteRule } from "./RouteRulesBuilder";
 import { ActionRulesBuilder, newActionRule } from "./ActionRulesBuilder";
 import { JudgeRulesBuilder, newJudgeRule } from "./JudgeRulesBuilder";
@@ -419,7 +421,11 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   );
 
   // Tool Usage rules + workflow tool catalogue
-  const [toolRules, setToolRules] = useState<ToolUsageRule[]>(initialData?.toolRules ?? []);
+  // Every rule builder opens on one blank rule, so picking a technique always
+  // shows what there is to fill in rather than an empty panel.
+  const [toolRules, setToolRules] = useState<ToolUsageRule[]>(
+    initialData?.toolRules?.length ? initialData.toolRules : [newToolRule()],
+  );
   const [toolCatalog, setToolCatalog] = useState<EvaluationAgentInfo[]>([]);
   const [catalogRouters, setCatalogRouters] = useState<EvaluationRouterInfo[]>([]);
   const [catalogActionNodes, setCatalogActionNodes] = useState<EvaluationActionNodeInfo[]>([]);
@@ -427,7 +433,8 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const toolUsageSelected = metrics.includes("tool_used");
-  // Route and Action dropdowns are populated from the same catalogue.
+  // Tool Usage, Route and Action are all rule-based: they share the node catalogue
+  // and the dataset's conversations for specific-turn targeting.
   const needsCatalog =
     toolUsageSelected ||
     metrics.includes("route_taken") ||
@@ -470,7 +477,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   // Imported conversations for specific-turn targeting, derived from the suite's cases.
   const [conversations, setConversations] = useState<RuleConversation[]>([]);
   useEffect(() => {
-    if (!toolUsageSelected || !suiteId) {
+    if (!needsCatalog || !suiteId) {
       setConversations([]);
       return;
     }
@@ -485,7 +492,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [toolUsageSelected, suiteId]);
+  }, [needsCatalog, suiteId]);
 
   // When the catalogue loads, rewrite any legacy tool/agent NAMES (from an old
   // evaluation) to canonical ids so they aren't later saved as if they were ids.
@@ -560,10 +567,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     return toolUnresolved || agentUnresolved;
   };
 
-  const ruleSpecificTurnIncomplete = (rule: ToolUsageRule): boolean =>
-    rule.scope === "specific_turn" &&
-    (!rule.target_source_conversation_id || rule.target_turn_index == null);
-
   const toolRulesInvalid =
     toolUsageSelected &&
     (toolRules.length === 0 ||
@@ -571,7 +574,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         (rule) =>
           (rule.operator !== "only" && rule.tool_ids.length === 0) ||
           ruleHasUnresolvedRef(rule) ||
-          ruleSpecificTurnIncomplete(rule),
+          scopeTargetIncomplete(rule),
       ));
   const nliScoreInvalid = metrics.includes("nli_eval") && !isValidScore(nliMinEntailScore);
   const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
@@ -590,11 +593,12 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
       ((Boolean(rule.router) && !inCatalog) || (!rule.router && Boolean(rule.expected)));
     const usesDropdowns = catalogRouters.length > 0 && !isLegacyValue;
     if (usesDropdowns && !rule.router.trim()) return true;
+    if (scopeTargetIncomplete(rule)) return true;
     return !rule.expected.trim();
   };
 
   const actionRuleInvalid = (rule: ActionRuleDraft): boolean =>
-    !rule.node.trim() && !rule.nodeType.trim();
+    (!rule.node.trim() && !rule.nodeType.trim()) || scopeTargetIncomplete(rule);
 
   const isConfigureStepValid = (): boolean => {
     if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
@@ -702,7 +706,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setProvFailOnViolation(false);
     setProvLlmProviderId(providers[0]?.id ?? "");
     setProvLlmJudgeSystemPromptSuffix("");
-    setToolRules([]);
+    setToolRules([newToolRule()]);
     setNotContainsText("");
     setFieldEqualsField("");
     setFieldEqualsExpected("");
@@ -1135,12 +1139,13 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Route Taken Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks that router nodes selected the expected branches. All rules must
-                  pass.
+                  Checks that router nodes selected the expected branches, on every turn or
+                  at least once in a conversation. All rules must pass.
                 </p>
                 <RouteRulesBuilder
                   rules={routeRules}
                   routers={catalogRouters}
+                  conversations={conversations}
                   onChange={setRouteRules}
                 />
               </div>
@@ -1153,12 +1158,13 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                   Action Taken Config
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checks whether specific workflow nodes ran successfully. All rules must
-                  pass.
+                  Checks whether specific workflow nodes ran successfully, on every turn or
+                  at least once in a conversation. All rules must pass.
                 </p>
                 <ActionRulesBuilder
                   rules={actionRules}
                   nodes={catalogActionNodes}
+                  conversations={conversations}
                   onChange={setActionRules}
                 />
               </div>
