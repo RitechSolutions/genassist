@@ -16,6 +16,8 @@ interface PageHeaderProps {
   secondaryActionButtonText?: React.ReactNode;
   onSecondaryActionClick?: () => void;
   secondaryActionDisabled?: boolean;
+  /** Rendered after the primary action, e.g. an overflow menu of secondary tools. */
+  trailingActions?: React.ReactNode;
 }
 
 export function PageHeader({
@@ -30,6 +32,7 @@ export function PageHeader({
   secondaryActionButtonText,
   onSecondaryActionClick,
   secondaryActionDisabled,
+  trailingActions,
 }: PageHeaderProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
@@ -62,6 +65,7 @@ export function PageHeader({
               {actionButtonText}
             </Button>
           )}
+          {trailingActions}
         </div>
       </div>
     </div>

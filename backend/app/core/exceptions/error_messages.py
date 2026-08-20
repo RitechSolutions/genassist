@@ -176,6 +176,9 @@ class ErrorKey(Enum):
     LLM_USAGE_CONTROL_NOT_FOUND = "LLM_USAGE_CONTROL_NOT_FOUND"
     LLM_USAGE_CAPTURE_NOT_ENABLED = "LLM_USAGE_CAPTURE_NOT_ENABLED"
     LLM_COST_RATE_ALREADY_EXISTS = "LLM_COST_RATE_ALREADY_EXISTS"
+    LLM_CATALOG_MODEL_ALREADY_EXISTS = "LLM_CATALOG_MODEL_ALREADY_EXISTS"
+    LLM_CATALOG_UNKNOWN_PROVIDER = "LLM_CATALOG_UNKNOWN_PROVIDER"
+    LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD = "LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD"
 
 
 ERROR_MESSAGES = {
@@ -349,6 +352,9 @@ ERROR_MESSAGES = {
         ErrorKey.LLM_USAGE_CONTROL_NOT_FOUND: "LLM usage control state is not initialized.",
         ErrorKey.LLM_USAGE_CAPTURE_NOT_ENABLED: "LLM usage capture must be activated first.",
         ErrorKey.LLM_COST_RATE_ALREADY_EXISTS: "A rate for this provider and model already exists.",
+        ErrorKey.LLM_CATALOG_MODEL_ALREADY_EXISTS: "This model is already registered for that provider.",
+        ErrorKey.LLM_CATALOG_UNKNOWN_PROVIDER: "Unknown LLM provider type: {0}.",
+        ErrorKey.LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD: "The {0} provider type has no model field to extend.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",

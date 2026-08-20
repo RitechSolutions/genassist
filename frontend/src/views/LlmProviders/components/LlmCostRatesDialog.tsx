@@ -27,6 +27,7 @@ import {
 import type { LlmCostRate } from "@/interfaces/llmCostRate.interface";
 import toast from "react-hot-toast";
 import {
+  Coins,
   Copy,
   Download,
   FileText,
@@ -39,6 +40,7 @@ import {
 } from "lucide-react";
 import { formatTimeAgo } from "@/helpers/formatters";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ListEmptyState } from "@/components/ListEmptyState";
 
 /** Example CSV matching the import API (UTF-8, header row required). */
 const CSV_MODEL = `provider,model,input_per_1k,output_per_1k
@@ -456,9 +458,22 @@ export function LlmCostRatesDialog({
               Loading…
             </div>
           ) : rows.length === 0 ? (
-            <p className="p-6 text-sm text-muted-foreground">
-              No rates configured yet. Add one, or upload a CSV.
-            </p>
+            <ListEmptyState
+              icon={<Coins className="h-12 w-12 text-muted-foreground" />}
+              title="No cost rates yet"
+              description="Add a rate to price token usage per provider and model, or upload a CSV to set several at once."
+              action={
+                !form ? (
+                  <Button
+                    onClick={openCreateForm}
+                    className="rounded-full flex items-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add rate
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <Table>
               <TableHeader>
