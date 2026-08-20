@@ -47,11 +47,11 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         result = await self.db.execute(stmt)
         return result.all()
 
-    async def soft_delete_by_agent(self, agent_id: UUID) -> None:
+    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
         """Retire every version of an agent's workflow.
 
         Each version is a separate row, so deleting the agent leaves them all
-        behind.
+        behind. Skip the commit to batch this with the agent's own delete.
         """
         await self.db.execute(
             update(WorkflowModel)
@@ -59,7 +59,8 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
             .values(is_deleted=1)
             .execution_options(synchronize_session="fetch")
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     async def get_summaries_by_agent(self, agent_id: UUID) -> List:
         stmt = (
