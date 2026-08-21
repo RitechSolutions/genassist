@@ -2,9 +2,9 @@ from typing import List
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import case, select, update
+from sqlalchemy import and_, case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.db_repository import DbRepository
@@ -14,21 +14,28 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(WorkflowModel, db)
 
+    @staticmethod
+    def _visible_agent():
+        """An agent the caller may see: live, and inside their groups."""
+        clause = AgentModel.is_deleted == 0
+        scope_clause = get_group_scope_clause(AgentModel)
+        return clause if scope_clause is None else and_(clause, scope_clause)
+
     def _minimal_select(self):
         """Minimal workflow columns, the active-version flag, and the owning
         agent's identity.
 
-        Agents are group-scoped but workflows are not, so the scope filter is
-        bypassed for the join; otherwise the same version would look active to
-        some callers and not to others.
+        The automatic agent scope filter is bypassed so the active-version
+        pointer reads the same for every caller; scoping is applied explicitly
+        instead. The agent's name is a scoped column, so it is nulled for agents
+        outside the caller's groups on every path.
         """
         is_active_version = case(
             (AgentModel.workflow_id == WorkflowModel.id, True), else_=False
         ).label("is_active_version")
-        # A retired agent counts as no agent, matching Agent Studio.
-        agent_name = case(
-            (AgentModel.is_deleted == 0, AgentModel.name), else_=None
-        ).label("agent_name")
+        agent_name = case((self._visible_agent(), AgentModel.name), else_=None).label(
+            "agent_name"
+        )
         stmt = select(
             WorkflowModel.id,
             WorkflowModel.name,
@@ -42,10 +49,25 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         return stmt.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
 
     async def get_all_minimal(self) -> List[WorkflowModel]:
+        """Every workflow. Internal callers rely on seeing them all, e.g. to find
+        a workflow's sibling versions; user-facing lists use the visible variant."""
         result = await self.db.execute(self._minimal_select())
         return result.all()
 
+    async def get_visible_minimal(self) -> List[WorkflowModel]:
+        """Workflows whose agent the caller can see, as Agent Studio lists them.
+
+        A workflow with no live agent of its own — a row created without one, or
+        a leftover from a deleted agent — is not listed, since there is no agent
+        to see it under.
+        """
+        stmt = self._minimal_select().where(self._visible_agent())
+        result = await self.db.execute(stmt)
+        return result.all()
+
     async def get_minimal_by_ids(self, ids: List[UUID]) -> List:
+        """Point lookup by id — not scoped, so a stored reference still resolves
+        to a name (e.g. labelling an existing run)."""
         if not ids:
             return []
         stmt = self._minimal_select().where(WorkflowModel.id.in_(ids))

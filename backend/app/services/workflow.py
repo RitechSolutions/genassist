@@ -43,6 +43,11 @@ class WorkflowService:
         rows = await self.repository.get_all_minimal()
         return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
 
+    async def get_visible_minimal(self) -> List[WorkflowMinimal]:
+        """What the caller may pick from, matching Agent Studio."""
+        rows = await self.repository.get_visible_minimal()
+        return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
+
     async def get_minimal_by_ids(self, ids: List[UUID]) -> List[WorkflowMinimal]:
         rows = await self.repository.get_minimal_by_ids(ids)
         return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
