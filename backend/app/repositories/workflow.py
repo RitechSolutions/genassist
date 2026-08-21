@@ -15,22 +15,27 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         super().__init__(WorkflowModel, db)
 
     def _minimal_select(self):
-        """Minimal workflow columns plus whether this row is its agent's live
-        version — the one the builder marks Active.
+        """Minimal workflow columns, the active-version flag, and the owning
+        agent's identity.
 
         Agents are group-scoped but workflows are not, so the scope filter is
         bypassed for the join; otherwise the same version would look active to
-        some callers and not to others. Only the pointer is read.
+        some callers and not to others.
         """
         is_active_version = case(
             (AgentModel.workflow_id == WorkflowModel.id, True), else_=False
         ).label("is_active_version")
+        # A retired agent counts as no agent, matching Agent Studio.
+        agent_name = case(
+            (AgentModel.is_deleted == 0, AgentModel.name), else_=None
+        ).label("agent_name")
         stmt = select(
             WorkflowModel.id,
             WorkflowModel.name,
             WorkflowModel.version,
             WorkflowModel.agent_id,
             is_active_version,
+            agent_name,
         ).outerjoin(AgentModel, AgentModel.id == WorkflowModel.agent_id)
         if hasattr(WorkflowModel, "is_deleted"):
             stmt = stmt.where(WorkflowModel.is_deleted == 0)

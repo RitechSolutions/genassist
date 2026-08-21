@@ -15,21 +15,31 @@ export const compareVersions = (a: string, b: string): number => {
   return 0;
 };
 
+/** Agents as Agent Studio lists them, then workflows with no agent left. */
+export type WorkflowGroupKind = "agent" | "unlinked";
+
 export interface WorkflowGroup {
   key: string;
   name: string;
+  /** The live version's own name, for spotting renames between saves. */
+  workflowName: string;
+  kind: WorkflowGroupKind;
   /** Newest version first. */
   versions: WorkflowMinimal[];
   activeVersionId: string | null;
 }
 
-/** Group versions by the workflow they belong to, newest first.
+const KIND_ORDER: Record<WorkflowGroupKind, number> = {
+  agent: 0,
+  unlinked: 1,
+};
+
+/** Group versions by the agent they belong to, newest version first.
  *
- * Versions of one workflow are separate rows sharing an ``agent_id``, and their
+ * Versions of one workflow are separate rows sharing an ``agent_id`` and their
  * names can differ (a rename between saves), so grouping by name would split
- * them apart. The group takes its name from the live version, and the active
- * version is the one its agent points at — the same pointer the builder marks
- * Active and a plain evaluation run executes.
+ * them apart. The group is named after its agent, matching Agent Studio; a
+ * workflow whose agent is gone keeps its own name and sorts last.
  */
 export const groupWorkflowVersions = (
   workflows: WorkflowMinimal[],
@@ -43,17 +53,23 @@ export const groupWorkflowVersions = (
   }
 
   return Array.from(byWorkflow.entries())
-    .map(([key, versions]) => {
+    .map(([key, versions]): WorkflowGroup => {
       const ordered = [...versions].sort((a, b) =>
         compareVersions(b.version, a.version),
       );
       const active = ordered.find((workflow) => workflow.is_active_version);
+      const named = active ?? ordered[0];
       return {
         key,
-        name: (active ?? ordered[0]).name,
+        name: named.agent_name || named.name,
+        workflowName: named.name,
+        kind: named.agent_name ? "agent" : "unlinked",
         versions: ordered,
         activeVersionId: active?.id ?? null,
       };
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name),
+    );
 };

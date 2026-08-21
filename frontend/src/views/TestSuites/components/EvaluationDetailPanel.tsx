@@ -234,7 +234,9 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       const workflowData = (workflows ?? []).find(
         (item: WorkflowMinimal) => item.id === evaluation.workflow_id,
       );
-      setWorkflowName(workflowData?.name ?? "Dataset default");
+      setWorkflowName(
+        workflowData?.agent_name || workflowData?.name || "Dataset default",
+      );
       setWorkflowAgentId(workflowData?.agent_id ?? null);
     };
     loadContext();
