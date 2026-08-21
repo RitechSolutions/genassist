@@ -14,18 +14,26 @@ import { Plus, Trash2 } from "lucide-react";
 import type {
   ActionRuleDraft,
   EvaluationActionNodeInfo,
+  RuleConversation,
+  RuleScopeTarget,
 } from "@/interfaces/testEvaluation.interface";
+import { RuleScopeFields } from "./RuleScopeFields";
+import { scopePhrase } from "../helpers/ruleScope";
+import { newRuleId } from "../helpers/evaluationForm";
 
 export const newActionRule = (): ActionRuleDraft => ({
+  id: newRuleId(),
   node: "",
   nodeType: "",
   shouldFire: true,
+  scope: "every_turn",
 });
 
 interface ActionRuleRowProps {
   rule: ActionRuleDraft;
   index: number;
   nodes: EvaluationActionNodeInfo[];
+  conversations: RuleConversation[];
   onChange: (patch: Partial<ActionRuleDraft>) => void;
   onRemove: () => void;
   canRemove: boolean;
@@ -35,16 +43,23 @@ const ActionRuleRow: React.FC<ActionRuleRowProps> = ({
   rule,
   index,
   nodes,
+  conversations,
   onChange,
   onRemove,
   canRemove,
 }) => {
-  const nodeInCatalog = nodes.some((node) => node.id === rule.node);
+  const selectedNode = nodes.find((node) => node.id === rule.node);
   // Free text is only for a config the catalogue can't match: a saved node id
   // that is gone, or a legacy node_type-based config.
   const isLegacyValue =
-    (Boolean(rule.node) && nodes.length > 0 && !nodeInCatalog) || Boolean(rule.nodeType);
+    (Boolean(rule.node) && nodes.length > 0 && !selectedNode) || Boolean(rule.nodeType);
   const useDropdown = nodes.length > 0 && !isLegacyValue;
+
+  const targetName = selectedNode?.label ?? rule.node ?? rule.nodeType;
+  const requirement = rule.shouldFire ? "must complete" : "must not complete";
+  const summary = targetName
+    ? `"${targetName}" ${requirement} ${scopePhrase(rule, conversations)}.`
+    : null;
 
   return (
     <div className="rounded-lg border p-3 space-y-3">
@@ -82,7 +97,7 @@ const ActionRuleRow: React.FC<ActionRuleRowProps> = ({
             <Input
               value={rule.node}
               onChange={(e) => onChange({ node: e.target.value })}
-              placeholder="e.g. Create Zendesk Ticket"
+              placeholder="e.g. Create Support Ticket"
               className="mt-1"
             />
           </div>
@@ -91,7 +106,7 @@ const ActionRuleRow: React.FC<ActionRuleRowProps> = ({
             <Input
               value={rule.nodeType}
               onChange={(e) => onChange({ nodeType: e.target.value })}
-              placeholder="e.g. zendeskTicketNode"
+              placeholder="e.g. httpRequestNode"
               className="mt-1"
             />
           </div>
@@ -109,6 +124,18 @@ const ActionRuleRow: React.FC<ActionRuleRowProps> = ({
           onCheckedChange={(checked) => onChange({ shouldFire: checked })}
         />
       </div>
+
+      <RuleScopeFields
+        rule={rule}
+        conversations={conversations}
+        onChange={(patch: Partial<RuleScopeTarget>) => onChange(patch)}
+      />
+
+      {summary && (
+        <div className="rounded-md bg-primary/5 px-3 py-2">
+          <p className="text-sm text-primary">{summary}</p>
+        </div>
+      )}
     </div>
   );
 };
@@ -116,12 +143,14 @@ const ActionRuleRow: React.FC<ActionRuleRowProps> = ({
 interface ActionRulesBuilderProps {
   rules: ActionRuleDraft[];
   nodes: EvaluationActionNodeInfo[];
+  conversations?: RuleConversation[];
   onChange: (rules: ActionRuleDraft[]) => void;
 }
 
 export const ActionRulesBuilder: React.FC<ActionRulesBuilderProps> = ({
   rules,
   nodes,
+  conversations = [],
   onChange,
 }) => {
   const updateRule = (index: number, patch: Partial<ActionRuleDraft>) => {
@@ -136,10 +165,11 @@ export const ActionRulesBuilder: React.FC<ActionRulesBuilderProps> = ({
     <div className="space-y-3">
       {rules.map((rule, index) => (
         <ActionRuleRow
-          key={index}
+          key={rule.id || index}
           rule={rule}
           index={index}
           nodes={nodes}
+          conversations={conversations}
           onChange={(patch) => updateRule(index, patch)}
           onRemove={() => removeRule(index)}
           canRemove={rules.length > 1}

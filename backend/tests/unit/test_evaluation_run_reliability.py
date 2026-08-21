@@ -317,7 +317,7 @@ class TestCoverageAggregation:
 class TestRunPathLabelResolution:
     @pytest.mark.asyncio
     async def test_run_loop_passes_workflow_so_comments_use_node_labels(self):
-        """The run loop must hand the workflow graph to the evaluators — without
+        """The run loop must resolve node labels from the workflow graph — without
         it, route/action comments degrade to 'unknown node' for real runs."""
         service = _service()
         now = datetime(2026, 1, 1)
@@ -364,11 +364,133 @@ class TestRunPathLabelResolution:
                 },
             )
 
-        persisted = service.result_repo.create.call_args[0][0]
-        comment = persisted.metrics["route_taken"]["comment"]
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        comment = rows[0].details["comment"]
+        assert rows[0].technique == "route_taken"
         assert "Escalation Router" in comment
         assert router_id not in comment
         assert "unknown node" not in comment
+
+
+class TestConversationScopedRules:
+    """Conversation-scoped route/action rules are graded once per conversation."""
+
+    @staticmethod
+    def _case(*, suite_id, conversation_id, turn_index):
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        return SimpleNamespace(
+            id=uuid4(),
+            suite_id=suite_id,
+            source_conversation_id=conversation_id,
+            turn_index=turn_index,
+            input_data={"message": f"turn {turn_index}"},
+            expected_output={"value": "answer"},
+            tags=["imported"],
+            weight=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    @staticmethod
+    def _state(nodes):
+        return SimpleNamespace(
+            output="answer",
+            status="completed",
+            format_state_as_response=lambda: {
+                "output": "answer",
+                "state": {"errors": [], "nodeExecutionStatus": nodes},
+            },
+        )
+
+    async def _run(self, *, scope, ticket_node_id, turn_states, techniques=("action_taken",)):
+        service = _service()
+        suite_id = uuid4()
+        conversation_id = uuid4()
+        cases = [
+            self._case(suite_id=suite_id, conversation_id=conversation_id, turn_index=index)
+            for index in range(len(turn_states))
+        ]
+        service.case_repo.get_all_for_suite.return_value = cases
+
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            side_effect=[self._state(nodes) for nodes in turn_states]
+        )
+        suite = SimpleNamespace(id=suite_id, default_input_metadata=None)
+        workflow = SimpleNamespace(
+            id=uuid4(),
+            nodes=[{"id": ticket_node_id, "type": "httpNode", "data": {"name": "Create Ticket"}}],
+            edges=[],
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=list(techniques), status="queued", summary_metrics=None
+        )
+
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                suite,
+                workflow,
+                run,
+                technique_configs={
+                    "action_taken": {
+                        "rules": [{"id": "ticket", "node": ticket_node_id, "scope": scope}]
+                    }
+                },
+            )
+        return service, run
+
+    @pytest.mark.asyncio
+    async def test_ticket_created_on_one_turn_passes_the_conversation(self):
+        ticket = str(uuid4())
+        service, run = await self._run(
+            scope="conversation",
+            ticket_node_id=ticket,
+            turn_states=[
+                {},
+                {ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}},
+                {},
+            ],
+        )
+
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        assert len(rows) == 1
+        assert rows[0].technique == "action_taken"
+        assert rows[0].scope == "conversation"
+        assert rows[0].status == "passed"
+        assert rows[0].case_id is None
+        assert "1 of 3 turns" in rows[0].details["comment"]
+        assert run.summary_metrics["action_taken"]["accuracy"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_same_run_fails_every_turn_scope(self):
+        """The identical run graded per turn fails the two turns without a ticket."""
+        ticket = str(uuid4())
+        service, run = await self._run(
+            scope="every_turn",
+            ticket_node_id=ticket,
+            turn_states=[
+                {},
+                {ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}},
+                {},
+            ],
+        )
+
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        assert [row.status for row in rows] == ["failed", "passed", "failed"]
+        assert all(row.case_id is not None for row in rows)
+        assert run.summary_metrics["action_taken"]["accuracy"] == pytest.approx(1 / 3)
+
+    @pytest.mark.asyncio
+    async def test_action_results_are_not_also_scored_per_case(self):
+        ticket = str(uuid4())
+        service, _ = await self._run(
+            scope="conversation",
+            ticket_node_id=ticket,
+            turn_states=[{ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}}],
+        )
+
+        persisted = service.result_repo.create.call_args[0][0]
+        assert "action_taken" not in (persisted.metrics or {})
 
 
 class TestPausedConversationExecution:
