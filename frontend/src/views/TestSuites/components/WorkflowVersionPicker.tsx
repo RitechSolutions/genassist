@@ -3,15 +3,7 @@ import { Check, ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
-import {
-  groupWorkflowVersions,
-  WorkflowGroupKind,
-} from "../helpers/workflowVersions";
-
-const SECTION_LABELS: Record<WorkflowGroupKind, string | null> = {
-  agent: null,
-  unlinked: "Not in Agent Studio",
-};
+import { groupWorkflowVersions } from "../helpers/workflowVersions";
 
 interface WorkflowVersionPickerProps {
   workflows: WorkflowMinimal[];
@@ -43,11 +35,8 @@ export const WorkflowVersionPicker: React.FC<WorkflowVersionPickerProps> = ({
         <p className="px-2.5 py-2 text-sm text-muted-foreground">{emptyMessage}</p>
       )}
 
-      {groups.map((group, index) => {
+      {groups.map((group) => {
         const isExpanded = expandedKey === group.key;
-        const startsSection =
-          SECTION_LABELS[group.kind] !== null &&
-          group.kind !== groups[index - 1]?.kind;
         const selectedInGroup = group.versions.find(
           (workflow) => workflow.id === selectedWorkflowId,
         );
@@ -56,11 +45,6 @@ export const WorkflowVersionPicker: React.FC<WorkflowVersionPickerProps> = ({
         const defaultForGroup = group.activeVersionId ?? group.versions[0].id;
         return (
           <div key={group.key}>
-            {startsSection && (
-              <p className="px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {SECTION_LABELS[group.kind]}
-              </p>
-            )}
             <button
               type="button"
               onClick={() => {
