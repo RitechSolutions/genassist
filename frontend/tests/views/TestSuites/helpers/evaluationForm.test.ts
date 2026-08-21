@@ -276,7 +276,17 @@ describe("route_taken and action_taken multi-rule configs", () => {
       evalWithConfigs({ route_taken: { expected: "true", node: "router1" } }),
       [],
     );
-    expect(initial.routeRules).toEqual([{ router: "router1", expected: "true" }]);
+    expect(initial.routeRules).toEqual([
+      {
+        id: "route-1",
+        router: "router1",
+        expected: "true",
+        scope: "every_turn",
+        target_source_conversation_id: null,
+        target_turn_indexes: [],
+        target_case_ids: [],
+      },
+    ]);
   });
 
   it("parses a legacy single-rule action config into one draft rule", () => {
@@ -285,7 +295,16 @@ describe("route_taken and action_taken multi-rule configs", () => {
       [],
     );
     expect(initial.actionRules).toEqual([
-      { node: "action1", nodeType: "", shouldFire: false },
+      {
+        id: "action-1",
+        node: "action1",
+        nodeType: "",
+        shouldFire: false,
+        scope: "every_turn",
+        target_source_conversation_id: null,
+        target_turn_indexes: [],
+        target_case_ids: [],
+      },
     ]);
   });
 
@@ -293,13 +312,116 @@ describe("route_taken and action_taken multi-rule configs", () => {
     const data = {
       metrics: ["route_taken"],
       routeRules: [
-        { router: "r1", expected: "true" },
-        { router: "", expected: "support" },
+        { id: "r-1", router: "r1", expected: "true", scope: "every_turn" },
+        { id: "r-2", router: "", expected: "support", scope: "conversation" },
       ],
     } as unknown as EvaluationWizardData;
 
     expect(buildTechniqueConfigs(data).route_taken).toEqual({
-      rules: [{ router: "r1", expected: "true" }, { expected: "support" }],
+      rules: [
+        { id: "r-1", router: "r1", expected: "true", scope: "every_turn" },
+        { id: "r-2", expected: "support", scope: "conversation" },
+      ],
+    });
+  });
+
+  it("serializes an action rule scoped to the whole conversation", () => {
+    const data = {
+      metrics: ["action_taken"],
+      actionRules: [
+        { id: "a-1", node: "zendesk", nodeType: "", shouldFire: true, scope: "conversation" },
+      ],
+    } as unknown as EvaluationWizardData;
+
+    expect(buildTechniqueConfigs(data).action_taken).toEqual({
+      rules: [{ id: "a-1", node: "zendesk", should_fire: true, scope: "conversation" }],
+    });
+  });
+
+  it("keeps every picked turn of a specific-turn rule and drops targets otherwise", () => {
+    const data = {
+      metrics: ["route_taken"],
+      routeRules: [
+        {
+          id: "r-1",
+          router: "r1",
+          expected: "true",
+          scope: "specific_turn",
+          target_source_conversation_id: "conv-1",
+          target_turn_indexes: [1, 3],
+          target_case_ids: ["case-2", "case-4"],
+        },
+        {
+          id: "r-2",
+          router: "r2",
+          expected: "false",
+          scope: "every_turn",
+          target_source_conversation_id: null,
+          target_turn_indexes: [],
+          target_case_ids: [],
+        },
+      ],
+    } as unknown as EvaluationWizardData;
+
+    expect(buildTechniqueConfigs(data).route_taken).toEqual({
+      rules: [
+        {
+          id: "r-1",
+          router: "r1",
+          expected: "true",
+          scope: "specific_turn",
+          target_source_conversation_id: "conv-1",
+          target_turn_indexes: [1, 3],
+          target_case_ids: ["case-2", "case-4"],
+        },
+        { id: "r-2", router: "r2", expected: "false", scope: "every_turn" },
+      ],
+    });
+  });
+
+  it("reads a rule saved with the older single-turn fields as one picked turn", () => {
+    const initial = getEditInitialData(
+      evalWithConfigs({
+        action_taken: {
+          rules: [
+            {
+              id: "a-1",
+              node: "zendesk",
+              scope: "specific_turn",
+              target_source_conversation_id: "conv-1",
+              target_turn_index: 2,
+              target_case_id: "case-3",
+            },
+          ],
+        },
+      }),
+      [],
+    );
+
+    expect(initial.actionRules?.[0]).toMatchObject({
+      scope: "specific_turn",
+      target_source_conversation_id: "conv-1",
+      target_turn_indexes: [2],
+      target_case_ids: ["case-3"],
+    });
+
+    const data = {
+      metrics: ["action_taken"],
+      actionRules: initial.actionRules,
+    } as unknown as EvaluationWizardData;
+
+    expect(buildTechniqueConfigs(data).action_taken).toEqual({
+      rules: [
+        {
+          id: "a-1",
+          node: "zendesk",
+          should_fire: true,
+          scope: "specific_turn",
+          target_source_conversation_id: "conv-1",
+          target_turn_indexes: [2],
+          target_case_ids: ["case-3"],
+        },
+      ],
     });
   });
 
@@ -311,15 +433,15 @@ describe("route_taken and action_taken multi-rule configs", () => {
       }),
       [],
     );
-    expect(initial.routeRules).toEqual([{ router: "r1", expected: "true" }]);
-    expect(initial.actionRules).toEqual([{ node: "a1", nodeType: "", shouldFire: true }]);
+    expect(initial.routeRules?.map((rule) => rule.router)).toEqual(["r1"]);
+    expect(initial.actionRules?.map((rule) => rule.node)).toEqual(["a1"]);
   });
 
   it("round-trips a stored multi-rule action config through the wizard", () => {
     const stored = {
       action_taken: {
         rules: [
-          { node: "a1", should_fire: true },
+          { id: "a1-rule", node: "a1", should_fire: true, scope: "conversation" },
           { node_type: "zendeskTicketNode", should_fire: false },
         ],
       },
@@ -332,8 +454,13 @@ describe("route_taken and action_taken multi-rule configs", () => {
 
     expect(buildTechniqueConfigs(data).action_taken).toEqual({
       rules: [
-        { node: "a1", should_fire: true },
-        { node_type: "zendeskTicketNode", should_fire: false },
+        { id: "a1-rule", node: "a1", should_fire: true, scope: "conversation" },
+        {
+          id: "action-2",
+          node_type: "zendeskTicketNode",
+          should_fire: false,
+          scope: "every_turn",
+        },
       ],
     });
   });

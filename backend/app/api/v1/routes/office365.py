@@ -10,7 +10,7 @@ from app.services.app_settings import AppSettingsService
 from app.services.datasources import DataSourceService
 from app.core.utils.encryption_utils import decrypt_key
 from fastapi_injector import Injected
-import requests
+import httpx
 from datetime import datetime, timedelta
 
 from app.tasks.sharepoint_tasks import import_sharepoint_files_to_kb_async_with_scope
@@ -170,8 +170,9 @@ async def get_office365_access_token(
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-        response = requests.post(
-            token_url, data=payload, headers=headers, timeout=30)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                token_url, data=payload, headers=headers)
         response.raise_for_status()
         token_data = response.json()
 
@@ -188,7 +189,7 @@ async def get_office365_access_token(
             "scope": token_data.get("scope", ""),
         }
 
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         logger.error(f"Office365 token exchange failed: {e}")
         if hasattr(e, "response") and e.response is not None:
             logger.error(f"Response content: {e.response.text}")
@@ -212,8 +213,9 @@ async def get_office365_user_email(access_token: str) -> str:
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json"
         }
-        response = requests.get(
-            "https://graph.microsoft.com/v1.0/me", headers=headers, timeout=15)
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(
+                "https://graph.microsoft.com/v1.0/me", headers=headers)
 
         if response.status_code != 200:
             logger.error(

@@ -12,15 +12,26 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import type {
   EvaluationRouterInfo,
+  RuleConversation,
+  RuleScopeTarget,
   RouteRuleDraft,
 } from "@/interfaces/testEvaluation.interface";
+import { RuleScopeFields } from "./RuleScopeFields";
+import { scopePhrase } from "../helpers/ruleScope";
+import { newRuleId } from "../helpers/evaluationForm";
 
-export const newRouteRule = (): RouteRuleDraft => ({ router: "", expected: "" });
+export const newRouteRule = (): RouteRuleDraft => ({
+  id: newRuleId(),
+  router: "",
+  expected: "",
+  scope: "every_turn",
+});
 
 interface RouteRuleRowProps {
   rule: RouteRuleDraft;
   index: number;
   routers: EvaluationRouterInfo[];
+  conversations: RuleConversation[];
   onChange: (patch: Partial<RouteRuleDraft>) => void;
   onRemove: () => void;
   canRemove: boolean;
@@ -30,6 +41,7 @@ const RouteRuleRow: React.FC<RouteRuleRowProps> = ({
   rule,
   index,
   routers,
+  conversations,
   onChange,
   onRemove,
   canRemove,
@@ -41,6 +53,13 @@ const RouteRuleRow: React.FC<RouteRuleRowProps> = ({
     routers.length > 0 &&
     ((Boolean(rule.router) && !selectedRouter) || (!rule.router && Boolean(rule.expected)));
   const useDropdowns = routers.length > 0 && !isLegacyValue;
+
+  const routerName = selectedRouter?.label ?? rule.router;
+  const summary = rule.expected
+    ? routerName
+      ? `Router "${routerName}" must take route "${rule.expected}" ${scopePhrase(rule, conversations)}.`
+      : `Route "${rule.expected}" must be taken ${scopePhrase(rule, conversations)}.`
+    : null;
 
   return (
     <div className="rounded-lg border p-3 space-y-3">
@@ -128,6 +147,18 @@ const RouteRuleRow: React.FC<RouteRuleRowProps> = ({
           </div>
         </>
       )}
+
+      <RuleScopeFields
+        rule={rule}
+        conversations={conversations}
+        onChange={(patch: Partial<RuleScopeTarget>) => onChange(patch)}
+      />
+
+      {summary && (
+        <div className="rounded-md bg-primary/5 px-3 py-2">
+          <p className="text-sm text-primary">{summary}</p>
+        </div>
+      )}
     </div>
   );
 };
@@ -135,12 +166,14 @@ const RouteRuleRow: React.FC<RouteRuleRowProps> = ({
 interface RouteRulesBuilderProps {
   rules: RouteRuleDraft[];
   routers: EvaluationRouterInfo[];
+  conversations?: RuleConversation[];
   onChange: (rules: RouteRuleDraft[]) => void;
 }
 
 export const RouteRulesBuilder: React.FC<RouteRulesBuilderProps> = ({
   rules,
   routers,
+  conversations = [],
   onChange,
 }) => {
   const updateRule = (index: number, patch: Partial<RouteRuleDraft>) => {
@@ -155,10 +188,11 @@ export const RouteRulesBuilder: React.FC<RouteRulesBuilderProps> = ({
     <div className="space-y-3">
       {rules.map((rule, index) => (
         <RouteRuleRow
-          key={index}
+          key={rule.id || index}
           rule={rule}
           index={index}
           routers={routers}
+          conversations={conversations}
           onChange={(patch) => updateRule(index, patch)}
           onRemove={() => removeRule(index)}
           canRemove={rules.length > 1}

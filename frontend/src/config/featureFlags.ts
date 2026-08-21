@@ -26,6 +26,11 @@ export const FeatureFlags = {
       SHOW_COST_PER_CONVERSATION: 'analytics.showCostPerConversation',
     },
 
+    // Conversations dialog: the "Ask GenAI" assistant is hidden by default; show when this flag is enabled
+    CONVERSATIONS: {
+      SHOW_ASK_GENAI: 'conversations.showAskGenAI',
+    },
+
     LLM_SETTINGS: {
       SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
       SHOW_BEDROCK_FINE_TUNE: 'llmSettings.showBedrockFineTune',

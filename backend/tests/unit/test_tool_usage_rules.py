@@ -320,6 +320,35 @@ def test_specific_turn_accepts_conversation_turn_target():
     assert rule.scope == "specific_turn"
 
 
+def test_specific_turn_accepts_several_turn_targets():
+    rule = ToolUsageRule(
+        id="x", tool_ids=["a"], operator="all", scope="specific_turn",
+        target_source_conversation_id="conv-1", target_turn_indexes=[0, 2],
+    )
+    assert rule.targeted_turn_indexes == [0, 2]
+    assert describe_tool_rule(rule, {}, {"a": "search"}) == (
+        'Any agent must use "search" on turns 1, 3.'
+    )
+
+
+def test_tool_rule_graded_once_per_targeted_turn():
+    rules = parse_tool_usage_config({"rules": [{
+        "id": "r1", "tool_ids": ["a"], "operator": "all", "scope": "specific_turn",
+        "target_source_conversation_id": "conv-1", "target_turn_indexes": [0, 1],
+    }]}).rules
+    turns = [
+        {"id": "case-1", "source_conversation_id": "conv-1", "turn_index": 0},
+        {"id": "case-2", "source_conversation_id": "conv-1", "turn_index": 1},
+    ]
+    planned = plan_tool_rule_results(
+        rules, turns, [["case-1", "case-2"]],
+        {"case-1": [_event("a", agent_id="ag")], "case-2": []},
+        {"case-1": {"ag"}, "case-2": {"ag"}},
+    )
+    assert [entry["case_id"] for entry in planned] == ["case-1", "case-2"]
+    assert [entry["result"]["status"] for entry in planned] == [RULE_PASSED, RULE_FAILED]
+
+
 def test_only_allows_empty_tool_ids():
     rule = ToolUsageRule(id="x", tool_ids=[], operator="only")
     assert rule.operator == "only"

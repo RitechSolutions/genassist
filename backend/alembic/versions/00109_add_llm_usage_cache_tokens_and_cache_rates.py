@@ -8,7 +8,7 @@ with no cache activity, and otherwise record the effective per-1K rates actually
 used, so ``cost_usd`` is reproducible from the row alone.
 
 Revision ID: d37941010920
-Revises: db1cbdf682c5
+Revises: c41d7ab35f92
 Create Date: 2026-08-19 11:36:40.419380
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d37941010920"
-down_revision: Union[str, None] = "db1cbdf682c5"
+down_revision: Union[str, None] = "c41d7ab35f92"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

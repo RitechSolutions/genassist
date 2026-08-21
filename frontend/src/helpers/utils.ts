@@ -98,6 +98,35 @@ export function downloadFile(fileUrl: string, filename: string) {
   }
 }
 
+/**
+ * Delay before an object URL is released. Firefox and Safari start reading the
+ * blob asynchronously after the click, so revoking in the same tick cancels the
+ * download; Chrome happens to tolerate it. Long enough for the browser to take
+ * ownership of the data, short enough not to pin the blob in memory.
+ */
+const OBJECT_URL_REVOKE_MS = 60_000;
+
+/**
+ * Hands a blob to the browser as a file download. The anchor is attached to the
+ * document before clicking (Firefox ignores clicks on detached anchors) and the
+ * object URL is released on a later turn rather than synchronously.
+ */
+export function downloadBlob(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_REVOKE_MS);
+  }
+}
+
 export type FileManagerFileUrlKind = "source" | "download";
 
 export function getFileDownloadUrl(

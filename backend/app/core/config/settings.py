@@ -269,6 +269,11 @@ class ProjectSettings(BaseSettings):
 
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
+    # Optional regex an *unknown* (per-agent) Origin must match before AgentCORSMiddleware
+    # will reflect it with Access-Control-Allow-Credentials. When unset, dynamic origins are
+    # reflected unrestricted (current behavior) — set this to close the CSRF vector if agent
+    # endpoints ever move to cookie-based auth. Example: r"https://.*\.example\.com"
+    CORS_AGENT_ALLOWED_ORIGIN_REGEX: Optional[str] = None
 
     # === WebSocket Configuration ===
     USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)

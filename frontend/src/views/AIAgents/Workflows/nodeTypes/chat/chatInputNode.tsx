@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { NodeProps } from "reactflow";
+import React, { useCallback, useEffect, useState } from "react";
+import { NodeProps, useReactFlow } from "reactflow";
 import { Play } from "lucide-react";
-import { ChatInputNodeData } from "../../types/nodes";
+import { ChatInputNodeData, SetStateNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import { ParameterSection } from "../../components/custom/ParameterSection";
 import { NodeSchema, SchemaField } from "../../types/schemas";
@@ -39,6 +39,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
   const nodeDefinition = nodeRegistry.getNodeType(CHAT_INPUT_NODE_TYPE);
   const color = getNodeColor(nodeDefinition.category);
   const nodeActions = useNodeActions();
+  const { setNodes } = useReactFlow();
   const [dynamicParams, setDynamicParams] = useState<NodeSchema>(
     data.inputSchema
   );
@@ -70,6 +71,43 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
     }));
   };
 
+  const removeStateEntriesFor = useCallback(
+    (paramName: string) => {
+      setNodes((nodes) =>
+        nodes.map((node) => {
+          if (node.type !== "setStateNode") return node;
+
+          // Older nodes kept a single entry in stateKey/stateValue, which
+          // SetStateDialog migrates into `states` on open — clear those too, or
+          // the deleted parameter would come back the next time it's opened.
+          const nodeData = node.data as SetStateNodeData & {
+            stateKey?: string;
+            stateValue?: string;
+          };
+          const states = nodeData?.states;
+          const remaining = Array.isArray(states)
+            ? states.filter((state) => state.key !== paramName)
+            : undefined;
+          const dropsEntry = !!remaining && remaining.length !== states.length;
+          const dropsLegacyEntry = nodeData?.stateKey === paramName;
+          if (!dropsEntry && !dropsLegacyEntry) return node;
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              ...(dropsEntry ? { states: remaining } : {}),
+              ...(dropsLegacyEntry
+                ? { stateKey: undefined, stateValue: undefined }
+                : {}),
+            },
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
   const removeItem = (
     setter: React.Dispatch<React.SetStateAction<NodeSchema>>,
     name: string
@@ -79,6 +117,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
       delete newParams[name];
       return newParams;
     });
+    removeStateEntriesFor(name);
   };
 
   return (
@@ -86,7 +125,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
       {/* Inline "Test" affordance for the Start node. It's the workflow entry
           point, so testing straight from here runs the whole graph (opens the
           Executions panel). Shown when the node is selected and sits to the LEFT
-          of the node — the node's only handle is the output on the right. */}
+          of the node — the node's only handle is the output on the right */}
       {selected && nodeActions?.testWorkflow && (
         <div className="absolute right-full top-1/2 z-30 -translate-y-1/2 pr-3 nodrag nopan pointer-events-auto">
           <Button

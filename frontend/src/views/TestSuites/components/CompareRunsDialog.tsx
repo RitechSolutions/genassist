@@ -29,7 +29,7 @@ import { TestResult, TestRun } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 import { cn } from "@/helpers/utils";
 import { methodLabel } from "../helpers/methodLabels";
-import { CaseStatus, caseStatusFor } from "../helpers/runResults";
+import { CaseStatus, caseStatusFor, isTurnScope } from "../helpers/runResults";
 
 interface CompareRunsDialogProps {
   isOpen: boolean;
@@ -49,7 +49,7 @@ interface CaseComparison {
 
 interface RunData {
   results: TestResult[];
-  toolResults: TestToolRuleResult[];
+  ruleResults: TestToolRuleResult[];
 }
 
 /** Summary metric shape stored per technique on a run. */
@@ -181,11 +181,11 @@ export const CompareRunsDialog: React.FC<CompareRunsDialogProps> = ({
       try {
         const loaded = await Promise.all(
           idsToLoad.map(async (runId) => {
-            const [results, toolResults] = await Promise.all([
+            const [results, ruleResults] = await Promise.all([
               listResultsForRun(runId),
               getToolRuleResults(runId).catch(() => []),
             ]);
-            return [runId, { results: results ?? [], toolResults: toolResults ?? [] }] as const;
+            return [runId, { results: results ?? [], ruleResults: ruleResults ?? [] }] as const;
           }),
         );
         if (isStale) return;
@@ -204,19 +204,17 @@ export const CompareRunsDialog: React.FC<CompareRunsDialogProps> = ({
     const data = dataByRunId[runId];
     const map = new Map<string, CaseStatus>();
     if (!data) return map;
-    const toolsByCase = new Map<string, TestToolRuleResult[]>();
-    for (const toolResult of data.toolResults) {
-      const isTurnScope =
-        toolResult.scope === "every_turn" || toolResult.scope === "specific_turn";
-      if (isTurnScope && toolResult.case_id) {
-        const existing = toolsByCase.get(toolResult.case_id) ?? [];
-        existing.push(toolResult);
-        toolsByCase.set(toolResult.case_id, existing);
+    const rulesByCase = new Map<string, TestToolRuleResult[]>();
+    for (const ruleResult of data.ruleResults) {
+      if (isTurnScope(ruleResult.scope) && ruleResult.case_id) {
+        const existing = rulesByCase.get(ruleResult.case_id) ?? [];
+        existing.push(ruleResult);
+        rulesByCase.set(ruleResult.case_id, existing);
       }
     }
     for (const result of data.results) {
       if (!result.case_id) continue;
-      map.set(result.case_id, caseStatusFor(result, toolsByCase.get(result.case_id) ?? []));
+      map.set(result.case_id, caseStatusFor(result, rulesByCase.get(result.case_id) ?? []));
     }
     return map;
   };

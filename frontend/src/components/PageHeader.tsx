@@ -6,6 +6,8 @@ import { PageTitle } from "@/components/Heading";
 interface PageHeaderProps {
   title: string;
   subtitle: string;
+  /** Optional controls (e.g. a status/type <Select>) rendered before the search input. */
+  filters?: React.ReactNode;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchPlaceholder: string;
@@ -19,6 +21,7 @@ interface PageHeaderProps {
 export function PageHeader({
   title,
   subtitle,
+  filters,
   searchQuery,
   onSearchChange,
   searchPlaceholder,
@@ -35,6 +38,7 @@ export function PageHeader({
         <p className="text-sm md:text-base text-muted-foreground animate-fade-up">{subtitle}</p>
       </div>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+        {filters}
         <SearchInput
           value={searchQuery}
           onChange={onSearchChange}

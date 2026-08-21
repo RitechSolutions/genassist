@@ -27,10 +27,15 @@ import { Check, ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react"
 import { cn } from "@/helpers/utils";
 import type {
   EvaluationAgentInfo,
+  RuleConversation,
+  RuleScopeTarget,
   ToolUsageOperator,
   ToolUsageRule,
-  ToolUsageScope,
 } from "@/interfaces/testEvaluation.interface";
+import { RuleScopeFields } from "./RuleScopeFields";
+import { scopePhrase } from "../helpers/ruleScope";
+
+export type { RuleConversation };
 
 const ANY_AGENT = "__any__";
 
@@ -47,19 +52,6 @@ const MATCH_OPTIONS: { value: MatchMode; label: string }[] = [
   { value: "all", label: "All selected tools" },
   { value: "any", label: "At least one" },
 ];
-
-const SCOPE_OPTIONS: { value: ToolUsageScope; label: string }[] = [
-  { value: "every_turn", label: "Every turn" },
-  { value: "conversation", label: "Whole conversation" },
-  { value: "specific_turn", label: "Specific turn" },
-];
-
-// An imported multi-turn conversation available for specific-turn targeting.
-export interface RuleConversation {
-  id: string; // source_conversation_id
-  label: string;
-  turns: { caseId: string; turnIndex: number; label: string }[];
-}
 
 const operatorToExpectation = (operator: ToolUsageOperator): Expectation =>
   operator === "none" ? "must_not_use" : operator === "only" ? "only" : "must_use";
@@ -170,53 +162,11 @@ const RuleCard: React.FC<RuleCardProps> = ({
     onChange({ tool_ids });
   };
 
-  const selectedConversation = conversations.find(
-    (conversation) => conversation.id === rule.target_source_conversation_id,
-  );
-
-  const changeScope = (scope: ToolUsageScope) => {
-    if (scope === "specific_turn") {
-      onChange({ scope });
-      return;
-    }
-    onChange({
-      scope,
-      target_source_conversation_id: null,
-      target_turn_index: null,
-      target_case_id: null,
-    });
-  };
-
-  const selectConversation = (conversationId: string) =>
-    onChange({
-      target_source_conversation_id: conversationId,
-      target_turn_index: null,
-      target_case_id: null,
-    });
-
-  const selectTurn = (turnValue: string) => {
-    const turn = selectedConversation?.turns.find((t) => String(t.turnIndex) === turnValue);
-    onChange({
-      target_turn_index: turn ? turn.turnIndex : null,
-      target_case_id: turn ? turn.caseId : null,
-    });
-  };
-
-  const scopePhrase = (): string => {
-    if (rule.scope === "conversation") return "during the conversation";
-    if (rule.scope === "specific_turn") {
-      if (!selectedConversation || rule.target_turn_index == null) return "on the selected turn";
-      const turn = selectedConversation.turns.find((t) => t.turnIndex === rule.target_turn_index);
-      return `on ${selectedConversation.label}, ${turn?.label ?? `turn ${rule.target_turn_index + 1}`}`;
-    }
-    return "on every turn";
-  };
-
   const summary = (): string => {
     const agent = rule.agent_id ? catalog.find((a) => a.id === rule.agent_id) : null;
     const agentLabel = agent ? `"${agent.label}"` : "Any agent";
     const tools = rule.tool_ids.map((id) => `"${toolLabelById.get(id) ?? id}"`);
-    const scope = scopePhrase();
+    const scope = scopePhrase(rule, conversations);
     const successfully = rule.require_success ? "successfully " : "";
     if (expectation === "must_not_use")
       return `${agentLabel} must not use ${joinPhrases(tools, "or")} ${scope}.`;
@@ -362,23 +312,11 @@ const RuleCard: React.FC<RuleCardProps> = ({
         {toolsRequired && <p className="text-xs text-destructive">Select at least one tool.</p>}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>When</Label>
-          <Select value={rule.scope} onValueChange={(value) => changeScope(value as ToolUsageScope)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SCOPE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
+      <RuleScopeFields
+        rule={rule}
+        conversations={conversations}
+        onChange={(patch: Partial<RuleScopeTarget>) => onChange(patch)}
+      >
         {expectation !== "must_not_use" && (
           <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
             <div>
@@ -391,54 +329,7 @@ const RuleCard: React.FC<RuleCardProps> = ({
             />
           </div>
         )}
-      </div>
-
-      {rule.scope === "specific_turn" &&
-        (conversations.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No imported conversations in this dataset to target.
-          </p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Conversation</Label>
-              <Select
-                value={rule.target_source_conversation_id ?? ""}
-                onValueChange={selectConversation}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a conversation" />
-                </SelectTrigger>
-                <SelectContent>
-                  {conversations.map((conversation) => (
-                    <SelectItem key={conversation.id} value={conversation.id}>
-                      {conversation.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Turn</Label>
-              <Select
-                value={rule.target_turn_index != null ? String(rule.target_turn_index) : ""}
-                disabled={!selectedConversation}
-                onValueChange={selectTurn}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a turn" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(selectedConversation?.turns ?? []).map((turn) => (
-                    <SelectItem key={turn.caseId} value={String(turn.turnIndex)}>
-                      {turn.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        ))}
+      </RuleScopeFields>
 
       {/* Advanced settings */}
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>

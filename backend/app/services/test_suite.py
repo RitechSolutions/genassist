@@ -2,7 +2,6 @@ import asyncio
 import dataclasses
 import logging
 import json
-import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -20,6 +19,11 @@ from app.db.models.test_suite import (
     TestEvaluationModel,
     TestToolRuleResultModel,
 )
+from app.services.evaluation_text import (
+    display_name as _display_name,
+    normalize_text as _normalize_text,
+)
+from app.services.route_action_rules import action_observations, route_observations
 from app.services.evaluation_nli import (
     NLI_MAX_ANSWER_CLAIMS,
     evaluation_nli_model,
@@ -74,21 +78,6 @@ from app.services.realtime_notifications import emit_notification, notification_
 logger = logging.getLogger(__name__)
 
 
-def _normalize_text(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    # Unwrap single-key string wrapper dicts produced by both the frontend
-    # (expected_output fallback) and the execution engine (actual_output).
-    # Supported keys: "value" (execution wrapper) and "text" (legacy frontend wrapper).
-    if isinstance(value, dict):
-        for key in ("value", "text"):
-            if list(value.keys()) == [key] and isinstance(value[key], str):
-                return value[key].strip()
-    return str(value).strip()
-
-
 def _truncate_output(output: Any, max_length: int = 64000) -> Any:
     """
     Keep full workflow outputs for inspection; only truncate extremely large
@@ -102,8 +91,18 @@ def _truncate_output(output: Any, max_length: int = 64000) -> Any:
 # Reserved key holding run-level counts alongside the per-technique metrics.
 RUN_TOTALS_KEY = "_totals"
 
-# Tool Usage is graded per scope from collected tool events, not per case.
+# Rule-based techniques are graded per scope (turn or whole conversation) from
+# what the run observed, not per case, and are stored as one row per rule check.
 TOOL_USED_TECHNIQUE = "tool_used"
+ROUTE_TAKEN_TECHNIQUE = "route_taken"
+ACTION_TAKEN_TECHNIQUE = "action_taken"
+RULE_ROW_TECHNIQUES = (TOOL_USED_TECHNIQUE, ROUTE_TAKEN_TECHNIQUE, ACTION_TAKEN_TECHNIQUE)
+
+_RULE_TECHNIQUE_LABELS = {
+    TOOL_USED_TECHNIQUE: "Tool usage",
+    ROUTE_TAKEN_TECHNIQUE: "Route taken",
+    ACTION_TAKEN_TECHNIQUE: "Action taken",
+}
 
 # Checks that cannot honestly run until the workflow has produced its final answer.
 _FINAL_OUTPUT_TECHNIQUES = frozenset(
@@ -122,6 +121,10 @@ _FINAL_OUTPUT_TECHNIQUES = frozenset(
 CASE_EXECUTION_TIMEOUT_SECONDS = 20 * 60
 EVALUATOR_TIMEOUT_SECONDS = 5 * 60
 NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
+
+# Rule grading runs after the cases; a bug or stuck DB call here must not leave
+# the run stuck in "running" forever.
+RULE_EVALUATION_TIMEOUT_SECONDS = 60
 
 # Metering runs outside the scoring budget; one hung flush must not stall a long run.
 EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS = 30
@@ -345,10 +348,6 @@ def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
     return any(hint in name for hint in _RETRIEVAL_TOOL_HINTS)
 
 
-def _names_equal(first: Any, second: Any) -> bool:
-    return _normalize_text(first).lower() == _normalize_text(second).lower()
-
-
 def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
     """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
     try:
@@ -397,32 +396,6 @@ def _tool_result_satisfies(call: Dict[str, Any], require_not_empty: bool, requir
     if required_text and required_text not in result_text:
         return False
     return True
-
-
-def _node_matches_selector(node: Dict[str, Any], selector: Any) -> bool:
-    """Match a trace node by exact id or case-insensitive display label."""
-    return node.get("id") == selector or _names_equal(node.get("label"), selector)
-
-
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
-)
-
-
-def _display_name(value: Any, labels: Dict[str, str], fallback: str = "unknown node") -> str:
-    """Human name for a node/tool reference: its resolved label, the value itself
-    when it already reads as a name, or a neutral fallback instead of a raw id."""
-    text = str(value or "").strip()
-    if not text:
-        return fallback
-    label = labels.get(text)
-    if label:
-        return label
-    # MCP tool ids are "{nodeId}:{toolName}"; the tool name half is readable.
-    prefix, _, suffix = text.partition(":")
-    if suffix and _UUID_RE.match(prefix):
-        return suffix
-    return fallback if _UUID_RE.match(text) else text
 
 
 def _tool_usage_labeler(
@@ -493,47 +466,6 @@ def _json_diff_summary(
     return "; ".join(shown)
 
 
-def _parse_route_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Route rules from config; a legacy single-rule config becomes a one-item list."""
-    raw_rules = config.get("rules")
-    if isinstance(raw_rules, list):
-        rules = []
-        for raw in raw_rules:
-            if not isinstance(raw, dict):
-                continue
-            expected = _normalize_text(raw.get("expected"))
-            if not expected:
-                continue
-            rules.append({"router": raw.get("router") or raw.get("node"), "expected": expected})
-        return rules
-    expected = _normalize_text(config.get("expected"))
-    if not expected:
-        return []
-    return [{"router": config.get("router") or config.get("node"), "expected": expected}]
-
-
-def _parse_action_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Action rules from config; a legacy single-rule config becomes a one-item list."""
-
-    def build(raw: Dict[str, Any]) -> Dict[str, Any] | None:
-        selector = raw.get("node")
-        node_type = raw.get("node_type")
-        if not selector and not node_type:
-            return None
-        return {
-            "node": selector,
-            "node_type": node_type,
-            "should_fire": bool(raw.get("should_fire", True)),
-        }
-
-    raw_rules = config.get("rules")
-    if isinstance(raw_rules, list):
-        built = [build(raw) for raw in raw_rules if isinstance(raw, dict)]
-        return [rule for rule in built if rule]
-    rule = build(config)
-    return [rule] if rule else []
-
-
 def _parse_judge_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Judge rules from config; a legacy single-rubric config becomes a one-item list."""
 
@@ -559,122 +491,6 @@ def _parse_judge_rules(config: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [rule for rule in built if rule]
     rule = build(config)
     return [rule] if rule else []
-
-
-def _grade_route_rule(
-    rule: Dict[str, Any],
-    routers: List[Dict[str, Any]],
-    node_labels: Dict[str, str],
-    rule_number: int,
-) -> Dict[str, Any]:
-    """Grade one route rule against the routers seen in the trace."""
-    selector = rule.get("router")
-    expected = rule["expected"]
-    matched = [r for r in routers if _node_matches_selector(r, selector)] if selector else routers
-    routes = [
-        _normalize_text((r.get("output") or {}).get("route"))
-        for r in matched
-        if isinstance(r.get("output"), dict)
-    ]
-    passed = any(_names_equal(route, expected) for route in routes)
-    if selector:
-        trace_label = matched[0].get("label") if matched else None
-        router_name = trace_label or _display_name(selector, node_labels)
-    else:
-        router_name = None
-    routes_taken = [route for route in routes if route]
-    # The stored observed value stays plain (legacy shape); quotes are comment-only.
-    observed = ", ".join(routes_taken) or "none"
-    quoted_routes = ", ".join(f"'{route}'" for route in routes_taken) or "none"
-
-    if passed:
-        comment = (
-            f"Router '{router_name}' took route '{expected}'."
-            if router_name
-            else f"Route '{expected}' was taken."
-        )
-    elif selector and not matched:
-        comment = f"Router '{router_name}' did not run."
-    elif router_name:
-        comment = f"Expected route '{expected}' on router '{router_name}', took {quoted_routes}."
-    else:
-        comment = f"Expected route '{expected}', took {quoted_routes}."
-
-    return {
-        "rule_number": rule_number,
-        "router": {"id": selector, "label": router_name},
-        "expected": expected,
-        "observed": observed,
-        "passed": passed,
-        "comment": comment,
-    }
-
-
-def _grade_action_rule(
-    rule: Dict[str, Any],
-    nodes: Dict[str, Any],
-    node_labels: Dict[str, str],
-    rule_number: int,
-) -> Dict[str, Any]:
-    """Grade one action rule against the executed nodes in the trace."""
-    selector = rule.get("node")
-    node_type = rule.get("node_type")
-    should_fire = rule["should_fire"]
-
-    def is_target(node: Dict[str, Any]) -> bool:
-        if selector and not _node_matches_selector(node, selector):
-            return False
-        if node_type and node.get("type") != node_type:
-            return False
-        return True
-
-    candidates = [node for node in nodes.values() if is_target(node)]
-    fired_node = next(
-        (node for node in candidates if node.get("status") == "success" and not node.get("error")),
-        None,
-    )
-    fired = fired_node is not None
-    errored = any(node.get("error") for node in candidates)
-    passed = fired if should_fire else not fired
-
-    # Name the node that determined the outcome: the one that fired when the rule
-    # hinges on firing, else the first match (all share the not-fired status).
-    named_node = fired_node or (candidates[0] if candidates else None)
-    trace_label = named_node.get("label") if named_node else None
-    target_name = trace_label or _display_name(selector or node_type, node_labels)
-
-    show_comment_on_pass = False
-    if passed:
-        if not candidates:
-            comment = f"'{target_name}' did not run in this evaluation."
-            show_comment_on_pass = True
-        elif fired:
-            comment = f"'{target_name}' completed."
-        else:
-            comment = f"'{target_name}' did not complete."
-    elif should_fire:
-        comment = f"Expected '{target_name}' to fire but it did not."
-    else:
-        comment = f"Expected '{target_name}' not to fire but it did."
-
-    if not candidates:
-        observed = "did not run"
-    elif fired:
-        observed = "completed"
-    elif errored:
-        observed = "ran with an error"
-    else:
-        observed = "did not complete"
-
-    return {
-        "rule_number": rule_number,
-        "node": {"id": selector or node_type, "label": target_name},
-        "expected": "must complete" if should_fire else "must not complete",
-        "observed": observed,
-        "passed": passed,
-        "comment": comment,
-        "show_comment_on_pass": show_comment_on_pass,
-    }
 
 
 def _rules_result(key: str, details: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -745,6 +561,34 @@ def _append_retrieval(
         return
     retrievals.append({"node": node, "label": label, "query": query, "results": results})
     seen_content.add(content_key)
+
+
+def _turn_descriptors(cases: List[TestCaseInDB]) -> List[Dict[str, Any]]:
+    """Describe turns by id so the scope planner stays ORM-free."""
+    return [
+        {
+            "id": str(case.id),
+            "source_conversation_id": (
+                str(case.source_conversation_id) if case.source_conversation_id else None
+            ),
+            "turn_index": case.turn_index,
+        }
+        for case in cases
+    ]
+
+
+def _conversation_groups(conversations: List[List[TestCaseInDB]]) -> List[List[str]]:
+    """Turn ids grouped per conversation, in the order the run executed them."""
+    return [[str(case.id) for case in group] for group in conversations]
+
+
+def _invalid_rule_config_summary(exc: Exception) -> Dict[str, Any]:
+    """Summary for a rule config that could not be parsed, so the run still completes
+    and says why instead of failing silently."""
+    return {
+        "avg_score": 0.0, "accuracy": 0.0, "cases": 0, "error": str(exc),
+        "coverage": {"passed": 0, "failed": 0, "not_evaluated": 0, "evaluated": 0, "total": 0},
+    }
 
 
 def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
@@ -958,6 +802,7 @@ class SimpleEvaluatorRegistry:
         outputs: Any,
         reference_outputs: Any,
         execution_trace: Any = None,
+        grading_context: Dict[str, Any] | None = None,
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
         usage_ref: "EvaluationUsageRef | None" = None,
@@ -967,7 +812,9 @@ class SimpleEvaluatorRegistry:
             "inputs": inputs,
             "outputs": outputs,
             "reference_outputs": reference_outputs,
-            "trace": _build_grading_context(execution_trace),
+            # Callers that already built the grading context pass it in rather than
+            # paying to rebuild it.
+            "trace": grading_context if grading_context is not None else _build_grading_context(execution_trace),
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
             "_usage_ref": usage_ref,
@@ -1240,27 +1087,26 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pass when every configured router rule saw its expected branch taken."""
-        from app.services.tool_catalog import resolve_node_labels
+        """Pass when every configured router rule saw its expected branch taken.
 
-        rules = _parse_route_rules(config)
-        if not rules:
-            return {
-                "key": "route_taken",
-                "score": False,
-                "passed": False,
-                "comment": "No expected route configured.",
-            }
+        Grades this turn alone; the run loop applies each rule's scope instead
+        (see :func:`app.services.route_action_rules.plan_route_results`).
+        """
+        from app.services.route_action_rules import (
+            grade_route_rule,
+            parse_route_config,
+            route_observations,
+        )
 
-        routers = (payload.get("trace") or {}).get("nodes_by_type", {}).get("routerNode", [])
-        workflow = payload.get("workflow")
-        node_labels = resolve_node_labels(workflow) if workflow is not None else {}
-
-        details = [
-            _grade_route_rule(rule, routers, node_labels, index)
-            for index, rule in enumerate(rules, start=1)
-        ]
-        return _rules_result("route_taken", details)
+        return self._grade_single_turn(
+            key="route_taken",
+            payload=payload,
+            config=config,
+            parse=parse_route_config,
+            observe=route_observations,
+            grade=grade_route_rule,
+            empty_comment="No expected route configured.",
+        )
 
     async def _action_taken(
         self,
@@ -1271,27 +1117,59 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pass when every configured side-effect node rule is satisfied."""
+        """Pass when every configured side-effect node rule is satisfied.
+
+        Grades this turn alone; the run loop applies each rule's scope instead
+        (see :func:`app.services.route_action_rules.plan_action_results`).
+        """
+        from app.services.route_action_rules import (
+            action_observations,
+            grade_action_rule,
+            parse_action_config,
+        )
+
+        return self._grade_single_turn(
+            key="action_taken",
+            payload=payload,
+            config=config,
+            parse=parse_action_config,
+            observe=action_observations,
+            grade=grade_action_rule,
+            empty_comment="No action node or node_type configured.",
+        )
+
+    @staticmethod
+    def _grade_single_turn(
+        *,
+        key: str,
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+        parse: Callable[[Dict[str, Any]], Any],
+        observe: Callable[[Dict[str, Any]], List[Dict[str, Any]]],
+        grade: Callable[..., Dict[str, Any]],
+        empty_comment: str,
+    ) -> Dict[str, Any]:
+        """Grade one rule-based technique against a single turn's trace."""
+        from app.services.route_action_rules import ScopeSlice
         from app.services.tool_catalog import resolve_node_labels
 
-        rules = _parse_action_rules(config)
+        try:
+            rules = parse(config).rules
+        except ValueError as exc:
+            return {"key": key, "score": False, "passed": False,
+                    "comment": f"Invalid {key} config: {exc}"}
         if not rules:
-            return {
-                "key": "action_taken",
-                "score": False,
-                "passed": False,
-                "comment": "No action node or node_type configured.",
-            }
+            return {"key": key, "score": False, "passed": False, "comment": empty_comment}
 
-        nodes = (payload.get("trace") or {}).get("nodes") or {}
         workflow = payload.get("workflow")
         node_labels = resolve_node_labels(workflow) if workflow is not None else {}
+        scope_slice = ScopeSlice(turns=[observe(payload.get("trace") or {})], total_turns=1)
 
         details = [
-            _grade_action_rule(rule, nodes, node_labels, index)
+            grade(rule, scope_slice, node_labels, index)
             for index, rule in enumerate(rules, start=1)
         ]
-        return _rules_result("action_taken", details)
+        return _rules_result(key, details)
 
     async def _guardrail_nli(
         self,
@@ -2203,15 +2081,22 @@ class TestSuiteService:
         engine = WorkflowEngine(workflow_config)
 
         evaluator_keys = run.techniques or self.evaluators.default_techniques()
-        # tool_used is graded once per scope from collected events (not per case),
-        # so it is pulled out of the per-case techniques to avoid double counting.
-        tool_usage_requested = TOOL_USED_TECHNIQUE in evaluator_keys
-        per_case_keys = [k for k in evaluator_keys if k != TOOL_USED_TECHNIQUE]
+        # Rule-based techniques are graded once per scope from what the run observed
+        # (not per case), so they are pulled out of the per-case techniques to avoid
+        # double counting.
+        rule_keys = [k for k in evaluator_keys if k in RULE_ROW_TECHNIQUES]
+        per_case_keys = [k for k in evaluator_keys if k not in RULE_ROW_TECHNIQUES]
+        tool_usage_requested = TOOL_USED_TECHNIQUE in rule_keys
+        route_or_action_requested = bool(
+            {ROUTE_TAKEN_TECHNIQUE, ACTION_TAKEN_TECHNIQUE} & set(rule_keys)
+        )
 
         per_case_metrics: List[Dict[str, Any]] = []
         status_counts: Dict[str, int] = {}
         case_events: Dict[str, List[Dict[str, Any]]] = {}
         case_executed_agents: Dict[str, set] = {}
+        case_routes: Dict[str, List[Dict[str, Any]]] = {}
+        case_actions: Dict[str, List[Dict[str, Any]]] = {}
         provider_name_cache: Dict[str, Tuple[str, str, bool]] = {}
         metering_state: Dict[str, Any] = {"timed_out": False}
 
@@ -2304,6 +2189,12 @@ class TestSuiteService:
                     node_status = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
                     case_events[str(case.id)] = execution_trace.get("tool_events") or []
                     case_executed_agents[str(case.id)] = set(node_status.keys())
+                # Built once and shared with the evaluators; a turn that produced no
+                # trace records nothing, which is how a scope reports "not evaluated".
+                grading_context = _build_grading_context(execution_trace)
+                if route_or_action_requested:
+                    case_routes[str(case.id)] = route_observations(grading_context)
+                    case_actions[str(case.id)] = action_observations(grading_context)
                 # The prefix keeps judge rows off the execution's own ledger key; without
                 # an execution id there is nothing to key on, so metering stays off
                 state_execution_id = getattr(state, "execution_id", None)
@@ -2324,6 +2215,7 @@ class TestSuiteService:
                             outputs=output,
                             reference_outputs=case.expected_output,
                             execution_trace=execution_trace,
+                            grading_context=grading_context,
                             technique_configs=technique_configs,
                             # Evaluators resolve node/tool ids to display labels from
                             # the graph; without it comments degrade to "unknown node".
@@ -2452,32 +2344,20 @@ class TestSuiteService:
                 "not_evaluated": not_evaluated.get(key, 0),
             }
 
-        # Tool Usage: grade rules across their scope from the collected events and
-        # persist per-rule results; the summary is computed from those, not per case.
-        # Bounded and isolated from the rest of the run — a bug or a stuck DB call
-        # here must not leave the whole run stuck in "running" forever.
-        if tool_usage_requested:
-            try:
-                tool_summary = await asyncio.wait_for(
-                    self._evaluate_tool_usage(
-                        run=run,
-                        cases=cases,
-                        conversations=conversations,
-                        technique_configs=technique_configs,
-                        workflow=workflow,
-                        case_events=case_events,
-                        case_executed_agents=case_executed_agents,
-                    ),
-                    timeout=60,
-                )
-                if tool_summary is not None:
-                    summary[TOOL_USED_TECHNIQUE] = tool_summary
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.exception("Tool usage evaluation failed for run %s: %s", run.id, exc)
-                summary[TOOL_USED_TECHNIQUE] = {
-                    "avg_score": 0.0, "accuracy": 0.0, "cases": 0,
-                    "error": "Tool usage evaluation failed or timed out.",
-                }
+        summary.update(
+            await self._evaluate_rule_techniques(
+                run=run,
+                cases=cases,
+                conversations=conversations,
+                technique_configs=technique_configs,
+                workflow=workflow,
+                requested=rule_keys,
+                case_events=case_events,
+                case_executed_agents=case_executed_agents,
+                case_routes=case_routes,
+                case_actions=case_actions,
+            )
+        )
 
         # Metrics above cover scored cases only. A case can run yet fail scoring, so
         # "executed" and "scored" are counted separately rather than merged.
@@ -2495,6 +2375,75 @@ class TestSuiteService:
         run.status = "completed"
         run.summary_metrics = summary
         await self.run_repo.update(run)
+
+    async def _evaluate_rule_techniques(
+        self,
+        *,
+        run: TestRunModel,
+        cases: List[TestCaseInDB],
+        conversations: List[List[TestCaseInDB]],
+        technique_configs: Dict[str, Dict[str, Any]] | None,
+        workflow: WorkflowInDB,
+        requested: List[str],
+        case_events: Dict[str, List[Dict[str, Any]]],
+        case_executed_agents: Dict[str, set],
+        case_routes: Dict[str, List[Dict[str, Any]]],
+        case_actions: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """Grade each requested rule-based technique across its scopes, persist the
+        per-rule results, and return their summaries.
+
+        Every technique is bounded and isolated: a bug or a stuck DB call in one
+        must not leave the whole run stuck in "running", nor drop the others.
+        """
+        graders: Dict[str, Callable[[], Any]] = {
+            TOOL_USED_TECHNIQUE: lambda: self._evaluate_tool_usage(
+                run=run,
+                cases=cases,
+                conversations=conversations,
+                technique_configs=technique_configs,
+                workflow=workflow,
+                case_events=case_events,
+                case_executed_agents=case_executed_agents,
+            ),
+            ROUTE_TAKEN_TECHNIQUE: lambda: self._evaluate_route_or_action(
+                technique=ROUTE_TAKEN_TECHNIQUE,
+                run=run,
+                cases=cases,
+                conversations=conversations,
+                technique_configs=technique_configs,
+                workflow=workflow,
+                observations_by_turn=case_routes,
+            ),
+            ACTION_TAKEN_TECHNIQUE: lambda: self._evaluate_route_or_action(
+                technique=ACTION_TAKEN_TECHNIQUE,
+                run=run,
+                cases=cases,
+                conversations=conversations,
+                technique_configs=technique_configs,
+                workflow=workflow,
+                observations_by_turn=case_actions,
+            ),
+        }
+
+        summaries: Dict[str, Any] = {}
+        for technique in RULE_ROW_TECHNIQUES:
+            if technique not in requested:
+                continue
+            label = _RULE_TECHNIQUE_LABELS[technique]
+            try:
+                summary = await asyncio.wait_for(
+                    graders[technique](), timeout=RULE_EVALUATION_TIMEOUT_SECONDS
+                )
+                if summary is not None:
+                    summaries[technique] = summary
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("%s evaluation failed for run %s: %s", label, run.id, exc)
+                summaries[technique] = {
+                    "avg_score": 0.0, "accuracy": 0.0, "cases": 0,
+                    "error": f"{label} evaluation failed or timed out.",
+                }
+        return summaries
 
     async def _evaluate_tool_usage(
         self,
@@ -2532,10 +2481,7 @@ class TestSuiteService:
             )
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception("Invalid tool_used config for run %s: %s", run.id, exc)
-            return {
-                "avg_score": 0.0, "accuracy": 0.0, "cases": 0, "error": str(exc),
-                "coverage": {"passed": 0, "failed": 0, "not_evaluated": 0, "evaluated": 0, "total": 0},
-            }
+            return _invalid_rule_config_summary(exc)
 
         if not parsed.rules:
             return None
@@ -2548,19 +2494,6 @@ class TestSuiteService:
                 for case_id, executed in case_executed_agents.items()
             }
 
-        # Describe turns/conversations by id so the scope planner stays ORM-free.
-        turns = [
-            {
-                "id": str(case.id),
-                "source_conversation_id": (
-                    str(case.source_conversation_id) if case.source_conversation_id else None
-                ),
-                "turn_index": case.turn_index,
-            }
-            for case in cases
-        ]
-        conversation_groups = [[str(case.id) for case in group] for group in conversations]
-
         # Human-readable snapshot captured at run time, so results stay legible even
         # if a tool or agent is later renamed. Labels come from the resolved catalogue.
         agent_labels = {agent["id"]: agent["label"] for agent in agents}
@@ -2571,21 +2504,130 @@ class TestSuiteService:
         label_of = _tool_usage_labeler({**agent_labels, **tool_labels}, all_events)
 
         planned = plan_tool_rule_results(
-            parsed.rules, turns, conversation_groups, case_events, case_executed_agents, label_of
+            parsed.rules,
+            _turn_descriptors(cases),
+            _conversation_groups(conversations),
+            case_events,
+            case_executed_agents,
+            label_of,
         )
 
         rule_by_id = {rule.id: rule for rule in parsed.rules}
-        # Turn index per case so a per-turn result can name the turn it graded.
-        turn_index_by_case = {turn["id"]: turn["turn_index"] for turn in turns}
         rule_snapshot_by_id = {
             rule.id: self._rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule)
             for index, rule in enumerate(parsed.rules)
         }
+
+        def extra_details(entry: Dict[str, Any]) -> Dict[str, Any]:
+            rule = rule_by_id[entry["rule_id"]]
+            return {
+                "rule": rule.model_dump(mode="json"),
+                **rule_snapshot_by_id[entry["rule_id"]],
+                # Label every tool the result mentions (including forbidden/outside
+                # tools) so the UI never has to fall back to a raw id.
+                "tools": self._entry_tool_labels(entry["result"], rule.tool_ids, tool_labels),
+            }
+
+        await self._persist_rule_results(
+            run=run,
+            technique=TOOL_USED_TECHNIQUE,
+            planned=planned,
+            cases=cases,
+            conversations=conversations,
+            extra_details=extra_details,
+        )
+        return summarize_planned_results(planned)
+
+    async def _evaluate_route_or_action(
+        self,
+        *,
+        technique: str,
+        run: TestRunModel,
+        cases: List[TestCaseInDB],
+        conversations: List[List[TestCaseInDB]],
+        technique_configs: Dict[str, Dict[str, Any]] | None,
+        workflow: WorkflowInDB,
+        observations_by_turn: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, Any] | None:
+        """Grade route/action rules per scope, persist one result per rule/scope unit,
+        and return a summary computed from those results (the canonical source)."""
+        from app.services.rule_scopes import summarize_planned_results
+        from app.services.route_action_rules import (
+            describe_action_rule,
+            describe_route_rule,
+            parse_action_config,
+            parse_route_config,
+            plan_action_results,
+            plan_route_results,
+        )
+        from app.services.tool_catalog import resolve_node_labels
+
+        config = (technique_configs or {}).get(technique)
+        if not config:
+            return None
+
+        is_route = technique == ROUTE_TAKEN_TECHNIQUE
+        parse = parse_route_config if is_route else parse_action_config
+        plan = plan_route_results if is_route else plan_action_results
+        describe = describe_route_rule if is_route else describe_action_rule
+        try:
+            rules = parse(config).rules
+        except ValueError as exc:
+            logger.exception("Invalid %s config for run %s: %s", technique, run.id, exc)
+            return _invalid_rule_config_summary(exc)
+
+        if not rules:
+            return None
+
+        # Labels are snapshotted per result, so a later node rename never rewrites
+        # what a past run reported.
+        node_labels = resolve_node_labels(workflow) if workflow is not None else {}
+        planned = plan(
+            rules,
+            _turn_descriptors(cases),
+            _conversation_groups(conversations),
+            observations_by_turn,
+            node_labels,
+        )
+
+        rule_by_id = {rule.id: rule for rule in rules}
+
+        def extra_details(entry: Dict[str, Any]) -> Dict[str, Any]:
+            rule = rule_by_id[entry["rule_id"]]
+            return {
+                "rule": rule.model_dump(mode="json"),
+                "rule_summary": describe(rule, node_labels),
+            }
+
+        await self._persist_rule_results(
+            run=run,
+            technique=technique,
+            planned=planned,
+            cases=cases,
+            conversations=conversations,
+            extra_details=extra_details,
+        )
+        return summarize_planned_results(planned)
+
+    async def _persist_rule_results(
+        self,
+        *,
+        run: TestRunModel,
+        technique: str,
+        planned: List[Dict[str, Any]],
+        cases: List[TestCaseInDB],
+        conversations: List[List[TestCaseInDB]],
+        extra_details: Callable[[Dict[str, Any]], Dict[str, Any]],
+    ) -> None:
+        """Store one row per rule check, each carrying what it graded and why."""
+        # Turn index per case so a per-turn result can name the turn it graded.
+        turn_index_by_case = {str(case.id): case.turn_index for case in cases}
         turn_count_by_conv, conv_number_by_id = self._conversation_index(conversations)
 
         rows = [
             TestToolRuleResultModel(
                 run_id=run.id,
+                technique=technique,
                 rule_id=entry["rule_id"],
                 scope=entry["scope"],
                 case_id=entry["case_id"],
@@ -2594,23 +2636,16 @@ class TestSuiteService:
                 score=self._rule_score(entry["result"]["status"]),
                 details={
                     **entry["result"],
-                    "rule": rule_by_id[entry["rule_id"]].model_dump(mode="json"),
                     "turn_index": turn_index_by_case.get(entry["case_id"]),
-                    **rule_snapshot_by_id[entry["rule_id"]],
                     "target": self._target_snapshot(
                         entry, turn_index_by_case, turn_count_by_conv, conv_number_by_id
                     ),
-                    # Label every tool the result mentions (including forbidden/outside
-                    # tools) so the UI never has to fall back to a raw id.
-                    "tools": self._entry_tool_labels(
-                        entry["result"], rule_by_id[entry["rule_id"]].tool_ids, tool_labels
-                    ),
+                    **extra_details(entry),
                 },
             )
             for entry in planned
         ]
         await self.tool_rule_result_repo.create_many(rows)
-        return summarize_planned_results(planned)
 
     @staticmethod
     def _rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule) -> Dict[str, Any]:
@@ -2730,6 +2765,37 @@ class TestSuiteService:
         suite = await self.suite_repo.get_by_id(suite_id)
         return suite.workflow_id if suite else None
 
+    async def _prepare_technique_configs(
+        self, workflow_id: Any, technique_configs: Dict[str, Any] | None
+    ) -> Dict[str, Any] | None:
+        """Validate and canonicalize rule configs before they are stored, so a
+        config the run loop could not grade is refused at the API boundary."""
+        self._validate_route_action_configs(technique_configs)
+        return await self._canonicalize_tool_used_configs(workflow_id, technique_configs)
+
+    @staticmethod
+    def _validate_route_action_configs(technique_configs: Dict[str, Any] | None) -> None:
+        """Reject a route/action config whose rules are not valid (an unknown scope,
+        a specific-turn rule with no target, a rule with nothing to assert)."""
+        from app.services.route_action_rules import parse_action_config, parse_route_config
+
+        parsers = {
+            ROUTE_TAKEN_TECHNIQUE: parse_route_config,
+            ACTION_TAKEN_TECHNIQUE: parse_action_config,
+        }
+        for technique, parse in parsers.items():
+            config = (technique_configs or {}).get(technique)
+            if not config:
+                continue
+            try:
+                parse(config)
+            except ValueError as exc:
+                raise AppException(
+                    error_key=ErrorKey.RULE_CONFIG_INVALID,
+                    status_code=400,
+                    error_detail=f"{_RULE_TECHNIQUE_LABELS[technique]}: {exc}",
+                ) from exc
+
     async def _canonicalize_tool_used_configs(
         self, workflow_id: Any, technique_configs: Dict[str, Any] | None
     ) -> Dict[str, Any] | None:
@@ -2762,7 +2828,7 @@ class TestSuiteService:
         workflow_id = await self._effective_workflow_id(
             payload.get("workflow_id"), payload.get("suite_id")
         )
-        payload["technique_configs"] = await self._canonicalize_tool_used_configs(
+        payload["technique_configs"] = await self._prepare_technique_configs(
             workflow_id, payload.get("technique_configs")
         )
         orm = TestEvaluationModel(**payload)
@@ -2793,7 +2859,7 @@ class TestSuiteService:
             workflow_id = await self._effective_workflow_id(
                 updates.get("workflow_id") or row.workflow_id, suite_id
             )
-            updates["technique_configs"] = await self._canonicalize_tool_used_configs(
+            updates["technique_configs"] = await self._prepare_technique_configs(
                 workflow_id, updates["technique_configs"]
             )
         for field, value in updates.items():

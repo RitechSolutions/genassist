@@ -1,17 +1,22 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
-import {
-  getAllMLModels,
-  createMLModel,
-  updateMLModel,
-  deleteMLModel,
-  uploadModelFile,
-} from "@/services/mlModels";
 import { v4 as uuidv4 } from "uuid";
+import { Brain, ChevronLeft, FileCode, Pencil, Plus, Trash2 } from "lucide-react";
+
+import { PageLayout } from "@/components/PageLayout";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/label";
+import { TagsFieldInput } from "@/components/TagsFieldInput";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ListEmptyState } from "@/components/ListEmptyState";
+import { ListErrorState } from "@/components/ListErrorState";
+import { PageListSkeleton } from "@/components/skeletons";
 import {
   Select,
   SelectContent,
@@ -19,804 +24,593 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import {
-  Upload,
-  X,
-  Pencil,
-  AlertCircle,
-  CheckCircle2,
-  Plus,
-  ChevronLeft,
-  Trash2,
-  Brain,
-  FileCode,
-  FileIcon,
-  Download,
-} from "lucide-react";
-import { SearchInput } from "@/components/SearchInput";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { PageListSkeleton } from "@/components/skeletons";
-import { MLModel } from "@/interfaces/ml-model.interface";
-import { Badge } from "@/components/badge";
-import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
-import { getApiUrlString } from "@/config/api";
 
-const DEFAULT_FORM_DATA: MLModel = {
-  id: uuidv4(),
+import { MLModel } from "@/interfaces/ml-model.interface";
+import {
+  createMLModel,
+  deleteMLModel,
+  getAllMLModels,
+  updateMLModel,
+  uploadModelFile,
+} from "@/services/mlModels";
+import { extractErrorMessage } from "@/helpers/apiError";
+import { MLModelType, MODEL_TYPE_OPTIONS, modelTypeLabel } from "../helpers/modelTypes";
+import { ModelFilePicker } from "./ModelFilePicker";
+
+const ALL_TYPES = "all";
+const MODELS_QUERY_KEY = ["ml-models"];
+
+type ParamRow = { key: string; value: string };
+
+interface FormValues {
+  name: string;
+  description: string;
+  model_type: MLModelType;
+  target_variable: string;
+  features: string[];
+  params: ParamRow[];
+  pkl_file: string | null;
+  pkl_file_id: string | null;
+  pendingFile: File | null;
+}
+
+type FormErrors = Partial<Record<keyof FormValues, string>>;
+
+const emptyForm = (): FormValues => ({
   name: "",
   description: "",
   model_type: "xgboost",
-  pkl_file: null,
-  features: [],
   target_variable: "",
-  inference_params: {},
-};
+  features: [],
+  params: [],
+  pkl_file: null,
+  pkl_file_id: null,
+  pendingFile: null,
+});
+
+const formFromModel = (model: MLModel): FormValues => ({
+  name: model.name ?? "",
+  description: model.description ?? "",
+  model_type: model.model_type,
+  target_variable: model.target_variable ?? "",
+  features: model.features ?? [],
+  params: Object.entries(model.inference_params ?? {}).map(([key, value]) => ({
+    key,
+    value: String(value ?? ""),
+  })),
+  pkl_file: model.pkl_file ?? null,
+  pkl_file_id: model.pkl_file_id ?? null,
+  pendingFile: null,
+});
+
+/** Left-hand caption column of a form section (title + explanation). */
+const SectionIntro: React.FC<{ title: string; children: React.ReactNode }> = ({
+  title,
+  children,
+}) => (
+  <div>
+    <h3 className="text-lg font-semibold">{title}</h3>
+    <p className="mt-1 text-sm text-muted-foreground">{children}</p>
+  </div>
+);
 
 const MLModelsManager: React.FC = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<MLModel[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [showForm, setShowForm] = useState<boolean>(false);
-  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const location = useLocation();
+  const queryClient = useQueryClient();
 
-  const [modelToDelete, setModelToDelete] = useState<Partial<MLModel> | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>(ALL_TYPES);
+
+  const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState<MLModel | null>(null);
+  const [values, setValues] = useState<FormValues>(emptyForm);
+  // Set when the form was opened from a model's detail page, so leaving the form
+  // (via the back arrow or after saving) returns there instead of to the list.
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [modelToDelete, setModelToDelete] = useState<MLModel | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [editingItem, setEditingItem] = useState<MLModel | null>(null);
-  const [formData, setFormData] = useState<MLModel>(DEFAULT_FORM_DATA);
-  const [featuresInput, setFeaturesInput] = useState<string>("");
-  const [inferenceParamsKV, setInferenceParamsKV] = useState<
-    { key: string; value: string }[]
-  >([]);
+  const {
+    data: models = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: MODELS_QUERY_KEY,
+    queryFn: getAllMLModels,
+  });
 
+  const filteredItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return models.filter((model) => {
+      const matchesType = typeFilter === ALL_TYPES || model.model_type === typeFilter;
+      const matchesQuery =
+        !query ||
+        model.name?.toLowerCase().includes(query) ||
+        model.description?.toLowerCase().includes(query);
+      return matchesType && matchesQuery;
+    });
+  }, [models, searchQuery, typeFilter]);
+
+  const setField = <K extends keyof FormValues>(key: K, value: FormValues[K]) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  };
+
+  const openCreateForm = () => {
+    setReturnTo(null);
+    setEditingItem(null);
+    setValues(emptyForm());
+    setErrors({});
+    setShowForm(true);
+  };
+
+  const openEditForm = (model: MLModel, from?: string) => {
+    setReturnTo(from ?? null);
+    setEditingItem(model);
+    setValues(formFromModel(model));
+    setErrors({});
+    setShowForm(true);
+  };
+
+  // The detail page's "Edit" action routes back here with the model to edit, so
+  // editing always happens on this full page rather than in a second surface.
+  const editModelId = (location.state as { editModelId?: string } | null)?.editModelId;
   useEffect(() => {
-    fetchItems();
-  }, []);
+    if (!editModelId || models.length === 0) return;
+    const target = models.find((model) => model.id === editModelId);
+    if (target) openEditForm(target, `/ml-models/${target.id}`);
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editModelId, models]);
 
-  const fetchItems = async () => {
-    try {
-      setLoading(true);
-      const data = await getAllMLModels();
-      setItems(data);
-      setError(null);
-    } catch (err) {
-      setError("Failed to load ML models");
-    } finally {
-      setLoading(false);
-    }
+  const closeForm = () => {
+    const origin = returnTo;
+    setShowForm(false);
+    setEditingItem(null);
+    setValues(emptyForm());
+    setErrors({});
+    setReturnTo(null);
+    if (origin) navigate(origin);
   };
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setSelectedFile(file);
-  };
-
-  const uploadFile = async () => {
-    if (!selectedFile) return null;
-
-    setIsUploading(true);
-
-    try {
-      return await uploadModelFile(selectedFile);
-    } catch (error) {
-      setError(
-        `Failed to upload file: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-      return null;
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleFeaturesInputChange = (value: string) => {
-    setFeaturesInput(value);
-
-    // Parse comma-separated values and update formData
-    const featuresArray = value
-      .split(', ')
-      .map(f => f.trim())
-      .filter(f => f.length > 0);
-
-    setFormData((prev) => ({
-      ...prev,
-      features: featuresArray,
-    }));
-  };
-
-  const syncInferenceParamsToForm = (kv: { key: string; value: string }[]) => {
-    const paramsObject = kv.reduce((acc, { key, value }) => {
-      const trimmedKey = key.trim();
-      if (trimmedKey.length > 0) {
-        acc[trimmedKey] = value;
-      }
-      return acc;
-    }, {} as Record<string, string>);
-    setFormData((prev) => ({
-      ...prev,
-      inference_params: paramsObject,
-    }));
-  };
-
-  const addParamRow = () => {
-    setInferenceParamsKV((prev) => {
-      const next = [...prev, { key: "", value: "" }];
-      syncInferenceParamsToForm(next);
-      return next;
-    });
-  };
-
-  const updateParamKey = (index: number, newKey: string) => {
-    setInferenceParamsKV((prev) => {
-      const next = prev.map((item, i) => (i === index ? { ...item, key: newKey } : item));
-      syncInferenceParamsToForm(next);
-      return next;
-    });
-  };
-
-  const updateParamValue = (index: number, newValue: string) => {
-    setInferenceParamsKV((prev) => {
-      const next = prev.map((item, i) => (i === index ? { ...item, value: newValue } : item));
-      syncInferenceParamsToForm(next);
-      return next;
-    });
-  };
-
-  const removeParamRow = (index: number) => {
-    setInferenceParamsKV((prev) => {
-      const next = prev.filter((_, i) => i !== index);
-      syncInferenceParamsToForm(next);
-      return next;
-    });
+  const validate = (): boolean => {
+    const next: FormErrors = {};
+    if (!values.name.trim()) next.name = "Name is required.";
+    if (!values.description.trim()) next.description = "Description is required.";
+    if (!values.model_type) next.model_type = "Model type is required.";
+    if (!values.target_variable.trim())
+      next.target_variable = "Target variable is required.";
+    if (values.features.length === 0) next.features = "Add at least one feature.";
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const requiredFields = [
-      { label: "name", isEmpty: !formData.name },
-      { label: "description", isEmpty: !formData.description },
-      { label: "model type", isEmpty: !formData.model_type },
-      { label: "target variable", isEmpty: !formData.target_variable },
-    ];
-
-    const missingFields = requiredFields
-      .filter((field) => field.isEmpty)
-      .map((field) => field.label)
-      .map((label) => label.charAt(0).toUpperCase() + label.slice(1));
-
-    if (missingFields.length > 0) {
-      if (missingFields.length === 1) {
-        toast.error(`${missingFields[0]} is required.`);
-      } else {
-        toast.error(`Please provide: ${missingFields.join(", ")}.`);
-      }
-      return;
-    }
-
-    if (formData.features.length === 0) {
-      toast.error("Please add at least one feature.");
-      return;
-    }
+    if (!validate()) return;
 
     try {
-      setLoading(true);
-      setError(null);
-      setSuccess(null);
+      setIsSaving(true);
 
-      const dataToSubmit = { ...formData };
-
-      // if pkl file is selected, upload the file
-      if (selectedFile && (!formData.pkl_file || !formData.pkl_file_id)) {
-        const uploadResult = await uploadFile();
-
-        if (!uploadResult) {
-          throw new Error("File upload failed");
-        }
-
-        dataToSubmit.pkl_file = uploadResult?.file_path;
-
-        // store file manager file ID for download
-        if (uploadResult?.file_id) {
-          dataToSubmit.pkl_file_id = uploadResult?.file_id;
-        }
+      let pklFile = values.pkl_file;
+      let pklFileId = values.pkl_file_id;
+      if (values.pendingFile) {
+        const uploaded = await uploadModelFile(values.pendingFile);
+        if (!uploaded?.file_path) throw new Error("File upload failed.");
+        pklFile = uploaded.file_path;
+        pklFileId = uploaded.file_id ?? null;
       }
+
+      const inferenceParams = values.params.reduce<Record<string, string>>(
+        (acc, { key, value }) => {
+          const trimmed = key.trim();
+          if (trimmed) acc[trimmed] = value;
+          return acc;
+        },
+        {}
+      );
+
+      const payload = {
+        name: values.name.trim(),
+        description: values.description.trim(),
+        model_type: values.model_type,
+        target_variable: values.target_variable.trim(),
+        features: values.features,
+        inference_params: inferenceParams,
+        pkl_file: pklFile,
+        pkl_file_id: pklFileId,
+      };
 
       if (editingItem) {
-        await updateMLModel(editingItem.id, dataToSubmit);
-        setSuccess(`ML model "${dataToSubmit.name}" updated successfully`);
+        await updateMLModel(editingItem.id, payload);
+        void queryClient.invalidateQueries({ queryKey: ["ml-model", editingItem.id] });
+        toast.success(`ML model "${payload.name}" updated.`);
       } else {
-        dataToSubmit.id = uuidv4();
-        await createMLModel(dataToSubmit);
-        setSuccess(`ML model "${dataToSubmit.name}" created successfully`);
+        await createMLModel({ ...payload, id: uuidv4() });
+        toast.success(`ML model "${payload.name}" created.`);
       }
 
-      setFormData(DEFAULT_FORM_DATA);
-      setSelectedFile(null);
-      setEditingItem(null);
-      setShowForm(false);
-      fetchItems();
+      closeForm();
+      void refetch();
     } catch (err) {
-      let errorMessage = err instanceof Error ? err.message : String(err);
-
-      if (errorMessage.includes("400")) {
-        errorMessage = "An ML model with this name already exists.";
-      }
-
+      const status =
+        (err as { status?: number })?.status ??
+        (err as { response?: { status?: number } })?.response?.status;
       toast.error(
-        `Failed to ${
-          editingItem ? "update" : "create"
-        } ML model: ${errorMessage}`
+        status === 400
+          ? "An ML model with this name already exists."
+          : extractErrorMessage(
+              err,
+              `Failed to ${editingItem ? "update" : "create"} ML model.`
+            )
       );
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
-  };
-
-  const handleCancel = () => {
-    setFormData(DEFAULT_FORM_DATA);
-    setSelectedFile(null);
-    setEditingItem(null);
-    setError(null);
-    setSuccess(null);
-    setShowForm(false);
-    setFeaturesInput("");
-    setInferenceParamsKV([]);
-  };
-
-  const handleEdit = (item: MLModel) => {
-    setEditingItem(item);
-    setFormData({
-      ...item,
-      features: item.features || [],
-      inference_params: item.inference_params || {},
-    });
-    setFeaturesInput((item.features || []).join(', '));
-    setInferenceParamsKV(
-      Object.entries(item.inference_params || {}).map(([key, value]) => ({
-        key,
-        value: String(value ?? ""),
-      }))
-    );
-    setSelectedFile(null);
-    setShowForm(true);
-  };
-
-  const handleDeleteClick = async (id: string, name: string) => {
-    setModelToDelete({ id, name });
-    setIsDeleteDialogOpen(true);
   };
 
   const handleDelete = async () => {
-    if (!modelToDelete?.id) return;
-
+    if (!modelToDelete) return;
     try {
       setIsDeleting(true);
       await deleteMLModel(modelToDelete.id);
-      toast.success(`ML model deleted successfully.`);
-      setItems((prev) => prev.filter((s) => s.id !== modelToDelete.id));
-    } catch (err) {
+      toast.success("ML model deleted successfully.");
+      void refetch();
+    } catch {
       toast.error("Failed to delete ML model.");
     } finally {
-      setModelToDelete(null);
-      setIsDeleteDialogOpen(false);
       setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+      setModelToDelete(null);
     }
   };
 
-  const downloadModelFile = async (fileId: string) => {
-    try {
-      const tenantId = localStorage.getItem("tenant_id");
-      const fileUrl = getFileDownloadUrl(fileId, getApiUrlString, tenantId || "");
-      await downloadFile(fileUrl, `${formData.name || "model"}.pkl`);
-    } catch (error) {
-      toast.error("Failed to download model file");
-      console.error(error);
-    }
-  };
-
-  const filteredItems = items.filter((item) => {
-    const matchesQuery =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchQuery.toLowerCase());
-
+  if (showForm) {
     return (
-      matchesQuery &&
-      (item.model_type === typeFilter || typeFilter === "all")
-    );
-  });
+      <PageLayout>
+        <div className="flex items-center">
+          <Button variant="ghost" size="icon" onClick={closeForm} className="mr-2">
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {editingItem ? "Edit ML Model" : "New ML Model"}
+          </h1>
+        </div>
 
-  const getModelTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      xgboost: "XGBoost",
-      random_forest: "Random Forest",
-      linear_regression: "Linear Regression",
-      logistic_regression: "Logistic Regression",
-      other: "Other",
-    };
-    return labels[type] || type;
-  };
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="divide-y rounded-lg border bg-card dark:bg-zinc-900">
+            {/* Basic information */}
+            <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-3">
+              <SectionIntro title="Basic Information">
+                What this model is and what it predicts.
+              </SectionIntro>
+
+              <div className="space-y-6 md:col-span-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField id="name" label="Name" error={errors.name}>
+                    <Input
+                      id="name"
+                      value={values.name}
+                      onChange={(e) => setField("name", e.target.value)}
+                      placeholder="Name for this ML model"
+                    />
+                  </FormField>
+
+                  <FormField id="model_type" label="Model Type" error={errors.model_type}>
+                    <Select
+                      value={values.model_type}
+                      onValueChange={(value) => setField("model_type", value as MLModelType)}
+                    >
+                      <SelectTrigger id="model_type">
+                        <SelectValue placeholder="Select model type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MODEL_TYPE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                </div>
+
+                <FormField id="description" label="Description" error={errors.description}>
+                  <Textarea
+                    id="description"
+                    value={values.description}
+                    onChange={(e) => setField("description", e.target.value)}
+                    placeholder="Brief description of this ML model"
+                    rows={3}
+                  />
+                </FormField>
+
+                <FormField
+                  id="target_variable"
+                  label="Target Variable"
+                  error={errors.target_variable}
+                >
+                  <Input
+                    id="target_variable"
+                    value={values.target_variable}
+                    onChange={(e) => setField("target_variable", e.target.value)}
+                    placeholder="e.g., price, category, churn"
+                  />
+                </FormField>
+
+                <div>
+                  <Label className="text-sm font-medium">Model File (.pkl)</Label>
+                  <div className="mt-1.5">
+                    <ModelFilePicker
+                      pendingFile={values.pendingFile}
+                      existingPath={values.pkl_file}
+                      existingFileId={values.pkl_file_id}
+                      modelName={values.name}
+                      onSelect={(file) => setField("pendingFile", file)}
+                      onRemoveExisting={() =>
+                        setValues((prev) => ({ ...prev, pkl_file: null, pkl_file_id: null }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Features */}
+            <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-3">
+              <SectionIntro title="Features">
+                The input columns the model expects, in the order it was trained on.
+              </SectionIntro>
+
+              <div className="md:col-span-2">
+                <FormField id="features" label="Features" error={errors.features}>
+                  <TagsFieldInput
+                    id="features"
+                    value={values.features}
+                    placeholder="Type a feature and press Enter"
+                    onChange={(next) => setField("features", next)}
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    {values.features.length > 0
+                      ? `${values.features.length} feature${
+                          values.features.length !== 1 ? "s" : ""
+                        } defined`
+                      : "Press Enter or comma to add each feature. Paste a comma-separated list to add several at once."}
+                  </p>
+                </FormField>
+              </div>
+            </div>
+
+            {/* Inference parameters */}
+            <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-3">
+              <SectionIntro title="Inference Parameters">
+                Optional parameter names and default values used at inference time.
+              </SectionIntro>
+
+              <div className="space-y-3 md:col-span-2">
+                {values.params.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No parameters defined yet.</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[1fr_1fr_2.5rem] gap-2">
+                      <Label className="text-xs text-muted-foreground">Name</Label>
+                      <Label className="text-xs text-muted-foreground">Default value</Label>
+                      <span />
+                    </div>
+                    {values.params.map((param, index) => (
+                      <div
+                        key={index}
+                        className="grid grid-cols-[1fr_1fr_2.5rem] items-center gap-2"
+                      >
+                        <Input
+                          value={param.key}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              params: prev.params.map((p, i) =>
+                                i === index ? { ...p, key: e.target.value } : p
+                              ),
+                            }))
+                          }
+                          placeholder="Parameter name (e.g., threshold)"
+                          aria-label={`Parameter ${index + 1} name`}
+                        />
+                        <Input
+                          value={param.value}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              params: prev.params.map((p, i) =>
+                                i === index ? { ...p, value: e.target.value } : p
+                              ),
+                            }))
+                          }
+                          placeholder="Default value (optional)"
+                          aria-label={`Parameter ${index + 1} value`}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-red-500"
+                          aria-label={`Remove parameter ${index + 1}`}
+                          onClick={() =>
+                            setValues((prev) => ({
+                              ...prev,
+                              params: prev.params.filter((_, i) => i !== index),
+                            }))
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </>
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    setValues((prev) => ({
+                      ...prev,
+                      params: [...prev.params, { key: "", value: "" }],
+                    }))
+                  }
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Parameter
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={closeForm}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={isSaving}>
+              {editingItem ? "Update ML Model" : "Create ML Model"}
+            </Button>
+          </div>
+        </form>
+      </PageLayout>
+    );
+  }
 
   return (
-    <div className="space-y-8">
-      {showForm ? (
-        <>
-          <div className="flex items-center">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleCancel}
-              className="mr-2"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <h2 className="text-2xl font-bold tracking-tight">
-              {editingItem ? "Edit ML Model" : "New ML Model"}
-            </h2>
-          </div>
+    <PageLayout>
+      <PageHeader
+        title="ML Models"
+        subtitle="Model definitions your workflows can train and run inference against."
+        filters={
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-full bg-card sm:w-44" aria-label="Filter by model type">
+              <SelectValue placeholder="All types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_TYPES}>All types</SelectItem>
+              {MODEL_TYPE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search ML models..."
+        actionButtonText="Add New"
+        onActionClick={openCreateForm}
+      />
 
-          {error && (
-            <div className="flex items-center gap-2 p-3 text-destructive bg-destructive/10 rounded-md">
-              <AlertCircle className="h-4 w-4" />
-              <p className="text-sm font-medium">{error}</p>
-            </div>
-          )}
-
-          {success && (
-            <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 rounded-md">
-              <CheckCircle2 className="h-4 w-4" />
-              <p className="text-sm font-medium">{success}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-6">
-              <div className="rounded-lg border bg-card dark:bg-zinc-900">
-                {/* Basic Information */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        Basic Information
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Basic information about the ML model.
-                      </p>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <div className="mb-1">Name</div>
-                          <Input
-                            id="name"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleInputChange}
-                            placeholder="Name for this ML model"
-                          />
-                        </div>
-
-                        <div>
-                          <div className="mb-1">Model Type</div>
-                          <Select
-                            value={formData.model_type}
-                            onValueChange={(value) =>
-                              handleInputChange({
-                                target: { name: "model_type", value },
-                              } as React.ChangeEvent<HTMLInputElement>)
-                            }
-                          >
-                            <SelectTrigger id="model_type">
-                              <SelectValue placeholder="Select model type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="xgboost">XGBoost</SelectItem>
-                              <SelectItem value="random_forest">Random Forest</SelectItem>
-                              <SelectItem value="linear_regression">Linear Regression</SelectItem>
-                              <SelectItem value="logistic_regression">Logistic Regression</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="mb-1">Description</div>
-                        <Textarea
-                          id="description"
-                          name="description"
-                          value={formData.description}
-                          onChange={handleInputChange}
-                          placeholder="Brief description of this ML model"
-                          rows={3}
-                        />
-                      </div>
-
-                      <div>
-                        <div className="mb-1">Target Variable</div>
-                        <Input
-                          id="target_variable"
-                          name="target_variable"
-                          value={formData.target_variable}
-                          onChange={handleInputChange}
-                          placeholder="e.g., price, category, churn"
-                        />
-                      </div>
-
-                      <div>
-                        <div className="mb-1">Upload Model File (.pkl)</div>
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md cursor-pointer">
-                            <label
-                              htmlFor="file-upload"
-                              className="flex flex-col items-center gap-2 cursor-pointer w-full p-6"
-                            >
-                              <Upload className="h-10 w-10 text-muted-foreground" />
-                              <span className="text-sm font-medium text-muted-foreground">
-                                {selectedFile
-                                  ? selectedFile.name
-                                  : formData.pkl_file
-                                  ? "Replace file"
-                                  : "Select .pkl file to upload (optional)"}
-                              </span>
-                              <input
-                                id="file-upload"
-                                type="file"
-                                accept=".pkl"
-                                onChange={handleFileChange}
-                                disabled={isUploading}
-                                className="hidden"
-                              />
-                            </label>
-                          </div>
-
-                          {selectedFile && (
-                            <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                              <div className="flex items-center gap-2">
-                                <FileCode className="h-4 w-4" />
-                                <span className="text-sm">
-                                  {selectedFile.name} (
-                                  {(selectedFile.size / 1024).toFixed(1)} KB)
-                                </span>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setSelectedFile(null)}
-                                className="h-8 w-8"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          )}
-
-                          {formData.pkl_file && !formData.pkl_file_id && !selectedFile && (
-                            <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                              <div className="flex items-center gap-2">
-                                <FileCode className="h-4 w-4" />
-                                <span className="text-sm">
-                                  File: {formData.pkl_file}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {formData.pkl_file_id && !selectedFile && (
-                            <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                              <div className="flex items-center gap-2">
-                                <FileIcon className="h-4 w-4" />
-                                <span className="text-sm">
-                                  {formData.name}
-                                </span>
-                              </div>
-
-                              <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => downloadModelFile(formData.pkl_file_id as string)}
-                                  className="h-8 w-8 ml-auto"
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                            </div>
-                          )}
-
-                          {isUploading && (
-                            <div className="p-2 text-sm text-muted-foreground">
-                              Uploading file... Please wait.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="-mx-6 my-0 border-t border-border" />
-
-                {/* Features Section */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">Features</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Enter comma-separated feature names for the model.
-                      </p>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-4">
-                      <div>
-                        <Input
-                          value={featuresInput}
-                          onChange={(e) => handleFeaturesInputChange(e.target.value)}
-                          placeholder="Enter features separated by commas (e.g., age, income, credit_score)"
-                        />
-                        {formData.features.length > 0 && (
-                          <p className="text-sm text-muted-foreground mt-2">
-                            {formData.features.length} feature{formData.features.length !== 1 ? 's' : ''} defined: {formData.features.join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="-mx-6 my-0 border-t border-border" />
-
-                {/* Inference Parameters Section */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        Inference Parameters
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Define parameter names and their default values for inference.
-                      </p>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-4">
-                      <div className="space-y-3">
-                        {inferenceParamsKV.length === 0 && (
-                          <p className="text-sm text-muted-foreground">No parameters defined yet.</p>
-                        )}
-                        {inferenceParamsKV.map((item, index) => (
-                          <div key={index} className="grid grid-cols-12 gap-2 items-center">
-                            <div className="col-span-5">
-                              <Input
-                                value={item.key}
-                                onChange={(e) => updateParamKey(index, e.target.value)}
-                                placeholder="Parameter name (e.g., temperature)"
-                              />
-                            </div>
-                            <div className="col-span-6">
-                              <Input
-                                value={item.value}
-                                onChange={(e) => updateParamValue(index, e.target.value)}
-                                placeholder="Default value (optional)"
-                              />
-                            </div>
-                            <div className="col-span-1 flex justify-end">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeParamRow(index)}
-                                className="h-8 w-8 text-red-500"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                        <div>
-                          <Button type="button" variant="secondary" onClick={addParamRow}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Parameter
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submit buttons */}
-              <div className="flex justify-end gap-3">
-                <Button type="button" variant="outline" onClick={handleCancel}>
-                  Cancel
+      <div className="overflow-hidden rounded-lg border bg-card dark:bg-zinc-900">
+        {isPending ? (
+          <PageListSkeleton variant="rich" bordered={false} />
+        ) : isError ? (
+          <ListErrorState
+            title="Couldn't load ML models"
+            message="Something went wrong while loading your ML models."
+            onRetry={() => void refetch()}
+          />
+        ) : filteredItems.length === 0 ? (
+          <ListEmptyState
+            icon={<Brain className="h-12 w-12 text-muted-foreground" />}
+            title={searchQuery ? "No ML models found" : "No ML models yet"}
+            description={
+              searchQuery
+                ? "Try adjusting your search query or filters."
+                : "ML models let you configure and run inference pipelines. Create your first ML model to get started."
+            }
+            action={
+              !searchQuery ? (
+                <Button onClick={openCreateForm} className="rounded-full">
+                  Create your first ML model
                 </Button>
-                <Button type="submit" disabled={loading || isUploading}>
-                  {loading || isUploading
-                    ? "Saving..."
-                    : editingItem
-                    ? "Update ML Model"
-                    : "Create ML Model"}
-                </Button>
-              </div>
-            </div>
-          </form>
-        </>
-      ) : (
-        <>
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h2 className="text-2xl sm:text-3xl font-bold animate-fade-down">ML Models</h2>
-                <p className="text-muted-foreground font-normal animate-fade-up">
-                  Manage machine learning model definitions
-                </p>
-              </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                <div className="relative">
-                  <Select
-                    value={typeFilter}
-                    onValueChange={(value) => setTypeFilter(value)}
-                    defaultValue="all"
+              ) : undefined
+            }
+          />
+        ) : (
+          <div className="divide-y divide-border">
+            {filteredItems.map((item) => (
+              <div
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/ml-models/${item.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    navigate(`/ml-models/${item.id}`);
+                  }
+                }}
+                className="cursor-pointer px-4 py-4 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
+              >
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-1 flex-col space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="break-words text-base font-semibold sm:text-lg">
+                        {item.name}
+                      </h4>
+                      <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-500/20 dark:text-blue-400">
+                        {modelTypeLabel(item.model_type)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{item.description}</p>
+                    <div className="mt-1 flex flex-wrap gap-3 text-sm text-muted-foreground">
+                      <span>
+                        <strong>Target:</strong> {item.target_variable}
+                      </span>
+                      <span>
+                        <strong>Features:</strong> {item.features?.length ?? 0}
+                      </span>
+                      {(item.pkl_file || !!item.pkl_file_id) && (
+                        <span className="flex items-center gap-1">
+                          <FileCode className="h-4 w-4" />
+                          Model file uploaded
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    className="flex w-full justify-end gap-2 md:w-auto"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
                   >
-                    <SelectTrigger className="w-full sm:min-w-32 bg-card">
-                      <SelectValue placeholder="Filter by type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">(Show all)</SelectItem>
-                      <SelectItem value="xgboost">XGBoost</SelectItem>
-                      <SelectItem value="random_forest">Random Forest</SelectItem>
-                      <SelectItem value="linear_regression">Linear Regression</SelectItem>
-                      <SelectItem value="logistic_regression">Logistic Regression</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <SearchInput
-                  placeholder="Search ML models..."
-                  className="w-full sm:min-w-64"
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                />
-                <Button
-                  onClick={() => setShowForm(true)}
-                  className="w-full rounded-full sm:w-auto"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add New
-                </Button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="flex items-center gap-2 p-3 text-destructive bg-destructive/10 rounded-md">
-                <AlertCircle className="h-4 w-4" />
-                <p className="text-sm font-medium">{error}</p>
-              </div>
-            )}
-
-            {success && (
-              <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-500/15 rounded-md">
-                <CheckCircle2 className="h-4 w-4" />
-                <p className="text-sm font-medium">{success}</p>
-              </div>
-            )}
-
-            <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
-              {loading ? (
-                <PageListSkeleton variant="rich" bordered={false} />
-              ) : filteredItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                  <div className="rounded-full bg-muted p-4">
-                    <Brain className="h-12 w-12 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-medium text-lg">
-                    {searchQuery ? "No ML models found" : "No ML models yet"}
-                  </h3>
-                  <p className="text-sm text-muted-foreground max-w-md px-4">
-                    {searchQuery
-                      ? "Try adjusting your search query or filters."
-                      : "ML models let you configure and run inference pipelines. Create your first ML model to get started."}
-                  </p>
-                  {!searchQuery && (
                     <Button
-                      onClick={() => setShowForm(true)}
-                      className="rounded-full"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label={`Edit ${item.name}`}
+                      onClick={() => openEditForm(item)}
                     >
-                      Create your first ML model
+                      <Pencil className="h-4 w-4" />
                     </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {filteredItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="px-4 py-4 sm:px-6 hover:bg-muted cursor-pointer transition-colors"
-                      onClick={(e) => {
-                        // Don't navigate if clicking on buttons
-                        if ((e.target as HTMLElement).closest('button')) {
-                          return;
-                        }
-                        navigate(`/ml-models/${item.id}`);
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-500"
+                      aria-label={`Delete ${item.name}`}
+                      onClick={() => {
+                        setModelToDelete(item);
+                        setIsDeleteDialogOpen(true);
                       }}
                     >
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div className="flex-1 flex flex-col space-y-2">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-base sm:text-lg font-semibold break-words">
-                              {item.name}
-                            </h4>
-                            <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-500/20 dark:text-blue-400">
-                              {getModelTypeLabel(item.model_type)}
-                            </span>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {item.description}
-                          </p>
-                          <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mt-1">
-                            <span>
-                              <strong>Target:</strong> {item.target_variable}
-                            </span>
-                            <span>
-                              <strong>Features:</strong> {item.features.length}
-                            </span>
-                            {(item.pkl_file || !!item.pkl_file_id) && (
-                              <span className="flex items-center gap-1">
-                                <FileCode className="h-4 w-4" />
-                                Model file uploaded
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex gap-2 justify-end w-full md:w-auto">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEdit(item);
-                            }}
-                            className="h-8 w-8"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(item.id, item.name);
-                            }}
-                            className="h-8 w-8 text-red-500"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-        </>
-      )}
+        )}
+      </div>
 
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}
@@ -824,11 +618,10 @@ const MLModelsManager: React.FC = () => {
         onConfirm={handleDelete}
         isInProgress={isDeleting}
         itemName={modelToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete the ML model "${modelToDelete?.name}".`}
+        description={`This action cannot be undone. This will permanently delete the ML model "${modelToDelete?.name}", along with its pipeline configurations and run history.`}
       />
-    </div>
+    </PageLayout>
   );
 };
 
 export default MLModelsManager;
-

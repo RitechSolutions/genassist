@@ -47,14 +47,17 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { TooltipProvider } from "@/components/RadixTooltip";
 import { TooltipButton } from "@/components/tooltip-button";
 import { cn } from "@/helpers/utils";
-import { ToolUsageResults } from "./ToolUsageResults";
-import { ToolUsageResultCard } from "./ToolUsageResultCard";
+import { RuleResults } from "./RuleResults";
+import { RuleResultCard } from "./RuleResultCard";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 import { CompareRunsDialog } from "./CompareRunsDialog";
 import { MetricRuleBreakdown } from "./MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
 import {
+  groupByTechnique,
+  isRuleTechnique,
   isResultFailed,
+  isTurnScope,
   isResultNotScored,
   isResultPassed,
   notScoredLabel,
@@ -190,7 +193,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   const [isRunDetailsOpen, setIsRunDetailsOpen] = useState(false);
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [resultsByRun, setResultsByRun] = useState<Record<string, TestResult[]>>({});
-  const [toolResultsByRun, setToolResultsByRun] = useState<Record<string, TestToolRuleResult[]>>({});
+  const [ruleResultsByRun, setRuleResultsByRun] = useState<Record<string, TestToolRuleResult[]>>({});
   const [suite, setSuite] = useState<TestSuite | null>(null);
   const [workflowName, setWorkflowName] = useState<string>("Dataset default");
   const [workflowAgentId, setWorkflowAgentId] = useState<string | null>(null);
@@ -293,12 +296,12 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       setResultFilter("all");
       setIsLoadingResults(true);
       try {
-        const [data, toolRows] = await Promise.all([
+        const [data, ruleRows] = await Promise.all([
           listResultsForRun(selectedRunId),
           getToolRuleResults(selectedRunId).catch(() => []),
         ]);
         setResultsByRun((prev) => ({ ...prev, [selectedRunId]: data ?? [] }));
-        setToolResultsByRun((prev) => ({ ...prev, [selectedRunId]: toolRows ?? [] }));
+        setRuleResultsByRun((prev) => ({ ...prev, [selectedRunId]: ruleRows ?? [] }));
       } finally {
         setIsLoadingResults(false);
       }
@@ -325,12 +328,12 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           if (updated.status === "completed" || updated.status === "failed") {
             clearInterval(pollInterval);
             setIsRunning(false);
-            const [results, toolRows] = await Promise.all([
+            const [results, ruleRows] = await Promise.all([
               listResultsForRun(created.id),
               getToolRuleResults(created.id).catch(() => []),
             ]);
             setResultsByRun((prev) => ({ ...prev, [created.id]: results ?? [] }));
-            setToolResultsByRun((prev) => ({ ...prev, [created.id]: toolRows ?? [] }));
+            setRuleResultsByRun((prev) => ({ ...prev, [created.id]: ruleRows ?? [] }));
           }
         }, 10_000);
         // Return early — setIsRunning(false) is handled by the interval above.
@@ -358,29 +361,27 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
 
   const selectedRun = runs.find((run) => run.id === selectedRunId);
   const selectedRunResults = selectedRunId ? resultsByRun[selectedRunId] ?? [] : [];
-  const selectedRunToolResults = selectedRunId ? toolResultsByRun[selectedRunId] ?? [] : [];
+  const selectedRunRuleResults = selectedRunId ? ruleResultsByRun[selectedRunId] ?? [] : [];
 
-  // Turn-level tool results are shown inside the matching test-case detail; conversation
-  // results stay in the run-level Tool Usage section.
-  const toolResultsByCaseId = useMemo(() => {
-    const rows = selectedRunId ? toolResultsByRun[selectedRunId] ?? [] : [];
+  // Turn-level rule results are shown inside the matching test-case detail;
+  // conversation results stay in the run-level sections.
+  const ruleResultsByCaseId = useMemo(() => {
+    const rows = selectedRunId ? ruleResultsByRun[selectedRunId] ?? [] : [];
     const map = new Map<string, TestToolRuleResult[]>();
-    for (const toolResult of rows) {
-      const isTurnScope =
-        toolResult.scope === "every_turn" || toolResult.scope === "specific_turn";
-      if (isTurnScope && toolResult.case_id) {
-        const existing = map.get(toolResult.case_id) ?? [];
-        existing.push(toolResult);
-        map.set(toolResult.case_id, existing);
+    for (const ruleResult of rows) {
+      if (isTurnScope(ruleResult.scope) && ruleResult.case_id) {
+        const existing = map.get(ruleResult.case_id) ?? [];
+        existing.push(ruleResult);
+        map.set(ruleResult.case_id, existing);
       }
     }
     return map;
-  }, [selectedRunId, toolResultsByRun]);
+  }, [selectedRunId, ruleResultsByRun]);
 
   // A case's displayed status must reflect its turn-level Tool Usage results too: a
   // tool failure fails the case, and a tool pass can score an otherwise-unscored case.
   const caseTools = (result: TestResult): TestToolRuleResult[] =>
-    result.case_id ? toolResultsByCaseId.get(result.case_id) ?? [] : [];
+    result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
 
   const casePassed = (result: TestResult): boolean => {
     const tools = caseTools(result);
@@ -472,7 +473,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           evaluation?.technique_configs?.[tech] as Record<string, unknown> | undefined,
         ),
       );
-    const caseToolRows = result.case_id ? toolResultsByCaseId.get(result.case_id) ?? [] : [];
+    const caseRuleRows = result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
 
     return (
       <>
@@ -555,17 +556,19 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
             </div>
           )}
 
-          {/* Turn-level Tool Usage for this case */}
-          {caseToolRows.length > 0 && (
-            <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Tool Usage</div>
+          {/* Turn-level rule checks for this case, grouped by technique */}
+          {groupByTechnique(caseRuleRows).map(([technique, rows]) => (
+            <div key={technique}>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">
+                {methodLabel(technique)}
+              </div>
               <div className="space-y-2">
-                {caseToolRows.map((toolResult) => (
-                  <ToolUsageResultCard key={toolResult.id} result={toolResult} />
+                {rows.map((ruleResult) => (
+                  <RuleResultCard key={ruleResult.id} result={ruleResult} />
                 ))}
               </div>
             </div>
-          )}
+          ))}
 
           {/* Input / Expected comparison, side by side */}
           <div
@@ -1009,7 +1012,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                                       </span>
                                       {typeof summary.cases === "number" && (
                                         <span className="text-xs text-muted-foreground">
-                                          {summary.cases} cases
+                                          {summary.cases} {isRuleTechnique(tech) ? "checks" : "cases"}
                                         </span>
                                       )}
                                     </div>
@@ -1070,7 +1073,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                     </Tabs>
                   </div>
                   <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-                    {selectedRunToolResults.length > 0 && <ToolUsageResults results={selectedRunToolResults} />}
+                    {selectedRunRuleResults.length > 0 && <RuleResults results={selectedRunRuleResults} />}
 
                     {isLoadingResults ? (
                       [1, 2, 3, 4].map((i) => (

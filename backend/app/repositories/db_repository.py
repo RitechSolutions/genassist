@@ -177,11 +177,13 @@ class DbRepository(Generic[OrmModelT]):
         await self.db.delete(obj)
         await self.db.commit()
 
-    async def soft_delete(self, obj: OrmModelT) -> None:
+    async def soft_delete(self, obj: OrmModelT, commit: bool = True) -> None:
+        """Skip the commit to batch this delete with later writes."""
         await self.db.execute(
                 update(obj.__class__)
                 .where(obj.__class__.id == obj.id)
                 .values(is_deleted=1)
                 .execution_options(synchronize_session="fetch")
                 )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()

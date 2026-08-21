@@ -4,7 +4,7 @@ from typing import Any, Dict
 from uuid import UUID
 from fastapi import HTTPException
 from fastapi_injector import Injected
-import requests
+import httpx
 
 from app.core.utils.encryption_utils import decrypt_key
 from app.services.app_settings import AppSettingsService
@@ -54,8 +54,9 @@ async def get_access_token(
             'Content-Type': 'application/x-www-form-urlencoded'
         }
 
-        response = requests.post(
-            token_url, data=payload, headers=headers, timeout=30)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                token_url, data=payload, headers=headers)
         response.raise_for_status()
 
         token_data = response.json()
@@ -76,7 +77,7 @@ async def get_access_token(
             'app_settings_id': app_settings_id
         }
 
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         logger.error(f"Token exchange request failed: {e}")
         if hasattr(e, 'response') and e.response is not None:
             logger.error(f"Response content: {e.response.text}")
@@ -103,7 +104,8 @@ async def get_user_email(access_token: str) -> str:
         headers = {
             "Authorization": f"Bearer {access_token}"
         }
-        response = requests.request("GET", user_info_url, headers=headers)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(user_info_url, headers=headers)
         if response.status_code != 200:
             logger.error(
                 f"Failed to retrieve user info: {response.status_code} - {response.text}")
