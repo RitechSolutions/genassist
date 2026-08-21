@@ -23,17 +23,28 @@ from app.services.bedrock_fine_tuning import BedrockFineTuningService
 
 logger = logging.getLogger(__name__)
 
-# Bedrock rejects a cachePoint on families that don't support it, failing every call
-_BEDROCK_CACHEABLE_FAMILIES = ("anthropic", "claude", "nova")
+# Bedrock rejects a cachePoint on a model that doesn't support it, failing every call.
+# Nova support is family-wide; Claude support is version-specific — Claude 3 (v1) and the
+# original Claude 3.5 Sonnet release never got caching, only 3.5 Sonnet v2 and later did.
+# Verified against AWS's supported-models table (docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html).
+_BEDROCK_CACHEABLE_ANTHROPIC_MARKERS = (
+    "claude-3-5-sonnet-20241022",  # the v2 release; the 20240620 v1 release is not cache-capable
+    "claude-3-5-haiku",
+    "claude-3-7-sonnet",
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-haiku-4",
+)
 
 
-def _bedrock_supports_prompt_caching(model_name: Optional[str], bedrock_model_provider: Optional[str]) -> bool:
-    """True if this Bedrock model accepts prompt caching. Unknown ARNs skip caching instead of failing"""
-    families = f"{model_name or ''} {bedrock_model_provider or ''}".lower()
-    supported = any(family in families for family in _BEDROCK_CACHEABLE_FAMILIES)
-    if not supported:
-        logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock family", model_name)
-    return supported
+def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
+    """True if this Bedrock model accepts prompt caching. Foundation-model and inference-profile 
+    ARNs include that name. Custom and provisioned ARNs do not, so they stay uncached."""
+    name = (model_name or "").lower()
+    if "nova" in name or any(marker in name for marker in _BEDROCK_CACHEABLE_ANTHROPIC_MARKERS):
+        return True
+    logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock model", model_name)
+    return False
 
 
 async def build_chat_model(
@@ -131,7 +142,7 @@ async def build_chat_model(
     # model and every invocation is still traced.
     if prompt_caching_enabled and (
         provider == "anthropic"
-        or (provider == "bedrock_converse" and _bedrock_supports_prompt_caching(model_name, bedrock_model_provider))
+        or (provider == "bedrock_converse" and _bedrock_supports_prompt_caching(model_name))
     ):
         from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
 

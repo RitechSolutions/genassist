@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _TTL_SECONDS = 60.0
+# Bounds a failed refresh's retry rate
+_FAILURE_COOLDOWN_SECONDS = 5.0
 _cache: dict[str, tuple[float, dict[str, dict[str, dict[str, float]]]]] = {}
+_next_retry: dict[str, float] = {}
+# Tenants with a load in flight
+_refreshing: set[str] = set()
 _sync_session_factories: dict[str, sessionmaker[Any]] = {}
 
 
@@ -44,8 +49,10 @@ def invalidate_llm_cost_rates_cache(tenant: str | None = None) -> None:
     with _lock:
         if tenant is None:
             _cache.clear()
+            _next_retry.clear()
         else:
             _cache.pop(tenant, None)
+            _next_retry.pop(tenant, None)
 
 
 def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | None:
@@ -85,18 +92,27 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
 
 
 def get_db_pricing_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]]:
-    """
-    Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS.
-    A failed refresh keeps serving the last good copy, so a DB blip cannot silently
-    revert a tenant to the bundled rates.
-    """
+    """Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS.
+    One DB load at a time per tenant"""
+    now = time.monotonic()
     with _lock:
         entry = _cache.get(tenant)
-        if entry is not None and time.monotonic() < entry[0]:
+        if entry is not None and now < entry[0]:
             return entry[1]
-    loaded = _load_db_nested(tenant)
-    if loaded is None:
-        return entry[1] if entry is not None else {}
-    with _lock:
-        _cache[tenant] = (time.monotonic() + _TTL_SECONDS, loaded)
-    return loaded
+        stale = entry[1] if entry is not None else {}
+        if tenant in _refreshing or now < _next_retry.get(tenant, 0.0):
+            return stale
+        _refreshing.add(tenant)
+
+    loaded = None
+    try:
+        loaded = _load_db_nested(tenant)
+    finally:
+        with _lock:
+            _refreshing.discard(tenant)
+            if loaded is None:
+                _next_retry[tenant] = time.monotonic() + _FAILURE_COOLDOWN_SECONDS
+            else:
+                _cache[tenant] = (time.monotonic() + _TTL_SECONDS, loaded)
+                _next_retry.pop(tenant, None)
+    return loaded if loaded is not None else stale

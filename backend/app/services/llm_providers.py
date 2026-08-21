@@ -207,7 +207,7 @@ class LlmProviderService:
         caching_requested = cd.get("prompt_caching_enabled") is True
 
         try:
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from langchain_core.messages import HumanMessage
 
             from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
             from app.modules.workflow.llm.provider import build_chat_model
@@ -218,14 +218,7 @@ class LlmProviderService:
                 model_name=cd.get("model"),
             )
             caching_active = model_has_prompt_caching(llm)
-            if caching_active:
-                probe = [
-                    SystemMessage(content=[{"type": "text", "text": "Connection test."}]),
-                    HumanMessage(content="ping"),
-                ]
-            else:
-                probe = [HumanMessage(content="ping")]
-            await llm.ainvoke(probe)
+            await llm.ainvoke([HumanMessage(content="ping")])
             message = "Connection successful."
             if caching_requested and not caching_active:
                 message += " Note: prompt caching is not supported for this model and will be ignored."

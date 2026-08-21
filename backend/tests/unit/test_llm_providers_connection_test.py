@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import botocore.exceptions as botocore_exceptions
 import pytest
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
@@ -48,47 +48,26 @@ async def _test_connection(service, built_model, **connection_data):
         return await service.test_connection("bedrock", {"model": "a-model", **connection_data})
 
 
-def _system_content(sent: list):
-    return [m for m in sent if isinstance(m, SystemMessage)][0].content
-
-
 @pytest.mark.asyncio
 class TestProbeShape:
-    async def test_bedrock_cache_point_round_trips_to_the_provider(self, service):
-        inner = _CapturingModel()
-        result = await _test_connection(service, PromptCachingChatModel(inner=inner, cache_style="bedrock_converse"))
+    @pytest.mark.parametrize("cache_style", ["bedrock_converse", "anthropic", None], ids=repr)
+    async def test_the_probe_is_a_plain_ping(self, service, cache_style):
+        model = _CapturingModel()
+        built = model if cache_style is None else PromptCachingChatModel(inner=model, cache_style=cache_style)
+        result = await _test_connection(service, built)
 
         assert result == {"success": True, "message": "Connection successful."}
-        assert _system_content(inner.seen[-1]) == [
-            {"type": "text", "text": "Connection test."},
-            {"cachePoint": {"type": "default"}},
-        ]
-        assert inner.seen[-1][-1].content == "ping"
-
-    async def test_anthropic_cache_control_round_trips_to_the_provider(self, service):
-        inner = _CapturingModel()
-        await _test_connection(service, PromptCachingChatModel(inner=inner, cache_style="anthropic"))
-
-        assert _system_content(inner.seen[-1]) == [
-            {"type": "text", "text": "Connection test.", "cache_control": {"type": "ephemeral"}}
-        ]
-
-    async def test_plain_ping_when_the_model_does_not_cache(self, service):
-        model = _CapturingModel()
-        result = await _test_connection(service, model)
-
-        assert result["success"] is True
         assert [type(m) for m in model.seen[-1]] == [HumanMessage]
         assert model.seen[-1][0].content == "ping"
 
 
 @pytest.mark.asyncio
 class TestFailures:
-    async def test_rejected_cache_point_reports_failure(self, service):
+    async def test_a_provider_error_reports_failure(self, service):
         inner = _CapturingModel(
             error=botocore_exceptions.ClientError(
                 {
-                    "Error": {"Code": "ValidationException", "Message": "cachePoint not supported"},
+                    "Error": {"Code": "ValidationException", "Message": "model is not supported"},
                     "ResponseMetadata": {"HTTPStatusCode": 400},
                 },
                 "Converse",
@@ -97,7 +76,7 @@ class TestFailures:
         result = await _test_connection(service, PromptCachingChatModel(inner=inner, cache_style="bedrock_converse"))
 
         assert result["success"] is False
-        assert "cachePoint not supported" in result["message"]
+        assert "model is not supported" in result["message"]
 
     async def test_build_failure_reports_failure(self, service):
         with patch(_BUILD, new=AsyncMock(side_effect=ValueError("bad region"))):

@@ -67,26 +67,35 @@ class TestBedrockFamilyGuard:
         llm, init = await _build("bedrock", {"prompt_caching_enabled": True}, model_name)
         assert llm is init.return_value, "wrapping these fails every call with a ValidationException"
 
-    async def test_arn_wraps_on_the_selected_model_provider(self):
-        llm, _ = await _build(
-            "bedrock",
-            {"prompt_caching_enabled": True, "model_provider": "anthropic"},
-            "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/abc123",
-        )
-        assert isinstance(llm, PromptCachingChatModel)
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "anthropic.claude-3-haiku-20240307-v1:0",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            "anthropic.claude-3-opus-20240229-v1:0",
+            "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+        ],
+    )
+    async def test_non_cacheable_claude_versions_run_uncached(self, model_name):
+        llm, init = await _build("bedrock", {"prompt_caching_enabled": True}, model_name)
+        assert llm is init.return_value, "wrapping these fails every call with a ValidationException"
 
-    async def test_arn_wraps_on_a_family_it_names_itself(self):
-        llm, _ = await _build(
-            "bedrock",
-            {"prompt_caching_enabled": True, "model_provider": "amazon"},
+    @pytest.mark.parametrize(
+        "model_name",
+        [
             "arn:aws:bedrock:eu-central-1::foundation-model/amazon.nova-2-lite-v1:0",
-        )
+            "arn:aws:bedrock:us-east-1::inference-profile/us.anthropic.claude-sonnet-4-5-v1:0",
+        ],
+    )
+    async def test_arn_wraps_on_a_model_it_names_itself(self, model_name):
+        llm, _ = await _build("bedrock", {"prompt_caching_enabled": True, "model_provider": "amazon"}, model_name)
         assert isinstance(llm, PromptCachingChatModel)
 
-    async def test_family_less_arn_under_amazon_stays_uncached(self):
+    @pytest.mark.parametrize("model_provider", ["anthropic", "amazon"])
+    async def test_opaque_arns_stay_uncached(self, model_provider):
         llm, init = await _build(
             "bedrock",
-            {"prompt_caching_enabled": True, "model_provider": "amazon"},
+            {"prompt_caching_enabled": True, "model_provider": model_provider},
             "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/abc123",
         )
         assert llm is init.return_value
