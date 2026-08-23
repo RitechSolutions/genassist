@@ -191,9 +191,9 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
     if (!form) return;
     const errors = validateLlmCostRateForm(form);
     setFieldErrors(errors);
+    setFormError(null);
     if (Object.keys(errors).length > 0) return;
     setSaving(true);
-    setFormError(null);
     try {
       if (editingId) {
         await updateLlmCostRate(editingId, {

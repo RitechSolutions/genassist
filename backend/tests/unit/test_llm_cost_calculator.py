@@ -656,6 +656,28 @@ class TestLiveLedgerParity:
         )
         assert live == round(float(ledger["cost_usd"]), 6)
 
+    def test_an_unresolved_bedrock_bucket_splits_the_two_surfaces(self, bundled_bedrock_row, no_db_rates):
+        args = ("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 0)
+
+        ledger = _resolve_cost(*args[:4], {}, cache_read_tokens=args[4], cache_creation_tokens=args[5])
+        assert ledger["cost_usd"] is None
+        assert ledger["pricing_status"] == PricingStatus.UNPRICED.value
+
+        live = LlmCostCalculator().calculate_cost(*args)
+        assert live == round((7 / 1000) * 0.001 + (20 / 1000) * 0.002 + (3697 / 1000) * 0.001, 6)
+        assert live == LlmCostCalculator().calculate_cost("bedrock", args[1], 7 + 3697, 20)
+
+    def test_the_shipped_bedrock_table_splits_them_the_same_way(self, no_db_rates):
+        args = ("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 0)
+
+        ledger = _resolve_cost(*args[:4], {}, cache_read_tokens=args[4], cache_creation_tokens=args[5])
+        assert ledger["cost_usd"] is None
+
+        live = LlmCostCalculator().calculate_cost(*args)
+        assert live == round(
+            (7 + 3697) / 1000 * DEFAULT_PRICING["input_per_1k"] + (20 / 1000) * DEFAULT_PRICING["output_per_1k"], 6
+        )
+
 
 class TestFindPricingIgnoresTheResolutionLadder:
 
