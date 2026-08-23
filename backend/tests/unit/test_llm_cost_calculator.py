@@ -543,11 +543,17 @@ class TestCacheRateLadder:
         assert res.cache_read_per_1k == Decimal("0.00001"), "the tenant's own rate wins"
         assert res.cache_creation_per_1k == Decimal("0"), "the omitted bucket is inherited from the bundled row"
 
-    def test_claude_on_bedrock_falls_back_to_the_anthropic_multipliers(self):
-        configured = {
-            "bedrock": {"us.anthropic.claude-sonnet-4-v1:0": {"input_per_1k": "0.003", "output_per_1k": "0.015"}}
-        }
-        res = resolve_pricing("bedrock", "us.anthropic.claude-sonnet-4-v1:0", configured)
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "us.anthropic.claude-sonnet-4-v1:0",
+            "global.anthropic.claude-sonnet-5",
+            "us.anthropic.claude-fable-5",
+        ],
+    )
+    def test_claude_on_bedrock_falls_back_to_the_anthropic_multipliers(self, model):
+        configured = {"bedrock": {model: {"input_per_1k": "0.003", "output_per_1k": "0.015"}}}
+        res = resolve_pricing("bedrock", model, configured)
         assert res.cache_read_per_1k == Decimal("0.0003")
         assert res.cache_creation_per_1k == Decimal("0.00375")
 

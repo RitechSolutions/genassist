@@ -54,6 +54,8 @@ class TestBedrockFamilyGuard:
             "eu.amazon.nova-2-lite-v1:0",
             "eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
             "us.anthropic.claude-sonnet-4-5-v1:0",
+            "global.anthropic.claude-sonnet-5",
+            "us.anthropic.claude-fable-5",
         ],
     )
     async def test_cacheable_families_wrap(self, model_name):
@@ -91,6 +93,7 @@ class TestBedrockFamilyGuard:
         [
             "arn:aws:bedrock:eu-central-1::foundation-model/amazon.nova-2-lite-v1:0",
             "arn:aws:bedrock:us-east-1::inference-profile/us.anthropic.claude-sonnet-4-5-v1:0",
+            "arn:aws:bedrock:us-east-1::inference-profile/global.anthropic.claude-fable-5",
         ],
     )
     async def test_arn_wraps_on_a_model_it_names_itself(self, model_name):
@@ -111,6 +114,8 @@ class TestBedrockFamilyGuard:
         [
             "arn:aws:bedrock:us-east-1:123456789012:custom-model/my-nova-finetune",
             "arn:aws:bedrock:us-east-1:123456789012:provisioned-model/nova-throughput",
+            "arn:aws:bedrock:us-east-1:123456789012:custom-model/claude-sonnet-5-finetune",
+            "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/claude-fable-5-throughput",
         ],
     )
     async def test_a_deployment_arn_never_inherits_its_base_family(self, model_name):

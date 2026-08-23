@@ -13,6 +13,9 @@ BEDROCK_CACHEABLE_ANTHROPIC_MARKERS = (
     "claude-opus-4",
     "claude-sonnet-4",
     "claude-haiku-4",
+    # Claude 5: only Sonnet and Fable are served on the Converse path
+    "claude-sonnet-5",
+    "claude-fable-5",
 )
 
 CLAUDE_FAMILY = "claude"
