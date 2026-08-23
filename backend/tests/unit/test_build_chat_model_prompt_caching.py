@@ -106,6 +106,17 @@ class TestBedrockFamilyGuard:
         )
         assert llm is init.return_value
 
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "arn:aws:bedrock:us-east-1:123456789012:custom-model/my-nova-finetune",
+            "arn:aws:bedrock:us-east-1:123456789012:provisioned-model/nova-throughput",
+        ],
+    )
+    async def test_a_deployment_arn_never_inherits_its_base_family(self, model_name):
+        llm, init = await _build("bedrock", {"prompt_caching_enabled": True, "model_provider": "amazon"}, model_name)
+        assert llm is init.return_value
+
     async def test_missing_model_name_stays_uncached(self):
         llm, init = await _build("bedrock", {"prompt_caching_enabled": True}, None)
         assert llm is init.return_value

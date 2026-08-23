@@ -4,16 +4,7 @@ LLM cost calculation service.
 Calculates cost in USD from token usage using provider/model pricing.
 """
 
-from app.core.config.llm_pricing import (
-    ANTHROPIC_CACHE_READ_MULTIPLIER,
-    ANTHROPIC_CACHE_WRITE_MULTIPLIER,
-    CACHE_EXCLUSIVE_PROVIDERS,
-    default_cache_rate,
-    find_pricing,
-)
-
-_CACHE_READ_MULTIPLIER = float(ANTHROPIC_CACHE_READ_MULTIPLIER)
-_CACHE_WRITE_MULTIPLIER = float(ANTHROPIC_CACHE_WRITE_MULTIPLIER)
+from app.core.config.llm_pricing import blended_token_cost, resolve_live_pricing
 
 
 class LlmCostCalculator:
@@ -42,31 +33,22 @@ class LlmCostCalculator:
         """
         if input_tokens < 0 or output_tokens < 0:
             return 0.0
-        pricing = find_pricing(provider, model)
-        input_per_1k = pricing.get("input_per_1k", 0.001)
-        output_per_1k = pricing.get("output_per_1k", 0.002)
-        cache_read = max(int(cache_read_tokens), 0)
-        cache_creation = max(int(cache_creation_tokens), 0)
-        if not cache_read and not cache_creation:
-            return round((input_tokens / 1000.0) * input_per_1k + (output_tokens / 1000.0) * output_per_1k, 6)
+        pricing = resolve_live_pricing(provider, model)
+        input_per_1k = pricing.display_rates.get("input_per_1k", 0.001)
+        output_per_1k = pricing.display_rates.get("output_per_1k", 0.002)
+        read_rate = input_per_1k if pricing.cache_read_per_1k is None else pricing.cache_read_per_1k
+        creation_rate = input_per_1k if pricing.cache_creation_per_1k is None else pricing.cache_creation_per_1k
 
-        provider_key = (provider or "").strip().lower()
-        read_rate = pricing.get("cache_read_per_1k")
-        if read_rate is None:
-            read_rate = default_cache_rate(provider_key, input_per_1k, _CACHE_READ_MULTIPLIER)
-        creation_rate = pricing.get("cache_creation_per_1k")
-        if creation_rate is None:
-            creation_rate = default_cache_rate(provider_key, input_per_1k, _CACHE_WRITE_MULTIPLIER)
-
-        if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
-            uncached = input_tokens
-        else:
-            uncached = max(input_tokens - cache_read - cache_creation, 0)
-
-        return round(
-            (uncached / 1000.0) * input_per_1k
-            + (output_tokens / 1000.0) * output_per_1k
-            + (cache_read / 1000.0) * read_rate
-            + (cache_creation / 1000.0) * creation_rate,
-            6,
+        cost = blended_token_cost(
+            (provider or "").strip().lower(),
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            input_per_1k,
+            output_per_1k,
+            read_rate,
+            creation_rate,
+            1000.0,
         )
+        return round(cost, 6)

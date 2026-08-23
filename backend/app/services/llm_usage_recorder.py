@@ -11,11 +11,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.llm_pricing import (
-    ANTHROPIC_CACHE_READ_MULTIPLIER,
-    ANTHROPIC_CACHE_WRITE_MULTIPLIER,
-    CACHE_EXCLUSIVE_PROVIDERS,
     PricingStatus,
-    default_cache_rate,
+    blended_token_cost,
+    inclusive_cache_fallback,
     resolve_pricing,
 )
 from app.core.utils.date_time_utils import utc_now
@@ -123,49 +121,30 @@ def _resolve_cost(
     resolution = resolve_pricing(provider, model, configured_rates)
     if resolution.status is PricingStatus.UNPRICED:
         return dict(_UNPRICED)
-    thousand = Decimal(1000)
-    cache_read = max(int(cache_read_tokens), 0)
-    cache_creation = max(int(cache_creation_tokens), 0)
-
-    if not cache_read and not cache_creation:
-        cost = (Decimal(int(input_tokens)) / thousand) * resolution.input_per_1k + (
-            Decimal(int(output_tokens)) / thousand
-        ) * resolution.output_per_1k
-        return {
-            "input_per_1k": resolution.input_per_1k,
-            "output_per_1k": resolution.output_per_1k,
-            "cache_read_per_1k": None,
-            "cache_creation_per_1k": None,
-            "cost_usd": cost,
-            "pricing_status": resolution.status.value,
-        }
 
     provider_key = (provider or "").strip().lower()
-    read_rate = resolution.cache_read_per_1k
-    if read_rate is None:
-        read_rate = default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_READ_MULTIPLIER)
-    creation_rate = resolution.cache_creation_per_1k
-    if creation_rate is None:
-        creation_rate = default_cache_rate(provider_key, resolution.input_per_1k, ANTHROPIC_CACHE_WRITE_MULTIPLIER)
-
-    if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
-        uncached = max(int(input_tokens), 0)
-    else:
-        uncached = max(int(input_tokens) - cache_read - cache_creation, 0)
-
-    cost = (
-        (Decimal(uncached) / thousand) * resolution.input_per_1k
-        + (Decimal(int(output_tokens)) / thousand) * resolution.output_per_1k
-        + (Decimal(cache_read) / thousand) * read_rate
-        + (Decimal(cache_creation) / thousand) * creation_rate
+    read_rate = inclusive_cache_fallback(provider_key, resolution.cache_read_per_1k, resolution.input_per_1k)
+    creation_rate = inclusive_cache_fallback(provider_key, resolution.cache_creation_per_1k, resolution.input_per_1k)
+    cost = blended_token_cost(
+        provider_key,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        resolution.input_per_1k,
+        resolution.output_per_1k,
+        read_rate,
+        creation_rate,
+        Decimal(1000),
     )
+    cached = max(int(cache_read_tokens), 0) > 0 or max(int(cache_creation_tokens), 0) > 0
     return {
         "input_per_1k": resolution.input_per_1k,
         "output_per_1k": resolution.output_per_1k,
-        "cache_read_per_1k": read_rate,
-        "cache_creation_per_1k": creation_rate,
+        "cache_read_per_1k": read_rate if cached else None,
+        "cache_creation_per_1k": creation_rate if cached else None,
         "cost_usd": cost,
-        "pricing_status": resolution.status.value,
+        "pricing_status": resolution.status.value if cost is not None else PricingStatus.UNPRICED.value,
     }
 
 

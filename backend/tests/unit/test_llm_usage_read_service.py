@@ -146,23 +146,23 @@ def _row(
     cache_read=0,
     cache_creation=0,
 ):
-    return (
-        Decimal(cost),
-        input_tokens,
-        output_tokens,
-        total_tokens,
-        calls,
-        unpriced,
-        configured,
-        fallback,
-        legacy,
-        priced_tokens,
-        Decimal(conv_cost),
-        Decimal(studio_cost),
-        conversations,
-        cache_read,
-        cache_creation,
-    )
+    return {
+        "sum_cost": Decimal(cost),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "total_calls": calls,
+        "unpriced_calls": unpriced,
+        "configured_calls": configured,
+        "fallback_calls": fallback,
+        "legacy_estimate_calls": legacy,
+        "priced_tokens": priced_tokens,
+        "conversation_cost": Decimal(conv_cost),
+        "agent_studio_test_cost": Decimal(studio_cost),
+        "distinct_conversations": conversations,
+        "cache_read_tokens": cache_read,
+        "cache_creation_tokens": cache_creation,
+    }
 
 
 @pytest.mark.asyncio

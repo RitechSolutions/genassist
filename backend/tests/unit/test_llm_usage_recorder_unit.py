@@ -181,12 +181,46 @@ class TestResolveCostCacheBuckets:
         out = _resolve_cost("anthropic", "claude-3-5-sonnet", 100, 0, cache_read_tokens=500)
         assert out["cost_usd"] == Decimal("0.00015")
 
-    def test_bedrock_buckets_are_additive_and_default_to_the_input_rate(self):
+    def test_bedrock_buckets_are_additive_to_the_reported_input(self):
         # exclusive provider: the reported 7 input tokens are already net of the cache read
-        out = _resolve_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, cache_read_tokens=3697)
+        configured = {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": "0.0001",
+                    "output_per_1k": "0.0004",
+                    "cache_read_per_1k": "0.0001",
+                    "cache_creation_per_1k": "0.0001",
+                }
+            }
+        }
+        out = _resolve_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, configured, cache_read_tokens=3697)
         assert out["cache_read_per_1k"] == Decimal("0.0001")
         assert out["cache_creation_per_1k"] == Decimal("0.0001")
         assert out["cost_usd"] == Decimal("0.0003784")
+
+    def test_bedrock_without_a_resolved_cache_rate_refuses_a_total(self):
+        configured = {"bedrock": {"m": {"input_per_1k": "0.00033", "output_per_1k": "0.00275"}}}
+        out = _resolve_cost("bedrock", "m", 7, 20, configured, cache_read_tokens=3697)
+        assert out["pricing_status"] == "unpriced"
+        assert out["cost_usd"] is None
+
+    def test_the_partial_snapshot_keeps_every_rate_that_was_known(self):
+        configured = {"bedrock": {"m": {"input_per_1k": "0.00033", "output_per_1k": "0.00275"}}}
+        out = _resolve_cost("bedrock", "m", 7, 20, configured, cache_read_tokens=3697)
+        assert out["input_per_1k"] == Decimal("0.00033"), "the base rates were resolved and stay on the row"
+        assert out["output_per_1k"] == Decimal("0.00275")
+        assert out["cache_read_per_1k"] is None, "only the bucket nobody could price is nulled"
+        assert out["cache_creation_per_1k"] is None
+
+    def test_an_unconfigured_bedrock_model_snapshots_nothing(self):
+        out = _resolve_cost("bedrock", "eu.amazon.nova-2-lite-v1:0", 7, 20, cache_read_tokens=3697)
+        assert out["pricing_status"] == "unpriced"
+        assert all(out[key] is None for key in ("input_per_1k", "output_per_1k", "cost_usd"))
+
+    def test_a_totally_unknown_model_still_snapshots_nothing(self):
+        out = _resolve_cost("bedrock", "amazon.titan-text-v1", 7, 20, cache_read_tokens=3697)
+        assert out["pricing_status"] == "unpriced"
+        assert all(out[key] is None for key in ("input_per_1k", "output_per_1k", "cost_usd"))
 
     def test_configured_cache_rates_are_used_and_snapshotted(self):
         configured = {
@@ -846,7 +880,9 @@ class TestCacheColumnWiring:
         row = _rows_of(_insert_for(record_scope.statements, "llm_usage_events"))[0]
         assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (3697, 0)
         assert row["input_tokens"] == 7, "provider-raw, not inflated by the cached prefix"
-        assert row["cache_read_per_1k"] == Decimal("0.0001"), "unconfigured bedrock falls back to the input rate"
+        # the shipped default is the EU profile, which no bundled row is sourced for
+        assert row["cost_usd"] is None and row["pricing_status"] == "unpriced"
+        assert all(row[key] is None for key in ("input_per_1k", "cache_read_per_1k", "cache_creation_per_1k"))
 
     @pytest.mark.asyncio
     async def test_evaluation_rows_carry_counts_and_snapshots(self, evaluation_scope):

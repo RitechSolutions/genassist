@@ -18,10 +18,14 @@ BEDROCK_CACHEABLE_ANTHROPIC_MARKERS = (
 CLAUDE_FAMILY = "claude"
 NOVA_FAMILY = "nova"
 
+_RATED_ARN_RESOURCES = ("foundation-model/", "inference-profile/")
+
 
 def bedrock_cache_family(model_key: Optional[str]) -> Optional[str]:
     """The cache-capable Bedrock family a model id names, or None"""
     name = (model_key or "").lower()
+    if name.startswith("arn:") and not name.split(":", 5)[-1].startswith(_RATED_ARN_RESOURCES):
+        return None
     if NOVA_FAMILY in name:
         return NOVA_FAMILY
     if any(marker in name for marker in BEDROCK_CACHEABLE_ANTHROPIC_MARKERS):
