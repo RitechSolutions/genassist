@@ -136,7 +136,7 @@ services:
   celery_worker:
     image: ghcr.io/ritechsolutions/genassist-backend:latest
     container_name: genassist-celery-worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info
+    command: python /src/run_celery.py worker --loglevel=info
     env_file:
       - ./backend/.env
     environment:
@@ -157,7 +157,7 @@ services:
   celery_beat:
     image: ghcr.io/ritechsolutions/genassist-backend:latest
     container_name: genassist-celery-beat
-    command: celery -A app.tasks.celery_app beat --loglevel=info
+    command: python /src/run_celery.py beat --loglevel=info
     env_file:
       - ./backend/.env
     environment:
@@ -178,7 +178,7 @@ services:
   flower:
     image: ghcr.io/ritechsolutions/genassist-backend:latest
     container_name: genassist-flower
-    command: celery -A app.tasks.celery_app flower --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
+    command: python /src/run_celery.py flower --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
     ports:
       - "5555:5555"
     env_file:

@@ -10,6 +10,7 @@ import httpx
 from injector import inject
 if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
     from langchain_core.language_models import BaseChatModel
+from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family, prompt_caching_effective
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.core.utils.enums.bedrock_fine_tuning_enum import (
@@ -23,28 +24,21 @@ from app.services.bedrock_fine_tuning import BedrockFineTuningService
 
 logger = logging.getLogger(__name__)
 
-# Bedrock rejects a cachePoint on a model that doesn't support it, failing every call.
-# Nova support is family-wide; Claude support is version-specific — Claude 3 (v1) and the
-# original Claude 3.5 Sonnet release never got caching, only 3.5 Sonnet v2 and later did.
-# Verified against AWS's supported-models table (docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html).
-_BEDROCK_CACHEABLE_ANTHROPIC_MARKERS = (
-    "claude-3-5-sonnet-20241022",  # the v2 release; the 20240620 v1 release is not cache-capable
-    "claude-3-5-haiku",
-    "claude-3-7-sonnet",
-    "claude-opus-4",
-    "claude-sonnet-4",
-    "claude-haiku-4",
-)
-
-
 def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
-    """True if this Bedrock model accepts prompt caching. Foundation-model and inference-profile 
-    ARNs include that name. Custom and provisioned ARNs do not, so they stay uncached."""
-    name = (model_name or "").lower()
-    if "nova" in name or any(marker in name for marker in _BEDROCK_CACHEABLE_ANTHROPIC_MARKERS):
+    """True if this Bedrock model accepts prompt caching"""
+    if bedrock_cache_family(model_name) is not None:
         return True
     logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock model", model_name)
     return False
+
+
+def _without_prompt_caching_fields(schemas: Dict[str, Any]) -> Dict[str, Any]:
+    """Drops the per-provider toggle from an already-copied schema payload"""
+    for schema in schemas.values():
+        fields = schema.get("fields")
+        if fields:
+            schema["fields"] = [f for f in fields if f.get("name") != "prompt_caching_enabled"]
+    return schemas
 
 
 async def build_chat_model(
@@ -62,7 +56,8 @@ async def build_chat_model(
     # collides with init_chat_model's own `model_provider` routing kwarg in the spread below.
     bedrock_model_provider = cd.pop("model_provider", None)
 
-    prompt_caching_enabled = cd.pop("prompt_caching_enabled", None) is True
+    cd.pop("prompt_caching_enabled", None)
+    prompt_caching_enabled = prompt_caching_effective(connection_data)
 
     if provider == "vllm":
         provider = "openai"
@@ -190,6 +185,9 @@ class LLMProvider:
         ]
 
         schemas = copy.deepcopy(LLM_FORM_SCHEMAS_DICT)
+
+        if not settings.PROMPT_CACHING_FEATURE_ENABLED:
+            schemas = _without_prompt_caching_fields(schemas)
 
         # Inject OpenAI fine-tuned models into the openai schema
         if "openai" in schemas and "fields" in schemas["openai"]:

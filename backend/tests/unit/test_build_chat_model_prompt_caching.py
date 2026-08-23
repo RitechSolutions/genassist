@@ -4,11 +4,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.core.config.settings import settings
 from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
 from app.modules.workflow.llm.provider import build_chat_model
 
 _INIT = "langchain.chat_models.init_chat_model"
 _OPIK = "app.modules.workflow.llm.opik_tracing.get_opik_callbacks"
+
+
+@pytest.fixture(autouse=True)
+def _platform_flag_on(monkeypatch):
+    monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", True)
 
 
 async def _build(provider, connection_data, model_name="a-model"):
@@ -125,6 +131,28 @@ class TestUnwrappedCases:
     async def test_no_flag_returns_the_plain_model(self):
         llm, init = await _build("anthropic", {"api_key": "k"})
         assert llm is init.return_value
+
+
+@pytest.mark.asyncio
+class TestPlatformWithhold:
+
+    @pytest.fixture(autouse=True)
+    def _flag_off(self, monkeypatch):
+        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", False)
+
+    async def test_a_stored_opt_in_stays_inert(self):
+        llm, init = await _build("anthropic", {"api_key": "k", "prompt_caching_enabled": True})
+        assert llm is init.return_value
+        assert "prompt_caching_enabled" not in init.call_args.kwargs
+
+    async def test_a_supported_bedrock_model_is_withheld_too(self):
+        llm, init = await _build("bedrock", {"prompt_caching_enabled": True}, "us.amazon.nova-2-lite-v1:0")
+        assert llm is init.return_value
+
+    async def test_the_stored_connection_data_is_never_rewritten(self):
+        connection_data = {"api_key": "k", "prompt_caching_enabled": True}
+        await _build("anthropic", connection_data)
+        assert connection_data == {"api_key": "k", "prompt_caching_enabled": True}
 
 
 @pytest.mark.asyncio

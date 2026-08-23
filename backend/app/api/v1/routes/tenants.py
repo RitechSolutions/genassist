@@ -115,6 +115,12 @@ async def update_tenant(
     updates = {k: v for k, v in tenant_data.dict().items() if v is not None}
     tenant = await service.update_tenant(tenant_id, **updates)
 
+    if isinstance(tenant, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=tenant.args[0] if tenant.args else "Failed to update tenant",
+        )
+
     if not tenant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"

@@ -9,12 +9,18 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+from app.core.config.settings import settings
 from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
 from app.repositories.llm_providers import LlmProviderRepository
 from app.services.app_settings import AppSettingsService
 from app.services.llm_providers import LlmProviderService
 
 _BUILD = "app.modules.workflow.llm.provider.build_chat_model"
+
+
+@pytest.fixture(autouse=True)
+def _platform_flag_on(monkeypatch):
+    monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", True)
 
 
 class _CapturingModel(BaseChatModel):
@@ -119,3 +125,31 @@ class TestPromptCachingNote:
         result = await _test_connection(service, model, prompt_caching_enabled=True)
 
         assert result == {"success": False, "message": "no credentials"}
+
+
+_WITHHELD = " Note: prompt caching is disabled for this deployment and will be ignored."
+
+
+@pytest.mark.asyncio
+class TestPlatformWithhold:
+
+    @pytest.fixture(autouse=True)
+    def _flag_off(self, monkeypatch):
+        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", False)
+
+    async def test_a_withheld_request_names_the_deployment_not_the_model(self, service):
+        result = await _test_connection(service, _CapturingModel(), prompt_caching_enabled=True)
+
+        assert result["message"] == "Connection successful." + _WITHHELD
+        assert _NOT_SUPPORTED not in result["message"]
+
+    async def test_a_cache_capable_model_is_still_reported_as_withheld(self, service):
+        wrapped = PromptCachingChatModel(inner=_CapturingModel(), cache_style="bedrock_converse")
+        result = await _test_connection(service, wrapped, prompt_caching_enabled=True)
+
+        assert result["message"] == "Connection successful." + _WITHHELD
+
+    async def test_no_note_when_caching_was_not_requested(self, service):
+        result = await _test_connection(service, _CapturingModel())
+
+        assert result["message"] == "Connection successful."

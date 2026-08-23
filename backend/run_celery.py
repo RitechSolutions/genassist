@@ -82,6 +82,16 @@ if __name__ == "__main__":
     import sys
     from celery.__main__ import main as celery_main
 
+    # Workers write billing rows and nothing sequences them after the API's
+    # migrations, so they refuse to start against an unmigrated schema and
+    # crash-loop until it lands.
+    if "worker" in sys.argv or "beat" in sys.argv:
+        from migrations import verify_llm_usage_schema_for_all_databases
+
+        if not verify_llm_usage_schema_for_all_databases():
+            logger.error("LLM usage schema verification failed; refusing to start Celery.")
+            sys.exit(1)
+
     # Only the worker needs a liveness heartbeat (beat/flower are separate
     # processes with their own concerns). The solo pool runs the worker in this
     # main process, so a daemon thread here reflects worker liveness directly.

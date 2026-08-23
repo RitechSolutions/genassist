@@ -59,7 +59,8 @@ class LlmUsageEventModel(Base):
             name="ck_llm_usage_events_pricing_status",
         ),
         CheckConstraint(
-            "input_tokens >= 0 AND output_tokens >= 0 AND total_tokens >= 0 AND call_index >= 0",
+            "input_tokens >= 0 AND output_tokens >= 0 AND total_tokens >= 0 AND call_index >= 0"
+            " AND cache_read_tokens >= 0 AND cache_creation_tokens >= 0",
             name="ck_llm_usage_events_non_negative",
         ),
         CheckConstraint("total_tokens >= input_tokens + output_tokens", name="ck_llm_usage_events_total_ge_parts"),

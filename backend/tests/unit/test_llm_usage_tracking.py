@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.config.settings import settings
 from app.core.utils.llm_usage_utils import USAGE_METADATA_MISSING
 from app.modules.workflow.engine.llm_usage_tracking import (
     merge_llm_usage_from_result,
@@ -13,6 +14,11 @@ from app.modules.workflow.engine.llm_usage_tracking import (
     resolve_provider_attribution,
     resolve_provider_model,
 )
+
+
+@pytest.fixture(autouse=True)
+def _platform_flag_on(monkeypatch):
+    monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", True)
 
 
 class FakeState:
@@ -97,6 +103,37 @@ class TestResolveProviderModel:
             await resolve_provider_model("p1", cache)
             await resolve_provider_model("p2", cache)
         assert service.get_by_id.await_count == 2
+
+
+class TestPlatformWithhold:
+
+    @pytest.fixture(autouse=True)
+    def _flag_off(self, monkeypatch):
+        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", False)
+
+    @pytest.mark.asyncio
+    async def test_a_stored_opt_in_reads_as_off(self):
+        ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
+        with ctx:
+            assert await resolve_provider_attribution("p1") == ("anthropic", "claude-3-opus", False)
+
+    @pytest.mark.asyncio
+    async def test_merged_entries_are_not_marked_as_caching(self):
+        state = FakeState()
+        ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
+        with ctx:
+            await merge_llm_usage_from_result(state, {"llm_usage": [{"input_tokens": 1}]}, "node-1", "p1")
+
+        assert state.llm_usage[0]["prompt_caching_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_the_stored_connection_data_is_never_rewritten(self):
+        provider = _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)
+        ctx, _ = _patch_provider_service({"p1": provider})
+        with ctx:
+            await resolve_provider_attribution("p1")
+
+        assert provider.connection_data["prompt_caching_enabled"] is True
 
 
 class TestMergeLlmUsageFromResult:

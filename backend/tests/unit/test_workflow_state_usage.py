@@ -1,7 +1,12 @@
 """Unit tests for WorkflowState LLM-usage plumbing (correlation id + sink semantics)"""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
+from app.core.config.settings import settings
+from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 WF = {"config": {"id": "wf-1"}, "nodes": [], "edges": []}
@@ -10,6 +15,16 @@ THREAD = "11111111-1111-1111-1111-111111111111"
 
 def _state() -> WorkflowState:
     return WorkflowState(workflow=WF, thread_id=THREAD, initial_values={"message": "hi"})
+
+
+def _caching_provider_injector():
+    provider = SimpleNamespace(
+        llm_model_provider="Anthropic",
+        llm_model="claude-3-opus",
+        connection_data={"prompt_caching_enabled": True},
+    )
+    service = MagicMock(get_by_id=AsyncMock(return_value=provider))
+    return patch("app.dependencies.injector.injector", MagicMock(get=MagicMock(return_value=service)))
 
 
 class TestAddLlmUsage:
@@ -90,6 +105,33 @@ class TestTotalLlmUsageCacheTokens:
         plain = _state()
         plain.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
         assert cached.get_total_llm_usage()["cost_usd"] < plain.get_total_llm_usage()["cost_usd"]
+
+
+class TestPlatformWithholdInTotals:
+
+    async def _merge_one_call(self) -> WorkflowState:
+        s = _state()
+        with _caching_provider_injector():
+            await merge_llm_usage_from_result(s, {"llm_usage": [{"input_tokens": 10, "output_tokens": 5}]}, "n1", "p1")
+        return s
+
+    @pytest.mark.asyncio
+    async def test_flag_off_keeps_cache_fields_out_of_the_totals(self, monkeypatch):
+        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", False)
+        s = await self._merge_one_call()
+        usage = s.get_total_llm_usage()
+
+        assert s.llm_usage[0]["prompt_caching_enabled"] is False
+        assert "cache_read_tokens" not in usage and "cache_creation_tokens" not in usage
+
+    @pytest.mark.asyncio
+    async def test_flag_on_restores_the_zeroed_cache_fields(self, monkeypatch):
+        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", True)
+        s = await self._merge_one_call()
+        usage = s.get_total_llm_usage()
+
+        assert s.llm_usage[0]["prompt_caching_enabled"] is True
+        assert usage["cache_read_tokens"] == 0 and usage["cache_creation_tokens"] == 0
 
 
 class TestFormatIncludesExecutionId:

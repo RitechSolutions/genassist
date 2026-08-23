@@ -12,6 +12,7 @@ Metering is best-effort: nothing here may raise into a node's business path.
 import logging
 from typing import Any, Dict, Optional
 
+from app.core.config.llm_prompt_cache_capabilities import prompt_caching_effective
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage, usage_or_placeholder
 from app.services.llm_providers import LlmProviderService
 
@@ -26,7 +27,7 @@ async def resolve_provider_attribution(
     provider_id: Any,
     cache: Optional[Dict[str, ProviderAttribution]] = None,
 ) -> ProviderAttribution:
-    """Provider/model names plus the record's prompt-caching opt-in, memoized per id when ``cache`` is given"""
+    """Provider/model names plus the effective prompt-caching state, memoized per id when ``cache`` is given"""
     key = str(provider_id) if provider_id else ""
     if cache is not None and key in cache:
         return cache[key]
@@ -40,7 +41,7 @@ async def resolve_provider_attribution(
             resolved = (
                 (info.llm_model_provider or "").lower(),
                 info.llm_model or "",
-                (getattr(info, "connection_data", None) or {}).get("prompt_caching_enabled") is True,
+                prompt_caching_effective(getattr(info, "connection_data", None)),
             )
         except Exception:
             logger.warning("Could not resolve LLM provider %s for usage attribution", key, exc_info=True)

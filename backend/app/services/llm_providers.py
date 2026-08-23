@@ -9,6 +9,7 @@ from injector import inject
 from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.config.llm_prompt_cache_capabilities import prompt_caching_effective
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
@@ -127,6 +128,16 @@ class LlmProviderService:
                         update_conn_data["masked_api_key"] = get_masked_api_key(update_conn_data[field_name])
                     update_conn_data[field_name] = encrypt_key(update_conn_data[field_name])
 
+        # Updates replace connection_data as a whole. Omitting prompt_caching_enabled keeps
+        # the stored optional (the field is hidden while the platform flag is off);
+        # true or false still updates it
+        if (
+            "connection_data" in update_data
+            and "prompt_caching_enabled" not in update_conn_data
+            and "prompt_caching_enabled" in existing_conn_data
+        ):
+            update_conn_data["prompt_caching_enabled"] = existing_conn_data["prompt_caching_enabled"]
+
         if "connection_data" in update_data:
             connection_data_changed = any(
                 update_data["connection_data"].get(k) != existing_conn_data.get(k)
@@ -205,6 +216,7 @@ class LlmProviderService:
 
         cd.pop("masked_api_key", None)
         caching_requested = cd.get("prompt_caching_enabled") is True
+        caching_effective = prompt_caching_effective(cd)
 
         try:
             from langchain_core.messages import HumanMessage
@@ -220,7 +232,9 @@ class LlmProviderService:
             caching_active = model_has_prompt_caching(llm)
             await llm.ainvoke([HumanMessage(content="ping")])
             message = "Connection successful."
-            if caching_requested and not caching_active:
+            if caching_requested and not caching_effective:
+                message += " Note: prompt caching is disabled for this deployment and will be ignored."
+            elif caching_effective and not caching_active:
                 message += " Note: prompt caching is not supported for this model and will be ignored."
             return {"success": True, "message": message}
 
