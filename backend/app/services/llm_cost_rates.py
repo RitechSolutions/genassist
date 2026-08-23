@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -27,6 +28,30 @@ logger = logging.getLogger(__name__)
 
 # Cache rate columns stay optional so files written for the 4-column format still import
 _REQUIRED_COLUMNS = frozenset({"provider", "model", "input_per_1k", "output_per_1k"})
+_BASE_COLUMNS = ["provider", "model", "input_per_1k", "output_per_1k"]
+_CACHE_COLUMNS = ["cache_read_per_1k", "cache_creation_per_1k"]
+
+MAX_IMPORT_BYTES = 1 * 1024 * 1024
+MAX_IMPORT_ROWS = 10_000
+MAX_IMPORT_ERRORS = 100
+
+
+def import_exceeds_byte_cap(raw: bytes) -> bool:
+    """The route reads one byte past the cap, so a file exactly at it still passes"""
+    return len(raw) > MAX_IMPORT_BYTES
+
+
+def _capped_errors(errors: list[str]) -> list[str]:
+    """A broken file can fail every row; the caller only needs the first hundred"""
+    if len(errors) <= MAX_IMPORT_ERRORS:
+        return errors
+    omitted = len(errors) - MAX_IMPORT_ERRORS
+    return [*errors[:MAX_IMPORT_ERRORS], f"… {omitted} additional errors omitted"]
+
+
+def _rate_key(provider_key: str | None, model_key: str | None) -> tuple[str, str]:
+    """Matches how the repository's lookup normalizes both sides"""
+    return (provider_key or "").strip().lower(), (model_key or "").strip().lower()
 
 
 def _optional_rate(value: Decimal | None) -> str:
@@ -41,28 +66,25 @@ class LlmCostRateService:
     async def list_active(self) -> list[LlmCostRateModel]:
         return await self.repo.list_active()
 
-    async def export_csv(self) -> str:
+    async def export_csv(self, include_cache_rates: bool) -> str:
         """
-        Export the current rates in the same 6-column format the importer accepts.
-        Unconfigured cache rates export blank, so a round-trip keeps them unset.
+        Export the current rates in a format the importer accepts. Unconfigured cache rates export blank, so a
+        round-trip keeps them unset.
         """
         rows = await self.repo.list_active()
         out = io.StringIO()
         writer = csv.writer(out, lineterminator="\n")
-        writer.writerow(
-            ["provider", "model", "input_per_1k", "output_per_1k", "cache_read_per_1k", "cache_creation_per_1k"]
-        )
+        writer.writerow((_BASE_COLUMNS + _CACHE_COLUMNS) if include_cache_rates else _BASE_COLUMNS)
         for r in rows:
-            writer.writerow(
-                [
-                    (r.provider_key or "").strip(),
-                    (r.model_key or "").strip(),
-                    format_rate(r.input_per_1k),
-                    format_rate(r.output_per_1k),
-                    _optional_rate(r.cache_read_per_1k),
-                    _optional_rate(r.cache_creation_per_1k),
-                ]
-            )
+            values = [
+                (r.provider_key or "").strip(),
+                (r.model_key or "").strip(),
+                format_rate(r.input_per_1k),
+                format_rate(r.output_per_1k),
+            ]
+            if include_cache_rates:
+                values += [_optional_rate(r.cache_read_per_1k), _optional_rate(r.cache_creation_per_1k)]
+            writer.writerow(values)
         return out.getvalue()
 
     async def create_rate(self, dto: LlmCostRateCreate) -> LlmCostRateRead:
@@ -95,8 +117,10 @@ class LlmCostRateService:
             return None
         row.input_per_1k = dto.input_per_1k
         row.output_per_1k = dto.output_per_1k
-        row.cache_read_per_1k = dto.cache_read_per_1k
-        row.cache_creation_per_1k = dto.cache_creation_per_1k
+        if "cache_read_per_1k" in dto.model_fields_set:
+            row.cache_read_per_1k = dto.cache_read_per_1k
+        if "cache_creation_per_1k" in dto.model_fields_set:
+            row.cache_creation_per_1k = dto.cache_creation_per_1k
         row.updated_at = datetime.now(timezone.utc)
         updated = await self.repo.update(row)
         invalidate_llm_cost_rates_cache(tenant)
@@ -120,7 +144,16 @@ class LlmCostRateService:
             return LlmCostRateImportResult(
                 inserted=0, updated=0, errors=["CSV has no header row"]
             )
-        headers = {h.strip().lower() for h in reader.fieldnames if h}
+        header_names = [(h or "").strip().lower() for h in reader.fieldnames]
+        header_counts = Counter(name for name in header_names if name)
+        headers = set(header_counts)
+        if any(count > 1 for count in header_counts.values()):
+            duplicates = sorted(h for h, count in header_counts.items() if count > 1)
+            return LlmCostRateImportResult(
+                inserted=0,
+                updated=0,
+                errors=[f"Duplicate columns: {', '.join(duplicates)}"],
+            )
         if not _REQUIRED_COLUMNS.issubset(headers):
             missing = _REQUIRED_COLUMNS - headers
             return LlmCostRateImportResult(
@@ -129,14 +162,24 @@ class LlmCostRateService:
                 errors=[f"Missing columns: {', '.join(sorted(missing))}"],
             )
 
+        original_header: dict[str, str] = {}
+        for name, raw in zip(header_names, reader.fieldnames):
+            if name:
+                original_header.setdefault(name, raw)
+
         def col(row: dict[str, str], name: str) -> str:
-            for k, v in row.items():
-                if k and k.strip().lower() == name:
-                    return (v or "").strip()
-            return ""
+            key = original_header.get(name)
+            return "" if key is None else (row.get(key) or "").strip()
 
         seen_keys: dict[tuple[str, str], int] = {}
+        parsed: list[LlmCostRateCreate] = []
         for i, row in enumerate(reader, start=2):
+            if i - 1 > MAX_IMPORT_ROWS:
+                return LlmCostRateImportResult(
+                    inserted=0,
+                    updated=0,
+                    errors=[f"CSV has more than {MAX_IMPORT_ROWS} data rows"],
+                )
             # Every row goes through the create schema, so CSV and JSON reject
             # blank keys, negatives, non-finite and over-precise rates alike
             try:
@@ -157,8 +200,12 @@ class LlmCostRateService:
                 errors.append(f"Row {i}: duplicate of row {seen_keys[key]} for {dto.provider}/{dto.model}")
                 continue
             seen_keys[key] = i
+            parsed.append(dto)
 
-            existing = await self.repo.get_active_by_provider_model(dto.provider, dto.model)
+        index = {_rate_key(r.provider_key, r.model_key): r for r in await self.repo.list_active()}
+
+        for dto in parsed:
+            existing = index.get((dto.provider, dto.model))
             if existing:
                 existing.input_per_1k = dto.input_per_1k
                 existing.output_per_1k = dto.output_per_1k
@@ -173,18 +220,20 @@ class LlmCostRateService:
                 self.repo.db.add(existing)
                 updated += 1
             else:
-                self.repo.db.add(
-                    LlmCostRateModel(
-                        provider_key=dto.provider,
-                        model_key=dto.model,
-                        input_per_1k=dto.input_per_1k,
-                        output_per_1k=dto.output_per_1k,
-                        cache_read_per_1k=dto.cache_read_per_1k,
-                        cache_creation_per_1k=dto.cache_creation_per_1k,
-                        updated_at=datetime.now(timezone.utc),
-                    )
+                created = LlmCostRateModel(
+                    provider_key=dto.provider,
+                    model_key=dto.model,
+                    input_per_1k=dto.input_per_1k,
+                    output_per_1k=dto.output_per_1k,
+                    cache_read_per_1k=dto.cache_read_per_1k,
+                    cache_creation_per_1k=dto.cache_creation_per_1k,
+                    updated_at=datetime.now(timezone.utc),
                 )
+                self.repo.db.add(created)
+                index[(dto.provider, dto.model)] = created
                 inserted += 1
+
+        errors = _capped_errors(errors)
 
         try:
             await self.repo.db.commit()
@@ -194,5 +243,6 @@ class LlmCostRateService:
             errors.append("No rows were imported: the file conflicts with existing rates")
             return LlmCostRateImportResult(inserted=0, updated=0, errors=errors)
 
-        invalidate_llm_cost_rates_cache(tenant)
+        if inserted or updated:
+            invalidate_llm_cost_rates_cache(tenant)
         return LlmCostRateImportResult(inserted=inserted, updated=updated, errors=errors)

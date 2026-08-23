@@ -1,56 +1,49 @@
-import { getApiUrl, apiRequest } from "@/config/api";
+import { getApiUrl, apiRequest } from '@/config/api';
 import type {
   LlmCostRate,
   LlmCostRateCreatePayload,
   LlmCostRateImportResult,
   LlmCostRateUpdatePayload,
-} from "@/interfaces/llmCostRate.interface";
+} from '@/interfaces/llmCostRate.interface';
 
 export async function getLlmCostRates(): Promise<LlmCostRate[]> {
-  const data = await apiRequest<LlmCostRate[]>("GET", "llm-cost-rates/");
+  const data = await apiRequest<LlmCostRate[]>('GET', 'llm-cost-rates/');
   return data ?? [];
 }
 
-export async function createLlmCostRate(
-  payload: LlmCostRateCreatePayload
-): Promise<LlmCostRate | null> {
-  return await apiRequest<LlmCostRate>("POST", "llm-cost-rates/", {
+export async function createLlmCostRate(payload: LlmCostRateCreatePayload): Promise<LlmCostRate | null> {
+  return await apiRequest<LlmCostRate>('POST', 'llm-cost-rates/', {
     ...payload,
   });
 }
 
-export async function updateLlmCostRate(
-  id: string,
-  payload: LlmCostRateUpdatePayload
-): Promise<LlmCostRate | null> {
-  return await apiRequest<LlmCostRate>("PUT", `llm-cost-rates/${id}`, {
+export async function updateLlmCostRate(id: string, payload: LlmCostRateUpdatePayload): Promise<LlmCostRate | null> {
+  return await apiRequest<LlmCostRate>('PUT', `llm-cost-rates/${id}`, {
     ...payload,
   });
 }
 
-export async function importLlmCostRatesCsv(
-  file: File
-): Promise<LlmCostRateImportResult> {
-  const baseURL = (await getApiUrl()).replace(/\/$/, "");
+export async function importLlmCostRatesCsv(file: File): Promise<LlmCostRateImportResult> {
+  const baseURL = (await getApiUrl()).replace(/\/$/, '');
   const fullUrl = `${baseURL}/llm-cost-rates/import`;
 
-  const token = localStorage.getItem("access_token");
-  const tokenType = localStorage.getItem("token_type") || "Bearer";
-  const tenantId = localStorage.getItem("tenant_id");
+  const token = localStorage.getItem('access_token');
+  const tokenType = localStorage.getItem('token_type') || 'Bearer';
+  const tenantId = localStorage.getItem('tenant_id');
 
   const headers: Record<string, string> = {};
   if (token) {
     headers.Authorization = `${tokenType} ${token}`;
   }
   if (tenantId) {
-    headers["x-tenant-id"] = tenantId;
+    headers['x-tenant-id'] = tenantId;
   }
 
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append('file', file);
 
   const response = await fetch(fullUrl, {
-    method: "POST",
+    method: 'POST',
     body: formData,
     headers,
   });
@@ -66,26 +59,27 @@ export async function importLlmCostRatesCsv(
 }
 
 export async function deleteLlmCostRate(id: string): Promise<void> {
-  await apiRequest("DELETE", `llm-cost-rates/${id}`);
+  await apiRequest('DELETE', `llm-cost-rates/${id}`);
 }
 
 export async function exportLlmCostRatesCsv(): Promise<Blob> {
-  const baseURL = (await getApiUrl()).replace(/\/$/, "");
-  const fullUrl = `${baseURL}/llm-cost-rates/export`;
+  const baseURL = (await getApiUrl()).replace(/\/$/, '');
+  // The endpoint defaults to the legacy 4-column layout; the dialog wants the cache columns
+  const fullUrl = `${baseURL}/llm-cost-rates/export?include_cache_rates=true`;
 
-  const token = localStorage.getItem("access_token");
-  const tokenType = localStorage.getItem("token_type") || "Bearer";
-  const tenantId = localStorage.getItem("tenant_id");
+  const token = localStorage.getItem('access_token');
+  const tokenType = localStorage.getItem('token_type') || 'Bearer';
+  const tenantId = localStorage.getItem('tenant_id');
 
   const headers: Record<string, string> = {};
   if (token) {
     headers.Authorization = `${tokenType} ${token}`;
   }
   if (tenantId) {
-    headers["x-tenant-id"] = tenantId;
+    headers['x-tenant-id'] = tenantId;
   }
 
-  const response = await fetch(fullUrl, { method: "GET", headers });
+  const response = await fetch(fullUrl, { method: 'GET', headers });
   if (!response.ok) {
     const errBody = (await response.json().catch(() => ({}))) as {
       detail?: string;

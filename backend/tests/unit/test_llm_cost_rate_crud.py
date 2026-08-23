@@ -173,9 +173,8 @@ async def test_create_carries_cache_rates_to_the_row():
     assert read.cache_creation_per_1k == Decimal("0"), "free writes are a configured rate, not an unset one"
 
 
-@pytest.mark.asyncio
-async def test_update_clears_cache_rates_the_payload_leaves_blank():
-    row = LlmCostRateModel(
+def _configured_row():
+    return LlmCostRateModel(
         id=uuid4(),
         provider_key="bedrock",
         model_key="nova",
@@ -184,15 +183,64 @@ async def test_update_clears_cache_rates_the_payload_leaves_blank():
         cache_read_per_1k=Decimal("0.000025"),
         cache_creation_per_1k=Decimal("0"),
     )
-    service = LlmCostRateService(FakeRateRepo(existing_by_id=row))
 
-    read = await service.update_rate(
+async def _update(row, **cache_fields):
+    service = LlmCostRateService(FakeRateRepo(existing_by_id=row))
+    return await service.update_rate(
         uuid4(),
-        LlmCostRateUpdate(input_per_1k="0.0001", output_per_1k="0.0004", cache_read_per_1k="  "),
+        LlmCostRateUpdate(input_per_1k="0.0001", output_per_1k="0.0004", **cache_fields),
     )
 
-    assert row.cache_read_per_1k is None and row.cache_creation_per_1k is None
+
+@pytest.mark.asyncio
+async def test_update_clears_the_cache_rate_the_payload_sends_blank():
+    row = _configured_row()
+
+    read = await _update(row, cache_read_per_1k="  ")
+
+    assert row.cache_read_per_1k is None
     assert read.cache_read_per_1k is None
+    assert row.cache_creation_per_1k == Decimal("0"), "the key the payload omitted is left alone"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["cache_read_per_1k", "cache_creation_per_1k"])
+async def test_update_clears_the_cache_rate_the_payload_sends_null(field):
+    row = _configured_row()
+
+    await _update(row, **{field: None})
+
+    assert getattr(row, field) is None
+
+
+@pytest.mark.asyncio
+async def test_update_omitting_both_cache_keys_preserves_them():
+    row = _configured_row()
+
+    read = await _update(row)
+
+    assert row.cache_read_per_1k == Decimal("0.000025")
+    assert row.cache_creation_per_1k == Decimal("0")
+    assert read.cache_read_per_1k == Decimal("0.000025")
+
+
+@pytest.mark.asyncio
+async def test_update_treats_zero_as_a_configured_rate():
+    row = _configured_row()
+
+    await _update(row, cache_read_per_1k="0")
+
+    assert row.cache_read_per_1k == Decimal("0"), "free reads are configured, not unset"
+
+
+@pytest.mark.asyncio
+async def test_update_replaces_both_cache_rates_when_both_are_sent():
+    row = _configured_row()
+
+    await _update(row, cache_read_per_1k="0.0003", cache_creation_per_1k="0.00375")
+
+    assert row.cache_read_per_1k == Decimal("0.0003")
+    assert row.cache_creation_per_1k == Decimal("0.00375")
 
 
 @pytest.mark.parametrize("field", ["cache_read_per_1k", "cache_creation_per_1k"])

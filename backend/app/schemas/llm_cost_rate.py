@@ -75,7 +75,8 @@ class LlmCostRateCreate(BaseModel):
 
 class LlmCostRateUpdate(BaseModel):
     """Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate.
-    Cache rates are full-replace: a blank one clears back to the provider default"""
+    Base rates are full-replace; a cache rate is only touched when the payload carries
+    its key. Sent blank it clears back to the provider default, omitted it is kept"""
 
     input_per_1k: RateDecimal
     output_per_1k: RateDecimal
