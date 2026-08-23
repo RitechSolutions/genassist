@@ -2,7 +2,6 @@ from typing import List, Dict, Any, Optional
 import logging
 import json
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage
 
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
@@ -29,7 +28,10 @@ from app.modules.workflow.agents.agent_prompts import (
     create_tool_selection_prompt,
     create_conversation_context as build_conversation_context
 )
-from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    build_cacheable_system_message,
+    model_has_prompt_caching,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ class ToolAgent(BaseToolAgent):
         tools: List[BaseTool],
         verbose: bool = False,
         max_iterations: int = 6,
-        volatile_system_suffix: Optional[str] = None
+        stable_volatile_parts: Optional[tuple[str, str]] = None
     ):
         """Initialize a Tool agent
 
@@ -54,19 +56,16 @@ class ToolAgent(BaseToolAgent):
             tools: List of tools the agent can use to accomplish tasks
             verbose: Whether to enable verbose logging of tool execution
             max_iterations: Maximum number of tool execution iterations
-            volatile_system_suffix: Trailing part of ``system_prompt`` that changes every
-                request. Set only when the rest of the prompt is stable enough to cache
+            stable_volatile_parts: ``system_prompt`` split into its stable half and the
+                trailing part that changes every request. Set only when the stable half
+                is worth caching
         """
         super().__init__(llm_model, system_prompt, tools,
                          verbose=verbose, max_iterations=max_iterations)
-        self.volatile_system_suffix = volatile_system_suffix
+        self.stable_volatile_parts = stable_volatile_parts
         # Splitting moves the guidance out of the fused user turn, so it is only worth
         # doing when the provider can cache it and the caller marked the prompt eligible.
-        self._cache_split = bool(
-            volatile_system_suffix
-            and system_prompt.endswith(volatile_system_suffix)
-            and model_has_prompt_caching(llm_model)
-        )
+        self._cache_split = stable_volatile_parts is not None and model_has_prompt_caching(llm_model)
 
     # ==================== PROMPT GENERATION ====================
 
@@ -84,15 +83,11 @@ class ToolAgent(BaseToolAgent):
         if not self._cache_split:
             return [{"role": "user", "content": query_prompt}]
 
-        base = self.system_prompt[: -len(self.volatile_system_suffix)]
-        # The volatile tail sits after the tool guidance: in front of it, the guidance
-        # would fall outside the cacheable prefix.
-        system_message = SystemMessage(
-            content=[
-                {"type": "text", "text": self._create_enhanced_system_prompt(base)},
-                {"type": "text", "text": self.volatile_system_suffix},
-            ]
-        )
+        stable, volatile = self.stable_volatile_parts
+        # The guidance is wrapped here, not at init: tools stay mutable afterwards. The
+        # volatile tail sits after it, in front, the guidance would fall outside the
+        # cacheable prefix.
+        system_message = build_cacheable_system_message(self._create_enhanced_system_prompt(stable), volatile)
         return [system_message, {"role": "user", "content": query_prompt}]
 
     # ==================== RESPONSE PARSING ====================

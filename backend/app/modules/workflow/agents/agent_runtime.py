@@ -10,7 +10,10 @@ from app.modules.workflow.agents.react_agent import ReActAgent
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
 from app.modules.workflow.agents.tool_agent import ToolAgent
-from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    build_cacheable_system_message,
+    model_has_prompt_caching,
+)
 from app.modules.workflow.llm.provider import LLMProvider
 
 if TYPE_CHECKING:
@@ -32,25 +35,18 @@ class AgentRunResult:
     llm_model: Any
 
 
-def _split_system_prompt(
-    system_prompt: str, volatile_system_suffix: Optional[str], llm_model: Any
+def _react_system_prompt(
+    system_prompt: str, stable_volatile_parts: Optional[tuple[str, str]], llm_model: Any
 ) -> Union[str, SystemMessage]:
-    """Split the prompt into a cacheable prefix plus its volatile tail, or leave it as a string"""
-    if not volatile_system_suffix or not model_has_prompt_caching(llm_model):
-        return system_prompt
-    if not system_prompt.endswith(volatile_system_suffix):
+    """A cacheable prefix plus its volatile tail, or the full string when ineligible"""
+    if not stable_volatile_parts or not model_has_prompt_caching(llm_model):
         return system_prompt
 
-    base = system_prompt[: -len(volatile_system_suffix)]
-    if not base.strip():
+    stable, volatile = stable_volatile_parts
+    if not stable.strip():
         return system_prompt
 
-    return SystemMessage(
-        content=[
-            {"type": "text", "text": base},
-            {"type": "text", "text": volatile_system_suffix},
-        ]
-    )
+    return build_cacheable_system_message(stable, volatile)
 
 
 async def run_agent_once(
@@ -66,7 +62,7 @@ async def run_agent_once(
     max_iterations: int,
     chat_history: Optional[List[Any]] = None,
     llm_model: Any = None,
-    volatile_system_suffix: Optional[str] = None,
+    stable_volatile_parts: Optional[tuple[str, str]] = None,
 ) -> AgentRunResult:
     """Pick the LLM if needed, create the agent for ``agent_type``, run it once,
     add its token usage to ``state``, and return a normalized result"""
@@ -87,7 +83,7 @@ async def run_agent_once(
     elif agent_type == "ReActAgentLC":
         agent = ReActAgentLC(
             llm_model=llm_model,
-            system_prompt=_split_system_prompt(system_prompt, volatile_system_suffix, llm_model),
+            system_prompt=_react_system_prompt(system_prompt, stable_volatile_parts, llm_model),
             tools=tools,
             max_iterations=max_iterations,
         )
@@ -103,7 +99,7 @@ async def run_agent_once(
             system_prompt=system_prompt,
             tools=tools,
             max_iterations=max_iterations,
-            volatile_system_suffix=volatile_system_suffix,
+            stable_volatile_parts=stable_volatile_parts,
         )
 
     result = await agent.invoke(user_prompt, chat_history=chat_history or [])

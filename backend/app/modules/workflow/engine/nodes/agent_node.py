@@ -340,6 +340,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         return _delegate
 
+    def _timestamped_system_prompt(self, system_prompt: str) -> tuple[str, Optional[tuple[str, str]]]:
+        """Full prompt with the timestamp appended, plus its (stable, volatile) parts.
+        None when the raw template is volatile, so the prompt must not be cached"""
+        suffix = f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        full = system_prompt + suffix
+        if has_volatile_template_vars(self.node_data.get("systemPrompt")):
+            return full, None
+        return full, (system_prompt, suffix)
+
     @staticmethod
     def _drop_child_tools(all_tools, delegation_map, child_ids):
         """Remove delegation tools for children already delegated this turn"""
@@ -350,7 +359,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     async def _run_agent_with_delegations(
         self, *, config, provider_id, fallback_chain_id, agent_type,
         system_prompt, prompt, all_tools, delegation_map, max_iterations, chat_history,
-        volatile_system_suffix: Optional[str] = None,
+        stable_volatile_parts: Optional[tuple[str, str]] = None,
     ) -> Dict[str, Any]:
         """Invoke the agent, resolving delegation tool calls, until it answers or pauses"""
         from app.modules.workflow.agents.sub_agents import orchestrator
@@ -382,7 +391,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 system_prompt=system_prompt, user_prompt=current_prompt,
                 tools=active_tools, max_iterations=max_iterations,
                 chat_history=chat_history, llm_model=llm_model,
-                volatile_system_suffix=volatile_system_suffix,
+                stable_volatile_parts=stable_volatile_parts,
             )
             llm_model = run.llm_model
             steps.extend(run.steps)
@@ -598,15 +607,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         if config.get("piiMasking") and all_tools:
             self._wrap_tools_for_pii_unmask(all_tools)
 
-        # Add current time to system prompt
-        timestamp_suffix = f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        system_prompt += timestamp_suffix
-
-        # A forwarded suffix means "the prefix before it may be cached", so a prompt built
-        # from per-request template variables withholds it.
-        volatile_system_suffix = (
-            None if has_volatile_template_vars(self.node_data.get("systemPrompt")) else timestamp_suffix
-        )
+        # Add current time to system prompt. Forwarded parts mean "the stable half may be
+        # cached", so a prompt built from per-request template variables withholds them.
+        system_prompt, stable_volatile_parts = self._timestamped_system_prompt(system_prompt)
 
         # Set input for tracking
         self.set_node_input({
@@ -640,7 +643,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     delegation_map=delegation_map,
                     max_iterations=max_iterations,
                     chat_history=chat_history,
-                    volatile_system_suffix=volatile_system_suffix,
+                    stable_volatile_parts=stable_volatile_parts,
                 )
 
             run = await run_agent_once(
@@ -654,7 +657,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 tools=tools,
                 max_iterations=max_iterations,
                 chat_history=chat_history,
-                volatile_system_suffix=volatile_system_suffix,
+                stable_volatile_parts=stable_volatile_parts,
             )
 
             # The agent caught an error internally and returned a standardized error response

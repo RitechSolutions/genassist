@@ -1,6 +1,5 @@
 """Sub-agent node: a specialist agent a parent delegates to"""
 
-import datetime
 import logging
 from typing import Any, Dict, Optional
 
@@ -11,7 +10,6 @@ from app.modules.workflow.agents.sub_agents import messages
 from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
 from app.modules.workflow.engine.nodes.agent_node import AgentNode
-from app.modules.workflow.engine.utils import has_volatile_template_vars
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +47,7 @@ class SubAgentNode(AgentNode):
         if config.get("piiMasking") and all_tools:
             self._wrap_tools_for_pii_unmask(all_tools)
 
-        timestamp_suffix = f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        system_prompt += timestamp_suffix
-        volatile_system_suffix = (
-            None if has_volatile_template_vars(self.node_data.get("systemPrompt")) else timestamp_suffix
-        )
+        system_prompt, stable_volatile_parts = self._timestamped_system_prompt(system_prompt)
 
         self.set_node_input({"system_prompt": system_prompt, "prompt": prompt, "tools_reference": all_tools})
 
@@ -76,7 +70,7 @@ class SubAgentNode(AgentNode):
                     delegation_map=delegation_map,
                     max_iterations=max_iterations,
                     chat_history=chat_history,
-                    volatile_system_suffix=volatile_system_suffix,
+                    stable_volatile_parts=stable_volatile_parts,
                 )
 
             run = await run_agent_once(
@@ -90,7 +84,7 @@ class SubAgentNode(AgentNode):
                 tools=all_tools,
                 max_iterations=max_iterations,
                 chat_history=chat_history,
-                volatile_system_suffix=volatile_system_suffix,
+                stable_volatile_parts=stable_volatile_parts,
             )
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:

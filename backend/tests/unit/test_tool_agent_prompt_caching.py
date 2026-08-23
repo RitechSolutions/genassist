@@ -18,7 +18,11 @@ from app.modules.workflow.agents.agent_prompts import (
 from app.modules.workflow.agents.agent_utils import create_tool_descriptions
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.tool_agent import ToolAgent
-from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    PROMPT_CACHE_OPT_IN_KEY,
+    PromptCachingChatModel,
+)
 
 _BASE = "You are a helpful assistant with a long stable prefix."
 _SUFFIX = " Current time: 2026-08-17 12:00:00"
@@ -64,14 +68,17 @@ def _weather_tool(result="Sunny, 21C"):
     )
 
 
-def _agent(*, tools=None, replies=None, caching=True, suffix=_SUFFIX, system_prompt=None):
+_PARTS = (_BASE, _SUFFIX)
+
+
+def _agent(*, tools=None, replies=None, caching=True, parts=_PARTS, system_prompt=None):
     inner = _CapturingModel(replies=replies or [_DIRECT_JSON])
     llm = PromptCachingChatModel(inner=inner, cache_style="anthropic") if caching else inner
     agent = ToolAgent(
         llm_model=llm,
         system_prompt=_BASE + _SUFFIX if system_prompt is None else system_prompt,
         tools=tools if tools is not None else [],
-        volatile_system_suffix=suffix,
+        stable_volatile_parts=parts,
     )
     return agent, inner
 
@@ -95,16 +102,25 @@ class TestGate:
         [
             ({}, True),
             ({"caching": False}, False),
-            ({"suffix": None}, False),
-            ({"suffix": ""}, False),
-            ({"system_prompt": _BASE + _SUFFIX + " trailing"}, False),
+            ({"parts": None}, False),
         ],
-        ids=["caching_and_suffix", "no_caching", "no_suffix", "empty_suffix", "suffix_not_at_end"],
+        ids=["caching_and_parts", "no_caching", "no_parts"],
     )
     def test_split_only_when_the_prompt_is_marked_cacheable(self, kwargs, expected):
         agent, _ = _agent(**kwargs)
 
         assert agent._cache_split is expected
+
+    def test_a_mixed_fallback_chain_stays_fused(self):
+        chain = FallbackChatModel(
+            models=[
+                _CapturingModel(replies=[_DIRECT_JSON]),
+                PromptCachingChatModel(inner=_CapturingModel(replies=[_DIRECT_JSON]), cache_style="anthropic"),
+            ]
+        )
+        agent = ToolAgent(llm_model=chain, system_prompt=_BASE + _SUFFIX, tools=[], stable_volatile_parts=_PARTS)
+
+        assert agent._cache_split is False
 
 
 @pytest.mark.asyncio
@@ -134,8 +150,8 @@ class TestFusedModeIsUnchanged:
         )
         assert _fused_text(inner) == expected
 
-    async def test_caching_model_without_a_suffix_stays_fused_and_unmarked(self):
-        agent, inner = _agent(tools=[_weather_tool()], suffix=None)
+    async def test_caching_model_without_parts_stays_fused_and_unmarked(self):
+        agent, inner = _agent(tools=[_weather_tool()], parts=None)
 
         await agent.invoke(_QUERY)
 
@@ -184,8 +200,27 @@ class TestSplitMode:
         assert system_content[-1] == {"type": "text", "text": _SUFFIX}
         assert "Current time" not in system_content[0]["text"]
 
+    async def test_the_system_turn_carries_the_opt_in_tag(self):
+        agent, inner = _agent(tools=[_weather_tool()])
+
+        await agent.invoke(_QUERY)
+
+        assert inner.seen[-1][0].additional_kwargs == {PROMPT_CACHE_OPT_IN_KEY: True}
+
+    async def test_tools_added_after_construction_reach_the_cached_block(self):
+        agent, inner = _agent(tools=[_weather_tool()])
+        late = _weather_tool()
+        late.name = "currency"
+        late.description = "Convert between currencies."
+        agent.add_tool(late)
+
+        await agent.invoke(_QUERY)
+
+        system_content, _ = _split_turns(inner)
+        assert late.description in system_content[0]["text"]
+
     async def test_blank_base_still_yields_a_non_blank_cached_block(self):
-        agent, inner = _agent(tools=[_weather_tool()], system_prompt=_SUFFIX)
+        agent, inner = _agent(tools=[_weather_tool()], system_prompt=_SUFFIX, parts=("", _SUFFIX))
 
         await agent.invoke(_QUERY)
 

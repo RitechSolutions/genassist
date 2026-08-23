@@ -249,14 +249,14 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 )
 
             if cacheable_prefix:
+                from app.modules.workflow.llm.prompt_caching_chat_model import build_cacheable_system_message
+
                 stable_text = (system_prompt + "\n\n") if memory else system_prompt
-                system_content: Any = [{"type": "text", "text": stable_text}]
-                if chat_history:
-                    system_content.append({"type": "text", "text": chat_history})
+                system_message = build_cacheable_system_message(stable_text, chat_history)
             elif memory:
-                system_content = system_prompt + "\n\n" + chat_history
+                system_message = SystemMessage(content=system_prompt + "\n\n" + chat_history)
             else:
-                system_content = system_prompt
+                system_message = SystemMessage(content=system_prompt)
 
             # default message content
             message_content = [{"type": "text", "text": prompt}]
@@ -269,7 +269,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 message_content.extend(attachments_message_content)
 
             # Process the input through the model
-            response = await llm.ainvoke([SystemMessage(content=system_content), HumanMessage(content=message_content)])
+            response = await llm.ainvoke([system_message, HumanMessage(content=message_content)])
 
             from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 

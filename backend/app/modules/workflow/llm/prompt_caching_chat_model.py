@@ -18,11 +18,27 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 
 from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
 
-__all__ = ["PromptCachingChatModel", "model_has_prompt_caching"]
+__all__ = [
+    "PROMPT_CACHE_OPT_IN_KEY",
+    "PromptCachingChatModel",
+    "build_cacheable_system_message",
+    "model_has_prompt_caching",
+]
 
 CacheStyle = Literal["anthropic", "bedrock_converse"]
 
 _MARKER_KEYS: dict[str, str] = {"anthropic": "cache_control", "bedrock_converse": "cachePoint"}
+
+# Optional marker the builder stamps and the wrapper requires
+PROMPT_CACHE_OPT_IN_KEY = "genassist_prompt_cache"
+
+
+def build_cacheable_system_message(stable: str, volatile: Optional[str] = None) -> SystemMessage:
+    """The only sanctioned constructor for a cache-eligible system message"""
+    content: List[Any] = [{"type": "text", "text": stable}]
+    if volatile:
+        content.append({"type": "text", "text": volatile})
+    return SystemMessage(content=content, additional_kwargs={PROMPT_CACHE_OPT_IN_KEY: True})
 
 
 class PromptCachingChatModel(BaseChatModel):
@@ -57,6 +73,9 @@ class PromptCachingChatModel(BaseChatModel):
 
     def _mark_system(self, message: SystemMessage) -> SystemMessage:
         """Mark the first content block, or return `message` untouched if ineligible"""
+        if not message.additional_kwargs.get(PROMPT_CACHE_OPT_IN_KEY):
+            return message
+
         content = message.content
         if not isinstance(content, list) or not content:
             return message
@@ -133,5 +152,5 @@ def model_has_prompt_caching(model: Any) -> bool:
     if isinstance(model, PromptCachingChatModel):
         return True
     if isinstance(model, FallbackChatModel):
-        return any(isinstance(child, PromptCachingChatModel) for child in model.models)
+        return bool(model.models) and all(isinstance(child, PromptCachingChatModel) for child in model.models)
     return False

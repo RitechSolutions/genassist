@@ -9,12 +9,16 @@ from langchain_core.messages import SystemMessage
 
 from app.modules.workflow.agents.agent_runtime import AgentRunResult, run_agent_once
 from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
-from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    PROMPT_CACHE_OPT_IN_KEY,
+    PromptCachingChatModel,
+)
 
 _RUNTIME = "app.modules.workflow.agents.agent_runtime"
 _MERGE = "app.modules.workflow.engine.llm_usage_tracking.merge_llm_usage_from_result"
 _AGENT_NAMES = ("ReActAgent", "ReActAgentLC", "SimpleToolAgent", "ToolAgent")
 _SUFFIX = " Current time: 2026-08-17 12:00:00"
+_PARTS = ("base prompt", _SUFFIX)
 
 
 def _fake_agent_class(result):
@@ -189,18 +193,18 @@ async def test_supplied_llm_model_skips_provider_resolution():
     assert run.llm_model == "reused-model"
     cls, _ = classes["ToolAgent"]
     cls.assert_called_once_with(
-        llm_model="reused-model", system_prompt="sys", tools=[], max_iterations=7, volatile_system_suffix=None
+        llm_model="reused-model", system_prompt="sys", tools=[], max_iterations=7, stable_volatile_parts=None
     )
 
 
 @pytest.mark.asyncio
-async def test_tool_agent_receives_the_volatile_suffix():
+async def test_tool_agent_receives_the_prompt_parts():
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
-        await run_agent_once(**_base_kwargs(volatile_system_suffix=" Current time: X"))
+        await run_agent_once(**_base_kwargs(stable_volatile_parts=_PARTS))
 
     cls, _ = classes["ToolAgent"]
-    assert cls.call_args.kwargs["volatile_system_suffix"] == " Current time: X"
+    assert cls.call_args.kwargs["stable_volatile_parts"] == _PARTS
 
 
 @pytest.mark.asyncio
@@ -212,13 +216,13 @@ async def test_tool_agent_receives_the_volatile_suffix():
         ("SimpleToolExecutor", "SimpleToolAgent"),
     ],
 )
-async def test_other_agents_never_receive_the_suffix(agent_type, expected):
+async def test_other_agents_never_receive_the_parts(agent_type, expected):
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
-        await run_agent_once(**_base_kwargs(agent_type=agent_type, volatile_system_suffix=" Current time: X"))
+        await run_agent_once(**_base_kwargs(agent_type=agent_type, stable_volatile_parts=_PARTS))
 
     cls, _ = classes[expected]
-    assert "volatile_system_suffix" not in cls.call_args.kwargs
+    assert "stable_volatile_parts" not in cls.call_args.kwargs
 
 
 def _caching_model():
@@ -237,9 +241,9 @@ async def _react_lc_prompt(**overrides):
 
 @pytest.mark.asyncio
 class TestReActAgentLCSplit:
-    async def test_cacheable_prompt_becomes_two_blocks(self):
+    async def test_cacheable_parts_become_two_blocks(self):
         prompt = await _react_lc_prompt(
-            llm_model=_caching_model(), system_prompt="base prompt" + _SUFFIX, volatile_system_suffix=_SUFFIX
+            llm_model=_caching_model(), system_prompt="base prompt" + _SUFFIX, stable_volatile_parts=_PARTS
         )
 
         assert isinstance(prompt, SystemMessage)
@@ -247,20 +251,21 @@ class TestReActAgentLCSplit:
             {"type": "text", "text": "base prompt"},
             {"type": "text", "text": _SUFFIX},
         ]
+        assert prompt.additional_kwargs == {PROMPT_CACHE_OPT_IN_KEY: True}
 
     async def test_blocks_render_back_to_the_original_string(self):
         prompt = await _react_lc_prompt(
-            llm_model=_caching_model(), system_prompt="base prompt" + _SUFFIX, volatile_system_suffix=_SUFFIX
+            llm_model=_caching_model(), system_prompt="base prompt" + _SUFFIX, stable_volatile_parts=_PARTS
         )
 
         assert "".join(block["text"] for block in prompt.content) == "base prompt" + _SUFFIX
 
     async def test_model_without_caching_keeps_the_string(self):
-        prompt = await _react_lc_prompt(system_prompt="base prompt" + _SUFFIX, volatile_system_suffix=_SUFFIX)
+        prompt = await _react_lc_prompt(system_prompt="base prompt" + _SUFFIX, stable_volatile_parts=_PARTS)
 
         assert prompt == "base prompt" + _SUFFIX
 
-    async def test_missing_suffix_keeps_the_string(self):
+    async def test_missing_parts_keep_the_string(self):
         prompt = await _react_lc_prompt(llm_model=_caching_model(), system_prompt="base prompt" + _SUFFIX)
 
         assert prompt == "base prompt" + _SUFFIX
@@ -268,30 +273,23 @@ class TestReActAgentLCSplit:
     @pytest.mark.parametrize("base", ["", " ", "\n\t "], ids=repr)
     async def test_blank_base_keeps_the_string(self, base):
         prompt = await _react_lc_prompt(
-            llm_model=_caching_model(), system_prompt=base + _SUFFIX, volatile_system_suffix=_SUFFIX
+            llm_model=_caching_model(), system_prompt=base + _SUFFIX, stable_volatile_parts=(base, _SUFFIX)
         )
 
         assert prompt == base + _SUFFIX
 
-    async def test_suffix_not_at_the_end_keeps_the_string(self):
-        system_prompt = "base" + _SUFFIX + " trailing note"
-        prompt = await _react_lc_prompt(
-            llm_model=_caching_model(), system_prompt=system_prompt, volatile_system_suffix=_SUFFIX
-        )
-
-        assert prompt == system_prompt
-
-    async def test_empty_suffix_keeps_the_string(self):
-        prompt = await _react_lc_prompt(
-            llm_model=_caching_model(), system_prompt="base prompt", volatile_system_suffix=""
-        )
-
-        assert prompt == "base prompt"
-
-    async def test_fallback_chain_with_a_cached_child_splits(self):
+    async def test_mixed_fallback_chain_keeps_the_string(self):
         chain = FallbackChatModel(models=[MagicMock(name="plain"), _caching_model()])
         prompt = await _react_lc_prompt(
-            llm_model=chain, system_prompt="base prompt" + _SUFFIX, volatile_system_suffix=_SUFFIX
+            llm_model=chain, system_prompt="base prompt" + _SUFFIX, stable_volatile_parts=_PARTS
+        )
+
+        assert prompt == "base prompt" + _SUFFIX
+
+    async def test_homogeneous_fallback_chain_splits(self):
+        chain = FallbackChatModel(models=[_caching_model(), _caching_model()])
+        prompt = await _react_lc_prompt(
+            llm_model=chain, system_prompt="base prompt" + _SUFFIX, stable_volatile_parts=_PARTS
         )
 
         assert isinstance(prompt, SystemMessage)

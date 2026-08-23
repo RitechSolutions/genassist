@@ -10,12 +10,16 @@ from langchain_core.messages import (
     AIMessageChunk,
     HumanMessage,
     SystemMessage,
+    message_to_dict,
+    messages_from_dict,
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
 from app.modules.workflow.llm.prompt_caching_chat_model import (
+    PROMPT_CACHE_OPT_IN_KEY,
     PromptCachingChatModel,
+    build_cacheable_system_message,
     model_has_prompt_caching,
 )
 
@@ -72,18 +76,22 @@ def _system_blocks(sent: list) -> list:
     return [m for m in sent if isinstance(m, SystemMessage)][0].content
 
 
+def _tagged(content) -> SystemMessage:
+    return SystemMessage(content=content, additional_kwargs={PROMPT_CACHE_OPT_IN_KEY: True})
+
+
 @pytest.mark.asyncio
 class TestInversionRule:
     async def test_anthropic_marks_first_block(self):
         wrapper, inner = _wrap("anthropic")
-        await wrapper.ainvoke([SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")])
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
         assert _system_blocks(inner.last) == [
             {"type": "text", "text": "stable", "cache_control": {"type": "ephemeral"}}
         ]
 
     async def test_bedrock_inserts_cache_point_after_first_block(self):
         wrapper, inner = _wrap("bedrock_converse")
-        await wrapper.ainvoke([SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")])
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
         assert _system_blocks(inner.last) == [
             {"type": "text", "text": "stable"},
             {"cachePoint": {"type": "default"}},
@@ -92,7 +100,7 @@ class TestInversionRule:
     @pytest.mark.parametrize("style", _STYLES)
     async def test_plain_string_system_is_never_marked(self, style):
         wrapper, inner = _wrap(style)
-        original = SystemMessage(content="a plain string prompt")
+        original = _tagged("a plain string prompt")
         await wrapper.ainvoke([original, HumanMessage(content="hi")])
         sent_system = [m for m in inner.last if isinstance(m, SystemMessage)][0]
         assert sent_system.content == "a plain string prompt"
@@ -104,6 +112,56 @@ class TestInversionRule:
         messages = [HumanMessage(content="hi")]
         await wrapper.ainvoke(messages)
         assert [m.content for m in inner.last] == ["hi"]
+
+
+class TestCacheableSystemMessageBuilder:
+    def test_two_blocks_when_a_volatile_part_is_given(self):
+        assert build_cacheable_system_message("stable", "volatile").content == [
+            {"type": "text", "text": "stable"},
+            {"type": "text", "text": "volatile"},
+        ]
+
+    @pytest.mark.parametrize("volatile", [None, ""], ids=["omitted", "empty"])
+    def test_a_missing_volatile_part_emits_one_block(self, volatile):
+        assert build_cacheable_system_message("stable", volatile).content == [{"type": "text", "text": "stable"}]
+
+    def test_the_tag_is_stamped(self):
+        assert build_cacheable_system_message("stable").additional_kwargs == {PROMPT_CACHE_OPT_IN_KEY: True}
+
+    def test_the_class_stays_a_plain_system_message(self):
+        assert type(build_cacheable_system_message("stable")) is SystemMessage
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("style", _STYLES)
+class TestOptInTag:
+
+    async def test_untagged_blocks_pass_through_unmarked(self, style):
+        wrapper, inner = _wrap(style)
+        content = [{"type": "text", "text": "stable"}, {"type": "text", "text": "volatile"}]
+
+        await wrapper.ainvoke([SystemMessage(content=list(content)), HumanMessage(content="hi")])
+
+        assert _system_blocks(inner.last) == content
+
+    @pytest.mark.parametrize("tag", [False, None, 0, ""], ids=["false", "none", "zero", "empty"])
+    async def test_a_falsy_tag_never_authorizes_marking(self, style, tag):
+        wrapper, inner = _wrap(style)
+        message = SystemMessage(
+            content=[{"type": "text", "text": "stable"}], additional_kwargs={PROMPT_CACHE_OPT_IN_KEY: tag}
+        )
+
+        await wrapper.ainvoke([message, HumanMessage(content="hi")])
+
+        assert _system_blocks(inner.last) == [{"type": "text", "text": "stable"}]
+
+    async def test_a_tagged_message_that_round_tripped_through_a_dict_still_marks(self, style):
+        wrapper, inner = _wrap(style)
+        restored = messages_from_dict([message_to_dict(build_cacheable_system_message("stable"))])[0]
+
+        await wrapper.ainvoke([restored, HumanMessage(content="hi")])
+
+        assert len(_system_blocks(inner.last)) == (1 if style == "anthropic" else 2)
 
 
 @pytest.mark.asyncio
@@ -132,12 +190,7 @@ class TestBlockSelection:
         wrapper, inner = _wrap(style)
         await wrapper.ainvoke(
             [
-                SystemMessage(
-                    content=[
-                        {"type": "text", "text": "stable base"},
-                        {"type": "text", "text": "volatile suffix"},
-                    ]
-                ),
+                build_cacheable_system_message("stable base", "volatile suffix"),
                 HumanMessage(content="hi"),
             ]
         )
@@ -158,13 +211,13 @@ class TestBlockSelection:
     async def test_blank_or_non_text_first_block_is_untouched(self, style, first_block):
         wrapper, inner = _wrap(style)
         content = [first_block, {"type": "text", "text": "later"}]
-        await wrapper.ainvoke([SystemMessage(content=list(content)), HumanMessage(content="hi")])
+        await wrapper.ainvoke([_tagged(list(content)), HumanMessage(content="hi")])
         assert _system_blocks(inner.last) == content
 
     @pytest.mark.parametrize("style", _STYLES)
     async def test_empty_block_list_is_untouched(self, style):
         wrapper, inner = _wrap(style)
-        await wrapper.ainvoke([SystemMessage(content=[]), HumanMessage(content="hi")])
+        await wrapper.ainvoke([_tagged([]), HumanMessage(content="hi")])
         assert _system_blocks(inner.last) == []
 
     @pytest.mark.parametrize(
@@ -176,7 +229,7 @@ class TestBlockSelection:
     )
     async def test_idempotent_when_already_marked(self, style, already_marked):
         wrapper, inner = _wrap(style)
-        await wrapper.ainvoke([SystemMessage(content=list(already_marked)), HumanMessage(content="hi")])
+        await wrapper.ainvoke([_tagged(list(already_marked)), HumanMessage(content="hi")])
         assert _system_blocks(inner.last) == already_marked
 
     @pytest.mark.parametrize("style", _STYLES)
@@ -193,7 +246,7 @@ class TestBlockSelection:
                 {"type": "text", "text": "b"},
                 {"cachePoint": {"type": "default"}},
             ]
-        await wrapper.ainvoke([SystemMessage(content=list(content)), HumanMessage(content="hi")])
+        await wrapper.ainvoke([_tagged(list(content)), HumanMessage(content="hi")])
         assert _system_blocks(inner.last) == content
 
     @pytest.mark.parametrize("style", _STYLES)
@@ -201,9 +254,9 @@ class TestBlockSelection:
         wrapper, inner = _wrap(style)
         await wrapper.ainvoke(
             [
-                SystemMessage(content=[{"type": "text", "text": "first"}]),
+                build_cacheable_system_message("first"),
                 HumanMessage(content="hi"),
-                SystemMessage(content=[{"type": "text", "text": "second"}]),
+                build_cacheable_system_message("second"),
             ]
         )
         systems = [m for m in inner.last if isinstance(m, SystemMessage)]
@@ -215,9 +268,9 @@ class TestBlockSelection:
         wrapper, inner = _wrap(style)
         await wrapper.ainvoke(
             [
-                SystemMessage(content="plain"),
+                _tagged("plain"),
                 HumanMessage(content="hi"),
-                SystemMessage(content=[{"type": "text", "text": "second"}]),
+                build_cacheable_system_message("second"),
             ]
         )
         systems = [m for m in inner.last if isinstance(m, SystemMessage)]
@@ -230,7 +283,7 @@ class TestCopyOnWrite:
     @pytest.mark.parametrize("style", _STYLES)
     async def test_caller_objects_are_never_mutated(self, style):
         wrapper, inner = _wrap(style)
-        system = SystemMessage(content=[{"type": "text", "text": "stable"}, {"type": "text", "text": "suffix"}])
+        system = build_cacheable_system_message("stable", "suffix")
         messages = [system, HumanMessage(content="hi")]
         original_content = system.content
         original_first = original_content[0]
@@ -248,7 +301,7 @@ class TestCopyOnWrite:
     @pytest.mark.parametrize("style", _STYLES)
     async def test_repeated_invocations_do_not_accumulate_markers(self, style):
         wrapper, inner = _wrap(style)
-        messages = [SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")]
+        messages = [build_cacheable_system_message("stable"), HumanMessage(content="hi")]
         await wrapper.ainvoke(messages)
         await wrapper.ainvoke(messages)
         assert _system_blocks(inner.seen[0]) == _system_blocks(inner.seen[1])
@@ -275,7 +328,7 @@ class TestMethodContracts:
             [
                 chunk.content
                 async for chunk in wrapper.astream(
-                    [SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")]
+                    [build_cacheable_system_message("stable"), HumanMessage(content="hi")]
                 )
             ]
         )
@@ -286,9 +339,7 @@ class TestMethodContracts:
         wrapper, inner = _wrap("bedrock_converse")
         out = "".join(
             chunk.content
-            for chunk in wrapper.stream(
-                [SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")]
-            )
+            for chunk in wrapper.stream([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
         )
         assert out == "ok-response"
         assert _system_blocks(inner.last)[1] == {"cachePoint": {"type": "default"}}
@@ -334,7 +385,7 @@ class TestBindTools:
         assert bound.cache_style == "bedrock_converse"
         assert bound.inner.tools_bound == [{"name": "search"}]
 
-        await bound.ainvoke([SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")])
+        await bound.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
         assert _system_blocks(bound.inner.last)[1] == {"cachePoint": {"type": "default"}}
 
 
@@ -345,7 +396,7 @@ class TestRunnableBinding:
         wrapper, inner = _wrap("bedrock_converse")
         bound = wrapper.bind(temperature=0)
 
-        await bound.ainvoke([SystemMessage(content=[{"type": "text", "text": "stable"}]), HumanMessage(content="hi")])
+        await bound.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
 
         assert _system_blocks(inner.last)[1] == {"cachePoint": {"type": "default"}}
         assert inner.seen_kwargs[-1]["temperature"] == 0
@@ -376,38 +427,57 @@ class TestModelHasPromptCaching:
         assert model_has_prompt_caching(wrapper) is True
         assert model_has_prompt_caching(plain) is False
         assert model_has_prompt_caching(None) is False
-        assert model_has_prompt_caching(FallbackChatModel(models=[plain, wrapper])) is True
         assert model_has_prompt_caching(FallbackChatModel(models=[wrapper])) is True
+        assert model_has_prompt_caching(FallbackChatModel(models=[wrapper, wrapper])) is True
+        assert model_has_prompt_caching(FallbackChatModel(models=[plain, wrapper])) is False
+        assert model_has_prompt_caching(FallbackChatModel(models=[wrapper, plain])) is False
         assert model_has_prompt_caching(FallbackChatModel(models=[plain, plain])) is False
+        assert model_has_prompt_caching(FallbackChatModel(models=[])) is False
 
     def test_survives_chain_wide_bind_tools(self):
         chain = FallbackChatModel(
-            models=[_CapturingModel(), PromptCachingChatModel(inner=_CapturingModel(), cache_style="anthropic")],
+            models=[
+                PromptCachingChatModel(inner=_CapturingModel(), cache_style="anthropic"),
+                PromptCachingChatModel(inner=_CapturingModel(), cache_style="anthropic"),
+            ],
             provider_ids=["p1", "p2"],
         )
         assert model_has_prompt_caching(chain.bind_tools([{"name": "search"}])) is True
 
 
-@pytest.mark.asyncio
 class TestMixedFallbackChain:
-    async def test_uncached_primary_gets_unmarked_shape_then_cached_child_marks(self):
-        primary = _CapturingModel(fail=True)
-        cached_inner = _CapturingModel(text="from-cached-child")
+
+    @pytest.mark.parametrize("position", [0, 1], ids=["primary", "fallback"])
+    def test_a_single_unwrapped_child_disables_the_chain(self, position):
+        models = [PromptCachingChatModel(inner=_CapturingModel(), cache_style="anthropic") for _ in range(2)]
+        models[position] = _CapturingModel()
+
+        assert model_has_prompt_caching(FallbackChatModel(models=models, provider_ids=["p1", "p2"])) is False
+
+
+@pytest.mark.asyncio
+class TestHomogeneousFallbackChain:
+    async def test_failover_to_a_wrapped_child_still_marks(self):
+        primary_inner = _CapturingModel(fail=True)
+        fallback_inner = _CapturingModel(text="from-fallback-child")
         chain = FallbackChatModel(
-            models=[primary, PromptCachingChatModel(inner=cached_inner, cache_style="anthropic")],
+            models=[
+                PromptCachingChatModel(inner=primary_inner, cache_style="anthropic"),
+                PromptCachingChatModel(inner=fallback_inner, cache_style="anthropic"),
+            ],
             provider_ids=["p1", "p2"],
         )
-        system = SystemMessage(content=[{"type": "text", "text": "stable"}])
+        system = build_cacheable_system_message("stable")
         messages = [system, HumanMessage(content="hi")]
         original_content = system.content
 
         assert model_has_prompt_caching(chain) is True
         resp = await chain.ainvoke(messages)
-        assert resp.content == "from-cached-child"
-        assert _system_blocks(primary.last) == [{"type": "text", "text": "stable"}]
-        assert _system_blocks(cached_inner.last) == [
-            {"type": "text", "text": "stable", "cache_control": {"type": "ephemeral"}}
-        ]
+        assert resp.content == "from-fallback-child"
+        for inner in (primary_inner, fallback_inner):
+            assert _system_blocks(inner.last) == [
+                {"type": "text", "text": "stable", "cache_control": {"type": "ephemeral"}}
+            ]
         assert messages[0] is system
         assert system.content is original_content
         assert original_content == [{"type": "text", "text": "stable"}]

@@ -10,7 +10,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.modules.workflow.engine.nodes.llm_model_node import LLMModelNode
 from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
-from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    PROMPT_CACHE_OPT_IN_KEY,
+    PromptCachingChatModel,
+)
 from app.modules.workflow.llm.provider import LLMProvider
 
 _BASE = "You are a helpful assistant with a long stable prefix."
@@ -188,6 +191,20 @@ class TestBlockShapes:
         assert len(blocks) == 1
         assert blocks[0]["text"].strip()
 
+    async def test_the_system_turn_carries_the_opt_in_tag(self):
+        llm, inner = _caching_llm("anthropic")
+
+        await _run(llm, history=_HISTORY)
+
+        assert _sent(inner)[0].additional_kwargs == {PROMPT_CACHE_OPT_IN_KEY: True}
+
+    async def test_the_uncached_system_turn_carries_no_tag(self):
+        llm, inner = _plain_llm()
+
+        await _run(llm, history=_HISTORY)
+
+        assert _sent(inner)[0].additional_kwargs == {}
+
     async def test_user_turn_is_untouched_by_the_split(self):
         llm, inner = _caching_llm("anthropic")
 
@@ -263,16 +280,24 @@ class TestStringPathIsPreserved:
 
 @pytest.mark.asyncio
 class TestFallbackChain:
-    async def test_chain_with_a_cached_child_opts_in_chain_wide(self):
-        primary = _CapturingModel()
-        cached, _ = _caching_llm("anthropic")
-        chain = FallbackChatModel(models=[primary, cached])
+    async def test_chain_with_every_child_cached_opts_in_chain_wide(self):
+        primary, primary_inner = _caching_llm("anthropic")
+        chain = FallbackChatModel(models=[primary, _caching_llm("anthropic")[0]])
 
         await _run(chain, history=_HISTORY)
-        assert _system_content(primary) == [
-            {"type": "text", "text": _BASE + "\n\n"},
+
+        assert _system_content(primary_inner) == [
+            {"type": "text", "text": _BASE + "\n\n", "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": _HISTORY},
         ]
+
+    async def test_mixed_chain_keeps_the_single_string(self):
+        primary = _CapturingModel()
+        chain = FallbackChatModel(models=[primary, _caching_llm("anthropic")[0]])
+
+        await _run(chain, history=_HISTORY)
+
+        assert _system_content(primary) == _BASE + "\n\n" + _HISTORY
 
     async def test_chain_without_a_cached_child_keeps_the_single_string(self):
         primary = _CapturingModel()

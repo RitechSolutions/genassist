@@ -8,7 +8,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
-from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    PromptCachingChatModel,
+    build_cacheable_system_message,
+)
 
 _CREATE_AGENT = "app.modules.workflow.agents.react_agent_lc.create_agent"
 _STABLE = "You are a helpful agent with a long stable prefix."
@@ -109,7 +112,7 @@ class _CapturingModel(BaseChatModel):
 
 
 def _two_block_system_message() -> SystemMessage:
-    return SystemMessage(content=[{"type": "text", "text": _STABLE}, {"type": "text", "text": _SUFFIX}])
+    return build_cacheable_system_message(_STABLE, _SUFFIX)
 
 
 @pytest.mark.asyncio

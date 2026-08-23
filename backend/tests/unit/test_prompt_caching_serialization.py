@@ -4,10 +4,22 @@ import pytest
 from langchain_anthropic.chat_models import _format_messages
 from langchain_aws.chat_models.bedrock_converse import _messages_to_bedrock
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    message_to_dict,
+    messages_from_dict,
+)
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
+from app.modules.workflow.llm.prompt_caching_chat_model import (
+    PROMPT_CACHE_OPT_IN_KEY,
+    PromptCachingChatModel,
+    build_cacheable_system_message,
+    model_has_prompt_caching,
+)
 
 _STABLE = "You are a helpful assistant with a long stable prefix."
 _VOLATILE = "Current time: 2026-08-17T10:00:00Z"
@@ -31,7 +43,8 @@ class _CapturingModel(BaseChatModel):
 async def _sent(style: str, system_content) -> list:
     inner = _CapturingModel()
     wrapper = PromptCachingChatModel(inner=inner, cache_style=style)
-    await wrapper.ainvoke([SystemMessage(content=system_content), HumanMessage(content="hello")])
+    tagged = SystemMessage(content=system_content, additional_kwargs={PROMPT_CACHE_OPT_IN_KEY: True})
+    await wrapper.ainvoke([tagged, HumanMessage(content="hello")])
     return inner.seen[-1]
 
 
@@ -99,43 +112,76 @@ class TestBedrockConverseSerialization:
 _AGENT_SUFFIX = " Current time: 2026-08-17 12:00:00"
 _HISTORY = "User: hi\nAssistant: hello"
 
-_SPLITS = [
-    pytest.param(
-        [{"type": "text", "text": _STABLE}, {"type": "text", "text": _AGENT_SUFFIX}],
-        _STABLE + _AGENT_SUFFIX,
-        id="agent_split",
-    ),
-    pytest.param(
-        [{"type": "text", "text": _STABLE + "\n\n"}, {"type": "text", "text": _HISTORY}],
-        _STABLE + "\n\n" + _HISTORY,
-        id="llm_node_split",
-    ),
+_LEGACY_RENDERINGS = [
+    pytest.param(_STABLE + _AGENT_SUFFIX, id="agent_split"),
+    pytest.param(_STABLE + "\n\n" + _HISTORY, id="llm_node_split"),
 ]
 
 
-@pytest.mark.parametrize("blocks,rendered", _SPLITS)
-class TestUncachedChildrenInAMixedChain:
-    def test_openai_passes_the_blocks_through_as_content_parts(self, blocks, rendered):
+class TestOptInTagStaysInProcess:
+
+    def test_it_survives_a_dict_round_trip(self):
+        message = build_cacheable_system_message(_STABLE, _VOLATILE)
+
+        restored = messages_from_dict([message_to_dict(message)])[0]
+
+        assert type(restored) is SystemMessage
+        assert restored.additional_kwargs[PROMPT_CACHE_OPT_IN_KEY] is True
+        assert restored.content == message.content
+
+    def test_anthropic_never_sees_it(self):
+        system, messages = _format_messages(
+            [build_cacheable_system_message(_STABLE, _VOLATILE), HumanMessage(content="hello")]
+        )
+
+        assert not _contains_key(system, PROMPT_CACHE_OPT_IN_KEY)
+        assert not _contains_key(messages, PROMPT_CACHE_OPT_IN_KEY)
+
+    def test_bedrock_never_sees_it(self):
+        messages, system = _messages_to_bedrock(
+            [build_cacheable_system_message(_STABLE, _VOLATILE), HumanMessage(content="hello")]
+        )
+
+        assert not _contains_key(system, PROMPT_CACHE_OPT_IN_KEY)
+        assert not _contains_key(messages, PROMPT_CACHE_OPT_IN_KEY)
+
+    def test_openai_never_sees_it(self):
         from langchain_openai.chat_models.base import _convert_message_to_dict
 
-        assert _convert_message_to_dict(SystemMessage(content=blocks)) == {"role": "system", "content": blocks}
+        assert not _contains_key(
+            _convert_message_to_dict(build_cacheable_system_message(_STABLE, _VOLATILE)), PROMPT_CACHE_OPT_IN_KEY
+        )
 
-    def test_google_keeps_one_part_per_block(self, blocks, rendered):
+
+def test_a_mixed_chain_is_not_cache_eligible():
+    chain = FallbackChatModel(
+        models=[_CapturingModel(), PromptCachingChatModel(inner=_CapturingModel(), cache_style="anthropic")]
+    )
+
+    assert model_has_prompt_caching(chain) is False
+
+
+@pytest.mark.parametrize("rendered", _LEGACY_RENDERINGS)
+class TestMixedChainKeepsTheLegacyString:
+
+    def test_openai_receives_the_flattened_string(self, rendered):
+        from langchain_openai.chat_models.base import _convert_message_to_dict
+
+        assert _convert_message_to_dict(SystemMessage(content=rendered)) == {"role": "system", "content": rendered}
+
+    def test_google_receives_one_part(self, rendered):
         from langchain_google_genai.chat_models import _parse_chat_history
 
         system, _ = _parse_chat_history(
-            [SystemMessage(content=blocks), HumanMessage(content="hi")], convert_system_message_to_human=False
+            [SystemMessage(content=rendered), HumanMessage(content="hi")], convert_system_message_to_human=False
         )
-        assert [part.text for part in system.parts] == [block["text"] for block in blocks]
+        assert [part.text for part in system.parts] == [rendered]
 
-    def test_ollama_injects_a_newline_per_block(self, blocks, rendered):
-        """Known deviation: langchain_ollama joins blocks with \\n, so a mixed chain
-        sends this child two extra newlines. Delete this test if that formatter changes."""
+    def test_ollama_receives_the_flattened_string(self, rendered):
         from langchain_ollama import ChatOllama
 
         content = ChatOllama(model="llama3")._convert_messages_to_ollama_messages(
-            [SystemMessage(content=blocks), HumanMessage(content="hi")]
+            [SystemMessage(content=rendered), HumanMessage(content="hi")]
         )[0]["content"]
 
-        assert content == "".join("\n" + block["text"] for block in blocks)
-        assert content != rendered
+        assert content == rendered

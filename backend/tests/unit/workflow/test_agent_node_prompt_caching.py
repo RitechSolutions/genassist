@@ -1,4 +1,4 @@
-"""Agent and sub-agent nodes forward the timestamp suffix only for cache-eligible prompts"""
+"""Agent and sub-agent nodes forward the prompt parts only for cache-eligible prompts"""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -70,16 +70,15 @@ _NODES = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("node_cls,module,config", _NODES)
 class TestVolatilityGate:
-    async def test_stable_prompt_forwards_the_timestamp_suffix(self, node_cls, module, config):
+    async def test_stable_prompt_forwards_the_prompt_parts(self, node_cls, module, config):
         kwargs = await _run(node_cls, module, config, node_data={"systemPrompt": _STABLE}, resolved=_STABLE)
 
-        suffix = kwargs["volatile_system_suffix"]
-        assert suffix.startswith(" Current time: ")
-        assert kwargs["system_prompt"].startswith(_STABLE)
-        assert kwargs["system_prompt"].endswith(suffix)
+        stable, volatile = kwargs["stable_volatile_parts"]
+        assert stable.startswith(_STABLE)
+        assert volatile.startswith(" Current time: ")
 
     @pytest.mark.parametrize("var", _VOLATILE_VARS)
-    async def test_volatile_prompt_withholds_the_suffix(self, node_cls, module, config, var):
+    async def test_volatile_prompt_withholds_the_parts(self, node_cls, module, config, var):
         kwargs = await _run(
             node_cls,
             module,
@@ -88,15 +87,40 @@ class TestVolatilityGate:
             resolved="Answer about a bug report",
         )
 
-        assert kwargs["volatile_system_suffix"] is None
+        assert kwargs["stable_volatile_parts"] is None
         assert kwargs["system_prompt"].startswith("Answer about a bug report")
         assert " Current time: " in kwargs["system_prompt"]
 
-    async def test_absent_raw_prompt_forwards_the_suffix(self, node_cls, module, config):
+    async def test_absent_raw_prompt_forwards_the_parts(self, node_cls, module, config):
         kwargs = await _run(node_cls, module, config, node_data={"name": "Agent"})
 
-        assert kwargs["volatile_system_suffix"] is not None
+        assert kwargs["stable_volatile_parts"] is not None
         assert kwargs["system_prompt"].startswith("You are a helpful assistant.")
+
+
+class TestTimestampedSystemPromptHelper:
+
+    @staticmethod
+    def _node(raw):
+        return AgentNode("node-1", {"type": "agentNode", "data": {"systemPrompt": raw}}, _state())
+
+    def test_stable_template_returns_parts_that_rebuild_the_prompt(self):
+        full, parts = self._node(_STABLE)._timestamped_system_prompt(_STABLE)
+
+        assert parts == (_STABLE, full[len(_STABLE) :])
+        assert "".join(parts) == full
+        assert parts[1].startswith(" Current time: ")
+
+    @pytest.mark.parametrize("var", _VOLATILE_VARS)
+    def test_volatile_template_withholds_the_parts(self, var):
+        full, parts = self._node(f"Answer about {var}")._timestamped_system_prompt("Answer about a bug report")
+
+        assert parts is None
+        assert full.startswith("Answer about a bug report")
+        assert " Current time: " in full
+
+    def test_the_sub_agent_node_inherits_it(self):
+        assert SubAgentNode._timestamped_system_prompt is AgentNode._timestamped_system_prompt
 
 
 @pytest.mark.asyncio
@@ -118,14 +142,15 @@ class TestDelegationPathThreading:
         kwargs.update(over)
         return kwargs
 
-    async def test_suffix_reaches_run_agent_once(self):
+    async def test_parts_reach_run_agent_once(self):
         node = AgentNode("node-1", {"type": "agentNode", "data": {}}, _state())
         once = AsyncMock(return_value=_run_result())
+        parts = ("sys", " Current time: X")
 
         with patch(f"{_AGENT_NODE}.run_agent_once", once):
-            await node._run_agent_with_delegations(**self._delegation_kwargs(volatile_system_suffix=" Current time: X"))
+            await node._run_agent_with_delegations(**self._delegation_kwargs(stable_volatile_parts=parts))
 
-        assert once.await_args.kwargs["volatile_system_suffix"] == " Current time: X"
+        assert once.await_args.kwargs["stable_volatile_parts"] == parts
 
     async def test_callers_omitting_the_kwarg_send_none(self):
         node = AgentNode("node-1", {"type": "agentNode", "data": {}}, _state())
@@ -134,23 +159,23 @@ class TestDelegationPathThreading:
         with patch(f"{_AGENT_NODE}.run_agent_once", once):
             await node._run_agent_with_delegations(**self._delegation_kwargs())
 
-        assert once.await_args.kwargs["volatile_system_suffix"] is None
+        assert once.await_args.kwargs["stable_volatile_parts"] is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("node_cls,module,config", _NODES)
-class TestSuffixInvariant:
+class TestPartsInvariant:
 
     @staticmethod
-    def _assert_prompt_ends_with_the_forwarded_suffix(kwargs):
-        suffix = kwargs["volatile_system_suffix"]
-        assert suffix, "a stable prompt must still forward one"
-        assert kwargs["system_prompt"].endswith(suffix)
+    def _assert_parts_rebuild_the_prompt(kwargs):
+        parts = kwargs["stable_volatile_parts"]
+        assert parts, "a stable prompt must still forward them"
+        assert "".join(parts) == kwargs["system_prompt"]
 
     async def test_holds_for_a_plain_run(self, node_cls, module, config):
         kwargs = await _run(node_cls, module, config, node_data={"systemPrompt": _STABLE}, resolved=_STABLE)
 
-        self._assert_prompt_ends_with_the_forwarded_suffix(kwargs)
+        self._assert_parts_rebuild_the_prompt(kwargs)
 
     async def test_holds_with_memory_enabled(self, node_cls, module, config):
         with patch.object(node_cls, "_get_chat_history_for_agent", AsyncMock(return_value=[])):
@@ -162,7 +187,7 @@ class TestSuffixInvariant:
                 resolved=_STABLE,
             )
 
-        self._assert_prompt_ends_with_the_forwarded_suffix(kwargs)
+        self._assert_parts_rebuild_the_prompt(kwargs)
 
     async def test_holds_with_pii_masking_and_tools(self, node_cls, module, config):
         kwargs = await _run(
@@ -174,7 +199,7 @@ class TestSuffixInvariant:
             tools=[MagicMock(name="tool")],
         )
 
-        self._assert_prompt_ends_with_the_forwarded_suffix(kwargs)
+        self._assert_parts_rebuild_the_prompt(kwargs)
 
     async def test_holds_on_the_delegation_branch(self, node_cls, module, config):
         node = node_cls("node-1", {"type": "agentNode", "data": {"systemPrompt": _STABLE}}, _state())
@@ -185,4 +210,4 @@ class TestSuffixInvariant:
         ), patch.object(node_cls, "_run_agent_with_delegations", delegating):
             await node.process({**config, "systemPrompt": _STABLE})
 
-        self._assert_prompt_ends_with_the_forwarded_suffix(delegating.await_args.kwargs)
+        self._assert_parts_rebuild_the_prompt(delegating.await_args.kwargs)
