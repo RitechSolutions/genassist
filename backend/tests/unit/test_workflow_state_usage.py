@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core.config.settings import settings
 from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -107,27 +106,27 @@ class TestTotalLlmUsageCacheTokens:
         assert cached.get_total_llm_usage()["cost_usd"] < plain.get_total_llm_usage()["cost_usd"]
 
 
-class TestPlatformWithholdInTotals:
+class TestTheNodeRequestDrivesTheTotals:
 
-    async def _merge_one_call(self) -> WorkflowState:
+    async def _merge_one_call(self, requested: bool) -> WorkflowState:
         s = _state()
         with _caching_provider_injector():
-            await merge_llm_usage_from_result(s, {"llm_usage": [{"input_tokens": 10, "output_tokens": 5}]}, "n1", "p1")
+            await merge_llm_usage_from_result(
+                s, {"llm_usage": [{"input_tokens": 10, "output_tokens": 5}]}, "n1", "p1", requested
+            )
         return s
 
     @pytest.mark.asyncio
-    async def test_flag_off_keeps_cache_fields_out_of_the_totals(self, monkeypatch):
-        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", False)
-        s = await self._merge_one_call()
+    async def test_an_unrequested_run_keeps_cache_fields_out_of_the_totals(self):
+        s = await self._merge_one_call(False)
         usage = s.get_total_llm_usage()
 
         assert s.llm_usage[0]["prompt_caching_enabled"] is False
         assert "cache_read_tokens" not in usage and "cache_creation_tokens" not in usage
 
     @pytest.mark.asyncio
-    async def test_flag_on_restores_the_zeroed_cache_fields(self, monkeypatch):
-        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", True)
-        s = await self._merge_one_call()
+    async def test_a_requested_run_reports_the_zeroed_cache_fields(self):
+        s = await self._merge_one_call(True)
         usage = s.get_total_llm_usage()
 
         assert s.llm_usage[0]["prompt_caching_enabled"] is True

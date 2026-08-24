@@ -123,6 +123,9 @@ class WorkflowState:
         self.node_execution_status: dict[str, Any] = {}
         self.execution_path: list[str] = []
         self.execution_history: list[str] = []
+        # Sub-agent prompt-caching diagnostics propagated in from child runs. Kept out of
+        # node_execution_status so no metric, analytics or failure consumer ever sees them
+        self.prompt_caching_diagnostics: dict[str, Any] = {}
 
         # Performance metrics
         self.time_taken = 0
@@ -384,7 +387,7 @@ class WorkflowState:
         return totals
 
     def _prompt_caching_requested(self) -> bool:
-        """Whether any call this run ran against a provider with the caching toggle on"""
+        """Whether any call this run came from a node with the caching toggle on"""
         return any(u.get("prompt_caching_enabled") for u in self.llm_usage)
 
     def reset_execution_state(self) -> None:
@@ -398,6 +401,7 @@ class WorkflowState:
         self.node_execution_status.clear()
         self.execution_path.clear()
         self.execution_history.clear()
+        self.prompt_caching_diagnostics.clear()
         self.errors.clear()
         self.llm_usage.clear()
         self.tool_events.clear()
@@ -668,6 +672,12 @@ class WorkflowState:
         self.node_inputs[node_id] = input_data
         self.node_execution_status[node_id].update({"input": input_data})
 
+    def annotate_node_execution(self, node_id: str, key: str, value: Any) -> None:
+        """Attach extra detail to a node's execution entry. No-op when the node never ran"""
+        entry = self.node_execution_status.get(node_id)
+        if isinstance(entry, dict):
+            entry[key] = value
+
     def get_node_input(self, node_id: str) -> Any:
         """Get the input for a specific node"""
         return self.node_inputs.get(node_id)
@@ -690,6 +700,10 @@ class WorkflowState:
         self.node_execution_status = {
             **self.node_execution_status,
             **state.node_execution_status,
+        }
+        self.prompt_caching_diagnostics = {
+            **self.prompt_caching_diagnostics,
+            **state.prompt_caching_diagnostics,
         }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
@@ -714,7 +728,7 @@ class WorkflowState:
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get the complete state including all execution details"""
-        return {
+        full = {
             "status": self.status,
             "input": self.initial_values,
             "output": self.output,
@@ -730,6 +744,10 @@ class WorkflowState:
             "performanceMetrics": self.performance_metrics,
             "execution_end_time": self.execution_end_time,
         }
+        # Conditional: a run with no opted-in sub-agent stays byte-identical to before
+        if self.prompt_caching_diagnostics:
+            full["promptCachingDiagnostics"] = self.prompt_caching_diagnostics
+        return full
 
     def _collect_failed_nodes(self) -> list[dict]:
         """Collect the nodes that failed in this run, latest run per node only.

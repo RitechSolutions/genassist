@@ -49,6 +49,10 @@ class _FakeState:
     def __init__(self, memory=None):
         self._memory = memory
         self.llm_usage: list = []
+        self.annotations: dict = {}
+
+    def annotate_node_execution(self, node_id, key, value):
+        self.annotations.setdefault(node_id, {})[key] = value
 
     def get_memory(self):
         return self._memory
@@ -69,7 +73,7 @@ def _patch_injector(llm):
     )
     inj = MagicMock()
     inj.get = MagicMock(side_effect=lambda cls: provider if cls is LLMProvider else service)
-    return patch("app.dependencies.injector.injector", inj)
+    return patch("app.dependencies.injector.injector", inj), provider
 
 
 def _caching_llm(style: str = "anthropic"):
@@ -93,7 +97,8 @@ async def _run(llm, *, raw=_BASE, resolved=None, history=None, node_data=None):
         "userPrompt": "hello",
         "memory": memory is not None,
     }
-    with _patch_injector(llm):
+    ctx, _ = _patch_injector(llm)
+    with ctx:
         return await node.process(config)
 
 
@@ -306,3 +311,134 @@ class TestFallbackChain:
         await _run(chain, history=_HISTORY)
 
         assert _system_content(primary) == _BASE + "\n\n" + _HISTORY
+
+
+async def _forward(llm, **config_overrides):
+    state = _FakeState()
+    node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": {"systemPrompt": _BASE}}, state)
+    config = {"providerId": "p1", "systemPrompt": _BASE, "userPrompt": "hello", **config_overrides}
+
+    ctx, provider = _patch_injector(llm)
+    with ctx:
+        await node.process(config)
+    return provider, state
+
+
+@pytest.mark.asyncio
+class TestNodeOptInForwarding:
+
+    async def test_the_toggle_reaches_the_model_build(self):
+        provider, _ = await _forward(_caching_llm()[0], promptCaching=True)
+
+        assert provider.get_model_for_node.await_args.args == ("p1", None, True)
+
+    @pytest.mark.parametrize("raw", [None, False, "true", "True", 1, "1"], ids=repr)
+    async def test_only_a_real_true_requests_caching(self, raw):
+        config = {} if raw is None else {"promptCaching": raw}
+        provider, _ = await _forward(_plain_llm()[0], **config)
+
+        assert provider.get_model_for_node.await_args.args == ("p1", None, False)
+
+    async def test_the_chain_id_still_travels_with_the_toggle(self):
+        provider, _ = await _forward(_plain_llm()[0], fallbackChainId="chain-1", promptCaching=True)
+
+        assert provider.get_model_for_node.await_args.args == ("p1", "chain-1", True)
+
+    async def test_usage_entries_carry_the_request(self):
+        _, state = await _forward(_caching_llm()[0], promptCaching=True)
+
+        assert state.llm_usage[0]["prompt_caching_enabled"] is True
+
+    async def test_usage_entries_stay_unmarked_when_the_toggle_is_off(self):
+        _, state = await _forward(_plain_llm()[0])
+
+        assert state.llm_usage[0]["prompt_caching_enabled"] is False
+
+    async def test_chain_of_thought_forwards_the_request_too(self):
+        with patch("app.modules.workflow.engine.nodes.llm_model_node.ChainOfThoughtAgent") as agent_cls:
+            agent_cls.return_value.invoke = AsyncMock(return_value={"response": "ok"})
+            provider, _ = await _forward(_plain_llm()[0], type="Chain-of-Thought", promptCaching=True)
+
+        assert provider.get_model_for_node.await_args.args == ("p1", None, True)
+
+
+async def _diagnose(llm, *, raw=_BASE, resolved=None, history=None, node_data=None, **config_overrides):
+    memory = _FakeMemory(history) if history is not None else None
+    data = node_data if node_data is not None else {"systemPrompt": raw}
+    state = _FakeState(memory=memory)
+    node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": data}, state)
+    config = {
+        "providerId": "p1",
+        "systemPrompt": _BASE if resolved is None else resolved,
+        "userPrompt": "hello",
+        "memory": memory is not None,
+        **config_overrides,
+    }
+
+    ctx, _ = _patch_injector(llm)
+    with ctx:
+        await node.process(config)
+    return state.annotations.get("llm-1", {}).get("prompt_caching")
+
+
+@pytest.mark.asyncio
+class TestNodeDiagnostic:
+
+    async def test_a_split_prompt_reports_applied(self):
+        diagnostic = await _diagnose(_caching_llm()[0], history=_HISTORY, promptCaching=True)
+
+        assert diagnostic == {"requested": True, "applied": True, "reason": None}
+
+    async def test_a_volatile_prompt_names_the_gate(self):
+        diagnostic = await _diagnose(
+            _caching_llm()[0], raw="Summarize: {{message}}", resolved="Summarize: a bug", promptCaching=True
+        )
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "volatile_prompt"}
+
+    async def test_an_unwrapped_model_names_the_provider(self):
+        diagnostic = await _diagnose(_plain_llm()[0], promptCaching=True)
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_cache_markers"}
+
+    async def test_a_mixed_chain_is_distinguished_from_a_plain_model(self):
+        chain = FallbackChatModel(models=[_CapturingModel(), _caching_llm()[0]])
+        diagnostic = await _diagnose(chain, promptCaching=True)
+
+        assert diagnostic["reason"] == "mixed_fallback_chain"
+
+    async def test_a_chain_with_no_cacheable_child_reads_as_unsupported(self):
+        chain = FallbackChatModel(models=[_CapturingModel(), _CapturingModel()])
+        diagnostic = await _diagnose(chain, promptCaching=True)
+
+        assert diagnostic["reason"] == "unsupported_cache_markers"
+
+    async def test_a_blank_prompt_names_the_first_gate(self):
+        diagnostic = await _diagnose(_caching_llm()[0], raw="", resolved="   ", promptCaching=True)
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "empty_prompt"}
+
+    async def test_chain_of_thought_reports_the_mode(self):
+        with patch("app.modules.workflow.engine.nodes.llm_model_node.ChainOfThoughtAgent") as agent_cls:
+            agent_cls.return_value.invoke = AsyncMock(return_value={"response": "ok"})
+            diagnostic = await _diagnose(_caching_llm()[0], type="Chain-of-Thought", promptCaching=True)
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_mode"}
+
+    @pytest.mark.parametrize("raw", [None, False, "true", 1], ids=repr)
+    async def test_an_unrequested_node_writes_no_annotation(self, raw):
+        config = {} if raw is None else {"promptCaching": raw}
+        diagnostic = await _diagnose(_caching_llm()[0], history=_HISTORY, **config)
+
+        assert diagnostic is None
+
+    async def test_a_state_without_the_hook_never_breaks_the_node(self):
+        state = _FakeState()
+        del state.annotations
+        state.annotate_node_execution = None  # a state built before the diagnostic existed
+        node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": {"systemPrompt": _BASE}}, state)
+        config = {"providerId": "p1", "systemPrompt": _BASE, "userPrompt": "hi", "promptCaching": True}
+
+        ctx, _ = _patch_injector(_caching_llm()[0])
+        with ctx:
+            assert await node.process(config) == "ok"

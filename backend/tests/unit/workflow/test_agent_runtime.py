@@ -135,7 +135,7 @@ async def test_merges_usage_from_result():
     with stack:
         await run_agent_once(**_base_kwargs(state=state))
 
-    merge.assert_awaited_once_with(state, result, "node-1", "prov-1")
+    merge.assert_awaited_once_with(state, result, "node-1", "prov-1", False)
 
 
 @pytest.mark.asyncio
@@ -293,3 +293,156 @@ class TestReActAgentLCSplit:
         )
 
         assert isinstance(prompt, SystemMessage)
+
+
+@pytest.mark.asyncio
+class TestPromptCachingOptIn:
+
+    @pytest.mark.parametrize("requested", [True, False], ids=["opted-in", "default-off"])
+    async def test_the_request_reaches_the_model_build(self, requested):
+        stack, _, injector, _ = _patch_runtime({"response": "ok"})
+        with stack:
+            await run_agent_once(**_base_kwargs(prompt_caching_enabled=requested))
+
+        provider = injector.get.return_value
+        assert provider.get_model_for_node.await_args.args == ("prov-1", None, requested)
+
+    @pytest.mark.parametrize("requested", [True, False], ids=["opted-in", "default-off"])
+    async def test_the_request_marks_the_usage_merge(self, requested):
+        stack, _, _, merge = _patch_runtime({"response": "ok"})
+        with stack:
+            await run_agent_once(**_base_kwargs(prompt_caching_enabled=requested))
+
+        assert merge.await_args.args[-1] is requested
+
+    async def test_a_reused_model_skips_the_build_but_still_marks_usage(self):
+        stack, _, injector, merge = _patch_runtime({"response": "ok"})
+        with stack:
+            await run_agent_once(**_base_kwargs(llm_model="reused-model", prompt_caching_enabled=True))
+
+        injector.get.assert_not_called()
+        assert merge.await_args.args[-1] is True
+
+    async def test_omitting_the_argument_defaults_to_off(self):
+        stack, _, injector, _ = _patch_runtime({"response": "ok"})
+        with stack:
+            await run_agent_once(**_base_kwargs())
+
+        assert injector.get.return_value.get_model_for_node.await_args.args == ("prov-1", None, False)
+
+
+class _DiagState:
+
+    def __init__(self):
+        self.annotations: dict = {}
+
+    def annotate_node_execution(self, node_id, key, value):
+        self.annotations.setdefault(node_id, {})[key] = value
+
+
+async def _diagnose(*, tool_agent_split=None, **overrides):
+    state = _DiagState()
+    stack, classes, _, _ = _patch_runtime({"response": "ok"})
+    if tool_agent_split is not None:
+        classes["ToolAgent"][1]._cache_split = tool_agent_split
+    with stack:
+        await run_agent_once(**_base_kwargs(state=state, prompt_caching_enabled=True, **overrides))
+    return state.annotations.get("node-1", {}).get("prompt_caching")
+
+
+@pytest.mark.asyncio
+class TestDiagnosticPerDispatchBranch:
+
+    @pytest.mark.parametrize("agent_type", ["ReActAgent", "SimpleToolExecutor"])
+    async def test_a_mode_that_never_splits_says_so(self, agent_type):
+        diagnostic = await _diagnose(
+            agent_type=agent_type, llm_model=_caching_model(), stable_volatile_parts=_PARTS
+        )
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_mode"}
+
+    async def test_react_lc_applied_tracks_the_split_it_actually_got(self):
+        diagnostic = await _diagnose(
+            agent_type="ReActAgentLC",
+            llm_model=_caching_model(),
+            system_prompt="base prompt" + _SUFFIX,
+            stable_volatile_parts=_PARTS,
+        )
+
+        assert diagnostic == {"requested": True, "applied": True, "reason": None}
+
+    async def test_react_lc_without_parts_names_the_volatile_gate(self):
+        diagnostic = await _diagnose(agent_type="ReActAgentLC", llm_model=_caching_model())
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "volatile_prompt"}
+
+    @pytest.mark.parametrize("base", ["", "  \n"], ids=repr)
+    async def test_react_lc_with_a_blank_stable_half_names_the_empty_prompt(self, base):
+        diagnostic = await _diagnose(
+            agent_type="ReActAgentLC",
+            llm_model=_caching_model(),
+            system_prompt=base + _SUFFIX,
+            stable_volatile_parts=(base, _SUFFIX),
+        )
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "empty_prompt"}
+
+    async def test_react_lc_on_a_plain_model_names_the_provider(self):
+        diagnostic = await _diagnose(agent_type="ReActAgentLC", stable_volatile_parts=_PARTS)
+
+        assert diagnostic["reason"] == "unsupported_cache_markers"
+
+    async def test_react_lc_on_a_mixed_chain_is_distinguished(self):
+        chain = FallbackChatModel(models=[MagicMock(name="plain"), _caching_model()])
+        diagnostic = await _diagnose(agent_type="ReActAgentLC", llm_model=chain, stable_volatile_parts=_PARTS)
+
+        assert diagnostic["reason"] == "mixed_fallback_chain"
+
+    @pytest.mark.parametrize("split", [True, False], ids=["split", "fused"])
+    async def test_tool_agent_applied_mirrors_its_own_decision(self, split):
+        diagnostic = await _diagnose(
+            tool_agent_split=split, llm_model=_caching_model(), stable_volatile_parts=_PARTS
+        )
+
+        assert diagnostic["applied"] is split
+
+    async def test_an_unexplained_withheld_split_reports_no_reason(self):
+        diagnostic = await _diagnose(
+            tool_agent_split=False, llm_model=_caching_model(), stable_volatile_parts=_PARTS
+        )
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": None}
+
+
+@pytest.mark.asyncio
+class TestDiagnosticIsRequestGated:
+
+    async def test_an_unrequested_run_writes_nothing(self):
+        state = _DiagState()
+        stack, _, _, _ = _patch_runtime({"response": "ok"})
+        with stack:
+            await run_agent_once(**_base_kwargs(state=state, agent_type="ReActAgent"))
+
+        assert state.annotations == {}
+
+    async def test_a_state_without_the_hook_never_breaks_the_run(self):
+        stack, _, _, _ = _patch_runtime({"response": "ok"})
+        with stack:
+            run = await run_agent_once(
+                **_base_kwargs(state=SimpleNamespace(), agent_type="ReActAgent", prompt_caching_enabled=True)
+            )
+
+        assert run.response == "ok"
+
+    async def test_repeated_runs_stay_idempotent(self):
+        state = _DiagState()
+        stack, _, _, _ = _patch_runtime({"response": "ok"})
+        with stack:
+            for _ in range(3):
+                await run_agent_once(
+                    **_base_kwargs(state=state, agent_type="ReActAgent", prompt_caching_enabled=True)
+                )
+
+        assert state.annotations == {"node-1": {"prompt_caching": {
+            "requested": True, "applied": False, "reason": "unsupported_mode"
+        }}}

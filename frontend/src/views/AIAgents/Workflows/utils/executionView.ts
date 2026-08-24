@@ -3,6 +3,7 @@ import {
   ExecutionViewModel,
   ExecutionViewState,
   NodeExecutionView,
+  PromptCachingDiagnostic,
   RawNodeExecutionEntry,
 } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
@@ -67,21 +68,56 @@ const resolveStateBag = (response: unknown): Record<string, unknown> => {
 };
 
 /**
- * Collapse archived re-run keys (`"{id}_N"`) to the latest entry. A key is treated as archived
- * only when it ends in `_<digit>+` AND its base id also exists as a key — this avoids
- * misclassifying legitimate ids like `r2_destmissing` or a lone `step_0`.
+ * A key is an archived earlier run only when it ends in `_<digit>+` AND its base id also
+ * exists in the same map — this avoids misclassifying legitimate ids like `r2_destmissing`
+ * or a lone `step_0`.
  */
+const isArchivedKey = (key: string, keys: Set<string>): boolean => {
+  const match = key.match(/^(.+)_(\d+)$/);
+  return Boolean(match && keys.has(match[1]));
+};
+
+/** Collapse archived re-run keys (`"{id}_N"`) to the latest entry. */
 const stripArchivedKeys = (map: Record<string, unknown>): Record<string, RawNodeExecutionEntry> => {
   const keys = Object.keys(map);
   const keySet = new Set(keys);
   const result: Record<string, RawNodeExecutionEntry> = {};
   for (const key of keys) {
-    const match = key.match(/^(.+)_(\d+)$/);
-    if (match && keySet.has(match[1])) continue; // archived earlier run of match[1]
+    if (isArchivedKey(key, keySet)) continue;
     const entry = map[key];
     result[key] = isRecord(entry) ? (entry as RawNodeExecutionEntry) : {};
   }
   return result;
+};
+
+/**
+ * Reason codes the backend emits when a requested split was withheld. An unmapped or absent
+ * code leaves `reasonText` undefined, and the UI falls back to a plain "not applied".
+ */
+const PROMPT_CACHING_REASON_TEXT: Record<string, string> = {
+  unsupported_mode: 'this agent type never splits its prompt',
+  volatile_prompt: 'the system prompt changes on every request',
+  mixed_fallback_chain: 'not every model in the fallback chain can cache',
+  unsupported_cache_markers: 'the provider or model does not accept explicit cache markers',
+  empty_prompt: 'there is no stable prompt to cache',
+};
+
+const normalizePromptCaching = (value: unknown): PromptCachingDiagnostic | undefined => {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.requested !== 'boolean' || typeof value.applied !== 'boolean') return undefined;
+  const reason = asString(value.reason);
+  const reasonText = reason ? PROMPT_CACHING_REASON_TEXT[reason] : undefined;
+  return { requested: value.requested, applied: value.applied, ...(reasonText ? { reasonText } : {}) };
+};
+
+/** Fallback display names from the workflow graph, for nodes the run never executed. */
+const buildNameLookup = (workflow?: Workflow | null): Map<string, string> => {
+  const nameById = new Map<string, string>();
+  for (const node of workflow?.nodes ?? []) {
+    const data = node.data as { name?: string } | undefined;
+    if (node.id && data?.name) nameById.set(node.id, data.name);
+  }
+  return nameById;
 };
 
 const deriveDuration = (entry: RawNodeExecutionEntry): number | undefined => {
@@ -104,11 +140,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
   const entries = stripArchivedKeys(rawMap);
 
   // Fallback name lookup from the workflow structure (backend usually includes `name`).
-  const nameById = new Map<string, string>();
-  for (const node of workflow?.nodes ?? []) {
-    const data = node.data as { name?: string } | undefined;
-    if (node.id && data?.name) nameById.set(node.id, data.name);
-  }
+  const nameById = buildNameLookup(workflow);
 
   const nodes: NodeExecutionView[] = Object.entries(entries).map(([nodeId, entry]) => ({
     nodeId,
@@ -121,6 +153,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     input: entry.input,
     output: entry.output,
     error: asString(entry.error) ?? null,
+    promptCaching: normalizePromptCaching(entry.prompt_caching),
   }));
 
   // Execution order by startTime (nodes without a startTime sort last, stable by id).
@@ -145,6 +178,16 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
       slowestDuration = node.durationMs;
       slowestNodeId = node.nodeId;
     }
+  }
+
+  // Sub-agent diagnostics ride their own key, so no node count or status derives from them.
+  const rawDiagnostics = isRecord(bag.promptCachingDiagnostics) ? bag.promptCachingDiagnostics : {};
+  const diagnosticKeys = new Set(Object.keys(rawDiagnostics));
+  const promptCachingDiagnostics: Record<string, PromptCachingDiagnostic> = {};
+  for (const [nodeId, raw] of Object.entries(rawDiagnostics)) {
+    if (isArchivedKey(nodeId, diagnosticKeys)) continue;
+    const diagnostic = normalizePromptCaching(raw);
+    if (diagnostic) promptCachingDiagnostics[nodeId] = diagnostic;
   }
 
   const executionStartTime = asNumber(bag.execution_start_time);
@@ -173,7 +216,42 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     executionEndTime,
     overallDurationMs,
     slowestNodeId,
+    promptCachingDiagnostics,
   };
+};
+
+export interface PromptCachingWarning {
+  nodeId: string;
+  name: string;
+  reasonText?: string;
+}
+
+/**
+ * Every node that asked for prompt caching and did not get it, from the nodes this run
+ * executed and from the sub-agent diagnostics propagated in.
+ */
+export const collectPromptCachingWarnings = (
+  response: unknown,
+  workflow?: Workflow | null
+): PromptCachingWarning[] => {
+  const model = buildExecutionViewModel(response, workflow);
+  const warnings: PromptCachingWarning[] = [];
+  const seen = new Set<string>();
+
+  for (const node of model.nodes) {
+    const diagnostic = node.promptCaching;
+    if (!diagnostic?.requested || diagnostic.applied) continue;
+    warnings.push({ nodeId: node.nodeId, name: node.name, reasonText: diagnostic.reasonText });
+    seen.add(node.nodeId);
+  }
+
+  const nameById = buildNameLookup(workflow);
+  for (const [nodeId, diagnostic] of Object.entries(model.promptCachingDiagnostics)) {
+    if (seen.has(nodeId) || !diagnostic.requested || diagnostic.applied) continue;
+    warnings.push({ nodeId, name: nameById.get(nodeId) ?? nodeId, reasonText: diagnostic.reasonText });
+  }
+
+  return warnings;
 };
 
 /**

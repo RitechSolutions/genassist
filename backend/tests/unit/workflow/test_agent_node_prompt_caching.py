@@ -211,3 +211,44 @@ class TestPartsInvariant:
             await node.process({**config, "systemPrompt": _STABLE})
 
         self._assert_parts_rebuild_the_prompt(delegating.await_args.kwargs)
+
+
+async def _run_delegating(node_cls, module, config, *, node_data):
+    node = node_cls("node-1", {"type": "agentNode", "data": node_data}, _state())
+    delegated = AsyncMock(return_value={"message": "ok"})
+    with patch.object(node_cls, "_build_delegation_tools", return_value=([], {"ask_child": {}})), patch.object(
+        node_cls, "_run_agent_with_delegations", delegated
+    ), patch.object(node_cls, "get_connected_nodes", return_value=[]):
+        await node.process(dict(config))
+    return delegated.await_args.kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("node_cls,module,config", _NODES)
+class TestPromptCachingOptInForwarding:
+
+    async def test_the_toggle_travels_to_the_runtime(self, node_cls, module, config):
+        kwargs = await _run(
+            node_cls, module, {**config, "promptCaching": True}, node_data={"systemPrompt": _STABLE}
+        )
+
+        assert kwargs["prompt_caching_enabled"] is True
+
+    @pytest.mark.parametrize("raw", [None, False, "true", "True", 1, "1"], ids=repr)
+    async def test_only_a_real_true_requests_caching(self, node_cls, module, config, raw):
+        extra = {} if raw is None else {"promptCaching": raw}
+        kwargs = await _run(node_cls, module, {**config, **extra}, node_data={"systemPrompt": _STABLE})
+
+        assert kwargs["prompt_caching_enabled"] is False
+
+    async def test_the_delegation_branch_forwards_it_too(self, node_cls, module, config):
+        kwargs = await _run_delegating(
+            node_cls, module, {**config, "promptCaching": True}, node_data={"systemPrompt": _STABLE}
+        )
+
+        assert kwargs["prompt_caching_enabled"] is True
+
+    async def test_the_delegation_branch_defaults_off(self, node_cls, module, config):
+        kwargs = await _run_delegating(node_cls, module, config, node_data={"systemPrompt": _STABLE})
+
+        assert kwargs["prompt_caching_enabled"] is False

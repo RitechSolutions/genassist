@@ -12,37 +12,32 @@ Metering is best-effort: nothing here may raise into a node's business path.
 import logging
 from typing import Any, Dict, Optional
 
-from app.core.config.llm_prompt_cache_capabilities import prompt_caching_effective
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage, usage_or_placeholder
 from app.services.llm_providers import LlmProviderService
 
 logger = logging.getLogger(__name__)
 
 
-# One provider id resolved to (provider, model, prompt_caching_enabled)
-ProviderAttribution = tuple[str, str, bool]
+# One provider id resolved to (provider, model)
+ProviderAttribution = tuple[str, str]
 
 
-async def resolve_provider_attribution(
+async def resolve_provider_model(
     provider_id: Any,
     cache: Optional[Dict[str, ProviderAttribution]] = None,
 ) -> ProviderAttribution:
-    """Provider/model names plus the effective prompt-caching state, memoized per id when ``cache`` is given"""
+    """Resolve provider/model names for pricing, memoized per id when ``cache`` is given"""
     key = str(provider_id) if provider_id else ""
     if cache is not None and key in cache:
         return cache[key]
 
-    resolved = ("", "", False)
+    resolved = ("", "")
     if key:
         try:
             from app.dependencies.injector import injector
 
             info = await injector.get(LlmProviderService).get_by_id(provider_id)
-            resolved = (
-                (info.llm_model_provider or "").lower(),
-                info.llm_model or "",
-                prompt_caching_effective(getattr(info, "connection_data", None)),
-            )
+            resolved = ((info.llm_model_provider or "").lower(), info.llm_model or "")
         except Exception:
             logger.warning("Could not resolve LLM provider %s for usage attribution", key, exc_info=True)
 
@@ -51,20 +46,12 @@ async def resolve_provider_attribution(
     return resolved
 
 
-async def resolve_provider_model(
-    provider_id: Any,
-    cache: Optional[Dict[str, ProviderAttribution]] = None,
-) -> tuple[str, str]:
-    """Resolve provider/model names for pricing, memoized per id when ``cache`` is given"""
-    provider, model, _ = await resolve_provider_attribution(provider_id, cache)
-    return provider, model
-
-
 async def merge_llm_usage_from_result(
     state,
     result: Dict[str, Any],
     node_id: str,
     provider_id: str,
+    prompt_caching_enabled: bool = False,
 ) -> None:
     """
     Merge llm_usage from agent result into workflow state.
@@ -77,6 +64,7 @@ async def merge_llm_usage_from_result(
         result: Agent result dict that may contain "llm_usage" list
         node_id: Node ID for tracking
         provider_id: LLM provider ID to resolve provider/model names
+        prompt_caching_enabled: Whether the node asked for prompt caching on this call
     """
     try:
         llm_usage_list = result.get("llm_usage", []) if isinstance(result, dict) else []
@@ -89,7 +77,7 @@ async def merge_llm_usage_from_result(
             if not isinstance(u, dict):
                 continue
             pid = u.get("provider_id") or provider_id
-            provider, model, prompt_caching_enabled = await resolve_provider_attribution(pid, resolved)
+            provider, model = await resolve_provider_model(pid, resolved)
             state.add_llm_usage(
                 input_tokens=u.get("input_tokens", 0),
                 output_tokens=u.get("output_tokens", 0),
@@ -112,6 +100,7 @@ async def record_node_llm_usage(
     node_id: str,
     provider_id: str,
     purpose: Optional[str] = None,
+    prompt_caching_enabled: bool = False,
 ) -> None:
     """Record token usage from one LangChain message onto ``state``"""
     if response is None:
@@ -125,7 +114,7 @@ async def record_node_llm_usage(
 
     entry = usage_or_placeholder(usage)
     entry["purpose"] = purpose
-    await merge_llm_usage_from_result(state, {"llm_usage": [entry]}, node_id, provider_id)
+    await merge_llm_usage_from_result(state, {"llm_usage": [entry]}, node_id, provider_id, prompt_caching_enabled)
 
 
 async def record_compaction_usage(

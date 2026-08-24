@@ -1,6 +1,6 @@
-"""Prompt-caching capability facts and the platform-level effective-state policy"""
+"""Prompt-caching capability facts"""
 
-from typing import Any, Dict, Optional
+from typing import Optional
 
 # Bedrock rejects a cachePoint on a model that doesn't support it, failing every call.
 # Nova support is family-wide; Claude support is version-specific, Claude 3 (v1) and the
@@ -34,13 +34,3 @@ def bedrock_cache_family(model_key: Optional[str]) -> Optional[str]:
     if any(marker in name for marker in BEDROCK_CACHEABLE_ANTHROPIC_MARKERS):
         return CLAUDE_FAMILY
     return None
-
-
-def prompt_caching_effective(connection_data: Optional[Dict[str, Any]]) -> bool:
-    """True only if the platform flag and the provider opt-in are both on.
-    The stored opt-in is never rewritten"""
-    from app.core.config.settings import settings
-
-    if not settings.PROMPT_CACHING_FEATURE_ENABLED:
-        return False
-    return (connection_data or {}).get("prompt_caching_enabled") is True

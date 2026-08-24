@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildExecutionViewModel, deriveExecutionViewState, formatDuration } from '@/views/AIAgents/Workflows/utils/executionView';
+import {
+  buildExecutionViewModel,
+  collectPromptCachingWarnings,
+  deriveExecutionViewState,
+  formatDuration,
+} from '@/views/AIAgents/Workflows/utils/executionView';
 
 // A representative nested response mirroring the real backend wire format
 // (`response.state.nodeExecutionStatus`, snake_case run-level fields).
@@ -153,5 +158,153 @@ describe('formatDuration', () => {
     expect(formatDuration(123_000)).toBe('2 m 03 s');
     expect(formatDuration(undefined)).toBe('—');
     expect(formatDuration(-5)).toBe('—');
+  });
+});
+
+const WITHHELD = { requested: true, applied: false, reason: 'unsupported_mode' };
+const APPLIED = { requested: true, applied: true, reason: null };
+
+const workflowWith = (nodes: Array<{ id: string; name: string }>) =>
+  ({
+    name: 'wf',
+    nodes: nodes.map((n) => ({ id: n.id, type: 'x', position: { x: 0, y: 0 }, data: { name: n.name } })),
+    edges: [],
+  }) as unknown as Parameters<typeof buildExecutionViewModel>[1];
+
+const responseWith = (state: Record<string, unknown>) => ({ status: 'success', state });
+
+describe('buildExecutionViewModel — prompt caching', () => {
+  it('normalizes a per-entry diagnostic and maps its reason to display text', () => {
+    const m = buildExecutionViewModel(
+      responseWith({ nodeExecutionStatus: { llm: { status: 'success', prompt_caching: WITHHELD } } })
+    );
+    expect(m.byId.llm.promptCaching).toEqual({
+      requested: true,
+      applied: false,
+      reasonText: 'this agent type never splits its prompt',
+    });
+  });
+
+  it('leaves reasonText off for an applied diagnostic and for an unknown code', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: {
+          a: { status: 'success', prompt_caching: APPLIED },
+          b: { status: 'success', prompt_caching: { requested: true, applied: false, reason: 'from_the_future' } },
+        },
+      })
+    );
+    expect(m.byId.a.promptCaching).toEqual({ requested: true, applied: true });
+    expect(m.byId.b.promptCaching).toEqual({ requested: true, applied: false });
+  });
+
+  it('drops malformed diagnostics rather than half-rendering them', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: {
+          a: { status: 'success', prompt_caching: 'yes' },
+          b: { status: 'success', prompt_caching: { requested: 'true', applied: false } },
+          c: { status: 'success' },
+        },
+      })
+    );
+    expect(m.byId.a.promptCaching).toBeUndefined();
+    expect(m.byId.b.promptCaching).toBeUndefined();
+    expect(m.byId.c.promptCaching).toBeUndefined();
+  });
+
+  it('exposes standalone sub-agent diagnostics without touching counts', () => {
+    const withDiagnostics = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { llm: { status: 'success', startTime: 1, endTime: 2 } },
+        promptCachingDiagnostics: { child: WITHHELD, grandchild: APPLIED },
+      })
+    );
+    const plain = buildExecutionViewModel(
+      responseWith({ nodeExecutionStatus: { llm: { status: 'success', startTime: 1, endTime: 2 } } })
+    );
+
+    expect(Object.keys(withDiagnostics.promptCachingDiagnostics).sort()).toEqual(['child', 'grandchild']);
+    expect(withDiagnostics.totalNodes).toBe(plain.totalNodes);
+    expect(withDiagnostics.counts).toEqual(plain.counts);
+    expect(Object.keys(withDiagnostics.byId)).toEqual(['llm']);
+  });
+
+  it('collapses archived re-run keys inside the standalone collection', () => {
+    const m = buildExecutionViewModel(
+      responseWith({ nodeExecutionStatus: {}, promptCachingDiagnostics: { child: WITHHELD, child_0: APPLIED } })
+    );
+    expect(Object.keys(m.promptCachingDiagnostics)).toEqual(['child']);
+  });
+
+  it('yields an empty collection for a malformed or absent bag', () => {
+    for (const bad of [undefined, {}, responseWith({ promptCachingDiagnostics: 'x' })]) {
+      expect(buildExecutionViewModel(bad as unknown).promptCachingDiagnostics).toEqual({});
+    }
+  });
+});
+
+describe('collectPromptCachingWarnings', () => {
+  it('reports a node that asked for caching and did not get it', () => {
+    const warnings = collectPromptCachingWarnings(
+      responseWith({ nodeExecutionStatus: { llm: { name: 'LLM', status: 'success', prompt_caching: WITHHELD } } })
+    );
+    expect(warnings).toEqual([
+      { nodeId: 'llm', name: 'LLM', reasonText: 'this agent type never splits its prompt' },
+    ]);
+  });
+
+  it('excludes applied nodes and nodes that never asked', () => {
+    const warnings = collectPromptCachingWarnings(
+      responseWith({
+        nodeExecutionStatus: {
+          a: { status: 'success', prompt_caching: APPLIED },
+          b: { status: 'success' },
+        },
+      })
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  it('combines entry annotations with standalone sub-agent diagnostics', () => {
+    const warnings = collectPromptCachingWarnings(
+      responseWith({
+        nodeExecutionStatus: { llm: { name: 'LLM', status: 'success', prompt_caching: WITHHELD } },
+        promptCachingDiagnostics: {
+          child: { requested: true, applied: false, reason: 'volatile_prompt' },
+          fine: APPLIED,
+        },
+      }),
+      workflowWith([{ id: 'child', name: 'Research Sub-Agent' }])
+    );
+    expect(warnings.map((w) => w.nodeId)).toEqual(['llm', 'child']);
+    expect(warnings[1]).toEqual({
+      nodeId: 'child',
+      name: 'Research Sub-Agent',
+      reasonText: 'the system prompt changes on every request',
+    });
+  });
+
+  it('never lists the same node twice when both sources carry it', () => {
+    const warnings = collectPromptCachingWarnings(
+      responseWith({
+        nodeExecutionStatus: { child: { name: 'Child', status: 'success', prompt_caching: WITHHELD } },
+        promptCachingDiagnostics: { child: WITHHELD },
+      })
+    );
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('falls back to the node id when no name is available', () => {
+    const warnings = collectPromptCachingWarnings(
+      responseWith({ nodeExecutionStatus: {}, promptCachingDiagnostics: { child: WITHHELD } })
+    );
+    expect(warnings[0].name).toBe('child');
+  });
+
+  it('returns an empty list for missing or malformed input (never throws)', () => {
+    for (const bad of [undefined, null, {}, 42, 'nope', { state: { nodeExecutionStatus: 'x' } }]) {
+      expect(collectPromptCachingWarnings(bad as unknown)).toEqual([]);
+    }
   });
 });

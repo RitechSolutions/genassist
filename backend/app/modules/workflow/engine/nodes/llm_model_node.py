@@ -4,7 +4,7 @@ LLM model node implementation using the BaseNode class.
 
 import base64
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -129,18 +129,21 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             max_messages = config.get("maxMessages", 10)
             return await memory.get_chat_history(as_string=True, max_messages=max_messages)
 
-    def _system_prompt_is_cacheable(self, llm: Any, system_prompt: Any) -> bool:
+    def _system_prompt_is_cacheable(self, llm: Any, system_prompt: Any) -> tuple[bool, Optional[str]]:
         """Whether the system prompt is stable enough across requests to cache"""
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
         if not isinstance(system_prompt, str) or not system_prompt.strip():
-            return False
+            return False, diagnostics.REASON_EMPTY_PROMPT
 
-        from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
+        unsupported = diagnostics.unwrapped_model_reason(llm)
+        if unsupported:
+            return False, unsupported
 
-        if not model_has_prompt_caching(llm):
-            return False
+        if has_volatile_template_vars(self.node_data.get("systemPrompt")):
+            return False, diagnostics.REASON_VOLATILE_PROMPT
 
-        return not has_volatile_template_vars(self.node_data.get("systemPrompt"))
+        return True, None
 
     async def _perform_compaction(self, memory, config: Dict[str, Any], provider_id: str) -> None:
         """
@@ -207,6 +210,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
         prompt = config.get("userPrompt", "Hello, how can you help me?")
         _type = config.get("type", "base")
         memory_enabled = config.get("memory", False)
+        prompt_caching_enabled = config.get("promptCaching") is True
 
         logger.debug(f"Input data: system_prompt={system_prompt}, prompt={prompt}")
 
@@ -218,11 +222,18 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             from app.dependencies.injector import injector
 
             llm_provider = injector.get(LLMProvider)
-            llm = await llm_provider.get_model_for_node(provider_id, fallback_chain_id)
+            llm = await llm_provider.get_model_for_node(provider_id, fallback_chain_id, prompt_caching_enabled)
 
             memory = self.get_memory() if memory_enabled else None
 
             if _type == "Chain-of-Thought":
+                if prompt_caching_enabled:
+                    from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+                    diagnostics.record(
+                        self.get_state(), self.node_id,
+                        applied=False, reason=diagnostics.REASON_UNSUPPORTED_MODE,
+                    )
                 agent = ChainOfThoughtAgent(
                     llm_model=llm,
                     system_prompt=system_prompt,
@@ -235,12 +246,18 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
 
                 from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 
-                await merge_llm_usage_from_result(self.get_state(), result, self.node_id, provider_id)
+                await merge_llm_usage_from_result(
+                    self.get_state(), result, self.node_id, provider_id, prompt_caching_enabled
+                )
                 if isinstance(result, dict) and "llm_usage" in result:
                     result = {k: v for k, v in result.items() if k != "llm_usage"}
                 return result
 
-            cacheable_prefix = self._system_prompt_is_cacheable(llm, system_prompt)
+            cacheable_prefix, cache_reason = self._system_prompt_is_cacheable(llm, system_prompt)
+            if prompt_caching_enabled:
+                from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+                diagnostics.record(self.get_state(), self.node_id, applied=cacheable_prefix, reason=cache_reason)
 
             chat_history = ""
             if memory:
@@ -273,7 +290,9 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
 
             from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 
-            await record_node_llm_usage(self.get_state(), response, self.node_id, provider_id)
+            await record_node_llm_usage(
+                self.get_state(), response, self.node_id, provider_id, prompt_caching_enabled=prompt_caching_enabled
+            )
 
             return response.content
 

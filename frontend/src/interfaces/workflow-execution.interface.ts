@@ -162,6 +162,22 @@ export interface RawNodeExecutionEntry {
   input?: unknown;
   output?: unknown;
   error?: string | null;
+  /** Present only when the node asked for prompt caching. */
+  prompt_caching?: RawPromptCachingDiagnostic;
+}
+
+/** What a node asked of prompt caching, and what it got. `reason` is a code, or null. */
+export interface RawPromptCachingDiagnostic {
+  requested?: boolean;
+  applied?: boolean;
+  reason?: string | null;
+}
+
+/** Normalized diagnostic; `reasonText` is absent when the reason code is unknown or missing. */
+export interface PromptCachingDiagnostic {
+  requested: boolean;
+  applied: boolean;
+  reasonText?: string;
 }
 
 /** Normalized, display-ready status used by the Execution view. */
@@ -186,6 +202,7 @@ export interface NodeExecutionView {
   error?: string | null;
   /** 0-based execution order, when derivable from startTime. */
   order?: number;
+  promptCaching?: PromptCachingDiagnostic;
 }
 
 /** Everything the Execution view needs, derived once from the test response. */
@@ -203,6 +220,12 @@ export interface ExecutionViewModel {
   overallDurationMs?: number;
   /** Node id with the largest duration, when any node has a duration. */
   slowestNodeId?: string;
+  /**
+   * Diagnostics propagated up from sub-agent runs, keyed by the child node id. These nodes
+   * never appear in `nodes`/`byId` — the parent run did not execute them — so they are
+   * surfaced by the run-level notice rather than by selection.
+   */
+  promptCachingDiagnostics: Record<string, PromptCachingDiagnostic>;
 }
 
 /** Which of the four interactive states the Execution view should render. */

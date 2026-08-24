@@ -28,6 +28,12 @@ import { Badge } from "@/components/badge";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
+import { PromptCachingHint, promptCachingHint } from "../utils/promptCachingHint";
+
+const PROMPT_CACHING_TONE_CLASS: Record<PromptCachingHint["tone"], string> = {
+  info: "text-muted-foreground",
+  warning: "text-amber-700 dark:text-amber-400",
+};
 
 const DEFAULT_AGENT_TYPE_OPTIONS: string[] = [
   "ReActAgent",
@@ -156,6 +162,20 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
       piiMasking: checked,
     });
   };
+
+  const handlePromptCachingChange = (checked: boolean) => {
+    onConfigChange({
+      ...config,
+      promptCaching: checked,
+    });
+  };
+
+  const promptCachingNotice = promptCachingHint(
+    config.promptCaching,
+    providers.find((p) => p.id === config.providerId),
+    typeSelect,
+    config.type
+  );
 
   const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval") => {
     onConfigChange({
@@ -465,6 +485,30 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           checked={config.piiMasking ?? false}
           onCheckedChange={handlePiiMaskingChange}
         />
+      </div>
+      <div className="space-y-2 w-full">
+        <div className="flex items-center gap-2 w-full">
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor={`prompt-caching-switch-${id}`}>
+              Enable Prompt Caching
+            </Label>
+            <span className="text-xs text-muted-foreground">
+              Caches the stable start of the system prompt for 5 minutes so
+              repeat calls read it at a reduced rate
+            </span>
+          </div>
+          <div className="flex-1" />
+          <Switch
+            id={`prompt-caching-switch-${id}`}
+            checked={config.promptCaching === true}
+            onCheckedChange={handlePromptCachingChange}
+          />
+        </div>
+        {promptCachingNotice && (
+          <p className={`text-xs ${PROMPT_CACHING_TONE_CLASS[promptCachingNotice.tone]}`}>
+            {promptCachingNotice.text}
+          </p>
+        )}
       </div>
       {config.memory && (
         <>

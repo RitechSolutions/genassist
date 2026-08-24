@@ -9,7 +9,6 @@ from injector import inject
 from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.config.llm_prompt_cache_capabilities import prompt_caching_effective
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
@@ -59,6 +58,8 @@ class LlmProviderService:
         api_key = connection_data.get("api_key")
         if api_key:
             connection_data["masked_api_key"] = get_masked_api_key(api_key)
+
+        connection_data.pop("prompt_caching_enabled", None)
 
         connection_data = await self.encrypt_connection_data_fields(connection_data)
         data.connection_data = connection_data
@@ -111,6 +112,14 @@ class LlmProviderService:
         existing_conn_data = obj.connection_data or {}
         update_conn_data = update_data.get("connection_data", {})
 
+        # Prompt caching is a node setting now. Stripping the legacy provider key before the
+        # changed-comparison keeps a resubmitted stale value from resetting connection_status.
+        had_legacy_caching_key = "prompt_caching_enabled" in update_conn_data
+        update_conn_data.pop("prompt_caching_enabled", None)
+        if had_legacy_caching_key and not update_conn_data:
+            # Assigning the now-empty dict would erase the stored credentials.
+            update_data.pop("connection_data", None)
+
         if obj.llm_model_provider == "vllm_fine_tuned" and ":::" in update_conn_data.get("model", ""):
             _, update_data["llm_model"] = self._extract_vllm_fine_tuned(
                 update_conn_data, update_data.get("llm_model", "")
@@ -127,16 +136,6 @@ class LlmProviderService:
                     if field_name == "api_key":
                         update_conn_data["masked_api_key"] = get_masked_api_key(update_conn_data[field_name])
                     update_conn_data[field_name] = encrypt_key(update_conn_data[field_name])
-
-        # Updates replace connection_data as a whole. Omitting prompt_caching_enabled keeps
-        # the stored optional (the field is hidden while the platform flag is off);
-        # true or false still updates it
-        if (
-            "connection_data" in update_data
-            and "prompt_caching_enabled" not in update_conn_data
-            and "prompt_caching_enabled" in existing_conn_data
-        ):
-            update_conn_data["prompt_caching_enabled"] = existing_conn_data["prompt_caching_enabled"]
 
         if "connection_data" in update_data:
             connection_data_changed = any(
@@ -215,13 +214,10 @@ class LlmProviderService:
             cd = base
 
         cd.pop("masked_api_key", None)
-        caching_requested = cd.get("prompt_caching_enabled") is True
-        caching_effective = prompt_caching_effective(cd)
 
         try:
             from langchain_core.messages import HumanMessage
 
-            from app.modules.workflow.llm.prompt_caching_chat_model import model_has_prompt_caching
             from app.modules.workflow.llm.provider import build_chat_model
 
             llm = await build_chat_model(
@@ -229,14 +225,8 @@ class LlmProviderService:
                 connection_data=cd,
                 model_name=cd.get("model"),
             )
-            caching_active = model_has_prompt_caching(llm)
             await llm.ainvoke([HumanMessage(content="ping")])
-            message = "Connection successful."
-            if caching_requested and not caching_effective:
-                message += " Note: prompt caching is disabled for this deployment and will be ignored."
-            elif caching_effective and not caching_active:
-                message += " Note: prompt caching is not supported for this model and will be ignored."
-            return {"success": True, "message": message}
+            return {"success": True, "message": "Connection successful."}
 
         except Exception as e:
             logger.error(f"LLM provider test connection failed: {e}")

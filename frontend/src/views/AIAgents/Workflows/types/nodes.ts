@@ -267,6 +267,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
   fallbackChainId?: string;
   memory: boolean;
   piiMasking?: boolean;
+  promptCaching?: boolean;
   systemPrompt?: string;
   userPrompt?: string;
   type:

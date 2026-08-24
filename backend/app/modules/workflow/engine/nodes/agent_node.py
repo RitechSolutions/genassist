@@ -322,6 +322,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             child_output = child_state.get_node_output(child_id)
             if child_output is not None:
                 state.node_outputs[child_id] = child_output
+            orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
 
             completion = orchestrator.child_completion(child_state)
             message = orchestrator.child_message(child_state)
@@ -360,6 +361,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         self, *, config, provider_id, fallback_chain_id, agent_type,
         system_prompt, prompt, all_tools, delegation_map, max_iterations, chat_history,
         stable_volatile_parts: Optional[tuple[str, str]] = None,
+        prompt_caching_enabled: bool = False,
     ) -> Dict[str, Any]:
         """Invoke the agent, resolving delegation tool calls, until it answers or pauses"""
         from app.modules.workflow.agents.sub_agents import orchestrator
@@ -392,6 +394,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 tools=active_tools, max_iterations=max_iterations,
                 chat_history=chat_history, llm_model=llm_model,
                 stable_volatile_parts=stable_volatile_parts,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
             llm_model = run.llm_model
             steps.extend(run.steps)
@@ -441,6 +444,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         from app.modules.workflow.agents.sub_agents.models import (
             MAX_TASK_CHARS,
             MAX_USER_PROMPT_CHARS,
+            SUB_AGENT_DIAGNOSTICS_KEY,
             ParentResume,
             SubAgentFrame,
             SubAgentStack,
@@ -457,10 +461,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             return self._shape_delegated_message(messages.DELEGATION_DEPTH_REACHED, steps, tools_used)
 
         workflow = state.workflow
+        request_context = state.capture_resume_context()
+        # Added only when there is something to carry, so an unused-caching frame stays
+        # byte-identical to one written before this key existed
+        if state.prompt_caching_diagnostics:
+            request_context[SUB_AGENT_DIAGNOSTICS_KEY] = dict(state.prompt_caching_diagnostics)
         resume = ParentResume(
             node_outputs=_frame_snapshot(state.node_outputs),
             node_execution_status=_frame_snapshot(_without_tool_references(state.node_execution_status)),
-            request_context=_frame_snapshot(state.capture_resume_context()),
+            request_context=_frame_snapshot(request_context),
             user_prompt=current_prompt[:MAX_USER_PROMPT_CHARS],
             completed_count=completed_count,
             accumulated_steps=_frame_snapshot(steps),
@@ -489,6 +498,12 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         state.node_execution_status.update(resume.get("node_execution_status") or {})
         request_context = resume.get("request_context")
         if request_context:
+            from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_DIAGNOSTICS_KEY
+
+            request_context = dict(request_context)
+            carried = request_context.pop(SUB_AGENT_DIAGNOSTICS_KEY, None)
+            if isinstance(carried, dict):
+                state.prompt_caching_diagnostics.update(carried)
             state.restore_resume_context(request_context, drop_keys={"message"})
         steps = list(resume.get("accumulated_steps") or [])
         tools_used = list(resume.get("accumulated_tools_used") or [])
@@ -584,6 +599,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         agent_type: str = config.get("type", "ToolSelector")
         max_iterations = config.get("maxIterations", 7)
         memory_enabled = config.get("memory", False)
+        prompt_caching_enabled = config.get("promptCaching") is True
 
         # Get input data from state (this would typically come from connected nodes)
         # For now, we'll use default values
@@ -644,6 +660,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     max_iterations=max_iterations,
                     chat_history=chat_history,
                     stable_volatile_parts=stable_volatile_parts,
+                    prompt_caching_enabled=prompt_caching_enabled,
                 )
 
             run = await run_agent_once(
@@ -658,6 +675,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 max_iterations=max_iterations,
                 chat_history=chat_history,
                 stable_volatile_parts=stable_volatile_parts,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
 
             # The agent caught an error internally and returned a standardized error response

@@ -5,20 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core.config.settings import settings
 from app.core.utils.llm_usage_utils import USAGE_METADATA_MISSING
 from app.modules.workflow.engine.llm_usage_tracking import (
     merge_llm_usage_from_result,
     record_compaction_usage,
     record_node_llm_usage,
-    resolve_provider_attribution,
     resolve_provider_model,
 )
-
-
-@pytest.fixture(autouse=True)
-def _platform_flag_on(monkeypatch):
-    monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", True)
 
 
 class FakeState:
@@ -75,26 +68,6 @@ class TestResolveProviderModel:
         service.get_by_id.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_reads_the_prompt_caching_toggle(self):
-        ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
-        with ctx:
-            assert await resolve_provider_attribution("p1") == ("anthropic", "claude-3-opus", True)
-
-    @pytest.mark.asyncio
-    async def test_absent_or_non_boolean_toggle_reads_as_off(self):
-        providers = {"p1": _provider(), "p2": _provider(prompt_caching_enabled="true")}
-        ctx, _ = _patch_provider_service(providers)
-        with ctx:
-            assert (await resolve_provider_attribution("p1"))[2] is False
-            assert (await resolve_provider_attribution("p2"))[2] is False
-
-    @pytest.mark.asyncio
-    async def test_lookup_failure_reads_as_off(self):
-        ctx, _ = _patch_provider_service(error=RuntimeError("provider table down"))
-        with ctx:
-            assert await resolve_provider_attribution("p1") == ("", "", False)
-
-    @pytest.mark.asyncio
     async def test_memoizes_per_id(self):
         cache = {}
         ctx, service = _patch_provider_service({"p1": _provider(), "p2": _provider("Anthropic", "claude-3-opus")})
@@ -104,21 +77,17 @@ class TestResolveProviderModel:
             await resolve_provider_model("p2", cache)
         assert service.get_by_id.await_count == 2
 
-
-class TestPlatformWithhold:
-
-    @pytest.fixture(autouse=True)
-    def _flag_off(self, monkeypatch):
-        monkeypatch.setattr(settings, "PROMPT_CACHING_FEATURE_ENABLED", False)
-
     @pytest.mark.asyncio
-    async def test_a_stored_opt_in_reads_as_off(self):
+    async def test_resolution_is_names_only(self):
         ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
         with ctx:
-            assert await resolve_provider_attribution("p1") == ("anthropic", "claude-3-opus", False)
+            assert await resolve_provider_model("p1") == ("anthropic", "claude-3-opus")
+
+
+class TestTheLegacyStoredKeyIsNeverRead:
 
     @pytest.mark.asyncio
-    async def test_merged_entries_are_not_marked_as_caching(self):
+    async def test_a_stored_opt_in_does_not_mark_usage(self):
         state = FakeState()
         ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
         with ctx:
@@ -131,7 +100,7 @@ class TestPlatformWithhold:
         provider = _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)
         ctx, _ = _patch_provider_service({"p1": provider})
         with ctx:
-            await resolve_provider_attribution("p1")
+            await resolve_provider_model("p1")
 
         assert provider.connection_data["prompt_caching_enabled"] is True
 
@@ -151,15 +120,6 @@ class TestMergeLlmUsageFromResult:
         assert entry["purpose"] == "chat" and entry["node_id"] == "node-1"
         assert entry["llm_provider_id"] == "p1"
         assert entry["prompt_caching_enabled"] is False
-
-    @pytest.mark.asyncio
-    async def test_marks_entries_from_a_caching_enabled_provider(self):
-        state = FakeState()
-        ctx, _ = _patch_provider_service({"p1": _provider("Anthropic", "claude-3-opus", prompt_caching_enabled=True)})
-        with ctx:
-            await merge_llm_usage_from_result(state, {"llm_usage": [{"input_tokens": 1}]}, "node-1", "p1")
-
-        assert state.llm_usage[0]["prompt_caching_enabled"] is True
 
     @pytest.mark.asyncio
     async def test_per_item_provider_id_overrides_the_node_primary(self):
@@ -202,6 +162,37 @@ class TestMergeLlmUsageFromResult:
         with ctx:
             await merge_llm_usage_from_result(state, {"llm_usage": ["junk"]}, "node-1", "p1")
         assert state.llm_usage == []
+
+
+class TestNodeRequestedCaching:
+
+    @pytest.mark.asyncio
+    async def test_the_request_marks_every_entry(self):
+        state = FakeState()
+        ctx, _ = _patch_provider_service({"p1": _provider(), "p2": _provider("Anthropic", "claude-3-opus")})
+        result = {"llm_usage": [{"input_tokens": 1}, {"input_tokens": 2, "provider_id": "p2"}]}
+        with ctx:
+            await merge_llm_usage_from_result(state, result, "node-1", "p1", True)
+
+        assert [e["prompt_caching_enabled"] for e in state.llm_usage] == [True, True]
+
+    @pytest.mark.asyncio
+    async def test_without_the_request_a_plain_provider_stays_unmarked(self):
+        state = FakeState()
+        ctx, _ = _patch_provider_service({"p1": _provider()})
+        with ctx:
+            await merge_llm_usage_from_result(state, {"llm_usage": [{"input_tokens": 1}]}, "node-1", "p1")
+
+        assert state.llm_usage[0]["prompt_caching_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_record_node_llm_usage_forwards_the_request(self):
+        state = FakeState()
+        ctx, _ = _patch_provider_service({"p1": _provider()})
+        with ctx:
+            await record_node_llm_usage(state, _message({"input_tokens": 5}), "node-1", "p1", None, True)
+
+        assert state.llm_usage[0]["prompt_caching_enabled"] is True
 
 
 class TestRecordNodeLlmUsage:

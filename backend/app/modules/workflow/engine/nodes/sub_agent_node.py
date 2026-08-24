@@ -28,6 +28,7 @@ class SubAgentNode(AgentNode):
         max_iterations = config.get("maxIterations", 7)
         memory_enabled = config.get("memory", False)
         mode = config.get("mode", "single_turn")
+        prompt_caching_enabled = config.get("promptCaching") is True
 
         system_prompt = config.get("systemPrompt") or "You are a helpful assistant."
         system_prompt += self._completion_instructions(mode)
@@ -71,6 +72,7 @@ class SubAgentNode(AgentNode):
                     max_iterations=max_iterations,
                     chat_history=chat_history,
                     stable_volatile_parts=stable_volatile_parts,
+                    prompt_caching_enabled=prompt_caching_enabled,
                 )
 
             run = await run_agent_once(
@@ -85,6 +87,7 @@ class SubAgentNode(AgentNode):
                 max_iterations=max_iterations,
                 chat_history=chat_history,
                 stable_volatile_parts=stable_volatile_parts,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:

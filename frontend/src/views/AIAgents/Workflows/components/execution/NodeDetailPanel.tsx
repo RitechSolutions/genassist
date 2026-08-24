@@ -53,6 +53,15 @@ const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
               Duration: <span className="tabular-nums">{formatDuration(node.durationMs)}</span>
             </span>
           </div>
+          {node.promptCaching && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {node.promptCaching.applied
+                ? 'Prompt caching: applied'
+                : `Prompt caching: requested but not applied${
+                    node.promptCaching.reasonText ? ` — ${node.promptCaching.reasonText}` : ''
+                  }`}
+            </div>
+          )}
         </div>
         <button
           type="button"

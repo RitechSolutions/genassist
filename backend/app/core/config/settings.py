@@ -343,12 +343,6 @@ class ProjectSettings(BaseSettings):
     # search counts; duplicate in-flight requests reuse that result and are not charged.
     WEB_SEARCH_TENANT_PER_MINUTE: int = 30
 
-    # === LLM Prompt Caching ===
-    # Platform withhold, required on top of each provider's own opt-in. While this is
-    # False the toggle is not offered in the provider form and a stored opt-in stays
-    # inert, no wrapping, no caching attribution.
-    PROMPT_CACHING_FEATURE_ENABLED: bool = False
-
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
