@@ -36,6 +36,7 @@ def _patch_runtime(*, result=None, resolve_error=None):
 
     instance = MagicMock()
     instance.invoke = AsyncMock(return_value=result or {})
+    instance.cache_split_decision = (False, None)
     stack.enter_context(patch(f"{_RUNTIME}.ToolAgent", MagicMock(return_value=instance)))
 
     provider = MagicMock()
@@ -713,8 +714,8 @@ def _child_state_with_diagnostic(node_id="child", diagnostic=None):
     return SimpleNamespace(
         get_node_output=lambda _id: {"message": "child answer"},
         get_last_node_output=lambda: {"message": "child answer"},
-        node_execution_status={node_id: {"status": "success", "prompt_caching": diagnostic or _CHILD_DIAG}},
-        prompt_caching_diagnostics={},
+        node_execution_status={node_id: {"status": "success"}},
+        prompt_caching_diagnostics={node_id: diagnostic or _CHILD_DIAG},
         sub_agent_control={"result": "child answer"},
         get_memory=MagicMock(return_value=MagicMock(add_input_output=AsyncMock())),
     )
@@ -746,7 +747,7 @@ async def test_the_parents_execution_map_never_gains_the_child():
 async def test_nested_diagnostics_chain_up_through_the_delegation():
     node = _parent_node(thread_id="t-diag-nested")
     child = _child_state_with_diagnostic()
-    child.prompt_caching_diagnostics = {"grandchild": {"requested": True, "applied": True, "reason": None}}
+    child.prompt_caching_diagnostics["grandchild"] = {"requested": True, "applied": True, "reason": None}
     await _delegate_once(node, child)
 
     assert set(node.get_state().prompt_caching_diagnostics) == {"child", "grandchild"}
@@ -756,7 +757,7 @@ async def test_nested_diagnostics_chain_up_through_the_delegation():
 async def test_a_child_without_a_diagnostic_leaves_the_collection_empty():
     node = _parent_node(thread_id="t-diag-none")
     child = _child_state_with_diagnostic()
-    child.node_execution_status = {"child": {"status": "success"}}
+    child.prompt_caching_diagnostics = {}
     await _delegate_once(node, child)
 
     assert node.get_state().prompt_caching_diagnostics == {}

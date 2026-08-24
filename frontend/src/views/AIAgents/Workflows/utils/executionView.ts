@@ -107,7 +107,15 @@ const normalizePromptCaching = (value: unknown): PromptCachingDiagnostic | undef
   if (typeof value.requested !== 'boolean' || typeof value.applied !== 'boolean') return undefined;
   const reason = asString(value.reason);
   const reasonText = reason ? PROMPT_CACHING_REASON_TEXT[reason] : undefined;
-  return { requested: value.requested, applied: value.applied, ...(reasonText ? { reasonText } : {}) };
+  const cacheReadTokens = asNumber(value.cache_read_tokens);
+  const cacheCreationTokens = asNumber(value.cache_creation_tokens);
+  return {
+    requested: value.requested,
+    applied: value.applied,
+    ...(reasonText ? { reasonText } : {}),
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+  };
 };
 
 /** Fallback display names from the workflow graph, for nodes the run never executed. */
@@ -142,6 +150,8 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
   // Fallback name lookup from the workflow structure (backend usually includes `name`).
   const nameById = buildNameLookup(workflow);
 
+  const rawDiagnostics = isRecord(bag.promptCachingDiagnostics) ? bag.promptCachingDiagnostics : {};
+
   const nodes: NodeExecutionView[] = Object.entries(entries).map(([nodeId, entry]) => ({
     nodeId,
     name: asString(entry.name) ?? nameById.get(nodeId) ?? nodeId,
@@ -153,7 +163,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     input: entry.input,
     output: entry.output,
     error: asString(entry.error) ?? null,
-    promptCaching: normalizePromptCaching(entry.prompt_caching),
+    promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]) ?? normalizePromptCaching(entry.prompt_caching),
   }));
 
   // Execution order by startTime (nodes without a startTime sort last, stable by id).
@@ -180,8 +190,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     }
   }
 
-  // Sub-agent diagnostics ride their own key, so no node count or status derives from them.
-  const rawDiagnostics = isRecord(bag.promptCachingDiagnostics) ? bag.promptCachingDiagnostics : {};
+  // Diagnostics ride their own key, so no node count or status derives from them.
   const diagnosticKeys = new Set(Object.keys(rawDiagnostics));
   const promptCachingDiagnostics: Record<string, PromptCachingDiagnostic> = {};
   for (const [nodeId, raw] of Object.entries(rawDiagnostics)) {

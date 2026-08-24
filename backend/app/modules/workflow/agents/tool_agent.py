@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import json
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import SystemMessage
 
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
@@ -28,10 +29,7 @@ from app.modules.workflow.agents.agent_prompts import (
     create_tool_selection_prompt,
     create_conversation_context as build_conversation_context
 )
-from app.modules.workflow.llm.prompt_caching_chat_model import (
-    build_cacheable_system_message,
-    model_has_prompt_caching,
-)
+from app.modules.workflow.llm.prompt_caching_chat_model import build_cacheable_system_message
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +60,20 @@ class ToolAgent(BaseToolAgent):
         """
         super().__init__(llm_model, system_prompt, tools,
                          verbose=verbose, max_iterations=max_iterations)
+
+        from app.modules.workflow.engine.prompt_cache_diagnostics import cache_split_decision
+
         self.stable_volatile_parts = stable_volatile_parts
         # Splitting moves the guidance out of the fused user turn, so it is only worth
         # doing when the provider can cache it and the caller marked the prompt eligible.
-        self._cache_split = stable_volatile_parts is not None and model_has_prompt_caching(llm_model)
+        # Gated on the enhanced prefix: the wrapped tool guidance makes
+        # a blank base prompt still worth caching.
+        self.cache_split_decision = cache_split_decision(
+            stable_volatile_parts,
+            llm_model,
+            stable_text=self._create_enhanced_system_prompt(stable_volatile_parts[0]) if stable_volatile_parts else None,
+        )
+        self._cache_split = self.cache_split_decision[0]
 
     # ==================== PROMPT GENERATION ====================
 
@@ -78,16 +86,19 @@ class ToolAgent(BaseToolAgent):
         else:
             return create_tool_agent_no_tools_prompt(base_prompt)
 
-    def _build_messages(self, query_prompt: str) -> List[Any]:
+    def _cacheable_system_message(self) -> SystemMessage:
+        """The split mode's system turn. Built per invoke, not at init: tools stay
+        mutable afterwards. The volatile tail sits after the guidance, in front, the
+        guidance would fall outside the cacheable prefix."""
+        stable, volatile = self.stable_volatile_parts
+        return build_cacheable_system_message(self._create_enhanced_system_prompt(stable), volatile)
+
+    def _build_messages(self, query_prompt: str, system_message: Optional[SystemMessage] = None) -> List[Any]:
         """One fused user turn, or a cacheable system turn plus the query portion"""
         if not self._cache_split:
             return [{"role": "user", "content": query_prompt}]
-
-        stable, volatile = self.stable_volatile_parts
-        # The guidance is wrapped here, not at init: tools stay mutable afterwards. The
-        # volatile tail sits after it, in front, the guidance would fall outside the
-        # cacheable prefix.
-        system_message = build_cacheable_system_message(self._create_enhanced_system_prompt(stable), volatile)
+        if system_message is None:
+            system_message = self._cacheable_system_message()
         return [system_message, {"role": "user", "content": query_prompt}]
 
     # ==================== RESPONSE PARSING ====================
@@ -233,11 +244,14 @@ class ToolAgent(BaseToolAgent):
         workflow_steps: List[Dict[str, Any]] = []
         tools_used: List[Dict[str, Any]] = []
         llm_usage_entries: List[Dict[str, Any]] = []
+        # Byte-identical across iterations (only the user turn grows), so its built once
+        # per invoke. Kept invocation-local: tools added later still reach the next invoke
+        system_message = self._cacheable_system_message() if self._cache_split else None
 
         for iteration in range(self.max_iterations):
             try:
                 result = await self._execute_workflow_iteration(
-                    prompt, iteration, workflow_steps, tools_used, llm_usage_entries
+                    prompt, iteration, workflow_steps, tools_used, llm_usage_entries, system_message
                 )
 
                 if result is not None:
@@ -283,9 +297,10 @@ class ToolAgent(BaseToolAgent):
         workflow_steps: List[Dict],
         tools_used: List[Dict],
         llm_usage_entries: List[Dict],
+        system_message: Optional[SystemMessage] = None,
     ) -> Optional[Dict[str, Any]]:
         """Execute a single workflow iteration"""
-        response = await self.llm_model.ainvoke(self._build_messages(prompt))
+        response = await self.llm_model.ainvoke(self._build_messages(prompt, system_message))
         response_content = self._extract_response_content(response)
 
         usage = extract_usage_from_aimessage(response)

@@ -242,6 +242,49 @@ describe('buildExecutionViewModel — prompt caching', () => {
       expect(buildExecutionViewModel(bad as unknown).promptCachingDiagnostics).toEqual({});
     }
   });
+
+  it('attaches a diagnostic from the standalone collection to its executed node', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { llm: { status: 'success' } },
+        promptCachingDiagnostics: { llm: WITHHELD },
+      })
+    );
+    expect(m.byId.llm.promptCaching).toEqual({
+      requested: true,
+      applied: false,
+      reasonText: 'this agent type never splits its prompt',
+    });
+  });
+
+  it('prefers the collection over a legacy per-entry annotation', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { llm: { status: 'success', prompt_caching: WITHHELD } },
+        promptCachingDiagnostics: { llm: APPLIED },
+      })
+    );
+    expect(m.byId.llm.promptCaching?.applied).toBe(true);
+  });
+
+  it('normalizes observed cache activity and drops non-numeric values', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { a: { status: 'success' }, b: { status: 'success' } },
+        promptCachingDiagnostics: {
+          a: { ...APPLIED, cache_read_tokens: 950, cache_creation_tokens: 0 },
+          b: { ...APPLIED, cache_read_tokens: 'lots' },
+        },
+      })
+    );
+    expect(m.byId.a.promptCaching).toEqual({
+      requested: true,
+      applied: true,
+      cacheReadTokens: 950,
+      cacheCreationTokens: 0,
+    });
+    expect(m.byId.b.promptCaching).toEqual({ requested: true, applied: true });
+  });
 });
 
 describe('collectPromptCachingWarnings', () => {

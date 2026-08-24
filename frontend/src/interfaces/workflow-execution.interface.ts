@@ -171,6 +171,9 @@ export interface RawPromptCachingDiagnostic {
   requested?: boolean;
   applied?: boolean;
   reason?: string | null;
+  /** Provider-reported cache activity, stamped after the call */
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
 }
 
 /** Normalized diagnostic; `reasonText` is absent when the reason code is unknown or missing. */
@@ -178,6 +181,8 @@ export interface PromptCachingDiagnostic {
   requested: boolean;
   applied: boolean;
   reasonText?: string;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 /** Normalized, display-ready status used by the Execution view. */

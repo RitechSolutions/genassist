@@ -24,6 +24,7 @@ _PARTS = ("base prompt", _SUFFIX)
 def _fake_agent_class(result):
     instance = MagicMock()
     instance.invoke = AsyncMock(return_value=result)
+    instance.cache_split_decision = (False, None)
     return MagicMock(return_value=instance), instance
 
 
@@ -334,20 +335,17 @@ class TestPromptCachingOptIn:
 class _DiagState:
 
     def __init__(self):
-        self.annotations: dict = {}
-
-    def annotate_node_execution(self, node_id, key, value):
-        self.annotations.setdefault(node_id, {})[key] = value
+        self.prompt_caching_diagnostics: dict = {}
 
 
-async def _diagnose(*, tool_agent_split=None, **overrides):
+async def _diagnose(*, tool_agent_split=None, result=None, **overrides):
     state = _DiagState()
-    stack, classes, _, _ = _patch_runtime({"response": "ok"})
+    stack, classes, _, _ = _patch_runtime(result if result is not None else {"response": "ok"})
     if tool_agent_split is not None:
-        classes["ToolAgent"][1]._cache_split = tool_agent_split
+        classes["ToolAgent"][1].cache_split_decision = (tool_agent_split, None)
     with stack:
         await run_agent_once(**_base_kwargs(state=state, prompt_caching_enabled=True, **overrides))
-    return state.annotations.get("node-1", {}).get("prompt_caching")
+    return state.prompt_caching_diagnostics.get("node-1")
 
 
 @pytest.mark.asyncio
@@ -415,6 +413,49 @@ class TestDiagnosticPerDispatchBranch:
 
 
 @pytest.mark.asyncio
+class TestObservedCacheTokens:
+
+    async def test_an_applied_run_records_what_the_provider_reported(self):
+        result = {
+            "response": "ok",
+            "llm_usage": [
+                {"input_tokens": 5, "output_tokens": 2, "token_details": {"cache_read": 900, "cache_creation": 100}},
+                {"input_tokens": 5, "output_tokens": 2, "token_details": {"cache_read": 50}},
+            ],
+        }
+        diagnostic = await _diagnose(tool_agent_split=True, result=result)
+
+        assert diagnostic == {
+            "requested": True,
+            "applied": True,
+            "reason": None,
+            "cache_read_tokens": 950,
+            "cache_creation_tokens": 100,
+        }
+
+    async def test_zero_activity_is_stamped_as_zero_not_left_absent(self):
+        result = {"response": "ok", "llm_usage": [{"input_tokens": 5, "output_tokens": 2}]}
+        diagnostic = await _diagnose(tool_agent_split=True, result=result)
+
+        assert diagnostic["cache_read_tokens"] == 0
+        assert diagnostic["cache_creation_tokens"] == 0
+
+    async def test_a_run_with_no_usage_stays_unstamped(self):
+        diagnostic = await _diagnose(tool_agent_split=True)
+
+        assert diagnostic == {"requested": True, "applied": True, "reason": None}
+
+    async def test_a_withheld_split_never_gains_token_fields(self):
+        result = {
+            "response": "ok",
+            "llm_usage": [{"input_tokens": 5, "output_tokens": 2, "token_details": {"cache_read": 900}}],
+        }
+        diagnostic = await _diagnose(tool_agent_split=False, result=result)
+
+        assert "cache_read_tokens" not in diagnostic
+
+
+@pytest.mark.asyncio
 class TestDiagnosticIsRequestGated:
 
     async def test_an_unrequested_run_writes_nothing(self):
@@ -423,7 +464,7 @@ class TestDiagnosticIsRequestGated:
         with stack:
             await run_agent_once(**_base_kwargs(state=state, agent_type="ReActAgent"))
 
-        assert state.annotations == {}
+        assert state.prompt_caching_diagnostics == {}
 
     async def test_a_state_without_the_hook_never_breaks_the_run(self):
         stack, _, _, _ = _patch_runtime({"response": "ok"})
@@ -443,6 +484,6 @@ class TestDiagnosticIsRequestGated:
                     **_base_kwargs(state=state, agent_type="ReActAgent", prompt_caching_enabled=True)
                 )
 
-        assert state.annotations == {"node-1": {"prompt_caching": {
+        assert state.prompt_caching_diagnostics == {"node-1": {
             "requested": True, "applied": False, "reason": "unsupported_mode"
-        }}}
+        }}

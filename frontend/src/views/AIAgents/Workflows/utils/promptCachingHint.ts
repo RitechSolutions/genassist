@@ -4,32 +4,88 @@ export interface PromptCachingHint {
   tone: "info" | "warning";
 }
 
-// These cache long prompts server-side with no marker, so the toggle is moot rather than a mistake.
+/** The provider fields the hint consults; a full LLMProvider satisfies it. */
+export interface PromptCachingHintProvider {
+  llm_model_provider?: string;
+  prompt_caching_mode?: string;
+}
+
+type CachingMode = "explicit" | "automatic" | "none";
+
+// Legacy fallback only. These cache long prompts server-side with no marker, so the
+// toggle is moot rather than a mistake.
 const AUTOMATIC_CACHING_FAMILIES = ["openai", "azure_openai", "google_genai", "google_vertexai"];
 
+const AUTOMATIC_HINT: PromptCachingHint = {
+  text: "Recent models on this provider cache long prompts automatically, so this setting has no effect.",
+  tone: "info",
+};
+
+const UNSUPPORTED_PROVIDER_HINT: PromptCachingHint = {
+  text: "This provider does not support prompt caching, so the setting has no effect.",
+  tone: "warning",
+};
+
+const UNSUPPORTED_MODEL_HINT: PromptCachingHint = {
+  text: "This model does not support prompt caching, so the setting has no effect.",
+  tone: "warning",
+};
+
+const MIXED_CHAIN_HINT: PromptCachingHint = {
+  text: "Not every model in the fallback chain can cache, so nothing is cached.",
+  tone: "warning",
+};
+
 /**
- * Builder-time note for a node that asked for prompt caching but will not get it
+ * Every provider the chain references excep the primary, 
+ * resolved from the COMPLETE provider list, the runtime does not skip a
+ * provider an existing chain references merely because it is inactive.
+ */
+export function fallbackChainProviders<T extends { id: string }>(
+  allProviders: T[],
+  primaryProviderId: string | undefined,
+  chain: { provider_ids: string[] } | null | undefined,
+): T[] {
+  return (chain?.provider_ids ?? [])
+    .filter((id) => id !== primaryProviderId)
+    .map((id) => allProviders.find((p) => p.id === id))
+    .filter((p): p is T => p !== undefined);
+}
+
+const resolveMode = (provider: PromptCachingHintProvider | undefined): CachingMode | undefined => {
+  const mode = provider?.prompt_caching_mode;
+  if (mode === "explicit" || mode === "automatic" || mode === "none") return mode;
+  const family = (provider?.llm_model_provider ?? "").toLowerCase();
+  if (!family) return undefined;
+  if (family === "anthropic" || family === "bedrock") return "explicit";
+  return AUTOMATIC_CACHING_FAMILIES.includes(family) ? "automatic" : "none";
+};
+
+/**
+ * Builder-time note for a node that asked for prompt caching but will not get it.
  */
 export function promptCachingHint(
   promptCaching: unknown,
-  provider: { llm_model_provider?: string } | undefined,
+  provider: PromptCachingHintProvider | undefined,
   nodeKind: "agent" | "model",
   type: string | undefined,
+  fallbackProviders: Array<PromptCachingHintProvider | undefined> = [],
 ): PromptCachingHint | null {
   if (promptCaching !== true) return null;
 
-  const family = (provider?.llm_model_provider ?? "").toLowerCase();
-  if (family && family !== "anthropic" && family !== "bedrock") {
-    if (AUTOMATIC_CACHING_FAMILIES.includes(family)) {
-      return {
-        text: "Recent models on this provider cache long prompts automatically, so this setting has no effect.",
-        tone: "info",
-      };
+  // Providers the hint cannot classify (none selected, or deleted chain members the
+  // runtime would skip anyway) stay out of the verdict.
+  const classified = [provider, ...fallbackProviders]
+    .map((p) => ({ family: (p?.llm_model_provider ?? "").toLowerCase(), mode: resolveMode(p) }))
+    .filter((c): c is { family: string; mode: CachingMode } => c.mode !== undefined);
+
+  if (classified.length > 0) {
+    const modes = classified.map((c) => c.mode);
+    if (modes.every((mode) => mode === "automatic")) return AUTOMATIC_HINT;
+    if (!modes.every((mode) => mode === "explicit")) {
+      if (classified.length > 1) return MIXED_CHAIN_HINT;
+      return classified[0].family === "bedrock" ? UNSUPPORTED_MODEL_HINT : UNSUPPORTED_PROVIDER_HINT;
     }
-    return {
-      text: "This provider does not support prompt caching, so the setting has no effect.",
-      tone: "warning",
-    };
   }
 
   const nonSplitting =

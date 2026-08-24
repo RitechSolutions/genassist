@@ -157,17 +157,19 @@ def _refresh_in_background():
     return thread, loaded
 
 
-def test_a_cold_stampede_reaches_the_db_once(monkeypatch, clock):
+def test_a_cold_stampede_reaches_the_db_once_and_every_caller_waits_for_it(monkeypatch, clock):
     loader = _install(monkeypatch, BlockingLoader(RATES))
     thread, loaded = _refresh_in_background()
     assert loader.entered.wait(5)
 
-    assert [get_db_pricing_nested(TENANT) for _ in range(5)] == [{}] * 5
-    assert loader.calls == 1
-
+    waiters = [_refresh_in_background() for _ in range(3)]
     loader.released.set()
     thread.join(5)
+    for waiter_thread, _ in waiters:
+        waiter_thread.join(5)
+
     assert loaded == [RATES]
+    assert [result for _, results in waiters for result in results] == [RATES] * 3
     assert loader.calls == 1
 
 
@@ -185,6 +187,34 @@ def test_a_ttl_expiry_stampede_serves_the_stale_copy_while_one_caller_refreshes(
     loader.released.set()
     thread.join(5)
     assert get_db_pricing_nested(TENANT) == NEWER
+
+
+@pytest.mark.parametrize("scope", ["tenant", "all"], ids=["one-tenant", "all-tenants"])
+def test_an_invalidation_during_a_load_discards_the_stale_snapshot(monkeypatch, clock, scope):
+    loader = _install(monkeypatch, BlockingLoader(RATES, NEWER))
+    thread, loaded = _refresh_in_background()
+    assert loader.entered.wait(5)
+
+    invalidate_llm_cost_rates_cache(TENANT if scope == "tenant" else None)
+    loader.released.set()
+    thread.join(5)
+
+    assert loaded == [NEWER]
+    assert loader.calls == 2
+    assert get_db_pricing_nested(TENANT) == NEWER
+
+
+def test_an_invalidation_during_a_failing_load_does_not_resurrect_the_cooldown(monkeypatch, clock):
+    loader = _install(monkeypatch, BlockingLoader(None, RATES))
+    thread, loaded = _refresh_in_background()
+    assert loader.entered.wait(5)
+
+    invalidate_llm_cost_rates_cache(TENANT)
+    loader.released.set()
+    thread.join(5)
+
+    assert loaded == [RATES]
+    assert loader.calls == 2
 
 
 def test_a_crashing_load_does_not_wedge_the_tenant(monkeypatch, clock):

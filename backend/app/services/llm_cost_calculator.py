@@ -4,7 +4,7 @@ LLM cost calculation service.
 Calculates cost in USD from token usage using provider/model pricing.
 """
 
-from app.core.config.llm_pricing import blended_token_cost, resolve_live_pricing
+from app.core.config.llm_pricing import blended_token_cost, cache_rate_or_input, resolve_live_pricing
 
 
 class LlmCostCalculator:
@@ -36,8 +36,8 @@ class LlmCostCalculator:
         pricing = resolve_live_pricing(provider, model)
         input_per_1k = pricing.display_rates.get("input_per_1k", 0.001)
         output_per_1k = pricing.display_rates.get("output_per_1k", 0.002)
-        read_rate = input_per_1k if pricing.cache_read_per_1k is None else pricing.cache_read_per_1k
-        creation_rate = input_per_1k if pricing.cache_creation_per_1k is None else pricing.cache_creation_per_1k
+        read_rate = cache_rate_or_input(pricing.cache_read_per_1k, input_per_1k)
+        creation_rate = cache_rate_or_input(pricing.cache_creation_per_1k, input_per_1k)
 
         cost = blended_token_cost(
             (provider or "").strip().lower(),

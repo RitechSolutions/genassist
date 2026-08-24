@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from sqlalchemy import create_engine, engine_from_config, inspect, text
 from sqlalchemy.pool import NullPool
 
@@ -11,10 +12,16 @@ _RATES_TABLE = "llm_cost_rates"
 _CACHE_TOKEN_COLUMNS = ("cache_read_tokens", "cache_creation_tokens")
 _CACHE_RATE_COLUMNS = ("cache_read_per_1k", "cache_creation_per_1k")
 LLM_USAGE_NON_NEGATIVE_CONSTRAINT = "ck_llm_usage_events_non_negative"
-LLM_USAGE_NON_NEGATIVE_DEF = (
-    "CHECK (((input_tokens >= 0) AND (output_tokens >= 0)"
-    " AND (total_tokens >= 0) AND (call_index >= 0)"
-    " AND (cache_read_tokens >= 0) AND (cache_creation_tokens >= 0)))"
+# Checks constraint conjuncts by presence, not byte-comparing pg_get_constraintdef
+# output (Postgres re-renders it inconsistently). Requires all conjuncts AND-joined
+# to block OR-weakened rewrites from slipping through.
+LLM_USAGE_NON_NEGATIVE_COLUMNS = (
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "call_index",
+    "cache_read_tokens",
+    "cache_creation_tokens",
 )
 
 
@@ -65,12 +72,15 @@ def run_migrations(url) -> bool:
     The call is idempotent – if you're already at head, nothing happens.
     """
 
-    all_table_names = get_table_names(url)
-    if (
-        os.getenv("AUTO_MIGRATE", "true").lower() == "false"
-        or "users" not in all_table_names
-    ):
+    if os.getenv("AUTO_MIGRATE", "true").lower() == "false":
         logger.info("AUTO_MIGRATE is disabled – skipping Alembic.")
+        return True
+
+    all_table_names = get_table_names(url)
+    if "users" not in all_table_names:
+        # Fresh database: create_all builds the schema at startup, only head revision
+        # is recorded (migration chain can't replay from empty)
+        logger.info("Database has no schema yet, stamping head; create_all builds it at startup.")
         from alembic.config import Config
 
         alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
@@ -359,10 +369,20 @@ def _llm_usage_schema_problems(connection) -> list:
         definition = " ".join((constraint[0] or "").split())
         if definition.endswith(" NOT VALID"):
             definition = definition[: -len(" NOT VALID")]
-        if definition != LLM_USAGE_NON_NEGATIVE_DEF:
+        missing = [name for name in LLM_USAGE_NON_NEGATIVE_COLUMNS if f"({name} >= 0)" not in definition]
+        # After removing the conjuncts, only CHECK/AND/parens may remain: any residue
+        # (OR, NOT, CASE, casts, extra predicates of another shape) breaks the guarantee
+        residue = re.sub(r"\(\w+ >= 0\)", " ", definition)
+        residue = re.sub(r"\bCHECK\b|\bAND\b|[()]", " ", residue).strip()
+        if missing:
             problems.append(
                 f"constraint {LLM_USAGE_NON_NEGATIVE_CONSTRAINT} is {definition!r},"
-                f" expected {LLM_USAGE_NON_NEGATIVE_DEF!r}"
+                f" missing non-negative checks for: {', '.join(missing)}"
+            )
+        elif residue:
+            problems.append(
+                f"constraint {LLM_USAGE_NON_NEGATIVE_CONSTRAINT} is {definition!r},"
+                f" not a pure conjunction of non-negative checks"
             )
         elif not constraint[1]:
             problems.append(f"constraint {LLM_USAGE_NON_NEGATIVE_CONSTRAINT} is not validated")
@@ -404,11 +424,20 @@ def verify_llm_usage_schema_for_all_databases() -> bool:
         logger.error(f"Could not list tenants for LLM usage schema verification: {e}")
         return False
 
-    for tenant in tenants:
-        if not verify_llm_usage_schema(settings.get_tenant_database_url_sync(tenant), f"tenant:({tenant})"):
-            verified = False
+    if not tenants:
+        return verified
 
-    return verified
+    # Every process (uvicorn, Celery workers, beat) pays this sweep at startup.
+    # A bounded pool caps tenant scaling; each check opens its own connection.
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _verify_tenant(tenant: str) -> bool:
+        return verify_llm_usage_schema(settings.get_tenant_database_url_sync(tenant), f"tenant:({tenant})")
+
+    with ThreadPoolExecutor(max_workers=min(8, len(tenants))) as pool:
+        results = list(pool.map(_verify_tenant, tenants))
+
+    return verified and all(results)
 
 
 def migrate_and_verify_tenant(tenant: str) -> bool:

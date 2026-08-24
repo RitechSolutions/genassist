@@ -66,17 +66,23 @@ class TestWireShape:
         assert set(full["nodeExecutionStatus"]) == {"ok", "bad"}
 
 
-class TestAnnotateNodeExecution:
-    def test_it_attaches_to_an_existing_entry(self):
+class TestRecordWritesTheSingleStore:
+    def test_a_recorded_diagnostic_lands_in_the_collection_not_the_entry(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
         state = _run(with_diagnostics=False)
-        state.annotate_node_execution("ok", "prompt_caching", _APPLIED)
+        diagnostics.record(state, "ok", applied=True)
 
-        assert state.node_execution_status["ok"]["prompt_caching"] == _APPLIED
+        assert state.prompt_caching_diagnostics == {"ok": _APPLIED}
+        assert "prompt_caching" not in state.node_execution_status["ok"]
 
-    def test_it_is_a_no_op_for_a_node_that_never_ran(self):
+    def test_a_node_that_never_ran_still_records(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
         state = _run(with_diagnostics=False)
-        state.annotate_node_execution("never-ran", "prompt_caching", _APPLIED)
+        diagnostics.record(state, "never-ran", applied=False, reason="unsupported_mode")
 
+        assert state.prompt_caching_diagnostics == {"never-ran": _WITHHELD}
         assert set(state.node_execution_status) == {"ok", "bad"}
 
 
@@ -112,14 +118,14 @@ class TestCollectionLifecycle:
         assert parent.prompt_caching_diagnostics == {"c": _WITHHELD}
 
 
-@pytest.mark.parametrize("entry_annotated", [True, False], ids=["annotated", "plain"])
-class TestOwnEntryAnnotationSurvivesTheSubFlowMerge:
-    def test_entries_merge_wholesale(self, entry_annotated):
+class TestOwnDiagnosticsSurviveTheSubFlowMerge:
+    def test_the_childs_own_recording_reaches_the_parent_collection(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
         parent = _state()
         child = _run(with_diagnostics=False)
-        if entry_annotated:
-            child.annotate_node_execution("ok", "prompt_caching", _APPLIED)
+        diagnostics.record(child, "ok", applied=True)
 
         parent.update_nodes_from_another_state(child)
 
-        assert ("prompt_caching" in parent.node_execution_status["ok"]) is entry_annotated
+        assert parent.prompt_caching_diagnostics == {"ok": _APPLIED}

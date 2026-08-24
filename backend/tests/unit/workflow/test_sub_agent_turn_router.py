@@ -320,7 +320,8 @@ def _fresh_parent_state():
 @pytest.mark.asyncio
 async def test_completion_turn_carries_the_child_diagnostic_to_the_fresh_parent():
     child = _completed_child_state()
-    child.node_execution_status = {"child": {"status": "success", "prompt_caching": _CHILD_DIAG}}
+    child.node_execution_status = {"child": {"status": "success"}}
+    child.prompt_caching_diagnostics = {"child": _CHILD_DIAG}
 
     parent = await _resume_with(child, _fresh_parent_state())
 

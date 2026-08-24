@@ -16,7 +16,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
-from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
+from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel, child_callback_config
 
 __all__ = [
     "PROMPT_CACHE_OPT_IN_KEY",
@@ -112,7 +112,11 @@ class PromptCachingChatModel(BaseChatModel):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        ai = await self.inner.ainvoke(self._mark_messages(messages), **self._invoke_kwargs(stop, kwargs))
+        ai = await self.inner.ainvoke(
+            self._mark_messages(messages),
+            config=child_callback_config(run_manager),
+            **self._invoke_kwargs(stop, kwargs),
+        )
         return ChatResult(generations=[ChatGeneration(message=ai)])
 
     async def _astream(
@@ -123,7 +127,8 @@ class PromptCachingChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         marked = self._mark_messages(messages)
-        async for chunk in self.inner.astream(marked, **self._invoke_kwargs(stop, kwargs)):
+        config = child_callback_config(run_manager)
+        async for chunk in self.inner.astream(marked, config=config, **self._invoke_kwargs(stop, kwargs)):
             yield ChatGenerationChunk(message=chunk)
 
     def _generate(
@@ -133,7 +138,11 @@ class PromptCachingChatModel(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        ai = self.inner.invoke(self._mark_messages(messages), **self._invoke_kwargs(stop, kwargs))
+        ai = self.inner.invoke(
+            self._mark_messages(messages),
+            config=child_callback_config(run_manager),
+            **self._invoke_kwargs(stop, kwargs),
+        )
         return ChatResult(generations=[ChatGeneration(message=ai)])
 
     def _stream(
@@ -144,7 +153,8 @@ class PromptCachingChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         marked = self._mark_messages(messages)
-        for chunk in self.inner.stream(marked, **self._invoke_kwargs(stop, kwargs)):
+        config = child_callback_config(run_manager)
+        for chunk in self.inner.stream(marked, config=config, **self._invoke_kwargs(stop, kwargs)):
             yield ChatGenerationChunk(message=chunk)
 
 

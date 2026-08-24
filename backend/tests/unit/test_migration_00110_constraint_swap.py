@@ -104,7 +104,8 @@ class TestExpectedDefinitions:
         )
 
     def test_the_migration_and_the_runtime_verifier_agree(self, module):
-        assert module._EXTENDED_DEF == migrations.LLM_USAGE_NON_NEGATIVE_DEF
+        for column in migrations.LLM_USAGE_NON_NEGATIVE_COLUMNS:
+            assert f"({column} >= 0)" in module._EXTENDED_DEF
         assert module._CONSTRAINT == migrations.LLM_USAGE_NON_NEGATIVE_CONSTRAINT
 
     def test_the_migration_imports_no_application_code(self):

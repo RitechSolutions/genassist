@@ -10,6 +10,12 @@ EVENTS = "llm_usage_events"
 RATES = "llm_cost_rates"
 CONSTRAINT = migrations.LLM_USAGE_NON_NEGATIVE_CONSTRAINT
 
+HEALTHY_DEF = (
+    "CHECK (((input_tokens >= 0) AND (output_tokens >= 0)"
+    " AND (total_tokens >= 0) AND (call_index >= 0)"
+    " AND (cache_read_tokens >= 0) AND (cache_creation_tokens >= 0)))"
+)
+
 _BIGINT_ZERO = ("bigint", True, "'0'::bigint")
 _RATE = ("numeric(18,10)", False, None)
 
@@ -61,7 +67,7 @@ class FakeConnection:
         return False
 
 
-def _problems(columns=None, constraint=(migrations.LLM_USAGE_NON_NEGATIVE_DEF, True)):
+def _problems(columns=None, constraint=(HEALTHY_DEF, True)):
     connection = FakeConnection(_healthy() if columns is None else columns, constraint)
     return migrations._llm_usage_schema_problems(connection)
 
@@ -78,9 +84,25 @@ class TestAHealthySchema:
         assert _problems(columns) == []
 
     def test_a_not_valid_marker_on_the_right_definition_is_only_a_validation_problem(self):
-        problems = _problems(constraint=(f"{migrations.LLM_USAGE_NON_NEGATIVE_DEF} NOT VALID", False))
+        problems = _problems(constraint=(f"{HEALTHY_DEF} NOT VALID", False))
 
         assert problems == [f"constraint {CONSTRAINT} is not validated"]
+
+    def test_deparser_drift_in_whitespace_and_parentheses_is_tolerated(self):
+        drifted = (
+            "CHECK ((input_tokens >= 0) AND (output_tokens >= 0)\n"
+            "  AND (total_tokens >= 0) AND (call_index >= 0)\n"
+            "  AND (cache_read_tokens >= 0) AND (cache_creation_tokens >= 0))"
+        )
+
+        assert _problems(constraint=(drifted, True)) == []
+
+    def test_a_future_migration_adding_a_conjunct_still_verifies(self):
+        extended = HEALTHY_DEF.replace(
+            "(cache_creation_tokens >= 0)))", "(cache_creation_tokens >= 0) AND (new_counter >= 0)))"
+        )
+
+        assert _problems(constraint=(extended, True)) == []
 
 
 class TestMissingObjects:
@@ -147,20 +169,47 @@ class TestTheConstraint:
     def test_a_missing_constraint_is_reported(self):
         assert f"constraint {CONSTRAINT} is missing from {EVENTS}" in _problems(constraint=None)
 
-    def test_the_right_name_with_the_wrong_expression_is_rejected(self):
+    def test_the_pre_00110_expression_sharing_the_name_is_rejected(self):
         pre_00110 = (
             "CHECK (((input_tokens >= 0) AND (output_tokens >= 0) AND (total_tokens >= 0) AND (call_index >= 0)))"
         )
 
-        assert any("expected" in p for p in _problems(constraint=(pre_00110, True)))
+        problems = _problems(constraint=(pre_00110, True))
+        assert any("missing non-negative checks for: cache_read_tokens, cache_creation_tokens" in p for p in problems)
+
+    def test_a_wrong_operator_is_rejected(self):
+        weakened = HEALTHY_DEF.replace("(cache_read_tokens >= 0)", "(cache_read_tokens > 0)")
+
+        assert any("cache_read_tokens" in p for p in _problems(constraint=(weakened, True)))
+
+    def test_an_or_weakened_rewrite_with_every_substring_present_is_rejected(self):
+        weakened = HEALTHY_DEF.replace(" AND ", " OR ")
+
+        problems = _problems(constraint=(weakened, True))
+        assert any("not a pure conjunction" in p for p in problems)
+
+    @pytest.mark.parametrize(
+        "smuggled",
+        [
+            "CHECK (CASE WHEN false THEN ((input_tokens >= 0) AND (output_tokens >= 0)"
+            " AND (total_tokens >= 0) AND (call_index >= 0)"
+            " AND (cache_read_tokens >= 0) AND (cache_creation_tokens >= 0)) ELSE true END)",
+            HEALTHY_DEF.replace("CHECK (", "CHECK (NOT NOT ", 1),
+            HEALTHY_DEF.replace("(cache_creation_tokens >= 0)", "(cache_creation_tokens >= 0) AND (1 = 1)"),
+        ],
+        ids=["case-wrapped", "double-negated", "extra-foreign-predicate"],
+    )
+    def test_non_conjunctive_structure_around_the_predicates_is_rejected(self, smuggled):
+        problems = _problems(constraint=(smuggled, True))
+        assert any("not a pure conjunction" in p for p in problems)
 
     def test_an_unvalidated_constraint_is_rejected(self):
-        assert _problems(constraint=(migrations.LLM_USAGE_NON_NEGATIVE_DEF, False)) == [
+        assert _problems(constraint=(HEALTHY_DEF, False)) == [
             f"constraint {CONSTRAINT} is not validated"
         ]
 
     def test_the_lookup_is_scoped_to_the_table_not_just_the_name(self):
-        connection = FakeConnection(_healthy(), (migrations.LLM_USAGE_NON_NEGATIVE_DEF, True))
+        connection = FakeConnection(_healthy(), (HEALTHY_DEF, True))
         migrations._llm_usage_schema_problems(connection)
 
         constraint_sql = connection.statements[-1]
@@ -179,7 +228,7 @@ class TestVerifyLlmUsageSchema:
         return engine
 
     def test_a_sound_database_verifies_and_the_engine_is_disposed(self, monkeypatch):
-        connection = FakeConnection(_healthy(), (migrations.LLM_USAGE_NON_NEGATIVE_DEF, True))
+        connection = FakeConnection(_healthy(), (HEALTHY_DEF, True))
         engine = self._engine_returning(monkeypatch, connection)
 
         assert migrations.verify_llm_usage_schema("postgresql://x/y", "main") is True

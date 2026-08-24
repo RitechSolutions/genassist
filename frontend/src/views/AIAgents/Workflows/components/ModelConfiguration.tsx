@@ -28,7 +28,7 @@ import { Badge } from "@/components/badge";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
-import { PromptCachingHint, promptCachingHint } from "../utils/promptCachingHint";
+import { PromptCachingHint, fallbackChainProviders, promptCachingHint } from "../utils/promptCachingHint";
 
 const PROMPT_CACHING_TONE_CLASS: Record<PromptCachingHint["tone"], string> = {
   info: "text-muted-foreground",
@@ -71,11 +71,13 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   const queryClient = useQueryClient();
   const { workflow } = useWorkflow();
 
-  const { data: providers = [] } = useQuery({
+  const { data: allProviders = [] } = useQuery({
     queryKey: ["llmProviders"],
     queryFn: getAllLLMProviders,
-    select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
+  // Active-only for the selectable options; capability checks resolve from the full
+  // list, since a saved node or chain can still reference an inactive provider.
+  const providers = allProviders.filter((p: LLMProvider) => p.is_active === 1);
 
   const { data: allFallbackChains = [] } = useQuery({
     queryKey: ["fallbackChains"],
@@ -170,11 +172,14 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     });
   };
 
+  // The runtime chain is the node's provider plus the chain's others, so the hint
+  // judges that same effective set.
   const promptCachingNotice = promptCachingHint(
     config.promptCaching,
-    providers.find((p) => p.id === config.providerId),
+    allProviders.find((p) => p.id === config.providerId),
     typeSelect,
-    config.type
+    config.type,
+    fallbackChainProviders(allProviders, config.providerId, selectedFallbackChain)
   );
 
   const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval") => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { promptCachingHint } from "@/views/AIAgents/Workflows/utils/promptCachingHint";
+import { fallbackChainProviders, promptCachingHint } from "@/views/AIAgents/Workflows/utils/promptCachingHint";
 
 const anthropic = { llm_model_provider: "anthropic" };
 const openai = { llm_model_provider: "OpenAI" };
@@ -61,5 +61,98 @@ describe("promptCachingHint", () => {
   it("reports the provider first when both apply", () => {
     expect(promptCachingHint(true, cohere, "agent", "ReActAgent")?.text).toMatch(/does not support prompt caching/);
     expect(promptCachingHint(true, openai, "agent", "ReActAgent")?.tone).toBe("info");
+  });
+
+  describe("backend-served prompt_caching_mode", () => {
+    it("warns about the model, not the provider, on a non-cacheable Bedrock model", () => {
+      const provider = { llm_model_provider: "bedrock", prompt_caching_mode: "none" as const };
+      expect(promptCachingHint(true, provider, "model", "Base")).toEqual({
+        text: "This model does not support prompt caching, so the setting has no effect.",
+        tone: "warning",
+      });
+    });
+
+    it("warns about the provider when a non-Bedrock family reports none", () => {
+      const provider = { llm_model_provider: "cohere", prompt_caching_mode: "none" as const };
+      expect(promptCachingHint(true, provider, "model", "Base")?.text).toMatch(/provider does not support/);
+    });
+
+    it("prefers the served mode over the family heuristic", () => {
+      const provider = { llm_model_provider: "cohere", prompt_caching_mode: "automatic" as const };
+      expect(promptCachingHint(true, provider, "model", "Base")?.tone).toBe("info");
+    });
+
+    it("an explicit mode still runs the agent-type check", () => {
+      const provider = { llm_model_provider: "bedrock", prompt_caching_mode: "explicit" as const };
+      expect(promptCachingHint(true, provider, "agent", "ToolSelector")).toBeNull();
+      expect(promptCachingHint(true, provider, "agent", "ReActAgent")?.text).toMatch(/does not split/);
+    });
+
+    it("falls back to the family heuristic when the field is absent", () => {
+      expect(promptCachingHint(true, { llm_model_provider: "bedrock" }, "model", "Base")).toBeNull();
+      expect(promptCachingHint(true, cohere, "model", "Base")?.tone).toBe("warning");
+    });
+  });
+
+  describe("fallback chains", () => {
+    const explicit = { llm_model_provider: "anthropic", prompt_caching_mode: "explicit" as const };
+    const bedrockNone = { llm_model_provider: "bedrock", prompt_caching_mode: "none" as const };
+    const automatic = { llm_model_provider: "OpenAI", prompt_caching_mode: "automatic" as const };
+
+    it("warns when a capable primary carries an unsupported fallback", () => {
+      expect(promptCachingHint(true, explicit, "model", "Base", [cohere])).toEqual({
+        text: "Not every model in the fallback chain can cache, so nothing is cached.",
+        tone: "warning",
+      });
+    });
+
+    it("names the chain, not the model, when the primary is the unsupported one", () => {
+      const hint = promptCachingHint(true, bedrockNone, "model", "Base", [explicit]);
+      expect(hint?.text).toMatch(/fallback chain/);
+      expect(hint?.text).not.toMatch(/This model/);
+    });
+
+    it("an all-capable chain stays silent and still runs the agent-type check", () => {
+      expect(promptCachingHint(true, explicit, "agent", "ToolSelector", [explicit])).toBeNull();
+      expect(promptCachingHint(true, explicit, "agent", "ReActAgent", [explicit])?.text).toMatch(/does not split/);
+    });
+
+    it("an all-automatic chain gets the informational hint, never a warning", () => {
+      expect(promptCachingHint(true, automatic, "model", "Base", [openai])?.tone).toBe("info");
+    });
+
+    it("mixed automatic and unsupported members warn about the chain", () => {
+      expect(promptCachingHint(true, automatic, "model", "Base", [cohere])?.text).toMatch(/fallback chain/);
+    });
+
+    it("unclassifiable chain members are ignored, like the runtime skipping unbuildable providers", () => {
+      expect(promptCachingHint(true, explicit, "model", "Base", [undefined, {}])).toBeNull();
+    });
+  });
+
+  describe("fallbackChainProviders", () => {
+    const primary = { id: "p1", llm_model_provider: "anthropic", prompt_caching_mode: "explicit" as const, is_active: 1 };
+    const inactiveCohere = { id: "p2", llm_model_provider: "cohere", prompt_caching_mode: "none" as const, is_active: 0 };
+    const all = [primary, inactiveCohere];
+    const chain = { provider_ids: ["p1", "p2"] };
+
+    it("resolves inactive members — the runtime still builds them", () => {
+      expect(fallbackChainProviders(all, "p1", chain)).toEqual([inactiveCohere]);
+    });
+
+    it("an inactive unsupported fallback still poisons the chain verdict", () => {
+      const hint = promptCachingHint(true, primary, "model", "Base", fallbackChainProviders(all, "p1", chain));
+      expect(hint?.text).toMatch(/fallback chain/);
+      expect(hint?.tone).toBe("warning");
+    });
+
+    it("excludes the primary and drops ids with no provider object", () => {
+      expect(fallbackChainProviders([primary], "p1", { provider_ids: ["p1", "ghost"] })).toEqual([]);
+    });
+
+    it("yields nothing without a selected chain", () => {
+      expect(fallbackChainProviders(all, "p1", undefined)).toEqual([]);
+      expect(fallbackChainProviders(all, "p1", null)).toEqual([]);
+    });
   });
 });

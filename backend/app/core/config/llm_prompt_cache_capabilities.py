@@ -21,7 +21,25 @@ BEDROCK_CACHEABLE_ANTHROPIC_MARKERS = (
 CLAUDE_FAMILY = "claude"
 NOVA_FAMILY = "nova"
 
+# These cache long prompts server-side with no marker, so a node's caching toggle is
+# moot rather than a mistake on them
+AUTOMATIC_CACHING_PROVIDERS = frozenset({"openai", "azure_openai", "google_genai", "google_vertexai"})
+
 _RATED_ARN_RESOURCES = ("foundation-model/", "inference-profile/")
+
+
+def prompt_caching_mode(provider: Optional[str], model_key: Optional[str]) -> str:
+    """Caching mode for this provider/model pair: "explicit" (the call is wraped
+    with its own cache marker), "automatic" (provider caches server-side, no marker),
+    or "none". Exposed so the builder doesn't reimplement this classification"""
+    family = (provider or "").strip().lower()
+    if family == "anthropic":
+        return "explicit"
+    if family == "bedrock":
+        return "explicit" if bedrock_cache_family(model_key) else "none"
+    if family in AUTOMATIC_CACHING_PROVIDERS:
+        return "automatic"
+    return "none"
 
 
 def bedrock_cache_family(model_key: Optional[str]) -> Optional[str]:

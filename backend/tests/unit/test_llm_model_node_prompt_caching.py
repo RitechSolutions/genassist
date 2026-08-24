@@ -49,10 +49,7 @@ class _FakeState:
     def __init__(self, memory=None):
         self._memory = memory
         self.llm_usage: list = []
-        self.annotations: dict = {}
-
-    def annotate_node_execution(self, node_id, key, value):
-        self.annotations.setdefault(node_id, {})[key] = value
+        self.prompt_caching_diagnostics: dict = {}
 
     def get_memory(self):
         return self._memory
@@ -378,7 +375,7 @@ async def _diagnose(llm, *, raw=_BASE, resolved=None, history=None, node_data=No
     ctx, _ = _patch_injector(llm)
     with ctx:
         await node.process(config)
-    return state.annotations.get("llm-1", {}).get("prompt_caching")
+    return state.prompt_caching_diagnostics.get("llm-1")
 
 
 @pytest.mark.asyncio
@@ -432,10 +429,9 @@ class TestNodeDiagnostic:
 
         assert diagnostic is None
 
-    async def test_a_state_without_the_hook_never_breaks_the_node(self):
+    async def test_a_state_without_the_store_never_breaks_the_node(self):
         state = _FakeState()
-        del state.annotations
-        state.annotate_node_execution = None  # a state built before the diagnostic existed
+        del state.prompt_caching_diagnostics  # a state built before the diagnostic existed
         node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": {"systemPrompt": _BASE}}, state)
         config = {"providerId": "p1", "systemPrompt": _BASE, "userPrompt": "hi", "promptCaching": True}
 

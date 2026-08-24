@@ -123,8 +123,9 @@ class WorkflowState:
         self.node_execution_status: dict[str, Any] = {}
         self.execution_path: list[str] = []
         self.execution_history: list[str] = []
-        # Sub-agent prompt-caching diagnostics propagated in from child runs. Kept out of
-        # node_execution_status so no metric, analytics or failure consumer ever sees them
+        # The single store for prompt-caching diagnostics: this run's own nodes plus any
+        # propagated in from sub-agent child runs. Kept out of node_execution_status so
+        # no metric, analytics or failure consumer ever sees them
         self.prompt_caching_diagnostics: dict[str, Any] = {}
 
         # Performance metrics
@@ -671,12 +672,6 @@ class WorkflowState:
         """Set the input for a specific node"""
         self.node_inputs[node_id] = input_data
         self.node_execution_status[node_id].update({"input": input_data})
-
-    def annotate_node_execution(self, node_id: str, key: str, value: Any) -> None:
-        """Attach extra detail to a node's execution entry. No-op when the node never ran"""
-        entry = self.node_execution_status.get(node_id)
-        if isinstance(entry, dict):
-            entry[key] = value
 
     def get_node_input(self, node_id: str) -> Any:
         """Get the input for a specific node"""

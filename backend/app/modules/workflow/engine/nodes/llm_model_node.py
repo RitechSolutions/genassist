@@ -133,17 +133,8 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
         """Whether the system prompt is stable enough across requests to cache"""
         from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
-        if not isinstance(system_prompt, str) or not system_prompt.strip():
-            return False, diagnostics.REASON_EMPTY_PROMPT
-
-        unsupported = diagnostics.unwrapped_model_reason(llm)
-        if unsupported:
-            return False, unsupported
-
-        if has_volatile_template_vars(self.node_data.get("systemPrompt")):
-            return False, diagnostics.REASON_VOLATILE_PROMPT
-
-        return True, None
+        parts = None if has_volatile_template_vars(self.node_data.get("systemPrompt")) else (system_prompt, "")
+        return diagnostics.cache_split_decision(parts, llm)
 
     async def _perform_compaction(self, memory, config: Dict[str, Any], provider_id: str) -> None:
         """
@@ -293,6 +284,11 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             await record_node_llm_usage(
                 self.get_state(), response, self.node_id, provider_id, prompt_caching_enabled=prompt_caching_enabled
             )
+
+            if prompt_caching_enabled and cacheable_prefix:
+                from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+                diagnostics.record_observed_cache_tokens(self.get_state(), self.node_id, [response])
 
             return response.content
 

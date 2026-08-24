@@ -121,6 +121,26 @@ class TestGate:
         agent = ToolAgent(llm_model=chain, system_prompt=_BASE + _SUFFIX, tools=[], stable_volatile_parts=_PARTS)
 
         assert agent._cache_split is False
+        assert agent.cache_split_decision == (False, "mixed_fallback_chain")
+
+    @pytest.mark.parametrize(
+        "kwargs,expected",
+        [
+            ({}, (True, None)),
+            ({"caching": False}, (False, "unsupported_cache_markers")),
+            ({"parts": None}, (False, "volatile_prompt")),
+        ],
+        ids=["caching_and_parts", "no_caching", "no_parts"],
+    )
+    def test_the_stored_decision_names_the_gate(self, kwargs, expected):
+        agent, _ = _agent(**kwargs)
+
+        assert agent.cache_split_decision == expected
+
+    def test_a_blank_base_is_still_eligible_through_the_enhanced_prefix(self):
+        agent, _ = _agent(tools=[_weather_tool()], system_prompt=_SUFFIX, parts=("", _SUFFIX))
+
+        assert agent.cache_split_decision == (True, None)
 
 
 @pytest.mark.asyncio
@@ -284,6 +304,15 @@ class TestSplitModeStillDrivesTheWorkflow:
         assert len(inner.seen) == 2
         for sent in inner.seen:
             assert sum("cache_control" in block for block in sent[0].content) == 1
+
+    async def test_the_system_turn_is_built_once_per_invoke(self):
+        agent, inner = _agent(tools=[_weather_tool()], replies=[_TOOL_CALL_JSON, _DIRECT_JSON])
+        agent._cacheable_system_message = MagicMock(side_effect=agent._cacheable_system_message)
+
+        await agent.invoke(_QUERY)
+
+        assert len(inner.seen) == 2
+        agent._cacheable_system_message.assert_called_once()
 
     async def test_no_tools_workflow_returns_the_direct_response(self):
         agent, _ = _agent(replies=[_DIRECT_JSON])

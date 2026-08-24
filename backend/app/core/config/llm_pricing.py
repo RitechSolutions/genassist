@@ -114,12 +114,15 @@ def _normalize_model_name(model: str) -> str:
     return str(model).lower().strip()
 
 
+def cache_rate_or_input(rate: Optional[_Rate], input_per_1k: _Rate) -> _Rate:
+    """Display-path policy: an unresolved cache bucket bills at the input rate"""
+    return input_per_1k if rate is None else rate
+
+
 def inclusive_cache_fallback(provider_key: str, rate: Optional[_Rate], input_per_1k: _Rate) -> Optional[_Rate]:
-    if rate is not None:
-        return rate
-    if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
+    if rate is None and provider_key in CACHE_EXCLUSIVE_PROVIDERS:
         return None
-    return input_per_1k
+    return cache_rate_or_input(rate, input_per_1k)
 
 
 def blended_token_cost(
@@ -142,20 +145,18 @@ def blended_token_cost(
 
     if (cache_read and cache_read_per_1k is None) or (cache_creation and cache_creation_per_1k is None):
         return None
-    read_per_1k = input_per_1k if cache_read_per_1k is None else cache_read_per_1k
-    creation_per_1k = input_per_1k if cache_creation_per_1k is None else cache_creation_per_1k
 
     if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
         uncached = max(int(input_tokens), 0)
     else:
         uncached = max(int(input_tokens) - cache_read - cache_creation, 0)
 
-    return (
-        (uncached / thousand) * input_per_1k
-        + (int(output_tokens) / thousand) * output_per_1k
-        + (cache_read / thousand) * read_per_1k
-        + (cache_creation / thousand) * creation_per_1k
-    )
+    cost = (uncached / thousand) * input_per_1k + (int(output_tokens) / thousand) * output_per_1k
+    if cache_read:
+        cost += (cache_read / thousand) * cache_read_per_1k
+    if cache_creation:
+        cost += (cache_creation / thousand) * cache_creation_per_1k
+    return cost
 
 
 def _rate_pair(row: Any) -> Optional[tuple[Decimal, Decimal]]:
