@@ -161,10 +161,12 @@ class TestResult(TestResultInDB):
 
 
 class TestToolRuleResult(BaseModel):
-    """One Tool Usage rule outcome for a scope unit (turn or conversation)."""
+    """One rule outcome for a scope unit (turn or conversation), for any
+    rule-based technique: tool_used, route_taken or action_taken."""
 
     id: UUID
     run_id: UUID
+    technique: str = Field(default="tool_used", description="tool_used | route_taken | action_taken")
     rule_id: str
     scope: str
     case_id: Optional[UUID] = None

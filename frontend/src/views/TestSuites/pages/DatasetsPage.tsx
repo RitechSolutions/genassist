@@ -45,6 +45,26 @@ const getTimeAgo = (date: Date): string => {
   return date.toLocaleDateString();
 };
 
+// Named after the agent, as the workflow picker does; the version keeps two
+// entries apart, and the workflow name settles versions that still collide.
+const workflowFilterOptions = (workflows: WorkflowMinimal[]) => {
+  const options = workflows.map((workflow) => ({
+    id: workflow.id,
+    label: `${workflow.agent_name || workflow.name} · v${workflow.version}`,
+    workflowName: workflow.name,
+  }));
+  const counts = new Map<string, number>();
+  options.forEach((o) => counts.set(o.label, (counts.get(o.label) ?? 0) + 1));
+
+  return options
+    .map((option) =>
+      (counts.get(option.label) ?? 0) > 1
+        ? { ...option, label: `${option.label} (${option.workflowName})` }
+        : option,
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
+};
+
 const DatasetsPage: React.FC = () => {
   const navigate = useNavigate();
   const [suites, setSuites] = useState<TestSuite[]>([]);
@@ -494,9 +514,9 @@ const DatasetsPage: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all__">All workflows</SelectItem>
-                  {workflows.map((wf) => (
-                    <SelectItem key={wf.id} value={wf.id ?? ""}>
-                      {wf.name}
+                  {workflowFilterOptions(workflows).map((option) => (
+                    <SelectItem key={option.id} value={option.id ?? ""}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -421,15 +421,36 @@ def collect_provider_ids(configs: Optional[Dict[str, Any]]) -> List[str]:
 
 
 def collect_case_ids(configs: Optional[Dict[str, Any]]) -> List[str]:
-    """Test case ids referenced by turn-targeted tool rules."""
-    config = (configs or {}).get(TOOL_USED)
-    if not isinstance(config, dict) or not isinstance(config.get("rules"), list):
-        return []
+    """Test case ids referenced by turn-targeted rules of any rule-based technique."""
     ids: Dict[str, None] = {}
-    for rule in config["rules"]:
-        if isinstance(rule, dict) and rule.get("target_case_id"):
-            ids.setdefault(str(rule["target_case_id"]), None)
+    for _, _, rule in _rules_with_targets(configs):
+        for case_id in _rule_case_ids(rule):
+            ids.setdefault(case_id, None)
     return list(ids.keys())
+
+
+def _rule_case_ids(rule: Dict[str, Any]) -> List[str]:
+    """Every case id a rule targets, from the one-turn and many-turn shapes."""
+    values = rule.get("target_case_ids")
+    ids = [str(value) for value in values if value] if isinstance(values, list) else []
+    if rule.get("target_case_id"):
+        ids.append(str(rule["target_case_id"]))
+    return list(dict.fromkeys(ids))
+
+
+def _rules_with_targets(
+    configs: Optional[Dict[str, Any]],
+) -> List[Tuple[str, int, Dict[str, Any]]]:
+    """(technique, index, rule) for every rule that targets a specific test case."""
+    found: List[Tuple[str, int, Dict[str, Any]]] = []
+    for technique in _RULE_REWRITERS:
+        config = (configs or {}).get(technique)
+        if not isinstance(config, dict) or not isinstance(config.get("rules"), list):
+            continue
+        for index, rule in enumerate(config["rules"]):
+            if isinstance(rule, dict) and _rule_case_ids(rule):
+                found.append((technique, index, rule))
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -633,39 +654,69 @@ def rewrite_case_refs(
     configs: Dict[str, Any],
     case_map: Dict[str, str],
 ) -> Tuple[Dict[str, Any], List[str]]:
-    """Re-point tool rules' target_case_id at the recreated cases.
+    """Re-point every turn-targeted rule's target_case_id at the recreated cases.
 
     A rule that also targets by (conversation, turn) just loses the stale id —
     the portable pair keeps working. A rule with neither mapping is kept but
     will grade as "target turn not found", so it is reported.
     """
-    config = configs.get(TOOL_USED)
-    if not isinstance(config, dict) or not isinstance(config.get("rules"), list):
-        return configs, []
-
     warnings: List[str] = []
-    rules: List[Any] = []
-    for rule in config["rules"]:
-        if not isinstance(rule, dict) or not rule.get("target_case_id"):
-            rules.append(rule)
-            continue
-        updated = dict(rule)
-        mapped = case_map.get(str(updated["target_case_id"]))
-        has_conversation_target = (
-            updated.get("target_source_conversation_id") is not None
-            and updated.get("target_turn_index") is not None
-        )
-        if mapped:
-            updated["target_case_id"] = mapped
-        elif has_conversation_target:
-            updated.pop("target_case_id")
-        else:
-            warnings.append(
-                f"Tool Usage rule '{updated.get('id')}' targets a test case that "
-                "is not part of the bundle; it will grade as not evaluated."
-            )
-        rules.append(updated)
-    return {**configs, TOOL_USED: {**config, "rules": rules}}, warnings
+    new_configs = dict(configs)
+    for technique, index, rule in _rules_with_targets(configs):
+        updated, warning = _repoint_rule(technique, rule, case_map)
+        if warning:
+            warnings.append(warning)
+        config = new_configs[technique]
+        rules = list(config["rules"])
+        rules[index] = updated
+        new_configs[technique] = {**config, "rules": rules}
+    return new_configs, warnings
+
+
+def _repoint_rule(
+    technique: str, rule: Dict[str, Any], case_map: Dict[str, str]
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    updated = dict(rule)
+    case_ids = _rule_case_ids(updated)
+    mapped = [case_map.get(case_id) for case_id in case_ids]
+
+    if all(mapped):
+        return _with_case_ids(updated, [case_id for case_id in mapped if case_id]), None
+
+    # The portable (conversation, turn) pair still points at the right turns, so a
+    # stale id is dropped rather than kept as a target that cannot resolve.
+    if _has_conversation_target(updated):
+        return _with_case_ids(updated, []), None
+
+    label = _TECHNIQUE_LABELS.get(technique, technique)
+    return updated, (
+        f"{label} rule '{updated.get('id')}' targets a test case that "
+        "is not part of the bundle; it will grade as not evaluated."
+    )
+
+
+def _has_conversation_target(rule: Dict[str, Any]) -> bool:
+    turn_indexes = rule.get("target_turn_indexes")
+    has_turns = rule.get("target_turn_index") is not None or (
+        isinstance(turn_indexes, list) and bool(turn_indexes)
+    )
+    return rule.get("target_source_conversation_id") is not None and has_turns
+
+
+def _with_case_ids(rule: Dict[str, Any], case_ids: List[str]) -> Dict[str, Any]:
+    """Write case ids back in the shape the rule already used."""
+    updated = {
+        key: value
+        for key, value in rule.items()
+        if key not in ("target_case_id", "target_case_ids")
+    }
+    if not case_ids:
+        return updated
+    if isinstance(rule.get("target_case_ids"), list):
+        updated["target_case_ids"] = case_ids
+    else:
+        updated["target_case_id"] = case_ids[0]
+    return updated
 
 
 # ---------------------------------------------------------------------------

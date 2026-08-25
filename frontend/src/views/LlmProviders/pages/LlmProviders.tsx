@@ -5,8 +5,16 @@ import { PageHeader } from "@/components/PageHeader";
 import { LLMProviderCard } from "../components/LLMProviderCard";
 import { LLMProviderDialog } from "../components/LLMProviderDialog";
 import { LlmCostRatesDialog } from "../components/LlmCostRatesDialog";
+import { LlmModelCatalogDialog } from "../components/LlmModelCatalogDialog";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
-import { Coins } from "lucide-react";
+import { Brain, Coins, MoreVertical } from "lucide-react";
+import { Button } from "@/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
 import toast from "react-hot-toast";
 
 export default function LLMProviders() {
@@ -22,6 +30,7 @@ export default function LLMProviders() {
   );
   const [updatedProvider, setUpdatedProvider] = useState<LLMProvider | null>(null);
   const [costRatesOpen, setCostRatesOpen] = useState(false);
+  const [modelCatalogOpen, setModelCatalogOpen] = useState(false);
 
   // Fetch all providers
   useEffect(() => {
@@ -81,13 +90,31 @@ export default function LLMProviders() {
         searchPlaceholder="Search providers..."
         actionButtonText="Add New Provider"
         onActionClick={handleCreate}
-        secondaryActionButtonText={
-          <>
-          <Coins className="w-4 h-4 text-primary" />
-          <span>Manage costs</span>
-          </>
+        trailingActions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="rounded-full shrink-0 self-end sm:self-auto"
+                aria-label="More actions"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setCostRatesOpen(true)}>
+                <Coins className="w-4 h-4 mr-2 text-primary" />
+                Manage costs
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setModelCatalogOpen(true)}>
+                <Brain className="w-4 h-4 mr-2 text-primary" />
+                Manage models
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
-        onSecondaryActionClick={() => setCostRatesOpen(true)}
       />
 
       <LLMProviderCard
@@ -107,6 +134,11 @@ export default function LLMProviders() {
       />
 
       <LlmCostRatesDialog open={costRatesOpen} onOpenChange={setCostRatesOpen} />
+
+      <LlmModelCatalogDialog
+        open={modelCatalogOpen}
+        onOpenChange={setModelCatalogOpen}
+      />
     </PageLayout>
   );
 }
