@@ -4,7 +4,7 @@ Rule results are no longer Tool Usage only: Route Taken and Action Taken rules a
 graded per scope too. Existing rows all came from Tool Usage.
 
 Revision ID: c41d7ab35f92
-Revises: b8454171e700
+Revises: c7f1a9d4e620
 Create Date: 2026-08-20 00:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "c41d7ab35f92"
-down_revision: Union[str, None] = "b8454171e700"
+down_revision: Union[str, None] = "c7f1a9d4e620"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
