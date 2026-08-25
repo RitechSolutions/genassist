@@ -43,6 +43,8 @@ export interface WorkflowMinimal {
   agent_id?: string | null;
   /** True for the version its agent points at — what the builder marks Active. */
   is_active_version?: boolean;
+  /** Null when the agent is gone or retired. */
+  agent_name?: string | null;
 }
 
 export interface WorkflowSummary {
