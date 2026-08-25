@@ -63,7 +63,7 @@ class TemplateRepository(DbRepository[TemplateModel]):
             .where(TemplateModel.id == template_id)
             .values(install_count=TemplateModel.install_count + 1)
         )
-        await self.db.commit()
+        await self.db.flush()
 
     async def find_published(
         self, source_template_id: UUID, statuses: Iterable[TemplateStatus]

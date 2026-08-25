@@ -104,5 +104,5 @@ class AuditLogRepository(DbRepository[AuditLogModel]):
 
         stmt = delete(AuditLogModel).where(AuditLogModel.record_id.in_(record_ids))
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         return int(result.rowcount or 0)

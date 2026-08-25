@@ -100,6 +100,9 @@ async def execute_workflow_run_async(run_id: UUID):
                 await run_repository.update_status(
                     run_id, WorkflowScheduleRunStatus.RUNNING
                 )
+                # Commit the RUNNING marker so reconcilers/other workers see it
+                # during the long execution below (repos only flush now).
+                await session.commit()
 
                 schedule = await schedule_repository.get_by_id(run.schedule_id)
 
@@ -121,6 +124,7 @@ async def execute_workflow_run_async(run_id: UUID):
                         await schedule_repository.set_fixed_thread_id(
                             schedule.id, thread_id
                         )
+                        await session.commit()
                 else:
                     thread_id = str(uuid.uuid4())
 
@@ -161,6 +165,7 @@ async def execute_workflow_run_async(run_id: UUID):
                     workflow_id=workflow.id,
                     thread_id=thread_id,
                 )
+                await session.commit()
                 logger.info(f"Workflow schedule run {run_id} completed successfully")
 
             except Exception as e:
@@ -169,11 +174,15 @@ async def execute_workflow_run_async(run_id: UUID):
                     exc_info=True,
                 )
                 try:
+                    # Clear any failed-transaction state from the execution error
+                    # before writing the FAILED status (repos only flush now).
+                    await session.rollback()
                     await run_repository.update_status(
                         run_id,
                         WorkflowScheduleRunStatus.FAILED,
                         error_message=str(e),
                     )
+                    await session.commit()
                     socket_connection_manager = injector.get(SocketConnectionManager)
                     emit_notification(
                         socket_connection_manager=socket_connection_manager,
@@ -281,6 +290,9 @@ async def check_and_execute_scheduled_workflows_async():
                         schedule_id=schedule.id,
                         agent_id=schedule.agent_id,
                     )
+                    # Commit the run before dispatch so the executing worker (a
+                    # separate session) can find it (repos only flush now).
+                    await session.commit()
 
                     # Dispatch first so a metadata-write hiccup can never block
                     # the actual execution.
@@ -295,7 +307,9 @@ async def check_and_execute_scheduled_workflows_async():
                         await schedule_repository.set_last_run_at(
                             schedule.id, current_time
                         )
+                        await session.commit()
                     except Exception as e:
+                        await session.rollback()
                         logger.exception(
                             f"Failed to set last_run_at for schedule {schedule.id}: {str(e)}"
                         )
@@ -377,12 +391,15 @@ async def reconcile_stuck_workflow_runs_async():
                 running_before=running_before,
                 error_message=_STUCK_RUN_ERROR,
             )
+            # Repos only flush now; this out-of-band session owns its commit.
+            await session.commit()
             if failed:
                 logger.warning(
                     f"Reconciled {failed} stuck workflow schedule run(s) as FAILED "
                     f"for tenant {tenant_id}"
                 )
         except Exception as e:
+            await session.rollback()
             logger.error(
                 f"Error reconciling stuck workflow runs: {str(e)}", exc_info=True
             )
