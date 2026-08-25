@@ -81,16 +81,40 @@ export interface EvaluationToolCatalog {
 }
 
 export type ToolUsageOperator = "all" | "any" | "none" | "only";
-export type ToolUsageScope = "specific_turn" | "every_turn" | "conversation";
+
+// What a rule is graded over: each turn, one targeted turn, or the whole
+// conversation ("at least once during it").
+export type RuleScope = "specific_turn" | "every_turn" | "conversation";
+
+// Every rule-based technique (tool usage, route, action) carries these.
+export interface RuleScopeTarget {
+  scope: RuleScope;
+  target_source_conversation_id?: string | null;
+  // A specific-turn rule may name several turns; it is graded once per turn.
+  target_case_ids?: string[];
+  target_turn_indexes?: number[];
+  // The single-turn shape saved before that, still read when editing.
+  target_case_id?: string | null;
+  target_turn_index?: number | null;
+}
+
+// An imported multi-turn conversation available for specific-turn targeting.
+export interface RuleConversation {
+  id: string; // source_conversation_id
+  label: string;
+  turns: { caseId: string; turnIndex: number; label: string }[];
+}
 
 // ---- Route / Action multi-rule builder drafts ----
 
-export interface RouteRuleDraft {
+export interface RouteRuleDraft extends RuleScopeTarget {
+  id: string;
   router: string;
   expected: string;
 }
 
-export interface ActionRuleDraft {
+export interface ActionRuleDraft extends RuleScopeTarget {
+  id: string;
   node: string;
   nodeType: string;
   shouldFire: boolean;
@@ -120,20 +144,19 @@ export interface ToolUsagePerToolCheck {
   expected_args?: Record<string, unknown> | null;
 }
 
-export interface ToolUsageRule {
+export interface ToolUsageRule extends RuleScopeTarget {
   id: string;
   agent_id?: string | null;
   tool_ids: string[];
   operator: ToolUsageOperator;
   require_success?: boolean;
-  scope: ToolUsageScope;
-  target_case_id?: string | null;
-  target_source_conversation_id?: string | null;
-  target_turn_index?: number | null;
   min_calls?: number | null;
   max_calls?: number | null;
   per_tool?: Record<string, ToolUsagePerToolCheck>;
 }
+
+// Techniques graded per scope, stored as one result row per rule check.
+export type RuleTechnique = "tool_used" | "route_taken" | "action_taken";
 
 // The readable, rename-proof snapshot the backend stores with each result.
 export interface ToolRuleTargetInfo {
@@ -146,6 +169,12 @@ export interface ToolRuleResultDetails {
   rule_number?: number;
   rule_summary?: string;
   agent?: { id: string | null; label: string };
+  // Route / Action results describe one node and what it did.
+  router?: { id: string | null; label: string | null };
+  node?: { id: string | null; label: string | null };
+  expected?: string;
+  observed?: string;
+  show_comment_on_pass?: boolean;
   tools?: Record<string, { label: string }>;
   target?: ToolRuleTargetInfo;
   observed_tools?: string[];
@@ -170,6 +199,7 @@ export interface ToolRuleResultDetails {
 export interface TestToolRuleResult {
   id: string;
   run_id: string;
+  technique: RuleTechnique;
   rule_id: string;
   scope: string;
   case_id?: string | null;

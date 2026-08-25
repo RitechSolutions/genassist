@@ -15,6 +15,7 @@ from app.db.models.job import JobModel
 from app.db.models.job_logs import JobLogsModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
 from app.db.models.llm_cost_rate import LlmCostRateModel
+from app.db.models.llm_model_catalog import LlmModelCatalogModel
 from app.db.models.llm_usage import (
     LlmUsageCaptureRunModel,
     LlmUsageControlModel,
@@ -94,6 +95,7 @@ __all__ = [
     "LlmAnalystModel",
     "LlmProvidersModel",
     "LlmCostRateModel",
+    "LlmModelCatalogModel",
     "LlmUsageEventModel",
     "LlmUsageCaptureRunModel",
     "LlmUsageControlModel",
@@ -172,6 +174,7 @@ models = [
     LlmAnalystModel,
     LlmProvidersModel,
     LlmCostRateModel,
+    LlmModelCatalogModel,
     JobLogsModel,
     JobModel,
     DataSourceModel,

@@ -10,12 +10,19 @@ vi.mock("@/config/api", () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn(), request: vi.fn() },
 }));
 
-import { apiRequest } from "@/config/api";
+vi.mock("@/helpers/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/helpers/utils")>()),
+  downloadBlob: vi.fn(),
+}));
+
+import { api, apiRequest } from "@/config/api";
+import { downloadBlob } from "@/helpers/utils";
 import {
   listFileManagerFiles,
   getFileManagerSettings,
   listFiles,
   getFileBase64,
+  downloadFileManagerFile,
 } from "@/services/fileManager";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -139,5 +146,23 @@ describe("getFileBase64", () => {
 
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "file-manager/files/f1/base64");
     expect(result).toBe(payload);
+  });
+});
+
+describe("downloadFileManagerFile", () => {
+  it("proxies the bytes through the API and saves them under the given name", async () => {
+    const blob = new Blob(["model"]);
+    vi.mocked(api.request).mockResolvedValue({ data: blob } as never);
+
+    await downloadFileManagerFile("f1", "Churn Predictor.pkl");
+
+    // force_proxy keeps the request on the API origin: the presigned-URL
+    // redirect is what Chrome blocks as an insecure download.
+    expect(api.request).toHaveBeenCalledWith({
+      method: "GET",
+      url: "http://localhost/api/file-manager/files/f1/source?force_proxy=true",
+      responseType: "blob",
+    });
+    expect(downloadBlob).toHaveBeenCalledWith(blob, "Churn Predictor.pkl");
   });
 });

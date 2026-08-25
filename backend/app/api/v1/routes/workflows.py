@@ -137,9 +137,9 @@ async def get_workflows(service: WorkflowService = Injected(WorkflowService)):
 )
 async def get_workflows_minimal(service: WorkflowService = Injected(WorkflowService)):
     """
-    Get a lightweight list of all workflows (id, name, version only).
+    Lightweight list of the workflows the caller can see, matching Agent Studio.
     """
-    return await service.get_all_minimal()
+    return await service.get_visible_minimal()
 
 
 @router.get(

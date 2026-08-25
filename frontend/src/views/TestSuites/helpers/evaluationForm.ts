@@ -7,10 +7,11 @@ import {
   JudgeRuleDraft,
   RouteRuleDraft,
   TestEvaluationConfig,
+  RuleScope,
+  RuleScopeTarget,
   ToolUsageOperator,
   ToolUsagePerToolCheck,
   ToolUsageRule,
-  ToolUsageScope,
 } from "@/interfaces/testEvaluation.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 
@@ -82,6 +83,47 @@ const legacyPerTool = (cfg: Record<string, unknown>): Record<string, ToolUsagePe
   };
 };
 
+// A rule id the builder can key on; the backend keeps whatever it is sent.
+export const newRuleId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `rule-${Math.random().toString(36).slice(2)}`;
+
+const numberList = (value: unknown): number[] =>
+  Array.isArray(value) ? value.filter((item): item is number => typeof item === "number") : [];
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+// Scope + turn targeting, stored the same way for tool, route and action rules.
+// A rule saved with the older single-turn fields is read as a one-turn selection.
+const parseScope = (rule: Record<string, unknown>): RuleScopeTarget => {
+  const turnIndexes = numberList(rule.target_turn_indexes);
+  const caseIds = stringList(rule.target_case_ids);
+  if (typeof rule.target_turn_index === "number") turnIndexes.push(rule.target_turn_index);
+  if (typeof rule.target_case_id === "string") caseIds.push(rule.target_case_id);
+
+  return {
+    scope: (rule.scope as RuleScope) ?? "every_turn",
+    target_source_conversation_id: (rule.target_source_conversation_id as string) ?? null,
+    target_turn_indexes: [...new Set(turnIndexes)],
+    target_case_ids: [...new Set(caseIds)],
+  };
+};
+
+const serializeScope = (rule: RuleScopeTarget): Record<string, unknown> => {
+  const turnIndexes = rule.target_turn_indexes ?? [];
+  const caseIds = rule.target_case_ids ?? [];
+  return {
+    scope: rule.scope ?? "every_turn",
+    ...(rule.target_source_conversation_id
+      ? { target_source_conversation_id: rule.target_source_conversation_id }
+      : {}),
+    ...(turnIndexes.length ? { target_turn_indexes: turnIndexes } : {}),
+    ...(caseIds.length ? { target_case_ids: caseIds } : {}),
+  };
+};
+
 // Keep only plain-object rule entries; the backend tolerates junk entries, so
 // the wizard must too instead of crashing the page render.
 const objectRules = (rules: unknown[]): Record<string, unknown>[] =>
@@ -102,10 +144,7 @@ const parseToolRules = (
       tool_ids: Array.isArray(rule.tool_ids) ? (rule.tool_ids as string[]) : [],
       operator: (rule.operator as ToolUsageOperator) ?? "all",
       require_success: Boolean(rule.require_success),
-      scope: (rule.scope as ToolUsageScope) ?? "every_turn",
-      target_case_id: (rule.target_case_id as string) ?? null,
-      target_source_conversation_id: (rule.target_source_conversation_id as string) ?? null,
-      target_turn_index: (rule.target_turn_index as number) ?? null,
+      ...parseScope(rule),
       min_calls: (rule.min_calls as number) ?? null,
       max_calls: (rule.max_calls as number) ?? null,
       per_tool: parsePerTool(rule.per_tool),
@@ -142,14 +181,9 @@ const serializeToolRule = (rule: ToolUsageRule): Record<string, unknown> => ({
   id: rule.id,
   tool_ids: rule.tool_ids,
   operator: rule.operator,
-  scope: rule.scope,
+  ...serializeScope(rule),
   ...(rule.agent_id ? { agent_id: rule.agent_id } : {}),
   ...(rule.require_success ? { require_success: true } : {}),
-  ...(rule.target_case_id ? { target_case_id: rule.target_case_id } : {}),
-  ...(rule.target_source_conversation_id
-    ? { target_source_conversation_id: rule.target_source_conversation_id }
-    : {}),
-  ...(rule.target_turn_index != null ? { target_turn_index: rule.target_turn_index } : {}),
   ...(rule.min_calls != null ? { min_calls: rule.min_calls } : {}),
   ...(rule.max_calls != null ? { max_calls: rule.max_calls } : {}),
   ...(rule.per_tool && Object.keys(rule.per_tool).length ? { per_tool: rule.per_tool } : {}),
@@ -186,20 +220,16 @@ const parseJudgeRules = (cfg: Record<string, unknown> | undefined): JudgeRuleDra
 // config becomes a one-item list.
 const parseRouteRules = (cfg: Record<string, unknown> | undefined): RouteRuleDraft[] => {
   if (!cfg) return [];
+  const toDraft = (rule: Record<string, unknown>, index: number): RouteRuleDraft => ({
+    id: (rule.id as string) || `route-${index + 1}`,
+    router: ((rule.router ?? rule.node) as string) ?? "",
+    expected: (rule.expected as string) ?? "",
+    ...parseScope(rule),
+  });
   if (Array.isArray(cfg.rules)) {
-    return objectRules(cfg.rules).map((rule) => ({
-      router: ((rule.router ?? rule.node) as string) ?? "",
-      expected: (rule.expected as string) ?? "",
-    }));
+    return objectRules(cfg.rules).map(toDraft);
   }
-  if (cfg.expected) {
-    return [
-      {
-        router: ((cfg.router ?? cfg.node) as string) ?? "",
-        expected: cfg.expected as string,
-      },
-    ];
-  }
+  if (cfg.expected) return [toDraft(cfg, 0)];
   return [];
 };
 
@@ -207,16 +237,18 @@ const parseRouteRules = (cfg: Record<string, unknown> | undefined): RouteRuleDra
 // config becomes a one-item list.
 const parseActionRules = (cfg: Record<string, unknown> | undefined): ActionRuleDraft[] => {
   if (!cfg) return [];
-  const toDraft = (rule: Record<string, unknown>): ActionRuleDraft => ({
+  const toDraft = (rule: Record<string, unknown>, index: number): ActionRuleDraft => ({
+    id: (rule.id as string) || `action-${index + 1}`,
     node: (rule.node as string) ?? "",
     nodeType: (rule.node_type as string) ?? "",
     shouldFire: rule.should_fire === undefined ? true : Boolean(rule.should_fire),
+    ...parseScope(rule),
   });
   if (Array.isArray(cfg.rules)) {
     return objectRules(cfg.rules).map(toDraft);
   }
   if (cfg.node || cfg.node_type) {
-    return [toDraft(cfg)];
+    return [toDraft(cfg, 0)];
   }
   return [];
 };
@@ -332,8 +364,10 @@ export const buildTechniqueConfigs = (
   if (data.metrics.includes("route_taken")) {
     configs.route_taken = {
       rules: data.routeRules.map((rule) => ({
+        ...(rule.id ? { id: rule.id } : {}),
         expected: rule.expected.trim(),
         ...(rule.router.trim() ? { router: rule.router.trim() } : {}),
+        ...serializeScope(rule),
       })),
     };
   }
@@ -341,9 +375,11 @@ export const buildTechniqueConfigs = (
   if (data.metrics.includes("action_taken")) {
     configs.action_taken = {
       rules: data.actionRules.map((rule) => ({
+        ...(rule.id ? { id: rule.id } : {}),
         should_fire: rule.shouldFire,
         ...(rule.node.trim() ? { node: rule.node.trim() } : {}),
         ...(rule.nodeType.trim() ? { node_type: rule.nodeType.trim() } : {}),
+        ...serializeScope(rule),
       })),
     };
   }

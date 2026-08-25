@@ -133,3 +133,31 @@ describe("groupWorkflowVersions", () => {
     expect(groups.map((g) => g.name)).toEqual(["Alpha", "Zebra"]);
   });
 });
+
+describe("groupWorkflowVersions naming", () => {
+  it("names a group after its agent, as Agent Studio does", () => {
+    const groups = groupWorkflowVersions([
+      wf({ id: "w1", name: "Parker Workflow", version: "1.0", agent_id: "a", agent_name: "Parker", is_active_version: true }),
+      wf({ id: "w2", name: "Parker New Workflow", version: "1.1", agent_id: "a", agent_name: "Parker" }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe("Parker");
+    expect(groups[0].workflowName).toBe("Parker Workflow");
+  });
+
+  it("falls back to the workflow name when the agent is gone", () => {
+    const groups = groupWorkflowVersions([
+      wf({ id: "w1", name: "Parker 4.1 REPRO", version: "1.1", agent_id: "gone", agent_name: null }),
+    ]);
+    expect(groups[0].name).toBe("Parker 4.1 REPRO");
+  });
+
+  it("sorts by the name it displays, agent or workflow", () => {
+    const groups = groupWorkflowVersions([
+      wf({ id: "u1", name: "Orphan", version: "1", agent_id: "gone", agent_name: null }),
+      wf({ id: "a1", name: "Zebra WF", version: "1", agent_id: "z", agent_name: "Zebra" }),
+      wf({ id: "a2", name: "Alpha WF", version: "1", agent_id: "b", agent_name: "Alpha" }),
+    ]);
+    expect(groups.map((group) => group.name)).toEqual(["Alpha", "Orphan", "Zebra"]);
+  });
+});

@@ -27,7 +27,7 @@ import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
 import { getCurrentUserId } from "@/services/auth";
 import { useWebSocketTranscript } from "../hooks/useWebsocket";
-import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
+import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmAnalyst";
 import toast from "react-hot-toast";
 import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";

@@ -169,7 +169,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   const currentWorkflow = workflows.find((w) => w.id === workflowId);
   const workflowName = isUnassigned
     ? "Unassigned evaluations"
-    : currentWorkflow?.name ?? "Workflow";
+    : currentWorkflow?.agent_name || currentWorkflow?.name || "Workflow";
   const workflowAgentId = isUnassigned ? null : currentWorkflow?.agent_id ?? null;
   // Offered on every workflow; the dialog handles one with no second version.
   const canRunAgainstVersion = Boolean(workflowAgentId);
