@@ -114,6 +114,41 @@ async def build_chat_model(
     return init_chat_model(**model_kwargs)
 
 
+async def _apply_model_catalog(schemas: Dict[str, Any]) -> None:
+    """Append the tenant's registered models to each provider's ``model`` options.
+
+    Purely additive: ``LLM_FORM_SCHEMAS`` stays the source of truth, so an empty
+    catalog leaves ``schemas`` exactly as the built-in definitions produced it.
+    Failures are swallowed — the LLM provider form must never break because the
+    catalog could not be read.
+    """
+    try:
+        from app.dependencies.injector import injector
+        from app.services.llm_model_catalog import LlmModelCatalogService
+
+        overlay = await injector.get(LlmModelCatalogService).build_option_overlay()
+    except Exception as exc:
+        logger.warning(
+            "Could not read the LLM model catalog; serving built-in models only: %s", exc
+        )
+        return
+
+    for provider_key, extra_options in overlay.items():
+        schema = schemas.get(provider_key)
+        if not schema or "fields" not in schema:
+            continue
+        for field in schema["fields"]:
+            if field.get("name") != "model":
+                continue
+            existing = field.get("options") or []
+            seen = {opt.get("value") for opt in existing}
+            field["options"] = [
+                *existing,
+                *(opt for opt in extra_options if opt["value"] not in seen),
+            ]
+            break
+
+
 @inject
 class LLMProvider:
 
@@ -220,6 +255,10 @@ class LLMProvider:
                 if field.get("name") == "model":
                     field["options"] = vllm_options
                     break
+
+        # Tenant-registered models, appended last so the built-in lists keep their
+        # order and win on any collision.
+        await _apply_model_catalog(schemas)
 
         return schemas
 

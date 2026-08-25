@@ -24,6 +24,7 @@ from app.api.v1.routes import (
     internal,
     llm_analysts,
     llm_cost_rates,
+    llm_model_catalog,
     llm_providers,
     llm_usage,
     local_fine_tuning,
@@ -109,6 +110,7 @@ router.include_router(llm_providers.router, prefix="/llm-providers", tags=["LlmP
 router.include_router(fallback_chains.router, prefix="/fallback-chains", tags=["FallbackChains"])
 router.include_router(audio_providers.router, prefix="/audio-providers", tags=["AudioProviders"])
 router.include_router(llm_cost_rates.router, prefix="/llm-cost-rates", tags=["LlmCostRates"])
+router.include_router(llm_model_catalog.router, prefix="/llm-model-catalog", tags=["LlmModelCatalog"])
 router.include_router(llm_analysts.router, prefix="/llm-analyst", tags=["LlmAnalyst"])
 
 router.include_router(agents.router, prefix="/genagent/agents", tags=["agents"])
