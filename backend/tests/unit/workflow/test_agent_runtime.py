@@ -413,6 +413,33 @@ class TestDiagnosticPerDispatchBranch:
 
 
 @pytest.mark.asyncio
+class TestARaisingInvocationRecordsNoAppliedMarker:
+
+    async def test_an_applied_split_leaves_no_diagnostic_when_the_agent_raises(self):
+        state = _DiagState()
+        stack, classes, _, _ = _patch_runtime({"response": "ok"})
+        classes["ToolAgent"][1].cache_split_decision = (True, None)
+        classes["ToolAgent"][1].invoke.side_effect = RuntimeError("provider down")
+
+        with stack:
+            with pytest.raises(RuntimeError):
+                await run_agent_once(**_base_kwargs(state=state, prompt_caching_enabled=True))
+
+        assert state.prompt_caching_diagnostics == {}
+
+    async def test_a_withheld_verdict_survives_the_raise(self):
+        state = _DiagState()
+        stack, classes, _, _ = _patch_runtime({"response": "ok"})
+        classes["ToolAgent"][1].invoke.side_effect = RuntimeError("provider down")
+
+        with stack:
+            with pytest.raises(RuntimeError):
+                await run_agent_once(**_base_kwargs(state=state, prompt_caching_enabled=True))
+
+        assert state.prompt_caching_diagnostics == {"node-1": {"requested": True, "applied": False, "reason": None}}
+
+
+@pytest.mark.asyncio
 class TestObservedCacheTokens:
 
     async def test_an_applied_run_records_what_the_provider_reported(self):

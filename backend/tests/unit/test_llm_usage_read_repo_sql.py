@@ -120,7 +120,8 @@ async def test_summary_derives_the_total_for_providers_that_exclude_the_cache_bu
     db = CapturingDb()
     await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
     sql = _sql(db.statements[0])
-    assert "ELSE 0 END + llm_usage_events.output_tokens ELSE llm_usage_events.total_tokens END" in sql
+    assert "greatest(llm_usage_events.total_tokens, llm_usage_events.input_tokens + CASE WHEN" in sql
+    assert "ELSE 0 END + llm_usage_events.output_tokens) ELSE llm_usage_events.total_tokens END" in sql
 
 
 @pytest.mark.asyncio

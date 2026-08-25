@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-import migrations
-
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
     / "alembic"
@@ -102,11 +100,6 @@ class TestExpectedDefinitions:
             " AND (total_tokens >= 0) AND (call_index >= 0)"
             " AND (cache_read_tokens >= 0) AND (cache_creation_tokens >= 0)))"
         )
-
-    def test_the_migration_and_the_runtime_verifier_agree(self, module):
-        for column in migrations.LLM_USAGE_NON_NEGATIVE_COLUMNS:
-            assert f"({column} >= 0)" in module._EXTENDED_DEF
-        assert module._CONSTRAINT == migrations.LLM_USAGE_NON_NEGATIVE_CONSTRAINT
 
     def test_the_migration_imports_no_application_code(self):
         source = _MIGRATION_PATH.read_text()

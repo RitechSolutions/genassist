@@ -86,6 +86,60 @@ class TestRecordWritesTheSingleStore:
         assert set(state.node_execution_status) == {"ok", "bad"}
 
 
+class TestDelegationTurnsMergeIntoOneEntry:
+
+    def test_one_applied_turn_marks_the_node_applied(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        diagnostics.record(state, "agent", applied=False, reason="unsupported_mode")
+
+        assert state.prompt_caching_diagnostics == {"agent": _APPLIED}
+
+    def test_observed_counts_survive_the_next_turns_re_record(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        diagnostics.record_observed_cache_tokens(state, "agent", [{"token_details": {"cache_read": 900}}])
+        diagnostics.record(state, "agent", applied=True)
+
+        assert state.prompt_caching_diagnostics["agent"] == {
+            **_APPLIED,
+            "cache_read_tokens": 900,
+            "cache_creation_tokens": 0,
+        }
+
+    def test_observed_counts_accumulate_across_turns(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        diagnostics.record_observed_cache_tokens(
+            state, "agent", [{"token_details": {"cache_read": 900, "cache_creation": 100}}]
+        )
+        diagnostics.record(state, "agent", applied=True)
+        diagnostics.record_observed_cache_tokens(state, "agent", [{"token_details": {"cache_read": 50}}])
+
+        assert state.prompt_caching_diagnostics["agent"] == {
+            **_APPLIED,
+            "cache_read_tokens": 950,
+            "cache_creation_tokens": 100,
+        }
+
+    def test_a_turn_with_no_usage_keeps_earlier_counts(self):
+        from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        diagnostics.record_observed_cache_tokens(state, "agent", [{"token_details": {"cache_read": 900}}])
+        diagnostics.record(state, "agent", applied=True)
+        diagnostics.record_observed_cache_tokens(state, "agent", [])
+
+        assert state.prompt_caching_diagnostics["agent"]["cache_read_tokens"] == 900
+
+
 class TestCollectionLifecycle:
     def test_a_fresh_state_starts_empty(self):
         assert _state().prompt_caching_diagnostics == {}

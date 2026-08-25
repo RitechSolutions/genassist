@@ -87,10 +87,25 @@ def test_within_ttl_serves_the_cached_copy(monkeypatch, clock):
     assert loader.calls == 1
 
 
-def test_expired_entry_reloads(monkeypatch, clock):
+def _wait_for_background_refresh(timeout: float = 5.0):
+    import time as real_time
+
+    for _ in range(int(timeout / 0.01)):
+        with pricing_cache._condition:
+            if not pricing_cache._refreshing:
+                return
+        real_time.sleep(0.01)
+    raise AssertionError("the background refresh never finished")
+
+
+def test_expired_entry_serves_stale_and_refreshes_in_the_background(monkeypatch, clock):
     loader = _install(monkeypatch, Loader(RATES, NEWER))
     get_db_pricing_nested(TENANT)
     clock.advance(pricing_cache._TTL_SECONDS + 1)
+
+    assert get_db_pricing_nested(TENANT) == RATES
+
+    _wait_for_background_refresh()
     assert get_db_pricing_nested(TENANT) == NEWER
     assert loader.calls == 2
 
@@ -114,6 +129,8 @@ def test_db_failure_after_a_warm_load_serves_the_stale_copy(monkeypatch, clock):
     _install(monkeypatch, Loader(RATES, None))
     get_db_pricing_nested(TENANT)
     clock.advance(pricing_cache._TTL_SECONDS + 1)
+    assert get_db_pricing_nested(TENANT) == RATES
+    _wait_for_background_refresh()
     assert get_db_pricing_nested(TENANT) == RATES
 
 
@@ -173,19 +190,43 @@ def test_a_cold_stampede_reaches_the_db_once_and_every_caller_waits_for_it(monke
     assert loader.calls == 1
 
 
-def test_a_ttl_expiry_stampede_serves_the_stale_copy_while_one_caller_refreshes(monkeypatch, clock):
+def test_a_failed_thread_start_releases_the_refresh_slot(monkeypatch, clock):
+    loader = _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+    clock.advance(pricing_cache._TTL_SECONDS + 1)
+
+    class _Unstartable:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    real_thread = threading.Thread
+    monkeypatch.setattr(pricing_cache.threading, "Thread", _Unstartable)
+    assert get_db_pricing_nested(TENANT) == RATES
+    assert TENANT not in pricing_cache._refreshing
+
+    monkeypatch.setattr(pricing_cache.threading, "Thread", real_thread)
+    assert get_db_pricing_nested(TENANT) == RATES
+    _wait_for_background_refresh()
+    assert get_db_pricing_nested(TENANT) == NEWER
+    assert loader.calls == 2
+
+
+def test_a_ttl_expiry_stampede_serves_the_stale_copy_while_one_refresh_runs(monkeypatch, clock):
     loader = _install(monkeypatch, BlockingLoader(RATES, NEWER, block_on=2))
     get_db_pricing_nested(TENANT)
     clock.advance(pricing_cache._TTL_SECONDS + 1)
 
-    thread, _ = _refresh_in_background()
+    assert get_db_pricing_nested(TENANT) == RATES
     assert loader.entered.wait(5)
 
     assert [get_db_pricing_nested(TENANT) for _ in range(5)] == [RATES] * 5
     assert loader.calls == 2
 
     loader.released.set()
-    thread.join(5)
+    _wait_for_background_refresh()
     assert get_db_pricing_nested(TENANT) == NEWER
 
 

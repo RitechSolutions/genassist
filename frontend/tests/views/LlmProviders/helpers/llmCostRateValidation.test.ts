@@ -31,9 +31,9 @@ describe('validateLlmCostRateForm', () => {
   });
 
   it('reports one message per field', () => {
-    const errors = validateLlmCostRateForm(form({ provider: '', input_per_1k: 'abc', cache_read_per_1k: '-1' }));
+    const errors = validateLlmCostRateForm(form({ provider: '', input_per_1k: '  ' }));
 
-    expect(Object.keys(errors).sort()).toEqual(['cache_read_per_1k', 'input_per_1k', 'provider']);
+    expect(Object.keys(errors).sort()).toEqual(['input_per_1k', 'provider']);
     expect(errors.model).toBeUndefined();
   });
 });
@@ -56,13 +56,18 @@ describe('identity fields', () => {
   });
 });
 
-describe('rate syntax', () => {
-  it.each(['0', '0.5', '0.00015', '12345678', '99999999.9999999999', '000000001', '0.12345678900'])(
-    'accepts %s',
-    (value) => {
-      expect(rateErrors(value)).toBeUndefined();
-    }
-  );
+describe('rate values', () => {
+  it.each(['0', '0.5', '0.00015', '12345678', '99999999.9999999999'])('accepts %s', (value) => {
+    expect(rateErrors(value)).toBeUndefined();
+  });
+
+  it.each(['.5', '+1', '1.', '1e-7', '1E+3', '1_000'])('leaves backend-valid %s to the backend', (value) => {
+    expect(rateErrors(value)).toBeUndefined();
+  });
+
+  it.each(['abc', '-0.001', '0.00000000001'])('does not pre-judge %s client-side', (value) => {
+    expect(rateErrors(value)).toBeUndefined();
+  });
 
   it.each(['', '   '])('requires a value (%s)', (value) => {
     expect(rateErrors(value)).toBe('A rate is required.');
@@ -70,42 +75,5 @@ describe('rate syntax', () => {
 
   it('trims surrounding whitespace, matching what the dialog submits', () => {
     expect(rateErrors('  0.5  ')).toBeUndefined();
-  });
-
-  it.each(['abc', '.', '.5', '+1', '-0', '-0.001', '1e-10', '1.', '1,5', '0x1'])(
-    'rejects %s as not a plain decimal',
-    (value) => {
-      expect(rateErrors(value)).toBe('Enter a plain decimal number, for example 0.00015.');
-    }
-  );
-});
-
-describe("decimal precision, pinned to the backend's Decimal constraints", () => {
-  it.each(['123456789', '123456789.1', '100000000'])('rejects %s for exceeding 8 whole digits', (value) => {
-    expect(rateErrors(value)).toBe('Use at most 8 digits before the decimal point.');
-  });
-
-  it('counts whole digits after dropping insignificant leading zeros', () => {
-    expect(rateErrors('0000012345678')).toBeUndefined();
-    expect(rateErrors('0000123456789')).toBeDefined();
-  });
-
-  it.each(['0.00000000001', '12345678.99999999999'])('rejects %s for exceeding 10 decimal places', (value) => {
-    expect(rateErrors(value)).toBe('Use at most 10 decimal places.');
-  });
-
-  it('counts decimal places after dropping insignificant trailing zeros', () => {
-    expect(rateErrors('0.123456789000')).toBeUndefined();
-    expect(rateErrors('0.0000000000')).toBeUndefined();
-    expect(rateErrors('0.1234567890123456789')).toBeDefined();
-  });
-
-  it('applies the same rules to cache rates', () => {
-    const errors = validateLlmCostRateForm(
-      form({ cache_read_per_1k: '123456789', cache_creation_per_1k: '0.00000000001' })
-    );
-
-    expect(errors.cache_read_per_1k).toBe('Use at most 8 digits before the decimal point.');
-    expect(errors.cache_creation_per_1k).toBe('Use at most 10 decimal places.');
   });
 });

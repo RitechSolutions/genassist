@@ -17,25 +17,29 @@ describe("promptCachingHint", () => {
     expect(promptCachingHint(1, openai, "model", "Base")).toBeNull();
   });
 
-  it("warns about a provider family that takes no cache markers", () => {
-    expect(promptCachingHint(true, cohere, "model", "Base")).toEqual({
+  it("warns about a provider that reports no caching support", () => {
+    const served = { llm_model_provider: "cohere", prompt_caching_mode: "none" as const };
+    expect(promptCachingHint(true, served, "model", "Base")).toEqual({
       text: "This provider does not support prompt caching, so the setting has no effect.",
       tone: "warning",
     });
   });
 
-  it("tells a family that caches on its own the setting is moot, never that caching is unavailable", () => {
+  it("tells a provider that caches on its own the setting is moot, never that caching is unavailable", () => {
     for (const family of automaticFamilies) {
-      const hint = promptCachingHint(true, { llm_model_provider: family }, "model", "Base");
+      const served = { llm_model_provider: family, prompt_caching_mode: "automatic" as const };
+      const hint = promptCachingHint(true, served, "model", "Base");
       expect(hint?.tone).toBe("info");
       expect(hint?.text).toMatch(/cache long prompts automatically/);
       expect(hint?.text).not.toMatch(/does not support|cannot cache|no caching/i);
     }
   });
 
-  it("passes anthropic and bedrock through", () => {
-    expect(promptCachingHint(true, anthropic, "model", "Base")).toBeNull();
-    expect(promptCachingHint(true, { llm_model_provider: "bedrock" }, "model", "Base")).toBeNull();
+  it("passes served explicit providers through", () => {
+    const anthropicExplicit = { llm_model_provider: "anthropic", prompt_caching_mode: "explicit" as const };
+    const bedrockExplicit = { llm_model_provider: "bedrock", prompt_caching_mode: "explicit" as const };
+    expect(promptCachingHint(true, anthropicExplicit, "model", "Base")).toBeNull();
+    expect(promptCachingHint(true, bedrockExplicit, "model", "Base")).toBeNull();
   });
 
   it("says nothing when no provider is selected yet", () => {
@@ -59,8 +63,10 @@ describe("promptCachingHint", () => {
   });
 
   it("reports the provider first when both apply", () => {
-    expect(promptCachingHint(true, cohere, "agent", "ReActAgent")?.text).toMatch(/does not support prompt caching/);
-    expect(promptCachingHint(true, openai, "agent", "ReActAgent")?.tone).toBe("info");
+    const noneCohere = { llm_model_provider: "cohere", prompt_caching_mode: "none" as const };
+    const autoOpenai = { llm_model_provider: "OpenAI", prompt_caching_mode: "automatic" as const };
+    expect(promptCachingHint(true, noneCohere, "agent", "ReActAgent")?.text).toMatch(/does not support prompt caching/);
+    expect(promptCachingHint(true, autoOpenai, "agent", "ReActAgent")?.tone).toBe("info");
   });
 
   describe("backend-served prompt_caching_mode", () => {
@@ -77,7 +83,7 @@ describe("promptCachingHint", () => {
       expect(promptCachingHint(true, provider, "model", "Base")?.text).toMatch(/provider does not support/);
     });
 
-    it("prefers the served mode over the family heuristic", () => {
+    it("trusts the served mode for any family", () => {
       const provider = { llm_model_provider: "cohere", prompt_caching_mode: "automatic" as const };
       expect(promptCachingHint(true, provider, "model", "Base")?.tone).toBe("info");
     });
@@ -88,9 +94,15 @@ describe("promptCachingHint", () => {
       expect(promptCachingHint(true, provider, "agent", "ReActAgent")?.text).toMatch(/does not split/);
     });
 
-    it("falls back to the family heuristic when the field is absent", () => {
+    it("stays silent when the field is absent — no client-side family fallback", () => {
       expect(promptCachingHint(true, { llm_model_provider: "bedrock" }, "model", "Base")).toBeNull();
-      expect(promptCachingHint(true, cohere, "model", "Base")?.tone).toBe("warning");
+      expect(promptCachingHint(true, cohere, "model", "Base")).toBeNull();
+      expect(
+        promptCachingHint(true, { llm_model_provider: "bedrock", prompt_caching_mode: "none" }, "model", "Base")
+      ).toEqual({
+        text: "This model does not support prompt caching, so the setting has no effect.",
+        tone: "warning",
+      });
     });
   });
 
@@ -98,9 +110,10 @@ describe("promptCachingHint", () => {
     const explicit = { llm_model_provider: "anthropic", prompt_caching_mode: "explicit" as const };
     const bedrockNone = { llm_model_provider: "bedrock", prompt_caching_mode: "none" as const };
     const automatic = { llm_model_provider: "OpenAI", prompt_caching_mode: "automatic" as const };
+    const none = { llm_model_provider: "cohere", prompt_caching_mode: "none" as const };
 
     it("warns when a capable primary carries an unsupported fallback", () => {
-      expect(promptCachingHint(true, explicit, "model", "Base", [cohere])).toEqual({
+      expect(promptCachingHint(true, explicit, "model", "Base", [none])).toEqual({
         text: "Not every model in the fallback chain can cache, so nothing is cached.",
         tone: "warning",
       });
@@ -122,11 +135,11 @@ describe("promptCachingHint", () => {
     });
 
     it("mixed automatic and unsupported members warn about the chain", () => {
-      expect(promptCachingHint(true, automatic, "model", "Base", [cohere])?.text).toMatch(/fallback chain/);
+      expect(promptCachingHint(true, automatic, "model", "Base", [none])?.text).toMatch(/fallback chain/);
     });
 
     it("unclassifiable chain members are ignored, like the runtime skipping unbuildable providers", () => {
-      expect(promptCachingHint(true, explicit, "model", "Base", [undefined, {}])).toBeNull();
+      expect(promptCachingHint(true, explicit, "model", "Base", [undefined, {}, cohere])).toBeNull();
     });
   });
 

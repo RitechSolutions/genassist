@@ -245,10 +245,6 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 return result
 
             cacheable_prefix, cache_reason = self._system_prompt_is_cacheable(llm, system_prompt)
-            if prompt_caching_enabled:
-                from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
-
-                diagnostics.record(self.get_state(), self.node_id, applied=cacheable_prefix, reason=cache_reason)
 
             chat_history = ""
             if memory:
@@ -276,6 +272,11 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 attachments_message_content = self._build_attachments_message_content(attachments)
                 message_content.extend(attachments_message_content)
 
+            if prompt_caching_enabled and not cacheable_prefix:
+                from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+                diagnostics.record(self.get_state(), self.node_id, applied=False, reason=cache_reason)
+
             # Process the input through the model
             response = await llm.ainvoke([system_message, HumanMessage(content=message_content)])
 
@@ -288,6 +289,7 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             if prompt_caching_enabled and cacheable_prefix:
                 from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
+                diagnostics.record(self.get_state(), self.node_id, applied=True)
                 diagnostics.record_observed_cache_tokens(self.get_state(), self.node_id, [response])
 
             return response.content

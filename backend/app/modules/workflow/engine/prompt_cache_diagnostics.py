@@ -26,10 +26,9 @@ def unwrapped_model_reason(llm: Any) -> Optional[str]:
 
 
 def cache_split_decision(
-    stable_volatile_parts: Optional[tuple], llm: Any, stable_text: Optional[str] = None
+    stable_volatile_parts: Optional[tuple], llm: Any, *, stable_never_blank: bool = False
 ) -> tuple[bool, Optional[str]]:
-    """The shared caching gate every node type calls: returns (applied, reason),
-    checked in order"""
+    """The shared caching gate every node type calls: returns (applied, reason),checked in order"""
     if not stable_volatile_parts:
         return False, REASON_VOLATILE_PROMPT
 
@@ -37,7 +36,9 @@ def cache_split_decision(
     if unsupported:
         return False, unsupported
 
-    stable = stable_volatile_parts[0] if stable_text is None else stable_text
+    if stable_never_blank:
+        return True, None
+    stable = stable_volatile_parts[0]
     if not isinstance(stable, str) or not stable.strip():
         return False, REASON_EMPTY_PROMPT
     return True, None
@@ -50,16 +51,29 @@ def _diagnostics_map(state: Any) -> Optional[dict]:
 
 def record(state: Any, node_id: str, *, applied: bool, reason: Optional[str] = None) -> None:
     """Write the node's decision into the state's diagnostics map. Best effort: a
-    diagnostic must never raise into the business path"""
+    diagnostic must never raise into the business path.
+
+    A delegation loop re-records the same node once per turn, so the entry covers
+    the whole node execution: one applied turn marks the node applied, and observed
+    token counts from earlier turns carry over"""
     try:
         diagnostics_map = _diagnostics_map(state)
         if diagnostics_map is None:
             return
-        diagnostics_map[node_id] = {
+        entry = {
             "requested": True,
             "applied": applied,
             "reason": None if applied else reason,
         }
+        previous = diagnostics_map.get(node_id)
+        if isinstance(previous, dict):
+            if previous.get("applied"):
+                entry["applied"] = True
+                entry["reason"] = None
+            for key in ("cache_read_tokens", "cache_creation_tokens"):
+                if key in previous:
+                    entry[key] = previous[key]
+        diagnostics_map[node_id] = entry
     except Exception:
         logger.warning("Failed writing the prompt-caching diagnostic for node %s", node_id, exc_info=True)
 
@@ -90,9 +104,10 @@ def record_observed_cache_tokens(state: Any, node_id: str, usage_entries: Any) -
             cache_read += read
             cache_creation += creation
         # A run with no usage at all stays unstamped: absent fields mean "not reported",
-        # zeros mean "reported, and nothing was cached"
+        # zeros mean "reported, and nothing was cached". Added, not assigned, so
+        # delegation turns accumulate into one node total
         if reported:
-            entry["cache_read_tokens"] = cache_read
-            entry["cache_creation_tokens"] = cache_creation
+            entry["cache_read_tokens"] = entry.get("cache_read_tokens", 0) + cache_read
+            entry["cache_creation_tokens"] = entry.get("cache_creation_tokens", 0) + cache_creation
     except Exception:
         logger.warning("Failed recording observed cache tokens for node %s", node_id, exc_info=True)

@@ -66,13 +66,9 @@ class ToolAgent(BaseToolAgent):
         self.stable_volatile_parts = stable_volatile_parts
         # Splitting moves the guidance out of the fused user turn, so it is only worth
         # doing when the provider can cache it and the caller marked the prompt eligible.
-        # Gated on the enhanced prefix: the wrapped tool guidance makes
-        # a blank base prompt still worth caching.
-        self.cache_split_decision = cache_split_decision(
-            stable_volatile_parts,
-            llm_model,
-            stable_text=self._create_enhanced_system_prompt(stable_volatile_parts[0]) if stable_volatile_parts else None,
-        )
+        # The enhanced prefix always carries the wrapped tool guidance, so even a blank
+        # base prompt stays cacheable.
+        self.cache_split_decision = cache_split_decision(stable_volatile_parts, llm_model, stable_never_blank=True)
         self._cache_split = self.cache_split_decision[0]
 
     # ==================== PROMPT GENERATION ====================

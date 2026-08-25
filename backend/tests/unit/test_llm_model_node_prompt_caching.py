@@ -37,6 +37,12 @@ class _CapturingModel(BaseChatModel):
         return self._generate(messages, stop, run_manager, **kwargs)
 
 
+class _RaisingModel(_CapturingModel):
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        raise RuntimeError("provider unavailable")
+
+
 class _FakeMemory:
     def __init__(self, history: str):
         self._history = history
@@ -428,6 +434,49 @@ class TestNodeDiagnostic:
         diagnostic = await _diagnose(_caching_llm()[0], history=_HISTORY, **config)
 
         assert diagnostic is None
+
+    async def test_a_failed_memory_lookup_leaves_no_applied_marker(self):
+        class _RaisingMemory:
+            async def get_chat_history(self, as_string: bool = False, max_messages: int = 10) -> str:
+                raise RuntimeError("memory backend down")
+
+        state = _FakeState(memory=_RaisingMemory())
+        node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": {"systemPrompt": _BASE}}, state)
+        config = {"providerId": "p1", "systemPrompt": _BASE, "userPrompt": "hi", "memory": True, "promptCaching": True}
+
+        ctx, _ = _patch_injector(_caching_llm()[0])
+        with ctx:
+            await node.process(config)
+
+        assert state.prompt_caching_diagnostics == {}
+
+    async def test_an_unreadable_attachment_leaves_no_applied_marker(self):
+        class _StateWithAttachments(_FakeState):
+            def get_value(self, key, default=None):
+                if key == "attachments":
+                    return [{"type": "image/png", "file_mime_type": "image/png", "file_local_path": "/nonexistent.png"}]
+                return default
+
+        state = _StateWithAttachments()
+        node = LLMModelNode("llm-1", {"type": "llmModelNode", "data": {"systemPrompt": _BASE}}, state)
+        config = {"providerId": "p1", "systemPrompt": _BASE, "userPrompt": "hi", "promptCaching": True}
+
+        ctx, _ = _patch_injector(_caching_llm()[0])
+        with ctx:
+            await node.process(config)
+
+        assert state.prompt_caching_diagnostics == {}
+
+    async def test_a_raising_model_call_leaves_no_applied_marker(self):
+        llm = PromptCachingChatModel(inner=_RaisingModel(), cache_style="anthropic")
+        diagnostic = await _diagnose(llm, promptCaching=True)
+
+        assert diagnostic is None
+
+    async def test_a_withheld_verdict_survives_a_raising_model_call(self):
+        diagnostic = await _diagnose(_RaisingModel(), promptCaching=True)
+
+        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_cache_markers"}
 
     async def test_a_state_without_the_store_never_breaks_the_node(self):
         state = _FakeState()

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import re
@@ -146,7 +145,7 @@ class TenantService:
             if not committed:
                 await self.repository.db.rollback()
 
-    async def update_tenant(self, tenant_id: UUID, **updates) -> Optional[TenantModel] | ValueError:
+    async def update_tenant(self, tenant_id: UUID, **updates) -> Optional[TenantModel]:
         """Update tenant information"""
         if not settings.MULTI_TENANT_ENABLED:
             return None
@@ -154,15 +153,6 @@ class TenantService:
         tenant = await self.repository.get_by_id(tenant_id)
         if not tenant:
             return None
-
-        if updates.get("is_active") is True and not tenant.is_active:
-            from migrations import migrate_and_verify_tenant
-
-            if not await asyncio.to_thread(migrate_and_verify_tenant, tenant.slug):
-                return ValueError(
-                    f"Cannot reactivate tenant '{tenant.slug}': its database could not be "
-                    "migrated and verified. Check the logs, then retry."
-                )
 
         for key, value in updates.items():
             if hasattr(tenant, key):

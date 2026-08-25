@@ -21,12 +21,6 @@
 # task_routes pins execute_pipeline_run / execute_test_suite_run /
 # check_scheduled_pipeline_runs to the "ml" queue.
 #
-# Migration ordering: run_celery.py verifies the LLM-usage schema before starting a
-# worker or beat and exits non-zero when it is unmigrated, so pods crash-loop until the
-# API's migrations land rather than silently dropping billing rows. A migration Job or
-# initContainer is the k8s-native way to sequence that; with the in-process check it is
-# belt-and-braces rather than required.
-#
 # This is a reference template — replace <IMAGE>, namespace, env/secret refs and resource
 # requests with your cluster's values. The fields that matter for the split are the
 # `command`, the CELERY_* env vars, and the `-Q` queue selector.

@@ -191,10 +191,8 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
   }
 
   // Diagnostics ride their own key, so no node count or status derives from them.
-  const diagnosticKeys = new Set(Object.keys(rawDiagnostics));
   const promptCachingDiagnostics: Record<string, PromptCachingDiagnostic> = {};
   for (const [nodeId, raw] of Object.entries(rawDiagnostics)) {
-    if (isArchivedKey(nodeId, diagnosticKeys)) continue;
     const diagnostic = normalizePromptCaching(raw);
     if (diagnostic) promptCachingDiagnostics[nodeId] = diagnostic;
   }

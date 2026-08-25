@@ -30,27 +30,16 @@ def test_a_fresh_database_stamps_head(monkeypatch, alembic_calls):
     assert alembic_calls == ["ensure_version", "stamp:head"]
 
 
-def test_auto_migrate_off_touches_no_revision_on_a_fresh_database(monkeypatch, alembic_calls):
+def test_a_fresh_database_stamps_head_even_with_auto_migrate_off(monkeypatch, alembic_calls):
     _tables(monkeypatch, [])
     monkeypatch.setenv("AUTO_MIGRATE", "false")
 
     assert migrations.run_migrations("postgresql://x/y") is True
-    assert alembic_calls == []
+    assert alembic_calls == ["ensure_version", "stamp:head"]
 
 
 def test_auto_migrate_off_touches_no_revision_on_an_existing_database(monkeypatch, alembic_calls):
     _tables(monkeypatch, ["users", "tenants"])
-    monkeypatch.setenv("AUTO_MIGRATE", "false")
-
-    assert migrations.run_migrations("postgresql://x/y") is True
-    assert alembic_calls == []
-
-
-def test_auto_migrate_off_never_even_inspects_the_database(monkeypatch, alembic_calls):
-    def _boom(url):
-        raise AssertionError("must not connect")
-
-    monkeypatch.setattr(migrations, "get_table_names", _boom)
     monkeypatch.setenv("AUTO_MIGRATE", "false")
 
     assert migrations.run_migrations("postgresql://x/y") is True

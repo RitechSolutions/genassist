@@ -230,11 +230,11 @@ describe('buildExecutionViewModel — prompt caching', () => {
     expect(Object.keys(withDiagnostics.byId)).toEqual(['llm']);
   });
 
-  it('collapses archived re-run keys inside the standalone collection', () => {
+  it('keeps every key — the backend never archives entries in this map', () => {
     const m = buildExecutionViewModel(
-      responseWith({ nodeExecutionStatus: {}, promptCachingDiagnostics: { child: WITHHELD, child_0: APPLIED } })
+      responseWith({ nodeExecutionStatus: {}, promptCachingDiagnostics: { step: WITHHELD, step_2: APPLIED } })
     );
-    expect(Object.keys(m.promptCachingDiagnostics)).toEqual(['child']);
+    expect(Object.keys(m.promptCachingDiagnostics).sort()).toEqual(['step', 'step_2']);
   });
 
   it('yields an empty collection for a malformed or absent bag', () => {

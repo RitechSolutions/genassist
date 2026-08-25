@@ -1,6 +1,8 @@
 /**
- * Client-side checks for the LLM cost rate form, mirroring the backend's
- * `LlmCostRateCreate` / `LlmCostRateUpdate` schemas.
+ * Client-side checks for the LLM cost rate form: presence and identity-field
+ * length only. Rate syntax, precision, and range belong to the backend's
+ * `RateDecimal`, the CSV import path uses the same schema, so both entry paths
+ * accept the same values, and its 422s surface through the dialog's formError.
  */
 
 export interface LlmCostRateFormValues {
@@ -16,25 +18,6 @@ export type LlmCostRateFieldErrors = Partial<Record<keyof LlmCostRateFormValues,
 
 const PROVIDER_MAX = 64;
 const MODEL_MAX = 512;
-const MAX_WHOLE_DIGITS = 8;
-const MAX_DECIMAL_PLACES = 10;
-
-const PLAIN_DECIMAL = /^\d+(?:\.\d+)?$/;
-
-function rateError(value: string): string | undefined {
-  if (!PLAIN_DECIMAL.test(value)) {
-    return 'Enter a plain decimal number, for example 0.00015.';
-  }
-
-  const [whole, fraction = ''] = value.split('.');
-  if (whole.replace(/^0+/, '').length > MAX_WHOLE_DIGITS) {
-    return `Use at most ${MAX_WHOLE_DIGITS} digits before the decimal point.`;
-  }
-  if (fraction.replace(/0+$/, '').length > MAX_DECIMAL_PLACES) {
-    return `Use at most ${MAX_DECIMAL_PLACES} decimal places.`;
-  }
-  return undefined;
-}
 
 function keyError(value: string, label: string, max: number): string | undefined {
   if (!value) return `${label} is required.`;
@@ -51,18 +34,9 @@ export function validateLlmCostRateForm(values: LlmCostRateFormValues): LlmCostR
   if (model) errors.model = model;
 
   for (const field of ['input_per_1k', 'output_per_1k'] as const) {
-    const value = values[field].trim();
-    const error = value ? rateError(value) : 'A rate is required.';
-    if (error) errors[field] = error;
+    if (!values[field].trim()) errors[field] = 'A rate is required.';
   }
 
-  // Blank means "not configured", which is not the same as 0
-  for (const field of ['cache_read_per_1k', 'cache_creation_per_1k'] as const) {
-    const value = values[field].trim();
-    if (!value) continue;
-    const error = rateError(value);
-    if (error) errors[field] = error;
-  }
-
+  // Cache rates may stay blank: "not configured" is not the same as 0.
   return errors;
 }

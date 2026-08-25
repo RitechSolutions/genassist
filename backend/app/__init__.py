@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -235,13 +234,6 @@ async def _lifespan(app: FastAPI):
 
     # Initialize database and application services
     await multi_tenant_manager.initialize()
-
-    # Serving against one the recorder cannot write to loses billing rows silently, so refuse before accepting traffic
-    from migrations import verify_llm_usage_schema_for_all_databases
-
-    if not await asyncio.to_thread(verify_llm_usage_schema_for_all_databases):
-        raise RuntimeError("LLM usage schema verification failed; refusing to serve.")
-
     await pre_wormup_tenant_singleton()
 
     from app.core.permissions import sync_permissions_on_startup

@@ -12,10 +12,6 @@ export interface PromptCachingHintProvider {
 
 type CachingMode = "explicit" | "automatic" | "none";
 
-// Legacy fallback only. These cache long prompts server-side with no marker, so the
-// toggle is moot rather than a mistake.
-const AUTOMATIC_CACHING_FAMILIES = ["openai", "azure_openai", "google_genai", "google_vertexai"];
-
 const AUTOMATIC_HINT: PromptCachingHint = {
   text: "Recent models on this provider cache long prompts automatically, so this setting has no effect.",
   tone: "info",
@@ -55,10 +51,9 @@ export function fallbackChainProviders<T extends { id: string }>(
 const resolveMode = (provider: PromptCachingHintProvider | undefined): CachingMode | undefined => {
   const mode = provider?.prompt_caching_mode;
   if (mode === "explicit" || mode === "automatic" || mode === "none") return mode;
-  const family = (provider?.llm_model_provider ?? "").toLowerCase();
-  if (!family) return undefined;
-  if (family === "anthropic" || family === "bedrock") return "explicit";
-  return AUTOMATIC_CACHING_FAMILIES.includes(family) ? "automatic" : "none";
+  // The backend serves prompt_caching_mode on every provider read and owns the
+  // classification (it is model-conditional for Bedrock)
+  return undefined;
 };
 
 /**

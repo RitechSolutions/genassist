@@ -99,10 +99,38 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
     return nested
 
 
+def _refresh(tenant: str, generation: tuple) -> tuple:
+    """One guarded DB load. Returns (loaded, generation at publish time)"""
+    loaded = None
+    current = generation
+    try:
+        loaded = _load_db_nested(tenant)
+    finally:
+        with _condition:
+            _refreshing.discard(tenant)
+            current = (_global_generation, _tenant_generation.get(tenant, 0))
+            if current == generation:
+                if loaded is None:
+                    _next_retry[tenant] = time.monotonic() + _FAILURE_COOLDOWN_SECONDS
+                else:
+                    _cache[tenant] = (time.monotonic() + _TTL_SECONDS, loaded)
+                    _next_retry.pop(tenant, None)
+            _condition.notify_all()
+    return loaded, current
+
+
+def _refresh_in_background(tenant: str, generation: tuple) -> None:
+    try:
+        _refresh(tenant, generation)
+    except Exception:
+        # Bookkeeping already ran in _refresh's finally; the next caller retries
+        logger.warning("Background llm_cost_rates refresh failed for tenant %s", tenant, exc_info=True)
+
+
 def get_db_pricing_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]]:
     """Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS.
-    One DB load at a time per tenant; a stale copy is served during a refresh, but a cold
-    miss waits for the in-flight load rather than pricing with an empty table"""
+    One DB load at a time per tenant. An expired warm entry is served stale while a
+    background thread refreshes. Only a cold miss blocks, rather than pricing with an empty table"""
     while True:
         with _condition:
             while True:
@@ -121,22 +149,22 @@ def get_db_pricing_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]]
             _refreshing.add(tenant)
             generation = (_global_generation, _tenant_generation.get(tenant, 0))
 
-        loaded = None
-        current = generation
-        try:
-            loaded = _load_db_nested(tenant)
-        finally:
-            with _condition:
-                _refreshing.discard(tenant)
-                current = (_global_generation, _tenant_generation.get(tenant, 0))
-                if current == generation:
-                    if loaded is None:
-                        _next_retry[tenant] = time.monotonic() + _FAILURE_COOLDOWN_SECONDS
-                    else:
-                        _cache[tenant] = (time.monotonic() + _TTL_SECONDS, loaded)
-                        _next_retry.pop(tenant, None)
-                _condition.notify_all()
+        if stale is not None:
+            try:
+                threading.Thread(
+                    target=_refresh_in_background,
+                    args=(tenant, generation),
+                    name=f"llm-cost-rates-refresh-{tenant}",
+                    daemon=True,
+                ).start()
+            except Exception:
+                with _condition:
+                    _refreshing.discard(tenant)
+                    _condition.notify_all()
+                logger.warning("Could not start the llm_cost_rates refresh thread for tenant %s", tenant, exc_info=True)
+            return stale
 
+        loaded, current = _refresh(tenant, generation)
         if current == generation:
-            return loaded if loaded is not None else (stale if stale is not None else {})
+            return loaded if loaded is not None else {}
         # Invalidated mid-load: the snapshot may predate the update, so discard and reload

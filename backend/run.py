@@ -25,19 +25,11 @@ app = create_app()
 
 if __name__ == "__main__":
     os.environ.setdefault("ALEMBIC_SKIP_FILECONFIG", "1")
-    # A half-migrated database silently drops billing rows, the recorder only
-    # logs failed inserts, it never crashes. So one broken tenant blocks startup for
-    # everyone — an accepted availability trade-off: billing correctness over serving.
-    # Recovery is deactivating the tenant row (SQL) or fixing its database.
-    if not run_migrations(settings.DATABASE_URL_SYNC):
-        logger.error("Migrations failed for the main database; refusing to start.")
-        raise SystemExit(1)
+    run_migrations(settings.DATABASE_URL_SYNC)
 
     # Run migrations for all active tenant databases
     from migrations import run_migrations_for_all_tenants
-    if not run_migrations_for_all_tenants():
-        logger.error("Migrations failed for at least one tenant database; refusing to start.")
-        raise SystemExit(1)
+    run_migrations_for_all_tenants()
 
     port = int(os.environ.get("FASTAPI_RUN_PORT", 8000))
     debug_mode = os.environ.get("RELOAD", "False").lower() == "true"

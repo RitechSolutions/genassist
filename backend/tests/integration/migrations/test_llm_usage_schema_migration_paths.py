@@ -24,7 +24,6 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-import migrations as migrations_module
 from alembic import command
 from alembic.config import Config
 
@@ -140,11 +139,6 @@ class TestColdStartParity:
 
         assert _constraint(empty_database) == (swap_migration._EXTENDED_DEF, True)
 
-    def test_a_cold_started_database_passes_startup_verification(self, empty_database, drill_database_url):
-        _cold_start(empty_database)
-
-        assert migrations_module.verify_llm_usage_schema(drill_database_url, "drill") is True
-
     def test_the_constraint_actually_rejects_a_negative_cache_count(self, empty_database):
         _cold_start(empty_database)
 
@@ -186,15 +180,6 @@ class TestUpgradeFrom00109:
         command.upgrade(alembic_config, "head")
 
         assert _cached_event_count(database_at_00109) == 1
-
-    def test_the_upgraded_database_passes_startup_verification(
-        self, database_at_00109, alembic_config, drill_database_url
-    ):
-        assert migrations_module.verify_llm_usage_schema(drill_database_url, "drill") is False
-
-        command.upgrade(alembic_config, "head")
-
-        assert migrations_module.verify_llm_usage_schema(drill_database_url, "drill") is True
 
     def test_upgrading_twice_is_a_no_op(self, database_at_00109, alembic_config, swap_migration):
         command.upgrade(alembic_config, "head")
@@ -241,7 +226,7 @@ class TestDowngradeInteraction:
         assert _cached_event_count(database_at_head) == 1
 
     def test_the_documented_recovery_repairs_the_reverted_constraint(
-        self, database_at_head, alembic_config, drill_database_url, swap_migration
+        self, database_at_head, alembic_config, swap_migration
     ):
         """A refused guard leaves 00110's swap reverted while the revision still reads 00110"""
         command.upgrade(alembic_config, "head")
@@ -249,13 +234,12 @@ class TestDowngradeInteraction:
         with pytest.raises(RuntimeError):
             command.downgrade(alembic_config, _00108)
 
-        assert migrations_module.verify_llm_usage_schema(drill_database_url, "drill") is False
+        assert _constraint(database_at_head) == (swap_migration._ORIGINAL_DEF, True)
 
         command.downgrade(alembic_config, _00109)
         command.upgrade(alembic_config, "head")
 
         assert _constraint(database_at_head) == (swap_migration._EXTENDED_DEF, True)
-        assert migrations_module.verify_llm_usage_schema(drill_database_url, "drill") is True
 
     def test_an_empty_ledger_downgrades_cleanly(self, database_at_head, alembic_config, engine):
         command.upgrade(alembic_config, "head")

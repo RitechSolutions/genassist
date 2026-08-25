@@ -23,7 +23,10 @@ _PROMPT_TOKENS = LlmUsageEventModel.input_tokens + case((_IS_EXCLUSIVE, _CACHE_R
 
 # Every token aggregate shares this one expression
 _TOKENS = case(
-    (_IS_EXCLUSIVE, _PROMPT_TOKENS + LlmUsageEventModel.output_tokens),
+    (
+        _IS_EXCLUSIVE,
+        func.greatest(LlmUsageEventModel.total_tokens, _PROMPT_TOKENS + LlmUsageEventModel.output_tokens),
+    ),
     else_=LlmUsageEventModel.total_tokens,
 )
 

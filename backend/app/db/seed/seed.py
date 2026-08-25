@@ -469,6 +469,10 @@ async def seed_data(session: AsyncSession, injector: Injector):
 
     await seed_llm_usage_control(session)
 
+    from app.db.seed.llm_cost_rates import seed_llm_cost_rates
+
+    await seed_llm_cost_rates(session)
+
     # Seed tools
     # currency_tool = await seed_tools(session, admin.id, injector)
 

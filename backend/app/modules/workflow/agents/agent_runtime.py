@@ -112,11 +112,13 @@ async def run_agent_once(
         decision = agent.cache_split_decision
 
     applied, split_reason = decision
-    if prompt_caching_enabled:
+    # A withheld verdict is config-truth and lands before the call; "applied" waits
+    # until the invocation returns, so a raising agent leaves no misleading marker
+    if prompt_caching_enabled and not applied:
         from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
         reason = diagnostics.REASON_UNSUPPORTED_MODE if mode_never_splits else split_reason
-        diagnostics.record(state, node_id, applied=applied, reason=reason)
+        diagnostics.record(state, node_id, applied=False, reason=reason)
 
     result = await agent.invoke(user_prompt, chat_history=chat_history or [])
     logger.debug("Agent result: %s", result)
@@ -128,6 +130,7 @@ async def run_agent_once(
     if prompt_caching_enabled and applied:
         from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
+        diagnostics.record(state, node_id, applied=True)
         usage_entries = result.get("llm_usage") if isinstance(result, dict) else None
         diagnostics.record_observed_cache_tokens(state, node_id, usage_entries)
 

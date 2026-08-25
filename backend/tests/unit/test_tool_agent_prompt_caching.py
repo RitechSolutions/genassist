@@ -142,6 +142,16 @@ class TestGate:
 
         assert agent.cache_split_decision == (True, None)
 
+    def test_construction_never_builds_the_enhanced_prompt(self, monkeypatch):
+        def _boom(self, base_prompt=None):
+            raise AssertionError("the enhanced prompt must stay invocation-local")
+
+        monkeypatch.setattr(ToolAgent, "_create_enhanced_system_prompt", _boom)
+
+        for kwargs in ({}, {"caching": False}, {"parts": None}):
+            agent, _ = _agent(tools=[_weather_tool()], **kwargs)
+            assert isinstance(agent.cache_split_decision, tuple)
+
 
 @pytest.mark.asyncio
 class TestFusedModeIsUnchanged:
