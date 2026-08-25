@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -44,6 +44,7 @@ import { getAudioUrl, stripAudioDataForDisplay } from "../hooks/useAudioTest";
 import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
+import { collectPromptCachingWarnings } from "../utils/executionView";
 
 type TestViewMode = "response" | "debug" | "execution";
 
@@ -124,6 +125,12 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
   );
   // Which history entry is currently shown in the results panel (highlights the list item).
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
+  // Nodes that asked for prompt caching and ran uncached.
+  const promptCachingWarnings = useMemo(
+    () => collectPromptCachingWarnings(response, workflow),
+    [response, workflow]
+  );
 
   // Dynamic pause/resume state
   const [pausedFormSchema, setPausedFormSchema] = useState<PausedFormSchema | null>(null);
@@ -1087,6 +1094,25 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                             </div>
                           </div>
                         )}
+                      {promptCachingWarnings.length > 0 && (
+                        <div className="rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+                          <div className="font-medium text-foreground">
+                            Prompt caching was requested but not applied on:
+                          </div>
+                          <ul className="mt-1.5 list-disc space-y-1 pl-6">
+                            {promptCachingWarnings.map((w) => (
+                              <li key={w.nodeId}>
+                                <span className="font-medium">{w.name}</span>
+                                {w.reasonText ? <span> — {w.reasonText}</span> : null}
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="mt-1.5 text-xs">
+                            The run completed normally, just uncached. Open the Execution tab
+                            to inspect each node.
+                          </div>
+                        </div>
+                      )}
                       {response?.status === "success" ? (
                         <>
                           {/* The user's test message */}

@@ -1,6 +1,5 @@
 """Sub-agent node: a specialist agent a parent delegates to"""
 
-import datetime
 import logging
 from typing import Any, Dict, Optional
 
@@ -29,6 +28,7 @@ class SubAgentNode(AgentNode):
         max_iterations = config.get("maxIterations", 7)
         memory_enabled = config.get("memory", False)
         mode = config.get("mode", "single_turn")
+        prompt_caching_enabled = config.get("promptCaching") is True
 
         system_prompt = config.get("systemPrompt") or "You are a helpful assistant."
         system_prompt += self._completion_instructions(mode)
@@ -48,7 +48,8 @@ class SubAgentNode(AgentNode):
         if config.get("piiMasking") and all_tools:
             self._wrap_tools_for_pii_unmask(all_tools)
 
-        system_prompt += f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        system_prompt, stable_volatile_parts = self._timestamped_system_prompt(system_prompt)
+
         self.set_node_input({"system_prompt": system_prompt, "prompt": prompt, "tools_reference": all_tools})
 
         try:
@@ -70,6 +71,8 @@ class SubAgentNode(AgentNode):
                     delegation_map=delegation_map,
                     max_iterations=max_iterations,
                     chat_history=chat_history,
+                    stable_volatile_parts=stable_volatile_parts,
+                    prompt_caching_enabled=prompt_caching_enabled,
                 )
 
             run = await run_agent_once(
@@ -83,6 +86,8 @@ class SubAgentNode(AgentNode):
                 tools=all_tools,
                 max_iterations=max_iterations,
                 chat_history=chat_history,
+                stable_volatile_parts=stable_volatile_parts,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:

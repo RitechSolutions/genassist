@@ -11,6 +11,7 @@ export interface LLMProvider {
   is_active: number;
   created_at: string;
   updated_at: string;
+  prompt_caching_mode?: "explicit" | "automatic" | "none";
 }
 
 export interface LLMProviderMinimal {
