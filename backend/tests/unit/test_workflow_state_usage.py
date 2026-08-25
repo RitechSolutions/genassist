@@ -234,41 +234,90 @@ class TestDelegationTurnsMergeIntoOneEntry:
 
         assert state.prompt_caching_diagnostics == {"agent": _APPLIED}
 
-    def test_observed_counts_survive_the_next_turns_re_record(self):
+    def test_a_re_record_keeps_the_entry_flag_only(self):
         state = _state()
         diagnostics.record(state, "agent", applied=True)
-        diagnostics.record_observed_cache_tokens(state, "agent", [{"token_details": {"cache_read": 900}}])
         diagnostics.record(state, "agent", applied=True)
 
-        assert state.prompt_caching_diagnostics["agent"] == {
-            **_APPLIED,
-            "cache_read_tokens": 900,
-            "cache_creation_tokens": 0,
-        }
+        assert state.prompt_caching_diagnostics == {"agent": _APPLIED}
 
-    def test_observed_counts_accumulate_across_turns(self):
+
+class TestSerializedCacheTokensComeFromUsage:
+
+    @staticmethod
+    def _serialized(state) -> dict:
+        return state.get_full_state()["promptCachingDiagnostics"]["agent"]
+
+    def test_an_applied_run_serializes_what_the_provider_reported(self):
         state = _state()
         diagnostics.record(state, "agent", applied=True)
-        diagnostics.record_observed_cache_tokens(
-            state, "agent", [{"token_details": {"cache_read": 900, "cache_creation": 100}}]
+        state.add_llm_usage(
+            5, 2, node_id="agent", prompt_caching_enabled=True,
+            token_details={"cache_read": 900, "cache_creation": 100},
         )
-        diagnostics.record(state, "agent", applied=True)
-        diagnostics.record_observed_cache_tokens(state, "agent", [{"token_details": {"cache_read": 50}}])
+        state.add_llm_usage(
+            5, 2, node_id="agent", prompt_caching_enabled=True, token_details={"cache_read": 50}
+        )
 
-        assert state.prompt_caching_diagnostics["agent"] == {
+        assert self._serialized(state) == {
             **_APPLIED,
             "cache_read_tokens": 950,
             "cache_creation_tokens": 100,
         }
 
-    def test_a_turn_with_no_usage_keeps_earlier_counts(self):
+    def test_zero_activity_is_stamped_as_zero_not_left_absent(self):
         state = _state()
         diagnostics.record(state, "agent", applied=True)
-        diagnostics.record_observed_cache_tokens(state, "agent", [{"token_details": {"cache_read": 900}}])
-        diagnostics.record(state, "agent", applied=True)
-        diagnostics.record_observed_cache_tokens(state, "agent", [])
+        state.add_llm_usage(5, 2, node_id="agent", prompt_caching_enabled=True)
 
-        assert state.prompt_caching_diagnostics["agent"]["cache_read_tokens"] == 900
+        serialized = self._serialized(state)
+        assert serialized["cache_read_tokens"] == 0
+        assert serialized["cache_creation_tokens"] == 0
+
+    def test_a_run_with_no_usage_stays_unstamped(self):
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+
+        assert self._serialized(state) == _APPLIED
+
+    def test_a_placeholder_with_no_provider_report_never_stamps_zeros(self):
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        state.add_llm_usage(
+            0, 0, node_id="agent", prompt_caching_enabled=True,
+            token_details={"usage_metadata_missing": True},
+        )
+
+        assert self._serialized(state) == _APPLIED
+
+    def test_a_withheld_entry_never_gains_token_fields(self):
+        state = _state()
+        diagnostics.record(state, "agent", applied=False, reason="volatile_prompt")
+        state.add_llm_usage(
+            5, 2, node_id="agent", prompt_caching_enabled=True, token_details={"cache_read": 900}
+        )
+
+        assert self._serialized(state) == _WITHHELD
+
+    def test_unflagged_and_other_node_usage_is_ignored(self):
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        state.add_llm_usage(5, 2, node_id="agent", token_details={"cache_read": 900})
+        state.add_llm_usage(
+            5, 2, node_id="other", prompt_caching_enabled=True, token_details={"cache_read": 50}
+        )
+
+        assert self._serialized(state) == _APPLIED
+
+    def test_the_stored_collection_stays_flag_only(self):
+        state = _state()
+        diagnostics.record(state, "agent", applied=True)
+        state.add_llm_usage(
+            5, 2, node_id="agent", prompt_caching_enabled=True, token_details={"cache_read": 900}
+        )
+        state.get_full_state()
+
+        assert state.prompt_caching_diagnostics == {"agent": _APPLIED}
 
 
 class TestCollectionLifecycle:

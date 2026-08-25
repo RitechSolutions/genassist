@@ -56,8 +56,7 @@ def record(state: Any, node_id: str, *, applied: bool, reason: Optional[str] = N
     ``applied`` means a cache marker was serialized into the provider request.
 
     A delegation loop re-records the same node once per turn, so the entry covers
-    the whole node execution: one applied turn marks the node applied, and observed
-    token counts from earlier turns carry over"""
+    the whole node execution: one applied turn marks the node applied"""
     try:
         if not applied and reason:
             logger.debug("Prompt caching withheld for node %s: %s", node_id, reason)
@@ -66,47 +65,34 @@ def record(state: Any, node_id: str, *, applied: bool, reason: Optional[str] = N
             return
         entry = {"requested": True, "applied": applied}
         previous = diagnostics_map.get(node_id)
-        if isinstance(previous, dict):
-            if previous.get("applied"):
-                entry["applied"] = True
-            for key in ("cache_read_tokens", "cache_creation_tokens"):
-                if key in previous:
-                    entry[key] = previous[key]
+        if isinstance(previous, dict) and previous.get("applied"):
+            entry["applied"] = True
         diagnostics_map[node_id] = entry
     except Exception:
         logger.warning("Failed writing the prompt-caching diagnostic for node %s", node_id, exc_info=True)
 
 
-def record_observed_cache_tokens(state: Any, node_id: str, usage_entries: Any) -> None:
-    """Stamp the provider-reported cache activity onto an applied diagnostic, so
-    "marker applied" can be told apart from "provider actually cached" (short prompts
-    below the provider's minimum are silently processed uncached)"""
-    try:
-        diagnostics_map = _diagnostics_map(state)
-        if diagnostics_map is None:
-            return
-        entry = diagnostics_map.get(node_id)
+def with_observed_cache_tokens(diagnostics_map: dict, llm_usage: Any) -> dict:
+
+    from app.core.utils.llm_usage_utils import extract_cache_tokens, is_usage_metadata_missing
+
+    serialized: dict = {}
+    for node_id, entry in diagnostics_map.items():
         if not isinstance(entry, dict) or not entry.get("applied"):
-            return
-
-        from app.core.utils.llm_usage_utils import extract_cache_tokens, extract_usage_from_aimessage
-
+            serialized[node_id] = entry
+            continue
         cache_read = cache_creation = 0
         reported = False
-        for usage in usage_entries or []:
-            if usage is not None and not isinstance(usage, dict):
-                usage = extract_usage_from_aimessage(usage)
-            if not isinstance(usage, dict):
+        for usage in llm_usage or []:
+            if not isinstance(usage, dict) or usage.get("node_id") != node_id:
+                continue
+            if not usage.get("prompt_caching_enabled") or is_usage_metadata_missing(usage.get("token_details")):
                 continue
             reported = True
             read, creation = extract_cache_tokens(usage.get("token_details"))
             cache_read += read
             cache_creation += creation
-        # A run with no usage at all stays unstamped: absent fields mean "not reported",
-        # zeros mean "reported, and nothing was cached". Added, not assigned, so
-        # delegation turns accumulate into one node total
         if reported:
-            entry["cache_read_tokens"] = entry.get("cache_read_tokens", 0) + cache_read
-            entry["cache_creation_tokens"] = entry.get("cache_creation_tokens", 0) + cache_creation
-    except Exception:
-        logger.warning("Failed recording observed cache tokens for node %s", node_id, exc_info=True)
+            entry = {**entry, "cache_read_tokens": cache_read, "cache_creation_tokens": cache_creation}
+        serialized[node_id] = entry
+    return serialized

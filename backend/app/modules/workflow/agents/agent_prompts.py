@@ -96,12 +96,7 @@ Respond with a human readable explanation of your thought process and the final 
 
 # ==================== TOOL AGENT PROMPTS ====================
 
-def create_tool_agent_tools_available_prompt(base_prompt: str, tool_descriptions: List[str]) -> str:
-    """Create ToolAgent system prompt when tools are available"""
-    tool_guidance = f"""
-
-AVAILABLE TOOLS:
-{chr(10).join(tool_descriptions)}
+_TOOL_AGENT_GUIDANCE = """
 
 TOOL USAGE GUIDELINES:
 - Always consider which tools are available before responding
@@ -115,24 +110,37 @@ TOOL USAGE GUIDELINES:
 
 TOOL CALL FORMAT:
 When you need to use a tool, respond with a JSON object in this exact format:
-{{
+{
     "action": "tool_call",
     "tool_name": "tool_name_here",
-    "parameters": {{
+    "parameters": {
         "param1": "value1",
         "param2": "value2"
-    }},
+    },
     "reasoning": "Brief explanation of why you chose this tool and these parameters"
-}}
+}
 
 If you don't need to use any tools, respond with:
-{{
+{
     "action": "direct_response",
     "response": "Your direct answer here",
     "reasoning": "Brief explanation of why no tools were needed"
-}}
+}
 """
-    return base_prompt + tool_guidance
+
+
+def create_tool_agent_tools_available_prompt(base_prompt: str, tool_descriptions: List[str]) -> str:
+    """Create ToolAgent system prompt when tools are available"""
+    head, rest = create_tool_agent_tools_available_parts(base_prompt, tool_descriptions, [])
+    return head + rest
+
+
+def create_tool_agent_tools_available_parts(
+    base_prompt: str, stable_descriptions: List[str], trailing_descriptions: List[str]
+) -> tuple[str, str]:
+    head = base_prompt + f"\n\nAVAILABLE TOOLS:\n{chr(10).join(stable_descriptions)}"
+    separator = "\n" if stable_descriptions and trailing_descriptions else ""
+    return head, separator + chr(10).join(trailing_descriptions) + _TOOL_AGENT_GUIDANCE
 
 
 def create_tool_agent_no_tools_prompt(base_prompt: str) -> str:

@@ -61,6 +61,7 @@ async def run_agent_once(
     chat_history: Optional[List[Any]] = None,
     llm_model: Any = None,
     stable_volatile_parts: Optional[tuple[str, str]] = None,
+    stable_tool_names: Optional[frozenset[str]] = None,
     prompt_caching_enabled: bool = False,
 ) -> AgentRunResult:
     """Pick the LLM if needed, create the agent for ``agent_type``, run it once,
@@ -107,13 +108,14 @@ async def run_agent_once(
             tools=tools,
             max_iterations=max_iterations,
             stable_volatile_parts=stable_volatile_parts,
+            stable_tool_names=stable_tool_names,
         )
         # The agent's own stored decision, so a change to its split rule carries over here.
         decision = agent.cache_split_decision
 
     applied, split_reason = decision
     # A withheld verdict is config-truth and lands before the call; "applied" waits
-    # until the invocation returns, so a raising agent leaves no misleading marker
+    # until the invocation returns, so a failed run leaves no misleading marker
     if prompt_caching_enabled and not applied:
         from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
@@ -127,12 +129,10 @@ async def run_agent_once(
 
     await merge_llm_usage_from_result(state, result, node_id, provider_id, prompt_caching_enabled)
 
-    if prompt_caching_enabled and applied:
+    if prompt_caching_enabled and applied and not (result.get("status") == "error" and not result.get("llm_usage")):
         from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
         diagnostics.record(state, node_id, applied=True)
-        usage_entries = result.get("llm_usage") if isinstance(result, dict) else None
-        diagnostics.record_observed_cache_tokens(state, node_id, usage_entries)
 
     steps_key = "reasoning_steps" if agent_type in ["ReActAgent", "ReActAgentLC"] else "steps"
 

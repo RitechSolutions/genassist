@@ -290,7 +290,6 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 
                 diagnostics.record(self.get_state(), self.node_id, applied=True)
-                diagnostics.record_observed_cache_tokens(self.get_state(), self.node_id, [response])
 
             return response.content
 

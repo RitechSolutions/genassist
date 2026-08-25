@@ -73,7 +73,7 @@ def _weather_tool(result="Sunny, 21C"):
 _PARTS = (_BASE, _SUFFIX)
 
 
-def _agent(*, tools=None, replies=None, caching=True, parts=_PARTS, system_prompt=None):
+def _agent(*, tools=None, replies=None, caching=True, parts=_PARTS, system_prompt=None, stable_tool_names=None):
     inner = _CapturingModel(replies=replies or [_DIRECT_JSON])
     llm = PromptCachingChatModel(inner=inner, cache_style="anthropic") if caching else inner
     agent = ToolAgent(
@@ -81,6 +81,7 @@ def _agent(*, tools=None, replies=None, caching=True, parts=_PARTS, system_promp
         system_prompt=_BASE + _SUFFIX if system_prompt is None else system_prompt,
         tools=tools if tools is not None else [],
         stable_volatile_parts=parts,
+        stable_tool_names=stable_tool_names,
     )
     return agent, inner
 
@@ -274,6 +275,103 @@ class TestSplitMode:
 
         assert split_text != fused_text
         assert split_text.replace(_SUFFIX, "", 1) == fused_text.replace(_SUFFIX, "", 1)
+
+
+def _delegation_tool(name="delegate_to_helper"):
+    return BaseTool(
+        node_id="child-1",
+        name=name,
+        description=f"Delegate a task to the '{name}' sub-agent (single_turn mode).",
+        parameters={"task": {"type": "string", "description": "The task.", "required": True}},
+        function=AsyncMock(return_value="{}"),
+        return_direct=True,
+    )
+
+
+def _return_direct_tool(name="lookup_order"):
+    tool = _weather_tool("record 42")
+    tool.name = name
+    tool.description = "Look up an order and return it verbatim."
+    tool.return_direct = True
+    return tool
+
+
+async def _cached_head(tools, stable_tool_names, parts=_PARTS, system_prompt=None):
+    agent, inner = _agent(
+        tools=tools, stable_tool_names=stable_tool_names, parts=parts, system_prompt=system_prompt
+    )
+    await agent.invoke(_QUERY)
+    system_content, _ = _split_turns(inner)
+    return system_content
+
+
+_STABLE_NAMES = frozenset({"weather"})
+
+
+@pytest.mark.asyncio
+class TestDelegationToolsSitPastTheMarker:
+
+    async def test_the_cached_block_excludes_non_stable_descriptions(self):
+        weather, delegate = _weather_tool(), _delegation_tool()
+        system_content = await _cached_head([weather, delegate], _STABLE_NAMES)
+
+        assert weather.description in system_content[0]["text"]
+        assert delegate.description not in system_content[0]["text"]
+        assert delegate.description in system_content[-1]["text"]
+
+    async def test_the_relocation_loses_nothing(self):
+        weather, delegate = _weather_tool(), _delegation_tool()
+        system_content = await _cached_head([weather, delegate], _STABLE_NAMES)
+
+        joined = "".join(block["text"] for block in system_content)
+        expected = create_tool_agent_tools_available_prompt(
+            _BASE, create_tool_descriptions([weather, delegate])
+        )
+        assert joined == expected + _SUFFIX
+
+    async def test_the_cached_block_is_identical_across_every_drop(self):
+        weather = _weather_tool()
+        turns = [
+            [weather, _delegation_tool("delegate_to_a"), _delegation_tool("delegate_to_b")],
+            [weather, _delegation_tool("delegate_to_b")],
+            [weather],
+        ]
+
+        heads = [(await _cached_head(tools, _STABLE_NAMES))[0] for tools in turns]
+
+        assert heads[0] == heads[1] == heads[2]
+
+    async def test_a_non_stable_tool_surviving_the_drops_stays_past_the_marker(self):
+        weather, finish = _weather_tool(), _delegation_tool("finish_task")
+        with_delegate = await _cached_head([weather, _delegation_tool(), finish], _STABLE_NAMES)
+        final_turn = await _cached_head([weather, finish], _STABLE_NAMES)
+
+        assert with_delegate[0] == final_turn[0]
+        assert finish.description in final_turn[-1]["text"]
+
+    async def test_a_return_direct_tool_outside_a_delegation_run_stays_cached(self):
+        lookup, weather = _return_direct_tool(), _weather_tool()
+        system_content = await _cached_head([lookup, weather], None)
+
+        assert system_content[0]["text"] == create_tool_agent_tools_available_prompt(
+            _BASE, create_tool_descriptions([lookup, weather])
+        )
+        assert system_content[0]["cache_control"] == {"type": "ephemeral"}
+
+    async def test_an_all_delegation_toolset_caches_exactly_the_header(self):
+        heads = [
+            (
+                await _cached_head(
+                    tools, frozenset(), parts=("", _SUFFIX), system_prompt=_SUFFIX
+                )
+            )[0]
+            for tools in ([_delegation_tool("delegate_to_a"), _delegation_tool("delegate_to_b")],
+                          [_delegation_tool("delegate_to_b")])
+        ]
+
+        assert heads[0] == heads[1]
+        assert heads[0]["text"] == "\n\nAVAILABLE TOOLS:\n"
+        assert heads[0]["cache_control"] == {"type": "ephemeral"}
 
 
 @pytest.mark.asyncio

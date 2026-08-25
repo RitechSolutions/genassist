@@ -739,7 +739,11 @@ class WorkflowState:
         }
         # Conditional: a run with no opted-in sub-agent stays byte-identical to before
         if self.prompt_caching_diagnostics:
-            full["promptCachingDiagnostics"] = self.prompt_caching_diagnostics
+            from app.modules.workflow.engine.prompt_cache_diagnostics import with_observed_cache_tokens
+
+            full["promptCachingDiagnostics"] = with_observed_cache_tokens(
+                self.prompt_caching_diagnostics, self.llm_usage
+            )
         return full
 
     def _collect_failed_nodes(self) -> list[dict]:

@@ -19,6 +19,7 @@ from app.modules.workflow.agents.agent_utils import (
     extract_direct_response
 )
 from app.modules.workflow.agents.agent_prompts import (
+    create_tool_agent_tools_available_parts,
     create_tool_agent_tools_available_prompt,
     create_tool_agent_no_tools_prompt,
     create_tool_agent_no_tools_query_prompt,
@@ -44,7 +45,8 @@ class ToolAgent(BaseToolAgent):
         tools: List[BaseTool],
         verbose: bool = False,
         max_iterations: int = 6,
-        stable_volatile_parts: Optional[tuple[str, str]] = None
+        stable_volatile_parts: Optional[tuple[str, str]] = None,
+        stable_tool_names: Optional[frozenset[str]] = None,
     ):
         """Initialize a Tool agent
 
@@ -64,10 +66,11 @@ class ToolAgent(BaseToolAgent):
         from app.modules.workflow.engine.prompt_cache_diagnostics import cache_split_decision
 
         self.stable_volatile_parts = stable_volatile_parts
+        self.stable_tool_names = stable_tool_names
         # Splitting moves the guidance out of the fused user turn, so it is only worth
         # doing when the provider can cache it and the caller marked the prompt eligible.
-        # The enhanced prefix always carries the wrapped tool guidance, so even a blank
-        # base prompt stays cacheable.
+        # The enhanced prefix carries at least the tools header, so even a blank base
+        # prompt stays cacheable.
         self.cache_split_decision = cache_split_decision(stable_volatile_parts, llm_model, stable_never_blank=True)
         self._cache_split = self.cache_split_decision[0]
 
@@ -87,7 +90,18 @@ class ToolAgent(BaseToolAgent):
         mutable afterwards. The volatile tail sits after the guidance, in front, the
         guidance would fall outside the cacheable prefix."""
         stable, volatile = self.stable_volatile_parts
-        return build_cacheable_system_message(self._create_enhanced_system_prompt(stable), volatile)
+        if self.stable_tool_names is None or not self.tools:
+            return build_cacheable_system_message(self._create_enhanced_system_prompt(stable), volatile)
+
+        split_at = next(
+            (i for i, tool in enumerate(self.tools) if tool.name not in self.stable_tool_names),
+            len(self.tools),
+        )
+        descriptions = create_tool_descriptions(self.tools)
+        head, rest = create_tool_agent_tools_available_parts(
+            stable, descriptions[:split_at], descriptions[split_at:]
+        )
+        return build_cacheable_system_message(head, rest + volatile)
 
     def _build_messages(self, query_prompt: str, system_message: Optional[SystemMessage] = None) -> List[Any]:
         """One fused user turn, or a cacheable system turn plus the query portion"""

@@ -161,6 +161,31 @@ class TestDelegationPathThreading:
 
         assert once.await_args.kwargs["stable_volatile_parts"] is None
 
+    async def test_stable_tool_names_are_the_prefix_before_the_first_delegation(self):
+        node = AgentNode("node-1", {"type": "agentNode", "data": {}}, _state())
+        once = AsyncMock(return_value=_run_result())
+        tools = [SimpleNamespace(name="weather"), SimpleNamespace(name="delegate_to_a"),
+                 SimpleNamespace(name="finish_task")]
+        delegation_map = {"delegate_to_a": {"child_node_id": "child-a", "mode": "single_turn"}}
+
+        with patch(f"{_AGENT_NODE}.run_agent_once", once):
+            await node._run_agent_with_delegations(
+                **self._delegation_kwargs(all_tools=tools, delegation_map=delegation_map)
+            )
+
+        assert once.await_args.kwargs["stable_tool_names"] == frozenset({"weather"})
+
+    async def test_a_run_without_delegations_sends_no_stable_tool_names(self):
+        node = AgentNode("node-1", {"type": "agentNode", "data": {}}, _state())
+        once = AsyncMock(return_value=_run_result())
+
+        with patch(f"{_AGENT_NODE}.run_agent_once", once):
+            await node._run_agent_with_delegations(
+                **self._delegation_kwargs(all_tools=[SimpleNamespace(name="weather")])
+            )
+
+        assert once.await_args.kwargs["stable_tool_names"] is None
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("node_cls,module,config", _NODES)

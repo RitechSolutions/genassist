@@ -375,6 +375,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         completed_count = 0
         current_prompt = prompt
 
+        stable_tool_names = None
+        if delegation_map:
+            first_delegation = next((i for i, t in enumerate(all_tools) if t.name in delegation_map), len(all_tools))
+            stable_tool_names = frozenset(t.name for t in all_tools[:first_delegation])
+
         resume = (state.initial_values or {}).get(SUB_AGENT_RESUME_KEY)
         if resume:
             completed_count, steps, tools_used, current_prompt = self._apply_sub_agent_resume(resume, pii)
@@ -394,6 +399,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 tools=active_tools, max_iterations=max_iterations,
                 chat_history=chat_history, llm_model=llm_model,
                 stable_volatile_parts=stable_volatile_parts,
+                stable_tool_names=stable_tool_names,
                 prompt_caching_enabled=prompt_caching_enabled,
             )
             llm_model = run.llm_model

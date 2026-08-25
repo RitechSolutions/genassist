@@ -194,7 +194,8 @@ async def test_supplied_llm_model_skips_provider_resolution():
     assert run.llm_model == "reused-model"
     cls, _ = classes["ToolAgent"]
     cls.assert_called_once_with(
-        llm_model="reused-model", system_prompt="sys", tools=[], max_iterations=7, stable_volatile_parts=None
+        llm_model="reused-model", system_prompt="sys", tools=[], max_iterations=7,
+        stable_volatile_parts=None, stable_tool_names=None,
     )
 
 
@@ -209,6 +210,17 @@ async def test_tool_agent_receives_the_prompt_parts():
 
 
 @pytest.mark.asyncio
+async def test_tool_agent_receives_the_stable_tool_names():
+    stack, classes, _, _ = _patch_runtime({"response": "ok"})
+    names = frozenset({"weather"})
+    with stack:
+        await run_agent_once(**_base_kwargs(stable_tool_names=names))
+
+    cls, _ = classes["ToolAgent"]
+    assert cls.call_args.kwargs["stable_tool_names"] == names
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "agent_type,expected",
     [
@@ -220,10 +232,17 @@ async def test_tool_agent_receives_the_prompt_parts():
 async def test_other_agents_never_receive_the_parts(agent_type, expected):
     stack, classes, _, _ = _patch_runtime({"response": "ok"})
     with stack:
-        await run_agent_once(**_base_kwargs(agent_type=agent_type, stable_volatile_parts=_PARTS))
+        await run_agent_once(
+            **_base_kwargs(
+                agent_type=agent_type,
+                stable_volatile_parts=_PARTS,
+                stable_tool_names=frozenset({"weather"}),
+            )
+        )
 
     cls, _ = classes[expected]
     assert "stable_volatile_parts" not in cls.call_args.kwargs
+    assert "stable_tool_names" not in cls.call_args.kwargs
 
 
 def _caching_model():
@@ -440,34 +459,16 @@ class TestARaisingInvocationRecordsNoAppliedMarker:
 
 
 @pytest.mark.asyncio
-class TestObservedCacheTokens:
+class TestTheEntryStaysFlagOnly:
 
-    async def test_an_applied_run_records_what_the_provider_reported(self):
+    async def test_an_applied_run_records_the_flags_only(self):
         result = {
             "response": "ok",
             "llm_usage": [
                 {"input_tokens": 5, "output_tokens": 2, "token_details": {"cache_read": 900, "cache_creation": 100}},
-                {"input_tokens": 5, "output_tokens": 2, "token_details": {"cache_read": 50}},
             ],
         }
         diagnostic = await _diagnose(tool_agent_split=True, result=result)
-
-        assert diagnostic == {
-            "requested": True,
-            "applied": True,
-            "cache_read_tokens": 950,
-            "cache_creation_tokens": 100,
-        }
-
-    async def test_zero_activity_is_stamped_as_zero_not_left_absent(self):
-        result = {"response": "ok", "llm_usage": [{"input_tokens": 5, "output_tokens": 2}]}
-        diagnostic = await _diagnose(tool_agent_split=True, result=result)
-
-        assert diagnostic["cache_read_tokens"] == 0
-        assert diagnostic["cache_creation_tokens"] == 0
-
-    async def test_a_run_with_no_usage_stays_unstamped(self):
-        diagnostic = await _diagnose(tool_agent_split=True)
 
         assert diagnostic == {"requested": True, "applied": True}
 
@@ -478,7 +479,31 @@ class TestObservedCacheTokens:
         }
         diagnostic = await _diagnose(tool_agent_split=False, result=result)
 
-        assert "cache_read_tokens" not in diagnostic
+        assert diagnostic == {"requested": True, "applied": False}
+
+
+@pytest.mark.asyncio
+class TestAnErrorResultRecordsNoAppliedMarker:
+
+    async def test_an_error_with_no_usage_leaves_no_diagnostic(self):
+        diagnostic = await _diagnose(tool_agent_split=True, result={"status": "error", "response": "boom"})
+
+        assert diagnostic is None
+
+    async def test_an_error_after_real_calls_still_records_applied(self):
+        result = {
+            "status": "error",
+            "response": "max iterations reached",
+            "llm_usage": [{"input_tokens": 5, "output_tokens": 2}],
+        }
+        diagnostic = await _diagnose(tool_agent_split=True, result=result)
+
+        assert diagnostic == {"requested": True, "applied": True}
+
+    async def test_a_withheld_verdict_survives_an_error_result(self):
+        diagnostic = await _diagnose(tool_agent_split=False, result={"status": "error", "response": "boom"})
+
+        assert diagnostic == {"requested": True, "applied": False}
 
 
 @pytest.mark.asyncio
