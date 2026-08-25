@@ -285,7 +285,7 @@ async def test_child_still_awaiting_does_not_resume_the_parent():
     router.workflow_engine.execute_from_node.assert_not_awaited()
 
 
-_CHILD_DIAG = {"requested": True, "applied": False, "reason": "unsupported_mode"}
+_CHILD_DIAG = {"requested": True, "applied": False}
 
 
 def _completed_child_state(**extra):

@@ -260,7 +260,7 @@ Sub-agent delegation — single edge from child to parent:
 | Field | Type | Default | Condition |
 |---|---|---|---|
 | name | text | — | Always |
-| promptCaching | boolean | false | Cache the stable system-prompt prefix and the tool-loop conversation (Anthropic / cache-capable Bedrock models only) |
+| promptCaching | boolean | false | Cache the stable system-prompt prefix (Anthropic / cache-capable Bedrock models only) |
 | memoryTrimmingMode | select | "message_count" | When memory=true. Options: message_count, token_budget, message_compacting, rag_retrieval |
 | maxMessages | number | 10 | When memoryTrimmingMode=message_count |
 | tokenBudget | number | 10000 | When memoryTrimmingMode=token_budget |
@@ -308,7 +308,7 @@ Sub-agent delegation — single edge from child to parent:
 | timeoutSeconds | number | 120 | Max seconds the parent waits for one delegated turn (5–300) |
 | memory | boolean | true | Enable the child's own conversation memory |
 | piiMasking | boolean | false | Mask PII before sending text to the LLM |
-| promptCaching | boolean | false | Cache the stable system-prompt prefix and the tool-loop conversation (Anthropic / cache-capable Bedrock models only) |
+| promptCaching | boolean | false | Cache the stable system-prompt prefix (Anthropic / cache-capable Bedrock models only) |
 | memoryTrimmingMode | select | "message_count" | When memory=true. Options: message_count, token_budget, message_compacting, rag_retrieval |
 | maxMessages | number | 20 | When memoryTrimmingMode=message_count |
 | tokenBudget | number | 10000 | When memoryTrimmingMode=token_budget |

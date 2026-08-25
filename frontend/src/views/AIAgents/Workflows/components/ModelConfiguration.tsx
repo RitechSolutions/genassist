@@ -498,8 +498,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               Enable Prompt Caching
             </Label>
             <span className="text-xs text-muted-foreground">
-              Caches the stable start of the system prompt — and, for
-              tool-calling agents, the growing conversation — for 5 minutes so
+              Caches the stable start of the system prompt for 5 minutes so
               repeat calls read it at a reduced rate
             </span>
           </div>

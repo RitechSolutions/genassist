@@ -155,8 +155,8 @@ class TestUpdateNodesDoesNotMergeUsage:
         assert [e["node_id"] for e in parent.llm_usage] == ["parent", "child"]
 
 
-_APPLIED = {"requested": True, "applied": True, "reason": None}
-_WITHHELD = {"requested": True, "applied": False, "reason": "unsupported_mode"}
+_APPLIED = {"requested": True, "applied": True}
+_WITHHELD = {"requested": True, "applied": False}
 
 
 def _run(*, with_diagnostics: bool) -> WorkflowState:

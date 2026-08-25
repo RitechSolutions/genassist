@@ -357,7 +357,7 @@ class TestDiagnosticPerDispatchBranch:
             agent_type=agent_type, llm_model=_caching_model(), stable_volatile_parts=_PARTS
         )
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_mode"}
+        assert diagnostic == {"requested": True, "applied": False}
 
     async def test_react_lc_applied_tracks_the_split_it_actually_got(self):
         diagnostic = await _diagnose(
@@ -367,15 +367,15 @@ class TestDiagnosticPerDispatchBranch:
             stable_volatile_parts=_PARTS,
         )
 
-        assert diagnostic == {"requested": True, "applied": True, "reason": None}
+        assert diagnostic == {"requested": True, "applied": True}
 
-    async def test_react_lc_without_parts_names_the_volatile_gate(self):
+    async def test_react_lc_without_parts_is_withheld(self):
         diagnostic = await _diagnose(agent_type="ReActAgentLC", llm_model=_caching_model())
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "volatile_prompt"}
+        assert diagnostic == {"requested": True, "applied": False}
 
     @pytest.mark.parametrize("base", ["", "  \n"], ids=repr)
-    async def test_react_lc_with_a_blank_stable_half_names_the_empty_prompt(self, base):
+    async def test_react_lc_with_a_blank_stable_half_is_withheld(self, base):
         diagnostic = await _diagnose(
             agent_type="ReActAgentLC",
             llm_model=_caching_model(),
@@ -383,18 +383,18 @@ class TestDiagnosticPerDispatchBranch:
             stable_volatile_parts=(base, _SUFFIX),
         )
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "empty_prompt"}
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_react_lc_on_a_plain_model_names_the_provider(self):
+    async def test_react_lc_on_a_plain_model_is_withheld(self):
         diagnostic = await _diagnose(agent_type="ReActAgentLC", stable_volatile_parts=_PARTS)
 
-        assert diagnostic["reason"] == "unsupported_cache_markers"
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_react_lc_on_a_mixed_chain_is_distinguished(self):
+    async def test_react_lc_on_a_mixed_chain_is_withheld(self):
         chain = FallbackChatModel(models=[MagicMock(name="plain"), _caching_model()])
         diagnostic = await _diagnose(agent_type="ReActAgentLC", llm_model=chain, stable_volatile_parts=_PARTS)
 
-        assert diagnostic["reason"] == "mixed_fallback_chain"
+        assert diagnostic == {"requested": True, "applied": False}
 
     @pytest.mark.parametrize("split", [True, False], ids=["split", "fused"])
     async def test_tool_agent_applied_mirrors_its_own_decision(self, split):
@@ -404,12 +404,12 @@ class TestDiagnosticPerDispatchBranch:
 
         assert diagnostic["applied"] is split
 
-    async def test_an_unexplained_withheld_split_reports_no_reason(self):
+    async def test_an_unexplained_withheld_split_still_records(self):
         diagnostic = await _diagnose(
             tool_agent_split=False, llm_model=_caching_model(), stable_volatile_parts=_PARTS
         )
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": None}
+        assert diagnostic == {"requested": True, "applied": False}
 
 
 @pytest.mark.asyncio
@@ -436,7 +436,7 @@ class TestARaisingInvocationRecordsNoAppliedMarker:
             with pytest.raises(RuntimeError):
                 await run_agent_once(**_base_kwargs(state=state, prompt_caching_enabled=True))
 
-        assert state.prompt_caching_diagnostics == {"node-1": {"requested": True, "applied": False, "reason": None}}
+        assert state.prompt_caching_diagnostics == {"node-1": {"requested": True, "applied": False}}
 
 
 @pytest.mark.asyncio
@@ -455,7 +455,6 @@ class TestObservedCacheTokens:
         assert diagnostic == {
             "requested": True,
             "applied": True,
-            "reason": None,
             "cache_read_tokens": 950,
             "cache_creation_tokens": 100,
         }
@@ -470,7 +469,7 @@ class TestObservedCacheTokens:
     async def test_a_run_with_no_usage_stays_unstamped(self):
         diagnostic = await _diagnose(tool_agent_split=True)
 
-        assert diagnostic == {"requested": True, "applied": True, "reason": None}
+        assert diagnostic == {"requested": True, "applied": True}
 
     async def test_a_withheld_split_never_gains_token_fields(self):
         result = {
@@ -511,6 +510,4 @@ class TestDiagnosticIsRequestGated:
                     **_base_kwargs(state=state, agent_type="ReActAgent", prompt_caching_enabled=True)
                 )
 
-        assert state.prompt_caching_diagnostics == {"node-1": {
-            "requested": True, "applied": False, "reason": "unsupported_mode"
-        }}
+        assert state.prompt_caching_diagnostics == {"node-1": {"requested": True, "applied": False}}

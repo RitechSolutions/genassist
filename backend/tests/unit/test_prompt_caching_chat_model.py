@@ -418,124 +418,19 @@ def _loop_turn(tail) -> list:
     ]
 
 
-@pytest.mark.asyncio
-class TestConversationBreakpoint:
-    """bind_tools opts the wrapper into tail caching, so each tool-loop turn re-reads
-    the previous turn's prefix. Unbound (single-shot) callers never pay the write."""
-
-    @staticmethod
-    def _bound(style):
-        wrapper, _ = _wrap(style)
-        bound = wrapper.bind_tools([{"name": "search"}])
-        return bound, bound.inner
-
-    async def test_bind_tools_turns_it_on(self):
-        bound, _ = self._bound("anthropic")
-        assert bound.cache_conversation is True
-
-    @pytest.mark.parametrize("style", _STYLES)
-    async def test_an_unbound_wrapper_leaves_the_tail_alone(self, style):
-        wrapper, inner = _wrap(style)
-        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
-        assert inner.last[-1].content == "hi"
-        assert "cache_control" not in inner.seen_kwargs[-1]
-
-    async def test_bound_anthropic_forwards_the_kwarg_and_keeps_the_tail_untouched(self):
-        bound, inner = self._bound("anthropic")
-        await bound.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
-        assert inner.seen_kwargs[-1]["cache_control"] == {"type": "ephemeral"}
-        assert inner.last[-1].content == "hi"
-
-    @pytest.mark.parametrize("style", _STYLES)
-    async def test_a_system_that_never_opted_in_keeps_the_tail_uncached(self, style):
-        bound, inner = self._bound(style)
-        await bound.ainvoke([SystemMessage(content="plain"), HumanMessage(content="hi")])
-        assert "cache_control" not in inner.seen_kwargs[-1]
-        assert inner.last[-1].content == "hi"
-
-    async def test_a_caller_supplied_cache_control_wins(self):
-        bound, inner = self._bound("anthropic")
-        await bound.ainvoke(
-            [build_cacheable_system_message("stable"), HumanMessage(content="hi")],
-            cache_control={"type": "ephemeral", "ttl": "1h"},
-        )
-        assert inner.seen_kwargs[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
-
-    async def test_bound_bedrock_appends_a_cache_point_to_a_string_human_tail(self):
-        bound, inner = self._bound("bedrock_converse")
-        await bound.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
-        assert inner.last[-1].content == [{"type": "text", "text": "hi"}, {"cachePoint": {"type": "default"}}]
-
-    async def test_bound_bedrock_marks_a_tool_result_tail(self):
-        bound, inner = self._bound("bedrock_converse")
-        await bound.ainvoke(_loop_turn(ToolMessage(content="result", tool_call_id="tc1")))
-        assert inner.last[-1].content == [{"type": "text", "text": "result"}, {"cachePoint": {"type": "default"}}]
-
-    async def test_bound_bedrock_tail_marking_is_idempotent(self):
-        bound, inner = self._bound("bedrock_converse")
-        content = [{"type": "text", "text": "hi"}, {"cachePoint": {"type": "default"}}]
-        await bound.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content=list(content))])
-        assert inner.last[-1].content == content
-
-    async def test_an_ai_tail_is_left_alone(self):
-        bound, inner = self._bound("bedrock_converse")
-        await bound.ainvoke([build_cacheable_system_message("stable"), AIMessage(content="draft")])
-        assert inner.last[-1].content == "draft"
-
-    async def test_bound_bedrock_never_mutates_the_caller_tail(self):
-        bound, inner = self._bound("bedrock_converse")
-        tail = HumanMessage(content=[{"type": "text", "text": "hi"}])
-        content = tail.content
-        await bound.ainvoke([build_cacheable_system_message("stable"), tail])
-        assert tail.content is content
-        assert content == [{"type": "text", "text": "hi"}]
-        assert inner.last[-1] is not tail
-
-    @pytest.mark.parametrize("content", ["", "   ", []], ids=["empty", "whitespace", "no-blocks"])
-    async def test_blank_tails_are_skipped(self, content):
-        bound, inner = self._bound("bedrock_converse")
-        await bound.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content=content)])
-        assert inner.last[-1].content == content
-
-    async def test_astream_carries_the_breakpoint(self):
-        bound, inner = self._bound("anthropic")
-        async for _ in bound.astream([build_cacheable_system_message("stable"), HumanMessage(content="hi")]):
-            pass
-        assert inner.seen_kwargs[-1]["cache_control"] == {"type": "ephemeral"}
-
-
-class TestConversationBreakpointSerialization:
-    """The tail breakpoint must land on a top-level block of the provider payload —
-    a marker nested inside tool_result content would be rejected by the API"""
-
-    def test_anthropic_places_the_kwarg_on_the_top_level_tool_result_block(self):
-        from langchain_anthropic import ChatAnthropic
-
-        payload = ChatAnthropic(model="claude-sonnet-4-5", api_key="test")._get_request_payload(
-            [
-                SystemMessage(content="sys"),
-                HumanMessage(content="hi"),
-                AIMessage(content="calling", tool_calls=[{"name": "t", "args": {}, "id": "tc1"}]),
-                ToolMessage(content="result", tool_call_id="tc1"),
-            ],
-            cache_control={"type": "ephemeral"},
-        )
-
-        last_block = payload["messages"][-1]["content"][-1]
-        assert last_block["type"] == "tool_result"
-        assert last_block["cache_control"] == {"type": "ephemeral"}
+class TestSystemPrefixOnly:
 
     @pytest.mark.asyncio
-    async def test_bedrock_renders_the_tail_point_as_a_sibling_of_the_tool_result(self):
-        wrapper, inner = _wrap("bedrock_converse")
-        bound = wrapper.bind_tools([{"name": "search"}])
+    async def test_a_tool_loop_turn_carries_no_cache_point_in_messages(self):
+        llm, _ = await _build("bedrock", {}, "eu.amazon.nova-2-lite-v1:0")
+        bound = llm.bind_tools([{"name": "search"}])
+        bound.inner = _CapturingModel()
+
         await bound.ainvoke(_loop_turn(ToolMessage(content="result", tool_call_id="tc1")))
 
-        messages, _ = _messages_to_bedrock(bound.inner.last)
-
-        tail_content = messages[-1]["content"]
-        assert tail_content[-1] == {"cachePoint": {"type": "default"}}
-        assert "cachePoint" not in str(tail_content[0]["toolResult"])
+        messages, system = _messages_to_bedrock(bound.inner.last)
+        assert "cachePoint" not in str(messages), "a cachePoint in messages fails the call"
+        assert {"cachePoint": {"type": "default"}} in system, "the system prefix still caches"
 
 
 class TestLangChainIntrospection:
@@ -800,9 +695,12 @@ class TestBedrockFamilyGuard:
         "model_name",
         [
             "eu.amazon.nova-2-lite-v1:0",
+            "us.amazon.nova-pro-v1:0",
+            "us.amazon.nova-premier-v1:0",
             "eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
             "us.anthropic.claude-sonnet-4-5-v1:0",
             "global.anthropic.claude-sonnet-5",
+            "global.anthropic.claude-opus-5",
             "us.anthropic.claude-fable-5",
         ],
     )
@@ -822,6 +720,11 @@ class TestBedrockFamilyGuard:
     async def test_families_without_cache_support_run_uncached(self, model_name):
         llm, init = await _build("bedrock", {}, model_name)
         assert llm is init.return_value, "wrapping these fails every call with a ValidationException"
+
+    @pytest.mark.parametrize("model_name", ["amazon.nova-sonic-v1:0", "amazon.nova-2-sonic-v1:0"])
+    async def test_speech_novas_run_uncached(self, model_name):
+        llm, init = await _build("bedrock", {}, model_name)
+        assert llm is init.return_value
 
     @pytest.mark.parametrize(
         "model_name",

@@ -12,6 +12,9 @@ tool message."""
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 from typing import Any, AsyncIterator, Iterator, List, Literal, Optional, Sequence
 
 from langchain_core.callbacks import (
@@ -19,10 +22,12 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel, child_callback_config
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "PROMPT_CACHE_OPT_IN_KEY",
@@ -39,6 +44,10 @@ _MARKER_KEYS: dict[str, str] = {"anthropic": "cache_control", "bedrock_converse"
 PROMPT_CACHE_OPT_IN_KEY = "genassist_prompt_cache"
 
 
+def _sha12(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
 def build_cacheable_system_message(stable: str, volatile: Optional[str] = None) -> SystemMessage:
     """The only sanctioned constructor for a cache-eligible system message"""
     content: List[Any] = [{"type": "text", "text": stable}]
@@ -52,103 +61,97 @@ class PromptCachingChatModel(BaseChatModel):
 
     inner: Any
     cache_style: CacheStyle
-    # Set by bind_tools: a tool loop re-sends a growing prefix, so the conversation
-    # tail earns its own breakpoint. Stays off for single-shot callers, whose tail
-    # changes every request and would pay the cache write without a read-back.
-    cache_conversation: bool = False
 
     @property
     def _llm_type(self) -> str:
         return "prompt_caching_chat_model"
 
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> "PromptCachingChatModel":
-        """Re-wrap the bound child so the type stays stable"""
-        return PromptCachingChatModel(
-            inner=self.inner.bind_tools(tools, **kwargs),
-            cache_style=self.cache_style,
-            cache_conversation=True,
-        )
+        """Re-wrap the bound child so a tool loop keeps caching its system prefix"""
+        return PromptCachingChatModel(inner=self.inner.bind_tools(tools, **kwargs), cache_style=self.cache_style)
 
-    def _mark_messages(self, messages: List[BaseMessage]) -> tuple[List[BaseMessage], bool]:
-        """`messages` with the first SystemMessage marked, plus whether caching is active"""
+    def _mark_messages(self, messages: List[BaseMessage]) -> List[BaseMessage]:
+        """`messages` with the first SystemMessage marked, or unchanged if none is eligible"""
         for idx, message in enumerate(messages):
             if not isinstance(message, SystemMessage):
                 continue
-            marked, active = self._mark_system(message)
+            marked = self._mark_system(message)
             if marked is message:
-                return messages, active
+                return messages
             new_messages = list(messages)
             new_messages[idx] = marked
-            return new_messages, active
-        return messages, False
+            return new_messages
+        return messages
 
-    def _mark_system(self, message: SystemMessage) -> tuple[SystemMessage, bool]:
+    def _mark_system(self, message: SystemMessage) -> SystemMessage:
         """Mark the first content block, or return `message` untouched if ineligible"""
         if not message.additional_kwargs.get(PROMPT_CACHE_OPT_IN_KEY):
-            return message, False
+            return message
 
         content = message.content
         if not isinstance(content, list) or not content:
-            return message, False
+            return message
 
         # Scans every block, not just the first: a marker the caller placed further down
         # is left as the only breakpoint rather than silently getting a second one.
         marker_key = _MARKER_KEYS[self.cache_style]
         if any(isinstance(block, dict) and marker_key in block for block in content):
-            return message, True
+            return message
 
         first = content[0]
         if not isinstance(first, dict) or first.get("type") != "text":
-            return message, False
+            return message
         text = first.get("text")
         if not isinstance(text, str) or not text.strip():
-            return message, False
+            return message
 
         if self.cache_style == "anthropic":
             new_content: List[Any] = [{**first, "cache_control": {"type": "ephemeral"}}, *content[1:]]
         else:
             new_content = [first, {"cachePoint": {"type": "default"}}, *content[1:]]
-        return message.model_copy(update={"content": new_content}), True
-
-    def _mark_conversation_tail(self, messages: List[BaseMessage]) -> List[BaseMessage]:
-        """Append a Bedrock cachePoint to the last human or tool message.
-
-        Anthropic never comes through here — its tail breakpoint travels as a request
-        kwarg so the provider package can pick the last eligible block itself."""
-        last = messages[-1] if messages else None
-        if not isinstance(last, (HumanMessage, ToolMessage)):
-            return messages
-
-        content = last.content
-        if isinstance(content, str):
-            if not content.strip():
-                return messages
-            new_content: List[Any] = [{"type": "text", "text": content}, {"cachePoint": {"type": "default"}}]
-        elif isinstance(content, list) and content:
-            if any(isinstance(block, dict) and "cachePoint" in block for block in content):
-                return messages
-            new_content = [*content, {"cachePoint": {"type": "default"}}]
-        else:
-            return messages
-
-        new_messages = list(messages)
-        new_messages[-1] = last.model_copy(update={"content": new_content})
-        return new_messages
+        return message.model_copy(update={"content": new_content})
 
     def _prepare(
         self, messages: List[BaseMessage], stop: Optional[List[str]], kwargs: dict
     ) -> tuple[List[BaseMessage], dict]:
         """Marked messages plus the kwargs the delegated call should carry"""
-        marked, active = self._mark_messages(messages)
         invoke_kwargs = dict(kwargs)
         if stop is not None:
             invoke_kwargs["stop"] = stop
-        if active and self.cache_conversation:
-            if self.cache_style == "anthropic":
-                invoke_kwargs.setdefault("cache_control", {"type": "ephemeral"})
-            else:
-                marked = self._mark_conversation_tail(marked)
-        return marked, invoke_kwargs
+        return self._mark_messages(messages), invoke_kwargs
+
+    def _log_cache_call(self, marked: List[BaseMessage], ai: Any) -> None:
+        """Logs for diagnosing unstable cache reads: the hashes tie a call to the
+        prefix and tool set it should hit, without logging prompt content"""
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        try:
+            system = next((m for m in marked if isinstance(m, SystemMessage)), None)
+            stable = ""
+            if system is not None:
+                if isinstance(system.content, list) and system.content and isinstance(system.content[0], dict):
+                    stable = str(system.content[0].get("text", ""))
+                elif isinstance(system.content, str):
+                    stable = system.content
+            bound_kwargs = getattr(self.inner, "kwargs", None)
+            tools = bound_kwargs.get("tools") if isinstance(bound_kwargs, dict) else None
+            base = getattr(self.inner, "bound", self.inner)
+            metadata = getattr(ai, "response_metadata", None) or {}
+            usage = getattr(ai, "usage_metadata", None) or {}
+            details = usage.get("input_token_details") or {}
+            logger.debug(
+                "prompt-cache call style=%s model=%s request_id=%s prefix_sha=%s tools_sha=%s "
+                "cache_read=%s cache_creation=%s",
+                self.cache_style,
+                getattr(base, "model_id", None) or getattr(base, "model", None),
+                metadata.get("id") or (metadata.get("ResponseMetadata") or {}).get("RequestId"),
+                _sha12(stable) if stable else None,
+                _sha12(json.dumps(tools, sort_keys=True, default=str)) if tools else None,
+                details.get("cache_read"),
+                details.get("cache_creation"),
+            )
+        except Exception:
+            logger.debug("prompt-cache call breadcrumb failed", exc_info=True)
 
     async def _agenerate(
         self,
@@ -159,6 +162,7 @@ class PromptCachingChatModel(BaseChatModel):
     ) -> ChatResult:
         marked, invoke_kwargs = self._prepare(messages, stop, kwargs)
         ai = await self.inner.ainvoke(marked, config=child_callback_config(run_manager), **invoke_kwargs)
+        self._log_cache_call(marked, ai)
         return ChatResult(generations=[ChatGeneration(message=ai)])
 
     async def _astream(
@@ -182,6 +186,7 @@ class PromptCachingChatModel(BaseChatModel):
     ) -> ChatResult:
         marked, invoke_kwargs = self._prepare(messages, stop, kwargs)
         ai = self.inner.invoke(marked, config=child_callback_config(run_manager), **invoke_kwargs)
+        self._log_cache_call(marked, ai)
         return ChatResult(generations=[ChatGeneration(message=ai)])
 
     def _stream(

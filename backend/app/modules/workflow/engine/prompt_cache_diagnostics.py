@@ -53,23 +53,22 @@ def record(state: Any, node_id: str, *, applied: bool, reason: Optional[str] = N
     """Write the node's decision into the state's diagnostics map. Best effort: a
     diagnostic must never raise into the business path.
 
+    ``applied`` means a cache marker was serialized into the provider request.
+
     A delegation loop re-records the same node once per turn, so the entry covers
     the whole node execution: one applied turn marks the node applied, and observed
     token counts from earlier turns carry over"""
     try:
+        if not applied and reason:
+            logger.debug("Prompt caching withheld for node %s: %s", node_id, reason)
         diagnostics_map = _diagnostics_map(state)
         if diagnostics_map is None:
             return
-        entry = {
-            "requested": True,
-            "applied": applied,
-            "reason": None if applied else reason,
-        }
+        entry = {"requested": True, "applied": applied}
         previous = diagnostics_map.get(node_id)
         if isinstance(previous, dict):
             if previous.get("applied"):
                 entry["applied"] = True
-                entry["reason"] = None
             for key in ("cache_read_tokens", "cache_creation_tokens"):
                 if key in previous:
                     entry[key] = previous[key]

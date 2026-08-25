@@ -162,25 +162,20 @@ export interface RawNodeExecutionEntry {
   input?: unknown;
   output?: unknown;
   error?: string | null;
-  /** Present only when the node asked for prompt caching. */
-  prompt_caching?: RawPromptCachingDiagnostic;
 }
 
-/** What a node asked of prompt caching, and what it got. `reason` is a code, or null. */
+/** What a node asked of prompt caching, and what it got. */
 export interface RawPromptCachingDiagnostic {
   requested?: boolean;
   applied?: boolean;
-  reason?: string | null;
   /** Provider-reported cache activity, stamped after the call */
   cache_read_tokens?: number;
   cache_creation_tokens?: number;
 }
 
-/** Normalized diagnostic; `reasonText` is absent when the reason code is unknown or missing. */
 export interface PromptCachingDiagnostic {
   requested: boolean;
   applied: boolean;
-  reasonText?: string;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
 }
@@ -226,9 +221,8 @@ export interface ExecutionViewModel {
   /** Node id with the largest duration, when any node has a duration. */
   slowestNodeId?: string;
   /**
-   * Diagnostics propagated up from sub-agent runs, keyed by the child node id. These nodes
-   * never appear in `nodes`/`byId` — the parent run did not execute them — so they are
-   * surfaced by the run-level notice rather than by selection.
+   * Prompt-caching diagnostics keyed by node id. Sub-agent children appear here too,
+   * though they are absent from `nodes`/`byId` — the parent run did not execute them.
    */
   promptCachingDiagnostics: Record<string, PromptCachingDiagnostic>;
 }

@@ -2567,7 +2567,7 @@ class TestPromptCachingDiagnosticsAreInvisibleToGrading:
             **trace,
             "state": {
                 **trace["state"],
-                "promptCachingDiagnostics": {"child": {"requested": True, "applied": False, "reason": None}},
+                "promptCachingDiagnostics": {"child": {"requested": True, "applied": False}},
             },
         }
 

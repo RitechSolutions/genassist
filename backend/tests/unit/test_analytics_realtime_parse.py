@@ -103,7 +103,7 @@ def test_bad_response_time_is_ignored():
     assert data["response_ms"] is None
 
 
-_DIAGNOSTICS = {"child": {"requested": True, "applied": False, "reason": "unsupported_mode"}}
+_DIAGNOSTICS = {"child": {"requested": True, "applied": False}}
 
 
 def _payload(**state_extra):

@@ -302,8 +302,8 @@ async def test_run_child_turn_without_usage_threading_stays_uncaptured():
     assert kwargs["usage_sink"] is None and kwargs["usage_context"] is None
 
 
-def _diag(applied=False, reason="unsupported_mode"):
-    return {"requested": True, "applied": applied, "reason": reason}
+def _diag(applied=False):
+    return {"requested": True, "applied": applied}
 
 
 def _state_with(entries=None, collected=None):
@@ -332,7 +332,7 @@ class TestPropagatePromptCacheDiagnostics:
         assert parent.node_execution_status == {"parent": {"status": "success"}}
 
     def test_descendant_diagnostics_chain_upward(self):
-        child = _state_with(collected={"child": _diag(), "grandchild": _diag(reason="volatile_prompt")})
+        child = _state_with(collected={"child": _diag(), "grandchild": _diag()})
         parent = _state_with()
 
         orchestrator.propagate_prompt_cache_diagnostics(child, parent)
@@ -340,8 +340,8 @@ class TestPropagatePromptCacheDiagnostics:
         assert set(parent.prompt_caching_diagnostics) == {"child", "grandchild"}
 
     def test_the_childs_entry_wins_over_a_stale_parent_copy(self):
-        child = _state_with(collected={"child": _diag(applied=True, reason=None)})
-        parent = _state_with(collected={"child": _diag(reason="volatile_prompt")})
+        child = _state_with(collected={"child": _diag(applied=True)})
+        parent = _state_with(collected={"child": _diag()})
 
         orchestrator.propagate_prompt_cache_diagnostics(child, parent)
 

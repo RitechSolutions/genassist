@@ -390,43 +390,43 @@ class TestNodeDiagnostic:
     async def test_a_split_prompt_reports_applied(self):
         diagnostic = await _diagnose(_caching_llm()[0], history=_HISTORY, promptCaching=True)
 
-        assert diagnostic == {"requested": True, "applied": True, "reason": None}
+        assert diagnostic == {"requested": True, "applied": True}
 
-    async def test_a_volatile_prompt_names_the_gate(self):
+    async def test_a_volatile_prompt_is_withheld(self):
         diagnostic = await _diagnose(
             _caching_llm()[0], raw="Summarize: {{message}}", resolved="Summarize: a bug", promptCaching=True
         )
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "volatile_prompt"}
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_an_unwrapped_model_names_the_provider(self):
+    async def test_an_unwrapped_model_is_withheld(self):
         diagnostic = await _diagnose(_plain_llm()[0], promptCaching=True)
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_cache_markers"}
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_a_mixed_chain_is_distinguished_from_a_plain_model(self):
+    async def test_a_mixed_chain_is_withheld(self):
         chain = FallbackChatModel(models=[_CapturingModel(), _caching_llm()[0]])
         diagnostic = await _diagnose(chain, promptCaching=True)
 
-        assert diagnostic["reason"] == "mixed_fallback_chain"
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_a_chain_with_no_cacheable_child_reads_as_unsupported(self):
+    async def test_a_chain_with_no_cacheable_child_is_withheld(self):
         chain = FallbackChatModel(models=[_CapturingModel(), _CapturingModel()])
         diagnostic = await _diagnose(chain, promptCaching=True)
 
-        assert diagnostic["reason"] == "unsupported_cache_markers"
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_a_blank_prompt_names_the_first_gate(self):
+    async def test_a_blank_prompt_is_withheld(self):
         diagnostic = await _diagnose(_caching_llm()[0], raw="", resolved="   ", promptCaching=True)
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "empty_prompt"}
+        assert diagnostic == {"requested": True, "applied": False}
 
-    async def test_chain_of_thought_reports_the_mode(self):
+    async def test_chain_of_thought_is_withheld(self):
         with patch("app.modules.workflow.engine.nodes.llm_model_node.ChainOfThoughtAgent") as agent_cls:
             agent_cls.return_value.invoke = AsyncMock(return_value={"response": "ok"})
             diagnostic = await _diagnose(_caching_llm()[0], type="Chain-of-Thought", promptCaching=True)
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_mode"}
+        assert diagnostic == {"requested": True, "applied": False}
 
     @pytest.mark.parametrize("raw", [None, False, "true", 1], ids=repr)
     async def test_an_unrequested_node_writes_no_annotation(self, raw):
@@ -476,7 +476,7 @@ class TestNodeDiagnostic:
     async def test_a_withheld_verdict_survives_a_raising_model_call(self):
         diagnostic = await _diagnose(_RaisingModel(), promptCaching=True)
 
-        assert diagnostic == {"requested": True, "applied": False, "reason": "unsupported_cache_markers"}
+        assert diagnostic == {"requested": True, "applied": False}
 
     async def test_a_state_without_the_store_never_breaks_the_node(self):
         state = _FakeState()

@@ -706,7 +706,7 @@ async def test_pause_frame_does_not_nest_prior_resume_marker():
     assert SUB_AGENT_RESUME_KEY not in captured
 
 
-_CHILD_DIAG = {"requested": True, "applied": False, "reason": "unsupported_mode"}
+_CHILD_DIAG = {"requested": True, "applied": False}
 _DIAG_KEY = "__prompt_caching_diagnostics"
 
 
@@ -747,7 +747,7 @@ async def test_the_parents_execution_map_never_gains_the_child():
 async def test_nested_diagnostics_chain_up_through_the_delegation():
     node = _parent_node(thread_id="t-diag-nested")
     child = _child_state_with_diagnostic()
-    child.prompt_caching_diagnostics["grandchild"] = {"requested": True, "applied": True, "reason": None}
+    child.prompt_caching_diagnostics["grandchild"] = {"requested": True, "applied": True}
     await _delegate_once(node, child)
 
     assert set(node.get_state().prompt_caching_diagnostics) == {"child", "grandchild"}

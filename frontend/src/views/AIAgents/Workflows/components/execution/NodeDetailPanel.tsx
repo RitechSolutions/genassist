@@ -26,7 +26,7 @@ const toJsonValue = (value: unknown): React.ComponentProps<typeof JsonViewer>['d
  */
 const promptCachingLine = (diagnostic: NonNullable<NodeExecutionView['promptCaching']>): string => {
   if (!diagnostic.applied) {
-    return `Prompt caching: requested but not applied${diagnostic.reasonText ? ` — ${diagnostic.reasonText}` : ''}`;
+    return 'Prompt caching: requested but not applied';
   }
   const { cacheReadTokens, cacheCreationTokens } = diagnostic;
   if (cacheReadTokens === undefined && cacheCreationTokens === undefined) {

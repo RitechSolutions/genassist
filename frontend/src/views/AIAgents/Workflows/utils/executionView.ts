@@ -90,42 +90,17 @@ const stripArchivedKeys = (map: Record<string, unknown>): Record<string, RawNode
   return result;
 };
 
-/**
- * Reason codes the backend emits when a requested split was withheld. An unmapped or absent
- * code leaves `reasonText` undefined, and the UI falls back to a plain "not applied".
- */
-const PROMPT_CACHING_REASON_TEXT: Record<string, string> = {
-  unsupported_mode: 'this agent type never splits its prompt',
-  volatile_prompt: 'the system prompt changes on every request',
-  mixed_fallback_chain: 'not every model in the fallback chain can cache',
-  unsupported_cache_markers: 'the provider or model does not accept explicit cache markers',
-  empty_prompt: 'there is no stable prompt to cache',
-};
-
 const normalizePromptCaching = (value: unknown): PromptCachingDiagnostic | undefined => {
   if (!isRecord(value)) return undefined;
   if (typeof value.requested !== 'boolean' || typeof value.applied !== 'boolean') return undefined;
-  const reason = asString(value.reason);
-  const reasonText = reason ? PROMPT_CACHING_REASON_TEXT[reason] : undefined;
   const cacheReadTokens = asNumber(value.cache_read_tokens);
   const cacheCreationTokens = asNumber(value.cache_creation_tokens);
   return {
     requested: value.requested,
     applied: value.applied,
-    ...(reasonText ? { reasonText } : {}),
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
     ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
   };
-};
-
-/** Fallback display names from the workflow graph, for nodes the run never executed. */
-const buildNameLookup = (workflow?: Workflow | null): Map<string, string> => {
-  const nameById = new Map<string, string>();
-  for (const node of workflow?.nodes ?? []) {
-    const data = node.data as { name?: string } | undefined;
-    if (node.id && data?.name) nameById.set(node.id, data.name);
-  }
-  return nameById;
 };
 
 const deriveDuration = (entry: RawNodeExecutionEntry): number | undefined => {
@@ -148,7 +123,11 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
   const entries = stripArchivedKeys(rawMap);
 
   // Fallback name lookup from the workflow structure (backend usually includes `name`).
-  const nameById = buildNameLookup(workflow);
+  const nameById = new Map<string, string>();
+  for (const node of workflow?.nodes ?? []) {
+    const data = node.data as { name?: string } | undefined;
+    if (node.id && data?.name) nameById.set(node.id, data.name);
+  }
 
   const rawDiagnostics = isRecord(bag.promptCachingDiagnostics) ? bag.promptCachingDiagnostics : {};
 
@@ -163,7 +142,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     input: entry.input,
     output: entry.output,
     error: asString(entry.error) ?? null,
-    promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]) ?? normalizePromptCaching(entry.prompt_caching),
+    promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]),
   }));
 
   // Execution order by startTime (nodes without a startTime sort last, stable by id).
@@ -225,40 +204,6 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     slowestNodeId,
     promptCachingDiagnostics,
   };
-};
-
-export interface PromptCachingWarning {
-  nodeId: string;
-  name: string;
-  reasonText?: string;
-}
-
-/**
- * Every node that asked for prompt caching and did not get it, from the nodes this run
- * executed and from the sub-agent diagnostics propagated in.
- */
-export const collectPromptCachingWarnings = (
-  response: unknown,
-  workflow?: Workflow | null
-): PromptCachingWarning[] => {
-  const model = buildExecutionViewModel(response, workflow);
-  const warnings: PromptCachingWarning[] = [];
-  const seen = new Set<string>();
-
-  for (const node of model.nodes) {
-    const diagnostic = node.promptCaching;
-    if (!diagnostic?.requested || diagnostic.applied) continue;
-    warnings.push({ nodeId: node.nodeId, name: node.name, reasonText: diagnostic.reasonText });
-    seen.add(node.nodeId);
-  }
-
-  const nameById = buildNameLookup(workflow);
-  for (const [nodeId, diagnostic] of Object.entries(model.promptCachingDiagnostics)) {
-    if (seen.has(nodeId) || !diagnostic.requested || diagnostic.applied) continue;
-    warnings.push({ nodeId, name: nameById.get(nodeId) ?? nodeId, reasonText: diagnostic.reasonText });
-  }
-
-  return warnings;
 };
 
 /**
