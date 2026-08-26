@@ -158,7 +158,7 @@ class DbRepository(Generic[OrmModelT]):
     # ---------- WRITE ----------
     async def create(self, obj: OrmModelT) -> OrmModelT:
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -166,24 +166,28 @@ class DbRepository(Generic[OrmModelT]):
     async def update(self, obj: OrmModelT) -> OrmModelT:
         """
         Accepts a *managed* ORM object whose attributes have already been
-        mutated by the caller.  Flush/commit & refresh are done here.
+        mutated by the caller. Flush & refresh are done here; the commit is
+        owned by the request/task transaction boundary.
         """
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
 
     async def delete(self, obj: OrmModelT) -> None:
         await self.db.delete(obj)
-        await self.db.commit()
+        await self.db.flush()
 
     async def soft_delete(self, obj: OrmModelT, commit: bool = True) -> None:
-        """Skip the commit to batch this delete with later writes."""
+        """
+        Mark the row deleted. The ``commit`` flag is retained for backward
+        compatibility but no longer commits — the transaction boundary owns that.
+        The Core UPDATE below is emitted to the current transaction immediately.
+        """
         await self.db.execute(
                 update(obj.__class__)
                 .where(obj.__class__.id == obj.id)
                 .values(is_deleted=1)
                 .execution_options(synchronize_session="fetch")
                 )
-        if commit:
-            await self.db.commit()
+        await self.db.flush()

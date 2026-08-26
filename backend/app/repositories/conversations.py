@@ -80,7 +80,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
             data["group_id"] = await self.resolve_group_id_for_operator(conversation_data.operator_id)
         new_conversation = ConversationModel(**data)
         self.db.add(new_conversation)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_conversation)
         return new_conversation
 
@@ -223,7 +223,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
         Updates an existing conversation in DB
         """
         self.db.add(conversation)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(conversation)
         return conversation
 
@@ -250,7 +250,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
             .values(custom_attributes=custom_attributes)
         )
         await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
 
     def _apply_base_filters(self, query, conversation_filter: ConversationFilter):
         """Apply all shared WHERE clauses so fetch and count stay in sync."""
@@ -570,7 +570,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
 
     async def delete_conversation(self, conversation: ConversationModel):
         await self.db.delete(conversation)
-        await self.db.commit()
+        await self.db.flush()
 
     async def get_topics_count(self) -> List[Tuple[str, int]]:
         """
@@ -609,7 +609,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
         if not conv:
             return None
         conv.zendesk_ticket_id = zendesk_ticket_id
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(conv)
         return conv
 

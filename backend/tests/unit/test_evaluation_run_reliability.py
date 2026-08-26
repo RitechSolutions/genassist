@@ -621,12 +621,13 @@ class TestPausedConversationExecution:
 
 class TestWatchdogRepo:
     @pytest.mark.asyncio
-    async def test_mark_stuck_as_failed_commits_and_returns_rowcount(self):
+    async def test_mark_stuck_as_failed_flushes_and_returns_rowcount(self):
         from app.repositories.test_suite import TestRunRepository
 
         db = MagicMock()
         db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=3))
-        db.commit = AsyncMock()
+        # Repos flush; the reconcile task/boundary owns the commit.
+        db.flush = AsyncMock()
         repo = TestRunRepository(db)
 
         now = datetime.now(timezone.utc)
@@ -636,7 +637,7 @@ class TestWatchdogRepo:
 
         assert failed == 3
         db.execute.assert_awaited_once()
-        db.commit.assert_awaited_once()
+        db.flush.assert_awaited_once()
 
 
 class TestWatchdogTask:

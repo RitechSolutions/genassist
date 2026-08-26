@@ -64,7 +64,7 @@ class UserRepository(DbRepository[UserModel]):
             user_role = UserRoleModel(user_id=new_user.id, role_id=role_id)
             self.db.add(user_role)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_user)
         return new_user
 
@@ -151,7 +151,7 @@ class UserRepository(DbRepository[UserModel]):
             .values(entra_oid=entra_oid)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         if result.rowcount:
             await self._clear_user_full_cache(user_id)
 
@@ -188,10 +188,12 @@ class UserRepository(DbRepository[UserModel]):
         for role_id in role_ids:
             self.db.add(UserRoleModel(user_id=new_user.id, role_id=role_id))
         try:
-            await self.db.commit()
+            # SAVEPOINT so a role-assignment conflict rolls back only these inserts,
+            # not the whole request transaction (the boundary owns the commit).
+            async with self.db.begin_nested():
+                await self.db.flush()
             await self.db.refresh(new_user)
         except IntegrityError as err:
-            await self.db.rollback()
             logger.warning("create_from_microsoft_sso integrity error: %s", err)
             raise AppException(error_key=ErrorKey.SSO_MICROSOFT_OAUTH_ERROR, status_code=409) from None
         return new_user
@@ -262,7 +264,7 @@ class UserRepository(DbRepository[UserModel]):
                     raise AppException(error_key=ErrorKey.ROLE_NOT_FOUND)
                 self.db.add(UserRoleModel(user_id=user.id, role_id=role_id))
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
 
         await self._clear_user_full_cache(user_id)
@@ -284,7 +286,7 @@ class UserRepository(DbRepository[UserModel]):
             .values(is_deleted=1)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         if result.rowcount:
             await self._clear_user_full_cache(user_id)
             return True
@@ -297,7 +299,7 @@ class UserRepository(DbRepository[UserModel]):
             .values(is_deleted=0)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         if result.rowcount:
             await self._clear_user_full_cache(user_id)
             return True
@@ -311,4 +313,4 @@ class UserRepository(DbRepository[UserModel]):
             .values(hashed_password=new_hashed, force_upd_pass_date=next_update_date)
         )
         await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()

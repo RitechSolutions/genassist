@@ -16,7 +16,7 @@ class AudioProviderRepository(DbRepository[AudioProvidersModel]):
     async def create(self, data) -> AudioProvidersModel:
         obj = AudioProvidersModel(**data.model_dump())
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -25,14 +25,14 @@ class AudioProviderRepository(DbRepository[AudioProvidersModel]):
 
     async def update(self, obj: AudioProvidersModel) -> AudioProvidersModel:
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
     async def delete(self, obj: AudioProvidersModel):
         obj.is_deleted = 1
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
 
     async def get_all(self):
         result = await self.db.execute(

@@ -150,7 +150,8 @@ export const getNodeLabel = (node: Node): string => {
 /**
  * Field-level comparison of two same-id nodes' normalized `data`. Compares every field present in
  * either node via `isEqual`. If the node's `type` itself changed, that is surfaced as a synthetic
- * `type` field change so the user sees the node was re-typed.
+ * `type` field change so the user sees the node was re-typed. `options.ignoreNodeNames` skips the
+ * node's own `data.name`.
  */
 export const diffNodeData = (baseNode: Node, targetNode: Node, options: DiffOptions = {}): FieldChange[] => {
   const changes: FieldChange[] = [];
@@ -168,6 +169,7 @@ export const diffNodeData = (baseNode: Node, targetNode: Node, options: DiffOpti
   const keys = Array.from(new Set([...Object.keys(baseData), ...Object.keys(targetData)]));
 
   for (const key of keys) {
+    if (options.ignoreNodeNames && key === 'name') continue;
     if (!isEqual(baseData[key], targetData[key])) {
       changes.push({ key, before: baseData[key], after: targetData[key] });
     }

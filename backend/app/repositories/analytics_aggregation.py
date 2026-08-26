@@ -425,7 +425,7 @@ class AnalyticsAggregationRepository:
                 },
             )
             await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
 
     async def upsert_node_daily_stats(self, stats_list: list[dict]) -> None:
         """
@@ -481,4 +481,4 @@ class AnalyticsAggregationRepository:
                 },
             )
             await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()

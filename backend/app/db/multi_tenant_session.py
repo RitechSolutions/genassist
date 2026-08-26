@@ -210,6 +210,11 @@ class MultiTenantSessionManager:
                     di_session = injector.get(AsyncSession)
                     try:
                         await seed_data(di_session, injector)
+                        # Repositories only flush now; commit the seeded rows explicitly.
+                        await di_session.commit()
+                    except Exception:
+                        await di_session.rollback()
+                        raise
                     finally:
                         try:
                             await di_session.close()
@@ -252,6 +257,8 @@ class MultiTenantSessionManager:
         session_factory = self.get_tenant_session_factory(tenant)
         async with session_factory() as session:
             await seed_data(session, injector)
+            # Repositories only flush now; commit the seeded rows explicitly.
+            await session.commit()
 
     async def get_all_table_names_async(self, tenant: str = "master") -> list[str]:
         """Introspect tables with the *current* session’s bind."""

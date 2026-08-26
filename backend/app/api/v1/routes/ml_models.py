@@ -1,11 +1,14 @@
+import asyncio
 import logging
 import os
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+import pandas as pd
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -380,4 +383,76 @@ async def analyze_csv(
         raise HTTPException(
             status_code=500,
             detail=f"Error analyzing CSV file: {str(e)}"
+        ) from e
+
+
+def _build_profile_report_html(file_path: str) -> str:
+    """Run ydata-profiling on a CSV file and return the report as an HTML string."""
+    from ydata_profiling import ProfileReport
+
+    df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
+    profile = ProfileReport(df, title=f"Data Profile: {Path(file_path).name}")
+    return profile.to_html()
+
+
+@router.post("/profile-csv", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def profile_csv(
+    file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
+    file_manager_service: FileManagerService = Injected(FileManagerService)
+):
+    """
+    Run pandas/ydata data profiling on a CSV file and return the report as a
+    downloadable HTML file.
+
+    The file_url can be:
+    - An absolute path (starting with /)
+    - A relative path (will be checked in DATA_VOLUME/train directories)
+    - A path within DATA_VOLUME
+    - An HTTP(S) URL (downloaded before profiling)
+    """
+    try:
+        try:
+            if file_url.startswith("http://") or file_url.startswith("https://"):
+                dest_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"csv_file_{uuid.uuid4()}.csv")
+                await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
+                file_path = dest_path
+            else:
+                file_path = ml_utils.resolve_csv_file_path(file_url)
+        except AppException as e:
+            if e.error_key == ErrorKey.FILE_NOT_FOUND:
+                raise HTTPException(
+                    status_code=404,
+                    detail=e.error_detail
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=e.error_detail
+                )
+
+        logger.info(f"Profiling CSV file: {file_path}")
+
+        # ydata-profiling is CPU-bound and can take a while on large files;
+        # run it off the event loop so it doesn't block other requests.
+        html = await asyncio.to_thread(_build_profile_report_html, str(file_path))
+
+        download_name = f"{Path(str(file_path)).stem}_profile.html"
+        return Response(
+            content=html,
+            media_type="text/html",
+            headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+        )
+
+    except HTTPException:
+        raise
+    except AppException:
+        raise
+    except Exception as e:
+        logger.error(f"Error profiling CSV file: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error profiling CSV file: {str(e)}"
         ) from e

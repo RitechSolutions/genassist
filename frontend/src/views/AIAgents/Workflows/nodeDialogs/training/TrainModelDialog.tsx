@@ -43,6 +43,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       modelParameters: data.modelParameters || {},
       validationSplit: data.validationSplit || 0.2,
       analysisResult: data.analysisResult || null,
+      splitMethod: data.splitMethod || "random",
+      dateColumn: data.dateColumn || "",
     }),
     (v) => ({
       name: v.name,
@@ -53,6 +55,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       featureColumns: v.featureColumns,
       modelParameters: v.modelParameters,
       validationSplit: v.validationSplit,
+      splitMethod: v.splitMethod,
+      dateColumn: v.splitMethod === "time_based" ? v.dateColumn : undefined,
     })
   );
 
@@ -93,6 +97,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       toast({
         title: "Validation Error",
         description: "Please select at least one feature column",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (values.splitMethod === "time_based" && !values.dateColumn.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please specify a date column for a time-based split",
         variant: "destructive",
       });
       return;
@@ -203,6 +216,10 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
 
   const handleModelTypeChange = (value: string) => {
     setField("modelType", value as TrainModelNodeData["modelType"]);
+  };
+
+  const handleSplitMethodChange = (value: string) => {
+    setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
   };
 
   return (
@@ -419,6 +436,60 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             </p>
           </div>
 
+          {/* Split Method */}
+          <div className="space-y-2">
+            <Label htmlFor="splitMethod">Split Method</Label>
+            <Select value={values.splitMethod} onValueChange={handleSplitMethodChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select split method" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="random">Random</SelectItem>
+                <SelectItem value="time_based">Time-based</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Random shuffles rows before splitting. Time-based sorts by a date
+              column and reserves the most recent rows for validation — use this
+              for time-series data.
+            </p>
+          </div>
+
+          {/* Date Column (time-based split only) */}
+          {values.splitMethod === "time_based" && (
+            <div className="space-y-2">
+              <Label htmlFor="dateColumn">Date Column *</Label>
+              {values.analysisResult ? (
+                <Select
+                  value={values.dateColumn}
+                  onValueChange={(v) => setField("dateColumn", v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select date column" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {values.analysisResult.column_names.map((columnName) => (
+                      <SelectItem key={columnName} value={columnName}>
+                        {columnName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <DraggableInput
+                  id="dateColumn"
+                  value={values.dateColumn}
+                  onChange={(e) => setField("dateColumn", e.target.value)}
+                  placeholder="Enter date/timestamp column name"
+                  className="w-full"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Column used to sort rows chronologically before splitting
+              </p>
+            </div>
+          )}
+
           {/* Validation Split */}
           <div className="space-y-2">
             <Label>
@@ -433,7 +504,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
               className="w-full"
             />
             <p className="text-xs text-muted-foreground">
-              Fraction of data to use for validation (10% - 50%)
+              {values.splitMethod === "time_based"
+                ? "Fraction of the most recent rows to reserve for validation (10% - 50%)"
+                : "Fraction of data to use for validation (10% - 50%)"}
             </p>
           </div>
         </div>

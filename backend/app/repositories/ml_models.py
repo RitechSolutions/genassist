@@ -35,12 +35,12 @@ class MLModelsRepository(DbRepository[MLModel]):
                 target_variable=ml_model_data.target_variable,
                 inference_params=ml_model_data.inference_params,
             )
-            self.db.add(new_ml_model)
-            await self.db.commit()
+            async with self.db.begin_nested():
+                self.db.add(new_ml_model)
+                await self.db.flush()
             await self.db.refresh(new_ml_model)
             return new_ml_model
         except IntegrityError as e:
-            await self.db.rollback()
             logger.error(f"IntegrityError while creating ML model: {str(e)}")
             raise AppException(
                 error_key=ErrorKey.ML_MODEL_NAME_EXISTS
@@ -95,11 +95,11 @@ class MLModelsRepository(DbRepository[MLModel]):
                 # Context not available, skip updating updated_by
                 pass
 
-            await self.db.commit()
+            async with self.db.begin_nested():
+                await self.db.flush()
             await self.db.refresh(ml_model)
             return ml_model
         except IntegrityError as e:
-            await self.db.rollback()
             logger.error(f"IntegrityError while updating ML model: {str(e)}")
             raise AppException(
                 error_key=ErrorKey.ML_MODEL_NAME_EXISTS
@@ -109,7 +109,7 @@ class MLModelsRepository(DbRepository[MLModel]):
         """Soft delete an ML model."""
         ml_model = await self.get_by_id(ml_model_id)
         ml_model.is_deleted = 1
-        await self.db.commit()
+        await self.db.flush()
         return ml_model
 
 

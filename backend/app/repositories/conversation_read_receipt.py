@@ -68,4 +68,4 @@ class ConversationReadReceiptRepository(DbRepository[ConversationReadReceiptMode
             )
         )
         await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()

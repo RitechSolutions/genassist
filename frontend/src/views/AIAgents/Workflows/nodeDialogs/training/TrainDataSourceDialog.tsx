@@ -13,11 +13,13 @@ import {
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import { useToast } from "@/components/use-toast";
-import { Save } from "lucide-react";
+import { Save, BarChart3 } from "lucide-react";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
 import { FileUploader } from "@/components/FileUploader";
+import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
+import { analyzeCSV, profileCSV } from "@/services/mlModels";
 import { useNodeDialogState } from "../useNodeDialogState";
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<
@@ -44,6 +46,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       csvFilePath: data.csvFilePath ?? null,
       csvFileId: data.csvFileId ?? null,
       csvFileUrl: data.csvFileUrl ?? null,
+      analysisResult: data.analysisResult ?? null,
     }),
     (v) => ({
       name: v.name,
@@ -54,6 +57,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       csvFilePath: v.csvFilePath ?? undefined,
       csvFileId: v.csvFileId ?? undefined,
       csvFileUrl: v.csvFileUrl ?? undefined,
+      analysisResult: v.analysisResult ?? undefined,
     })
   );
 
@@ -65,6 +69,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     return "csv";
   });
   const [isCsvUploading, setIsCsvUploading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isProfiling, setIsProfiling] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
@@ -107,6 +113,51 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       loadDataSources();
     }
   }, [isOpen, data, toast]);
+
+  const handleAnalyzeFile = async (fileUrl: string, fileName: string) => {
+    // The backend preview endpoint only supports CSV files today.
+    if (!fileName.toLowerCase().endsWith(".csv")) {
+      setField("analysisResult", null);
+      return;
+    }
+
+    try {
+      setIsAnalyzing(true);
+      const result = await analyzeCSV(fileUrl);
+      setField("analysisResult", result);
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Preview Failed",
+        description:
+          err instanceof Error ? err.message : "Failed to preview the file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleProfileData = async () => {
+    const target = values.csvFilePath || values.csvFileUrl;
+    if (!target) return;
+
+    try {
+      setIsProfiling(true);
+      const baseName = (values.csvFileName || "data").replace(/\.[^./]+$/, "");
+      await profileCSV(target, `${baseName}_profile.html`);
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Profiling Failed",
+        description:
+          err instanceof Error ? err.message : "Failed to generate data profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProfiling(false);
+    }
+  };
 
   const handleSourceChange = (value: string) => {
     setSelectedSource(value);
@@ -254,7 +305,17 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 csvFilePath: result.file_path,
                 csvFileId: result.file_id,
                 csvFileUrl: result.file_url,
+                analysisResult: null,
               }));
+              // Prefer the raw server file_path: analyze-csv resolves it directly.
+              // file_url (when file-manager storage is enabled) points at an
+              // authenticated /file-manager/files/{id}/source endpoint that the
+              // backend's own internal downloader hits without credentials, so it
+              // 400s there — file_path avoids that round-trip entirely.
+              const previewTarget = result.file_path || result.file_url;
+              if (previewTarget) {
+                handleAnalyzeFile(previewTarget, result.original_filename);
+              }
             }}
             onRemove={() => {
               setValues((v) => ({
@@ -263,11 +324,36 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 csvFilePath: null,
                 csvFileId: null,
                 csvFileUrl: null,
+                analysisResult: null,
               }));
             }}
             placeholder="Select a CSV file to upload"
           />
         )}
+        {values.sourceType === "csv" && isAnalyzing && (
+          <p className="text-xs text-muted-foreground">
+            Generating data preview...
+          </p>
+        )}
+        {values.sourceType === "csv" && values.analysisResult && (
+          <CSVAnalysisDisplay analysisResult={values.analysisResult} />
+        )}
+        {values.sourceType === "csv" &&
+          (values.csvFilePath || values.csvFileUrl) &&
+          values.csvFileName?.toLowerCase().endsWith(".csv") && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleProfileData}
+              loading={isProfiling}
+              disabled={isProfiling}
+              icon={<BarChart3 className="h-4 w-4" />}
+              className="w-fit"
+            >
+              {isProfiling ? "Generating profile..." : "Profile Data"}
+            </Button>
+          )}
       </div>
     </NodeConfigPanel>
   );

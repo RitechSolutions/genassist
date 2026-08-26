@@ -156,6 +156,11 @@ async def run_child_turn(
         input_data["session"] = canonical
 
     tenant = get_tenant_context()
+    from app.core.utils.db_connection_utils import (
+        commit_scope_session,
+        rollback_scope_session,
+    )
+
     factory = injector.get(RequestScopeFactory)
     async with factory.create_scope():
         set_tenant_context(tenant)
@@ -171,6 +176,13 @@ async def run_child_turn(
                 ),
                 timeout=timeout_seconds,
             )
+        except Exception:
+            # Repos only flush; roll back this child turn's writes on error.
+            await rollback_scope_session(context="orchestrator_child_turn")
+            raise
+        else:
+            # Commit this child turn's unit of work (no-op if nothing was written).
+            await commit_scope_session(context="orchestrator_child_turn")
         finally:
             try:
                 session = injector.get(AsyncSession)

@@ -63,7 +63,14 @@ class TemplateService:
         """
         factory = multi_tenant_manager.get_tenant_session_factory("master")
         async with factory() as session:
-            yield TemplateRepository(session)
+            # This is an out-of-band master session, not the request-scoped one, so
+            # it owns its own commit/rollback (repositories only flush now).
+            try:
+                yield TemplateRepository(session)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     @staticmethod
     def _to_item(

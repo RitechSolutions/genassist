@@ -115,10 +115,23 @@ def create_task_wrapper(task_func: Callable[..., Awaitable[Any]]) -> Callable:
         
         request_scope_factory = injector.get(RequestScopeFactory)
         
+        from app.core.utils.db_connection_utils import (
+            commit_scope_session,
+            rollback_scope_session,
+        )
+
         async with request_scope_factory.create_scope():
             try:
                 # Call the actual task function with the provided kwargs
-                return await task_func(**kwargs)
+                result = await task_func(**kwargs)
+            except Exception:
+                # Repos only flush; roll back this task's pending writes on error.
+                await rollback_scope_session(context="celery_task")
+                raise
+            else:
+                # Commit the task's unit of work (no-op if nothing was written).
+                await commit_scope_session(context="celery_task")
+                return result
             finally:
                 # Ensure any sessions created via DI are closed
                 try:

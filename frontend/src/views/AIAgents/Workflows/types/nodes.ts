@@ -434,6 +434,7 @@ export interface TrainDataSourceNodeData extends BaseNodeData {
   csvFilePath?: string; // Server path to the uploaded CSV file
   csvFileId?: string; // ID of the uploaded CSV file
   csvFileUrl?: string; // URL of the uploaded CSV file
+  analysisResult?: CSVAnalysisResult; // Preview/analysis of the uploaded file
 }
 
 // Preprocessing Node Data
@@ -445,6 +446,8 @@ export interface PreprocessingNodeData extends BaseNodeData {
 }
 
 // Train Model Node Data
+export type SplitMethod = "random" | "time_based";
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
@@ -459,6 +462,8 @@ export interface TrainModelNodeData extends BaseNodeData {
   featureColumns: string[]; // Feature column names
   modelParameters: Record<string, any>; // Model-specific parameters
   validationSplit: number; // Train/validation split ratio
+  splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
+  dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
 }
 
 // Per Chat RAG Node Data

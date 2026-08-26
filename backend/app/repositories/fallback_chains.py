@@ -16,7 +16,7 @@ class FallbackChainRepository(DbRepository[FallbackChainModel]):
     async def create(self, data):
         obj = FallbackChainModel(**data)
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -25,7 +25,7 @@ class FallbackChainRepository(DbRepository[FallbackChainModel]):
 
     async def update(self, obj: FallbackChainModel):
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 

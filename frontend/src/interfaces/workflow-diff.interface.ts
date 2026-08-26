@@ -15,6 +15,8 @@ export type NodeDiffStatus = 'added' | 'removed' | 'modified' | 'unchanged';
 export interface DiffOptions {
   /** Drop record-reference ids (provider, KB, connector, data source) from both sides. */
   ignoreIdReferences?: boolean;
+  /** Drop each node's display name. */
+  ignoreNodeNames?: boolean;
 }
 
 /** A single configuration field that differs between base and target for a modified node. */

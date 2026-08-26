@@ -32,7 +32,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
     async def save_messages(self, messages: List[TranscriptMessageModel]) -> List[TranscriptMessageModel]:
         """Save multiple transcript messages"""
         self.db.add_all(messages)
-        await self.db.commit()
+        await self.db.flush()
         for msg in messages:
             await self.db.refresh(msg)
         return messages
@@ -109,7 +109,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
             if transcript_feedback.feedback_message is not None:
                 existing_feedback.feedback_message = transcript_feedback.feedback_message
             existing_feedback.feedback_timestamp = datetime.now(timezone.utc)
-            await self.db.commit()
+            await self.db.flush()
             await self.db.refresh(existing_feedback)
             return existing_feedback, previous_feedback
         else:
@@ -125,7 +125,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                     feedback_message=transcript_feedback.feedback_message
                     )
             self.db.add(new_feedback)
-            await self.db.commit()
+            await self.db.flush()
             await self.db.refresh(new_feedback)
             return new_feedback, None
 
@@ -149,7 +149,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         messages = await self.get_messages_by_conversation_id(conversation_id)
         for message in messages:
             await self.db.delete(message)
-        await self.db.commit()
+        await self.db.flush()
 
 
     async def get_messages_by_type(
@@ -332,6 +332,6 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                     )
             self.db.add(issue)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(issue)
         return issue

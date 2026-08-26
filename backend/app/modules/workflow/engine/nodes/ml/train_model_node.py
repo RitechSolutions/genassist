@@ -57,6 +57,12 @@ class TrainModelNode(BaseNode):
                 - featureColumns: List of feature column names (required)
                 - modelParameters: Dictionary of model-specific parameters (optional)
                 - validationSplit: Fraction for validation split (default: 0.2)
+                - splitMethod: "random" (default) or "time_based" — for time-based split,
+                            the earliest (1 - validationSplit) fraction of rows (sorted by
+                            dateColumn) is used for training and the latest fraction for
+                            validation, with no shuffling.
+                - dateColumn: Name of the date/timestamp column to sort by (required when
+                            splitMethod is "time_based")
 
         Returns:
             Dictionary with training results and model file path
@@ -70,6 +76,8 @@ class TrainModelNode(BaseNode):
             feature_columns = config.get("featureColumns", [])
             model_parameters = config.get("modelParameters", {})
             validation_split = config.get("validationSplit", 0.2)
+            split_method = config.get("splitMethod", "random")
+            date_column = config.get("dateColumn")
 
             # Validate required parameters
             if not name:
@@ -96,6 +104,16 @@ class TrainModelNode(BaseNode):
                 raise AppException(
                     error_key=ErrorKey.MISSING_PARAMETER,
                     error_detail="featureColumns is required and must not be empty for train model node",
+                )
+            if split_method not in ("random", "time_based"):
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=f"Invalid splitMethod: {split_method}. Must be 'random' or 'time_based'",
+                )
+            if split_method == "time_based" and not date_column:
+                raise AppException(
+                    error_key=ErrorKey.MISSING_PARAMETER,
+                    error_detail="dateColumn is required when splitMethod is 'time_based'",
                 )
 
             # Validate model type
@@ -130,6 +148,9 @@ class TrainModelNode(BaseNode):
                 if col not in all_columns:
                     missing_columns.append(col)
 
+            if split_method == "time_based" and date_column not in all_columns:
+                missing_columns.append(date_column)
+
             if missing_columns:
                 logger.error(f"Columns not found in data: {missing_columns}. Available columns: {all_columns}")
                 return {
@@ -141,18 +162,26 @@ class TrainModelNode(BaseNode):
                 #     error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
                 # )
 
+            # For a time-based split, sort chronologically first so a positional
+            # split later puts the earliest rows in train and latest in validation.
+            if split_method == "time_based":
+                parsed_dates = pd.to_datetime(df[date_column], errors="coerce")
+                if parsed_dates.isna().all():
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Could not parse any values in dateColumn '{date_column}' as dates.",
+                    )
+                df = (
+                    df.assign(_sort_date_=parsed_dates)
+                    .sort_values("_sort_date_", na_position="last")
+                    .drop(columns=["_sort_date_"])
+                    .reset_index(drop=True)
+                )
+                logger.info(f"Sorted {len(df)} rows chronologically by '{date_column}' for time-based split")
+
             # Prepare features and target
             X = df[feature_columns].copy()
             y = df[target_column].copy()
-
-            # Handle missing values
-            if X.isnull().any().any():
-                logger.warning("Found missing values in features. Filling with median for numeric and mode for categorical.")
-                for col in X.columns:
-                    if X[col].dtype in ['int64', 'float64']:
-                        X[col].fillna(X[col].median(), inplace=True)
-                    else:
-                        X[col].fillna(X[col].mode()[0] if not X[col].mode().empty else '', inplace=True)
 
             if y.isnull().any():
                 logger.warning("Found missing values in target. Dropping rows with missing target values.")
@@ -160,31 +189,73 @@ class TrainModelNode(BaseNode):
                 X = X[mask]
                 y = y[mask]
 
-            # Handle categorical variables by one-hot encoding
-            categorical_columns = X.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                logger.info(f"One-hot encoding categorical columns: {list(categorical_columns)}")
-                X = pd.get_dummies(X, columns=categorical_columns, drop_first=True)
-
-            # Handle boolean columns
-            boolean_columns = X.select_dtypes(include=['bool']).columns
-            if len(boolean_columns) > 0:
-                logger.info(f"Converting boolean columns to int: {list(boolean_columns)}")
-                X[boolean_columns] = X[boolean_columns].astype(int)
-
             # Determine if classification or regression based on target
             is_classification = self._is_classification_task(y, model_type)
 
-            # Split data for validation
+            # Split BEFORE fitting any preprocessing (imputation medians/modes,
+            # one-hot categories) — fitting those on the full dataset would leak
+            # validation-row statistics into training, which for a time-based
+            # split defeats the entire point (keeping "future" rows out of
+            # training rather than just out of the raw feature matrix).
             if validation_split > 0 and validation_split < 1:
-                X_train, X_val, y_train, y_val = train_test_split(
-                    X, y, test_size=validation_split, random_state=42, stratify=y if is_classification else None
-                )
-                logger.info(f"Split data: {len(X_train)} training samples, {len(X_val)} validation samples")
+                if split_method == "time_based":
+                    split_idx = int(len(X) * (1 - validation_split))
+                    X_train, X_val = X.iloc[:split_idx].copy(), X.iloc[split_idx:].copy()
+                    y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
+                    logger.info(
+                        f"Time-based split on '{date_column}': {len(X_train)} training samples "
+                        f"(earliest), {len(X_val)} validation samples (latest)"
+                    )
+                else:
+                    X_train, X_val, y_train, y_val = train_test_split(
+                        X, y, test_size=validation_split, random_state=42, stratify=y if is_classification else None
+                    )
+                    logger.info(f"Split data: {len(X_train)} training samples, {len(X_val)} validation samples")
             else:
-                X_train, y_train = X, y
+                X_train, y_train = X.copy(), y
                 X_val, y_val = None, None
                 logger.info(f"Using all {len(X_train)} samples for training (no validation split)")
+
+            # Handle missing values — fit fill values on the training split only,
+            # then apply those same values to validation so nothing about the
+            # validation distribution leaks into how training data is filled.
+            # Checked per-column against both splits: X_train having no NaNs
+            # doesn't mean X_val doesn't (e.g. a time-based split can put all
+            # the missing rows in the "future" validation portion).
+            has_missing = X_train.isnull().any().any() or (
+                X_val is not None and X_val.isnull().any().any()
+            )
+            if has_missing:
+                logger.warning("Found missing values in features. Filling with median for numeric and mode for categorical.")
+                for col in X_train.columns:
+                    if X_train[col].dtype in ['int64', 'float64']:
+                        fill_value = X_train[col].median()
+                    else:
+                        mode_values = X_train[col].mode()
+                        fill_value = mode_values[0] if not mode_values.empty else ''
+                    X_train[col].fillna(fill_value, inplace=True)
+                    if X_val is not None:
+                        X_val[col].fillna(fill_value, inplace=True)
+
+            # Handle categorical variables by one-hot encoding. Categories are
+            # derived from the training split only; validation is reindexed to
+            # the same columns, so a category only seen in validation is
+            # dropped rather than leaking into the encoder's vocabulary.
+            categorical_columns = X_train.select_dtypes(include=['object']).columns
+            if len(categorical_columns) > 0:
+                logger.info(f"One-hot encoding categorical columns: {list(categorical_columns)}")
+                X_train = pd.get_dummies(X_train, columns=categorical_columns, drop_first=True)
+                if X_val is not None:
+                    X_val = pd.get_dummies(X_val, columns=categorical_columns, drop_first=True)
+                    X_val = X_val.reindex(columns=X_train.columns, fill_value=0)
+
+            # Handle boolean columns
+            boolean_columns = X_train.select_dtypes(include=['bool']).columns
+            if len(boolean_columns) > 0:
+                logger.info(f"Converting boolean columns to int: {list(boolean_columns)}")
+                X_train[boolean_columns] = X_train[boolean_columns].astype(int)
+                if X_val is not None:
+                    X_val[boolean_columns] = X_val[boolean_columns].astype(int)
 
             # Train the model
             model = await self._train_model(

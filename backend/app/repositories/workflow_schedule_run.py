@@ -171,5 +171,5 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         return result.rowcount or 0

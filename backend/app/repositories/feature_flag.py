@@ -15,7 +15,7 @@ class FeatureFlagRepository(DbRepository[FeatureFlagModel]):
     async def create(self, dto: FeatureFlagCreate) -> FeatureFlagModel:
         obj = FeatureFlagModel(**dto.model_dump())
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -34,7 +34,7 @@ class FeatureFlagRepository(DbRepository[FeatureFlagModel]):
             return None
         for field, val in dto.model_dump(exclude_unset=True).items():
             setattr(obj, field, val)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -43,5 +43,5 @@ class FeatureFlagRepository(DbRepository[FeatureFlagModel]):
         if not obj:
             return False
         await self.db.delete(obj)
-        await self.db.commit()
+        await self.db.flush()
         return True
