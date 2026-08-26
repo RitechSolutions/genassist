@@ -7,6 +7,7 @@ import os
 
 from app.schemas.filter import BaseFilterModel
 from app.services.users import UserService
+from app.repositories.user_types import UserTypesRepository
 from app.repositories.users import UserRepository
 from app.schemas.user import UserCreate, UserRead, UserTypeRead, UserUpdate
 from app.core.exceptions.error_messages import ErrorKey
@@ -25,8 +26,15 @@ def mock_repository():
     return AsyncMock(spec=UserRepository)
 
 @pytest.fixture
-def user_service(mock_repository):
-    return UserService(repository=mock_repository)
+def mock_user_types_repository():
+    return AsyncMock(spec=UserTypesRepository)
+
+@pytest.fixture
+def user_service(mock_repository, mock_user_types_repository):
+    return UserService(
+        repository=mock_repository,
+        user_types_repository=mock_user_types_repository,
+    )
 
 @pytest.fixture
 def sample_user_data():
@@ -195,7 +203,7 @@ async def test_get_user_by_username_not_found_no_throw(user_service, mock_reposi
     assert result is None
 
 @pytest.mark.asyncio
-async def test_update_user_success(user_service, mock_repository):
+async def test_update_user_success(user_service, mock_repository, mock_user_types_repository):
     # Setup
     user_id = uuid4()
     update_data = UserUpdate(
@@ -225,22 +233,102 @@ async def test_update_user_success(user_service, mock_repository):
     )
     mock_repository.update.assert_called_once_with(user_id, update_data)
     mock_repository.get_full.assert_called_once_with(mock_updated_user.id)
+    mock_user_types_repository.get_by_id.assert_not_called()
     assert result == mock_updated_user
 
-def test_user_update_rejects_empty_role_ids():
+CONSOLE_TYPE_ID = UUID("00000196-edb1-2b80-a681-167fc2a697de")
+INTERACTIVE_TYPE_ID = UUID("00000196-edb1-2b80-a681-167fc2a697dd")
+
+def _user_type(type_id: UUID, name: str) -> UserTypeRead:
+    return UserTypeRead(id=type_id, name=name, created_at=datetime.now(), updated_at=datetime.now())
+
+def _user(user_id: UUID, user_type: UserTypeRead, group_id: UUID | None = None) -> UserRead:
+    return UserRead(
+        id=user_id,
+        username="testuser",
+        email="test@example.com",
+        is_active=1,
+        roles=[],
+        user_type=user_type,
+        api_keys=[],
+        group_id=group_id,
+    )
+
+def test_user_update_allows_empty_role_ids():
+    assert UserUpdate(role_ids=[]).role_ids == []
+    assert UserUpdate().role_ids is None
+
+def test_user_create_still_rejects_empty_role_ids(sample_user_data):
     with pytest.raises(ValidationError):
-        UserUpdate(role_ids=[])
+        UserCreate(**{**sample_user_data, "role_ids": []})
+
+@pytest.mark.asyncio
+async def test_update_console_user_empty_role_ids_allowed(user_service, mock_repository, mock_user_types_repository):
+    user_id = uuid4()
+    group_id = uuid4()
+    update_data = UserUpdate(role_ids=[], user_type_id=CONSOLE_TYPE_ID, group_id=group_id)
+    updated_user = _user(user_id, _user_type(CONSOLE_TYPE_ID, "console"), group_id=group_id)
+    mock_user_types_repository.get_by_id.return_value = _user_type(CONSOLE_TYPE_ID, "console")
+    mock_repository.update.return_value = updated_user
+    mock_repository.get_full.return_value = updated_user
+
+    result = await user_service.update(user_id, update_data)
+
+    mock_user_types_repository.get_by_id.assert_called_once_with(CONSOLE_TYPE_ID)
+    mock_repository.update.assert_called_once_with(user_id, update_data)
+    assert update_data.role_ids == []
+    assert result.group_id == group_id
+
+@pytest.mark.asyncio
+async def test_update_console_user_empty_role_ids_without_type_allowed(user_service, mock_repository, mock_user_types_repository):
+    user_id = uuid4()
+    update_data = UserUpdate(role_ids=[])
+    console_user = _user(user_id, _user_type(CONSOLE_TYPE_ID, "console"))
+    mock_repository.get_full.return_value = console_user
+    mock_repository.update.return_value = console_user
+
+    result = await user_service.update(user_id, update_data)
+
+    mock_user_types_repository.get_by_id.assert_not_called()
+    mock_repository.update.assert_called_once_with(user_id, update_data)
+    assert result == console_user
 
 @pytest.mark.asyncio
 async def test_update_user_empty_role_ids(user_service, mock_repository):
     user_id = uuid4()
-    update_data = UserUpdate.model_construct(role_ids=[])
+    update_data = UserUpdate(role_ids=[])
+    mock_repository.get_full.return_value = _user(user_id, _user_type(INTERACTIVE_TYPE_ID, "interactive"))
 
     with pytest.raises(AppException) as exc_info:
         await user_service.update(user_id, update_data)
 
     assert exc_info.value.error_key == ErrorKey.USER_ROLES_REQUIRED
     assert exc_info.value.status_code == 400
+    mock_repository.update.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_update_console_to_interactive_empty_role_ids_rejected(user_service, mock_repository, mock_user_types_repository):
+    user_id = uuid4()
+    update_data = UserUpdate(role_ids=[], user_type_id=INTERACTIVE_TYPE_ID)
+    mock_repository.get_full.return_value = _user(user_id, _user_type(CONSOLE_TYPE_ID, "console"))
+    mock_user_types_repository.get_by_id.return_value = _user_type(INTERACTIVE_TYPE_ID, "interactive")
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.update(user_id, update_data)
+
+    assert exc_info.value.error_key == ErrorKey.USER_ROLES_REQUIRED
+    mock_repository.update.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_update_user_empty_role_ids_unknown_user_type(user_service, mock_repository, mock_user_types_repository):
+    user_id = uuid4()
+    update_data = UserUpdate(role_ids=[], user_type_id=uuid4())
+    mock_user_types_repository.get_by_id.return_value = None
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.update(user_id, update_data)
+
+    assert exc_info.value.error_key == ErrorKey.USER_TYPE_NOT_FOUND
     mock_repository.update.assert_not_called()
 
 @pytest.mark.asyncio

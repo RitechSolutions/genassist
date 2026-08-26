@@ -27,6 +27,7 @@ import { getApiUrl } from "@/config/api";
 import { isAxiosError } from "axios";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog, FieldErrors } from "@/components/ui/crud-dialog";
+import { areUserRolesRequired } from "@/views/Users/helpers/userFormRules";
 
 // Value for the "No group" option, since Radix SelectItem cannot use an empty string value.
 const NO_GROUP_VALUE = "__none__";
@@ -273,7 +274,10 @@ export function UserDialog({
         if (passwordRequired && !values.password) {
           validationErrors.password = "Password is required.";
         }
-        if (values.selectedRoleIds.length === 0) {
+        if (
+          areUserRolesRequired(dialogMode, selectedUserType?.name) &&
+          values.selectedRoleIds.length === 0
+        ) {
           validationErrors.selectedRoleIds = "Roles is required.";
         }
 
@@ -347,9 +351,12 @@ export function UserDialog({
             r.name?.toLowerCase() === "supervisor"
         );
 
+        const rolesRequired = areUserRolesRequired(m, selectedUserType?.name);
+
         const handleRoleToggle = (roleId: string) => {
           form.setValues((prev) => {
             if (
+              rolesRequired &&
               prev.selectedRoleIds.includes(roleId) &&
               prev.selectedRoleIds.length === 1
             ) {
@@ -422,7 +429,10 @@ export function UserDialog({
                 ) : (
                   <Select
                     value={values.userTypeId}
-                    onValueChange={(value) => setField("userTypeId", value)}
+                    onValueChange={(value) => {
+                      setField("userTypeId", value);
+                      form.setFieldError("selectedRoleIds", undefined);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />
