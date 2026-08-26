@@ -421,7 +421,7 @@ export interface JiraNodeData extends BaseNodeData {
 export interface MLModelInferenceNodeData extends BaseNodeData {
   modelId: string; // ID of the selected ML model
   modelName?: string; // Name of the selected model (for display)
-  inferenceInputs: Record<string, string>; // Dynamic inputs based on model's inference_params
+  inferenceInputs: Record<string, string>; // Values supplied for each of the model's features
 }
 
 // Train Data Source Node Data
