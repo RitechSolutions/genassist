@@ -35,6 +35,7 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ignoreIdReferences, setIgnoreIdReferences] = useState(false);
+  const [ignoreNodeNames, setIgnoreNodeNames] = useState(false);
 
   const loadVersions = useCallback(async () => {
     setLoading(true);
@@ -61,13 +62,14 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
       setResolvedTarget(undefined);
       setError(null);
       setIgnoreIdReferences(false);
+      setIgnoreNodeNames(false);
     }
   }, [open, loadVersions]);
 
   const diff = useMemo(() => {
     if (!resolvedBase || !resolvedTarget) return null;
-    return computeWorkflowDiff(resolvedBase, resolvedTarget, { ignoreIdReferences });
-  }, [resolvedBase, resolvedTarget, ignoreIdReferences]);
+    return computeWorkflowDiff(resolvedBase, resolvedTarget, { ignoreIdReferences, ignoreNodeNames });
+  }, [resolvedBase, resolvedTarget, ignoreIdReferences, ignoreNodeNames]);
 
   const versionChip = (workflow: Workflow, side: 'base' | 'target') => {
     const isTarget = side === 'target';
@@ -100,6 +102,15 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
       </span>
     );
   };
+
+  const optionToggle = (id: string, label: string, checked: boolean, onCheckedChange: (next: boolean) => void) => (
+    <div className="flex items-center gap-2">
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+      <label htmlFor={id} className="cursor-pointer select-none text-sm font-medium text-muted-foreground">
+        {label}
+      </label>
+    </div>
+  );
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -152,18 +163,14 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
                 </TabsTrigger>
               </TabsList>
 
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="ignore-id-references"
-                  checked={ignoreIdReferences}
-                  onCheckedChange={setIgnoreIdReferences}
-                />
-                <label
-                  htmlFor="ignore-id-references"
-                  className="cursor-pointer select-none text-sm font-medium text-muted-foreground"
-                >
-                  Ignore ID references
-                </label>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {optionToggle(
+                  'ignore-id-references',
+                  'Ignore ID references',
+                  ignoreIdReferences,
+                  setIgnoreIdReferences
+                )}
+                {optionToggle('ignore-node-names', 'Ignore node names', ignoreNodeNames, setIgnoreNodeNames)}
               </div>
             </div>
             <TabsContent value="list" className="min-h-0 flex-1 pt-3 data-[state=inactive]:hidden">
