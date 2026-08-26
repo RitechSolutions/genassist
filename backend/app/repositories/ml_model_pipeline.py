@@ -45,12 +45,12 @@ class MLModelPipelineConfigRepository(DbRepository[MLModelPipelineConfig]):
                 is_default=config_data.is_default,
                 cron_schedule=config_data.cron_schedule,
             )
-            self.db.add(new_config)
-            await self.db.commit()
+            async with self.db.begin_nested():
+                self.db.add(new_config)
+                await self.db.flush()
             await self.db.refresh(new_config)
             return new_config
         except IntegrityError as e:
-            await self.db.rollback()
             logger.error(f"IntegrityError while creating pipeline config: {str(e)}")
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR
@@ -118,11 +118,11 @@ class MLModelPipelineConfigRepository(DbRepository[MLModelPipelineConfig]):
                 # Context not available (e.g., in background tasks)
                 pass
 
-            await self.db.commit()
+            async with self.db.begin_nested():
+                await self.db.flush()
             await self.db.refresh(config)
             return config
         except IntegrityError as e:
-            await self.db.rollback()
             logger.error(f"IntegrityError while updating pipeline config: {str(e)}")
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR
@@ -132,7 +132,7 @@ class MLModelPipelineConfigRepository(DbRepository[MLModelPipelineConfig]):
         """Soft delete a pipeline configuration."""
         config = await self.get_by_id(config_id)
         config.is_deleted = 1
-        await self.db.commit()
+        await self.db.flush()
         return config
 
     async def unset_default_for_model(self, model_id: UUID, exclude_config_id: Optional[UUID] = None):
@@ -152,7 +152,7 @@ class MLModelPipelineConfigRepository(DbRepository[MLModelPipelineConfig]):
         configs = result.scalars().all()
         for config in configs:
             config.is_default = False
-        await self.db.commit()
+        await self.db.flush()
 
 
 @inject
@@ -171,12 +171,12 @@ class MLModelPipelineRunRepository(DbRepository[MLModelPipelineRun]):
                 workflow_id=run_data.workflow_id,
                 status=PipelineRunStatus.PENDING,
             )
-            self.db.add(new_run)
-            await self.db.commit()
+            async with self.db.begin_nested():
+                self.db.add(new_run)
+                await self.db.flush()
             await self.db.refresh(new_run)
             return new_run
         except IntegrityError as e:
-            await self.db.rollback()
             logger.error(f"IntegrityError while creating pipeline run: {str(e)}")
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR
@@ -265,7 +265,7 @@ class MLModelPipelineRunRepository(DbRepository[MLModelPipelineRun]):
             # Context not available (e.g., in background tasks)
             pass
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(run)
         return run
 
@@ -287,12 +287,12 @@ class MLModelPipelineArtifactRepository(DbRepository[MLModelPipelineArtifact]):
                 artifact_name=artifact_data.artifact_name,
                 file_size=artifact_data.file_size,
             )
-            self.db.add(new_artifact)
-            await self.db.commit()
+            async with self.db.begin_nested():
+                self.db.add(new_artifact)
+                await self.db.flush()
             await self.db.refresh(new_artifact)
             return new_artifact
         except IntegrityError as e:
-            await self.db.rollback()
             logger.error(f"IntegrityError while creating pipeline artifact: {str(e)}")
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR

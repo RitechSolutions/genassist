@@ -46,7 +46,7 @@ class LanguagesRepository(DbRepository[LanguageModel]):
     async def create(self, code: str, name: str) -> LanguageModel:
         obj = LanguageModel(code=code, name=name)
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -55,7 +55,7 @@ class LanguagesRepository(DbRepository[LanguageModel]):
             model.name = dto.name
         if dto.is_active is not None:
             model.is_active = dto.is_active
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(model)
         return model
 
@@ -66,13 +66,13 @@ class LanguagesRepository(DbRepository[LanguageModel]):
                 TranslationValueModel.language_id == model.id
             )
         )
-        await self.db.commit()
+        await self.db.flush()
 
     async def restore(self, model: LanguageModel, name: str) -> LanguageModel:
         model.is_deleted = 0
         model.is_active = True
         model.name = name
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(model)
         return model
 
@@ -130,7 +130,7 @@ class TranslationsRepository(DbRepository[TranslationKeyModel]):
                     TranslationValueModel(language_id=lang_id, value=value)
                 )
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         # Re-fetch with eager loading to populate language relationships
         return await self.get_by_key(dto.key)  # type: ignore[return-value]
 
@@ -165,7 +165,7 @@ class TranslationsRepository(DbRepository[TranslationKeyModel]):
                     # Empty string means remove this translation
                     await self.db.delete(existing_val)
 
-        await self.db.commit()
+        await self.db.flush()
         return await self.get_by_key(key)
 
     async def delete_by_key(self, key: str) -> bool:
@@ -173,5 +173,5 @@ class TranslationsRepository(DbRepository[TranslationKeyModel]):
         if not obj:
             return False
         await self.db.delete(obj)
-        await self.db.commit()
+        await self.db.flush()
         return True

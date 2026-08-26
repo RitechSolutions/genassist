@@ -20,6 +20,7 @@ from app.core.config.settings import settings
 # Multi-tenant session manager
 from app.core.tenant_scope import tenant_scope
 from app.db.multi_tenant_session import multi_tenant_manager
+from app.db.transaction_manager import TransactionManager
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.workflow.llm.provider import LLMProvider
@@ -210,6 +211,11 @@ class Dependencies(Module):
         return session
 
     def configure(self, binder):
+        # Request-scoped transaction boundary shared by the transaction middleware,
+        # the background-task scope helpers, and any service that opts into an
+        # explicit unit of work. Same request-scoped AsyncSession as the repositories.
+        binder.bind(TransactionManager, scope=request_scope)
+
         binder.bind(ToolService, scope=request_scope)
         binder.bind(ToolRepository, scope=request_scope)
 

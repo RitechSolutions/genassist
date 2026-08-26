@@ -138,6 +138,8 @@ export const TRAIN_MODEL_NODE_DEFINITION: NodeTypeDefinition<TrainModelNodeData>
       featureColumns: [],
       modelParameters: {},
       validationSplit: 0.2,
+      splitMethod: "random",
+      dateColumn: "",
       handlers: [
         {
           id: "input",

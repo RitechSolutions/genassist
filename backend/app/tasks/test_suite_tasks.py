@@ -162,6 +162,8 @@ async def reconcile_stuck_test_runs_async() -> None:
                 running_before=running_before,
                 error_message=_STUCK_TEST_RUN_ERROR,
             )
+            # Repos only flush now; this out-of-band session owns its commit.
+            await session.commit()
             if failed:
                 logger.warning(
                     "Reconciled %s stuck evaluation run(s) as failed for tenant %s",
@@ -169,6 +171,7 @@ async def reconcile_stuck_test_runs_async() -> None:
                     tenant_id,
                 )
         except Exception as exc:
+            await session.rollback()
             logger.error("Error reconciling stuck evaluation runs: %s", exc, exc_info=True)
         finally:
             await session.close()

@@ -87,7 +87,7 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
             .execution_options(synchronize_session="fetch")
         )
         if commit:
-            await self.db.commit()
+            await self.db.flush()
 
     async def get_summaries_by_agent(self, agent_id: UUID) -> List:
         stmt = (
