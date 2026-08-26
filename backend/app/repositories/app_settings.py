@@ -26,7 +26,7 @@ class AppSettingsRepository(DbRepository[AppSettingsModel]):
             is_active=dto.is_active,
         )
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -57,7 +57,7 @@ class AppSettingsRepository(DbRepository[AppSettingsModel]):
             return None
         for field, val in dto.model_dump(exclude_unset=True).items():
             setattr(obj, field, val)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -66,7 +66,7 @@ class AppSettingsRepository(DbRepository[AppSettingsModel]):
         if not obj:
             return False
         await self.db.delete(obj)
-        await self.db.commit()
+        await self.db.flush()
         return True
 
     async def get_all(self) -> List[AppSettingsModel]:

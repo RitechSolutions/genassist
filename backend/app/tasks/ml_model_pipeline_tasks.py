@@ -118,6 +118,9 @@ async def execute_pipeline_run_async(run_id: UUID):
 
                 # Update status to running
                 await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)
+                # Commit the RUNNING marker so it is visible during the long run
+                # below (repos only flush now; this session owns its commit).
+                await session.commit()
 
                 # Get workflow
                 workflow = await workflow_repository.get_by_id(run.workflow_id)
@@ -181,6 +184,8 @@ async def execute_pipeline_run_async(run_id: UUID):
                     execution_output=execution_output,
                     execution_id=UUID(state.execution_id) if state.execution_id else None,
                 )
+                # Persist artifacts + completed status for this run.
+                await session.commit()
 
                 logger.info(f"Pipeline run {run_id} completed successfully")
 
@@ -192,9 +197,12 @@ async def execute_pipeline_run_async(run_id: UUID):
                 # Update run status to failed
                 # Skip if run doesn't exist in this tenant's database
                 try:
+                    # Clear any failed-transaction state before writing FAILED.
+                    await session.rollback()
                     await run_repository.update_status(
                         run_id, PipelineRunStatus.FAILED, error_message=str(e)
                     )
+                    await session.commit()
                     socket_connection_manager = injector.get(SocketConnectionManager)
                     emit_notification(
                         socket_connection_manager=socket_connection_manager,
@@ -362,6 +370,9 @@ async def check_and_execute_scheduled_pipelines_async():
                             )
 
                             run = await run_repository.create(run_data)
+                            # Commit the run before dispatch so the executing worker
+                            # (a separate session) can find it (repos only flush now).
+                            await session.commit()
 
                             # Queue async execution (import here to avoid circular imports)
                             from app.tasks.ml_model_pipeline_tasks import (

@@ -18,7 +18,7 @@ class UserTypesRepository(DbRepository[UserTypeModel]):
                 name=user_type.name,
                 )
         self.db.add(new_user_type)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_user_type)
         return new_user_type
 
@@ -29,7 +29,7 @@ class UserTypesRepository(DbRepository[UserTypeModel]):
 
     async def update(self, user_type: UserTypeModel):
         self.db.add(user_type)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user_type)
         return user_type
 

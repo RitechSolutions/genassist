@@ -123,7 +123,7 @@ class RecordingsRepository(DbRepository[RecordingModel]):
                 )
 
         self.db.add(new_recording)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_recording)  #  Reload object with DB-assigned values
 
         return new_recording
@@ -263,7 +263,7 @@ class RecordingsRepository(DbRepository[RecordingModel]):
 
     async def delete_recording(self, recording: RecordingModel) -> None:
         await self.db.delete(recording)
-        await self.db.commit()
+        await self.db.flush()
 
     async def recording_exists(self , original_filename: str ,data_source_id: UUID):
         stmt = select(RecordingModel).where(
