@@ -12,9 +12,20 @@ export const MODEL_TYPE_OPTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { value: "xgboost", label: "XGBoost" },
+  { value: "lightgbm", label: "LightGBM" },
+  { value: "catboost", label: "CatBoost" },
   { value: "random_forest", label: "Random Forest" },
+  { value: "extra_trees", label: "Extra Trees" },
+  { value: "gradient_boosting", label: "Gradient Boosting" },
+  { value: "decision_tree", label: "Decision Tree" },
   { value: "linear_regression", label: "Linear Regression" },
+  { value: "ridge_regression", label: "Ridge Regression" },
+  { value: "lasso_regression", label: "Lasso Regression" },
+  { value: "elastic_net", label: "Elastic Net" },
   { value: "logistic_regression", label: "Logistic Regression" },
+  { value: "svm", label: "Support Vector Machine" },
+  { value: "knn", label: "K-Nearest Neighbors" },
+  { value: "neural_network", label: "Neural Network" },
   { value: "other", label: "Other" },
 ];
 
