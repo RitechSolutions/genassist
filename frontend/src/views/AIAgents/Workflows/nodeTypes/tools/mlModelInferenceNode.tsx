@@ -31,7 +31,7 @@ const MLModelInferenceNode: React.FC<NodeProps<MLModelInferenceNodeData>> = ({
     }
   };
 
-  // Count only inference parameters as draggable inputs
+  // Count only inference values as draggable inputs
   const totalInputs = Object.keys(data.inferenceInputs || {}).length;
 
   const nodeContent: NodeContentRow[] = [
