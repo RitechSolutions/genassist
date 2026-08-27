@@ -1,6 +1,6 @@
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional, Dict, Any
+from typing import Optional
 from datetime import datetime
 from enum import Enum
 
@@ -32,7 +32,6 @@ class MLModelBase(BaseModel):
     pkl_file_id: Optional[str] = Field(None, max_length=500, description="File manager ID for the uploaded .pkl file")
     features: Optional[list[str]] = Field(None, description="List of feature names used by the model")
     target_variable: Optional[str] = Field(None, max_length=255, description="The prediction target variable")
-    inference_params: Optional[Dict[str, Any]] = Field(None, description="Key-value pairs for inference configuration")
 
 
 class MLModelCreate(MLModelBase):
