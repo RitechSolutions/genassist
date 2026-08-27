@@ -64,6 +64,7 @@ class ErrorKey(Enum):
     PERMISSION_ALREADY_EXISTS = "PERMISSION_ALREADY_EXISTS"
     ROLE_PERMISSION_NOT_FOUND = "ROLE_PERMISSION_NOT_FOUND"
     ROLE_NOT_ALLOWED = "ROLE_NOT_ALLOWED"
+    ADMIN_ONLY_PERMISSION = "ADMIN_ONLY_PERMISSION"
     CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND"
     CONVERSATIONS_NOT_FOUND = "CONVERSATIONS_NOT_FOUND"
     CONVERSATION_FINALIZED = "CONVERSATION_FINALIZED"
@@ -242,6 +243,7 @@ ERROR_MESSAGES = {
         ErrorKey.PERMISSION_ALREADY_EXISTS: "Permission already exists.",
         ErrorKey.ROLE_PERMISSION_NOT_FOUND: "Role Permission not found.",
         ErrorKey.ROLE_NOT_ALLOWED: "You're not allowed to assign this role.",
+        ErrorKey.ADMIN_ONLY_PERMISSION: "This permission can only be assigned to the admin role.",
         ErrorKey.CONVERSATION_NOT_FOUND: "Conversation not found.",
         ErrorKey.CONVERSATION_FINALIZED: "Conversation already finalized.",
         ErrorKey.CONVERSATION_TAKEN_OVER: "Conversation already taken over.",

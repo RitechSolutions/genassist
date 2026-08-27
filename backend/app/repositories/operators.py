@@ -25,12 +25,12 @@ class OperatorRepository(DbRepository[OperatorModel]):
 
     async def create(self, operator: OperatorModel) -> OperatorModel:
         self.db.add(operator)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(operator, ["operator_statistics", "user"])
         return operator
         # async with self.session_factory() as session:
         #     session.add(operator)
-        #     await session.commit()
+        #     await session.flush()
         #     await session.refresh(operator, ["operator_statistics", "user"])
         #     return operator
 

@@ -181,7 +181,7 @@ const ValueLine: React.FC<{ side: 'before' | 'after'; value: unknown; glyph?: bo
       )}
       <span className="sr-only">{removed ? 'Before:' : 'After:'}</span>
       {isObj(value) ? (
-        <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-[11px] leading-5 text-muted-foreground">
+        <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-muted-foreground">
           {JSON.stringify(value, null, 2)}
         </pre>
       ) : (

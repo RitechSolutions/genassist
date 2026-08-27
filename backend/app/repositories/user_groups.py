@@ -44,7 +44,7 @@ class UserGroupRepository(DbRepository[UserGroupModel]):
         """Assign the user as a supervisor of the group and persist it."""
         link = UserSupervisedGroupModel(group_id=group_id, user_id=user_id)
         self.db.add(link)
-        await self.db.commit()
+        await self.db.flush()
         return link
 
     async def remove_supervisor(self, group_id: UUID, user_id: UUID) -> None:
@@ -55,13 +55,18 @@ class UserGroupRepository(DbRepository[UserGroupModel]):
                 UserSupervisedGroupModel.user_id == user_id,
             )
         )
-        await self.db.commit()
+        await self.db.flush()
 
     async def get_supervisor_user_ids(self, group_id: UUID) -> List[UUID]:
-        """Return the user IDs of all supervisors of the group."""
+        """Return the user IDs supervising the group, excluding anyone who has lost the supervisor role."""
         result = await self.db.execute(
-            select(UserSupervisedGroupModel.user_id).where(
-                UserSupervisedGroupModel.group_id == group_id
+            select(UserSupervisedGroupModel.user_id)
+            .join(UserRoleModel, UserRoleModel.user_id == UserSupervisedGroupModel.user_id)
+            .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
+            .where(
+                UserSupervisedGroupModel.group_id == group_id,
+                RoleModel.name == "supervisor",
             )
+            .distinct()
         )
         return list(result.scalars().all())

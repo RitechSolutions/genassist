@@ -22,6 +22,9 @@ class CapturingSession:
     async def commit(self):
         pass
 
+    async def flush(self):
+        pass
+
 
 def _rendered_upsert() -> str:
     session = CapturingSession()

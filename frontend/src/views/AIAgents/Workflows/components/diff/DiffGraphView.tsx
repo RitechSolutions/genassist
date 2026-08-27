@@ -193,7 +193,7 @@ const DiffGraphView: React.FC<DiffGraphViewProps> = ({ diff }) => {
                 {selectedStyle.label}
               </span>
             </div>
-            <ScrollArea className="flex-1 p-3">
+            <ScrollArea className="flex-1 p-3" viewportProps={{ className: '[&>div]:!block' }}>
               {selectedNode.fieldChanges.length > 0 ? (
                 <div className="space-y-2">
                   {selectedNode.fieldChanges.map((change) => (

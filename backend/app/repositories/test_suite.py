@@ -44,7 +44,7 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         await self.db.execute(
             delete(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))
         )
-        await self.db.commit()
+        await self.db.flush()
 
     async def soft_delete_all_for_suite(
         self, suite_id: UUID, commit: bool = True
@@ -57,7 +57,7 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             .execution_options(synchronize_session="fetch")
         )
         if commit:
-            await self.db.commit()
+            await self.db.flush()
 
     async def soft_delete_for_conversation(
         self, suite_id: UUID, conversation_id: UUID, commit: bool = True
@@ -74,12 +74,12 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             .execution_options(synchronize_session="fetch")
         )
         if commit:
-            await self.db.commit()
+            await self.db.flush()
 
     async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
         """Insert cases in a single transaction so a partial import cannot persist."""
         self.db.add_all(cases)
-        await self.db.commit()
+        await self.db.flush()
         for case in cases:
             await self.db.refresh(case)
         return cases
@@ -111,7 +111,7 @@ class TestRunRepository(DbRepository[TestRunModel]):
             .values(is_deleted=1)
             .execution_options(synchronize_session="fetch")
         )
-        await self.db.commit()
+        await self.db.flush()
 
     async def mark_stuck_as_failed(
         self,
@@ -142,7 +142,7 @@ class TestRunRepository(DbRepository[TestRunModel]):
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         return result.rowcount or 0
 
 
@@ -176,7 +176,7 @@ class TestToolRuleResultRepository(DbRepository[TestToolRuleResultModel]):
         if not results:
             return []
         self.db.add_all(results)
-        await self.db.commit()
+        await self.db.flush()
         return results
 
     async def get_all_for_run(self, run_id: UUID) -> List[TestToolRuleResultModel]:

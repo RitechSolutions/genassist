@@ -53,8 +53,10 @@ const SettingsPage = () => {
       setSecuritySettings(settings);
     };
     fetchProfile();
-    fetchFileManagerSettings();
-    fetchSecuritySettings();
+    if (hasPermission('write:app_settings')) {
+      fetchFileManagerSettings();
+      fetchSecuritySettings();
+    }
   }, []);
 
   const profileSection = useMemo(() => {
@@ -98,8 +100,8 @@ const SettingsPage = () => {
           { key: 'feature-flags', label: 'Feature Flags', show: hasPermission('read:feature_flag') },
           { key: 'translations', label: 'Translations', show: hasPermission('read:app_setting') },
           { key: 'languages', label: 'Languages', show: hasPermission('read:app_setting') },
-          { key: 'file-manager', label: 'File Manager', show: true },
-          { key: 'security', label: 'Security', show: true },
+          { key: 'file-manager', label: 'File Manager', show: hasPermission('write:app_settings') },
+          { key: 'security', label: 'Security', show: hasPermission('write:app_settings') },
           { key: 'maintenance', label: 'Maintenance', show: hasPermission('write:app_settings') },
         ] as { key: TabKey; label: string; show: boolean }[]
       ).filter((t) => t.show),
@@ -179,26 +181,30 @@ const SettingsPage = () => {
               </TabsContent>
             )}
 
-            <TabsContent value="file-manager" className="mt-0">
-              {fileManagerEnabled && fileManagerSettings ? (
-                <FileManagerSettingsCard settings={fileManagerSettings} />
-              ) : (
-                <Card className="p-6 shadow-sm animate-fade-up bg-card dark:bg-zinc-900">
-                  <h2 className="text-base sm:text-lg font-semibold mb-2">File Manager Settings</h2>
-                  <p className="text-sm text-muted-foreground">
-                    File manager is not enabled or is disabled in the database. Please contact your
-                    administrator to enable it.
-                  </p>
-                </Card>
-              )}
-            </TabsContent>
+            {hasPermission('write:app_settings') && (
+              <TabsContent value="file-manager" className="mt-0">
+                {fileManagerEnabled && fileManagerSettings ? (
+                  <FileManagerSettingsCard settings={fileManagerSettings} />
+                ) : (
+                  <Card className="p-6 shadow-sm animate-fade-up bg-card dark:bg-zinc-900">
+                    <h2 className="text-base sm:text-lg font-semibold mb-2">File Manager Settings</h2>
+                    <p className="text-sm text-muted-foreground">
+                      File manager is not enabled or is disabled in the database. Please contact your
+                      administrator to enable it.
+                    </p>
+                  </Card>
+                )}
+              </TabsContent>
+            )}
 
-            <TabsContent value="security" className="mt-0">
-              <SecuritySettingsCard
-                settings={securitySettings}
-                onSaved={(updated) => setSecuritySettings(updated)}
-              />
-            </TabsContent>
+            {hasPermission('write:app_settings') && (
+              <TabsContent value="security" className="mt-0">
+                <SecuritySettingsCard
+                  settings={securitySettings}
+                  onSaved={(updated) => setSecuritySettings(updated)}
+                />
+              </TabsContent>
+            )}
 
             {hasPermission('write:app_settings') && (
               <TabsContent value="maintenance" className="mt-0">

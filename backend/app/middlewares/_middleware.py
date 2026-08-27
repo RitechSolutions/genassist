@@ -24,6 +24,7 @@ from app.core.config.logging import (
     uid_ctx,
 )
 from app.middlewares.rate_limit_middleware import _request_context
+from app.middlewares.session_cleanup_middleware import TransactionMiddleware
 from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
 
@@ -191,11 +192,9 @@ def build_middlewares() -> list[Middleware]:
         [
             # 3️⃣  Fills Loguru context vars, measures duration, etc.
             Middleware(RequestContextMiddleware),
-            # 4️⃣  Ensures database sessions are closed after each request
-            # Middleware(SessionCleanupMiddleware),
-            # 5️⃣  Agent-route preflight handler (must sit before CORSMiddleware)
+            # 4️⃣  Agent-route preflight handler (must sit before CORSMiddleware)
             Middleware(AgentCORSMiddleware),
-            # 6️⃣  CORS
+            # 5️⃣  CORS
             Middleware(
                 CORSMiddleware,
                 allow_origins=get_allowed_origins(),
@@ -204,6 +203,10 @@ def build_middlewares() -> list[Middleware]:
                 allow_headers=["*"],
             ),
             Middleware(VersionHeaderMiddleware),
+            # 6️⃣  DB transaction boundary — must be the *innermost* user middleware so
+            #     it runs inside the tenant scope (tenant context still active when it
+            #     commits/rolls back the request-scoped session after the endpoint).
+            Middleware(TransactionMiddleware),
         ]
     )
 

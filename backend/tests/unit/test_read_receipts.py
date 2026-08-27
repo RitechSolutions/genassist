@@ -76,6 +76,9 @@ class _SpySession:
     async def commit(self):
         pass
 
+    async def flush(self):
+        pass
+
 
 def _compile(statement) -> str:
     return str(statement.compile(dialect=postgresql.dialect()))
@@ -108,9 +111,10 @@ async def test_advance_read_marker_upsert_refuses_to_regress():
 
 
 @pytest.mark.asyncio
-async def test_advance_read_marker_commits_once():
+async def test_advance_read_marker_flushes_once():
+    # Repositories flush; the request/task transaction boundary owns the commit.
     session = _SpySession()
-    session.commit = AsyncMock()
+    session.flush = AsyncMock()
     repo = ConversationReadReceiptRepository(session)
 
     await repo.advance_read_marker(
@@ -120,7 +124,7 @@ async def test_advance_read_marker_commits_once():
         last_read_sequence=0,
     )
 
-    session.commit.assert_awaited_once()
+    session.flush.assert_awaited_once()
 
 
 # --------------------------------------------------------------------------- #

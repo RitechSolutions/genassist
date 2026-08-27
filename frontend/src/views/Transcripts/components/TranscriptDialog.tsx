@@ -688,7 +688,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                       {loading && (
                         <div className="flex justify-start">
                           <div className="p-2 rounded-lg bg-muted text-foreground max-w-[75%]">
-                            <span className="block text-[11px] text-muted-foreground font-medium">GenAssist AI</span>
+                            <span className="block text-[11px] text-muted-foreground font-medium">Gen AI</span>
                             Thinking...
                           </div>
                         </div>

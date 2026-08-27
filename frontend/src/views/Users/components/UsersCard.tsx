@@ -12,6 +12,7 @@ import { currentUserIsAdmin, getCurrentUserId } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { User } from "@/interfaces/user.interface";
 import { UserGroup } from "@/interfaces/userGroup.interface";
+import { activeSupervisedGroupIds } from "../helpers/supervision";
 
 interface UsersCardProps {
   searchQuery: string;
@@ -168,11 +169,7 @@ export function UsersCard({
       key: "group",
       className: "truncate",
       cell: (user) => {
-        const additionalGroupCount = new Set(
-          (user.supervised_group_ids ?? []).filter(
-            (id) => id && id !== user.group_id
-          )
-        ).size;
+        const additionalGroupCount = new Set(activeSupervisedGroupIds(user)).size;
         return user.group_id ? (
           <div className="inline-flex items-center gap-1">
             <span>{groupMap[user.group_id] ?? "—"}</span>

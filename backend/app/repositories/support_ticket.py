@@ -141,7 +141,7 @@ class SupportTicketRepository(DbRepository[SupportTicketModel]):
         return result.scalars().first()
 
     async def save(self, ticket: SupportTicketModel) -> SupportTicketModel:
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(ticket)
         return ticket
 
@@ -160,7 +160,7 @@ class SupportTicketRepository(DbRepository[SupportTicketModel]):
             actor_user_id=actor_user_id,
         )
         self.db.add(event)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(event)
         return event
 
@@ -173,7 +173,7 @@ class SupportTicketRepository(DbRepository[SupportTicketModel]):
             body=body,
         )
         self.db.add(comment)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(comment)
         return comment
 
@@ -206,7 +206,7 @@ class SupportTicketRepository(DbRepository[SupportTicketModel]):
             row.payload = payload
             row.status = "pending"
             row.last_error = None
-            await self.db.commit()
+            await self.db.flush()
             await self.db.refresh(row)
             return row
 
@@ -217,7 +217,7 @@ class SupportTicketRepository(DbRepository[SupportTicketModel]):
             status="pending",
         )
         self.db.add(outbox)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(outbox)
         return outbox
 
@@ -255,6 +255,6 @@ class SupportTicketRepository(DbRepository[SupportTicketModel]):
         if not ticket:
             return None
         ticket.vote_count = (ticket.vote_count or 1) + 1
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(ticket)
         return ticket
