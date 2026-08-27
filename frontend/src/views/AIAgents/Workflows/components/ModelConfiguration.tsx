@@ -10,6 +10,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { getAllFallbackChains } from "@/services/fallbackChains";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { Switch } from "@/components/switch";
 import { BaseLLMNodeData } from "../types/nodes";
@@ -71,9 +73,16 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
 
+  // Fallback chains are flag-gated: skip the fetch entirely where the feature is off,
+  // otherwise every model config would call an endpoint that isn't routed there.
+  const fallbackChainsEnabled = useFeatureFlagVisible(
+    FeatureFlags.LLM_SETTINGS.SHOW_FALLBACK_CHAINS,
+  );
+
   const { data: allFallbackChains = [] } = useQuery({
     queryKey: ["fallbackChains"],
     queryFn: getAllFallbackChains,
+    enabled: fallbackChainsEnabled,
   });
 
   const activeFallbackChains = allFallbackChains.filter(
@@ -309,36 +318,38 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor={`fallback-chain-select-${id}`}>Fallback Chain (optional)</Label>
-        <Select
-          value={config.fallbackChainId || "__none__"}
-          onValueChange={handleFallbackChainSelect}
-        >
-          <SelectTrigger id={`fallback-chain-select-${id}`} className="w-full">
-            <SelectValue placeholder="None (use provider only)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">None</SelectItem>
-            {activeFallbackChains.map((chain) => (
-              <SelectItem key={chain.id} value={chain.id}>
-                {chain.name}
-              </SelectItem>
-            ))}
-            {selectedFallbackChainInactive && (
-              <SelectItem value={selectedFallbackChain.id} disabled>
-                {selectedFallbackChain.name} (inactive)
-              </SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-        {selectedFallbackChainInactive && (
-          <p className="text-xs text-muted-foreground">
-            This fallback chain has been deactivated. Choose an active chain or
-            None to change it.
-          </p>
-        )}
-      </div>
+      {fallbackChainsEnabled && (
+        <div className="space-y-2">
+          <Label htmlFor={`fallback-chain-select-${id}`}>Fallback Chain (optional)</Label>
+          <Select
+            value={config.fallbackChainId || "__none__"}
+            onValueChange={handleFallbackChainSelect}
+          >
+            <SelectTrigger id={`fallback-chain-select-${id}`} className="w-full">
+              <SelectValue placeholder="None (use provider only)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">None</SelectItem>
+              {activeFallbackChains.map((chain) => (
+                <SelectItem key={chain.id} value={chain.id}>
+                  {chain.name}
+                </SelectItem>
+              ))}
+              {selectedFallbackChainInactive && (
+                <SelectItem value={selectedFallbackChain.id} disabled>
+                  {selectedFallbackChain.name} (inactive)
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          {selectedFallbackChainInactive && (
+            <p className="text-xs text-muted-foreground">
+              This fallback chain has been deactivated. Choose an active chain or
+              None to change it.
+            </p>
+          )}
+        </div>
+      )}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor={`system-prompt-input-${id}`}>System Prompt</Label>
