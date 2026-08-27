@@ -142,24 +142,35 @@ class UserService:
             raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
         return full
 
-    async def _validate_empty_role_ids(self, user_id: UUID, user_data: UserUpdate) -> None:
-        # Console users are blocked from logging in, so they are the only type allowed to stay roleless.
+    async def _validate_roles_after_update(self, user_id: UUID, user_data: UserUpdate) -> None:
+        """Reject an update that would leave a login-capable user without any role"""
+        if user_data.role_ids:
+            return
+        if user_data.role_ids is None and user_data.user_type_id is None:
+            return
+
+        user = await self.repository.get_full(user_id)
+        if not user:
+            raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
+
         if user_data.user_type_id is not None:
             user_type = await self.user_types_repository.get_by_id(user_data.user_type_id)
             if not user_type:
                 raise AppException(error_key=ErrorKey.USER_TYPE_NOT_FOUND)
         else:
-            user = await self.repository.get_full(user_id)
-            if not user:
-                raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
             user_type = user.user_type
 
-        if not user_type or user_type.name != "console":
-            raise AppException(error_key=ErrorKey.USER_ROLES_REQUIRED, status_code=400)
+        # Console users are blocked from logging in, so they are the only type allowed to stay roleless.
+        if user_type and user_type.name == "console":
+            return
+
+        if user_data.role_ids is None and user.roles:
+            return
+
+        raise AppException(error_key=ErrorKey.USER_ROLES_REQUIRED, status_code=400)
 
     async def update(self, user_id: UUID, user_data: UserUpdate):
-        if user_data.role_ids is not None and len(user_data.role_ids) == 0:
-            await self._validate_empty_role_ids(user_id, user_data)
+        await self._validate_roles_after_update(user_id, user_data)
 
         if user_data.email is not None:
             existing = await self.repository.get_by_email(
