@@ -10,6 +10,7 @@ from app.db.models.ml_model import MLModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.ml_model import MLModelCreate
 from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -91,8 +92,8 @@ class MLModelsRepository(DbRepository[MLModel]):
             # Update the updated_by field from context
             try:
                 ml_model.updated_by = context.get("user_id")
-            except LookupError:
-                # Context not available, skip updating updated_by
+            except (LookupError, ContextDoesNotExistError):
+                # Context not available (e.g., in background tasks), skip updating updated_by
                 pass
 
             async with self.db.begin_nested():

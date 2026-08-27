@@ -25,6 +25,36 @@ _MAX_SANITIZE_DEPTH = 200
 _MAX_SANITIZE_NODES = 1_000_000
 
 
+# Model types that only support one task type, regardless of the target variable
+_CLASSIFICATION_ONLY_MODEL_TYPES = {"logistic_regression"}
+_REGRESSION_ONLY_MODEL_TYPES = {"linear_regression", "ridge_regression", "lasso_regression", "elastic_net"}
+
+
+def is_classification_task(y: pd.Series, model_type: str) -> bool:
+    """
+    Determine whether a target column represents a classification or regression task.
+
+    Args:
+        y: Target variable series
+        model_type: Type of model (e.g. "logistic_regression", "linear_regression")
+
+    Returns:
+        True if classification, False if regression
+    """
+    if model_type in _CLASSIFICATION_ONLY_MODEL_TYPES:
+        return True
+    if model_type in _REGRESSION_ONLY_MODEL_TYPES:
+        return False
+
+    # For others (e.g. xgboost, random_forest, svm, knn, neural_network), infer from target variable
+    if y.dtype in ["int64", "int32"] and y.nunique() <= 20:
+        return True
+    if y.dtype == "object":
+        return True
+
+    return False
+
+
 def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budget: list | None = None) -> Any:
     """
     Recursively sanitize data to make it JSON-compliant.
@@ -360,6 +390,103 @@ def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
         ) from e
 
 
+def parse_excel_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse an Excel (.xlsx) file into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the Excel file
+
+    Returns:
+        List of dictionaries representing spreadsheet rows
+    """
+    try:
+        df = pd.read_excel(file_path, engine="openpyxl")
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing Excel file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse Excel file: {str(e)}",
+        ) from e
+
+
+def parse_json_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse a JSON file (array of records) into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the JSON file
+
+    Returns:
+        List of dictionaries representing JSON records
+    """
+    try:
+        df = pd.read_json(file_path, orient="records")
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing JSON file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse JSON file: {str(e)}",
+        ) from e
+
+
+def parse_parquet_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse a Parquet file into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the Parquet file
+
+    Returns:
+        List of dictionaries representing Parquet rows
+    """
+    try:
+        df = pd.read_parquet(file_path)
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing Parquet file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse Parquet file: {str(e)}",
+        ) from e
+
+
+_TRAINING_FILE_PARSERS = {
+    ".csv": parse_csv_file,
+    ".xlsx": parse_excel_file,
+    ".json": parse_json_file,
+    ".parquet": parse_parquet_file,
+}
+
+
+def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse an uploaded training data file based on its extension.
+
+    Args:
+        file_path: Path to a .csv, .xlsx, .json, or .parquet file
+
+    Returns:
+        List of dictionaries representing file rows
+
+    Raises:
+        AppException: If the file extension is not supported
+    """
+    suffix = Path(file_path).suffix.lower()
+    parser = _TRAINING_FILE_PARSERS.get(suffix)
+    if not parser:
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"Unsupported file type: {suffix}. "
+                f"Supported types: {', '.join(_TRAINING_FILE_PARSERS)}"
+            ),
+        )
+    return parser(file_path)
+
+
 def resolve_csv_file_path(
     file_url: str, thread_id: Optional[str] = None
 ) -> Path:
@@ -511,9 +638,13 @@ async def execute_and_process_preprocessing_code(
     # Execute the preprocessing Python code
     response = await execute_python_code(python_code, params, wrap_code=True)
 
-    # Check for errors in response
-    errors = response.get("errors", None)
-    if errors and errors != "":
+    # "error" signals an execution failure (timeout, sandbox violation, syntax
+    # error, uncaught exception); "errors" carries captured stderr from an
+    # otherwise-successful run. Both must be checked, or a failure (e.g. the
+    # 120s execution timeout) is silently missed and surfaces later as a
+    # confusing "must return a DataFrame... Got: NoneType" error instead.
+    errors = response.get("error") or response.get("errors")
+    if errors:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,

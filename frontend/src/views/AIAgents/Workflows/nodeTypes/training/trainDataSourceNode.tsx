@@ -63,14 +63,14 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
 
   const getSourceTypeLabel = () => {
     if (data.sourceType === "csv") {
-      return "CSV upload";
+      return "File upload";
     }
     return "Data source";
   };
 
   const getDataSourceInfo = () => {
     if (data.sourceType === "csv") {
-      return data.csvFileName || (data.csvFilePath ? "CSV file" : "");
+      return data.csvFileName || (data.csvFilePath ? "Uploaded file" : "");
     }
     return selectedDataSource
       ? `${selectedDataSource.name} (${selectedDataSource.source_type})`
