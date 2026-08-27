@@ -12,6 +12,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.date_time_utils import shift_datetime
+from app.repositories.user_types import UserTypesRepository
 from app.repositories.users import UserRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserRead, UserReadAuth, UserUpdate
@@ -25,9 +26,14 @@ userid_key_builder = make_key_builder("user_id")
 class UserService:
     """Handles user-related business logic."""
 
-    def __init__(self, repository: UserRepository = Injected(UserRepository)):
+    def __init__(
+        self,
+        repository: UserRepository = Injected(UserRepository),
+        user_types_repository: UserTypesRepository = Injected(UserTypesRepository),
+    ):
         # repository
         self.repository = repository
+        self.user_types_repository = user_types_repository
 
     async def create(self, user: UserCreate):
         """Register a user with business logic validation."""
@@ -136,9 +142,35 @@ class UserService:
             raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
         return full
 
+    async def _validate_roles_after_update(self, user_id: UUID, user_data: UserUpdate) -> None:
+        """Reject an update that would leave a login-capable user without any role"""
+        if user_data.role_ids:
+            return
+        if user_data.role_ids is None and user_data.user_type_id is None:
+            return
+
+        user = await self.repository.get_full(user_id)
+        if not user:
+            raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
+
+        if user_data.user_type_id is not None:
+            user_type = await self.user_types_repository.get_by_id(user_data.user_type_id)
+            if not user_type:
+                raise AppException(error_key=ErrorKey.USER_TYPE_NOT_FOUND)
+        else:
+            user_type = user.user_type
+
+        # Console users are blocked from logging in, so they are the only type allowed to stay roleless.
+        if user_type and user_type.name == "console":
+            return
+
+        if user_data.role_ids is None and user.roles:
+            return
+
+        raise AppException(error_key=ErrorKey.USER_ROLES_REQUIRED, status_code=400)
+
     async def update(self, user_id: UUID, user_data: UserUpdate):
-        if user_data.role_ids is not None and len(user_data.role_ids) == 0:
-            raise AppException(error_key=ErrorKey.USER_ROLES_REQUIRED, status_code=400)
+        await self._validate_roles_after_update(user_id, user_data)
 
         if user_data.email is not None:
             existing = await self.repository.get_by_email(
