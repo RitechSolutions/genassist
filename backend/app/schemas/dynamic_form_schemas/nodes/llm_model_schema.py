@@ -58,6 +58,17 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         ),
     ),
     FieldSchema(
+        name="promptCaching",
+        type="boolean",
+        label="Enable Prompt Caching",
+        required=False,
+        default=False,
+        description=(
+            "Caches the stable start of the system prompt for 5 minutes so repeat calls "
+            "read it at a reduced rate. Anthropic and Bedrock cache-capable models only."
+        ),
+    ),
+    FieldSchema(
         name="memoryTrimmingMode",
         type="select",
         label="Memory Trimming Mode",

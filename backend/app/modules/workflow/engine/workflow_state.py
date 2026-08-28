@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
+from app.core.utils.llm_usage_utils import extract_cache_tokens
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
     ConversationMemory,
@@ -122,6 +123,10 @@ class WorkflowState:
         self.node_execution_status: dict[str, Any] = {}
         self.execution_path: list[str] = []
         self.execution_history: list[str] = []
+        # The single store for prompt-caching diagnostics: this run's own nodes plus any
+        # propagated in from sub-agent child runs. Kept out of node_execution_status so
+        # no metric, analytics or failure consumer ever sees them
+        self.prompt_caching_diagnostics: dict[str, Any] = {}
 
         # Performance metrics
         self.time_taken = 0
@@ -292,6 +297,7 @@ class WorkflowState:
         token_details: Optional[dict] = None,
         llm_provider_id: Optional[str] = None,
         total_tokens: Optional[int] = None,
+        prompt_caching_enabled: bool = False,
     ) -> None:
         """Append LLM token usage for this workflow execution"""
         self.llm_usage.append({
@@ -304,6 +310,7 @@ class WorkflowState:
             "purpose": purpose,
             "token_details": token_details,
             "llm_provider_id": llm_provider_id,
+            "prompt_caching_enabled": prompt_caching_enabled,
         })
 
     def add_tool_event(
@@ -350,22 +357,37 @@ class WorkflowState:
             for u in self.llm_usage
         )
         total_cost_usd = 0.0
+        total_cache_read = 0
+        total_cache_creation = 0
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
         for u in self.llm_usage:
+            cache_read, cache_creation = extract_cache_tokens(u.get("token_details"))
+            total_cache_read += cache_read
+            total_cache_creation += cache_creation
             total_cost_usd += self.llm_cost_calculator.calculate_cost(
                 u.get("provider", ""),
                 u.get("model", ""),
                 u.get("input_tokens", 0),
                 u.get("output_tokens", 0),
             )
-        return {
+        totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
             "total_tokens": total_tokens,
+            "cache_read_tokens": total_cache_read,
+            "cache_creation_tokens": total_cache_creation,
             "cost_usd": round(total_cost_usd, 6),
             "calls": len(self.llm_usage),
         }
+        if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):
+            del totals["cache_read_tokens"]
+            del totals["cache_creation_tokens"]
+        return totals
+
+    def _prompt_caching_requested(self) -> bool:
+        """Whether any call this run came from a node with the caching toggle on"""
+        return any(u.get("prompt_caching_enabled") for u in self.llm_usage)
 
     def reset_execution_state(self) -> None:
         """Reset execution state to initial values"""
@@ -378,6 +400,7 @@ class WorkflowState:
         self.node_execution_status.clear()
         self.execution_path.clear()
         self.execution_history.clear()
+        self.prompt_caching_diagnostics.clear()
         self.errors.clear()
         self.llm_usage.clear()
         self.tool_events.clear()
@@ -671,6 +694,10 @@ class WorkflowState:
             **self.node_execution_status,
             **state.node_execution_status,
         }
+        self.prompt_caching_diagnostics = {
+            **self.prompt_caching_diagnostics,
+            **state.prompt_caching_diagnostics,
+        }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
         # Usage is not merged here: nested engines append into the parent usage_sink,
@@ -694,7 +721,7 @@ class WorkflowState:
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get the complete state including all execution details"""
-        return {
+        full = {
             "status": self.status,
             "input": self.initial_values,
             "output": self.output,
@@ -710,6 +737,14 @@ class WorkflowState:
             "performanceMetrics": self.performance_metrics,
             "execution_end_time": self.execution_end_time,
         }
+        # Conditional: a run with no opted-in sub-agent stays byte-identical to before
+        if self.prompt_caching_diagnostics:
+            from app.modules.workflow.engine.prompt_cache_diagnostics import with_observed_cache_tokens
+
+            full["promptCachingDiagnostics"] = with_observed_cache_tokens(
+                self.prompt_caching_diagnostics, self.llm_usage
+            )
+        return full
 
     def _collect_failed_nodes(self) -> list[dict]:
         """Collect the nodes that failed in this run, latest run per node only.
