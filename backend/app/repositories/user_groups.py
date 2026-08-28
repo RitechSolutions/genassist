@@ -58,10 +58,15 @@ class UserGroupRepository(DbRepository[UserGroupModel]):
         await self.db.flush()
 
     async def get_supervisor_user_ids(self, group_id: UUID) -> List[UUID]:
-        """Return the user IDs of all supervisors of the group."""
+        """Return the user IDs supervising the group, excluding anyone who has lost the supervisor role."""
         result = await self.db.execute(
-            select(UserSupervisedGroupModel.user_id).where(
-                UserSupervisedGroupModel.group_id == group_id
+            select(UserSupervisedGroupModel.user_id)
+            .join(UserRoleModel, UserRoleModel.user_id == UserSupervisedGroupModel.user_id)
+            .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
+            .where(
+                UserSupervisedGroupModel.group_id == group_id,
+                RoleModel.name == "supervisor",
             )
+            .distinct()
         )
         return list(result.scalars().all())

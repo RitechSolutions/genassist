@@ -3,6 +3,7 @@ import {
   ExecutionViewModel,
   ExecutionViewState,
   NodeExecutionView,
+  PromptCachingDiagnostic,
   RawNodeExecutionEntry,
 } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
@@ -67,21 +68,39 @@ const resolveStateBag = (response: unknown): Record<string, unknown> => {
 };
 
 /**
- * Collapse archived re-run keys (`"{id}_N"`) to the latest entry. A key is treated as archived
- * only when it ends in `_<digit>+` AND its base id also exists as a key — this avoids
- * misclassifying legitimate ids like `r2_destmissing` or a lone `step_0`.
+ * A key is an archived earlier run only when it ends in `_<digit>+` AND its base id also
+ * exists in the same map — this avoids misclassifying legitimate ids like `r2_destmissing`
+ * or a lone `step_0`.
  */
+const isArchivedKey = (key: string, keys: Set<string>): boolean => {
+  const match = key.match(/^(.+)_(\d+)$/);
+  return Boolean(match && keys.has(match[1]));
+};
+
+/** Collapse archived re-run keys (`"{id}_N"`) to the latest entry. */
 const stripArchivedKeys = (map: Record<string, unknown>): Record<string, RawNodeExecutionEntry> => {
   const keys = Object.keys(map);
   const keySet = new Set(keys);
   const result: Record<string, RawNodeExecutionEntry> = {};
   for (const key of keys) {
-    const match = key.match(/^(.+)_(\d+)$/);
-    if (match && keySet.has(match[1])) continue; // archived earlier run of match[1]
+    if (isArchivedKey(key, keySet)) continue;
     const entry = map[key];
     result[key] = isRecord(entry) ? (entry as RawNodeExecutionEntry) : {};
   }
   return result;
+};
+
+const normalizePromptCaching = (value: unknown): PromptCachingDiagnostic | undefined => {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.requested !== 'boolean' || typeof value.applied !== 'boolean') return undefined;
+  const cacheReadTokens = asNumber(value.cache_read_tokens);
+  const cacheCreationTokens = asNumber(value.cache_creation_tokens);
+  return {
+    requested: value.requested,
+    applied: value.applied,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+  };
 };
 
 const deriveDuration = (entry: RawNodeExecutionEntry): number | undefined => {
@@ -110,6 +129,8 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     if (node.id && data?.name) nameById.set(node.id, data.name);
   }
 
+  const rawDiagnostics = isRecord(bag.promptCachingDiagnostics) ? bag.promptCachingDiagnostics : {};
+
   const nodes: NodeExecutionView[] = Object.entries(entries).map(([nodeId, entry]) => ({
     nodeId,
     name: asString(entry.name) ?? nameById.get(nodeId) ?? nodeId,
@@ -121,6 +142,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     input: entry.input,
     output: entry.output,
     error: asString(entry.error) ?? null,
+    promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]),
   }));
 
   // Execution order by startTime (nodes without a startTime sort last, stable by id).
@@ -145,6 +167,13 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
       slowestDuration = node.durationMs;
       slowestNodeId = node.nodeId;
     }
+  }
+
+  // Diagnostics ride their own key, so no node count or status derives from them.
+  const promptCachingDiagnostics: Record<string, PromptCachingDiagnostic> = {};
+  for (const [nodeId, raw] of Object.entries(rawDiagnostics)) {
+    const diagnostic = normalizePromptCaching(raw);
+    if (diagnostic) promptCachingDiagnostics[nodeId] = diagnostic;
   }
 
   const executionStartTime = asNumber(bag.execution_start_time);
@@ -173,6 +202,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     executionEndTime,
     overallDurationMs,
     slowestNodeId,
+    promptCachingDiagnostics,
   };
 };
 

@@ -44,6 +44,11 @@ export function MessageFeedbackPopover({
         className="w-80 z-[1401]"
         side="bottom"
         align="start"
+        // The popover is portaled to <body>, so the host Dialog's scroll lock
+        // (react-remove-scroll) treats wheel/touch here as "outside" and cancels it,
+        // which kills scrolling inside the textarea. Keep the events local.
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         <div className="grid gap-4">
           <div className="space-y-2">
@@ -57,6 +62,7 @@ export function MessageFeedbackPopover({
               value={text}
               onChange={(e) => onTextChange(e.target.value)}
               rows={4}
+              className="max-h-[40vh] resize-y overflow-y-auto overscroll-contain"
             />
           </div>
           <div className="flex justify-end gap-2">

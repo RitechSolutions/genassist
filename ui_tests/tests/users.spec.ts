@@ -51,6 +51,8 @@ test("Users › Functionality", async ({ page }) => {
     .first()
     .click();
 
+  await page.getByRole("checkbox", { name: "api" }).uncheck();
+
   await page.getByRole("button", { name: /update user/i }).click();
   await page.waitForTimeout(3000);
 
@@ -58,5 +60,6 @@ test("Users › Functionality", async ({ page }) => {
 
   await expect(userRow).toContainText(username);
   await expect(page.getByText("User updated successfully")).toBeVisible();
+  await expect(userRow.getByText("api", { exact: true })).toHaveCount(0);
   await page.waitForTimeout(5000);
 });

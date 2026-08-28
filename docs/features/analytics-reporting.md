@@ -201,11 +201,11 @@ All endpoints require `auth` + `read:dashboard` permission.
 **Agent-attributed aggregates** — agent and node daily stats, the node breakdown, custom-attribute keys, every LLM-usage read, and the dashboard's total cost and average response time — are limited to the agents the caller can see:
 
 - regular users see agents created by anyone in their own group;
-- supervisors see agents across all their supervised groups (supervision takes precedence over their own group);
+- supervisors see agents across all their supervised groups **plus their own group**;
 - users with no group see only agents they created themselves;
 - admins are unrestricted, and are the only callers whose totals include unattributed ledger rows (LLM calls with no owning agent).
 
-Soft-deleted agents are excluded for non-admins. The `agent_id` and `group_id` query parameters **narrow** this scope and never widen it: an unauthorized filter yields empty agent-scoped data rather than a `403`, so the endpoints cannot be used to probe for the existence of another group's agents. Scoping is evaluated per request against current group membership — historical rows follow whoever can see the agent *today*, and membership changes take effect immediately (there is no cache).
+Soft-deleted agents are excluded for non-admins. The `agent_id` and `group_id` query parameters **narrow** this scope and never widen it: an unauthorized filter yields empty agent-scoped data rather than a `403`, so the endpoints cannot be used to probe for the existence of another group's agents. Scoping is evaluated per request against current group membership — historical rows follow whoever can see the agent *today*. The membership a request scopes by comes from the `users:get_by_id_for_auth` cache (300s TTL).
 
 **Conversation-derived metrics** — the conversation counts in `/analytics/agents/summary`, the dashboard conversation lists, and the `/analytics/metrics` endpoints — keep their existing conversation-level group visibility instead. A caller's summary can therefore report conversations while its authorized *agent* scope is empty (for example, conversations that outlived their agent); foreign groups' conversations are never revealed.
 
