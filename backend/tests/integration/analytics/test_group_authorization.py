@@ -459,13 +459,13 @@ async def test_group_agent_dropdown_only_lists_agents_the_caller_can_see(world):
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_supervisor_context_grants_all_supervised_groups(world):
+async def test_supervisor_context_grants_supervised_groups_and_their_own(world):
     async with world.maker() as session:
         repo = AnalyticsReadRepository(session)
         with caller(
             user_id=world.user_id("u1"),
             group_id=world.group_id("g1"),
-            supervised=[world.group_id("g1"), world.group_id("g2")],
+            supervised=[world.group_id("g2")],
         ):
             rows = await repo.get_agent_daily_stats(from_date=world.day, to_date=world.day)
 

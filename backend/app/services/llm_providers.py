@@ -59,6 +59,8 @@ class LlmProviderService:
         if api_key:
             connection_data["masked_api_key"] = get_masked_api_key(api_key)
 
+        connection_data.pop("prompt_caching_enabled", None)
+
         connection_data = await self.encrypt_connection_data_fields(connection_data)
         data.connection_data = connection_data
 
@@ -109,6 +111,14 @@ class LlmProviderService:
 
         existing_conn_data = obj.connection_data or {}
         update_conn_data = update_data.get("connection_data", {})
+
+        # Prompt caching is a node setting now. Stripping the legacy provider key before the
+        # changed-comparison keeps a resubmitted stale value from resetting connection_status.
+        had_legacy_caching_key = "prompt_caching_enabled" in update_conn_data
+        update_conn_data.pop("prompt_caching_enabled", None)
+        if had_legacy_caching_key and not update_conn_data:
+            # Assigning the now-empty dict would erase the stored credentials.
+            update_data.pop("connection_data", None)
 
         if obj.llm_model_provider == "vllm_fine_tuned" and ":::" in update_conn_data.get("model", ""):
             _, update_data["llm_model"] = self._extract_vllm_fine_tuned(

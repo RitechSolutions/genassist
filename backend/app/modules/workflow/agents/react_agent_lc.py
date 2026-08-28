@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import logging
 import uuid
 from langchain_core.language_models import BaseChatModel
@@ -35,10 +35,12 @@ class RetryOnToolErrorMiddleware(AgentMiddleware):
 class ReActAgentLC(BaseToolAgent):
     """ReAct Agent implementation using LangGraph's prebuilt React agent"""
 
+    system_prompt: Union[str, SystemMessage]
+
     def __init__(
         self,
         llm_model: BaseChatModel,
-        system_prompt: str,
+        system_prompt: Union[str, SystemMessage],
         tools: List[BaseTool],
         verbose: bool = False,
         max_iterations: int = 5,
@@ -47,7 +49,9 @@ class ReActAgentLC(BaseToolAgent):
 
         Args:
             llm_model: The language model to use for reasoning and decision making
-            system_prompt: System prompt that defines the agent's behavior and role
+            system_prompt: System prompt that defines the agent's behavior and role.
+                A SystemMessage is passed to create_agent unchanged, so its content
+                blocks survive into the request
             tools: List of tools the agent can use to take actions
             verbose: Whether to enable verbose logging of reasoning cycles
             max_iterations: Maximum number of reasoning/action cycles
@@ -221,7 +225,6 @@ class ReActAgentLC(BaseToolAgent):
 
         try:
             # Prepare the input for LangGraph
-            # Add system prompt as the first message if it exists
             messages: List[BaseMessage] = []
 
             # Add chat history if available
@@ -517,11 +520,9 @@ class ReActAgentLC(BaseToolAgent):
         thread_id = kwargs.get("thread_id", str(uuid.uuid4()))
 
         try:
-            # Prepare the input for LangGraph
-            # Add system prompt as the first message if it exists
+            # Prepare the input for LangGraph.
+            # No system message here: create_agent already injects self.system_prompt
             messages: List[BaseMessage] = []
-            if self.system_prompt:
-                messages.append(SystemMessage(content=self.system_prompt))
 
             # Add chat history if available
             if chat_history:

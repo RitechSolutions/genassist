@@ -323,10 +323,15 @@ class NotificationRepository:
                             UserSupervisedGroupModel,
                             UserSupervisedGroupModel.user_id == UserModel.id,
                         )
+                        .join(UserRoleModel, UserRoleModel.user_id == UserModel.id)
+                        .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
                         .where(
                             UserSupervisedGroupModel.group_id.in_(explicit_group_ids),
+                            UserSupervisedGroupModel.is_deleted == 0,
+                            RoleModel.name == "supervisor",
                             UserModel.is_deleted == 0,
                         )
+                        .distinct()
                     )
                 ).all()
                 user_rows.extend(supervisors)
@@ -349,9 +354,13 @@ class NotificationRepository:
             pre_group_filter = dict(dedup)
             supervisors_for_group = (
                 await self.db.execute(
-                    select(UserSupervisedGroupModel.user_id).where(
+                    select(UserSupervisedGroupModel.user_id)
+                    .join(UserRoleModel, UserRoleModel.user_id == UserSupervisedGroupModel.user_id)
+                    .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
+                    .where(
                         UserSupervisedGroupModel.group_id == group_id,
                         UserSupervisedGroupModel.is_deleted == 0,
+                        RoleModel.name == "supervisor",
                     )
                 )
             ).scalars().all()

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from injector import inject
 
+from app.cache.redis_cache import invalidate_user_cache
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.user_group import UserGroupModel
@@ -57,8 +58,10 @@ class UserGroupService:
             )
         # Check not already assigned
         if await self.repository.is_supervisor(group_id, user_id):
+            await invalidate_user_cache(user_id)
             return {"message": "User is already a supervisor of this group"}
         await self.repository.add_supervisor(group_id, user_id)
+        await invalidate_user_cache(user_id)
         return {"message": f"User {user_id} added as supervisor of group {group_id}"}
 
     async def remove_supervisor(self, group_id: UUID, user_id: UUID) -> dict:
@@ -66,6 +69,7 @@ class UserGroupService:
         if not group:
             raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
         await self.repository.remove_supervisor(group_id, user_id)
+        await invalidate_user_cache(user_id)
         return {"message": f"User {user_id} removed as supervisor of group {group_id}"}
 
     async def get_supervisors(self, group_id: UUID) -> list[UUID]:

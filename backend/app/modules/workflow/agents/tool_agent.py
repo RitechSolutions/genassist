@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import json
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import SystemMessage
 
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
@@ -18,14 +19,18 @@ from app.modules.workflow.agents.agent_utils import (
     extract_direct_response
 )
 from app.modules.workflow.agents.agent_prompts import (
+    create_tool_agent_tools_available_parts,
     create_tool_agent_tools_available_prompt,
     create_tool_agent_no_tools_prompt,
     create_tool_agent_no_tools_query_prompt,
+    create_tool_agent_no_tools_query_portion,
     create_tool_agent_tools_query_prompt,
+    create_tool_agent_tools_query_portion,
     create_tool_agent_iteration_continuation_prompt,
     create_tool_selection_prompt,
     create_conversation_context as build_conversation_context
 )
+from app.modules.workflow.llm.prompt_caching_chat_model import build_cacheable_system_message
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +44,9 @@ class ToolAgent(BaseToolAgent):
         system_prompt: str,
         tools: List[BaseTool],
         verbose: bool = False,
-        max_iterations: int = 6
+        max_iterations: int = 6,
+        stable_volatile_parts: Optional[tuple[str, str]] = None,
+        stable_tool_names: Optional[frozenset[str]] = None,
     ):
         """Initialize a Tool agent
 
@@ -49,19 +56,60 @@ class ToolAgent(BaseToolAgent):
             tools: List of tools the agent can use to accomplish tasks
             verbose: Whether to enable verbose logging of tool execution
             max_iterations: Maximum number of tool execution iterations
+            stable_volatile_parts: ``system_prompt`` split into its stable half and the
+                trailing part that changes every request. Set only when the stable half
+                is worth caching
         """
         super().__init__(llm_model, system_prompt, tools,
                          verbose=verbose, max_iterations=max_iterations)
 
+        from app.modules.workflow.engine.prompt_cache_diagnostics import cache_split_decision
+
+        self.stable_volatile_parts = stable_volatile_parts
+        self.stable_tool_names = stable_tool_names
+        # Splitting moves the guidance out of the fused user turn, so it is only worth
+        # doing when the provider can cache it and the caller marked the prompt eligible.
+        # The enhanced prefix carries at least the tools header, so even a blank base
+        # prompt stays cacheable.
+        self.cache_split_decision = cache_split_decision(stable_volatile_parts, llm_model, stable_never_blank=True)
+        self._cache_split = self.cache_split_decision[0]
+
     # ==================== PROMPT GENERATION ====================
 
-    def _create_enhanced_system_prompt(self) -> str:
+    def _create_enhanced_system_prompt(self, base_prompt: Optional[str] = None) -> str:
         """Create an enhanced system prompt using centralized prompt templates"""
+        base_prompt = self.system_prompt if base_prompt is None else base_prompt
         if self.tools:
             tool_descriptions = create_tool_descriptions(self.tools)
-            return create_tool_agent_tools_available_prompt(self.system_prompt, tool_descriptions)
+            return create_tool_agent_tools_available_prompt(base_prompt, tool_descriptions)
         else:
-            return create_tool_agent_no_tools_prompt(self.system_prompt)
+            return create_tool_agent_no_tools_prompt(base_prompt)
+
+    def _cacheable_system_message(self) -> SystemMessage:
+        """The split mode's system turn. Built per invoke, not at init: tools stay
+        mutable afterwards. The volatile tail sits after the guidance, in front, the
+        guidance would fall outside the cacheable prefix."""
+        stable, volatile = self.stable_volatile_parts
+        if self.stable_tool_names is None or not self.tools:
+            return build_cacheable_system_message(self._create_enhanced_system_prompt(stable), volatile)
+
+        split_at = next(
+            (i for i, tool in enumerate(self.tools) if tool.name not in self.stable_tool_names),
+            len(self.tools),
+        )
+        descriptions = create_tool_descriptions(self.tools)
+        head, rest = create_tool_agent_tools_available_parts(
+            stable, descriptions[:split_at], descriptions[split_at:]
+        )
+        return build_cacheable_system_message(head, rest + volatile)
+
+    def _build_messages(self, query_prompt: str, system_message: Optional[SystemMessage] = None) -> List[Any]:
+        """One fused user turn, or a cacheable system turn plus the query portion"""
+        if not self._cache_split:
+            return [{"role": "user", "content": query_prompt}]
+        if system_message is None:
+            system_message = self._cacheable_system_message()
+        return [system_message, {"role": "user", "content": query_prompt}]
 
     # ==================== RESPONSE PARSING ====================
 
@@ -158,14 +206,15 @@ class ToolAgent(BaseToolAgent):
 
     async def _handle_no_tools_workflow(self, query: str, chat_history: List[Dict[str, str]]) -> Dict[str, Any]:
         """Handle workflow when no tools are available"""
-        enhanced_prompt = self._create_enhanced_system_prompt()
         context = build_conversation_context(chat_history)
-        prompt = create_tool_agent_no_tools_query_prompt(
-            enhanced_prompt, context, query)
+        if self._cache_split:
+            prompt = create_tool_agent_no_tools_query_portion(context, query)
+        else:
+            prompt = create_tool_agent_no_tools_query_prompt(
+                self._create_enhanced_system_prompt(), context, query)
 
         try:
-            response = await self.llm_model.ainvoke(
-                [{"role": "user", "content": prompt}])
+            response = await self.llm_model.ainvoke(self._build_messages(prompt))
             response_content = self._extract_response_content(response)
             logger.debug(f"Response: {response}")
             direct_response = extract_direct_response(response_content)
@@ -195,19 +244,24 @@ class ToolAgent(BaseToolAgent):
 
     async def _handle_tools_workflow(self, query: str, chat_history: List[Dict[str, str]]) -> Dict[str, Any]:
         """Handle workflow when tools are available"""
-        enhanced_prompt = self._create_enhanced_system_prompt()
         context = build_conversation_context(chat_history)
-        prompt = create_tool_agent_tools_query_prompt(
-            enhanced_prompt, context, query)
+        if self._cache_split:
+            prompt = create_tool_agent_tools_query_portion(context, query)
+        else:
+            prompt = create_tool_agent_tools_query_prompt(
+                self._create_enhanced_system_prompt(), context, query)
 
         workflow_steps: List[Dict[str, Any]] = []
         tools_used: List[Dict[str, Any]] = []
         llm_usage_entries: List[Dict[str, Any]] = []
+        # Byte-identical across iterations (only the user turn grows), so its built once
+        # per invoke. Kept invocation-local: tools added later still reach the next invoke
+        system_message = self._cacheable_system_message() if self._cache_split else None
 
         for iteration in range(self.max_iterations):
             try:
                 result = await self._execute_workflow_iteration(
-                    prompt, iteration, workflow_steps, tools_used, llm_usage_entries
+                    prompt, iteration, workflow_steps, tools_used, llm_usage_entries, system_message
                 )
 
                 if result is not None:
@@ -253,9 +307,10 @@ class ToolAgent(BaseToolAgent):
         workflow_steps: List[Dict],
         tools_used: List[Dict],
         llm_usage_entries: List[Dict],
+        system_message: Optional[SystemMessage] = None,
     ) -> Optional[Dict[str, Any]]:
         """Execute a single workflow iteration"""
-        response = await self.llm_model.ainvoke([{"role": "user", "content": prompt}])
+        response = await self.llm_model.ainvoke(self._build_messages(prompt, system_message))
         response_content = self._extract_response_content(response)
 
         usage = extract_usage_from_aimessage(response)

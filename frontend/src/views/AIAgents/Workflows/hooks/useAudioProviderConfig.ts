@@ -1,6 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAudioProvidersByCapability, getAudioProviderNodeSchemas } from "@/services/audioProviders";
 import type { AudioProvider } from "@/interfaces/audioProvider.interface";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
+
+/**
+ * Whether the Audio Providers feature is turned on for this environment. Hidden by
+ * default — /api/audio-providers is not routed everywhere, so every call site must
+ * check this before fetching. Nodes stay usable without it by falling back to the
+ * built-in model/voice lists below.
+ */
+export function useAudioProvidersEnabled(): boolean {
+  return useFeatureFlagVisible(FeatureFlags.LLM_SETTINGS.SHOW_AUDIO_PROVIDERS);
+}
 
 interface SelectOption {
   value: string;
@@ -74,16 +86,21 @@ const DEFAULT_TTS_FORMATS: SelectOption[] = [
 export function useAudioProviderConfig(options: UseAudioProviderConfigOptions & { capability: "stt" }): STTConfig;
 export function useAudioProviderConfig(options: UseAudioProviderConfigOptions & { capability: "tts" }): TTSConfig;
 export function useAudioProviderConfig({ capability, audioProviderId, enabled }: UseAudioProviderConfigOptions): STTConfig | TTSConfig {
+  // Folded in here as well as at the call sites so no caller can fire these
+  // requests in an environment where the feature is off.
+  const featureEnabled = useAudioProvidersEnabled();
+  const shouldFetch = enabled && featureEnabled;
+
   const { data: audioProviders } = useQuery({
     queryKey: ["audioProviders", capability],
     queryFn: () => getAudioProvidersByCapability(capability),
-    enabled,
+    enabled: shouldFetch,
   });
 
   const { data: nodeSchemas } = useQuery({
     queryKey: ["audioProviderNodeSchemas"],
     queryFn: getAudioProviderNodeSchemas,
-    enabled,
+    enabled: shouldFetch,
   });
 
   const selectedProvider = audioProviders?.find((p) => p.id === audioProviderId);

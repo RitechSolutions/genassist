@@ -90,6 +90,16 @@ class WorkflowExecutorNode(BaseNode):
             # Nested runs use a separate state; carry their tool events up for evaluation.
             self.get_state().absorb_tool_events(state)
 
+            child_diagnostics = getattr(state, "prompt_caching_diagnostics", None)
+            if child_diagnostics:
+                from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
+
+                diagnostics.record(
+                    self.get_state(),
+                    self.node_id,
+                    applied=any(isinstance(e, dict) and e.get("applied") for e in child_diagnostics.values()),
+                )
+
             # Format and return the response
             result = state.format_state_as_response()
 

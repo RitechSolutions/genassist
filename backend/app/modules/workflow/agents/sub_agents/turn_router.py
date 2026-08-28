@@ -119,6 +119,7 @@ class SubAgentTurnRouter:
             registry_managed=True,
             usage_context=usage_context,
         )
+        orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
         return self.finalize(state.format_state_as_response())
 
     def _child_timeout(self, child_node_id: str) -> float:

@@ -23,6 +23,7 @@ from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.db.models.user import UserModel
+from app.db.models.user_supervised_group import UserSupervisedGroupModel
 from app.db.models.user_type import UserTypeModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
@@ -255,14 +256,34 @@ class UserRepository(DbRepository[UserModel]):
 
         # Update roles
         if data.role_ids is not None:
+            was_supervisor = (
+                await self.db.execute(
+                    select(RoleModel.name)
+                    .join(UserRoleModel, UserRoleModel.role_id == RoleModel.id)
+                    .where(UserRoleModel.user_id == user.id, RoleModel.name == "supervisor")
+                    .limit(1)
+                )
+            ).scalars().first() is not None
+
             await self.db.execute(
                     delete(UserRoleModel).where(UserRoleModel.user_id == user.id)
                     )
+            role_names = set()
             for role_id in data.role_ids:
                 role = await self.db.get(RoleModel, role_id)
                 if not role:
                     raise AppException(error_key=ErrorKey.ROLE_NOT_FOUND)
+                role_names.add(role.name)
                 self.db.add(UserRoleModel(user_id=user.id, role_id=role_id))
+
+            # Demotion drops the assignments; promotion starts from a clean slate so
+            # assignments from an earlier stint cannot silently reactivate.
+            if "supervisor" not in role_names or not was_supervisor:
+                await self.db.execute(
+                    delete(UserSupervisedGroupModel).where(
+                        UserSupervisedGroupModel.user_id == user.id
+                    )
+                )
 
         await self.db.flush()
         await self.db.refresh(user)

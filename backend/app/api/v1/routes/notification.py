@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth
+from app.auth.utils import authorized_supervised_group_ids
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.notification import (
@@ -26,9 +27,7 @@ def _user_group_context(request: Request) -> tuple[UUID | None, list[UUID]]:
     user = getattr(request.state, "user", None)
     if not user:
         return None, []
-    gid = getattr(user, "group_id", None)
-    supervised = list(getattr(user, "supervised_group_ids", None) or [])
-    return gid, supervised
+    return getattr(user, "group_id", None), authorized_supervised_group_ids(user)
 
 
 @router.get(

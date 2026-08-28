@@ -27,6 +27,8 @@ import { getApiUrl } from "@/config/api";
 import { isAxiosError } from "axios";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog, FieldErrors } from "@/components/ui/crud-dialog";
+import { areUserRolesRequired } from "@/views/Users/helpers/userFormRules";
+import { isSupervisorUser } from "../helpers/supervision";
 
 // Value for the "No group" option, since Radix SelectItem cannot use an empty string value.
 const NO_GROUP_VALUE = "__none__";
@@ -110,7 +112,9 @@ export function UserDialog({
   const applyUser = (user: User) => {
     setEditUser(user);
     setGroupId(user.group_id ?? "");
-    setSupervisedGroupIds(user.supervised_group_ids ?? []);
+    // Assignments only survive while the role does, a demoted user starts empty
+    // so re-promotion cannot silently restore a previous stint's groups.
+    setSupervisedGroupIds(isSupervisorUser(user) ? (user.supervised_group_ids ?? []) : []);
     setResetSeq((seq) => seq + 1);
   };
 
@@ -229,6 +233,9 @@ export function UserDialog({
         if ((err as { __userIdMissing?: boolean })?.__userIdMissing) {
           return "User ID is required.";
         }
+        if ((err as { __supervisedSyncFailed?: boolean })?.__supervisedSyncFailed) {
+          return "User saved, but supervised groups could not be updated. Reopen to retry.";
+        }
         const data = isAxiosError(err)
           ? (err.response?.data as Record<string, unknown> | undefined)
           : undefined;
@@ -273,7 +280,10 @@ export function UserDialog({
         if (passwordRequired && !values.password) {
           validationErrors.password = "Password is required.";
         }
-        if (values.selectedRoleIds.length === 0) {
+        if (
+          areUserRolesRequired(dialogMode, selectedUserType?.name) &&
+          values.selectedRoleIds.length === 0
+        ) {
           validationErrors.selectedRoleIds = "Roles is required.";
         }
 
@@ -309,27 +319,34 @@ export function UserDialog({
           }
           await updateUser(uid, userData);
 
-          // Sync supervised groups: add newly selected, remove deselected
-          const previousIds = userToEdit?.supervised_group_ids ?? [];
-          const toAdd = supervisedGroupIds.filter((id) => !previousIds.includes(id));
-          const toRemove = previousIds.filter((id) => !supervisedGroupIds.includes(id));
-          await Promise.all([
-            ...toAdd.map((gid) => addGroupSupervisor(gid, uid)),
-            ...toRemove.map((gid) => removeGroupSupervisor(gid, uid)),
-          ]);
+          const stillSupervisor = roles
+            .filter((r) => values.selectedRoleIds.includes(r.id))
+            .some((r) => r.name?.toLowerCase() === "supervisor");
 
-          // Call onUserUpdated for edit mode with userData
-          if (onUserUpdated && userToEdit) {
-            const updatedUser: User = {
-              ...userToEdit,
-              ...userData,
-              user_type:
-                userTypes.find((type) => type.id === values.userTypeId) ||
-                userToEdit.user_type,
-              roles: roles.filter((role) => values.selectedRoleIds.includes(role.id)),
-              supervised_group_ids: supervisedGroupIds,
-            };
-            onUserUpdated(updatedUser);
+          if (stillSupervisor) {
+            // The PUT resolves before these run, and a promotion clears prior
+            // assignments server-side, so the diff needs the post-update record.
+            // Without it a deselection would diff against nothing and be dropped.
+            const current = await getUser(uid).catch(() => null);
+            if (!current) {
+              throw Object.assign(new Error("Supervised groups not synced."), {
+                __supervisedSyncFailed: true,
+              });
+            }
+            const previousIds = current.supervised_group_ids ?? [];
+            const toAdd = supervisedGroupIds.filter((id) => !previousIds.includes(id));
+            const toRemove = previousIds.filter((id) => !supervisedGroupIds.includes(id));
+            await Promise.all([
+              ...toAdd.map((gid) => addGroupSupervisor(gid, uid)),
+              ...toRemove.map((gid) => removeGroupSupervisor(gid, uid)),
+            ]);
+          }
+
+          if (onUserUpdated) {
+            // The save is already committed — a failed read-back only leaves the
+            // row stale, so it must not surface as a failed edit.
+            const finalUser = await getUser(uid).catch(() => null);
+            if (finalUser) onUserUpdated(finalUser);
           }
         }
       }}
@@ -347,9 +364,12 @@ export function UserDialog({
             r.name?.toLowerCase() === "supervisor"
         );
 
+        const rolesRequired = areUserRolesRequired(m, selectedUserType?.name);
+
         const handleRoleToggle = (roleId: string) => {
           form.setValues((prev) => {
             if (
+              rolesRequired &&
               prev.selectedRoleIds.includes(roleId) &&
               prev.selectedRoleIds.length === 1
             ) {
@@ -422,7 +442,10 @@ export function UserDialog({
                 ) : (
                   <Select
                     value={values.userTypeId}
-                    onValueChange={(value) => setField("userTypeId", value)}
+                    onValueChange={(value) => {
+                      setField("userTypeId", value);
+                      form.setFieldError("selectedRoleIds", undefined);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />

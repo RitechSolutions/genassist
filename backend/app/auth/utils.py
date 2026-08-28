@@ -64,6 +64,16 @@ def current_user_is_supervisor() -> bool:
      return False
 
 
+def authorized_supervised_group_ids(user) -> list[UUID]:
+    """Supervised-group assignments only count while the user still holds the supervisor role."""
+    if user is None:
+        return []
+    role_names = {role.name for role in (getattr(user, "roles", None) or [])}
+    if "supervisor" not in role_names:
+        return []
+    return list(getattr(user, "supervised_group_ids", None) or [])
+
+
 def current_user_is_admin() -> bool:
     roles = context.get("user_roles") if context.exists() else None
     if roles:
