@@ -43,7 +43,11 @@ class LlmUsageSummaryResponse(BaseModel):
 
     ``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,
     ignoring the filters, so a client can tell whether one has landed since it last
-    reported the gap. It is only populated when the filtered window has unpriced calls"""
+    reported the gap. It is only populated when the filtered window has unpriced calls.
+
+    Prompt tokens sent, normalized across providers. Includes cache (already
+    in total_input_tokens). If provider reports input minus cache, we add it back
+    so input + output = total_tokens."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,6 +60,8 @@ class LlmUsageSummaryResponse(BaseModel):
     total_input_tokens: int
     total_output_tokens: int
     total_tokens: int
+    total_cache_read_tokens: int = 0
+    total_cache_creation_tokens: int = 0
     total_calls: int
     configured_calls: int
     fallback_calls: int

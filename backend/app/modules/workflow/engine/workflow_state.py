@@ -370,6 +370,8 @@ class WorkflowState:
                 u.get("model", ""),
                 u.get("input_tokens", 0),
                 u.get("output_tokens", 0),
+                cache_read,
+                cache_creation,
             )
         totals = {
             "input_tokens": total_input,

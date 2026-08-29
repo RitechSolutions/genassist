@@ -97,6 +97,17 @@ class TestTotalLlmUsageCacheTokens:
         assert usage["cache_read_tokens"] == 600
         assert usage["cache_creation_tokens"] == 40
 
+    def test_cache_reads_lower_the_run_cost(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+        details = {"input_token_details": {"cache_read": 900, "cache_creation": 0}}
+        cached = _state()
+        cached.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet", token_details=details)
+        plain = _state()
+        plain.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
+        assert cached.get_total_llm_usage()["cost_usd"] < plain.get_total_llm_usage()["cost_usd"]
+
 
 class TestTheNodeRequestDrivesTheTotals:
 

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional
 
 from sqlalchemy import Index, Numeric, PrimaryKeyConstraint, String, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -26,3 +27,5 @@ class LlmCostRateModel(Base):
     model_key: Mapped[str] = mapped_column(String(512), nullable=False)
     input_per_1k: Mapped[Decimal] = mapped_column(Numeric(18, 10), nullable=False)
     output_per_1k: Mapped[Decimal] = mapped_column(Numeric(18, 10), nullable=False)
+    cache_read_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    cache_creation_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)

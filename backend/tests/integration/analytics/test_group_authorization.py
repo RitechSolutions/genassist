@@ -354,8 +354,8 @@ async def test_admin_reads_remain_tenant_wide_including_unattributed_spend(world
             row = await repo.summary(world.params, scope)
 
     assert scope is None
-    assert float(row[0]) == pytest.approx(TOTAL_COST)
-    assert row[4] == len(COST)
+    assert float(row["sum_cost"]) == pytest.approx(TOTAL_COST)
+    assert row["total_calls"] == len(COST)
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -537,8 +537,8 @@ async def test_llm_usage_scope_excludes_foreign_and_unattributed_events(world):
             row = await repo.summary(world.params, scope)
 
     assert scope == [world.agent_id("a1")]
-    assert row[4] == 1
-    assert float(row[0]) == pytest.approx(float(COST["a1"]))
+    assert row["total_calls"] == 1
+    assert float(row["sum_cost"]) == pytest.approx(float(COST["a1"]))
 
 
 @pytest.mark.asyncio(loop_scope="module")
