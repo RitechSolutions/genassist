@@ -12,8 +12,8 @@ import threading
 import time
 from typing import Any
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config.settings import settings
 from app.db.models.llm_cost_rate import LlmCostRateModel
@@ -57,6 +57,30 @@ def invalidate_llm_cost_rates_cache(tenant: str | None = None) -> None:
             _tenant_generation[tenant] = _tenant_generation.get(tenant, 0) + 1
             _cache.pop(tenant, None)
             _next_retry.pop(tenant, None)
+
+
+_PENDING_INVALIDATIONS = "llm_cost_rate_invalidations"
+
+
+def invalidate_llm_cost_rates_cache_after_commit(session: Any, tenant: str | None = None) -> None:
+    """Queue ``tenant``'s invalidation until ``session`` commits"""
+    info = getattr(session, "sync_session", session).info
+    info.setdefault(_PENDING_INVALIDATIONS, set()).add(tenant)
+
+
+@event.listens_for(Session, "after_commit")
+def _invalidate_committed_rate_changes(session: Session) -> None:
+    if session.in_nested_transaction():
+        return
+    for tenant in session.info.pop(_PENDING_INVALIDATIONS, ()):
+        invalidate_llm_cost_rates_cache(tenant)
+
+
+@event.listens_for(Session, "after_rollback")
+def _drop_rolled_back_rate_changes(session: Session) -> None:
+    if session.in_nested_transaction():
+        return
+    session.info.pop(_PENDING_INVALIDATIONS, None)
 
 
 def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | None:

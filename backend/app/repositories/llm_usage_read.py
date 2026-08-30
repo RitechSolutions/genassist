@@ -2,10 +2,10 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import Date, case, cast, distinct, func, select
+from sqlalchemy import Date, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.llm_pricing import CACHE_EXCLUSIVE_PROVIDERS, PricingStatus
+from app.core.config.llm_pricing import PricingStatus
 from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.repositories.db_repository import DbRepository
@@ -16,18 +16,9 @@ _STATUS = LlmUsageEventModel.pricing_status
 _SOURCE = LlmUsageEventModel.source
 _CACHE_READ = LlmUsageEventModel.cache_read_tokens
 _CACHE_WRITE = LlmUsageEventModel.cache_creation_tokens
-_IS_EXCLUSIVE = LlmUsageEventModel.provider_key.in_(sorted(CACHE_EXCLUSIVE_PROVIDERS))
-
-# Prompt tokens sent. Exclusive providers store input_tokens without cache, so we add those buckets back
-_PROMPT_TOKENS = LlmUsageEventModel.input_tokens + case((_IS_EXCLUSIVE, _CACHE_READ + _CACHE_WRITE), else_=0)
-
-_TOKENS = case(
-    (
-        _IS_EXCLUSIVE,
-        func.greatest(LlmUsageEventModel.total_tokens, _PROMPT_TOKENS + LlmUsageEventModel.output_tokens),
-    ),
-    else_=LlmUsageEventModel.total_tokens,
-)
+# Normalized at write time, so reads never reapply per-provider reporting rules
+_PROMPT_TOKENS = LlmUsageEventModel.prompt_tokens
+_TOKENS = func.greatest(LlmUsageEventModel.total_tokens, _PROMPT_TOKENS + LlmUsageEventModel.output_tokens)
 
 AGENT_STUDIO_TEST_SOURCES = ("workflow_test", "node_test")
 

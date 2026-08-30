@@ -38,3 +38,9 @@ export function validateLlmCostRateForm(values: LlmCostRateFormValues): LlmCostR
   // Cache rates may stay blank: "not configured" is not the same as 0.
   return errors;
 }
+
+/** Trimmed rate for the API. Blank clears the rate to unset; "0" is kept as a real price. */
+export function serializeCacheRate(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}

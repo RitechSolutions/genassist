@@ -108,6 +108,33 @@ class TestTotalLlmUsageCacheTokens:
         plain.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
         assert cached.get_total_llm_usage()["cost_usd"] < plain.get_total_llm_usage()["cost_usd"]
 
+    def test_a_cache_bucket_with_no_rate_leaves_the_run_cost_partial(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+        s = _state()
+        s.add_llm_usage(
+            7,
+            20,
+            provider="bedrock",
+            model="arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/nova-tuned",
+            token_details={"input_token_details": {"cache_read": 3697}},
+        )
+        s.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
+
+        usage = s.get_total_llm_usage()
+        assert usage["cost_is_partial"] is True
+        assert usage["cost_usd"] == round(1000 / 1000 * 0.003, 6), "only the priced call is counted"
+
+    def test_a_fully_priced_run_is_not_partial(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+        s = _state()
+        s.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
+
+        assert s.get_total_llm_usage()["cost_is_partial"] is False
+
 
 class TestTheNodeRequestDrivesTheTotals:
 

@@ -107,12 +107,12 @@ async def test_summary_sums_the_cache_token_buckets():
 
 
 @pytest.mark.asyncio
-async def test_summary_adds_cache_buckets_back_for_providers_that_exclude_them():
+async def test_summary_reads_the_stored_prompt_total_instead_of_deriving_it():
     db = CapturingDb()
     await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
     sql = _sql(db.statements[0])
-    assert "CASE WHEN (llm_usage_events.provider_key IN ('bedrock'))" in sql
-    assert "llm_usage_events.cache_read_tokens + llm_usage_events.cache_creation_tokens ELSE 0" in sql
+    assert "sum(llm_usage_events.prompt_tokens)" in sql
+    assert "provider_key IN" not in sql, "reads must not reapply provider reporting rules"
 @pytest.mark.asyncio
 @pytest.mark.parametrize("query", ["timeseries", "breakdown"])
 async def test_every_token_aggregate_shares_the_derived_total(query):
@@ -123,7 +123,7 @@ async def test_every_token_aggregate_shares_the_derived_total(query):
     else:
         await repo.breakdown(LlmUsageQueryParams(), None, _DIMENSION_COLUMNS["provider"])
     sql = _sql(db.statements[0])
-    assert "ELSE llm_usage_events.total_tokens END" in sql
+    assert "greatest(llm_usage_events.total_tokens, llm_usage_events.prompt_tokens" in sql
 @pytest.mark.asyncio
 async def test_summary_scopes_agent_studio_cost_to_the_two_studio_test_sources():
     db = CapturingDb()

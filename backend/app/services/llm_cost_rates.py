@@ -22,7 +22,10 @@ from app.schemas.llm_cost_rate import (
     LlmCostRateUpdate,
     format_rate,
 )
-from app.services.llm_pricing_cache import invalidate_llm_cost_rates_cache
+from app.services.llm_pricing_cache import (
+    invalidate_llm_cost_rates_cache,
+    invalidate_llm_cost_rates_cache_after_commit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +106,7 @@ class LlmCostRateService:
                 updated_at=datetime.now(timezone.utc),
             )
         )
-        invalidate_llm_cost_rates_cache(tenant)
+        invalidate_llm_cost_rates_cache_after_commit(self.repo.db, tenant)
         return LlmCostRateRead.model_validate(created, from_attributes=True)
 
     async def update_rate(self, rate_id: UUID, dto: LlmCostRateUpdate) -> LlmCostRateRead | None:
@@ -120,14 +123,14 @@ class LlmCostRateService:
             row.cache_creation_per_1k = dto.cache_creation_per_1k
         row.updated_at = datetime.now(timezone.utc)
         updated = await self.repo.update(row)
-        invalidate_llm_cost_rates_cache(tenant)
+        invalidate_llm_cost_rates_cache_after_commit(self.repo.db, tenant)
         return LlmCostRateRead.model_validate(updated, from_attributes=True)
 
     async def delete_by_id(self, rate_id: UUID) -> bool:
         tenant = get_tenant_context()
         ok = await self.repo.soft_delete_by_id(rate_id)
         if ok:
-            invalidate_llm_cost_rates_cache(tenant)
+            invalidate_llm_cost_rates_cache_after_commit(self.repo.db, tenant)
         return ok
 
     async def import_csv(self, text: str) -> LlmCostRateImportResult:

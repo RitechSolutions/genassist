@@ -11,7 +11,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, Optional, TypeVar
 
-from app.core.config.llm_prompt_cache_capabilities import CLAUDE_FAMILY, bedrock_cache_family
+from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
 
@@ -62,8 +62,9 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
 
 DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
 CACHE_EXCLUSIVE_PROVIDERS = frozenset({"bedrock"})
-ANTHROPIC_CACHE_READ_MULTIPLIER = Decimal("0.1")
-ANTHROPIC_CACHE_WRITE_MULTIPLIER = Decimal("1.25")
+# Cache ratios off the input rate, shared by Anthropic and the cache-capable Bedrock families
+CACHE_READ_MULTIPLIER = Decimal("0.1")
+CACHE_WRITE_5M_MULTIPLIER = Decimal("1.25")
 
 _MATCH_EXACT = "exact"
 _MATCH_LONGEST_PREFIX = "longest_prefix"
@@ -125,6 +126,16 @@ def inclusive_cache_fallback(provider_key: str, rate: Optional[_Rate], input_per
     if rate is None and provider_key in CACHE_EXCLUSIVE_PROVIDERS:
         return None
     return cache_rate_or_input(rate, input_per_1k)
+
+
+def canonical_prompt_tokens(
+    provider_key: str, input_tokens: int, cache_read_tokens: int, cache_creation_tokens: int
+) -> int:
+    """Prompt tokens sent, normalized across providers"""
+    prompt = max(int(input_tokens), 0)
+    if provider_key in CACHE_EXCLUSIVE_PROVIDERS:
+        prompt += max(int(cache_read_tokens), 0) + max(int(cache_creation_tokens), 0)
+    return prompt
 
 
 def blended_token_cost(
@@ -283,7 +294,7 @@ def _family_cache_rate(
 ) -> Optional[Decimal]:
     if provider_key == "anthropic":
         return input_per_1k * multiplier
-    if provider_key == "bedrock" and bedrock_cache_family(model_key) == CLAUDE_FAMILY:
+    if provider_key == "bedrock" and bedrock_cache_family(model_key):
         return input_per_1k * multiplier
     return None
 
@@ -297,8 +308,8 @@ def _resolve_cache_bucket_rates(
     """Read and write resolve separately: base rates row → bundled row → family default."""
     resolved: list[Optional[Decimal]] = []
     for key, multiplier in (
-        (CACHE_READ_KEY, ANTHROPIC_CACHE_READ_MULTIPLIER),
-        (CACHE_CREATION_KEY, ANTHROPIC_CACHE_WRITE_MULTIPLIER),
+        (CACHE_READ_KEY, CACHE_READ_MULTIPLIER),
+        (CACHE_CREATION_KEY, CACHE_WRITE_5M_MULTIPLIER),
     ):
         rate = _row_cache_rate(selected, key)
         if rate is None and bundled is not selected:

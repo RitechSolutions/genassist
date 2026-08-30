@@ -1,11 +1,14 @@
 import threading
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 import app.services.llm_pricing_cache as pricing_cache
 from app.services.llm_pricing_cache import (
     get_db_pricing_nested,
     invalidate_llm_cost_rates_cache,
+    invalidate_llm_cost_rates_cache_after_commit,
 )
 
 TENANT = "acme"
@@ -270,3 +273,89 @@ def test_a_crashing_load_does_not_wedge_the_tenant(monkeypatch, clock):
     clock.advance(pricing_cache._FAILURE_COOLDOWN_SECONDS + 1)
     assert get_db_pricing_nested(TENANT) == RATES
     assert loader.calls == 1
+
+
+@pytest.fixture
+def session():
+    engine = create_engine("sqlite://")
+    with Session(engine) as real_session:
+        real_session.execute(text("SELECT 1"))
+        yield real_session
+    engine.dispose()
+
+
+def test_a_pending_invalidation_leaves_the_cache_warm_until_the_commit(monkeypatch, clock, session):
+    loader = _install(monkeypatch, Loader(RATES, NEWER))
+    assert get_db_pricing_nested(TENANT) == RATES
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    assert get_db_pricing_nested(TENANT) == RATES, "uncommitted writes must not be published"
+
+    session.commit()
+    assert get_db_pricing_nested(TENANT) == NEWER
+    assert loader.calls == 2
+
+
+def test_a_rollback_keeps_the_committed_rates_cached(monkeypatch, clock, session):
+    loader = _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.rollback()
+    session.commit()
+
+    assert get_db_pricing_nested(TENANT) == RATES
+    assert loader.calls == 1
+
+
+def test_a_released_savepoint_does_not_publish_the_write_early(monkeypatch, clock, session):
+    _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    with session.begin_nested():
+        session.execute(text("SELECT 1"))
+
+    assert pricing_cache._cache.get(TENANT) is not None, "a savepoint is not the outer commit"
+    session.commit()
+    assert TENANT not in pricing_cache._cache
+
+
+def test_a_savepoint_rollback_keeps_the_invalidation_for_the_outer_commit(monkeypatch, clock, session):
+    _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    with pytest.raises(RuntimeError):
+        with session.begin_nested():
+            session.execute(text("SELECT 1"))
+            raise RuntimeError("the inner unit of work failed")
+
+    session.commit()
+    assert TENANT not in pricing_cache._cache, "the outer commit must still publish the write"
+
+
+def test_committing_one_tenant_leaves_the_others_cached(monkeypatch, clock, session):
+    other = "globex"
+    _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+    get_db_pricing_nested(other)
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.commit()
+
+    assert pricing_cache._cache.get(other) is not None, "another tenant's entry survives"
+    assert TENANT not in pricing_cache._cache
+
+
+def test_a_commit_drains_the_queue_once(monkeypatch, clock, session):
+    _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.commit()
+    get_db_pricing_nested(TENANT)
+    session.commit()
+
+    assert pricing_cache._cache.get(TENANT) is not None, "a later commit must not re-clear"
+

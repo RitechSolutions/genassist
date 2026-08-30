@@ -17,6 +17,7 @@ from app.services.llm_cost_rates import LlmCostRateService
 
 class FakeRateRepo:
     def __init__(self, existing_by_pm=None, existing_by_id=None):
+        self.db = object()
         self._by_pm = existing_by_pm
         self._by_id = existing_by_id
 
@@ -42,6 +43,7 @@ def _configure_mappers(app_def):
 @pytest.fixture(autouse=True)
 def _no_cache_calls(monkeypatch):
     monkeypatch.setattr(rate_module, "invalidate_llm_cost_rates_cache", lambda tenant=None: None)
+    monkeypatch.setattr(rate_module, "invalidate_llm_cost_rates_cache_after_commit", lambda session, tenant=None: None)
     monkeypatch.setattr(rate_module, "get_tenant_context", lambda: "tenant-1")
 
 
@@ -284,3 +286,62 @@ def test_read_serializes_unset_cache_rates_as_null():
     dumped = read.model_dump(mode="json")
     assert dumped["cache_read_per_1k"] is None
     assert dumped["cache_creation_per_1k"] == "0"
+
+
+class TestInvalidationWaitsForTheCommit:
+
+    @pytest.fixture
+    def queued(self, monkeypatch):
+        seen: list = []
+        monkeypatch.setattr(
+            rate_module,
+            "invalidate_llm_cost_rates_cache_after_commit",
+            lambda session, tenant=None: seen.append((session, tenant)),
+        )
+        monkeypatch.setattr(
+            rate_module,
+            "invalidate_llm_cost_rates_cache",
+            lambda tenant=None: pytest.fail("a rate write must not clear the cache before its commit"),
+        )
+        return seen
+
+    @pytest.mark.asyncio
+    async def test_create_queues_on_the_writing_session(self, queued):
+        repo = FakeRateRepo(existing_by_pm=None)
+        await LlmCostRateService(repo).create_rate(
+            LlmCostRateCreate(provider="openai", model="gpt-4o", input_per_1k=0.0025, output_per_1k=0.01)
+        )
+        assert queued == [(repo.db, "tenant-1")]
+
+    @pytest.mark.asyncio
+    async def test_update_queues_on_the_writing_session(self, queued):
+        row = LlmCostRateModel(
+            id=uuid4(), provider_key="openai", model_key="gpt-4o", input_per_1k=0.001, output_per_1k=0.002
+        )
+        repo = FakeRateRepo(existing_by_id=row)
+        await LlmCostRateService(repo).update_rate(uuid4(), LlmCostRateUpdate(input_per_1k=0.003, output_per_1k=0.02))
+        assert queued == [(repo.db, "tenant-1")]
+
+    @pytest.mark.asyncio
+    async def test_a_missing_rate_queues_nothing(self, queued):
+        service = LlmCostRateService(FakeRateRepo(existing_by_id=None))
+        assert await service.update_rate(uuid4(), LlmCostRateUpdate(input_per_1k=1, output_per_1k=2)) is None
+        assert queued == []
+
+    @pytest.mark.asyncio
+    async def test_delete_queues_only_when_a_row_was_removed(self, queued):
+        repo = FakeRateRepo()
+        repo.soft_delete_by_id = _returns(False)
+        assert await LlmCostRateService(repo).delete_by_id(uuid4()) is False
+        assert queued == []
+
+        repo.soft_delete_by_id = _returns(True)
+        assert await LlmCostRateService(repo).delete_by_id(uuid4()) is True
+        assert queued == [(repo.db, "tenant-1")]
+
+
+def _returns(value):
+    async def _call(rate_id):
+        return value
+
+    return _call

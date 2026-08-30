@@ -18,6 +18,7 @@ import { formatTimeAgo } from '@/helpers/formatters';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ListEmptyState } from '@/components/ListEmptyState';
 import {
+  serializeCacheRate,
   validateLlmCostRateForm,
   type LlmCostRateFieldErrors,
   type LlmCostRateFormValues,
@@ -25,11 +26,11 @@ import {
 
 /** Example CSV matching the import API (UTF-8, header row required). */
 const CSV_MODEL = `provider,model,input_per_1k,output_per_1k,cache_read_per_1k,cache_creation_per_1k
-openai,gpt-4o,0.0025,0.01,,
-openai,gpt-4o-mini,0.00015,0.0006,,
-anthropic,claude-3-5-sonnet,0.003,0.015,0.0003,0.00375
-bedrock,eu.amazon.nova-2-lite-v1:0,0.0001,0.0004,0.000025,0
-bedrock,eu.anthropic.claude-3-5-sonnet-20241022-v2:0,0.003,0.015,0.0003,0.00375
+openai,gpt-4o,0.001,0.002,,
+openai,gpt-4o-mini,0.001,0.002,,
+anthropic,claude-3-5-sonnet,0.001,0.002,,
+bedrock,eu.amazon.nova-2-lite-v1:0,0.001,0.002,0.0001,0
+bedrock,eu.anthropic.claude-3-5-sonnet-20241022-v2:0,0.001,0.002,0.0001,0.00125
 openrouter,_default,0.001,0.002,,
 vllm,_default,0,0,,`;
 
@@ -200,8 +201,8 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
         await updateLlmCostRate(editingId, {
           input_per_1k: form.input_per_1k.trim(),
           output_per_1k: form.output_per_1k.trim(),
-          cache_read_per_1k: form.cache_read_per_1k.trim() || null,
-          cache_creation_per_1k: form.cache_creation_per_1k.trim() || null,
+          cache_read_per_1k: serializeCacheRate(form.cache_read_per_1k),
+          cache_creation_per_1k: serializeCacheRate(form.cache_creation_per_1k),
         });
         toast.success('Cost rate updated.');
       } else {
@@ -210,8 +211,8 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
           model: form.model.trim(),
           input_per_1k: form.input_per_1k.trim(),
           output_per_1k: form.output_per_1k.trim(),
-          cache_read_per_1k: form.cache_read_per_1k.trim() || null,
-          cache_creation_per_1k: form.cache_creation_per_1k.trim() || null,
+          cache_read_per_1k: serializeCacheRate(form.cache_read_per_1k),
+          cache_creation_per_1k: serializeCacheRate(form.cache_creation_per_1k),
         });
         toast.success('Cost rate added.');
       }
@@ -420,6 +421,9 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
                 </label>
               </div>
 
+              <p className="text-xs text-muted-foreground">
+                Leave a cache rate blank to leave it unset; enter <code>0</code> to price that bucket as free.
+              </p>
               {editingId && (
                 <p className="text-xs text-muted-foreground">
                   Provider and model are fixed. Delete and re-add to move a rate.
@@ -602,8 +606,14 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
                 <p>
                   Optional: <code className="text-xs bg-muted px-1 rounded">cache_read_per_1k</code> and{' '}
                   <code className="text-xs bg-muted px-1 rounded">cache_creation_per_1k</code>. Files without them still
-                  import. Leave a value blank for the provider default, or enter{' '}
-                  <code className="text-xs bg-muted px-1 rounded">0</code> where the model charges nothing.
+                  import. Enter <code className="text-xs bg-muted px-1 rounded">0</code> where the model charges
+                  nothing. Left blank the bucket is unset, and the cost falls back to a family estimate where one
+                  exists, otherwise to ordinary input pricing, or stays unpriced on providers that report cache tokens
+                  outside their input count.
+                </p>
+                <p>
+                  The rates in the example below are placeholders. Copy the real per-1K figures from your provider's
+                  price list.
                 </p>
                 <p>
                   Use <code className="text-xs bg-muted px-1 rounded">_default</code> as{' '}

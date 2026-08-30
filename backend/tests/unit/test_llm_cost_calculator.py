@@ -87,9 +87,16 @@ class TestCalculateCostWithCacheTokens:
         cost = self.calculator.calculate_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 0)
         assert cost == round((7 / 1000) * 0.0001 + (20 / 1000) * 0.0004 + (3697 / 1000) * 0.0001, 6)
 
-    def test_bedrock_without_a_resolved_cache_rate_keeps_the_legacy_display_estimate(self):
-        cost = self.calculator.calculate_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 0)
-        assert cost == round((7 / 1000) * 0.0001 + (20 / 1000) * 0.0004 + (3697 / 1000) * 0.0001, 6)
+    def test_bedrock_nova_derives_cache_rates_from_its_input_rate(self):
+        cost = self.calculator.calculate_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 1000)
+        assert cost == round(
+            (7 / 1000) * 0.0001 + (20 / 1000) * 0.0004 + (3697 / 1000) * 0.0001 * 0.1 + (1000 / 1000) * 0.0001 * 1.25,
+            6,
+        )
+
+    def test_bedrock_without_a_resolved_cache_rate_is_unpriced(self):
+        model = "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/nova-tuned"
+        assert self.calculator.calculate_cost("bedrock", model, 7, 20, 3697, 0) is None
 
     def test_configured_cache_rates_win_over_the_provider_default(self, monkeypatch):
         monkeypatch.setattr(
@@ -503,14 +510,14 @@ class TestBundledCacheRateProvenance:
         assert (res.cache_read_per_1k, res.cache_creation_per_1k) == (None, None)
 
     @pytest.mark.parametrize(
-        ("provider", "model", "expected_base"),
+        ("provider", "model", "expected_base", "expected_cache"),
         [
-            ("bedrock", "us.amazon.nova-2-lite-v1:0-future", Decimal("0.001")),
-            ("openai", "gpt-4o-mini-2024-07-18", Decimal("0.00015")),
+            ("bedrock", "us.amazon.nova-2-lite-v1:0-future", Decimal("0.001"), Decimal("0.0001")),
+            ("openai", "gpt-4o-mini-2024-07-18", Decimal("0.00015"), None),
         ],
     )
     def test_a_longest_prefix_match_takes_the_base_rate_but_not_the_cache_rates(
-        self, bundled_cache_rates, monkeypatch, provider, model, expected_base
+        self, bundled_cache_rates, monkeypatch, provider, model, expected_base, expected_cache
     ):
         monkeypatch.setitem(
             llm_pricing.STATIC_LLM_PRICING_FALLBACK["openai"],
@@ -519,7 +526,7 @@ class TestBundledCacheRateProvenance:
         )
         res = resolve_pricing(provider, model, {})
         assert res.input_per_1k == expected_base, "version suffixes still price off the base model"
-        assert res.cache_read_per_1k is None
+        assert res.cache_read_per_1k == expected_cache, "the row's own cache rate is never inherited"
 
     def test_a_configured_region_less_rate_is_always_allowed(self, bundled_cache_rates):
         configured = {
@@ -556,15 +563,22 @@ class TestCacheRateLadder:
             "us.anthropic.claude-sonnet-4-v1:0",
             "global.anthropic.claude-sonnet-5",
             "us.anthropic.claude-fable-5",
+            "us.amazon.nova-2-lite-v1:0",
         ],
     )
-    def test_claude_on_bedrock_falls_back_to_the_anthropic_multipliers(self, model):
+    def test_cache_capable_bedrock_families_fall_back_to_the_multipliers(self, model):
         configured = {"bedrock": {model: {"input_per_1k": "0.003", "output_per_1k": "0.015"}}}
         res = resolve_pricing("bedrock", model, configured)
         assert res.cache_read_per_1k == Decimal("0.0003")
         assert res.cache_creation_per_1k == Decimal("0.00375")
 
-    @pytest.mark.parametrize("model", ["us.amazon.nova-2-lite-v1:0", "amazon.titan-text-express-v1"])
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "amazon.titan-text-express-v1",
+            "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/nova-tuned",
+        ],
+    )
     def test_no_other_bedrock_family_invents_a_multiplier(self, model):
         configured = {"bedrock": {model: {"input_per_1k": "0.001", "output_per_1k": "0.002"}}}
         res = resolve_pricing("bedrock", model, configured)
@@ -645,12 +659,26 @@ _PARITY_CASES = {
     "bedrock_bundled_uncached": (("bedrock", "us.amazon.nova-2-lite-v1:0", 1000, 500, 0, 0), {}),
     "inclusive_without_cache_rates": (("openai", "gpt-4o", 1000, 500, 400, 100), {}),
     "no_cache_activity": (("openai", "gpt-4o", 1000, 500, 0, 0), {}),
+    "bedrock_cache_without_any_cache_rate": (("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 0), {}),
+    "bedrock_write_without_a_write_rate": (
+        ("bedrock", "us.amazon.nova-2-lite-v1:0", 100, 10, 0, 2000),
+        {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": "0.0001",
+                    "output_per_1k": "0.0004",
+                    "cache_read_per_1k": "0.000025",
+                }
+            }
+        },
+    ),
 }
 
 
 class TestLiveLedgerParity:
+
     @pytest.mark.parametrize("case", sorted(_PARITY_CASES))
-    def test_the_display_cost_matches_the_ledger_on_every_priced_case(self, case, monkeypatch):
+    def test_the_display_cost_matches_the_ledger(self, case, monkeypatch):
         args, configured = _PARITY_CASES[case]
         monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: configured)
         provider, model, input_tokens, output_tokens, cache_read, cache_creation = args
@@ -664,22 +692,33 @@ class TestLiveLedgerParity:
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_creation,
         )
-        assert ledger["cost_usd"] is not None, "parity is only claimed where the ledger prices"
         live = LlmCostCalculator().calculate_cost(
             provider, model, input_tokens, output_tokens, cache_read, cache_creation
         )
-        assert live == round(float(ledger["cost_usd"]), 6)
 
-    def test_an_unresolved_bedrock_bucket_splits_the_two_surfaces(self, no_db_rates):
-        args = ("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, 3697, 0)
+        if ledger["cost_usd"] is None:
+            assert ledger["pricing_status"] == PricingStatus.UNPRICED.value
+            assert live is None, "the display path must not substitute a rate the ledger refused"
+        else:
+            assert live == round(float(ledger["cost_usd"]), 6)
 
-        ledger = _resolve_cost(*args[:4], {}, cache_read_tokens=args[4], cache_creation_tokens=args[5])
-        assert ledger["cost_usd"] is None
-        assert ledger["pricing_status"] == PricingStatus.UNPRICED.value
+    def test_an_explicit_zero_cache_rate_prices_on_both_surfaces(self, monkeypatch):
+        configured = {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": "0.0001",
+                    "output_per_1k": "0.0004",
+                    "cache_read_per_1k": "0",
+                    "cache_creation_per_1k": "0",
+                }
+            }
+        }
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: configured)
+        args = ("bedrock", "us.amazon.nova-2-lite-v1:0", 0, 0, 4000, 1000)
 
-        live = LlmCostCalculator().calculate_cost(*args)
-        assert live == round((7 / 1000) * 0.0001 + (20 / 1000) * 0.0004 + (3697 / 1000) * 0.0001, 6)
-        assert live == LlmCostCalculator().calculate_cost("bedrock", args[1], 7 + 3697, 20)
+        ledger = _resolve_cost(*args[:4], configured, cache_read_tokens=args[4], cache_creation_tokens=args[5])
+        assert ledger["cost_usd"] == Decimal("0"), "0 is a configured price, not an absent one"
+        assert LlmCostCalculator().calculate_cost(*args) == 0.0
 
 
 class TestFindPricingIgnoresTheResolutionLadder:

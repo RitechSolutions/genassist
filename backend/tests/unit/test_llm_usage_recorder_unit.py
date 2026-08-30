@@ -211,12 +211,13 @@ class TestResolveCostCacheBuckets:
         assert out["cache_read_per_1k"] is None, "only the bucket nobody could price is nulled"
         assert out["cache_creation_per_1k"] is None
 
-    def test_a_bundled_profile_keeps_base_snapshots_but_refuses_a_cached_total(self):
+    def test_a_bundled_profile_prices_a_cached_call_from_derived_rates(self):
         out = _resolve_cost("bedrock", "eu.amazon.nova-2-lite-v1:0", 7, 20, cache_read_tokens=3697)
-        assert out["pricing_status"] == "unpriced"
+        assert out["pricing_status"] == "fallback"
         assert out["input_per_1k"] == Decimal("0.0001"), "base rates come from the bundled EU profile"
         assert out["output_per_1k"] == Decimal("0.0004")
-        assert all(out[key] is None for key in ("cache_read_per_1k", "cache_creation_per_1k", "cost_usd"))
+        assert out["cache_read_per_1k"] == Decimal("0.00001")
+        assert out["cost_usd"] == Decimal("0.00004567")
 
     def test_a_totally_unknown_model_still_snapshots_nothing(self):
         out = _resolve_cost("bedrock", "amazon.titan-text-v1", 7, 20, cache_read_tokens=3697)
@@ -831,26 +832,39 @@ class TestTokenColumns:
     def test_cache_counts_are_read_from_the_token_details(self):
         details = {"input_token_details": {"cache_read": 3697, "cache_creation": 60}}
 
-        assert _token_columns({"total_tokens": 3724}, 7, 20, details) == {
+        assert _token_columns("bedrock", {"total_tokens": 3724}, 7, 20, details) == {
             "input_tokens": 7,
             "output_tokens": 20,
             "total_tokens": 3724,
             "token_details": details,
             "cache_read_tokens": 3697,
             "cache_creation_tokens": 60,
+            "prompt_tokens": 3764,
         }
 
     def test_stored_counts_stay_provider_raw(self):
-        columns = _token_columns({}, 7, 20, {"input_token_details": {"cache_read": 3697}})
+        columns = _token_columns("bedrock", {}, 7, 20, {"input_token_details": {"cache_read": 3697}})
 
         assert columns["input_tokens"] == 7
         assert columns["total_tokens"] == 27, "unchanged max(reported, in+out)"
 
+    def test_prompt_tokens_add_the_cache_buckets_only_for_exclusive_providers(self):
+        details = {"input_token_details": {"cache_read": 3697, "cache_creation": 60}}
+
+        assert _token_columns("bedrock", {}, 7, 20, details)["prompt_tokens"] == 3764
+        assert _token_columns("anthropic", {}, 3764, 20, details)["prompt_tokens"] == 3764
+
+    def test_prompt_tokens_are_normalized_before_the_provider_lookup(self):
+        details = {"input_token_details": {"cache_read": 100}}
+
+        assert _token_columns("  Bedrock ", {}, 7, 20, details)["prompt_tokens"] == 107
+
     @pytest.mark.parametrize("details", [None, {}, "junk", {"usage_metadata_missing": True}])
     def test_entries_without_cache_details_count_zero(self, details):
-        columns = _token_columns({}, 10, 5, details)
+        columns = _token_columns("bedrock", {}, 10, 5, details)
 
         assert (columns["cache_read_tokens"], columns["cache_creation_tokens"]) == (0, 0)
+        assert columns["prompt_tokens"] == 10, "an uncached call keeps the reported input count"
 
 
 _CACHED_DETAILS = {"input_token_details": {"cache_read": 500, "cache_creation": 60}}
@@ -881,9 +895,10 @@ class TestCacheColumnWiring:
         row = _rows_of(_insert_for(record_scope.statements, "llm_usage_events"))[0]
         assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (3697, 0)
         assert row["input_tokens"] == 7, "provider-raw, not inflated by the cached prefix"
-        assert row["cost_usd"] is None and row["pricing_status"] == "unpriced"
+        assert row["cost_usd"] == Decimal("0.00004567") and row["pricing_status"] == "fallback"
         assert row["input_per_1k"] == Decimal("0.0001")
-        assert all(row[key] is None for key in ("cache_read_per_1k", "cache_creation_per_1k"))
+        assert (row["cache_read_per_1k"], row["cache_creation_per_1k"]) == (Decimal("0.00001"), Decimal("0.000125"))
+        assert row["prompt_tokens"] == 3704, "bedrock reports input without the cache buckets"
 
     @pytest.mark.asyncio
     async def test_evaluation_rows_carry_counts_and_snapshots(self, evaluation_scope):
@@ -897,6 +912,7 @@ class TestCacheColumnWiring:
         row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
         assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (500, 60)
         assert row["cache_read_per_1k"] == Decimal("0.0003"), "0.1x of the anthropic input rate"
+        assert row["prompt_tokens"] == 660, "anthropic already counts the cache buckets in"
 
     @pytest.mark.asyncio
     async def test_analyst_row_carries_counts_and_snapshots(self, record_scope):
@@ -921,3 +937,4 @@ class TestCacheColumnWiring:
         row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
         assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (0, 0)
         assert (row["cache_read_per_1k"], row["cache_creation_per_1k"]) == (None, None)
+        assert row["prompt_tokens"] == row["input_tokens"], "an uncached call needs no adjustment"

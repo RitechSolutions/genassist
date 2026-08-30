@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.llm_pricing import (
     PricingStatus,
     blended_token_cost,
+    canonical_prompt_tokens,
     inclusive_cache_fallback,
     resolve_pricing,
 )
@@ -92,9 +93,12 @@ def _total_tokens(entry: dict[str, Any], input_tokens: int, output_tokens: int) 
     return max(reported, input_tokens + output_tokens)
 
 
-def _token_columns(entry: dict[str, Any], input_tokens: int, output_tokens: int, token_details: Any) -> dict[str, Any]:
-    """Store the provider's token counts as reported"""
+def _token_columns(
+    provider: str, entry: dict[str, Any], input_tokens: int, output_tokens: int, token_details: Any
+) -> dict[str, Any]:
+    """Store the provider's token counts as reported, plus the canonical prompt total"""
     cache_read, cache_creation = extract_cache_tokens(token_details)
+    provider_key = (provider or "").strip().lower()
     return {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -102,6 +106,7 @@ def _token_columns(entry: dict[str, Any], input_tokens: int, output_tokens: int,
         "token_details": token_details,
         "cache_read_tokens": cache_read,
         "cache_creation_tokens": cache_creation,
+        "prompt_tokens": canonical_prompt_tokens(provider_key, input_tokens, cache_read, cache_creation),
     }
 
 
@@ -261,7 +266,7 @@ class LlmUsageRecorder:
                             output_tokens = int(entry.get("output_tokens", 0) or 0)
                             provider_id = coerce_uuid(entry.get("llm_provider_id"))
                             token_details = entry.get("token_details")
-                            token_columns = _token_columns(entry, input_tokens, output_tokens, token_details)
+                            token_columns = _token_columns(provider, entry, input_tokens, output_tokens, token_details)
                             pricing = _resolve_cost(
                                 provider,
                                 model,
@@ -373,7 +378,7 @@ class LlmUsageRecorder:
                             provider = entry.get("provider", "") or ""
                             model = entry.get("model", "") or ""
                             provider_id = coerce_uuid(entry.get("llm_provider_id"))
-                            token_columns = _token_columns(usage, input_tokens, output_tokens, token_details)
+                            token_columns = _token_columns(provider, usage, input_tokens, output_tokens, token_details)
                             pricing = _resolve_cost(
                                 provider,
                                 model,
@@ -508,7 +513,7 @@ class LlmUsageRecorder:
                     output_tokens = int(entry.get("output_tokens") or 0)
                     token_details = entry.get("token_details")
                     configured_rates = await self._configured_rates(session)
-                    token_columns = _token_columns(entry, input_tokens, output_tokens, token_details)
+                    token_columns = _token_columns(provider, entry, input_tokens, output_tokens, token_details)
                     pricing = _resolve_cost(
                         provider,
                         model,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { LlmCostRateFormValues, validateLlmCostRateForm } from '@/views/LlmProviders/helpers/llmCostRateValidation';
+import {
+  LlmCostRateFormValues,
+  serializeCacheRate,
+  validateLlmCostRateForm,
+} from '@/views/LlmProviders/helpers/llmCostRateValidation';
 
 const VALID: LlmCostRateFormValues = {
   provider: 'openai',
@@ -75,5 +79,19 @@ describe('rate values', () => {
 
   it('trims surrounding whitespace, matching what the dialog submits', () => {
     expect(rateErrors('  0.5  ')).toBeUndefined();
+  });
+});
+
+describe('serializeCacheRate', () => {
+  it.each(['', '   '])('sends a blank rate as null so the bucket stays unset (%j)', (value) => {
+    expect(serializeCacheRate(value)).toBeNull();
+  });
+
+  it.each(['0', '0.0', ' 0 '])('keeps an explicit zero as a configured free rate (%j)', (value) => {
+    expect(serializeCacheRate(value)).toBe(value.trim());
+  });
+
+  it('trims a configured rate without reformatting it', () => {
+    expect(serializeCacheRate(' 0.000025 ')).toBe('0.000025');
   });
 });

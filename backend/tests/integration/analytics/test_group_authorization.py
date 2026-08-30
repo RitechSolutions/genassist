@@ -93,6 +93,7 @@ def _event(agent_id, *, provider: str, occurred_at: datetime, cost: Decimal) -> 
         provider_key=provider,
         model_key=f"{provider}-model",
         input_tokens=100,
+        prompt_tokens=100,
         output_tokens=50,
         total_tokens=150,
         cost_usd=cost,
