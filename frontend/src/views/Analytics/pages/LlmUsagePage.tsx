@@ -331,7 +331,7 @@ function LlmUsagePage() {
       sub: `${compact(summary?.total_input_tokens ?? 0)} input · ${compact(summary?.total_output_tokens ?? 0)} output`,
       description:
         cacheReadTokens || cacheWriteTokens
-          ? `Input includes ${cacheReadTokens.toLocaleString()} cache-read and ${cacheWriteTokens.toLocaleString()} cache-write tokens reported by providers. A cache bucket is priced at its configured rate where one is set, otherwise at a family estimate or at ordinary input pricing; buckets that resolve to neither leave the call unpriced.`
+          ? `Input includes ${cacheReadTokens.toLocaleString()} cache-read and ${cacheWriteTokens.toLocaleString()} cache-write tokens reported by providers.`
           : undefined,
       delta: summary && previous ? <KpiDelta delta={pctChange(summary.total_tokens, previous.total_tokens)} /> : null,
     },
