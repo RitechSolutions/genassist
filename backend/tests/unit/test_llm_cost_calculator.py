@@ -8,7 +8,6 @@ import app.core.config.llm_pricing as llm_pricing
 from app.core.config.llm_pricing import (
     DEFAULT_PRICING,
     PricingStatus,
-    find_pricing,
     resolve_pricing,
 )
 from app.services.llm_cost_calculator import LlmCostCalculator
@@ -18,6 +17,11 @@ from app.services.llm_usage_recorder import _resolve_cost
 @pytest.fixture
 def no_db_rates(monkeypatch):
     monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+
+
+def display_rates(provider: str, model: str) -> dict:
+    return llm_pricing.resolve_live_pricing(provider, model).display_rates
+
 
 MIRRORED_BEDROCK_RATES = {
     "bedrock": {
@@ -97,6 +101,11 @@ class TestCalculateCostWithCacheTokens:
     def test_bedrock_without_a_resolved_cache_rate_is_unpriced(self):
         model = "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/nova-tuned"
         assert self.calculator.calculate_cost("bedrock", model, 7, 20, 3697, 0) is None
+
+    def test_an_unrated_bedrock_family_derives_its_buckets_from_the_fabricated_default(self):
+        default_input = DEFAULT_PRICING["input_per_1k"]
+        cost = self.calculator.calculate_cost("bedrock", "eu.anthropic.claude-3-7-sonnet-20250219-v1:0", 0, 0, 1000, 0)
+        assert cost == round(default_input * 0.1, 6)
 
     def test_configured_cache_rates_win_over_the_provider_default(self, monkeypatch):
         monkeypatch.setattr(
@@ -371,26 +380,26 @@ class TestResolvePricingCacheRates:
         assert res.cache_creation_per_1k is None
 
 
-class TestFindPricingLegacyContract:
+class TestDisplayRatesContract:
     @pytest.fixture(autouse=True)
     def _no_db_rates(self, no_db_rates):
         pass
 
     def test_returns_floats_for_known_model(self):
-        pricing = find_pricing("openai", "gpt-4o")
+        pricing = display_rates("openai", "gpt-4o")
         assert pricing == {"input_per_1k": 0.0025, "output_per_1k": 0.01}
         assert isinstance(pricing["input_per_1k"], float)
 
     def test_unmatched_returns_default_pricing_copy(self):
-        pricing = find_pricing("openai", "unknown-model-xyz")
+        pricing = display_rates("openai", "unknown-model-xyz")
         assert pricing == DEFAULT_PRICING
         assert pricing is not DEFAULT_PRICING
 
-    def test_bundled_default_row_still_applies_on_the_legacy_path(self):
-        assert find_pricing("openrouter", "some/new-model") == {"input_per_1k": 0.001, "output_per_1k": 0.002}
+    def test_bundled_default_row_still_applies_on_the_display_path(self):
+        assert display_rates("openrouter", "some/new-model") == {"input_per_1k": 0.001, "output_per_1k": 0.002}
 
     def test_longest_prefix_wins_like_the_ledger(self):
-        assert find_pricing("openai", "gpt-4o-mini-2024-07-18")["input_per_1k"] == 0.00015
+        assert display_rates("openai", "gpt-4o-mini-2024-07-18")["input_per_1k"] == 0.00015
 
     def test_bedrock_region_prefixed_model_matches_a_region_less_rate(self, monkeypatch):
         monkeypatch.setattr(
@@ -398,7 +407,7 @@ class TestFindPricingLegacyContract:
             "get_db_pricing_nested",
             lambda tenant: {"bedrock": {"amazon.nova-2-lite-v1:0": {"input_per_1k": 0.009, "output_per_1k": 0.02}}},
         )
-        assert find_pricing("bedrock", "us.amazon.nova-2-lite-v1:0")["input_per_1k"] == 0.009
+        assert display_rates("bedrock", "us.amazon.nova-2-lite-v1:0")["input_per_1k"] == 0.009
 
     def test_configured_prefix_beats_a_bundled_exact_hit(self, monkeypatch):
         monkeypatch.setattr(
@@ -406,7 +415,7 @@ class TestFindPricingLegacyContract:
             "get_db_pricing_nested",
             lambda tenant: {"openai": {"gpt-4": {"input_per_1k": 0.111, "output_per_1k": 0.222}}},
         )
-        assert find_pricing("openai", "gpt-4o")["input_per_1k"] == 0.111
+        assert display_rates("openai", "gpt-4o")["input_per_1k"] == 0.111
 
     def test_unusable_configured_row_falls_through_to_bundled(self, monkeypatch):
         monkeypatch.setattr(
@@ -414,7 +423,7 @@ class TestFindPricingLegacyContract:
             "get_db_pricing_nested",
             lambda tenant: {"openai": {"gpt-4o": {"input_per_1k": "abc", "output_per_1k": "0.02"}}},
         )
-        assert find_pricing("openai", "gpt-4o") == {"input_per_1k": 0.0025, "output_per_1k": 0.01}
+        assert display_rates("openai", "gpt-4o") == {"input_per_1k": 0.0025, "output_per_1k": 0.01}
 
     def test_configured_cache_rates_reach_the_display_path(self, monkeypatch):
         monkeypatch.setattr(
@@ -424,12 +433,12 @@ class TestFindPricingLegacyContract:
                 "openai": {"gpt-4o": {"input_per_1k": 0.005, "output_per_1k": 0.02, "cache_read_per_1k": 0.0005}}
             },
         )
-        pricing = find_pricing("openai", "gpt-4o")
+        pricing = display_rates("openai", "gpt-4o")
         assert pricing["cache_read_per_1k"] == 0.0005
         assert "cache_creation_per_1k" not in pricing
 
     def test_provider_whitespace_is_normalized(self):
-        assert find_pricing(" OpenAI ", "gpt-4o")["input_per_1k"] == 0.0025
+        assert display_rates(" OpenAI ", "gpt-4o")["input_per_1k"] == 0.0025
 
 
 class TestDefaultRowPrecedenceMatchesTheLedger:
@@ -449,7 +458,7 @@ class TestDefaultRowPrecedenceMatchesTheLedger:
             "get_db_pricing_nested",
             lambda tenant: {"openai": {"_default": {"input_per_1k": 9.0, "output_per_1k": 9.0}}},
         )
-        assert find_pricing("openai", "gpt-4o")["input_per_1k"] == 0.0025
+        assert display_rates("openai", "gpt-4o")["input_per_1k"] == 0.0025
 
     def test_display_configured_default_wins_only_on_a_total_miss(self, monkeypatch):
         monkeypatch.setattr(
@@ -457,7 +466,7 @@ class TestDefaultRowPrecedenceMatchesTheLedger:
             "get_db_pricing_nested",
             lambda tenant: {"openrouter": {"_default": {"input_per_1k": 0.5, "output_per_1k": 0.9}}},
         )
-        assert find_pricing("openrouter", "some/new-model")["input_per_1k"] == 0.5
+        assert display_rates("openrouter", "some/new-model")["input_per_1k"] == 0.5
 
     def test_db_rate_overrides_static(self, monkeypatch):
         monkeypatch.setattr(
@@ -465,7 +474,7 @@ class TestDefaultRowPrecedenceMatchesTheLedger:
             "get_db_pricing_nested",
             lambda tenant: {"openai": {"gpt-4o": {"input_per_1k": 0.005, "output_per_1k": 0.02}}},
         )
-        assert find_pricing("openai", "gpt-4o")["input_per_1k"] == 0.005
+        assert display_rates("openai", "gpt-4o")["input_per_1k"] == 0.005
 
 _BUNDLED_WITH_CACHE = {
     "us.amazon.nova-2-lite-v1:0": {
@@ -721,16 +730,16 @@ class TestLiveLedgerParity:
         assert LlmCostCalculator().calculate_cost(*args) == 0.0
 
 
-class TestFindPricingIgnoresTheResolutionLadder:
+class TestDisplayDictOmitsInheritedCacheRates:
 
     def test_inherited_bundled_cache_rates_stay_out_of_the_display_dict(self, monkeypatch, bundled_cache_rates):
         configured = {"bedrock": {"us.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.005, "output_per_1k": 0.02}}}
         monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: configured)
 
-        assert find_pricing("bedrock", "us.amazon.nova-2-lite-v1:0") == {"input_per_1k": 0.005, "output_per_1k": 0.02}
+        assert display_rates("bedrock", "us.amazon.nova-2-lite-v1:0") == {"input_per_1k": 0.005, "output_per_1k": 0.02}
         live = llm_pricing.resolve_live_pricing("bedrock", "us.amazon.nova-2-lite-v1:0")
         assert live.cache_read_per_1k == 0.0004, "the calculator still gets the inherited rate"
         assert live.cache_creation_per_1k == 0.0
 
     def test_family_derived_cache_rates_stay_out_of_the_display_dict(self, no_db_rates):
-        assert find_pricing("anthropic", "claude-3-5-sonnet") == {"input_per_1k": 0.003, "output_per_1k": 0.015}
+        assert display_rates("anthropic", "claude-3-5-sonnet") == {"input_per_1k": 0.003, "output_per_1k": 0.015}

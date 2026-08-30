@@ -372,7 +372,14 @@ def resolve_live_pricing(provider: str, model: str) -> LivePricing:
             if selected is not None:
                 break
     if selected is None:
-        return LivePricing(DEFAULT_PRICING.copy())
+        default_input = Decimal(str(DEFAULT_PRICING["input_per_1k"]))
+        cache_read = _family_cache_rate(provider_key, model_key, default_input, CACHE_READ_MULTIPLIER)
+        cache_creation = _family_cache_rate(provider_key, model_key, default_input, CACHE_WRITE_5M_MULTIPLIER)
+        return LivePricing(
+            DEFAULT_PRICING.copy(),
+            None if cache_read is None else float(cache_read),
+            None if cache_creation is None else float(cache_creation),
+        )
 
     cache_read, cache_creation = _resolve_cache_bucket_rates(provider_key, model_key, selected, _bundled_match(matches))
     return LivePricing(
@@ -380,8 +387,3 @@ def resolve_live_pricing(provider: str, model: str) -> LivePricing:
         None if cache_read is None else float(cache_read),
         None if cache_creation is None else float(cache_creation),
     )
-
-
-def find_pricing(provider: str, model: str) -> Dict[str, float]:
-    """Returns float rates or DEFAULT_PRICING if unknown."""
-    return resolve_live_pricing(provider, model).display_rates

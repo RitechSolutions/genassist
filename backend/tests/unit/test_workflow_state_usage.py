@@ -171,6 +171,57 @@ class TestFormatIncludesExecutionId:
         assert isinstance(s.execution_id, str) and s.execution_id
 
 
+class TestTheRunCostNeverPassesOffASubtotal:
+
+    UNPRICED_MODEL = "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/nova-tuned"
+
+    @pytest.fixture(autouse=True)
+    def _no_db_rates(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+
+    def _unpriced_call(self, s: WorkflowState) -> None:
+        s.add_llm_usage(
+            7,
+            20,
+            provider="bedrock",
+            model=self.UNPRICED_MODEL,
+            token_details={"input_token_details": {"cache_read": 3697}},
+        )
+
+    def test_a_fully_priced_run_reports_its_total(self):
+        s = _state()
+        s.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
+
+        response = s.format_state_as_response()
+        assert response["token_usage"]["cost_is_partial"] is False
+        assert response["cost_usd"] == round(1000 / 1000 * 0.003, 6)
+
+    def test_a_mixed_run_reports_no_total_but_keeps_the_subtotal(self):
+        s = _state()
+        s.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
+        self._unpriced_call(s)
+
+        response = s.format_state_as_response()
+        assert response["cost_usd"] is None
+        assert response["token_usage"]["cost_is_partial"] is True
+        assert response["token_usage"]["cost_usd"] == round(1000 / 1000 * 0.003, 6)
+
+    def test_an_entirely_unpriced_run_is_not_reported_as_free(self):
+        s = _state()
+        self._unpriced_call(s)
+
+        response = s.format_state_as_response()
+        assert response["cost_usd"] is None
+        assert response["token_usage"]["cost_is_partial"] is True
+
+    def test_a_run_with_no_llm_calls_still_costs_zero(self):
+        response = _state().format_state_as_response()
+        assert response["cost_usd"] == 0.0
+        assert response["token_usage"]["cost_is_partial"] is False
+
+
 class TestUpdateNodesDoesNotMergeUsage:
     def test_child_usage_not_merged_by_update_nodes(self):
         parent = _state()

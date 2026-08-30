@@ -18,21 +18,21 @@ import { formatTimeAgo } from '@/helpers/formatters';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ListEmptyState } from '@/components/ListEmptyState';
 import {
+  changedCacheRates,
   serializeCacheRate,
   validateLlmCostRateForm,
   type LlmCostRateFieldErrors,
   type LlmCostRateFormValues,
 } from '@/views/LlmProviders/helpers/llmCostRateValidation';
 
-/** Example CSV matching the import API (UTF-8, header row required). */
-const CSV_MODEL = `provider,model,input_per_1k,output_per_1k,cache_read_per_1k,cache_creation_per_1k
-openai,gpt-4o,0.001,0.002,,
-openai,gpt-4o-mini,0.001,0.002,,
-anthropic,claude-3-5-sonnet,0.001,0.002,,
-bedrock,eu.amazon.nova-2-lite-v1:0,0.001,0.002,0.0001,0
-bedrock,eu.anthropic.claude-3-5-sonnet-20241022-v2:0,0.001,0.002,0.0001,0.00125
-openrouter,_default,0.001,0.002,,
-vllm,_default,0,0,,`;
+/** Header the import API requires (UTF-8). */
+const CSV_TEMPLATE = 'provider,model,input_per_1k,output_per_1k,cache_read_per_1k,cache_creation_per_1k';
+
+/** Display-only placeholder keys prevent pasted data from overwriting rates. */
+const CSV_EXAMPLE = `${CSV_TEMPLATE}
+example-provider,example-model,0.00025,0.001,,
+example-provider,example-model-cached,0.00025,0.001,0.000025,0
+example-provider,_default,0.00025,0.001,,`;
 
 interface LlmCostRatesDialogProps {
   open: boolean;
@@ -77,6 +77,7 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [form, setForm] = useState<RateForm | null>(null);
+  const [editPrefill, setEditPrefill] = useState<RateForm | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -146,13 +147,14 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
     }
   };
 
-  const copyCsvModel = () => {
-    void navigator.clipboard.writeText(`${CSV_MODEL.trim()}\n`);
-    toast.success('Example CSV copied to clipboard.');
+  const copyCsvTemplate = () => {
+    void navigator.clipboard.writeText(`${CSV_TEMPLATE}\n`);
+    toast.success('CSV header copied to clipboard.');
   };
 
   const closeForm = () => {
     setForm(null);
+    setEditPrefill(null);
     setEditingId(null);
     setFormError(null);
     setFieldErrors({});
@@ -162,21 +164,24 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
     setEditingId(null);
     setFormError(null);
     setFieldErrors({});
+    setEditPrefill(null);
     setForm({ ...EMPTY_FORM });
   };
 
   const openEditForm = (row: LlmCostRate) => {
-    setEditingId(row.id);
-    setFormError(null);
-    setFieldErrors({});
-    setForm({
+    const prefill: RateForm = {
       provider: row.provider_key,
       model: row.model_key,
       input_per_1k: row.input_per_1k,
       output_per_1k: row.output_per_1k,
       cache_read_per_1k: row.cache_read_per_1k ?? '',
       cache_creation_per_1k: row.cache_creation_per_1k ?? '',
-    });
+    };
+    setEditingId(row.id);
+    setFormError(null);
+    setFieldErrors({});
+    setEditPrefill(prefill);
+    setForm({ ...prefill });
   };
 
   const updateField = (field: keyof RateForm, value: string) => {
@@ -201,8 +206,7 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
         await updateLlmCostRate(editingId, {
           input_per_1k: form.input_per_1k.trim(),
           output_per_1k: form.output_per_1k.trim(),
-          cache_read_per_1k: serializeCacheRate(form.cache_read_per_1k),
-          cache_creation_per_1k: serializeCacheRate(form.cache_creation_per_1k),
+          ...(editPrefill ? changedCacheRates(form, editPrefill) : {}),
         });
         toast.success('Cost rate updated.');
       } else {
@@ -246,8 +250,8 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
     }
   };
 
-  const downloadCsvModel = () => {
-    const blob = new Blob([`${CSV_MODEL.trim()}\n`], {
+  const downloadCsvTemplate = () => {
+    const blob = new Blob([`${CSV_TEMPLATE}\n`], {
       type: 'text/csv;charset=utf-8',
     });
     const url = URL.createObjectURL(blob);
@@ -256,7 +260,7 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
     a.download = 'llm-cost-rates-template.csv';
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Template downloaded.');
+    toast.success('CSV header downloaded.');
   };
 
   const downloadCurrentRatesCsv = async () => {
@@ -292,8 +296,7 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
           <DialogHeader>
             <DialogTitle>LLM cost rates</DialogTitle>
             <DialogDescription>
-              USD per 1K tokens. Open <strong>CSV template</strong> for the exact column layout and a ready-to-edit
-              example.
+              USD per 1K tokens. Open <strong>CSV template</strong> for the exact column layout.
             </DialogDescription>
           </DialogHeader>
 
@@ -612,7 +615,7 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
                   outside their input count.
                 </p>
                 <p>
-                  The rates in the example below are placeholders. Copy the real per-1K figures from your provider's
+                  The rows below only illustrate the layout, the keys and rates are placeholders. Copy the real per-1K figures from your provider's
                   price list.
                 </p>
                 <p>
@@ -625,18 +628,18 @@ export function LlmCostRatesDialog({ open, onOpenChange }: LlmCostRatesDialogPro
           </DialogHeader>
 
           <div className="flex flex-wrap gap-2 shrink-0">
-            <Button type="button" variant="outline" size="sm" onClick={copyCsvModel}>
+            <Button type="button" variant="outline" size="sm" onClick={copyCsvTemplate}>
               <Copy className="w-4 h-4 mr-2" />
-              Copy example
+              Copy header
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={downloadCsvModel}>
+            <Button type="button" variant="outline" size="sm" onClick={downloadCsvTemplate}>
               <Download className="w-4 h-4 mr-2" />
-              Download .csv
+              Download header .csv
             </Button>
           </div>
 
           <pre className="text-xs font-mono bg-muted/80 rounded-md p-3 overflow-auto flex-1 min-h-[140px] border">
-            {CSV_MODEL.trim()}
+            {CSV_EXAMPLE}
           </pre>
         </DialogContent>
       </Dialog>

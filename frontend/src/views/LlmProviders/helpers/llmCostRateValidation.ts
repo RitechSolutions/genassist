@@ -3,6 +3,8 @@
  * precision, and range; 422 errors surface as formError.
  */
 
+import type { LlmCostRateUpdatePayload } from '@/interfaces/llmCostRate.interface';
+
 export interface LlmCostRateFormValues {
   provider: string;
   model: string;
@@ -43,4 +45,21 @@ export function validateLlmCostRateForm(values: LlmCostRateFormValues): LlmCostR
 export function serializeCacheRate(value: string): string | null {
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
+}
+
+type CacheRatePatch = Pick<LlmCostRateUpdatePayload, 'cache_read_per_1k' | 'cache_creation_per_1k'>;
+
+const CACHE_FIELDS = ['cache_read_per_1k', 'cache_creation_per_1k'] as const;
+
+/**
+ * Only send changed cache-rate fields: skip unchanged ones, send null for fields the user cleared.
+ */
+export function changedCacheRates(values: LlmCostRateFormValues, prefill: LlmCostRateFormValues): CacheRatePatch {
+  const patch: CacheRatePatch = {};
+  for (const field of CACHE_FIELDS) {
+    if (values[field].trim() !== prefill[field].trim()) {
+      patch[field] = serializeCacheRate(values[field]);
+    }
+  }
+  return patch;
 }

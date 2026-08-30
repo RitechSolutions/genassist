@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  changedCacheRates,
   LlmCostRateFormValues,
   serializeCacheRate,
   validateLlmCostRateForm,
@@ -93,5 +94,29 @@ describe('serializeCacheRate', () => {
 
   it('trims a configured rate without reformatting it', () => {
     expect(serializeCacheRate(' 0.000025 ')).toBe('0.000025');
+  });
+});
+
+describe('changedCacheRates', () => {
+  const prefill = form({ cache_read_per_1k: '0.0001', cache_creation_per_1k: '' });
+
+  it('omits both fields when neither was touched, so the backend keeps what it has', () => {
+    expect(changedCacheRates(form({ ...prefill }), prefill)).toEqual({});
+  });
+
+  it('sends null only for the field the user cleared', () => {
+    const edited = form({ ...prefill, cache_read_per_1k: '' });
+
+    expect(changedCacheRates(edited, prefill)).toEqual({ cache_read_per_1k: null });
+  });
+
+  it('sends a newly configured rate, zero included', () => {
+    const edited = form({ ...prefill, cache_creation_per_1k: '0' });
+
+    expect(changedCacheRates(edited, prefill)).toEqual({ cache_creation_per_1k: '0' });
+  });
+
+  it('treats a whitespace-only edit of a blank field as untouched', () => {
+    expect(changedCacheRates(form({ ...prefill, cache_creation_per_1k: '  ' }), prefill)).toEqual({});
   });
 });

@@ -1,7 +1,7 @@
 """
 In-memory cache of llm_cost_rates loaded via sync SQLAlchemy (per tenant).
 
-Used by find_pricing from synchronous workflow code without an async session.
+Read by resolve_live_pricing from synchronous workflow code without an async session.
 Invalidated when rates are updated via the API.
 """
 

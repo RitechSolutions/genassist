@@ -820,6 +820,7 @@ class WorkflowState:
         failed_nodes = self._collect_failed_nodes()
 
         token_usage = self.get_total_llm_usage()
+        cost_is_partial = bool(token_usage.get("cost_is_partial"))
         response = {
             "status": status,
             "has_failures": len(failed_nodes) > 0,
@@ -829,7 +830,7 @@ class WorkflowState:
             "performance_metrics": performance_metrics,
             "state": state,
             "token_usage": token_usage,
-            "cost_usd": token_usage.get("cost_usd", 0.0),
+            "cost_usd": None if cost_is_partial else token_usage.get("cost_usd", 0.0),
             "execution_id": self.execution_id,
             "tool_events": self.tool_events,
         }
