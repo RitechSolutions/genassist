@@ -309,7 +309,7 @@ const MLModelsManager: React.FC = () => {
                     value={values.description}
                     onChange={(e) => setField("description", e.target.value)}
                     placeholder="Brief description of this ML model"
-                    rows={3}
+                    size="hint"
                   />
                 </FormField>
 
