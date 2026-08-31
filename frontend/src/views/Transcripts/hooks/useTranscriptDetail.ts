@@ -247,10 +247,12 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
     });
   }, [isActive, localTranscript?.id]);
 
-  const sendAiMessage = useCallback(async () => {
-    if (!showAskGenAI || chatInput.trim() === '' || !localTranscript) return;
+  /** `question` lets a one-click suggestion ask without going through the input. */
+  const sendAiMessage = useCallback(async (question?: string) => {
+    const text = (question ?? chatInput).trim();
+    if (!showAskGenAI || text === '' || !localTranscript) return;
 
-    const userMessage = { role: 'Me', text: chatInput };
+    const userMessage = { role: 'Me', text };
 
     setAiMessagesByTranscript((prev) => ({
       ...prev,
@@ -262,8 +264,8 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
     setLoading(true);
 
     try {
-      const response = await askAIQuestion(localTranscript.id, chatInput);
-      const aiResponse = { role: 'GenAssist AI', text: response.answer };
+      const response = await askAIQuestion(localTranscript.id, text);
+      const aiResponse = { role: 'Gen AI', text: response.answer };
 
       setAiMessagesByTranscript((prev) => ({
         ...prev,
