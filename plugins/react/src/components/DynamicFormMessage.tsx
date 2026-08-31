@@ -1,8 +1,12 @@
 import React, { useState, CSSProperties } from 'react';
 
+// Any type this client does not know renders as a plain text input rather than
+// nothing at all - an older widget must never trap a visitor in an unfillable form.
+const KNOWN_FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'select', 'boolean'];
+
 interface FormField {
   name: string;
-  type: 'text' | 'number' | 'select' | 'boolean' | 'date';
+  type: 'text' | 'textarea' | 'number' | 'select' | 'boolean' | 'date';
   label: string;
   required?: boolean;
   placeholder?: string;
@@ -142,7 +146,7 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
   const bodyStyle: CSSProperties = isFullscreen
     ? { flex: 1, overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: '18px' }
     : isFooter
-    ? { maxHeight: '220px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '12px' }
+    ? { maxHeight: '340px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '12px' }
     : { display: 'flex', flexDirection: 'column', gap: '14px' };
 
   const labelStyle: CSSProperties = {
@@ -227,10 +231,28 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
 
       {field.description && <div style={descriptionStyle}>{field.description}</div>}
 
-      {field.type === 'text' && (
+      {(field.type === 'text' || !KNOWN_FIELD_TYPES.includes(field.type)) && (
         <input
           type="text"
           style={baseInputStyle(field.name)}
+          placeholder={field.placeholder || ''}
+          value={(formData[field.name] as string) || ''}
+          onChange={(e) => handleChange(field.name, e.target.value)}
+          onFocus={() => setFocused(field.name)}
+          onBlur={() => setFocused(null)}
+          disabled={disabled}
+        />
+      )}
+
+      {field.type === 'textarea' && (
+        <textarea
+          rows={4}
+          style={{
+            ...baseInputStyle(field.name),
+            minHeight: '96px',
+            lineHeight: 1.45,
+            resize: 'vertical',
+          }}
           placeholder={field.placeholder || ''}
           value={(formData[field.name] as string) || ''}
           onChange={(e) => handleChange(field.name, e.target.value)}
