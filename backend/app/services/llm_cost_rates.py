@@ -2,6 +2,7 @@ import csv
 import io
 import logging
 from collections import Counter
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -56,6 +57,68 @@ def _rate_key(provider_key: str | None, model_key: str | None) -> tuple[str, str
 
 def _optional_rate(value: Decimal | None) -> str:
     return "" if value is None else format_rate(value)
+
+
+def _parse_header(fieldnames: Sequence[str] | None) -> tuple[dict[str, str], set[str], str | None]:
+    """Original-case column lookup and normalized names, or why the header is unusable"""
+    if not fieldnames:
+        return {}, set(), "CSV has no header row"
+
+    names = [(h or "").strip().lower() for h in fieldnames]
+    counts = Counter(name for name in names if name)
+    if any(count > 1 for count in counts.values()):
+        duplicates = sorted(h for h, count in counts.items() if count > 1)
+        return {}, set(), f"Duplicate columns: {', '.join(duplicates)}"
+
+    headers = set(counts)
+    if not _REQUIRED_COLUMNS.issubset(headers):
+        missing = _REQUIRED_COLUMNS - headers
+        return {}, set(), f"Missing columns: {', '.join(sorted(missing))}"
+
+    original_header: dict[str, str] = {}
+    for name, raw in zip(names, fieldnames):
+        if name:
+            original_header.setdefault(name, raw)
+    return original_header, headers, None
+
+
+def _parse_rows(
+    reader: csv.DictReader, original_header: dict[str, str]
+) -> tuple[list[LlmCostRateCreate], list[str], str | None]:
+    """Accepted rows plus per-row errors, or why the whole file is rejected"""
+
+    def col(row: dict[str, str], name: str) -> str:
+        key = original_header.get(name)
+        return "" if key is None else (row.get(key) or "").strip()
+
+    errors: list[str] = []
+    seen_keys: dict[tuple[str, str], int] = {}
+    parsed: list[LlmCostRateCreate] = []
+    for i, row in enumerate(reader, start=2):
+        if i - 1 > MAX_IMPORT_ROWS:
+            return [], [], f"CSV has more than {MAX_IMPORT_ROWS} data rows"
+        # Every row goes through the create schema, so CSV and JSON reject
+        # blank keys, negatives, non-finite and over-precise rates alike
+        try:
+            dto = LlmCostRateCreate(
+                provider=col(row, "provider"),
+                model=col(row, "model"),
+                input_per_1k=col(row, "input_per_1k"),
+                output_per_1k=col(row, "output_per_1k"),
+                cache_read_per_1k=col(row, "cache_read_per_1k"),
+                cache_creation_per_1k=col(row, "cache_creation_per_1k"),
+            )
+        except ValidationError:
+            errors.append(f"Row {i}: invalid provider, model or rate value")
+            continue
+
+        key = (dto.provider, dto.model)
+        if key in seen_keys:
+            errors.append(f"Row {i}: duplicate of row {seen_keys[key]} for {dto.provider}/{dto.model}")
+            continue
+        seen_keys[key] = i
+        parsed.append(dto)
+    return parsed, errors, None
 
 
 @inject
@@ -133,76 +196,11 @@ class LlmCostRateService:
             invalidate_llm_cost_rates_cache_after_commit(self.repo.db, tenant)
         return ok
 
-    async def import_csv(self, text: str) -> LlmCostRateImportResult:
-        tenant = get_tenant_context()
+    async def _apply_rows(self, parsed: list[LlmCostRateCreate], headers: set[str]) -> tuple[int, int]:
+        """Stage inserts and updates. Cache columns absent from the header keep their stored value"""
+        index = {_rate_key(r.provider_key, r.model_key): r for r in await self.repo.list_active()}
         inserted = 0
         updated = 0
-        errors: list[str] = []
-
-        reader = csv.DictReader(io.StringIO(text))
-        if not reader.fieldnames:
-            return LlmCostRateImportResult(
-                inserted=0, updated=0, errors=["CSV has no header row"]
-            )
-        header_names = [(h or "").strip().lower() for h in reader.fieldnames]
-        header_counts = Counter(name for name in header_names if name)
-        headers = set(header_counts)
-        if any(count > 1 for count in header_counts.values()):
-            duplicates = sorted(h for h, count in header_counts.items() if count > 1)
-            return LlmCostRateImportResult(
-                inserted=0,
-                updated=0,
-                errors=[f"Duplicate columns: {', '.join(duplicates)}"],
-            )
-        if not _REQUIRED_COLUMNS.issubset(headers):
-            missing = _REQUIRED_COLUMNS - headers
-            return LlmCostRateImportResult(
-                inserted=0,
-                updated=0,
-                errors=[f"Missing columns: {', '.join(sorted(missing))}"],
-            )
-
-        original_header: dict[str, str] = {}
-        for name, raw in zip(header_names, reader.fieldnames):
-            if name:
-                original_header.setdefault(name, raw)
-
-        def col(row: dict[str, str], name: str) -> str:
-            key = original_header.get(name)
-            return "" if key is None else (row.get(key) or "").strip()
-
-        seen_keys: dict[tuple[str, str], int] = {}
-        parsed: list[LlmCostRateCreate] = []
-        for i, row in enumerate(reader, start=2):
-            if i - 1 > MAX_IMPORT_ROWS:
-                return LlmCostRateImportResult(
-                    inserted=0,
-                    updated=0,
-                    errors=[f"CSV has more than {MAX_IMPORT_ROWS} data rows"],
-                )
-            # Every row goes through the create schema, so CSV and JSON reject
-            # blank keys, negatives, non-finite and over-precise rates alike
-            try:
-                dto = LlmCostRateCreate(
-                    provider=col(row, "provider"),
-                    model=col(row, "model"),
-                    input_per_1k=col(row, "input_per_1k"),
-                    output_per_1k=col(row, "output_per_1k"),
-                    cache_read_per_1k=col(row, "cache_read_per_1k"),
-                    cache_creation_per_1k=col(row, "cache_creation_per_1k"),
-                )
-            except ValidationError:
-                errors.append(f"Row {i}: invalid provider, model or rate value")
-                continue
-
-            key = (dto.provider, dto.model)
-            if key in seen_keys:
-                errors.append(f"Row {i}: duplicate of row {seen_keys[key]} for {dto.provider}/{dto.model}")
-                continue
-            seen_keys[key] = i
-            parsed.append(dto)
-
-        index = {_rate_key(r.provider_key, r.model_key): r for r in await self.repo.list_active()}
 
         for dto in parsed:
             existing = index.get((dto.provider, dto.model))
@@ -231,6 +229,21 @@ class LlmCostRateService:
                 index[(dto.provider, dto.model)] = created
                 inserted += 1
 
+        return inserted, updated
+
+    async def import_csv(self, text: str) -> LlmCostRateImportResult:
+        tenant = get_tenant_context()
+        reader = csv.DictReader(io.StringIO(text))
+
+        original_header, headers, header_error = _parse_header(reader.fieldnames)
+        if header_error:
+            return LlmCostRateImportResult(inserted=0, updated=0, errors=[header_error])
+
+        parsed, errors, file_error = _parse_rows(reader, original_header)
+        if file_error:
+            return LlmCostRateImportResult(inserted=0, updated=0, errors=[file_error])
+
+        inserted, updated = await self._apply_rows(parsed, headers)
         errors = _capped_errors(errors)
 
         try:

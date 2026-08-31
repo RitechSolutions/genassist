@@ -71,11 +71,6 @@ CACHE_EXCLUSIVE_PROVIDERS = frozenset({"bedrock"})
 CACHE_READ_MULTIPLIER = Decimal("0.1")
 CACHE_WRITE_5M_MULTIPLIER = Decimal("1.25")
 
-_MATCH_EXACT = "exact"
-_MATCH_LONGEST_PREFIX = "longest_prefix"
-_MATCH_REGION_AGNOSTIC = "region_agnostic"
-_MATCH_DEFAULT_ROW = "default_row"
-
 CACHE_READ_KEY = "cache_read_per_1k"
 CACHE_CREATION_KEY = "cache_creation_per_1k"
 
@@ -113,7 +108,7 @@ class _LayerMatch:
     matched_key: str
     rates: tuple[Decimal, Decimal]
     row: Mapping[str, Any]
-    match_kind: str
+    is_exact: bool
 
 
 def _normalize_model_name(model: str) -> str:
@@ -230,14 +225,12 @@ def _match_bedrock_region_agnostic(model_key: str, table: Mapping[str, Any]) -> 
     return None
 
 
-def _matchers_for(
-    provider_key: str, status: PricingStatus
-) -> list[tuple[str, Callable[[str, Mapping[str, Any]], Optional[str]]]]:
+def _matchers_for(provider_key: str, status: PricingStatus) -> list[Callable[[str, Mapping[str, Any]], Optional[str]]]:
     """Matchers within one layer. Bedrock retries per-tenant; rates are
     region-specific."""
-    matchers = [(_MATCH_LONGEST_PREFIX, _exact_or_longest_prefix)]
+    matchers = [_exact_or_longest_prefix]
     if provider_key == "bedrock" and status is PricingStatus.CONFIGURED:
-        matchers.append((_MATCH_REGION_AGNOSTIC, _match_bedrock_region_agnostic))
+        matchers.append(_match_bedrock_region_agnostic)
     return matchers
 
 
@@ -257,15 +250,14 @@ def _collect_layer_matches(
 ) -> list[_LayerMatch]:
     matches: list[_LayerMatch] = []
     for table, status in layers:
-        for inexact_kind, matcher in _matchers_for(provider_key, status):
+        for matcher in _matchers_for(provider_key, status):
             matched_key = matcher(model_key, table)
             if matched_key is None:
                 continue
             row = table[matched_key]
             rates = _rate_pair(row)
             if rates is not None:
-                kind = _MATCH_EXACT if matched_key == model_key else inexact_kind
-                matches.append(_LayerMatch(status, matched_key, rates, row, kind))
+                matches.append(_LayerMatch(status, matched_key, rates, row, matched_key == model_key))
                 break
     return matches
 
@@ -275,7 +267,7 @@ def _default_row_match(table: Mapping[str, Any], status: PricingStatus) -> Optio
     rates = _rate_pair(row)
     if rates is None:
         return None
-    return _LayerMatch(status, "_default", rates, row, _MATCH_DEFAULT_ROW)
+    return _LayerMatch(status, "_default", rates, row, False)
 
 
 def _select_base_rates(matches: list[_LayerMatch]) -> Optional[_LayerMatch]:
@@ -289,7 +281,7 @@ def _bundled_match(matches: list[_LayerMatch]) -> Optional[_LayerMatch]:
 def _row_cache_rate(match: Optional[_LayerMatch], key: str) -> Optional[Decimal]:
     if match is None:
         return None
-    if match.status is PricingStatus.FALLBACK and match.match_kind != _MATCH_EXACT:
+    if match.status is PricingStatus.FALLBACK and not match.is_exact:
         return None
     return _cache_rate(match.row, key)
 
