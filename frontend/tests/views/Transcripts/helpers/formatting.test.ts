@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  isLiveConversationStatus,
+  isLiveTranscript,
   HOSTILITY_POSITIVE_MAX,
   HOSTILITY_NEUTRAL_MAX,
   getSentimentFromHostility,
@@ -40,7 +42,45 @@ describe("getSentimentFromHostility", () => {
   });
 });
 
+describe("isLiveConversationStatus", () => {
+  it("accepts both spellings of the in-progress status", () => {
+    // The REST API returns in_progress; the dashboard websocket normalises it to in-progress.
+    expect(isLiveConversationStatus("in_progress")).toBe(true);
+    expect(isLiveConversationStatus("in-progress")).toBe(true);
+    expect(isLiveConversationStatus("IN-PROGRESS")).toBe(true);
+    expect(isLiveConversationStatus(" takeover ")).toBe(true);
+  });
+
+  it("rejects finalized and missing statuses", () => {
+    expect(isLiveConversationStatus("finalized")).toBe(false);
+    expect(isLiveConversationStatus("unknown")).toBe(false);
+    expect(isLiveConversationStatus("")).toBe(false);
+    expect(isLiveConversationStatus(undefined)).toBe(false);
+    expect(isLiveConversationStatus(null)).toBe(false);
+  });
+
+  it("reads the status off a transcript", () => {
+    expect(isLiveTranscript(asTranscript({ status: "in-progress" }))).toBe(true);
+    expect(isLiveTranscript(asTranscript({ status: "finalized" }))).toBe(false);
+    expect(isLiveTranscript(null)).toBe(false);
+    expect(isLiveTranscript(undefined)).toBe(false);
+  });
+});
+
 describe("getEffectiveSentiment", () => {
+  it("derives sentiment from hostility for websocket-spelled live rows", () => {
+    expect(
+      getEffectiveSentiment(
+        asTranscript({
+          status: "in-progress",
+          in_progress_hostility_score: 80,
+          metrics: { sentiment: "positive" },
+        })
+      )
+    ).toBe("negative");
+  });
+
+
   it("derives sentiment from the top-level hostility score when live", () => {
     expect(
       getEffectiveSentiment(
