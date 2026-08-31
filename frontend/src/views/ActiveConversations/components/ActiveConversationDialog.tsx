@@ -21,7 +21,6 @@ import {
   TranscriptEntry,
   ConversationFeedbackEntry,
 } from "@/interfaces/transcript.interface";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
@@ -32,6 +31,7 @@ import toast from "react-hot-toast";
 import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 import { submitConversationFeedback } from "@/services/transcripts";
 import { isWsEnabled } from "@/config/api";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
@@ -578,6 +578,8 @@ function TranscriptDialogContent({
       ? Math.floor(conversationStats.duration / 1000)
       : conversationStats.duration;
 
+  const chatInputRef = useAutoGrowTextarea(chatInput, 160);
+
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !transcript?.id || isSendingRef.current) return;
 
@@ -834,7 +836,7 @@ function TranscriptDialogContent({
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
                         placeholder="Enter feedback details"
-                        className="resize-none text-sm"
+                        className="text-sm"
                       />
                     </div>
                     <Button
@@ -1005,13 +1007,15 @@ function TranscriptDialogContent({
               </Button>
             ) : isCurrentUserSupervisor ? (
               <>
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="flex-1"
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={chatInputRef}
+                    rows={1}
+                    className="flex-1 resize-none rounded-3xl border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                     placeholder="Type a message as Admin..."
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                    onKeyDown={submitOnEnter(handleSendMessage)}
                   />
                   <Button
                     onClick={handleSendMessage}

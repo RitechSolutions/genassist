@@ -25,6 +25,7 @@ import { Button } from '@/components/button';
 import { askAIQuestion } from '@/services/aiChat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 import { useToast } from '@/hooks/useToast';
 import { getEffectiveSentiment } from '../helpers/formatting';
 import { MetricCards } from './MetricCard';
@@ -271,6 +272,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
       setTotalCost(totalCost);
     });
   }, [isOpen, localTranscript?.id]);
+
+  const chatInputRef = useAutoGrowTextarea(chatInput, 160);
 
   const handleSendMessage = async () => {
     if (!showAskGenAI || chatInput.trim() === '' || !localTranscript) return;
@@ -580,8 +583,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                         placeholder="Enter feedback details"
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
-                        rows={6}
-                        className="resize-none text-sm"
+                        size="body"
+                        className="text-sm"
                       />
                     </div>
 
@@ -704,14 +707,15 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
               )}
             </div>
             {rightPanelTab === 'ai' && (
-              <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
-                <Input
-                  className="flex-1"
-                  type="text"
+              <div className="mt-2 flex items-end gap-2 bg-secondary/30 p-2 rounded-lg">
+                <textarea
+                  ref={chatInputRef}
+                  rows={1}
+                  className="flex-1 resize-none rounded-3xl border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                   placeholder="Ask GenAI"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                  onKeyDown={submitOnEnter(handleSendMessage)}
                 />
                 <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
                   Send
