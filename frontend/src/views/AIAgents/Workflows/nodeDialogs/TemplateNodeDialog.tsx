@@ -61,8 +61,8 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
             value={values.template}
             onChange={(e) => setField("template", e.target.value)}
             placeholder="Enter your template here... Use {{session.message}} or drag variables from the left panel"
-            className="h-32 font-mono text-sm"
-            rows={8}
+            size="code"
+            className="font-mono text-sm"
           />
         </div>
       </div>

@@ -155,7 +155,8 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
               value={values.query}
               onChange={(e) => setField("query", e.target.value)}
               placeholder="Ask a question about the specification file..."
-              className="w-full h-24 text-sm resize-none"
+              size="description"
+              className="w-full text-sm"
             />
           </div>
         </div>
