@@ -7,10 +7,11 @@ vi.mock("@/config/api", () => ({
   formatUploadOrNetworkError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
   API_DEFAULT_TIMEOUT_MS: 1000,
   API_UPLOAD_TIMEOUT_MS: 1000,
+  API_PREPROCESSING_TIMEOUT_MS: 5000,
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn(), request: vi.fn() },
 }));
 
-import { apiRequest } from "@/config/api";
+import { apiRequest, API_PREPROCESSING_TIMEOUT_MS } from "@/config/api";
 import {
   getAllMLModels,
   getMLModel,
@@ -103,18 +104,23 @@ describe("analyzeCSV", () => {
     const result = { row_count: 1 };
     mockApiRequest.mockResolvedValue(result as never);
     expect(await analyzeCSV("http://x/file.csv")).toBe(result);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "ml-models/analyze-csv", {
-      file_url: "http://x/file.csv",
-    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/analyze-csv",
+      { file_url: "http://x/file.csv" },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
   });
 
   it("includes python_code when provided", async () => {
     mockApiRequest.mockResolvedValue({ row_count: 1 } as never);
     await analyzeCSV("http://x/file.csv", "df.head()");
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "ml-models/analyze-csv", {
-      file_url: "http://x/file.csv",
-      python_code: "df.head()",
-    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/analyze-csv",
+      { file_url: "http://x/file.csv", python_code: "df.head()" },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
   });
 
   it("throws when the response is falsy", async () => {

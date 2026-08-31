@@ -50,6 +50,13 @@ def find_all_vars(obj_str: str) -> list:
     return re.findall(r"{{[^\s{}]+}}", obj_str)
 
 
+def has_volatile_template_vars(template: Any) -> bool:
+    """Whether a raw template contains any substitutable {{var}}"""
+    if not isinstance(template, str) or not template:
+        return False
+    return bool(find_all_vars(template))
+
+
 def find_code_param_vars(code_string: str) -> list:
     """
     Find all variable names referenced via params.get("varName") or param.get("varName")

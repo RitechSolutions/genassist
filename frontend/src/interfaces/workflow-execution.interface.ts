@@ -164,6 +164,22 @@ export interface RawNodeExecutionEntry {
   error?: string | null;
 }
 
+/** What a node asked of prompt caching, and what it got. */
+export interface RawPromptCachingDiagnostic {
+  requested?: boolean;
+  applied?: boolean;
+  /** Provider-reported cache activity, stamped after the call */
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
+}
+
+export interface PromptCachingDiagnostic {
+  requested: boolean;
+  applied: boolean;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
 /** Normalized, display-ready status used by the Execution view. */
 export type ExecutionNodeStatus =
   | "completed"
@@ -186,6 +202,7 @@ export interface NodeExecutionView {
   error?: string | null;
   /** 0-based execution order, when derivable from startTime. */
   order?: number;
+  promptCaching?: PromptCachingDiagnostic;
 }
 
 /** Everything the Execution view needs, derived once from the test response. */
@@ -203,6 +220,11 @@ export interface ExecutionViewModel {
   overallDurationMs?: number;
   /** Node id with the largest duration, when any node has a duration. */
   slowestNodeId?: string;
+  /**
+   * Prompt-caching diagnostics keyed by node id. Sub-agent children appear here too,
+   * though they are absent from `nodes`/`byId` — the parent run did not execute them.
+   */
+  promptCachingDiagnostics: Record<string, PromptCachingDiagnostic>;
 }
 
 /** Which of the four interactive states the Execution view should render. */

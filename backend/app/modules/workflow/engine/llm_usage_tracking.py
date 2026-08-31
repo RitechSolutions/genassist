@@ -18,10 +18,14 @@ from app.services.llm_providers import LlmProviderService
 logger = logging.getLogger(__name__)
 
 
+# One provider id resolved to (provider, model)
+ProviderAttribution = tuple[str, str]
+
+
 async def resolve_provider_model(
     provider_id: Any,
-    cache: Optional[Dict[str, tuple[str, str]]] = None,
-) -> tuple[str, str]:
+    cache: Optional[Dict[str, ProviderAttribution]] = None,
+) -> ProviderAttribution:
     """Resolve provider/model names for pricing, memoized per id when ``cache`` is given"""
     key = str(provider_id) if provider_id else ""
     if cache is not None and key in cache:
@@ -47,6 +51,7 @@ async def merge_llm_usage_from_result(
     result: Dict[str, Any],
     node_id: str,
     provider_id: str,
+    prompt_caching_enabled: bool = False,
 ) -> None:
     """
     Merge llm_usage from agent result into workflow state.
@@ -59,13 +64,14 @@ async def merge_llm_usage_from_result(
         result: Agent result dict that may contain "llm_usage" list
         node_id: Node ID for tracking
         provider_id: LLM provider ID to resolve provider/model names
+        prompt_caching_enabled: Whether the node asked for prompt caching on this call
     """
     try:
         llm_usage_list = result.get("llm_usage", []) if isinstance(result, dict) else []
         if not llm_usage_list:
             return
 
-        resolved: Dict[str, tuple[str, str]] = {}
+        resolved: Dict[str, ProviderAttribution] = {}
 
         for u in llm_usage_list:
             if not isinstance(u, dict):
@@ -82,6 +88,7 @@ async def merge_llm_usage_from_result(
                 purpose=u.get("purpose"),
                 token_details=u.get("token_details"),
                 llm_provider_id=pid,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
     except Exception:
         logger.warning("Failed merging LLM usage for node %s", node_id, exc_info=True)
@@ -93,6 +100,7 @@ async def record_node_llm_usage(
     node_id: str,
     provider_id: str,
     purpose: Optional[str] = None,
+    prompt_caching_enabled: bool = False,
 ) -> None:
     """Record token usage from one LangChain message onto ``state``"""
     if response is None:
@@ -106,7 +114,7 @@ async def record_node_llm_usage(
 
     entry = usage_or_placeholder(usage)
     entry["purpose"] = purpose
-    await merge_llm_usage_from_result(state, {"llm_usage": [entry]}, node_id, provider_id)
+    await merge_llm_usage_from_result(state, {"llm_usage": [entry]}, node_id, provider_id, prompt_caching_enabled)
 
 
 async def record_compaction_usage(

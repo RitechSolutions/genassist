@@ -10,6 +10,7 @@ import httpx
 from injector import inject
 if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
     from langchain_core.language_models import BaseChatModel
+from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.core.utils.enums.bedrock_fine_tuning_enum import (
@@ -23,11 +24,19 @@ from app.services.bedrock_fine_tuning import BedrockFineTuningService
 
 logger = logging.getLogger(__name__)
 
+def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
+    """True if this Bedrock model accepts prompt caching"""
+    if bedrock_cache_family(model_name) is not None:
+        return True
+    logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock model", model_name)
+    return False
+
 
 async def build_chat_model(
     provider_name: Optional[str],
     connection_data: Dict[str, Any],
     model_name: Optional[str],
+    prompt_caching_enabled: bool = False,
 ) -> BaseChatModel:
     cd = dict(connection_data)
     original_provider = (provider_name or "").lower()
@@ -38,6 +47,8 @@ async def build_chat_model(
     # `provider`. Pull the user-selected family out of connection_data here so it never
     # collides with init_chat_model's own `model_provider` routing kwarg in the spread below.
     bedrock_model_provider = cd.pop("model_provider", None)
+
+    cd.pop("prompt_caching_enabled", None)
 
     if provider == "vllm":
         provider = "openai"
@@ -111,7 +122,19 @@ async def build_chat_model(
     # torch/transformers, which must not be loaded into a Celery prefork master process.
     from langchain.chat_models import init_chat_model
 
-    return init_chat_model(**model_kwargs)
+    llm = init_chat_model(**model_kwargs)
+
+    # Wrap outside init_chat_model so the Opik callbacks stay attached to the inner
+    # model and every invocation is still traced.
+    if prompt_caching_enabled and (
+        provider == "anthropic"
+        or (provider == "bedrock_converse" and _bedrock_supports_prompt_caching(model_name))
+    ):
+        from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
+
+        return PromptCachingChatModel(inner=llm, cache_style=provider)
+
+    return llm
 
 
 async def _apply_model_catalog(schemas: Dict[str, Any]) -> None:
@@ -263,7 +286,11 @@ class LLMProvider:
         return schemas
 
 
-    async def get_model(self, model_id: str | None = None) -> BaseChatModel:
+    async def get_model(
+        self,
+        model_id: str | None = None,
+        prompt_caching_enabled: bool = False,
+    ) -> BaseChatModel:
         from app.dependencies.injector import injector
         llm_provider_service = injector.get(LlmProviderService)
 
@@ -274,9 +301,9 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
-        return await self._build_from_provider(llm_provider)
+        return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
-    async def _build_one(self, model_id: str) -> BaseChatModel:
+    async def _build_one(self, model_id: str, prompt_caching_enabled: bool = False) -> BaseChatModel:
         """Build a single chat model from a stored provider id.
 
         Shared by get_model and get_model_with_fallback so residency checks,
@@ -286,9 +313,9 @@ class LLMProvider:
         llm_provider_service = injector.get(LlmProviderService)
 
         llm_provider = await llm_provider_service.get_by_id(model_id)
-        return await self._build_from_provider(llm_provider)
+        return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
-    async def _build_from_provider(self, llm_provider) -> BaseChatModel:
+    async def _build_from_provider(self, llm_provider, prompt_caching_enabled: bool = False) -> BaseChatModel:
         from app.dependencies.injector import injector
         from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
         from app.services.app_settings import AppSettingsService
@@ -318,6 +345,7 @@ class LLMProvider:
                 provider_name=llm_provider.llm_model_provider,
                 connection_data=validated_data,
                 model_name=llm_provider.llm_model,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
             logger.info(f"Created LLM with init_chat_model for llm provider with ID: {llm_provider.id}")
         except Exception as e:
@@ -330,6 +358,7 @@ class LLMProvider:
         self,
         provider_id: str | None,
         fallback_chain_id: str | None = None,
+        prompt_caching_enabled: bool = False,
     ) -> BaseChatModel:
         """Resolve the model a node should use, honoring an optional fallback chain.
 
@@ -339,7 +368,7 @@ class LLMProvider:
         is applied per provider.
         """
         if not fallback_chain_id:
-            return await self.get_model(provider_id)
+            return await self.get_model(provider_id, prompt_caching_enabled)
 
         from app.dependencies.injector import injector
         from app.services.fallback_chains import FallbackChainService
@@ -353,12 +382,13 @@ class LLMProvider:
             effective_ids = chain_ids
 
         retry_policy = chain.retry_policy.model_dump() if chain.retry_policy else None
-        return await self.get_model_with_fallback(effective_ids, retry_policy)
+        return await self.get_model_with_fallback(effective_ids, retry_policy, prompt_caching_enabled)
 
     async def get_model_with_fallback(
         self,
         provider_ids: list[str],
         retry_policy: Optional[Dict[str, Any]] = None,
+        prompt_caching_enabled: bool = False,
     ) -> BaseChatModel:
         """Build a chat model that fails over across an ordered list of providers.
 
@@ -398,7 +428,7 @@ class LLMProvider:
         # Fast path: single provider, no retries, no timeout → no wrapper, zero
         # behavior change for plain single-provider nodes.
         if len(ids) == 1 and not has_retry and not has_timeout:
-            return await self._build_one(ids[0])
+            return await self._build_one(ids[0], prompt_caching_enabled)
 
         from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
 
@@ -409,7 +439,7 @@ class LLMProvider:
                 # Children stay as raw chat models (NOT wrapped with .with_retry, which
                 # returns a RunnableRetry lacking bind_tools and would break the agent
                 # path). Per-provider retry is handled inside FallbackChatModel instead.
-                model = await self._build_one(pid)
+                model = await self._build_one(pid, prompt_caching_enabled)
             except Exception as e:
                 # A provider that can't even be instantiated (e.g. deleted) is skipped
                 # so the rest of the chain can still serve the request.

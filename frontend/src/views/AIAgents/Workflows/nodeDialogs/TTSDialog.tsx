@@ -14,7 +14,7 @@ import {
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
-import { useAudioProviderConfig } from "../hooks/useAudioProviderConfig";
+import { useAudioProviderConfig, useAudioProvidersEnabled } from "../hooks/useAudioProviderConfig";
 import { useNodeDialogState } from "./useNodeDialogState";
 
 type TTSDialogProps = BaseNodeDialogProps<TTSNodeData, TTSNodeData>;
@@ -40,6 +40,10 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
     supportsSpeed,
     getDefaultsForProvider,
   } = useAudioProviderConfig({ capability: "tts", audioProviderId, enabled: isOpen });
+
+  // Without the feature the provider list is never fetched, so hide the picker and
+  // let the node run on the built-in defaults instead of showing an empty select.
+  const audioProvidersEnabled = useAudioProvidersEnabled();
 
   const { values, setField, setValues, merged, handleSave } =
     useNodeDialogState(
@@ -125,21 +129,23 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="audioProviderId">Audio Provider</Label>
-          <Select value={audioProviderId} onValueChange={handleProviderChange}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select audio provider" />
-            </SelectTrigger>
-            <SelectContent>
-              {audioProviders?.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} ({p.provider_type})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {audioProvidersEnabled && (
+          <div className="space-y-2">
+            <Label htmlFor="audioProviderId">Audio Provider</Label>
+            <Select value={audioProviderId} onValueChange={handleProviderChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select audio provider" />
+              </SelectTrigger>
+              <SelectContent>
+                {audioProviders?.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} ({p.provider_type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="voice">Voice</Label>
