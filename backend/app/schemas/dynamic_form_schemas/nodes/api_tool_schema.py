@@ -24,7 +24,8 @@ API_TOOL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     ),
     FieldSchema(
         name="requestBody",
-        type="text",
+        type="textarea",
+        size="code",
         label="Request Body (JSON)",
         required=False
     )
