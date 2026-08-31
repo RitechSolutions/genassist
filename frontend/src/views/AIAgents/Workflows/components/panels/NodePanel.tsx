@@ -42,6 +42,7 @@ import {
 } from "@/views/AIAgents/Workflows/utils/helpHeaderGradients";
 import { getNodeDocsUrl } from "@/views/AIAgents/Workflows/utils/nodeDocsLinks";
 import { isNewNode } from "@/views/AIAgents/Workflows/utils/newNodes";
+import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -88,6 +89,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedHelp, setSelectedHelp] = useState<HelpDialogState | null>(null);
   const [inputMessage, setInputMessage] = useState<string>("");
+  const composerRef = useAutoGrowTextarea(inputMessage, 128);
   const conversationScrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll conversation to bottom
@@ -123,12 +125,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  const handleKeyDown = submitOnEnter(handleSend);
 
   // Handle drag start
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
@@ -614,15 +611,16 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 {/* Input bar */}
                 <div className="p-3">
                   <div className="relative flex items-center">
-                    <Sparkles className="absolute left-3 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
-                    <input
-                      type="text"
+                    <Sparkles className="absolute left-3 top-3 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
+                    <textarea
+                      ref={composerRef}
+                      rows={1}
                       value={inputMessage}
                       onChange={(e) => setInputMessage(e.target.value)}
                       onKeyDown={handleKeyDown}
                       placeholder="Ask AI to update your workflow..."
                       disabled={isThinking}
-                      className="w-full h-10 bg-card rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
+                      className="w-full min-h-10 py-2 leading-6 resize-none bg-card rounded-3xl pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
                     />
                     <button
                       onClick={handleSend}

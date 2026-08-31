@@ -4,6 +4,7 @@ import { Button } from "@/components/button";
 import { Loader2, Send } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { testDeploymentInference } from "@/services/localFineTune";
+import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 import type { LocalFineTuneDeployment } from "@/interfaces/localFineTune.interface";
 
 interface Message {
@@ -24,6 +25,7 @@ export function LocalFineTuneTestDialog({
 }: LocalFineTuneTestDialogProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const inputRef = useAutoGrowTextarea(input, 120);
   const [loading, setLoading] = useState(false);
   const inFlight = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -60,12 +62,7 @@ export function LocalFineTuneTestDialog({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
-    }
-  };
+  const handleKeyDown = submitOnEnter(() => void handleSend());
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -111,7 +108,8 @@ export function LocalFineTuneTestDialog({
 
         <div className="p-4 border-t shrink-0 flex gap-2 items-end">
           <textarea
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[40px] max-h-[120px]"
+            ref={inputRef}
+            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[40px]"
             rows={1}
             placeholder='Type a message and press Enter… (e.g. "Hello")'
             value={input}
