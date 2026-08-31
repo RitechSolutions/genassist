@@ -15,9 +15,23 @@ export const getSentimentFromHostility = (hostilityScore: number): string => {
   }
 };
 
+/**
+ * A live conversation's status reaches the UI in two spellings: the REST API returns
+ * `in_progress`, while the dashboard websocket normalises the same state to `in-progress`.
+ * Compare through here so a running conversation is never mistaken for a finalized one just
+ * because of the separator.
+ */
+export const isLiveConversationStatus = (status?: string | null): boolean => {
+  const normalized = (status ?? "").trim().toLowerCase().replace(/-/g, "_");
+  return normalized === "in_progress" || normalized === "takeover";
+};
+
+export const isLiveTranscript = (transcript: Transcript | null | undefined): boolean =>
+  isLiveConversationStatus(transcript?.status);
+
 // Gets the effective sentiment for a transcript
 export const getEffectiveSentiment = (transcript: Transcript): string => {
-  const isLive = transcript?.status === "in_progress" || transcript?.status === "takeover";
+  const isLive = isLiveTranscript(transcript);
   
   if (isLive) {
     // Sentiment from hostility score
