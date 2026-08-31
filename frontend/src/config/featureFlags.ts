@@ -31,9 +31,14 @@ export const FeatureFlags = {
       SHOW_ASK_GENAI: 'conversations.showAskGenAI',
     },
 
+    // LLM Settings pages. Audio Providers and Fallback Chains are hidden by default:
+    // their backend prefixes (/api/audio-providers, /api/fallback-chains) are not routed
+    // in every environment, so they only appear where the flag is explicitly enabled.
     LLM_SETTINGS: {
       SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
       SHOW_BEDROCK_FINE_TUNE: 'llmSettings.showBedrockFineTune',
+      SHOW_AUDIO_PROVIDERS: 'llmSettings.showAudioProviders',
+      SHOW_FALLBACK_CHAINS: 'llmSettings.showFallbackChains',
     },
 
     // Workflow specific flags

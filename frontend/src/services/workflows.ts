@@ -64,6 +64,18 @@ export interface FailedNode {
   error: string;
 }
 
+/** Per-run token totals. Counts are provider-reported, so cache buckets may or may not
+ *  be contained in input_tokens depending on the provider. */
+export interface WorkflowTokenUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
+  cost_usd?: number;
+  calls?: number;
+}
+
 export interface WorkflowTestResponse {
   status: string;
   input: string;
@@ -72,6 +84,7 @@ export interface WorkflowTestResponse {
   has_failures?: boolean;
   /** Details of the nodes that failed, if any. */
   failed_nodes?: FailedNode[];
+  token_usage?: WorkflowTokenUsage;
   [key: string]: any;
 }
 

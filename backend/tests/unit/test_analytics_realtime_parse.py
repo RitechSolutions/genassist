@@ -101,3 +101,31 @@ def test_bad_response_time_is_ignored():
     }
     data = parse_agent_response_for_stats(payload)
     assert data["response_ms"] is None
+
+
+_DIAGNOSTICS = {"child": {"requested": True, "applied": False}}
+
+
+def _payload(**state_extra):
+    return {
+        "agent_id": _AGENT_ID,
+        "status": "success",
+        "row_agent_response": {
+            "state": {
+                "nodeExecutionStatus": {
+                    "n1": {"type": "llm", "status": "success", "time_taken": "50"},
+                    "n2": {"type": "tool", "status": "failed", "execution_time_ms": 20},
+                },
+                **state_extra,
+            }
+        },
+    }
+
+
+def test_propagated_prompt_caching_diagnostics_do_not_change_node_stats():
+    plain = parse_agent_response_for_stats(_payload())
+    annotated = parse_agent_response_for_stats(_payload(promptCachingDiagnostics=_DIAGNOSTICS))
+
+    assert annotated["total_nodes_executed"] == plain["total_nodes_executed"] == 2
+    assert annotated["nodes"] == plain["nodes"]
+    assert annotated["is_success"] == plain["is_success"]
