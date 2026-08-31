@@ -14,13 +14,7 @@ import { cn } from "@/helpers/utils";
 import { Transcript } from "@/interfaces/transcript.interface";
 
 import { getEffectiveSentiment, isLiveTranscript } from "../../helpers/formatting";
-
-const SENTIMENT_DOT: Record<string, string> = {
-  positive: "bg-emerald-500",
-  neutral: "bg-amber-500",
-  negative: "bg-rose-500",
-  "very-bad": "bg-rose-500",
-};
+import { SentimentBadge } from "../SentimentBadge";
 
 const isCallTranscript = (transcript: Transcript) =>
   Boolean(transcript?.recording_id) || Boolean(transcript?.metadata?.isCall);
@@ -127,8 +121,8 @@ export function ConversationListPanel({
                 onClick={() => onSelect(transcript)}
                 aria-current={isSelected}
                 className={cn(
-                  "flex w-full items-start gap-2.5 border-b border-border border-l-2 border-l-transparent px-3 py-3 text-left transition-colors",
-                  isSelected ? "border-l-primary bg-primary/5" : "hover:bg-muted/70"
+                  "flex w-full items-start gap-2.5 border-b border-border px-3 py-3 text-left transition-colors",
+                  isSelected ? "bg-primary/5" : "hover:bg-muted/70"
                 )}
               >
                 <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/5">
@@ -163,16 +157,8 @@ export function ConversationListPanel({
                   {preview ? (
                     <span className="mt-1 block truncate text-xs text-muted-foreground/80">{preview}</span>
                   ) : null}
-                  <span className="mt-1.5 flex items-center gap-2">
-                    <span className="flex items-center gap-1 text-[11px] capitalize text-muted-foreground">
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          SENTIMENT_DOT[sentiment.toLowerCase()] ?? "bg-muted-foreground/40"
-                        )}
-                      />
-                      {sentiment}
-                    </span>
+                  <span className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <SentimentBadge sentiment={sentiment} />
                     {(transcript?.thumbs_up_count ?? 0) > 0 && (
                       <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground">
                         <ThumbsUp className="h-3 w-3 text-emerald-500" />

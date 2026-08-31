@@ -1,12 +1,11 @@
-import { BotMessageSquare } from 'lucide-react';
-
-import { Button } from '@/components/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
-import { Input } from '@/components/ui/input';
+import { AssistantComposer } from '@/components/AssistantComposer';
+import { AssistantEmptyState, type AssistantSuggestion } from '@/components/AssistantEmptyState';
 import { cn } from '@/helpers/utils';
 
-import type { TranscriptDetailController, TranscriptRightPanelTab } from '../../hooks/useTranscriptDetail';
+import type { TranscriptDetailController } from '../../hooks/useTranscriptDetail';
 import { TranscriptThread } from '../TranscriptThread';
+
+const QUICK_QUESTIONS = ['Summarize this conversation', 'How did the agent perform?'];
 
 type TranscriptConversationPanelProps = {
   controller: TranscriptDetailController;
@@ -19,8 +18,8 @@ type TranscriptConversationPanelProps = {
 };
 
 /**
- * Transcript / Ask GenAI for a finalized conversation. Extracted from `TranscriptDialog`
- * so the Conversations workspace can render it as its own column.
+ * The transcript (or the assistant) for a finalized conversation. Which one is showing is driven
+ * by the switch in `TranscriptDetailTitle`, so this panel is all conversation and no chrome.
  */
 export function TranscriptConversationPanel({
   controller,
@@ -32,7 +31,6 @@ export function TranscriptConversationPanel({
     setTranscript,
     isCall,
     rightPanelTab,
-    setActiveTab,
     showAskGenAI,
     chatInput,
     setChatInput,
@@ -48,30 +46,27 @@ export function TranscriptConversationPanel({
 
   if (!transcript) return null;
 
+  // The dialog sizes the thread explicitly; the +44px over the previous values is the tab row
+  // that now lives in the header, so the dialog keeps its overall height.
   const threadHeight = fill
     ? 'flex-1 min-h-0'
     : isCall
-      ? 'h-[550px] 2xl:h-[min(70vh,660px)] min-[1920px]:h-[min(72vh,780px)]'
-      : 'h-[460px] 2xl:h-[min(64vh,560px)] min-[1920px]:h-[min(68vh,680px)]';
+      ? 'h-[594px] 2xl:h-[min(70vh,704px)] min-[1920px]:h-[min(72vh,824px)]'
+      : 'h-[504px] 2xl:h-[min(64vh,604px)] min-[1920px]:h-[min(68vh,724px)]';
+
+  const quickQuestions: AssistantSuggestion[] = QUICK_QUESTIONS.map((label) => ({
+    label,
+    onSelect: () => sendAiMessage(label),
+  }));
 
   const aiHeight = fill
     ? 'flex-1 min-h-0'
     : isCall
-      ? 'h-[500px] 2xl:h-[min(64vh,600px)] min-[1920px]:h-[min(66vh,720px)]'
-      : 'h-[400px] 2xl:h-[min(58vh,500px)] min-[1920px]:h-[min(62vh,620px)]';
+      ? 'h-[544px] 2xl:h-[min(64vh,644px)] min-[1920px]:h-[min(66vh,764px)]'
+      : 'h-[444px] 2xl:h-[min(58vh,544px)] min-[1920px]:h-[min(62vh,664px)]';
 
   return (
     <div className={cn('flex flex-col', fill && 'h-full min-h-0', className)}>
-      <Tabs
-        value={rightPanelTab}
-        onValueChange={(value) => setActiveTab(value as TranscriptRightPanelTab)}
-        className="pb-1"
-      >
-        <TabsList className={`grid w-full ${showAskGenAI ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          <TabsTrigger value="transcript">Transcript</TabsTrigger>
-          {showAskGenAI && <TabsTrigger value="ai">Ask GenAI</TabsTrigger>}
-        </TabsList>
-      </Tabs>
       <div className={cn('flex-1 flex flex-col bg-secondary/30 rounded-lg overflow-hidden', fill && 'min-h-0')}>
         {rightPanelTab === 'transcript' ? (
           <TranscriptThread
@@ -113,28 +108,24 @@ export function TranscriptConversationPanel({
                 )}
               </div>
             ) : (
-              <div className="flex flex-1 flex-col justify-center items-center text-muted-foreground">
-                <BotMessageSquare className="w-12 h-12 text-muted-foreground" />
-                <p className="text-sm mt-2">What can I help with?</p>
-              </div>
+              <AssistantEmptyState
+                title="Ask GenAI about this conversation."
+                prompt="What would you like to know?"
+                suggestions={quickQuestions}
+              />
             )}
           </div>
         )}
       </div>
       {rightPanelTab === 'ai' && (
-        <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
-          <Input
-            className="flex-1"
-            type="text"
-            placeholder="Ask GenAI"
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && sendAiMessage()}
-          />
-          <Button onClick={sendAiMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
-            Send
-          </Button>
-        </div>
+        <AssistantComposer
+          className="mt-2"
+          value={chatInput}
+          onChange={setChatInput}
+          onSubmit={(message) => sendAiMessage(message)}
+          placeholder="Ask GenAI about this conversation..."
+          busy={aiLoading}
+        />
       )}
     </div>
   );
