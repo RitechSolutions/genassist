@@ -109,6 +109,7 @@ export function FeatureFlagDialog({
           <FormField id="description" label="Description">
             <Textarea
               id="description"
+              size="description"
               value={values.description}
               onChange={(e) => setField("description", e.target.value)}
               placeholder="Description of what this feature flag controls"
