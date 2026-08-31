@@ -55,8 +55,13 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
         "eu.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
         "ca.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
         "us.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
+        "apac.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
         "us.amazon.nova-2-pro-v1:0": {"input_per_1k": 0.0002, "output_per_1k": 0.0008},
+        "eu.amazon.nova-2-pro-v1:0": {"input_per_1k": 0.0002, "output_per_1k": 0.0008},
+        "apac.amazon.nova-2-pro-v1:0": {"input_per_1k": 0.0002, "output_per_1k": 0.0008},
         "us.amazon.nova-2-flash-v1:0": {"input_per_1k": 0.0004, "output_per_1k": 0.0016},
+        "eu.amazon.nova-2-flash-v1:0": {"input_per_1k": 0.0004, "output_per_1k": 0.0016},
+        "apac.amazon.nova-2-flash-v1:0": {"input_per_1k": 0.0004, "output_per_1k": 0.0016},
     },
 }
 

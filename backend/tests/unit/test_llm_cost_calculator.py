@@ -257,8 +257,13 @@ class TestResolvePricingBedrockRegions:
             ("eu.amazon.nova-2-lite-v1:0", "0.0001", "0.0004"),
             ("ca.amazon.nova-2-lite-v1:0", "0.0001", "0.0004"),
             ("us.amazon.nova-2-lite-v1:0", "0.0001", "0.0004"),
+            ("apac.amazon.nova-2-lite-v1:0", "0.0001", "0.0004"),
             ("us.amazon.nova-2-pro-v1:0", "0.0002", "0.0008"),
+            ("eu.amazon.nova-2-pro-v1:0", "0.0002", "0.0008"),
+            ("apac.amazon.nova-2-pro-v1:0", "0.0002", "0.0008"),
             ("us.amazon.nova-2-flash-v1:0", "0.0004", "0.0016"),
+            ("eu.amazon.nova-2-flash-v1:0", "0.0004", "0.0016"),
+            ("apac.amazon.nova-2-flash-v1:0", "0.0004", "0.0016"),
         ],
     )
     def test_known_profiles_price_from_the_bundled_table(self, model, input_rate, output_rate):
@@ -270,9 +275,10 @@ class TestResolvePricingBedrockRegions:
     @pytest.mark.parametrize(
         "model",
         [
-            "apac.amazon.nova-2-lite-v1:0",
+            "jp.amazon.nova-2-lite-v1:0",
+            "global.amazon.nova-2-lite-v1:0",
             "amazon.nova-2-lite-v1:0",
-            "eu.amazon.nova-2-pro-v1:0",
+            "ca.amazon.nova-2-pro-v1:0",
         ],
     )
     def test_another_geography_never_inherits_a_bundled_rate(self, model):
@@ -302,7 +308,7 @@ class TestResolvePricingBedrockRegions:
 
     def test_a_tenant_default_answers_a_geography_the_bundled_table_cannot(self):
         configured = {"bedrock": {"_default": {"input_per_1k": "0.5", "output_per_1k": "0.9"}}}
-        res = resolve_pricing("bedrock", "apac.amazon.nova-2-lite-v1:0", configured)
+        res = resolve_pricing("bedrock", "jp.amazon.nova-2-lite-v1:0", configured)
         assert res.status is PricingStatus.CONFIGURED
         assert res.matched_model_key == "_default"
 
@@ -498,8 +504,13 @@ class TestBundledCacheRateProvenance:
             "eu.amazon.nova-2-lite-v1:0",
             "ca.amazon.nova-2-lite-v1:0",
             "us.amazon.nova-2-lite-v1:0",
+            "apac.amazon.nova-2-lite-v1:0",
             "us.amazon.nova-2-pro-v1:0",
+            "eu.amazon.nova-2-pro-v1:0",
+            "apac.amazon.nova-2-pro-v1:0",
             "us.amazon.nova-2-flash-v1:0",
+            "eu.amazon.nova-2-flash-v1:0",
+            "apac.amazon.nova-2-flash-v1:0",
         }
         for row in bundled.values():
             assert set(row) == {"input_per_1k", "output_per_1k"}, "no invented cache rates"
