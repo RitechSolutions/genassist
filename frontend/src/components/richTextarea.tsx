@@ -32,7 +32,20 @@ const OVERLAY_BASE_CLASS =
   "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 overflow-hidden text-foreground"
 
 const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, size, rows, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
+  (
+    {
+      className,
+      size,
+      rows,
+      value,
+      onFocus,
+      onChange,
+      onMouseUp,
+      onKeyDown,
+      ...props
+    },
+    ref
+  ) => {
     const sizing = resolveTextareaSizing({ size, rows, className })
     const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
     const overlayRef = React.useRef<HTMLDivElement | null>(null)
@@ -84,16 +97,23 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       syncScroll()
     }
 
-    const handleKeyDown = React.useMemo(
-      () =>
+    // The caller's handler runs first; the variable-aware one still runs unless
+    // the caller handled the key itself (e.g. Enter-to-send).
+    const handleKeyDown = React.useMemo(() => {
+      const handleVariableKeyDown =
         createVariableKeyDownHandler<HTMLTextAreaElement>({
           useOverlay,
           value,
           onChange,
           pendingCursorRef,
-        }),
-      [useOverlay, value, onChange]
-    )
+        })
+
+      return (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        onKeyDown?.(event)
+        if (event.defaultPrevented) return
+        handleVariableKeyDown(event)
+      }
+    }, [useOverlay, value, onChange, onKeyDown])
 
     const handleKeyUp = React.useMemo(
       () =>
