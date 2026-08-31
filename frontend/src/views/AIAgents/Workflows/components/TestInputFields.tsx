@@ -125,7 +125,7 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
                   className={`flex-1 font-mono text-xs ${
                     isPrefilled ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15" : ""
                   }`}
-                  rows={3}
+                  size="code"
                 />
                 <p className="text-xs text-muted-foreground">
                   {currentType === "object"
@@ -150,6 +150,18 @@ export const TestInputFields: React.FC<TestInputFieldsProps> = ({
                   ))}
                 </SelectContent>
               </Select>
+            ) : field.type === "textarea" ? (
+              <RichTextarea
+                id={field.id}
+                size="body"
+                placeholder={field.placeholder}
+                value={formData[field.id] || ""}
+                onChange={(e) => onInputChange(field.id, e.target.value)}
+                disabled={isLoading}
+                className={`flex-1 ${
+                  isPrefilled ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15" : ""
+                }`}
+              />
             ) : (
               <RichInput
                 id={field.id}

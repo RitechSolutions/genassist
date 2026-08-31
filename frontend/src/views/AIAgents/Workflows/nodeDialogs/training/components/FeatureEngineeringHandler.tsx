@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
 import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import { Button } from "@/components/button";
 import {
   Select,
@@ -171,7 +172,8 @@ export const FeatureEngineeringHandler: React.FC<
                       {feature.strategy === "custom_expression" && (
                         <div>
                           <Label className="text-xs">Expression</Label>
-                          <RichInput
+                          <RichTextarea
+                            size="hint"
                             value={feature.expression || ""}
                             onChange={(e) =>
                               handleFeatureChange(feature.id, {
@@ -179,7 +181,7 @@ export const FeatureEngineeringHandler: React.FC<
                               })
                             }
                             placeholder='e.g., df["col1"] + df["col2"]'
-                            className="h-8 text-xs font-mono"
+                            className="text-xs font-mono"
                           />
                           <p className="text-xs text-muted-foreground mt-1">
                             Use df["column_name"] to reference columns

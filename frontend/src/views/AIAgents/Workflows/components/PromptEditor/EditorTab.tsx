@@ -238,7 +238,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                   value={optimizeInstructions}
                   onChange={(e) => setOptimizeInstructions(e.target.value)}
                   placeholder="e.g., Make it more concise, add examples, enforce JSON output..."
-                  rows={2}
+                  size="description"
                   className="text-sm"
                 />
               </div>
