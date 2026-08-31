@@ -2,6 +2,10 @@ import * as React from "react"
 
 import { cn } from "@/helpers/utils"
 import {
+  resolveTextareaSizing,
+  type TextareaSizingProps,
+} from "@/components/ui/textarea-sizing"
+import {
   hasVariableSyntax,
   parseValueToSegments,
   VariableOverlayContent,
@@ -11,19 +15,25 @@ import {
   createVariableMouseUpHandler,
 } from "../helpers/variable-input"
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+export type TextareaProps = Omit<
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "size"
+> &
+  TextareaSizingProps
 
-const TEXTAREA_BASE_CLASS =
-  "flex min-h-[80px] w-full rounded-3xl border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 pointer-events-auto relative z-10"
+// Layered over the shared chrome so the highlight overlay sits behind the caret.
+const TEXTAREA_STACK_CLASS = "pointer-events-auto relative z-10"
 
-const TEXTAREA_TYPO_CLASS = "text-sm leading-normal whitespace-pre-wrap break-words"
+// No leading-* here: tailwind-merge drops a leading utility when a font-size
+// class follows it, and the overlay resolves its size after this string. Both
+// elements must land on the same line-height or the caret drifts from the text.
+const TEXTAREA_TYPO_CLASS = "text-sm whitespace-pre-wrap break-words"
 const OVERLAY_BASE_CLASS =
   "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 overflow-hidden text-foreground"
 
 const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
+  ({ className, size, rows, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
+    const sizing = resolveTextareaSizing({ size, rows, className })
     const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
     const overlayRef = React.useRef<HTMLDivElement | null>(null)
     const pendingCursorRef = React.useRef<number | null>(null)
@@ -111,10 +121,12 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="relative w-full">
         <textarea
+          rows={sizing.rows}
+          spellCheck={sizing.spellCheck}
           className={cn(
-            TEXTAREA_BASE_CLASS,
-            useOverlay && "text-transparent caret-foreground leading-normal",
-            className
+            TEXTAREA_STACK_CLASS,
+            sizing.className,
+            useOverlay && "text-transparent caret-foreground"
           )}
           ref={textareaRef}
           value={value}
@@ -129,7 +141,11 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         {useOverlay && segments.length > 0 && (
           <div
             ref={overlayRef}
-            className={cn(OVERLAY_BASE_CLASS, TEXTAREA_TYPO_CLASS, className)}
+            className={cn(
+              OVERLAY_BASE_CLASS,
+              TEXTAREA_TYPO_CLASS,
+              sizing.contentClassName
+            )}
             aria-hidden
           >
             <VariableOverlayContent segments={segments} />

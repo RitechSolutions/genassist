@@ -2,16 +2,16 @@ import React, { useState, useRef } from "react";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
 import { RichTextarea } from "@/components/richTextarea";
+import type { TextareaSizingProps } from "@/components/ui/textarea-sizing";
 import { parseDroppedVariable } from "@/helpers/variable-input/droppedVariable";
 
-interface DraggableTextAreaProps {
+interface DraggableTextAreaProps extends TextareaSizingProps {
   id?: string;
   label?: string;
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   className?: string;
-  rows?: number;
   onVariableDrop?: (path: string, value: unknown) => void;
 }
 
@@ -35,7 +35,8 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
   onChange,
   placeholder,
   className,
-  rows = 4,
+  size,
+  rows,
   onVariableDrop,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
@@ -142,6 +143,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           value={value}
           onChange={onChange}
           placeholder={placeholder}
+          size={size}
           rows={rows}
           className={cn(
             "w-full transition-colors",
