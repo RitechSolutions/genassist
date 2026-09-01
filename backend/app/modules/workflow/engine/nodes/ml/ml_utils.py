@@ -26,7 +26,7 @@ _MAX_SANITIZE_NODES = 1_000_000
 
 
 # Model types that only support one task type, regardless of the target variable
-_CLASSIFICATION_ONLY_MODEL_TYPES = {"logistic_regression"}
+_CLASSIFICATION_ONLY_MODEL_TYPES: set[str] = {"logistic_regression"}
 _REGRESSION_ONLY_MODEL_TYPES = {"linear_regression", "ridge_regression", "lasso_regression", "elastic_net"}
 
 
@@ -47,6 +47,11 @@ def is_classification_task(y: pd.Series, model_type: str) -> bool:
         return False
 
     # For others (e.g. xgboost, random_forest, svm, knn, neural_network), infer from target variable
+    # Boolean columns (e.g. from Parquet/Excel, which preserve a native bool dtype instead of
+    # coercing to strings) must be checked explicitly - they match neither the object nor the
+    # int64/int32 branch below and would otherwise silently fall through to regression.
+    if pd.api.types.is_bool_dtype(y):
+        return True
     if y.dtype in ["int64", "int32"] and y.nunique() <= 20:
         return True
     if y.dtype == "object":
