@@ -263,18 +263,24 @@ class AnalyticsAggregationRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_agent_ids_by_operator(self, operator_ids: set[UUID]) -> dict[UUID, UUID]:
-        """Bulk lookup for attribution fallback. Pure mapping (operator_id unique),
-        bypasses filters like the primary path."""
-        if not operator_ids:
-            return {}
+    async def get_conversation_agent_map(self, stat_date: date) -> dict[UUID, UUID]:
+        """Conversation → agent mapping for conversations with logs (rebuild fallback)."""
+        start_of_day = datetime.combine(stat_date, time.min, tzinfo=timezone.utc)
+        end_of_day = datetime.combine(stat_date, time.max, tzinfo=timezone.utc)
         stmt = (
-            select(AgentModel.operator_id, AgentModel.id)
-            .where(AgentModel.operator_id.in_(operator_ids))
+            select(AgentResponseLogModel.conversation_id, AgentModel.id)
+            .join(ConversationModel, ConversationModel.id == AgentResponseLogModel.conversation_id)
+            .join(AgentModel, AgentModel.operator_id == ConversationModel.operator_id)
+            .where(
+                AgentResponseLogModel.logged_at >= start_of_day,
+                AgentResponseLogModel.logged_at <= end_of_day,
+                AgentResponseLogModel.is_deleted == 0,
+            )
+            .distinct()
             .execution_options(**_DISCOVERY_FLAGS)
         )
         result = await self.db.execute(stmt)
-        return {operator_id: agent_id for operator_id, agent_id in result.all()}
+        return {conversation_id: agent_id for conversation_id, agent_id in result.all()}
 
     async def increment_thumbs(self, agent_id: UUID, is_thumbs_up: bool) -> None:
         """Increment thumbs_up_count or thumbs_down_count on agent_execution_daily_stats."""

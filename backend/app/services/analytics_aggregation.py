@@ -399,12 +399,11 @@ class AnalyticsAggregationService:
 
         # Hidden-value masking can rewrite the payload's agent_id before it is logged;
         # the conversation's operator still identifies the agent unambiguously.
-        operator_ids = {log.conversation.operator_id for log in all_logs if log.conversation is not None}
-        agent_by_operator = await self.repo.get_agent_ids_by_operator(operator_ids)
+        agent_by_conversation = await self.repo.get_conversation_agent_map(stat_date)
 
         # Build buckets from all logs for this date
         agent_buckets, node_buckets, unattributed = self._build_buckets_from_logs(
-            all_logs, stat_date, agent_by_operator
+            all_logs, stat_date, agent_by_conversation
         )
 
         # Convert buckets to stats dicts
@@ -444,7 +443,7 @@ class AnalyticsAggregationService:
         self,
         logs: list[AgentResponseLogModel],
         stat_date: date,
-        agent_by_operator: dict[UUID, UUID] | None = None,
+        agent_by_conversation: dict[UUID, UUID] | None = None,
     ) -> tuple[dict[tuple, dict], dict[tuple, dict], int]:
         """
         Process logs and build accumulator buckets.
@@ -453,7 +452,7 @@ class AnalyticsAggregationService:
         - agent_buckets: keyed by (agent_id, stat_date)
         - node_buckets: keyed by (agent_id, node_type, stat_date)
         - unattributed: logs skipped because no agent could be resolved from them,
-          neither from the payload nor via ``agent_by_operator``
+          neither from the payload nor via ``agent_by_conversation``
         """
         agent_buckets: dict[tuple, dict] = defaultdict(self._create_agent_bucket)
         node_buckets: dict[tuple, dict] = defaultdict(self._create_node_bucket)
@@ -473,9 +472,7 @@ class AnalyticsAggregationService:
             try:
                 agent_id = UUID(str(payload.get("agent_id") or ""))
             except ValueError:
-                agent_id = None
-                if agent_by_operator and log.conversation is not None:
-                    agent_id = agent_by_operator.get(log.conversation.operator_id)
+                agent_id = agent_by_conversation.get(log.conversation_id) if agent_by_conversation else None
             if agent_id is None:
                 unattributed += 1
                 continue

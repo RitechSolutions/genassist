@@ -543,7 +543,7 @@ async def test_unreadable_logs_rebuild_the_readable_part_but_never_reconcile(wor
             session,
             updated_at=FAKE_NOW - timedelta(hours=1),
             log_at=[datetime.combine(YESTERDAY, time(11, 0), tzinfo=timezone.utc)],
-            raw=json.dumps({"status": "success"}),
+            raw="{ truncated",
             is_deleted=1,
         )
         _add_agent_phantom(session, world.agent_id, D1, execution_count=7)
@@ -620,6 +620,36 @@ async def test_masked_agent_id_is_recovered_through_the_operator(world, monkeypa
         row = await _agent_row(session, world.agent_id, D1)
         assert row is not None and row.execution_count == 1, "the log is attributed via conversation.operator_id"
         assert await _agent_row(session, world.agent2_id, D1) is None, "and the date is reconciled as normal"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_masked_agent_id_on_soft_deleted_conversation_still_attributes(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        await _set_cursor(session, FAKE_NOW - timedelta(hours=54))
+        masked = json.loads(_raw(world.agent_id))
+        masked["agent_id"] = "[CUSTOMER_TIER]"
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            is_deleted=1,
+            log_at=[datetime.combine(D1, time(10, 0), tzinfo=timezone.utc)],
+            raw=json.dumps(masked),
+        )
+        _add_agent_phantom(session, world.agent2_id, D1)
+        await session.commit()
+
+        service, repo = _service(world, session)
+        _pin_db_now(repo, FAKE_NOW)
+        result = await service.aggregate_daily_stats()
+
+        assert result["dates_not_reconciled"] == 0, "the date is fully attributable"
+        row = await _agent_row(session, world.agent_id, D1)
+        assert row is not None and row.execution_count == 1, "execution attributed via the log's conversation FK"
+        assert row.unique_conversations == 0, "the soft-deleted conversation stays out of conversation counts"
+        assert row.finalized_conversations == 0 and row.thumbs_up_count == 0
+        assert await _agent_row(session, world.agent2_id, D1) is None, "unrelated phantoms reconcile as normal"
 
 
 @pytest.mark.asyncio(loop_scope="module")
