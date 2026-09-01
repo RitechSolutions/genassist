@@ -34,6 +34,7 @@ def _backfill_row(execution_id: str, **overrides) -> dict:
         "source_type": "workflow",
         "source": "chat",
         "input_tokens": 10,
+        "prompt_tokens": 10,
         "output_tokens": 5,
         "total_tokens": 15,
         "cost_usd": Decimal("0.001"),

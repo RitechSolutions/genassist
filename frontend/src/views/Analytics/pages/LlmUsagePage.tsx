@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
@@ -14,6 +14,7 @@ import {
   TrendingDown,
   TrendingUp,
   X,
+  type LucideIcon,
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/card";
@@ -65,6 +66,15 @@ const PARTIAL_COST_HELP =
   "Some calls here ran on a model with no configured rate. " +
   "This figure is the priced subtotal, real spend may be higher. Add the missing rates under " +
   "LLM Settings › LLM Providers to price them.";
+
+interface LlmUsageKpi {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  sub?: string;
+  description?: string;
+  delta: ReactNode;
+}
 
 const compact = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : `${n}`;
@@ -302,7 +312,10 @@ function LlmUsagePage() {
     },
   ];
 
-  const kpis = [
+  const cacheReadTokens = summary?.total_cache_read_tokens ?? 0;
+  const cacheWriteTokens = summary?.total_cache_creation_tokens ?? 0;
+
+  const kpis: LlmUsageKpi[] = [
     {
       label: "Total LLM Cost",
       value: formatUsd(summary?.total_cost_usd),
@@ -316,6 +329,10 @@ function LlmUsagePage() {
       value: compact(summary?.total_tokens ?? 0),
       icon: Coins,
       sub: `${compact(summary?.total_input_tokens ?? 0)} input · ${compact(summary?.total_output_tokens ?? 0)} output`,
+      description:
+        cacheReadTokens || cacheWriteTokens
+          ? `Input includes ${cacheReadTokens.toLocaleString()} cache-read and ${cacheWriteTokens.toLocaleString()} cache-write tokens reported by providers.`
+          : undefined,
       delta: summary && previous ? <KpiDelta delta={pctChange(summary.total_tokens, previous.total_tokens)} /> : null,
     },
     {
@@ -442,6 +459,7 @@ function LlmUsagePage() {
                 value={k.value}
                 icon={k.icon}
                 sub={k.sub}
+                description={k.description}
                 subClassName={KPI_SUB_CLASS}
                 delta={k.delta}
               />

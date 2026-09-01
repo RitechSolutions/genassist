@@ -23,6 +23,7 @@ from app.services.llm_usage_recorder import (
     _clamp_run_status,
     _normalize,
     _resolve_cost,
+    _token_columns,
     _total_tokens,
 )
 
@@ -49,7 +50,6 @@ class FakeSession:
 
 
 class CapturingSession(FakeSession):
-
     def __init__(self, returned_ids=()):
         super().__init__()
         self.statements = []
@@ -152,6 +152,130 @@ class TestResolveCost:
         assert out["pricing_status"] == "unpriced"
         assert out["cost_usd"] is None
 
+
+class TestResolveCostCacheBuckets:
+    def test_zero_cache_is_identical_to_omitting_the_arguments(self):
+        omitted = _resolve_cost("openai", "gpt-4o", 1000, 500)
+        explicit = _resolve_cost("openai", "gpt-4o", 1000, 500, cache_read_tokens=0, cache_creation_tokens=0)
+        assert omitted == explicit
+        assert omitted["cost_usd"] == Decimal("0.0075")
+
+    def test_zero_cache_leaves_rate_snapshots_null(self):
+        out = _resolve_cost("openai", "gpt-4o", 1000, 500)
+        assert out["cache_read_per_1k"] is None
+        assert out["cache_creation_per_1k"] is None
+
+    def test_negative_counts_clamp_and_take_the_zero_cache_path(self):
+        out = _resolve_cost("openai", "gpt-4o", 1000, 500, cache_read_tokens=-5, cache_creation_tokens=-1)
+        assert out == _resolve_cost("openai", "gpt-4o", 1000, 500)
+
+    def test_anthropic_defaults_to_the_published_multipliers(self):
+        out = _resolve_cost(
+            "anthropic", "claude-3-5-sonnet", 1000, 200, cache_read_tokens=500, cache_creation_tokens=100
+        )
+        assert out["cache_read_per_1k"] == Decimal("0.0003")
+        assert out["cache_creation_per_1k"] == Decimal("0.00375")
+        assert out["cost_usd"] == Decimal("0.004725")
+
+    def test_inclusive_provider_clamps_when_buckets_exceed_input(self):
+        out = _resolve_cost("anthropic", "claude-3-5-sonnet", 100, 0, cache_read_tokens=500)
+        assert out["cost_usd"] == Decimal("0.00015")
+
+    def test_bedrock_buckets_are_additive_to_the_reported_input(self):
+        configured = {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": "0.0001",
+                    "output_per_1k": "0.0004",
+                    "cache_read_per_1k": "0.0001",
+                    "cache_creation_per_1k": "0.0001",
+                }
+            }
+        }
+        out = _resolve_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 7, 20, configured, cache_read_tokens=3697)
+        assert out["cache_read_per_1k"] == Decimal("0.0001")
+        assert out["cache_creation_per_1k"] == Decimal("0.0001")
+        assert out["cost_usd"] == Decimal("0.0003784")
+
+    def test_bedrock_without_a_resolved_cache_rate_refuses_a_total(self):
+        configured = {"bedrock": {"m": {"input_per_1k": "0.00033", "output_per_1k": "0.00275"}}}
+        out = _resolve_cost("bedrock", "m", 7, 20, configured, cache_read_tokens=3697)
+        assert out["pricing_status"] == "unpriced"
+        assert out["cost_usd"] is None
+
+    def test_the_partial_snapshot_keeps_every_rate_that_was_known(self):
+        configured = {"bedrock": {"m": {"input_per_1k": "0.00033", "output_per_1k": "0.00275"}}}
+        out = _resolve_cost("bedrock", "m", 7, 20, configured, cache_read_tokens=3697)
+        assert out["input_per_1k"] == Decimal("0.00033"), "the base rates were resolved and stay on the row"
+        assert out["output_per_1k"] == Decimal("0.00275")
+        assert out["cache_read_per_1k"] is None, "only the bucket nobody could price is nulled"
+        assert out["cache_creation_per_1k"] is None
+
+    def test_a_bundled_profile_prices_a_cached_call_from_derived_rates(self):
+        out = _resolve_cost("bedrock", "eu.amazon.nova-2-lite-v1:0", 7, 20, cache_read_tokens=3697)
+        assert out["pricing_status"] == "fallback"
+        assert out["input_per_1k"] == Decimal("0.0001"), "base rates come from the bundled EU profile"
+        assert out["output_per_1k"] == Decimal("0.0004")
+        assert out["cache_read_per_1k"] == Decimal("0.00001")
+        assert out["cost_usd"] == Decimal("0.00004567")
+
+    def test_a_totally_unknown_model_still_snapshots_nothing(self):
+        out = _resolve_cost("bedrock", "amazon.titan-text-v1", 7, 20, cache_read_tokens=3697)
+        assert out["pricing_status"] == "unpriced"
+        assert all(out[key] is None for key in ("input_per_1k", "output_per_1k", "cost_usd"))
+
+    def test_configured_cache_rates_are_used_and_snapshotted(self):
+        configured = {
+            "bedrock": {
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": "0.0001",
+                    "output_per_1k": "0.0004",
+                    "cache_read_per_1k": "0.000025",
+                    "cache_creation_per_1k": "0",
+                }
+            }
+        }
+        out = _resolve_cost(
+            "bedrock",
+            "us.amazon.nova-2-lite-v1:0",
+            100,
+            10,
+            configured,
+            cache_read_tokens=1000,
+            cache_creation_tokens=2000,
+        )
+        assert out["pricing_status"] == "configured"
+        assert out["cache_read_per_1k"] == Decimal("0.000025")
+        assert out["cache_creation_per_1k"] == Decimal("0")
+        assert out["cost_usd"] == Decimal("0.000039")
+
+    def test_configured_cache_rates_override_the_anthropic_multipliers(self):
+        configured = {
+            "anthropic": {
+                "claude-3-5-sonnet": {
+                    "input_per_1k": "0.003",
+                    "output_per_1k": "0.015",
+                    "cache_read_per_1k": "0.001",
+                    "cache_creation_per_1k": "0.002",
+                }
+            }
+        }
+        out = _resolve_cost("anthropic", "claude-3-5-sonnet", 1000, 0, configured, cache_read_tokens=500)
+        assert out["cache_read_per_1k"] == Decimal("0.001")
+        assert out["cache_creation_per_1k"] == Decimal("0.002")
+
+    def test_unpriced_shape_carries_the_snapshot_keys(self):
+        out = _resolve_cost("openai", "totally-unknown-model", 1000, 1000, cache_read_tokens=500)
+        assert out["pricing_status"] == "unpriced"
+        assert out["cache_read_per_1k"] is None
+        assert out["cache_creation_per_1k"] is None
+        assert out["cost_usd"] is None
+
+    def test_usage_missing_wins_over_cache_counts(self):
+        out = _resolve_cost("anthropic", "claude-3-5-sonnet", 1000, 10, usage_missing=True, cache_read_tokens=500)
+        assert out["pricing_status"] == "unpriced"
+        assert out["cost_usd"] is None
+
     def test_missing_usage_stays_unpriced_even_with_a_configured_rate(self):
         configured = {"openai": {"gpt-4o": {"input_per_1k": Decimal("0.01"), "output_per_1k": Decimal("0.02")}}}
         out = _resolve_cost("openai", "gpt-4o", 0, 0, configured, usage_missing=True)
@@ -172,10 +296,9 @@ class TestResolveCost:
 
 
 class TestConfiguredRatesLoad:
-
     @staticmethod
-    def _rate(provider, model, inp, outp):
-        return SimpleNamespace(provider_key=provider, model_key=model, input_per_1k=inp, output_per_1k=outp)
+    def _rate(provider, model, inp, outp, **cache):
+        return SimpleNamespace(provider_key=provider, model_key=model, input_per_1k=inp, output_per_1k=outp, **cache)
 
     @pytest.mark.asyncio
     async def test_builds_nested_map_and_normalizes_keys(self, monkeypatch):
@@ -191,12 +314,46 @@ class TestConfiguredRatesLoad:
         loaded = await LlmUsageRecorder()._configured_rates(session)
 
         assert loaded == {
-            "openai": {"gpt-4o": {"input_per_1k": Decimal("0.01"), "output_per_1k": Decimal("0.02")}},
+            "openai": {
+                "gpt-4o": {
+                    "input_per_1k": Decimal("0.01"),
+                    "output_per_1k": Decimal("0.02"),
+                    "cache_read_per_1k": None,
+                    "cache_creation_per_1k": None,
+                }
+            },
             "bedrock": {
-                "us.amazon.nova-2-lite-v1:0": {"input_per_1k": Decimal("0.1"), "output_per_1k": Decimal("0.2")}
+                "us.amazon.nova-2-lite-v1:0": {
+                    "input_per_1k": Decimal("0.1"),
+                    "output_per_1k": Decimal("0.2"),
+                    "cache_read_per_1k": None,
+                    "cache_creation_per_1k": None,
+                }
             },
         }
         assert session.rolled_back is False
+
+    @pytest.mark.asyncio
+    async def test_configured_cache_rates_reach_the_pricing_table(self, monkeypatch):
+        rows = [
+            self._rate(
+                "bedrock",
+                "amazon.nova-2-lite-v1:0",
+                Decimal("0.0001"),
+                Decimal("0.0004"),
+                cache_read_per_1k=Decimal("0.000025"),
+                cache_creation_per_1k=Decimal("0"),
+            )
+        ]
+        monkeypatch.setattr(recorder_module.injector, "get", lambda _cls: FakeRateRepo(rows))
+
+        loaded = await LlmUsageRecorder()._configured_rates(FakeSession())
+
+        assert loaded["bedrock"]["amazon.nova-2-lite-v1:0"]["cache_read_per_1k"] == Decimal("0.000025")
+        assert loaded["bedrock"]["amazon.nova-2-lite-v1:0"]["cache_creation_per_1k"] == Decimal("0")
+        priced = _resolve_cost("bedrock", "eu.amazon.nova-2-lite-v1:0", 100, 0, loaded, cache_read_tokens=1000)
+        assert priced["pricing_status"] == "configured"
+        assert priced["cost_usd"] == Decimal("0.000035"), "1000 cache reads at the configured rate plus 100 input"
 
     @pytest.mark.asyncio
     async def test_load_failure_degrades_to_bundled_and_rolls_back(self, monkeypatch):
@@ -283,7 +440,6 @@ class TestAgentForWorkflow:
 
 
 class RecordingSession(FakeSession):
-
     def __init__(self):
         super().__init__()
         self.statements = []
@@ -292,6 +448,9 @@ class RecordingSession(FakeSession):
     async def execute(self, stmt):
         self.statements.append(stmt)
         return SimpleNamespace(all=lambda: [], scalar=lambda: 0, scalar_one_or_none=lambda: True)
+
+    async def scalar(self, stmt):
+        return True
 
     async def commit(self):
         self.committed = True
@@ -302,7 +461,6 @@ class RecordingSession(FakeSession):
 
 @pytest.fixture
 def record_scope(monkeypatch):
-
     @asynccontextmanager
     async def _scope():
         yield
@@ -357,9 +515,7 @@ class TestOccurredAt:
         recorded = datetime(2026, 7, 21, 0, 0, 15, tzinfo=timezone.utc)
         monkeypatch.setattr(recorder_module, "utc_now", lambda: recorded)
 
-        await LlmUsageRecorder().record_workflow_state(
-            _state(), WorkflowUsageContext(source="schedule"), "returned"
-        )
+        await LlmUsageRecorder().record_workflow_state(_state(), WorkflowUsageContext(source="schedule"), "returned")
 
         assert recorded in _bound_values(record_scope.statements)
 
@@ -407,7 +563,6 @@ class TestCaptureBound:
 
 
 class EvaluationSession(FakeSession):
-
     def __init__(
         self, *, workflows=(), providers=(), agents=(), workflow_agents=None, persisted=0, capture_enabled=True
     ):
@@ -447,7 +602,6 @@ class EvaluationSession(FakeSession):
 
 @pytest.fixture
 def evaluation_scope(monkeypatch):
-
     @asynccontextmanager
     async def _scope():
         yield
@@ -496,7 +650,6 @@ def _entry(call_index=0, purpose="llm_judge", provider="openai", model="gpt-4o",
 
 
 class TestRecordEvaluationCalls:
-
     @pytest.mark.asyncio
     async def test_empty_entries_never_touch_the_database(self, evaluation_scope):
         session = evaluation_scope(EvaluationSession())
@@ -630,9 +783,7 @@ class TestRecordEvaluationCalls:
     async def test_unknown_workflow_and_provider_are_nulled_not_rejected(self, evaluation_scope):
         session = evaluation_scope(EvaluationSession())
 
-        await LlmUsageRecorder().record_evaluation_calls(
-            "eval:abc", [_entry(provider_id=uuid4())], workflow_id=uuid4()
-        )
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry(provider_id=uuid4())], workflow_id=uuid4())
 
         row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
         assert row["workflow_id"] is None and row["llm_provider_id"] is None and row["agent_id"] is None
@@ -675,3 +826,115 @@ class TestWorkflowUsageContext:
         ctx = WorkflowUsageContext(source="schedule", agent_id=aid)
         assert isinstance(ctx.agent_id, UUID)
         assert ctx.agent_id == aid
+
+
+class TestTokenColumns:
+    def test_cache_counts_are_read_from_the_token_details(self):
+        details = {"input_token_details": {"cache_read": 3697, "cache_creation": 60}}
+
+        assert _token_columns("bedrock", {"total_tokens": 3724}, 7, 20, details) == {
+            "input_tokens": 7,
+            "output_tokens": 20,
+            "total_tokens": 3724,
+            "token_details": details,
+            "cache_read_tokens": 3697,
+            "cache_creation_tokens": 60,
+            "prompt_tokens": 3764,
+        }
+
+    def test_stored_counts_stay_provider_raw(self):
+        columns = _token_columns("bedrock", {}, 7, 20, {"input_token_details": {"cache_read": 3697}})
+
+        assert columns["input_tokens"] == 7
+        assert columns["total_tokens"] == 27, "unchanged max(reported, in+out)"
+
+    def test_prompt_tokens_add_the_cache_buckets_only_for_exclusive_providers(self):
+        details = {"input_token_details": {"cache_read": 3697, "cache_creation": 60}}
+
+        assert _token_columns("bedrock", {}, 7, 20, details)["prompt_tokens"] == 3764
+        assert _token_columns("anthropic", {}, 3764, 20, details)["prompt_tokens"] == 3764
+
+    def test_prompt_tokens_are_normalized_before_the_provider_lookup(self):
+        details = {"input_token_details": {"cache_read": 100}}
+
+        assert _token_columns("  Bedrock ", {}, 7, 20, details)["prompt_tokens"] == 107
+
+    @pytest.mark.parametrize("details", [None, {}, "junk", {"usage_metadata_missing": True}])
+    def test_entries_without_cache_details_count_zero(self, details):
+        columns = _token_columns("bedrock", {}, 10, 5, details)
+
+        assert (columns["cache_read_tokens"], columns["cache_creation_tokens"]) == (0, 0)
+        assert columns["prompt_tokens"] == 10, "an uncached call keeps the reported input count"
+
+
+_CACHED_DETAILS = {"input_token_details": {"cache_read": 500, "cache_creation": 60}}
+
+
+class TestCacheColumnWiring:
+
+    @pytest.mark.asyncio
+    async def test_workflow_rows_carry_counts_and_snapshots(self, record_scope):
+        state = SimpleNamespace(
+            execution_id=str(uuid4()),
+            llm_usage=[
+                {
+                    "provider": "bedrock",
+                    "model": "eu.amazon.nova-2-lite-v1:0",
+                    "input_tokens": 7,
+                    "output_tokens": 20,
+                    "total_tokens": 3724,
+                    "token_details": {"input_token_details": {"cache_read": 3697, "cache_creation": 0}},
+                }
+            ],
+            thread_id=None,
+            status="completed",
+        )
+
+        await LlmUsageRecorder().record_workflow_state(state, WorkflowUsageContext(source="chat"), "returned")
+
+        row = _rows_of(_insert_for(record_scope.statements, "llm_usage_events"))[0]
+        assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (3697, 0)
+        assert row["input_tokens"] == 7, "provider-raw, not inflated by the cached prefix"
+        assert row["cost_usd"] == Decimal("0.00004567") and row["pricing_status"] == "fallback"
+        assert row["input_per_1k"] == Decimal("0.0001")
+        assert (row["cache_read_per_1k"], row["cache_creation_per_1k"]) == (Decimal("0.00001"), Decimal("0.000125"))
+        assert row["prompt_tokens"] == 3704, "bedrock reports input without the cache buckets"
+
+    @pytest.mark.asyncio
+    async def test_evaluation_rows_carry_counts_and_snapshots(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+        usage = {"input_tokens": 660, "output_tokens": 10, "total_tokens": 670, "token_details": _CACHED_DETAILS}
+
+        await LlmUsageRecorder().record_evaluation_calls(
+            "eval:abc", [_entry(provider="anthropic", model="claude-3-5-sonnet", usage=usage)]
+        )
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (500, 60)
+        assert row["cache_read_per_1k"] == Decimal("0.0003"), "0.1x of the anthropic input rate"
+        assert row["prompt_tokens"] == 660, "anthropic already counts the cache buckets in"
+
+    @pytest.mark.asyncio
+    async def test_analyst_row_carries_counts_and_snapshots(self, record_scope):
+        await LlmUsageRecorder().record_analyst_call(
+            "analysis:1",
+            0,
+            "anthropic",
+            "claude-3-5-sonnet",
+            usage={"input_tokens": 660, "output_tokens": 10, "total_tokens": 670, "token_details": _CACHED_DETAILS},
+        )
+
+        row = _rows_of(_insert_for(record_scope.statements, "llm_usage_events"))[0]
+        assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (500, 60)
+        assert row["cache_creation_per_1k"] == Decimal("0.00375"), "1.25x of the anthropic input rate"
+
+    @pytest.mark.asyncio
+    async def test_uncached_rows_keep_zero_counts_and_null_snapshots(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession())
+
+        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert (row["cache_read_tokens"], row["cache_creation_tokens"]) == (0, 0)
+        assert (row["cache_read_per_1k"], row["cache_creation_per_1k"]) == (None, None)
+        assert row["prompt_tokens"] == row["input_tokens"], "an uncached call needs no adjustment"

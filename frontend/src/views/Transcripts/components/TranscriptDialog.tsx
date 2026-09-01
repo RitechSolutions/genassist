@@ -143,6 +143,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
     input_tokens: 0,
     output_tokens: 0,
   });
+  const [costIncomplete, setCostIncomplete] = useState(false);
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -269,6 +270,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
 
       setCostsByMessageId(map);
       setTotalCost(totalCost);
+      setCostIncomplete(logs.some((log) => log.cost_usd == null));
     });
   }, [isOpen, localTranscript?.id]);
 
@@ -626,7 +628,19 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                 <h4 className="text-sm font-medium mb-2">Conversation Costs</h4>
                 <p className="text-sm text-muted-foreground flex justify-between"><span>Input Tokens:</span> <b>{totalCost.input_tokens}</b></p>
                 <p className="text-sm text-muted-foreground flex justify-between"><span>Output Tokens:</span> <b>{totalCost.output_tokens}</b></p>
-                <p className="text-sm text-muted-foreground flex justify-between"><span>Total Cost:</span> <b>${totalCost.total.toFixed(6)}</b></p>
+                <p
+                  className="text-sm text-muted-foreground flex justify-between"
+                  title={
+                    costIncomplete
+                      ? 'Some messages have no cost recorded. The real total is higher than this.'
+                      : undefined
+                  }
+                >
+                  <span>Total Cost:</span>{' '}
+                  <b>
+                    {costIncomplete ? '≥ ' : ''}${totalCost.total.toFixed(6)}
+                  </b>
+                </p>
               </div>
               </>
             )}
