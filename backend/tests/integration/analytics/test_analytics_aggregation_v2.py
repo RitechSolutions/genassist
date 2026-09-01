@@ -246,7 +246,7 @@ def _pin_db_now(repo, now):
     repo.get_db_now = _now
 
 
-async def _seed_conversation(world, session, *, updated_at, is_deleted=0, conversation_date=None, log_at=()):
+async def _seed_conversation(world, session, *, updated_at, is_deleted=0, conversation_date=None, log_at=(), raw=None):
     conversation_id = uuid4()
     world.conversation_ids.append(conversation_id)
     with acting_as(world.user.id):
@@ -285,7 +285,7 @@ async def _seed_conversation(world, session, *, updated_at, is_deleted=0, conver
                     id=uuid4(),
                     transcript_message_id=message_id,
                     conversation_id=conversation_id,
-                    raw_response=_raw(world.agent_id),
+                    raw_response=_raw(world.agent_id) if raw is None else raw,
                     logged_at=logged_at,
                     is_deleted=0,
                 )
@@ -348,7 +348,7 @@ async def test_v1_flag_off_runs_legacy_and_swallows_dry_run_failure(world, monke
         repo.get_aggregation_state = sql_broken_preview
 
         async def no_writes(stat_date):
-            return [], []
+            return [], [], 0
 
         monkeypatch.setattr(service, "_aggregate_single_date", no_writes)
 
@@ -511,6 +511,115 @@ async def test_first_run_without_state_or_stats_stays_within_the_bounded_window(
         assert result["dates_selected"] == 2, "no cursor and no stats must still seed yesterday+today only"
         assert await _agent_row(session, world.agent_id, ancient_day) is None, "years-old logs stay for the backfill"
         assert await _get_cursor(session) == FAKE_NOW
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_unreadable_logs_rebuild_the_readable_part_but_never_reconcile(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        await _set_cursor(session, FAKE_NOW - timedelta(hours=54))
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[datetime.combine(D1, time(10, 0), tzinfo=timezone.utc)],
+        )
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[datetime.combine(D1, time(11, 0), tzinfo=timezone.utc)],
+            raw="{ truncated",
+        )
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[datetime.combine(YESTERDAY, time(10, 0), tzinfo=timezone.utc)],
+            raw="[]",
+        )
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[datetime.combine(YESTERDAY, time(11, 0), tzinfo=timezone.utc)],
+            raw=json.dumps({"status": "success"}),
+            is_deleted=1,
+        )
+        _add_agent_phantom(session, world.agent_id, D1, execution_count=7)
+        _add_agent_phantom(session, world.agent2_id, D1)
+        _add_agent_phantom(session, world.agent2_id, YESTERDAY)
+        await session.commit()
+
+        service, repo = _service(world, session)
+        _pin_db_now(repo, FAKE_NOW)
+        result = await service.aggregate_daily_stats()
+
+        assert result["dates_not_reconciled"] == 2, "both dates are reported incomplete"
+        rebuilt = await _agent_row(session, world.agent_id, D1)
+        assert rebuilt.execution_count == 1, "the readable log is authoritative for the key it produced"
+        for day in (D1, YESTERDAY):
+            untouched = await _agent_row(session, world.agent2_id, day)
+            assert untouched is not None, f"{day}: a row the rebuild did not produce must not be reconciled"
+            assert untouched.execution_count == 3 and untouched.last_aggregated_at == OLD_STAMP, f"{day}: nor altered"
+        assert await _get_cursor(session) == FAKE_NOW, "the cursor still advances"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_unreadable_log_today_rebuilds_the_readable_part_and_flags_the_run(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        await _set_cursor(session, FAKE_NOW - timedelta(hours=6))
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[FAKE_NOW - timedelta(hours=2)],
+        )
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[FAKE_NOW - timedelta(hours=3)],
+            raw="{ truncated",
+        )
+        _add_agent_phantom(session, world.agent_id, TODAY, execution_count=5)
+        await session.commit()
+
+        service, repo = _service(world, session)
+        _pin_db_now(repo, FAKE_NOW)
+        result = await service.aggregate_daily_stats()
+
+        assert result["today_rebuild_failed"] is True, "an unreadable log today marks the run incomplete"
+        row = await _agent_row(session, world.agent_id, TODAY)
+        assert row.execution_count == 1, "today is still rebuilt from what could be read"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_masked_agent_id_is_recovered_through_the_operator(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        await _set_cursor(session, FAKE_NOW - timedelta(hours=54))
+        masked = json.loads(_raw(world.agent_id))
+        masked["agent_id"] = "[CUSTOMER_TIER]"
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[datetime.combine(D1, time(10, 0), tzinfo=timezone.utc)],
+            raw=json.dumps(masked),
+        )
+        _add_agent_phantom(session, world.agent2_id, D1)
+        await session.commit()
+
+        service, repo = _service(world, session)
+        _pin_db_now(repo, FAKE_NOW)
+        result = await service.aggregate_daily_stats()
+
+        assert result["dates_not_reconciled"] == 0, "a recoverable agent_id must not fail the date closed"
+        row = await _agent_row(session, world.agent_id, D1)
+        assert row is not None and row.execution_count == 1, "the log is attributed via conversation.operator_id"
+        assert await _agent_row(session, world.agent2_id, D1) is None, "and the date is reconciled as normal"
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -706,7 +815,7 @@ async def test_flag_off_without_the_preview_runs_no_v2_discovery(world, monkeypa
         repo.discover_affected_dates = spy
 
         async def no_writes(stat_date):
-            return [], []
+            return [], [], 0
 
         monkeypatch.setattr(service, "_aggregate_single_date", no_writes)
 

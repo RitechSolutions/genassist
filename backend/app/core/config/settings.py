@@ -344,7 +344,8 @@ class ProjectSettings(BaseSettings):
     WEB_SEARCH_TENANT_PER_MINUTE: int = 30
 
     # === Analytics Aggregation ===
-    # Rollout flag: off keeps the legacy aggregation path unchanged.
+    # Rollout flag: off restores the legacy discovery strategy. Not a full revert,
+    # the shared UTC date alignment stays active either way.
     ANALYTICS_AGG_V2: bool = False
     ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
     # First-cutover seed window below the MAX(last_aggregated_at).

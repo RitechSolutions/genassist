@@ -38,6 +38,9 @@ class _StubResult:
     def all(self):
         return []
 
+    def scalars(self):
+        return self
+
 
 class RecordingSession(CapturingSession):
     async def execute(self, stmt):
@@ -89,10 +92,25 @@ class TestDailyStatsUpsert:
         for column in ("execution_count", "avg_response_ms", "min_response_ms", "unique_conversations"):
             assert f"{column} = excluded.{column}" in sql
 
+    def test_conflict_revives_a_soft_deleted_row(self):
+        assert "is_deleted = excluded.is_deleted" in _rendered_upsert()
+
     def test_timing_columns_are_still_cleared_by_null(self):
         sql = _rendered_upsert()
         assert "avg_response_ms = coalesce" not in sql
         assert "total_response_ms = coalesce" not in sql
+
+
+class TestLogPaginationOrdering:
+    def test_per_date_paging_orders_by_a_unique_key(self):
+        statements = _capture(lambda repo: repo.get_response_logs_for_date(STAT_DATE))
+        sql = str(_compiled(statements[0])).lower()
+        assert "order by agent_response_logs.logged_at, agent_response_logs.id" in sql
+
+    def test_windowed_paging_orders_by_a_unique_key(self):
+        statements = _capture(lambda repo: repo.get_response_logs_since(SINCE, UNTIL))
+        sql = str(_compiled(statements[0])).lower()
+        assert "order by agent_response_logs.logged_at, agent_response_logs.id" in sql
 
 
 class TestDiscoveryStatementShape:

@@ -108,7 +108,7 @@ class AnalyticsAggregationService:
         all_node_stats = []
 
         for stat_date in affected_dates:
-            agent_stats, node_stats = await self._aggregate_single_date(stat_date)
+            agent_stats, node_stats, _ = await self._aggregate_single_date(stat_date)
             all_agent_stats.extend(agent_stats)
             all_node_stats.extend(node_stats)
 
@@ -178,10 +178,11 @@ class AnalyticsAggregationService:
 
         agent_rows = 0
         node_rows = 0
+        unreconciled = 0
         for stat_date in past_dates:
             logger.info(f"[analytics-agg] tenant={tenant}: processing {stat_date}")
             try:
-                added_agents, added_nodes = await self._process_past_date(stat_date)
+                added_agents, added_nodes, skipped = await self._process_past_date(stat_date)
             except Exception:
                 await self.db.rollback()
                 logger.error(
@@ -192,15 +193,22 @@ class AnalyticsAggregationService:
                 raise
             agent_rows += added_agents
             node_rows += added_nodes
+            unreconciled += skipped
             logger.info(f"[analytics-agg] tenant={tenant}: date {stat_date} committed")
 
         logger.info(f"[analytics-agg] tenant={tenant}: processing today ({today})")
         today_rebuild_failed = False
         try:
-            agent_stats, node_stats = await self._rebuild_and_upsert(today)
+            agent_stats, node_stats, unattributed = await self._rebuild_and_upsert(today)
             await self.db.commit()
             agent_rows += len(agent_stats)
             node_rows += len(node_stats)
+            if unattributed:
+                today_rebuild_failed = True
+                logger.error(
+                    f"[analytics-agg] tenant={tenant}: today ({today}) has {unattributed} unreadable "
+                    "log(s); rebuilt from the readable ones only"
+                )
         except SoftTimeLimitExceeded:
             await self.db.rollback()
             raise
@@ -216,12 +224,14 @@ class AnalyticsAggregationService:
         cursor_age = (utc_now() - cutoff.astimezone(timezone.utc)).total_seconds()
         logger.info(
             f"[analytics-agg] tenant={tenant}: cursor advanced to {cutoff} (age {cursor_age:.0f}s); "
-            f"{len(past_dates)} past date(s), agent_rows={agent_rows}, node_rows={node_rows}"
+            f"{len(past_dates)} past date(s), agent_rows={agent_rows}, node_rows={node_rows}, "
+            f"unreconciled={unreconciled}"
         )
         return {
             "agent_stats_upserted": agent_rows,
             "node_stats_upserted": node_rows,
             "dates_selected": len(selected),
+            "dates_not_reconciled": unreconciled,
             "today_rebuild_failed": today_rebuild_failed,
         }
 
@@ -252,10 +262,11 @@ class AnalyticsAggregationService:
 
         agent_rows = 0
         node_rows = 0
+        unreconciled = 0
         for stat_date in past_dates:
             logger.info(f"[analytics-agg] tenant={tenant}: backfill processing {stat_date}")
             try:
-                added_agents, added_nodes = await self._process_past_date(stat_date)
+                added_agents, added_nodes, skipped = await self._process_past_date(stat_date)
             except Exception:
                 await self.db.rollback()
                 logger.error(
@@ -265,11 +276,13 @@ class AnalyticsAggregationService:
                 raise
             agent_rows += added_agents
             node_rows += added_nodes
+            unreconciled += skipped
 
+        today_rebuild_failed = False
         if today in selected:
             logger.info(f"[analytics-agg] tenant={tenant}: backfill processing today ({today})")
             try:
-                agent_stats, node_stats = await self._rebuild_and_upsert(today)
+                agent_stats, node_stats, unattributed = await self._rebuild_and_upsert(today)
                 await self.db.commit()
             except Exception:
                 # A manual backfill surfaces the failure instead of swallowing it
@@ -282,22 +295,50 @@ class AnalyticsAggregationService:
                 raise
             agent_rows += len(agent_stats)
             node_rows += len(node_stats)
+            if unattributed:
+                today_rebuild_failed = True
+                logger.error(
+                    f"[analytics-agg] tenant={tenant}: backfill today ({today}) has {unattributed} "
+                    "unreadable log(s); rebuilt from the readable ones only"
+                )
 
         logger.info(
             f"[analytics-agg] tenant={tenant}: backfill complete; "
-            f"agent_rows={agent_rows}, node_rows={node_rows} across {len(selected)} date(s)"
+            f"agent_rows={agent_rows}, node_rows={node_rows} across {len(selected)} date(s), "
+            f"unreconciled={unreconciled}"
         )
-        return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows, "dates_selected": len(selected)}
+        return {
+            "agent_stats_upserted": agent_rows,
+            "node_stats_upserted": node_rows,
+            "dates_selected": len(selected),
+            "dates_not_reconciled": unreconciled,
+            "today_rebuild_failed": today_rebuild_failed,
+        }
 
-    async def _rebuild_and_upsert(self, stat_date: date) -> tuple[list[dict], list[dict]]:
-        agent_stats, node_stats = await self._aggregate_single_date(stat_date)
+    async def _rebuild_and_upsert(self, stat_date: date) -> tuple[list[dict], list[dict], int]:
+        """Rebuild one date from every log it can read and upsert the result."""
+        agent_stats, node_stats, unattributed = await self._aggregate_single_date(stat_date)
         await self.repo.upsert_agent_daily_stats(agent_stats)
         await self.repo.upsert_node_daily_stats(node_stats)
-        return agent_stats, node_stats
+        return agent_stats, node_stats, unattributed
 
-    async def _process_past_date(self, stat_date: date) -> tuple[int, int]:
-        """Rebuild + upsert + reconcile one past date; the whole date commits atomically."""
-        agent_stats, node_stats = await self._rebuild_and_upsert(stat_date)
+    async def _process_past_date(self, stat_date: date) -> tuple[int, int, bool]:
+        """Rebuild + upsert + reconcile one past date; the whole date commits atomically.
+        Reconciliation deletes and zeroes whatever the rebuild did not produce, and an
+        unreadable log's agent is exactly what it did not produce, so it is skipped
+        whenever any log stayed unattributed.
+        """
+        agent_stats, node_stats, unattributed = await self._rebuild_and_upsert(stat_date)
+        if unattributed:
+            await self.db.commit()
+            logger.error(
+                f"[analytics-agg] tenant={get_tenant_context()}: {stat_date} has {unattributed} "
+                "unreadable log(s); rebuilt from the readable ones, NOT reconciled. Repair the "
+                "log payloads, then backfill the date — a backfill over the same logs skips "
+                "reconciliation again"
+            )
+            return len(agent_stats), len(node_stats), True
+
         stamped_at = utc_now()
         deleted, zeroed = await self.repo.reconcile_agent_daily_stats(
             stat_date, [s["agent_id"] for s in agent_stats], stamped_at
@@ -311,7 +352,7 @@ class AnalyticsAggregationService:
                 f"[analytics-agg] tenant={get_tenant_context()}: reconciled {stat_date}: "
                 f"agent deleted={deleted} zeroed={zeroed}, node deleted={nodes_deleted}"
             )
-        return len(agent_stats), len(node_stats)
+        return len(agent_stats), len(node_stats), False
 
     async def _aggregate_dates_streaming(self, affected_dates: list[date]) -> dict:
         """Aggregate and upsert one date at a time to keep memory bounded.
@@ -323,7 +364,7 @@ class AnalyticsAggregationService:
         agent_rows = 0
         node_rows = 0
         for stat_date in affected_dates:
-            agent_stats, node_stats = await self._aggregate_single_date(stat_date)
+            agent_stats, node_stats, _ = await self._aggregate_single_date(stat_date)
             await self.repo.upsert_agent_daily_stats(agent_stats)
             await self.repo.upsert_node_daily_stats(node_stats)
             agent_rows += len(agent_stats)
@@ -333,11 +374,11 @@ class AnalyticsAggregationService:
         )
         return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows}
 
-    async def _aggregate_single_date(self, stat_date: date) -> tuple[list[dict], list[dict]]:
+    async def _aggregate_single_date(self, stat_date: date) -> tuple[list[dict], list[dict], int]:
         """
         Aggregate ALL logs for a single date.
 
-        Returns tuple of (agent_stats_list, node_stats_list).
+        Returns tuple of (agent_stats_list, node_stats_list, unattributed_log_count).
         """
         # Fetch ALL logs for this date (paginated to avoid memory issues)
         BATCH_SIZE = 10000
@@ -354,16 +395,23 @@ class AnalyticsAggregationService:
             offset += BATCH_SIZE
 
         if not all_logs:
-            return [], []
+            return [], [], 0
+
+        # Hidden-value masking can rewrite the payload's agent_id before it is logged;
+        # the conversation's operator still identifies the agent unambiguously.
+        operator_ids = {log.conversation.operator_id for log in all_logs if log.conversation is not None}
+        agent_by_operator = await self.repo.get_agent_ids_by_operator(operator_ids)
 
         # Build buckets from all logs for this date
-        agent_buckets, node_buckets = self._build_buckets_from_logs(all_logs, stat_date)
+        agent_buckets, node_buckets, unattributed = self._build_buckets_from_logs(
+            all_logs, stat_date, agent_by_operator
+        )
 
         # Convert buckets to stats dicts
         agent_stats = self._build_agent_stats_from_buckets(agent_buckets)
         node_stats = self._build_node_stats_from_buckets(node_buckets)
 
-        return agent_stats, node_stats
+        return agent_stats, node_stats, unattributed
 
     def _create_agent_bucket(self) -> dict:
         """Factory for agent bucket accumulator."""
@@ -393,32 +441,43 @@ class AnalyticsAggregationService:
         }
 
     def _build_buckets_from_logs(
-        self, logs: list[AgentResponseLogModel], stat_date: date
-    ) -> tuple[dict[tuple, dict], dict[tuple, dict]]:
+        self,
+        logs: list[AgentResponseLogModel],
+        stat_date: date,
+        agent_by_operator: dict[UUID, UUID] | None = None,
+    ) -> tuple[dict[tuple, dict], dict[tuple, dict], int]:
         """
         Process logs and build accumulator buckets.
 
-        Returns (agent_buckets, node_buckets) where:
+        Returns (agent_buckets, node_buckets, unattributed) where:
         - agent_buckets: keyed by (agent_id, stat_date)
         - node_buckets: keyed by (agent_id, node_type, stat_date)
+        - unattributed: logs skipped because no agent could be resolved from them,
+          neither from the payload nor via ``agent_by_operator``
         """
         agent_buckets: dict[tuple, dict] = defaultdict(self._create_agent_bucket)
         node_buckets: dict[tuple, dict] = defaultdict(self._create_node_bucket)
+        unattributed = 0
 
         for log in logs:
             try:
                 payload = json.loads(log.raw_response)
             except (json.JSONDecodeError, TypeError):
                 logger.warning(f"Could not parse raw_response for log id={log.id}")
+                unattributed += 1
                 continue
-
-            agent_id_raw = payload.get("agent_id")
-            if not agent_id_raw:
+            if not isinstance(payload, dict):
+                unattributed += 1
                 continue
 
             try:
-                agent_id = UUID(str(agent_id_raw))
-            except (ValueError, AttributeError):
+                agent_id = UUID(str(payload.get("agent_id") or ""))
+            except ValueError:
+                agent_id = None
+                if agent_by_operator and log.conversation is not None:
+                    agent_id = agent_by_operator.get(log.conversation.operator_id)
+            if agent_id is None:
+                unattributed += 1
                 continue
 
             agent_key = (agent_id, stat_date)
@@ -524,7 +583,7 @@ class AnalyticsAggregationService:
                 )
                 ab["node_success_rates"].append(success_nodes / total_nodes)
 
-        return dict(agent_buckets), dict(node_buckets)
+        return dict(agent_buckets), dict(node_buckets), unattributed
 
     def _build_agent_stats_from_buckets(self, agent_buckets: dict[tuple, dict]) -> list[dict]:
         """Convert agent buckets to stats dictionaries for upsert."""

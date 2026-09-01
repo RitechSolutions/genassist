@@ -18,15 +18,19 @@ def _count_failures(payload: dict) -> int:
     return sum(1 for entry in results if isinstance(entry, dict) and "error" in entry)
 
 
-def _count_today_rebuild_failures(results: list) -> int:
-    """Today's rebuild is retried next run and never fails a tenant, so its failures
-    only reach the summary through the nested V2 result."""
+def _count_incomplete(results: list) -> int:
+    """Dates intentionally skipped because they need log repair. Prevents green
+    run status even when no tenant raised."""
+    return _sum_nested_result(results, "dates_not_reconciled") + _sum_nested_result(results, "today_rebuild_failed")
+
+
+def _sum_nested_result(results: list, key: str) -> int:
+    """Sum a V2 counter across tenants. These never fail a tenant run, so they reach
+    the summary only through the nested per-tenant result."""
     return sum(
-        1
+        int(entry["result"].get(key) or 0)
         for entry in results
-        if isinstance(entry, dict)
-        and isinstance(entry.get("result"), dict)
-        and entry["result"].get("today_rebuild_failed")
+        if isinstance(entry, dict) and isinstance(entry.get("result"), dict)
     )
 
 
@@ -52,14 +56,21 @@ async def aggregate_agent_analytics_async_with_scope():
     elapsed = monotonic() - started
     failures = _count_failures(payload)
     results = payload.get("results") or []
+    incomplete = _count_incomplete(results)
     completed = sum(1 for entry in results if isinstance(entry, dict) and "result" in entry)
     logger.info(
         f"[analytics-agg] run finished in {elapsed:.1f}s: status={payload.get('status')}, "
         f"tenants_completed={completed}, failure_signals={failures}, "
-        f"today_rebuild_failures={_count_today_rebuild_failures(results)}, entries={len(results)}"
+        f"today_rebuild_failures={_sum_nested_result(results, 'today_rebuild_failed')}, "
+        f"dates_not_reconciled={_sum_nested_result(results, 'dates_not_reconciled')}, "
+        f"entries={len(results)}"
     )
-    if failures and settings.ANALYTICS_AGG_V2:
-        raise RuntimeError(f"agent analytics aggregation failed for {failures} tenant run(s)")
+    # Raised only after every tenant was attempted, and counts only: tenant names and
+    # raw error text stay in the logs.
+    if (failures or incomplete) and settings.ANALYTICS_AGG_V2:
+        raise RuntimeError(
+            f"agent analytics aggregation failed for {failures} tenant run(s), {incomplete} date(s) left incomplete"
+        )
     return payload
 
 
@@ -90,8 +101,10 @@ def backfill_agent_analytics(tenant_id: str, from_date: str | None = None, to_da
     (from the request's tenant context). ``from_date`` / ``to_date`` are inclusive
     ISO date strings (``YYYY-MM-DD``) bounding the window to recompute; omit either
     to run open-ended. At large scale, run it in slices (e.g. one month per call).
-    Idempotent, but not non-destructive. Rebuilds all past dates; stale agent/node rows
-    # deleted or zeroed (kept if has cost data); unsupported rows dropped.
+    Idempotent, but not non-destructive: every past date in the window is rebuilt
+    authoritatively and reconciled, so agent rows the rebuild no longer produces are
+    deleted when they carry no token/cost data and zeroed when they do, and absent node
+    rows are deleted.
     """
     return run_async_in_celery(
         backfill_agent_analytics_async_with_scope(tenant_id=tenant_id, from_date=from_date, to_date=to_date),
@@ -113,8 +126,12 @@ async def backfill_agent_analytics_async_with_scope(
         from_date=from_date,
         to_date=to_date,
     )
-    if settings.ANALYTICS_AGG_V2 and result.get("status") == "failed":
-        raise RuntimeError("agent analytics backfill failed for 1 tenant run")
+    incomplete = _count_incomplete([result])
+    if settings.ANALYTICS_AGG_V2 and (result.get("status") == "failed" or incomplete):
+        failed = 1 if result.get("status") == "failed" else 0
+        raise RuntimeError(
+            f"agent analytics backfill failed for {failed} tenant run(s), {incomplete} date(s) left incomplete"
+        )
     return result
 
 

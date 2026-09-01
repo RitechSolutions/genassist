@@ -101,6 +101,7 @@ class AnalyticsAggregationRepository:
             "total_output_tokens": func.coalesce(tbl.c.total_output_tokens, 0) + (output_tokens or 0),
             "total_cost_usd": func.coalesce(tbl.c.total_cost_usd, 0.0) + cost_usd,
             "last_aggregated_at": stmt.excluded.last_aggregated_at,
+            "is_deleted": stmt.excluded.is_deleted,
             "updated_at": stmt.excluded.updated_at,
         }
 
@@ -165,6 +166,7 @@ class AnalyticsAggregationRepository:
                 "execution_count": tbl.c.execution_count + stmt.excluded.execution_count,
                 "success_count": tbl.c.success_count + stmt.excluded.success_count,
                 "failure_count": tbl.c.failure_count + stmt.excluded.failure_count,
+                "is_deleted": stmt.excluded.is_deleted,
                 "updated_at": stmt.excluded.updated_at,
             }
 
@@ -226,6 +228,7 @@ class AnalyticsAggregationRepository:
             update_set = {
                 "unique_conversations": tbl.c.unique_conversations + 1,
                 "in_progress_conversations": tbl.c.in_progress_conversations + 1,
+                "is_deleted": stmt.excluded.is_deleted,
                 "updated_at": stmt.excluded.updated_at,
             }
         else:  # finalize
@@ -234,6 +237,7 @@ class AnalyticsAggregationRepository:
                 "in_progress_conversations": func.greatest(
                     tbl.c.in_progress_conversations - 1, 0
                 ),
+                "is_deleted": stmt.excluded.is_deleted,
                 "updated_at": stmt.excluded.updated_at,
             }
 
@@ -258,6 +262,19 @@ class AnalyticsAggregationRepository:
             select(AgentModel.id).where(AgentModel.operator_id == operator_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_agent_ids_by_operator(self, operator_ids: set[UUID]) -> dict[UUID, UUID]:
+        """Bulk lookup for attribution fallback. Pure mapping (operator_id unique),
+        bypasses filters like the primary path."""
+        if not operator_ids:
+            return {}
+        stmt = (
+            select(AgentModel.operator_id, AgentModel.id)
+            .where(AgentModel.operator_id.in_(operator_ids))
+            .execution_options(**_DISCOVERY_FLAGS)
+        )
+        result = await self.db.execute(stmt)
+        return {operator_id: agent_id for operator_id, agent_id in result.all()}
 
     async def increment_thumbs(self, agent_id: UUID, is_thumbs_up: bool) -> None:
         """Increment thumbs_up_count or thumbs_down_count on agent_execution_daily_stats."""
@@ -291,11 +308,13 @@ class AnalyticsAggregationRepository:
         if is_thumbs_up:
             update_set = {
                 "thumbs_up_count": tbl.c.thumbs_up_count + 1,
+                "is_deleted": stmt.excluded.is_deleted,
                 "updated_at": stmt.excluded.updated_at,
             }
         else:
             update_set = {
                 "thumbs_down_count": tbl.c.thumbs_down_count + 1,
+                "is_deleted": stmt.excluded.is_deleted,
                 "updated_at": stmt.excluded.updated_at,
             }
 
@@ -328,7 +347,7 @@ class AnalyticsAggregationRepository:
                 AgentResponseLogModel.logged_at <= until,
                 AgentResponseLogModel.is_deleted == 0,
             )
-            .order_by(AgentResponseLogModel.logged_at)
+            .order_by(AgentResponseLogModel.logged_at, AgentResponseLogModel.id)
             .limit(limit)
             .offset(offset)
         )
@@ -363,7 +382,7 @@ class AnalyticsAggregationRepository:
                 AgentResponseLogModel.logged_at <= end_of_day,
                 AgentResponseLogModel.is_deleted == 0,
             )
-            .order_by(AgentResponseLogModel.logged_at)
+            .order_by(AgentResponseLogModel.logged_at, AgentResponseLogModel.id)
             .limit(limit)
             .offset(offset)
         )
@@ -433,6 +452,7 @@ class AnalyticsAggregationRepository:
                     "thumbs_up_count": stmt.excluded.thumbs_up_count,
                     "thumbs_down_count": stmt.excluded.thumbs_down_count,
                     "last_aggregated_at": stmt.excluded.last_aggregated_at,
+                    "is_deleted": stmt.excluded.is_deleted,
                     "updated_at": stmt.excluded.updated_at,
                 },
             )
@@ -489,6 +509,7 @@ class AnalyticsAggregationRepository:
                     "min_execution_ms": stmt.excluded.min_execution_ms,
                     "max_execution_ms": stmt.excluded.max_execution_ms,
                     "total_execution_ms": stmt.excluded.total_execution_ms,
+                    "is_deleted": stmt.excluded.is_deleted,
                     "updated_at": stmt.excluded.updated_at,
                 },
             )
@@ -501,14 +522,15 @@ class AnalyticsAggregationRepository:
         return result.scalars().first()
 
     async def get_db_now(self) -> datetime:
-        """Database clock, the discovery cutoff must order against DB-stamped timestamps."""
+        """Shared cutoff all workers use (DB-sourced, not local clocks). App-written
+        imestamps via Python callables. Overlap absorbs skew."""
         result = await self.db.execute(select(func.now()))
         return result.scalar_one()
 
     async def upsert_aggregation_state(self, cutoff: datetime) -> None:
         """Advance the cursor to cutoff. GREATEST keeps it monotonic under a stale write.
-        Reset is_deleted: the unique constraint matches soft-deleted rows, which
-        the global filter hides..
+        Reset is_deleted: the unique constraint matches soft-deleted rows, which the
+        global filter would then hide from every read.
         """
         now = utc_now()
         stmt = insert(AnalyticsAggregationStateModel).values(
