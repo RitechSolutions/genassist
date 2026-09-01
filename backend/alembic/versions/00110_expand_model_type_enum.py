@@ -8,7 +8,7 @@ never added to the Postgres enum, so creating an ML model with that type
 would previously fail at the DB layer.)
 
 Revision ID: 0af5effac072
-Revises: c41d7ab35f92
+Revises: d37941010920
 Create Date: 2026-08-27 00:00:00.000000
 
 """
@@ -18,7 +18,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "0af5effac072"
-down_revision: Union[str, None] = "c41d7ab35f92"
+down_revision: Union[str, None] = "d37941010920"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
