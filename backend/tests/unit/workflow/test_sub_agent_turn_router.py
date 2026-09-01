@@ -283,3 +283,77 @@ async def test_child_still_awaiting_does_not_resume_the_parent():
 
     run_child.assert_awaited_once()
     router.workflow_engine.execute_from_node.assert_not_awaited()
+
+
+_CHILD_DIAG = {"requested": True, "applied": False}
+
+
+def _completed_child_state(**extra):
+    return SimpleNamespace(
+        sub_agent_control={"result": "child done"},
+        get_last_node_output=lambda: {"message": "child done"},
+        node_outputs={"child": {"message": "child done"}},
+        node_execution_status={},
+        prompt_caching_diagnostics={},
+        **extra,
+    )
+
+
+async def _resume_with(child_state, parent_state):
+    router = _make_router()
+    router.workflow_engine.execute_from_node = AsyncMock(return_value=parent_state)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=_seed_stack()),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    return parent_state
+
+
+def _fresh_parent_state():
+    state = _fake_state({"status": "success", "output": {"message": "parent final"}})
+    state.node_execution_status = {"parent": {"status": "success"}}
+    state.prompt_caching_diagnostics = {}
+    return state
+
+
+@pytest.mark.asyncio
+async def test_completion_turn_carries_the_child_diagnostic_to_the_fresh_parent():
+    child = _completed_child_state()
+    child.node_execution_status = {"child": {"status": "success"}}
+    child.prompt_caching_diagnostics = {"child": _CHILD_DIAG}
+
+    parent = await _resume_with(child, _fresh_parent_state())
+
+    assert parent.prompt_caching_diagnostics == {"child": _CHILD_DIAG}
+    assert parent.node_execution_status == {"parent": {"status": "success"}}
+
+
+@pytest.mark.asyncio
+async def test_a_completion_turn_without_diagnostics_stays_empty():
+    parent = await _resume_with(_completed_child_state(), _fresh_parent_state())
+
+    assert parent.prompt_caching_diagnostics == {}
+
+
+@pytest.mark.asyncio
+async def test_a_mid_conversation_turn_returns_the_childs_own_response():
+    router = _make_router()
+    router.workflow_engine.execute_from_node = AsyncMock()
+    child = SimpleNamespace(
+        sub_agent_control=None,
+        get_last_node_output=lambda: {"message": "still working"},
+        format_state_as_response=lambda: {
+            "status": "success",
+            "output": {"message": "still working"},
+            "state": {"nodeExecutionStatus": {"child": {"prompt_caching": _CHILD_DIAG}}},
+        },
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=_seed_stack()),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child)),
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+
+    router.workflow_engine.execute_from_node.assert_not_awaited()
+    assert result["state"]["nodeExecutionStatus"]["child"]["prompt_caching"] == _CHILD_DIAG

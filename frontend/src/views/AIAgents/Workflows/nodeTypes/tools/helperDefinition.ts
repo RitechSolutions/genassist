@@ -320,7 +320,7 @@ export const ML_MODEL_INFERENCE_HELP_CONTENT: NodeHelpContent = {
         "Click the settings icon in the node header.",
         "The Configure ML Model dialog will open.",
         "Select the ML Model to run.",
-        "Configure the inference parameters shown for that model.",
+        "Configure the Inference Values shown for that model.",
         "Review the input fields expected by the selected model.",
         "Confirm how the prediction output will be used downstream.",
         "Save the node configuration.",

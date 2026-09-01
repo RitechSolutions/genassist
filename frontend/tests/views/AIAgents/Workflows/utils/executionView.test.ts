@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildExecutionViewModel, deriveExecutionViewState, formatDuration } from '@/views/AIAgents/Workflows/utils/executionView';
+import {
+  buildExecutionViewModel,
+  deriveExecutionViewState,
+  formatDuration,
+} from '@/views/AIAgents/Workflows/utils/executionView';
 
 // A representative nested response mirroring the real backend wire format
 // (`response.state.nodeExecutionStatus`, snake_case run-level fields).
@@ -153,5 +157,83 @@ describe('formatDuration', () => {
     expect(formatDuration(123_000)).toBe('2 m 03 s');
     expect(formatDuration(undefined)).toBe('—');
     expect(formatDuration(-5)).toBe('—');
+  });
+});
+
+const WITHHELD = { requested: true, applied: false };
+const APPLIED = { requested: true, applied: true };
+
+const responseWith = (state: Record<string, unknown>) => ({ status: 'success', state });
+
+describe('buildExecutionViewModel — prompt caching', () => {
+  it('drops malformed diagnostics rather than half-rendering them', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { a: { status: 'success' }, b: { status: 'success' }, c: { status: 'success' } },
+        promptCachingDiagnostics: { a: 'yes', b: { requested: 'true', applied: false } },
+      })
+    );
+    expect(m.byId.a.promptCaching).toBeUndefined();
+    expect(m.byId.b.promptCaching).toBeUndefined();
+    expect(m.byId.c.promptCaching).toBeUndefined();
+  });
+
+  it('exposes standalone sub-agent diagnostics without touching counts', () => {
+    const withDiagnostics = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { llm: { status: 'success', startTime: 1, endTime: 2 } },
+        promptCachingDiagnostics: { child: WITHHELD, grandchild: APPLIED },
+      })
+    );
+    const plain = buildExecutionViewModel(
+      responseWith({ nodeExecutionStatus: { llm: { status: 'success', startTime: 1, endTime: 2 } } })
+    );
+
+    expect(Object.keys(withDiagnostics.promptCachingDiagnostics).sort()).toEqual(['child', 'grandchild']);
+    expect(withDiagnostics.totalNodes).toBe(plain.totalNodes);
+    expect(withDiagnostics.counts).toEqual(plain.counts);
+    expect(Object.keys(withDiagnostics.byId)).toEqual(['llm']);
+  });
+
+  it('keeps every key — the backend never archives entries in this map', () => {
+    const m = buildExecutionViewModel(
+      responseWith({ nodeExecutionStatus: {}, promptCachingDiagnostics: { step: WITHHELD, step_2: APPLIED } })
+    );
+    expect(Object.keys(m.promptCachingDiagnostics).sort()).toEqual(['step', 'step_2']);
+  });
+
+  it('yields an empty collection for a malformed or absent bag', () => {
+    for (const bad of [undefined, {}, responseWith({ promptCachingDiagnostics: 'x' })]) {
+      expect(buildExecutionViewModel(bad as unknown).promptCachingDiagnostics).toEqual({});
+    }
+  });
+
+  it('attaches a diagnostic from the standalone collection to its executed node', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { llm: { status: 'success' } },
+        promptCachingDiagnostics: { llm: WITHHELD },
+      })
+    );
+    expect(m.byId.llm.promptCaching).toEqual({ requested: true, applied: false });
+  });
+
+  it('normalizes observed cache activity and drops non-numeric values', () => {
+    const m = buildExecutionViewModel(
+      responseWith({
+        nodeExecutionStatus: { a: { status: 'success' }, b: { status: 'success' } },
+        promptCachingDiagnostics: {
+          a: { ...APPLIED, cache_read_tokens: 950, cache_creation_tokens: 0 },
+          b: { ...APPLIED, cache_read_tokens: 'lots' },
+        },
+      })
+    );
+    expect(m.byId.a.promptCaching).toEqual({
+      requested: true,
+      applied: true,
+      cacheReadTokens: 950,
+      cacheCreationTokens: 0,
+    });
+    expect(m.byId.b.promptCaching).toEqual({ requested: true, applied: true });
   });
 });

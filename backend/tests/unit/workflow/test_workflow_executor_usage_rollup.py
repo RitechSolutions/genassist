@@ -54,14 +54,17 @@ def _patch_workflow_service():
     return patch("app.dependencies.injector.injector", inj)
 
 
-def _patch_engine(entries, error=None):
+def _patch_engine(entries, error=None, child_diagnostics=None):
 
     async def _execute(self, *, usage_sink=None, **kwargs):
         if usage_sink is not None:
             usage_sink.extend(entries)
         if error is not None:
             raise error
-        return _state(CHILD_WF)
+        child = _state(CHILD_WF)
+        if child_diagnostics:
+            child.prompt_caching_diagnostics = child_diagnostics
+        return child
 
     return patch.object(WorkflowEngine, "execute_from_node", _execute)
 
@@ -139,6 +142,41 @@ async def test_child_entries_are_copied_not_aliased():
 
     assert state.llm_usage[0] is not entries[0]
     assert entries[0]["node_id"] == "child-n1"
+
+
+@pytest.mark.asyncio
+async def test_child_caching_diagnostics_collapse_onto_the_executor():
+    state = _state()
+    diagnostics = {
+        "child-n1": {"requested": True, "applied": True},
+        "child-n2": {"requested": True, "applied": False},
+    }
+
+    with _patch_workflow_service(), _patch_engine([_entry("child-n1")], child_diagnostics=diagnostics):
+        await _node(state).process(CONFIG)
+
+    assert state.prompt_caching_diagnostics == {"exec-1": {"requested": True, "applied": True}}
+
+
+@pytest.mark.asyncio
+async def test_an_all_withheld_child_still_surfaces_a_withheld_entry():
+    state = _state()
+    diagnostics = {"child-n1": {"requested": True, "applied": False}}
+
+    with _patch_workflow_service(), _patch_engine([_entry("child-n1")], child_diagnostics=diagnostics):
+        await _node(state).process(CONFIG)
+
+    assert state.prompt_caching_diagnostics == {"exec-1": {"requested": True, "applied": False}}
+
+
+@pytest.mark.asyncio
+async def test_a_child_without_diagnostics_leaves_none_on_the_executor():
+    state = _state()
+
+    with _patch_workflow_service(), _patch_engine([_entry("child-n1")]):
+        await _node(state).process(CONFIG)
+
+    assert state.prompt_caching_diagnostics == {}
 
 
 @pytest.mark.asyncio

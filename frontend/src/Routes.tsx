@@ -318,17 +318,21 @@ export const RoutesProvider = () => {
             {
               path: "fallback-chains",
               element: (
-                <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
-                  <FallbackChains />
-                </ProtectedRoute>
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.LLM_SETTINGS.SHOW_FALLBACK_CHAINS}>
+                  <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
+                    <FallbackChains />
+                  </ProtectedRoute>
+                </FeatureFlagRoute>
               ),
             },
             {
               path: "audio-providers",
               element: (
-                <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
-                  <AudioProviders />
-                </ProtectedRoute>
+                <FeatureFlagRoute flagKey={FeatureFlagKeys.LLM_SETTINGS.SHOW_AUDIO_PROVIDERS}>
+                  <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
+                    <AudioProviders />
+                  </ProtectedRoute>
+                </FeatureFlagRoute>
               ),
             },
             {

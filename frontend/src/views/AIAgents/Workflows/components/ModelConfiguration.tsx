@@ -10,6 +10,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { getAllFallbackChains } from "@/services/fallbackChains";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { Switch } from "@/components/switch";
 import { BaseLLMNodeData } from "../types/nodes";
@@ -28,6 +30,12 @@ import { Badge } from "@/components/badge";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
+import { PromptCachingHint, fallbackChainProviders, promptCachingHint } from "../utils/promptCachingHint";
+
+const PROMPT_CACHING_TONE_CLASS: Record<PromptCachingHint["tone"], string> = {
+  info: "text-muted-foreground",
+  warning: "text-amber-700 dark:text-amber-400",
+};
 
 const DEFAULT_AGENT_TYPE_OPTIONS: string[] = [
   "ReActAgent",
@@ -65,15 +73,24 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   const queryClient = useQueryClient();
   const { workflow } = useWorkflow();
 
-  const { data: providers = [] } = useQuery({
+  const { data: allProviders = [] } = useQuery({
     queryKey: ["llmProviders"],
     queryFn: getAllLLMProviders,
-    select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
+  // Active-only for the selectable options; capability checks resolve from the full
+  // list, since a saved node or chain can still reference an inactive provider.
+  const providers = allProviders.filter((p: LLMProvider) => p.is_active === 1);
+
+  // Fallback chains are flag-gated: skip the fetch entirely where the feature is off,
+  // otherwise every model config would call an endpoint that isn't routed there.
+  const fallbackChainsEnabled = useFeatureFlagVisible(
+    FeatureFlags.LLM_SETTINGS.SHOW_FALLBACK_CHAINS,
+  );
 
   const { data: allFallbackChains = [] } = useQuery({
     queryKey: ["fallbackChains"],
     queryFn: getAllFallbackChains,
+    enabled: fallbackChainsEnabled,
   });
 
   const activeFallbackChains = allFallbackChains.filter(
@@ -156,6 +173,23 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
       piiMasking: checked,
     });
   };
+
+  const handlePromptCachingChange = (checked: boolean) => {
+    onConfigChange({
+      ...config,
+      promptCaching: checked,
+    });
+  };
+
+  // The runtime chain is the node's provider plus the chain's others, so the hint
+  // judges that same effective set.
+  const promptCachingNotice = promptCachingHint(
+    config.promptCaching,
+    allProviders.find((p) => p.id === config.providerId),
+    typeSelect,
+    config.type,
+    fallbackChainProviders(allProviders, config.providerId, selectedFallbackChain)
+  );
 
   const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval") => {
     onConfigChange({
@@ -309,36 +343,38 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor={`fallback-chain-select-${id}`}>Fallback Chain (optional)</Label>
-        <Select
-          value={config.fallbackChainId || "__none__"}
-          onValueChange={handleFallbackChainSelect}
-        >
-          <SelectTrigger id={`fallback-chain-select-${id}`} className="w-full">
-            <SelectValue placeholder="None (use provider only)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">None</SelectItem>
-            {activeFallbackChains.map((chain) => (
-              <SelectItem key={chain.id} value={chain.id}>
-                {chain.name}
-              </SelectItem>
-            ))}
-            {selectedFallbackChainInactive && (
-              <SelectItem value={selectedFallbackChain.id} disabled>
-                {selectedFallbackChain.name} (inactive)
-              </SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-        {selectedFallbackChainInactive && (
-          <p className="text-xs text-muted-foreground">
-            This fallback chain has been deactivated. Choose an active chain or
-            None to change it.
-          </p>
-        )}
-      </div>
+      {fallbackChainsEnabled && (
+        <div className="space-y-2">
+          <Label htmlFor={`fallback-chain-select-${id}`}>Fallback Chain (optional)</Label>
+          <Select
+            value={config.fallbackChainId || "__none__"}
+            onValueChange={handleFallbackChainSelect}
+          >
+            <SelectTrigger id={`fallback-chain-select-${id}`} className="w-full">
+              <SelectValue placeholder="None (use provider only)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">None</SelectItem>
+              {activeFallbackChains.map((chain) => (
+                <SelectItem key={chain.id} value={chain.id}>
+                  {chain.name}
+                </SelectItem>
+              ))}
+              {selectedFallbackChainInactive && (
+                <SelectItem value={selectedFallbackChain.id} disabled>
+                  {selectedFallbackChain.name} (inactive)
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          {selectedFallbackChainInactive && (
+            <p className="text-xs text-muted-foreground">
+              This fallback chain has been deactivated. Choose an active chain or
+              None to change it.
+            </p>
+          )}
+        </div>
+      )}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor={`system-prompt-input-${id}`}>System Prompt</Label>
@@ -465,6 +501,30 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           checked={config.piiMasking ?? false}
           onCheckedChange={handlePiiMaskingChange}
         />
+      </div>
+      <div className="space-y-2 w-full">
+        <div className="flex items-center gap-2 w-full">
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor={`prompt-caching-switch-${id}`}>
+              Enable Prompt Caching
+            </Label>
+            <span className="text-xs text-muted-foreground">
+              Caches the stable start of the system prompt for 5 minutes so
+              repeat calls read it at a reduced rate
+            </span>
+          </div>
+          <div className="flex-1" />
+          <Switch
+            id={`prompt-caching-switch-${id}`}
+            checked={config.promptCaching === true}
+            onCheckedChange={handlePromptCachingChange}
+          />
+        </div>
+        {promptCachingNotice && (
+          <p className={`text-xs ${PROMPT_CACHING_TONE_CLASS[promptCachingNotice.tone]}`}>
+            {promptCachingNotice.text}
+          </p>
+        )}
       </div>
       {config.memory && (
         <>

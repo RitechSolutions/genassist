@@ -8,7 +8,6 @@ avoiding repeated file I/O and deserialization overhead.
 import asyncio
 import logging
 import os
-import pickle
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, Optional, Set
@@ -17,6 +16,7 @@ from uuid import UUID
 from injector import inject
 
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.safe_pickle import safe_pickle_load
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +31,31 @@ ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 def _load_pickle_sync(pkl_file: str) -> Any:
     """
-    Synchronous function to load pickle file.
+    Synchronous function to load a pickle file.
     This will be executed in a thread pool to avoid blocking the event loop.
+
+    Deserialization goes through ``safe_pickle_load`` (a restricted unpickler
+    with an ML-framework allowlist) rather than the stdlib ``pickle.load``, so
+    only classes from known-safe modules are reconstructed. This prevents
+    ``__reduce__``-based code execution from a maliciously crafted .pkl file
+    at the point of deserialization itself, independent of the pre-load
+    opcode scan performed by ``validate_pickle_file_safe``.
     """
     load_errors = []
 
-    # Method 1: pickle with default encoding
+    # Method 1: restricted unpickler with default encoding
     try:
         with open(pkl_file, "rb") as f:
-            model = pickle.load(f)
+            model = safe_pickle_load(f)
         logger.info("Loaded model from %s", pkl_file)
         return model
     except Exception as e:
         load_errors.append(f"pickle (default) failed: {type(e).__name__}")
 
-    # Method 2: pickle with latin1 encoding
+    # Method 2: restricted unpickler with latin1 encoding (legacy Python 2 pickles)
     try:
         with open(pkl_file, "rb") as f:
-            model = pickle.load(f, encoding="latin1")
+            model = safe_pickle_load(f, encoding="latin1")
         logger.info("Loaded model (latin1) from %s", pkl_file)
         return model
     except Exception as e:

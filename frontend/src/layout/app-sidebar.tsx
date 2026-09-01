@@ -242,11 +242,13 @@ const navGroups: NavGroup[] = [
             title: "Fallback Chains",
             url: "/fallback-chains",
             permissionsRequired: ["read:llm_provider"],
+            feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_FALLBACK_CHAINS,
           },
           {
             title: "Audio Providers",
             url: "/audio-providers",
             permissionsRequired: ["read:llm_provider"],
+            feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_AUDIO_PROVIDERS,
           },
           {
             title: "LLM Analyst",

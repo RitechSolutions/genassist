@@ -23,7 +23,6 @@ export interface MLModel {
   pkl_file_id?: string | null;
   features: string[];
   target_variable: string;
-  inference_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;

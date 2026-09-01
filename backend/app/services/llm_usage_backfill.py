@@ -186,6 +186,7 @@ class LlmUsageBackfillService:
                         "conversation_id": row.conversation_id if row.conversation_id in valid_conversations else None,
                         "legacy_response_log_id": row.id,
                         "input_tokens": resolved.input_tokens,
+                        "prompt_tokens": resolved.input_tokens,
                         "output_tokens": resolved.output_tokens,
                         "total_tokens": resolved.total_tokens,
                         "cost_usd": resolved.cost_usd,
