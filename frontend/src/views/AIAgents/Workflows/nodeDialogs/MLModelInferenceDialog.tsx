@@ -75,7 +75,7 @@ export const MLModelInferenceDialog: React.FC<
     setSelectedModel(model || null);
 
     if (model) {
-      // Initialize inference inputs based on model's inference_params
+      // Initialize inference inputs based on the model's features
       const newInferenceInputs: Record<string, string> = {};
       if (model.features) {
         model.features.forEach((key) => {
@@ -159,7 +159,7 @@ export const MLModelInferenceDialog: React.FC<
           )}
         </div>
 
-        {/* Inference Parameters */}
+        {/* Inference Values */}
         {selectedModel &&
           selectedModel.features &&
           selectedModel.features.length > 0 && (
@@ -194,7 +194,7 @@ export const MLModelInferenceDialog: React.FC<
 
         {!selectedModel && !loading && (
           <div className="text-sm text-muted-foreground text-center py-4">
-            Select an ML model to configure inference parameters
+            Select an ML model to configure Inference Values
           </div>
         )}
       </div>

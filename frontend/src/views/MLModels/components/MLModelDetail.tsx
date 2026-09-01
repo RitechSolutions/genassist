@@ -523,9 +523,6 @@ const MLModelDetail: React.FC = () => {
     );
   }
 
-  const hasInferenceParams =
-    !!model.inference_params && Object.keys(model.inference_params).length > 0;
-
   return (
     <PageLayout>
       {/* Header: back + identity + primary actions */}
@@ -605,16 +602,6 @@ const MLModelDetail: React.FC = () => {
             )}
           </Field>
         </div>
-
-        {hasInferenceParams && (
-          <div className="mt-5 border-t pt-4">
-            <Field label="Inference parameters">
-              <div className="mt-1 rounded-md bg-muted p-3">
-                <JsonViewer data={model.inference_params as JsonValue} />
-              </div>
-            </Field>
-          </div>
-        )}
       </SectionCard>
 
       {/* Training pipeline configurations */}

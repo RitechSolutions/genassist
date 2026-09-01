@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import { v4 as uuidv4 } from "uuid";
-import { Brain, ChevronLeft, FileCode, Pencil, Plus, Trash2 } from "lucide-react";
+import { Brain, ChevronLeft, FileCode, Pencil, Trash2 } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -40,15 +40,12 @@ import { ModelFilePicker } from "./ModelFilePicker";
 const ALL_TYPES = "all";
 const MODELS_QUERY_KEY = ["ml-models"];
 
-type ParamRow = { key: string; value: string };
-
 interface FormValues {
   name: string;
   description: string;
   model_type: MLModelType;
   target_variable: string;
   features: string[];
-  params: ParamRow[];
   pkl_file: string | null;
   pkl_file_id: string | null;
   pendingFile: File | null;
@@ -62,7 +59,6 @@ const emptyForm = (): FormValues => ({
   model_type: "xgboost",
   target_variable: "",
   features: [],
-  params: [],
   pkl_file: null,
   pkl_file_id: null,
   pendingFile: null,
@@ -74,10 +70,6 @@ const formFromModel = (model: MLModel): FormValues => ({
   model_type: model.model_type,
   target_variable: model.target_variable ?? "",
   features: model.features ?? [],
-  params: Object.entries(model.inference_params ?? {}).map(([key, value]) => ({
-    key,
-    value: String(value ?? ""),
-  })),
   pkl_file: model.pkl_file ?? null,
   pkl_file_id: model.pkl_file_id ?? null,
   pendingFile: null,
@@ -207,22 +199,12 @@ const MLModelsManager: React.FC = () => {
         pklFileId = uploaded.file_id ?? null;
       }
 
-      const inferenceParams = values.params.reduce<Record<string, string>>(
-        (acc, { key, value }) => {
-          const trimmed = key.trim();
-          if (trimmed) acc[trimmed] = value;
-          return acc;
-        },
-        {}
-      );
-
       const payload = {
         name: values.name.trim(),
         description: values.description.trim(),
         model_type: values.model_type,
         target_variable: values.target_variable.trim(),
         features: values.features,
-        inference_params: inferenceParams,
         pkl_file: pklFile,
         pkl_file_id: pklFileId,
       };
@@ -384,88 +366,6 @@ const MLModelsManager: React.FC = () => {
                       : "Press Enter or comma to add each feature. Paste a comma-separated list to add several at once."}
                   </p>
                 </FormField>
-              </div>
-            </div>
-
-            {/* Inference parameters */}
-            <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-3">
-              <SectionIntro title="Inference Parameters">
-                Optional parameter names and default values used at inference time.
-              </SectionIntro>
-
-              <div className="space-y-3 md:col-span-2">
-                {values.params.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No parameters defined yet.</p>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-[1fr_1fr_2.5rem] gap-2">
-                      <Label className="text-xs text-muted-foreground">Name</Label>
-                      <Label className="text-xs text-muted-foreground">Default value</Label>
-                      <span />
-                    </div>
-                    {values.params.map((param, index) => (
-                      <div
-                        key={index}
-                        className="grid grid-cols-[1fr_1fr_2.5rem] items-center gap-2"
-                      >
-                        <Input
-                          value={param.key}
-                          onChange={(e) =>
-                            setValues((prev) => ({
-                              ...prev,
-                              params: prev.params.map((p, i) =>
-                                i === index ? { ...p, key: e.target.value } : p
-                              ),
-                            }))
-                          }
-                          placeholder="Parameter name (e.g., threshold)"
-                          aria-label={`Parameter ${index + 1} name`}
-                        />
-                        <Input
-                          value={param.value}
-                          onChange={(e) =>
-                            setValues((prev) => ({
-                              ...prev,
-                              params: prev.params.map((p, i) =>
-                                i === index ? { ...p, value: e.target.value } : p
-                              ),
-                            }))
-                          }
-                          placeholder="Default value (optional)"
-                          aria-label={`Parameter ${index + 1} value`}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500"
-                          aria-label={`Remove parameter ${index + 1}`}
-                          onClick={() =>
-                            setValues((prev) => ({
-                              ...prev,
-                              params: prev.params.filter((_, i) => i !== index),
-                            }))
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </>
-                )}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    setValues((prev) => ({
-                      ...prev,
-                      params: [...prev.params, { key: "", value: "" }],
-                    }))
-                  }
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Parameter
-                </Button>
               </div>
             </div>
           </div>

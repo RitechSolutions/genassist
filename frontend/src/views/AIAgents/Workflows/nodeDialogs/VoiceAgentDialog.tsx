@@ -18,6 +18,7 @@ import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { useNodeDialogState } from "./useNodeDialogState";
 import { getAllAudioProviders } from "@/services/audioProviders";
+import { useAudioProvidersEnabled } from "../hooks/useAudioProviderConfig";
 
 type VoiceAgentDialogProps = BaseNodeDialogProps<
   VoiceAgentNodeData,
@@ -82,10 +83,14 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  // The Live API needs a Gemini audio provider, so this node depends on the
+  // Audio Providers feature — don't fetch (or promise a picker) when it is off.
+  const audioProvidersEnabled = useAudioProvidersEnabled();
+
   const { data: audioProviders } = useQuery({
     queryKey: ["audioProviders", "all"],
     queryFn: getAllAudioProviders,
-    enabled: isOpen,
+    enabled: isOpen && audioProvidersEnabled,
   });
   // The Live API requires a Gemini API key
   const geminiProviders = audioProviders?.filter(
@@ -133,6 +138,7 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
           <Select
             value={values.voiceProviderId || ""}
             onValueChange={(value) => setField("voiceProviderId", value)}
+            disabled={!audioProvidersEnabled}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a Gemini audio provider" />
@@ -145,7 +151,13 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
               ))}
             </SelectContent>
           </Select>
-          {geminiProviders && geminiProviders.length === 0 && (
+          {!audioProvidersEnabled && (
+            <p className="text-xs text-destructive">
+              Audio Providers are not enabled in this environment, so this node
+              cannot be configured here.
+            </p>
+          )}
+          {audioProvidersEnabled && geminiProviders && geminiProviders.length === 0 && (
             <p className="text-xs text-destructive">
               No Gemini audio provider configured yet.
             </p>

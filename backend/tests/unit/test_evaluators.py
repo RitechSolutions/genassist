@@ -2558,3 +2558,17 @@ class TestGuardrailNliNode:
         assert out["answer"] == "A"
         assert out.get("blocked") is None
         assert out["_guardrail_nli"]["verdict"] == "entails"
+
+
+class TestPromptCachingDiagnosticsAreInvisibleToGrading:
+    def test_the_collection_does_not_change_the_grading_context(self):
+        trace = _sample_trace()
+        annotated = {
+            **trace,
+            "state": {
+                **trace["state"],
+                "promptCachingDiagnostics": {"child": {"requested": True, "applied": False}},
+            },
+        }
+
+        assert _build_grading_context(annotated) == _build_grading_context(trace)

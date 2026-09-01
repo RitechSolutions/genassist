@@ -19,6 +19,27 @@ const toJsonValue = (value: unknown): React.ComponentProps<typeof JsonViewer>['d
   // JsonViewer accepts any JSON-serializable value; narrow here to satisfy its prop type.
   value as React.ComponentProps<typeof JsonViewer>['data'];
 
+/**
+ * "Marker applied" is our decision to cache, not the outcome. The provider may
+ * still reject it (e.g., short prompt below minimum). The actual result comes from
+ * what the run reported.
+ */
+const promptCachingLine = (diagnostic: NonNullable<NodeExecutionView['promptCaching']>): string => {
+  if (!diagnostic.applied) {
+    return 'Prompt caching: requested but not applied';
+  }
+  const { cacheReadTokens, cacheCreationTokens } = diagnostic;
+  if (cacheReadTokens === undefined && cacheCreationTokens === undefined) {
+    return 'Prompt caching: cache marker applied';
+  }
+  if (!cacheReadTokens && !cacheCreationTokens) {
+    return 'Prompt caching: cache marker applied — the provider reported no cache activity';
+  }
+  const read = (cacheReadTokens ?? 0).toLocaleString();
+  const written = (cacheCreationTokens ?? 0).toLocaleString();
+  return `Prompt caching: cache marker applied — ${read} tokens read from cache, ${written} written`;
+};
+
 const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
   if (!node) {
     return (
@@ -53,6 +74,9 @@ const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
               Duration: <span className="tabular-nums">{formatDuration(node.durationMs)}</span>
             </span>
           </div>
+          {node.promptCaching && (
+            <div className="mt-1 text-xs text-muted-foreground">{promptCachingLine(node.promptCaching)}</div>
+          )}
         </div>
         <button
           type="button"

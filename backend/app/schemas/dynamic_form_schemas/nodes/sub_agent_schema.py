@@ -105,5 +105,16 @@ SUB_AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
             "inherits masking and unmasks with its own map so its tools still get real values."
         ),
     ),
+    FieldSchema(
+        name="promptCaching",
+        type="boolean",
+        label="Enable Prompt Caching",
+        required=False,
+        default=False,
+        description=(
+            "Caches the stable start of the system prompt for 5 minutes so repeat calls "
+            "read it at a reduced rate. Anthropic and Bedrock cache-capable models only."
+        ),
+    ),
     *memory_trimming_fields(max_messages_default=20),
 ]
