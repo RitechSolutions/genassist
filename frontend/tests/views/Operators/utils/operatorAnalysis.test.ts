@@ -104,6 +104,28 @@ describe("createConversationAnalysis", () => {
     ).toBe(0);
   });
 
+  it("parses the backend's percent-string average instead of producing NaN", () => {
+    const transcript = makeTranscript({});
+    const operator = makeOperator({
+      operator_statistics: { avg_customer_satisfaction: "86.0%" },
+    });
+    expect(
+      createConversationAnalysis(transcript, operator).analysis
+        .customer_satisfaction,
+    ).toBe(8.6);
+  });
+
+  it("falls back to the 8.6 default when the average is an unparseable string", () => {
+    const transcript = makeTranscript({});
+    const operator = makeOperator({
+      operator_statistics: { avg_customer_satisfaction: "N/A" },
+    });
+    expect(
+      createConversationAnalysis(transcript, operator).analysis
+        .customer_satisfaction,
+    ).toBe(8.6);
+  });
+
   it("preserves a transcript satisfaction of 0 rather than falling back", () => {
     const transcript = makeTranscript({
       analysis: { customer_satisfaction: 0 } as BackendTranscript["analysis"],
