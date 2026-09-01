@@ -143,22 +143,26 @@ def _row(
     conv_cost="0.80",
     studio_cost="0.20",
     conversations=4,
+    cache_read=0,
+    cache_creation=0,
 ):
-    return (
-        Decimal(cost),
-        input_tokens,
-        output_tokens,
-        total_tokens,
-        calls,
-        unpriced,
-        configured,
-        fallback,
-        legacy,
-        priced_tokens,
-        Decimal(conv_cost),
-        Decimal(studio_cost),
-        conversations,
-    )
+    return {
+        "sum_cost": Decimal(cost),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "total_calls": calls,
+        "unpriced_calls": unpriced,
+        "configured_calls": configured,
+        "fallback_calls": fallback,
+        "legacy_estimate_calls": legacy,
+        "priced_tokens": priced_tokens,
+        "conversation_cost": Decimal(conv_cost),
+        "agent_studio_test_cost": Decimal(studio_cost),
+        "distinct_conversations": conversations,
+        "cache_read_tokens": cache_read,
+        "cache_creation_tokens": cache_creation,
+    }
 
 
 @pytest.mark.asyncio
@@ -170,6 +174,20 @@ async def test_cost_per_conversation_divides_by_distinct():
     assert summ.agent_studio_test_cost_usd == 0.20
     assert summ.cost_is_partial is False
     assert summ.priced_token_coverage_pct == 100.0
+
+
+@pytest.mark.asyncio
+async def test_cache_token_totals_are_carried_from_the_summary_row():
+    service, *_ = _service(summary_row=_row(cache_read=3697, cache_creation=120))
+    summ = await service.get_summary(_params())
+    assert (summ.total_cache_read_tokens, summ.total_cache_creation_tokens) == (3697, 120)
+
+
+@pytest.mark.asyncio
+async def test_empty_scope_summary_reports_zero_cache_tokens():
+    service, *_ = _service(summary_row=_row(cache_read=3697, cache_creation=120), scope=[])
+    summ = await service.get_summary(_params(group_id=uuid4()))
+    assert (summ.total_cache_read_tokens, summ.total_cache_creation_tokens) == (0, 0)
 
 
 @pytest.mark.asyncio
