@@ -380,7 +380,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                     max="10"
                     value={values.optimizationConfig.cvFolds ?? 3}
                     onChange={(e) =>
-                      updateOptimizationConfig({ cvFolds: Number(e.target.value) })
+                      updateOptimizationConfig({
+                        cvFolds: e.target.value ? Number(e.target.value) : undefined,
+                      })
                     }
                     className="w-full"
                   />

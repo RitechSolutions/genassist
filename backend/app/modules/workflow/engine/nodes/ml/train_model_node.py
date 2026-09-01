@@ -1005,8 +1005,15 @@ class TrainModelNode(BaseNode):
             )
 
             ml_service = injector.get(MLModelsService)
+            # Marker recorded in the description of any model this node registers, so a
+            # later run can recognize "its own" row by name. Node IDs are unique per node
+            # instance, unlike the (often generic, e.g. "Train Model") display name.
+            node_marker = f"[train-model-node:{self.node_id}]"
             model_fields = {
-                "description": f"Trained by workflow Train Model node (thread {self.state.thread_id})",
+                "description": (
+                    f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
+                    f"{node_marker}"
+                ),
                 "model_type": model_type,
                 "features": feature_columns,
                 "target_variable": target_column,
@@ -1026,7 +1033,13 @@ class TrainModelNode(BaseNode):
                         f"falling back to lookup by name '{name}'"
                     )
             if existing is None:
-                existing = await ml_service.get_by_name(name)
+                # Only reuse a name match if this exact node registered it previously —
+                # display names default to the generic "Train Model" label, so two
+                # unrelated node instances can otherwise collide and silently overwrite
+                # each other's registered model.
+                by_name = await ml_service.get_by_name(name)
+                if by_name and node_marker in (by_name.description or ""):
+                    existing = by_name
 
             if existing:
                 updated = await ml_service.update(existing.id, MLModelUpdate(**model_fields))
