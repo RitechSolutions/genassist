@@ -62,7 +62,12 @@ class LlmUsageEventModel(Base):
             "input_tokens >= 0 AND output_tokens >= 0 AND total_tokens >= 0 AND call_index >= 0",
             name="ck_llm_usage_events_non_negative",
         ),
+        CheckConstraint(
+            "cache_read_tokens >= 0 AND cache_creation_tokens >= 0",
+            name="ck_llm_usage_events_cache_tokens_non_negative",
+        ),
         CheckConstraint("total_tokens >= input_tokens + output_tokens", name="ck_llm_usage_events_total_ge_parts"),
+        CheckConstraint("prompt_tokens >= input_tokens", name="ck_llm_usage_events_prompt_ge_input"),
     )
 
     execution_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -99,9 +104,14 @@ class LlmUsageEventModel(Base):
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     token_details: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    cache_read_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    cache_creation_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    prompt_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
 
     input_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     output_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    cache_read_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
+    cache_creation_per_1k: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     cost_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10), nullable=True)
     pricing_status: Mapped[str] = mapped_column(String(20), nullable=False)
 

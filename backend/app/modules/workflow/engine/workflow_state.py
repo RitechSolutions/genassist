@@ -359,18 +359,25 @@ class WorkflowState:
         total_cost_usd = 0.0
         total_cache_read = 0
         total_cache_creation = 0
+        unpriced_calls = 0
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
         for u in self.llm_usage:
             cache_read, cache_creation = extract_cache_tokens(u.get("token_details"))
             total_cache_read += cache_read
             total_cache_creation += cache_creation
-            total_cost_usd += self.llm_cost_calculator.calculate_cost(
+            cost = self.llm_cost_calculator.calculate_cost(
                 u.get("provider", ""),
                 u.get("model", ""),
                 u.get("input_tokens", 0),
                 u.get("output_tokens", 0),
+                cache_read,
+                cache_creation,
             )
+            if cost is None:
+                unpriced_calls += 1
+            else:
+                total_cost_usd += cost
         totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
@@ -378,6 +385,7 @@ class WorkflowState:
             "cache_read_tokens": total_cache_read,
             "cache_creation_tokens": total_cache_creation,
             "cost_usd": round(total_cost_usd, 6),
+            "cost_is_partial": unpriced_calls > 0,
             "calls": len(self.llm_usage),
         }
         if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):
@@ -812,6 +820,7 @@ class WorkflowState:
         failed_nodes = self._collect_failed_nodes()
 
         token_usage = self.get_total_llm_usage()
+        cost_is_partial = bool(token_usage.get("cost_is_partial"))
         response = {
             "status": status,
             "has_failures": len(failed_nodes) > 0,
@@ -821,7 +830,7 @@ class WorkflowState:
             "performance_metrics": performance_metrics,
             "state": state,
             "token_usage": token_usage,
-            "cost_usd": token_usage.get("cost_usd", 0.0),
+            "cost_usd": None if cost_is_partial else token_usage.get("cost_usd", 0.0),
             "execution_id": self.execution_id,
             "tool_events": self.tool_events,
         }
