@@ -1,11 +1,15 @@
 import json
 import logging
 from collections import defaultdict
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
+from celery.exceptions import SoftTimeLimitExceeded
 from injector import inject
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import settings
+from app.core.tenant_scope import get_tenant_context
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.db.models.agent_response_log import AgentResponseLogModel
@@ -16,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 class AnalyticsAggregationService:
     @inject
-    def __init__(self, repo: AnalyticsAggregationRepository):
+    def __init__(self, repo: AnalyticsAggregationRepository, db: AsyncSession):
         self.repo = repo
+        self.db = db
 
     async def aggregate_daily_stats(
         self,
@@ -28,6 +33,24 @@ class AnalyticsAggregationService:
         """
         Main entry point for the Celery task.
 
+        ``ANALYTICS_AGG_V2`` off: watermark path. On: cursor-based discovery with per-date
+        rebuild, reconciliation, and phantom date selection.
+        """
+        if not settings.ANALYTICS_AGG_V2:
+            if not force_full:
+                await self._log_discovery_preview()
+            return await self._aggregate_daily_stats_legacy(force_full, from_date, to_date)
+        if force_full:
+            return await self._backfill_authoritative(from_date, to_date)
+        return await self._aggregate_incremental()
+
+    async def _aggregate_daily_stats_legacy(
+        self,
+        force_full: bool = False,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> dict:
+        """
         Strategy: Date-based re-aggregation
         1. Find dates with new logs since last aggregation
         2. For each affected date, fetch ALL logs and recompute complete stats
@@ -99,6 +122,178 @@ class AnalyticsAggregationService:
             "agent_stats_upserted": len(all_agent_stats),
             "node_stats_upserted": len(all_node_stats),
         }
+
+    async def _resolve_incremental_window(self) -> tuple[datetime | None, datetime, date | None]:
+        cutoff = await self.repo.get_db_now()
+        state = await self.repo.get_aggregation_state()
+        if state is not None:
+            cursor = state.last_incremental_run_at
+            return cursor, cutoff, cursor.astimezone(timezone.utc).date()
+        watermark = await self.repo.get_last_aggregation_timestamp()
+        if watermark is not None:
+            return watermark - timedelta(hours=settings.ANALYTICS_AGG_HEAL_LOOKBACK_HOURS), cutoff, None
+        earliest = await self.repo.get_earliest_log_timestamp()
+        return earliest, cutoff, None
+
+    async def _log_discovery_preview(self) -> None:
+        """Preview what V2 would select, read-only. Errors swallowed to not affect
+        the run, except timeouts."""
+        try:
+            since, cutoff, cursor_date = await self._resolve_incremental_window()
+            if since is None:
+                return
+            overlap = timedelta(minutes=settings.ANALYTICS_AGG_SCAN_OVERLAP_MINUTES)
+            discovered = await self.repo.discover_affected_dates(since - overlap, cutoff)
+            today = cutoff.astimezone(timezone.utc).date()
+            sweep = self.repo.get_calendar_sweep_dates(cursor_date, today)
+            selected = {d for d in discovered if d <= today} | set(sweep)
+            logger.info(
+                f"[analytics-agg] dry-run tenant={get_tenant_context()}: V2 would select {len(selected)} date(s)"
+            )
+        except SoftTimeLimitExceeded:
+            raise
+        except Exception:
+            # Roll back so a failed preview statement can't leave the shared
+            # scope session in an aborted transaction for the run.
+            await self.db.rollback()
+            logger.warning("[analytics-agg] dry-run discovery preview failed", exc_info=True)
+
+    async def _aggregate_incremental(self) -> dict:
+        tenant = get_tenant_context()
+        since, cutoff, cursor_date = await self._resolve_incremental_window()
+        if since is None:
+            logger.info(f"[analytics-agg] tenant={tenant}: no cursor, no stats, no logs; nothing to do")
+            return {"agent_stats_upserted": 0, "node_stats_upserted": 0, "dates_selected": 0}
+
+        overlap = timedelta(minutes=settings.ANALYTICS_AGG_SCAN_OVERLAP_MINUTES)
+        logger.info(
+            f"[analytics-agg] tenant={tenant}: cursor={'set' if cursor_date is not None else 'absent'}, "
+            f"discovering window=[{since - overlap} .. {cutoff}]"
+        )
+        discovered = await self.repo.discover_affected_dates(since - overlap, cutoff)
+        today = cutoff.astimezone(timezone.utc).date()
+        sweep = self.repo.get_calendar_sweep_dates(cursor_date, today)
+        selected = sorted(d for d in {*discovered, *sweep} if d <= today)
+        past_dates = [d for d in selected if d < today]
+        logger.info(f"[analytics-agg] tenant={tenant}: selected={len(selected)} date(s)")
+
+        agent_rows = 0
+        node_rows = 0
+        for stat_date in past_dates:
+            logger.info(f"[analytics-agg] tenant={tenant}: processing {stat_date}")
+            try:
+                added_agents, added_nodes = await self._process_past_date(stat_date)
+            except Exception:
+                await self.db.rollback()
+                logger.error(
+                    f"[analytics-agg] tenant={tenant}: date {stat_date} failed and was rolled back; "
+                    "cursor not advanced",
+                    exc_info=True,
+                )
+                raise
+            agent_rows += added_agents
+            node_rows += added_nodes
+            logger.info(f"[analytics-agg] tenant={tenant}: date {stat_date} committed")
+
+        logger.info(f"[analytics-agg] tenant={tenant}: processing today ({today})")
+        try:
+            agent_stats, node_stats = await self._rebuild_and_upsert(today)
+            await self.db.commit()
+            agent_rows += len(agent_stats)
+            node_rows += len(node_stats)
+        except SoftTimeLimitExceeded:
+            await self.db.rollback()
+            raise
+        except Exception:
+            await self.db.rollback()
+            logger.error(f"[analytics-agg] tenant={tenant}: today ({today}) rebuild failed", exc_info=True)
+
+        await self.repo.upsert_aggregation_state(cutoff)
+        await self.db.commit()
+        cursor_age = (utc_now() - cutoff.astimezone(timezone.utc)).total_seconds()
+        logger.info(
+            f"[analytics-agg] tenant={tenant}: cursor advanced to {cutoff} (age {cursor_age:.0f}s); "
+            f"{len(past_dates)} past date(s), agent_rows={agent_rows}, node_rows={node_rows}"
+        )
+        return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows, "dates_selected": len(selected)}
+
+    async def _backfill_authoritative(self, from_date: date | None, to_date: date | None) -> dict:
+        """Backfill: log dates + stats-only dates, rebuild and reconcile per date."""
+        tenant = get_tenant_context()
+        cutoff = await self.repo.get_db_now()
+        today = cutoff.astimezone(timezone.utc).date()
+        logger.info(
+            f"[analytics-agg] tenant={tenant}: backfill discovering ({from_date or 'open'} -> {to_date or 'today'})"
+        )
+
+        log_since = (
+            datetime.combine(from_date, time.min, tzinfo=timezone.utc)
+            if from_date is not None
+            else await self.repo.get_earliest_log_timestamp()
+        )
+        log_until = datetime.combine(to_date, time.max, tzinfo=timezone.utc) if to_date is not None else cutoff
+        log_dates = await self.repo.get_affected_dates_since(log_since, log_until) if log_since is not None else []
+        stats_dates = await self.repo.get_stats_only_dates(from_date, to_date if to_date is not None else today)
+
+        selected = sorted(d for d in {*log_dates, *stats_dates} if d <= today)
+        past_dates = [d for d in selected if d < today]
+        logger.info(
+            f"[analytics-agg] tenant={tenant}: backfill selected={len(selected)} date(s) "
+            f"({from_date or 'open'} -> {to_date or 'today'})"
+        )
+
+        agent_rows = 0
+        node_rows = 0
+        for stat_date in past_dates:
+            logger.info(f"[analytics-agg] tenant={tenant}: backfill processing {stat_date}")
+            try:
+                added_agents, added_nodes = await self._process_past_date(stat_date)
+            except Exception:
+                await self.db.rollback()
+                logger.error(
+                    f"[analytics-agg] tenant={tenant}: backfill date {stat_date} failed and was rolled back",
+                    exc_info=True,
+                )
+                raise
+            agent_rows += added_agents
+            node_rows += added_nodes
+
+        if today in selected:
+            logger.info(f"[analytics-agg] tenant={tenant}: backfill processing today ({today})")
+            agent_stats, node_stats = await self._rebuild_and_upsert(today)
+            await self.db.commit()
+            agent_rows += len(agent_stats)
+            node_rows += len(node_stats)
+
+        logger.info(
+            f"[analytics-agg] tenant={tenant}: backfill complete; "
+            f"agent_rows={agent_rows}, node_rows={node_rows} across {len(selected)} date(s)"
+        )
+        return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows, "dates_selected": len(selected)}
+
+    async def _rebuild_and_upsert(self, stat_date: date) -> tuple[list[dict], list[dict]]:
+        agent_stats, node_stats = await self._aggregate_single_date(stat_date)
+        await self.repo.upsert_agent_daily_stats(agent_stats)
+        await self.repo.upsert_node_daily_stats(node_stats)
+        return agent_stats, node_stats
+
+    async def _process_past_date(self, stat_date: date) -> tuple[int, int]:
+        """Rebuild + upsert + reconcile one past date; the whole date commits atomically."""
+        agent_stats, node_stats = await self._rebuild_and_upsert(stat_date)
+        stamped_at = utc_now()
+        deleted, zeroed = await self.repo.reconcile_agent_daily_stats(
+            stat_date, [s["agent_id"] for s in agent_stats], stamped_at
+        )
+        nodes_deleted = await self.repo.reconcile_node_daily_stats(
+            stat_date, [(s["agent_id"], s["node_type"]) for s in node_stats]
+        )
+        await self.db.commit()
+        if deleted or zeroed or nodes_deleted:
+            logger.info(
+                f"[analytics-agg] tenant={get_tenant_context()}: reconciled {stat_date}: "
+                f"agent deleted={deleted} zeroed={zeroed}, node deleted={nodes_deleted}"
+            )
+        return len(agent_stats), len(node_stats)
 
     async def _aggregate_dates_streaming(self, affected_dates: list[date]) -> dict:
         """Aggregate and upsert one date at a time to keep memory bounded.
