@@ -346,6 +346,7 @@ class ProjectSettings(BaseSettings):
     # === Analytics Aggregation ===
     # Rollout flag: off keeps the legacy aggregation path unchanged.
     ANALYTICS_AGG_V2: bool = False
+    ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
     # First-cutover seed window below the MAX(last_aggregated_at).
     ANALYTICS_AGG_HEAL_LOOKBACK_HOURS: int = 12
     # Discovery overlap absorbing in-flight commits; recompute is idempotent.

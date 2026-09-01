@@ -37,7 +37,7 @@ class AnalyticsAggregationService:
         rebuild, reconciliation, and phantom date selection.
         """
         if not settings.ANALYTICS_AGG_V2:
-            if not force_full:
+            if not force_full and settings.ANALYTICS_AGG_PREVIEW_ENABLED:
                 await self._log_discovery_preview()
             return await self._aggregate_daily_stats_legacy(force_full, from_date, to_date)
         if force_full:
@@ -123,30 +123,37 @@ class AnalyticsAggregationService:
             "node_stats_upserted": len(all_node_stats),
         }
 
-    async def _resolve_incremental_window(self) -> tuple[datetime | None, datetime, date | None]:
+    async def _resolve_incremental_window(self) -> tuple[datetime, datetime, date | None]:
         cutoff = await self.repo.get_db_now()
+        overlap = timedelta(minutes=settings.ANALYTICS_AGG_SCAN_OVERLAP_MINUTES)
+        lookback = timedelta(hours=settings.ANALYTICS_AGG_HEAL_LOOKBACK_HOURS)
         state = await self.repo.get_aggregation_state()
         if state is not None:
             cursor = state.last_incremental_run_at
-            return cursor, cutoff, cursor.astimezone(timezone.utc).date()
+            return cursor - overlap, cutoff, cursor.astimezone(timezone.utc).date()
         watermark = await self.repo.get_last_aggregation_timestamp()
         if watermark is not None:
-            return watermark - timedelta(hours=settings.ANALYTICS_AGG_HEAL_LOOKBACK_HOURS), cutoff, None
-        earliest = await self.repo.get_earliest_log_timestamp()
-        return earliest, cutoff, None
+            return watermark - lookback - overlap, cutoff, None
+        # First run: seed bounded window, not earliest log, to avoid scanning whole
+        # history. Changed conversations still included. Backfill rebuilds existing.
+        return cutoff - lookback - overlap, cutoff, None
+
+    async def _select_dates(
+        self, since: datetime, cutoff: datetime, cursor_date: date | None
+    ) -> tuple[list[date], date]:
+        """Discovery union plus the calendar sweep, capped at today. Shared so the
+        flag-off preview predicts exactly what the V2 run would select."""
+        discovered = await self.repo.discover_affected_dates(since, cutoff)
+        today = cutoff.astimezone(timezone.utc).date()
+        sweep = self.repo.get_calendar_sweep_dates(cursor_date, today)
+        return sorted(d for d in {*discovered, *sweep} if d <= today), today
 
     async def _log_discovery_preview(self) -> None:
         """Preview what V2 would select, read-only. Errors swallowed to not affect
         the run, except timeouts."""
         try:
             since, cutoff, cursor_date = await self._resolve_incremental_window()
-            if since is None:
-                return
-            overlap = timedelta(minutes=settings.ANALYTICS_AGG_SCAN_OVERLAP_MINUTES)
-            discovered = await self.repo.discover_affected_dates(since - overlap, cutoff)
-            today = cutoff.astimezone(timezone.utc).date()
-            sweep = self.repo.get_calendar_sweep_dates(cursor_date, today)
-            selected = {d for d in discovered if d <= today} | set(sweep)
+            selected, _ = await self._select_dates(since, cutoff, cursor_date)
             logger.info(
                 f"[analytics-agg] dry-run tenant={get_tenant_context()}: V2 would select {len(selected)} date(s)"
             )
@@ -161,19 +168,11 @@ class AnalyticsAggregationService:
     async def _aggregate_incremental(self) -> dict:
         tenant = get_tenant_context()
         since, cutoff, cursor_date = await self._resolve_incremental_window()
-        if since is None:
-            logger.info(f"[analytics-agg] tenant={tenant}: no cursor, no stats, no logs; nothing to do")
-            return {"agent_stats_upserted": 0, "node_stats_upserted": 0, "dates_selected": 0}
-
-        overlap = timedelta(minutes=settings.ANALYTICS_AGG_SCAN_OVERLAP_MINUTES)
         logger.info(
             f"[analytics-agg] tenant={tenant}: cursor={'set' if cursor_date is not None else 'absent'}, "
-            f"discovering window=[{since - overlap} .. {cutoff}]"
+            f"discovering window=[{since} .. {cutoff}]"
         )
-        discovered = await self.repo.discover_affected_dates(since - overlap, cutoff)
-        today = cutoff.astimezone(timezone.utc).date()
-        sweep = self.repo.get_calendar_sweep_dates(cursor_date, today)
-        selected = sorted(d for d in {*discovered, *sweep} if d <= today)
+        selected, today = await self._select_dates(since, cutoff, cursor_date)
         past_dates = [d for d in selected if d < today]
         logger.info(f"[analytics-agg] tenant={tenant}: selected={len(selected)} date(s)")
 
@@ -196,6 +195,7 @@ class AnalyticsAggregationService:
             logger.info(f"[analytics-agg] tenant={tenant}: date {stat_date} committed")
 
         logger.info(f"[analytics-agg] tenant={tenant}: processing today ({today})")
+        today_rebuild_failed = False
         try:
             agent_stats, node_stats = await self._rebuild_and_upsert(today)
             await self.db.commit()
@@ -205,7 +205,10 @@ class AnalyticsAggregationService:
             await self.db.rollback()
             raise
         except Exception:
+            # Today is non-authoritative and retried next run, so it must not block the
+            # cursor. Surfaced in the result so a green task can still be alerted on.
             await self.db.rollback()
+            today_rebuild_failed = True
             logger.error(f"[analytics-agg] tenant={tenant}: today ({today}) rebuild failed", exc_info=True)
 
         await self.repo.upsert_aggregation_state(cutoff)
@@ -215,7 +218,12 @@ class AnalyticsAggregationService:
             f"[analytics-agg] tenant={tenant}: cursor advanced to {cutoff} (age {cursor_age:.0f}s); "
             f"{len(past_dates)} past date(s), agent_rows={agent_rows}, node_rows={node_rows}"
         )
-        return {"agent_stats_upserted": agent_rows, "node_stats_upserted": node_rows, "dates_selected": len(selected)}
+        return {
+            "agent_stats_upserted": agent_rows,
+            "node_stats_upserted": node_rows,
+            "dates_selected": len(selected),
+            "today_rebuild_failed": today_rebuild_failed,
+        }
 
     async def _backfill_authoritative(self, from_date: date | None, to_date: date | None) -> dict:
         """Backfill: log dates + stats-only dates, rebuild and reconcile per date."""
@@ -260,8 +268,18 @@ class AnalyticsAggregationService:
 
         if today in selected:
             logger.info(f"[analytics-agg] tenant={tenant}: backfill processing today ({today})")
-            agent_stats, node_stats = await self._rebuild_and_upsert(today)
-            await self.db.commit()
+            try:
+                agent_stats, node_stats = await self._rebuild_and_upsert(today)
+                await self.db.commit()
+            except Exception:
+                # A manual backfill surfaces the failure instead of swallowing it
+                # roll back so the session stays usable.
+                await self.db.rollback()
+                logger.error(
+                    f"[analytics-agg] tenant={tenant}: backfill today ({today}) failed and was rolled back",
+                    exc_info=True,
+                )
+                raise
             agent_rows += len(agent_stats)
             node_rows += len(node_stats)
 

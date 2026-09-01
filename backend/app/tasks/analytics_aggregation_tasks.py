@@ -18,6 +18,18 @@ def _count_failures(payload: dict) -> int:
     return sum(1 for entry in results if isinstance(entry, dict) and "error" in entry)
 
 
+def _count_today_rebuild_failures(results: list) -> int:
+    """Today's rebuild is retried next run and never fails a tenant, so its failures
+    only reach the summary through the nested V2 result."""
+    return sum(
+        1
+        for entry in results
+        if isinstance(entry, dict)
+        and isinstance(entry.get("result"), dict)
+        and entry["result"].get("today_rebuild_failed")
+    )
+
+
 @shared_task
 def aggregate_agent_analytics():
     return run_async_in_celery(
@@ -41,10 +53,10 @@ async def aggregate_agent_analytics_async_with_scope():
     failures = _count_failures(payload)
     results = payload.get("results") or []
     completed = sum(1 for entry in results if isinstance(entry, dict) and "result" in entry)
-    failed_entries = sum(1 for entry in results if isinstance(entry, dict) and "error" in entry)
     logger.info(
         f"[analytics-agg] run finished in {elapsed:.1f}s: status={payload.get('status')}, "
-        f"tenants_completed={completed}, tenants_failed={failed_entries}, entries={len(results)}"
+        f"tenants_completed={completed}, failure_signals={failures}, "
+        f"today_rebuild_failures={_count_today_rebuild_failures(results)}, entries={len(results)}"
     )
     if failures and settings.ANALYTICS_AGG_V2:
         raise RuntimeError(f"agent analytics aggregation failed for {failures} tenant run(s)")
@@ -78,7 +90,8 @@ def backfill_agent_analytics(tenant_id: str, from_date: str | None = None, to_da
     (from the request's tenant context). ``from_date`` / ``to_date`` are inclusive
     ISO date strings (``YYYY-MM-DD``) bounding the window to recompute; omit either
     to run open-ended. At large scale, run it in slices (e.g. one month per call).
-    Idempotent — upserts overwrite, so it is safe to re-run or re-slice.
+    Idempotent, but not non-destructive. Rebuilds all past dates; stale agent/node rows
+    # deleted or zeroed (kept if has cost data); unsupported rows dropped.
     """
     return run_async_in_celery(
         backfill_agent_analytics_async_with_scope(tenant_id=tenant_id, from_date=from_date, to_date=to_date),

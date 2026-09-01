@@ -7,6 +7,7 @@ import pytest
 import app.tasks.base as task_base
 from app.core.config.settings import settings
 from app.tasks.analytics_aggregation_tasks import (
+    _count_today_rebuild_failures,
     aggregate_agent_analytics_async_with_scope,
     backfill_agent_analytics_async_with_scope,
 )
@@ -72,6 +73,23 @@ class TestScheduledAggregationWrapper:
         assert _run_scheduled(monkeypatch, payload, v2=False) is payload
         outer = {"status": "failed", "error": "x"}
         assert _run_scheduled(monkeypatch, outer, v2=False) is outer
+
+
+class TestTodayRebuildFailures:
+    def test_counted_from_the_nested_tenant_result(self):
+        results = [
+            SUCCESS_ENTRY,
+            {"tenant_id": "t1", "tenant_slug": "t1", "result": {"today_rebuild_failed": True}},
+            {"tenant_id": "t2", "tenant_slug": "t2", "result": {"today_rebuild_failed": False}},
+        ]
+        assert _count_today_rebuild_failures(results) == 1
+
+    def test_error_and_legacy_entries_are_ignored(self):
+        results = [
+            {"tenant_id": "t1", "error": "boom"},
+            {"tenant_id": "t2", "result": {"agent_stats_upserted": 0}},
+        ]
+        assert _count_today_rebuild_failures(results) == 0
 
 
 class TestBackfillWrapper:

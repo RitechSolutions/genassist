@@ -31,13 +31,13 @@ from app.db.models.workflow import WorkflowModel
 from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
 from app.services.analytics_aggregation import AnalyticsAggregationService
 
-TODAY = date(2026, 3, 12)
-YESTERDAY = date(2026, 3, 11)
-D1 = date(2026, 3, 10)
-FAKE_NOW = datetime(2026, 3, 12, 12, 0, 0, tzinfo=timezone.utc)
-OLD_STAMP = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
-QUIET_START = datetime(2026, 2, 15, 0, 0, 0, tzinfo=timezone.utc)
-QUIET_END = datetime(2026, 3, 20, 23, 59, 59, tzinfo=timezone.utc)
+TODAY = date(2001, 3, 12)
+YESTERDAY = date(2001, 3, 11)
+D1 = date(2001, 3, 10)
+FAKE_NOW = datetime(2001, 3, 12, 12, 0, 0, tzinfo=timezone.utc)
+OLD_STAMP = datetime(2001, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
+QUIET_START = datetime(2001, 2, 15, 0, 0, 0, tzinfo=timezone.utc)
+QUIET_END = datetime(2001, 3, 20, 23, 59, 59, tzinfo=timezone.utc)
 
 
 @contextmanager
@@ -105,7 +105,7 @@ async def world(app_def):
         or changed_conversations
     ):
         await engine.dispose()
-        pytest.skip("local data overlaps the fixed 2026-02/03 test epoch; refusing authoritative reconciliation")
+        pytest.skip("local data overlaps the fixed 2001-02/03 test epoch; refusing authoritative reconciliation")
 
     async with engine.begin() as conn:
         has_table = await conn.run_sync(lambda c: sa_inspect(c).has_table("analytics_aggregation_state"))
@@ -330,6 +330,7 @@ async def _agent_row(session, agent_id, stat_date):
 @pytest.mark.asyncio(loop_scope="module")
 async def test_v1_flag_off_runs_legacy_and_swallows_dry_run_failure(world, monkeypatch):
     monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", False)
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_PREVIEW_ENABLED", True)
     async with world.maker() as session:
         service, repo = _service(world, session)
         watermark_calls = []
@@ -491,6 +492,28 @@ async def test_v5_sweep_seeds_minimal_without_state_and_covers_outage(world, mon
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_first_run_without_state_or_stats_stays_within_the_bounded_window(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        ancient_day = TODAY - timedelta(days=900)
+        ancient = datetime.combine(ancient_day, time(10, 0), tzinfo=timezone.utc)
+        await _seed_conversation(world, session, updated_at=ancient, log_at=[ancient])
+
+        service, repo = _service(world, session)
+        _pin_db_now(repo, FAKE_NOW)
+
+        async def no_watermark():
+            return None
+
+        repo.get_last_aggregation_timestamp = no_watermark
+        result = await service.aggregate_daily_stats()
+
+        assert result["dates_selected"] == 2, "no cursor and no stats must still seed yesterday+today only"
+        assert await _agent_row(session, world.agent_id, ancient_day) is None, "years-old logs stay for the backfill"
+        assert await _get_cursor(session) == FAKE_NOW
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_v8_today_rebuilt_but_reconciled_only_once_past(world, monkeypatch):
     monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
     async with world.maker() as session:
@@ -571,10 +594,33 @@ async def test_v11_stale_cutoff_cannot_regress_cursor(world, monkeypatch):
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_soft_deleted_cursor_is_revived_by_the_upsert(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        await session.execute(delete(AnalyticsAggregationStateModel))
+        session.add(
+            AnalyticsAggregationStateModel(
+                state_key=1, last_incremental_run_at=FAKE_NOW - timedelta(hours=6), is_deleted=1
+            )
+        )
+        await session.commit()
+
+        service, repo = _service(world, session)
+        _pin_db_now(repo, FAKE_NOW)
+        await service.aggregate_daily_stats()
+
+        row = (
+            await session.execute(select(AnalyticsAggregationStateModel).execution_options(**{SOFT_DELETE_FLAG: True}))
+        ).scalar_one()
+        assert row.is_deleted == 0, "the upsert must clear is_deleted or the cursor stays invisible"
+        assert await _get_cursor(session) == FAKE_NOW
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_v12_v15_backfill_heals_stats_only_phantom_dates_and_leaves_cursor(world, monkeypatch):
     monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
     async with world.maker() as session:
-        phantom_day = date(2026, 2, 20)
+        phantom_day = date(2001, 2, 20)
         _add_agent_phantom(session, world.agent_id, phantom_day)
         _add_agent_phantom(session, world.agent2_id, phantom_day, total_output_tokens=7)
         session.add(NodeExecutionDailyStatsModel(agent_id=world.agent_id, node_type="ghostNode", stat_date=phantom_day))
@@ -582,7 +628,7 @@ async def test_v12_v15_backfill_heals_stats_only_phantom_dates_and_leaves_cursor
 
         service, repo = _service(world, session)
         _pin_db_now(repo, FAKE_NOW)
-        await service.aggregate_daily_stats(force_full=True, to_date=date(2026, 2, 25))
+        await service.aggregate_daily_stats(force_full=True, to_date=date(2001, 2, 25))
 
         assert await _agent_row(session, world.agent_id, phantom_day) is None
         survivor = await _agent_row(session, world.agent2_id, phantom_day)
@@ -633,6 +679,7 @@ async def test_soft_time_limit_during_today_rebuild_surfaces_and_blocks_cursor(w
 @pytest.mark.asyncio(loop_scope="module")
 async def test_soft_time_limit_in_flag_off_preview_is_not_swallowed(world, monkeypatch):
     monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", False)
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_PREVIEW_ENABLED", True)
     async with world.maker() as session:
         service, repo = _service(world, session)
 
@@ -642,6 +689,30 @@ async def test_soft_time_limit_in_flag_off_preview_is_not_swallowed(world, monke
         repo.get_db_now = timing_out
         with pytest.raises(SoftTimeLimitExceeded):
             await service.aggregate_daily_stats()
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_flag_off_without_the_preview_runs_no_v2_discovery(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", False)
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_PREVIEW_ENABLED", False)
+    async with world.maker() as session:
+        service, repo = _service(world, session)
+        discoveries = []
+
+        async def spy(since, cutoff):
+            discoveries.append((since, cutoff))
+            return []
+
+        repo.discover_affected_dates = spy
+
+        async def no_writes(stat_date):
+            return [], []
+
+        monkeypatch.setattr(service, "_aggregate_single_date", no_writes)
+
+        result = await service.aggregate_daily_stats()
+        assert "dates_selected" not in result, "flag off must take the legacy path"
+        assert discoveries == [], "the preview is a diagnostic and must stay off by default"
 
 
 @pytest.mark.asyncio(loop_scope="module")

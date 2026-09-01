@@ -506,7 +506,10 @@ class AnalyticsAggregationRepository:
         return result.scalar_one()
 
     async def upsert_aggregation_state(self, cutoff: datetime) -> None:
-        """Advance the cursor to cutoff. GREATEST keeps it monotonic under a stale write."""
+        """Advance the cursor to cutoff. GREATEST keeps it monotonic under a stale write.
+        Reset is_deleted: the unique constraint matches soft-deleted rows, which
+        the global filter hides..
+        """
         now = utc_now()
         stmt = insert(AnalyticsAggregationStateModel).values(
             {
@@ -525,6 +528,7 @@ class AnalyticsAggregationRepository:
                     AnalyticsAggregationStateModel.__table__.c.last_incremental_run_at,
                     stmt.excluded.last_incremental_run_at,
                 ),
+                "is_deleted": stmt.excluded.is_deleted,
                 "updated_at": stmt.excluded.updated_at,
             },
         )
