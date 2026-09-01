@@ -153,40 +153,31 @@ class LlmUsageReadService:
         row = None if _is_empty_scope(scope) else await self.repo.summary(params, scope)
         if row is None:
             return self._empty_summary(params)
-        (
-            sum_cost,
-            input_tokens,
-            output_tokens,
-            total_tokens,
-            total_calls,
-            unpriced_calls,
-            configured_calls,
-            fallback_calls,
-            legacy_estimate_calls,
-            priced_tokens,
-            conversation_cost,
-            agent_studio_test_cost,
-            distinct_conversations,
-        ) = row
+        total_calls = int(row["total_calls"])
+        total_tokens = int(row["total_tokens"])
+        unpriced_calls = int(row["unpriced_calls"])
+        distinct_conversations = row["distinct_conversations"]
         return LlmUsageSummaryResponse(
             from_date=params.from_date,
             to_date=params.to_date,
-            total_cost_usd=float(sum_cost),
+            total_cost_usd=float(row["sum_cost"]),
             cost_is_partial=unpriced_calls > 0,
             cost_per_conversation_usd=(
-                float(conversation_cost) / distinct_conversations if distinct_conversations else None
+                float(row["conversation_cost"]) / distinct_conversations if distinct_conversations else None
             ),
-            agent_studio_test_cost_usd=float(agent_studio_test_cost),
-            total_input_tokens=int(input_tokens),
-            total_output_tokens=int(output_tokens),
-            total_tokens=int(total_tokens),
-            total_calls=int(total_calls),
-            configured_calls=int(configured_calls),
-            fallback_calls=int(fallback_calls),
-            legacy_estimate_calls=int(legacy_estimate_calls),
-            unpriced_calls=int(unpriced_calls),
+            agent_studio_test_cost_usd=float(row["agent_studio_test_cost"]),
+            total_input_tokens=int(row["input_tokens"]),
+            total_output_tokens=int(row["output_tokens"]),
+            total_tokens=total_tokens,
+            total_cache_read_tokens=int(row["cache_read_tokens"]),
+            total_cache_creation_tokens=int(row["cache_creation_tokens"]),
+            total_calls=total_calls,
+            configured_calls=int(row["configured_calls"]),
+            fallback_calls=int(row["fallback_calls"]),
+            legacy_estimate_calls=int(row["legacy_estimate_calls"]),
+            unpriced_calls=unpriced_calls,
             priced_token_coverage_pct=_coverage_pct(
-                int(total_calls), int(total_tokens), int(priced_tokens), int(unpriced_calls)
+                total_calls, total_tokens, int(row["priced_tokens"]), unpriced_calls
             ),
             last_unpriced_at=(await self.repo.last_unpriced_at() if unpriced_calls else None),
         )

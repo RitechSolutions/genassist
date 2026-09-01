@@ -19,6 +19,7 @@ from app.repositories.db_repository import DbRepository
 # Includes attribution so a re-run restamps rows backfilled before the agent fix.
 _FORCE_UPDATE_COLUMNS = (
     "input_tokens",
+    "prompt_tokens",
     "output_tokens",
     "total_tokens",
     "cost_usd",

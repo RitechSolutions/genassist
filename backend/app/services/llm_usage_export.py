@@ -36,6 +36,8 @@ def _summary_rows(summary: LlmUsageSummaryResponse) -> list[tuple[str, str]]:
         ("Cost per conversation (USD)", _usd(summary.cost_per_conversation_usd)),
         ("Agent Studio test cost (USD)", _usd(summary.agent_studio_test_cost_usd)),
         ("Total tokens", str(summary.total_tokens)),
+        ("Cache read tokens", str(summary.total_cache_read_tokens)),
+        ("Cache write tokens", str(summary.total_cache_creation_tokens)),
         ("Total calls", str(summary.total_calls)),
         ("Calls priced at configured rates", str(summary.configured_calls)),
         ("Calls priced at bundled fallback rates", str(summary.fallback_calls)),

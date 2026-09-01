@@ -73,6 +73,8 @@ export interface WorkflowTokenUsage {
   cache_read_tokens?: number;
   cache_creation_tokens?: number;
   cost_usd?: number;
+  /** True when a call could not be priced, so cost_usd is the priced subtotal only. */
+  cost_is_partial?: boolean;
   calls?: number;
 }
 
