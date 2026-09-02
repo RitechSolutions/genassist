@@ -194,8 +194,8 @@ const MLModelsManager: React.FC = () => {
       let pklFileId = values.pkl_file_id;
       if (values.pendingFile) {
         const uploaded = await uploadModelFile(values.pendingFile);
-        if (!uploaded?.file_path) throw new Error("File upload failed.");
-        pklFile = uploaded.file_path;
+        if (!uploaded?.file_id && !uploaded?.file_path) throw new Error("File upload failed.");
+        pklFile = uploaded.file_path ?? null;
         pklFileId = uploaded.file_id ?? null;
       }
 

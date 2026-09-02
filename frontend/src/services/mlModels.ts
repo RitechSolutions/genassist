@@ -59,7 +59,7 @@ export const deleteMLModel = async (id: string): Promise<void> => {
 
 export const uploadModelFile = async (
   file: File,
-): Promise<{ file_path: string; original_filename: string; file_id?: string; file_url?: string }> => {
+): Promise<{ file_path: string | null; original_filename: string; file_id?: string; file_url?: string }> => {
   try {
   const formData = new FormData();
   formData.append("file", file);
