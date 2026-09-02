@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import Date, cast, delete, exists, func, select, tuple_, union, update
+from sqlalchemy import Date, cast, exists, func, select, tuple_, union, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -624,23 +624,27 @@ class AnalyticsAggregationRepository:
     async def reconcile_agent_daily_stats(
         self, stat_date: date, present_agent_ids: list[UUID], stamped_at: datetime
     ) -> tuple[int, int]:
-        """Repair agent rows the rebuild no longer produces for the date."""
+        """Repair agent rows the rebuild no longer produces for the date: soft-delete the
+        cost-free ones, zero the batch-owned columns of the cost-bearing rest so their
+        realtime-owned token/cost data stays visible. A later upsert of the key revives
+        a hidden row."""
         tbl = AgentExecutionDailyStatsModel
         absent = [tbl.stat_date == stat_date, tbl.is_deleted == 0]
         if present_agent_ids:
             absent.append(tbl.agent_id.not_in(present_agent_ids))
 
-        delete_stmt = (
-            delete(tbl)
+        soft_delete_stmt = (
+            update(tbl)
             .where(
                 *absent,
                 func.coalesce(tbl.total_input_tokens, 0) == 0,
                 func.coalesce(tbl.total_output_tokens, 0) == 0,
                 func.coalesce(tbl.total_cost_usd, 0.0) == 0.0,
             )
+            .values(is_deleted=1, updated_at=stamped_at)
             .execution_options(synchronize_session=False)
         )
-        deleted = await self.db.execute(delete_stmt)
+        soft_deleted = await self.db.execute(soft_delete_stmt)
 
         zero_stmt = (
             update(tbl)
@@ -670,15 +674,18 @@ class AnalyticsAggregationRepository:
         zeroed = await self.db.execute(zero_stmt)
 
         await self.db.flush()
-        return deleted.rowcount, zeroed.rowcount
+        return soft_deleted.rowcount, zeroed.rowcount
 
-    async def reconcile_node_daily_stats(self, stat_date: date, present_keys: list[tuple[UUID, str]]) -> int:
-        """Delete node rows not in the rebuild. The table has no realtime-owned
-        columns to preserve."""
+    async def reconcile_node_daily_stats(
+        self, stat_date: date, present_keys: list[tuple[UUID, str]], stamped_at: datetime
+    ) -> int:
+        """Soft-delete node rows not in the rebuild. Nothing on this table is
+        realtime-owned, so no absent row has to stay visible."""
         tbl = NodeExecutionDailyStatsModel
-        stmt = delete(tbl).where(tbl.stat_date == stat_date, tbl.is_deleted == 0)
+        stmt = update(tbl).where(tbl.stat_date == stat_date, tbl.is_deleted == 0)
         if present_keys:
             stmt = stmt.where(tuple_(tbl.agent_id, tbl.node_type).not_in(present_keys))
-        result = await self.db.execute(stmt.execution_options(synchronize_session=False))
+        stmt = stmt.values(is_deleted=1, updated_at=stamped_at).execution_options(synchronize_session=False)
+        result = await self.db.execute(stmt)
         await self.db.flush()
         return result.rowcount

@@ -59,6 +59,10 @@ def _compiled(stmt):
     return stmt.compile(dialect=postgresql.dialect())
 
 
+def _set_clause(sql: str) -> str:
+    return sql.split(" set ", 1)[1].split(" where ", 1)[0]
+
+
 def _rendered_upsert() -> str:
     session = CapturingSession()
     repo = AnalyticsAggregationRepository(db=session)
@@ -163,16 +167,25 @@ class TestAgentReconciliationShape:
     def _statements(self):
         return _capture(lambda repo: repo.reconcile_agent_daily_stats(STAT_DATE, [AGENT_ID], STAMPED_AT))
 
-    def test_delete_targets_only_cost_free_absent_rows(self):
-        sql = str(_compiled(self._statements()[0])).lower()
-        assert sql.startswith("delete from agent_execution_daily_stats")
+    def test_soft_delete_targets_only_active_cost_free_absent_rows(self):
+        compiled = _compiled(self._statements()[0])
+        sql = str(compiled).lower()
+        assert sql.startswith("update agent_execution_daily_stats")
+        assert "agent_execution_daily_stats.is_deleted = " in sql and compiled.params["is_deleted_1"] == 0
         for column in ("total_input_tokens", "total_output_tokens", "total_cost_usd"):
             assert f"coalesce(agent_execution_daily_stats.{column}" in sql
         assert "not in" in sql
 
+    def test_soft_delete_flips_the_flag_and_stamps_nothing_else(self):
+        compiled = _compiled(self._statements()[0])
+        assert _set_clause(str(compiled).lower()) == "updated_at=%(updated_at)s, is_deleted=%(is_deleted)s"
+        assert compiled.params["is_deleted"] == 1
+        assert compiled.params["updated_at"] == STAMPED_AT
+
     def test_zeroing_never_touches_the_token_and_cost_trio(self):
         sql = str(_compiled(self._statements()[1])).lower()
         assert sql.startswith("update agent_execution_daily_stats")
+        assert "agent_execution_daily_stats.is_deleted = " in sql, "hidden rows must stay out of the zeroing"
         for column in ("total_input_tokens", "total_output_tokens", "total_cost_usd"):
             assert column not in sql
 
@@ -187,12 +200,25 @@ class TestAgentReconciliationShape:
 
 
 class TestNodeReconciliationShape:
-    def test_delete_excludes_present_keys_by_tuple(self):
-        statements = _capture(lambda repo: repo.reconcile_node_daily_stats(STAT_DATE, [(AGENT_ID, "apiToolNode")]))
-        sql = str(_compiled(statements[0])).lower()
-        assert sql.startswith("delete from node_execution_daily_stats")
+    def _statement(self):
+        statements = _capture(
+            lambda repo: repo.reconcile_node_daily_stats(STAT_DATE, [(AGENT_ID, "apiToolNode")], STAMPED_AT)
+        )
+        return _compiled(statements[0])
+
+    def test_soft_delete_excludes_present_keys_by_tuple(self):
+        compiled = self._statement()
+        sql = str(compiled).lower()
+        assert sql.startswith("update node_execution_daily_stats")
+        assert "node_execution_daily_stats.is_deleted = " in sql and compiled.params["is_deleted_1"] == 0
         assert "(node_execution_daily_stats.agent_id, node_execution_daily_stats.node_type)" in sql
         assert "not in" in sql
+
+    def test_soft_delete_flips_the_flag_and_stamps_nothing_else(self):
+        compiled = self._statement()
+        assert _set_clause(str(compiled).lower()) == "updated_at=%(updated_at)s, is_deleted=%(is_deleted)s"
+        assert compiled.params["is_deleted"] == 1
+        assert compiled.params["updated_at"] == STAMPED_AT
 
 
 class TestStatsOnlyDates:

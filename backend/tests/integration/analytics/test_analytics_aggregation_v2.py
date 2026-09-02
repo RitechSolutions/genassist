@@ -316,15 +316,25 @@ def _add_agent_phantom(session, agent_id, stat_date, **overrides):
     return row
 
 
-async def _agent_row(session, agent_id, stat_date):
-    return (
-        await session.execute(
-            select(AgentExecutionDailyStatsModel).where(
-                AgentExecutionDailyStatsModel.agent_id == agent_id,
-                AgentExecutionDailyStatsModel.stat_date == stat_date,
-            )
-        )
-    ).scalar_one_or_none()
+def _stats_query(model, agent_id, stat_date, include_deleted):
+    stmt = (
+        select(model)
+        .where(model.agent_id == agent_id, model.stat_date == stat_date)
+        .execution_options(populate_existing=True)
+    )
+    if include_deleted:
+        stmt = stmt.execution_options(**{SOFT_DELETE_FLAG: True})
+    return stmt
+
+
+async def _agent_row(session, agent_id, stat_date, *, include_deleted=False):
+    stmt = _stats_query(AgentExecutionDailyStatsModel, agent_id, stat_date, include_deleted)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def _node_rows(session, agent_id, stat_date, *, include_deleted=False):
+    stmt = _stats_query(NodeExecutionDailyStatsModel, agent_id, stat_date, include_deleted)
+    return (await session.execute(stmt)).scalars().all()
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -425,35 +435,74 @@ async def test_v4_v7_logless_conversation_selects_creation_date_and_heals_phanto
             conversation_date=datetime.combine(D1, time(9, 0), tzinfo=timezone.utc),
             log_at=(),
         )
-        _add_agent_phantom(session, world.agent_id, D1)
+        _add_agent_phantom(session, world.agent_id, D1, updated_at=OLD_STAMP)
         _add_agent_phantom(session, world.agent2_id, D1, total_input_tokens=5, total_cost_usd=0.5)
-        session.add(NodeExecutionDailyStatsModel(agent_id=world.agent_id, node_type="ghostNode", stat_date=D1))
+        session.add(
+            NodeExecutionDailyStatsModel(
+                agent_id=world.agent_id, node_type="ghostNode", stat_date=D1, execution_count=7
+            )
+        )
         await session.commit()
 
         service, repo = _service(world, session)
         _pin_db_now(repo, FAKE_NOW)
         await service.aggregate_daily_stats()
 
-        assert await _agent_row(session, world.agent_id, D1) is None, "cost-free phantom must be deleted"
+        assert await _agent_row(session, world.agent_id, D1) is None, "cost-free phantom must be hidden"
+        hidden = await _agent_row(session, world.agent_id, D1, include_deleted=True)
+        assert hidden is not None and hidden.is_deleted == 1, "hidden by the flag, not physically deleted"
+        assert hidden.execution_count == 3 and hidden.last_aggregated_at == OLD_STAMP, "contents are kept as-is"
+        assert hidden.updated_at != OLD_STAMP, "only updated_at is stamped"
         survivor = await _agent_row(session, world.agent2_id, D1)
-        assert survivor is not None, "cost-bearing phantom must be kept"
+        assert survivor is not None, "cost-bearing phantom must stay visible"
         assert survivor.execution_count == 0
         assert survivor.total_input_tokens == 5
         assert survivor.total_cost_usd == 0.5
-        assert survivor.last_aggregated_at != OLD_STAMP, "timestamps are stamped, not zeroed"
-        node_rows = (
-            (
-                await session.execute(
-                    select(NodeExecutionDailyStatsModel).where(
-                        NodeExecutionDailyStatsModel.agent_id == world.agent_id,
-                        NodeExecutionDailyStatsModel.stat_date == D1,
-                    )
-                )
+        assert survivor.last_aggregated_at == survivor.updated_at == hidden.updated_at, "one stamp for the whole date"
+        assert await _node_rows(session, world.agent_id, D1) == [], "phantom node rows must be hidden"
+        (hidden_node,) = await _node_rows(session, world.agent_id, D1, include_deleted=True)
+        assert hidden_node.is_deleted == 1 and hidden_node.updated_at == hidden.updated_at
+        assert hidden_node.execution_count == 7, "node contents are kept, not zeroed"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_hidden_rows_are_skipped_by_reconciliation_and_revived_by_the_next_rebuild(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", True)
+    async with world.maker() as session:
+        _add_agent_phantom(session, world.agent_id, D1, is_deleted=1, updated_at=OLD_STAMP)
+        session.add(
+            NodeExecutionDailyStatsModel(
+                agent_id=world.agent_id, node_type="ghostNode", stat_date=D1, execution_count=9, is_deleted=1
             )
-            .scalars()
-            .all()
         )
-        assert node_rows == [], "phantom node rows must be deleted"
+        await session.commit()
+        service, repo = _service(world, session)
+
+        assert await repo.get_stats_only_dates(D1, D1) == [], "a hidden-only date is not a backfill candidate"
+        assert await repo.reconcile_agent_daily_stats(D1, [], FAKE_NOW) == (0, 0), "hidden rows are not matched"
+        assert await repo.reconcile_node_daily_stats(D1, [], FAKE_NOW) == 0
+        await session.commit()
+        hidden = await _agent_row(session, world.agent_id, D1, include_deleted=True)
+        assert hidden.execution_count == 3 and hidden.updated_at == OLD_STAMP, "neither zeroed nor re-stamped"
+
+        raw = json.loads(_raw(world.agent_id))
+        raw["row_agent_response"]["state"]["nodeExecutionStatus"]["n1"]["type"] = "ghostNode"
+        await _set_cursor(session, FAKE_NOW - timedelta(hours=6))
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=FAKE_NOW - timedelta(hours=1),
+            log_at=[datetime.combine(D1, time(10, 0), tzinfo=timezone.utc)],
+            raw=json.dumps(raw),
+        )
+        _pin_db_now(repo, FAKE_NOW)
+        await service.aggregate_daily_stats()
+
+        revived = await _agent_row(session, world.agent_id, D1)
+        assert revived is not None and revived.is_deleted == 0, "the upsert's ON CONFLICT clears the flag"
+        assert revived.execution_count == 1, "and the rebuilt values replace the kept ones"
+        (revived_node,) = await _node_rows(session, world.agent_id, D1)
+        assert revived_node.is_deleted == 0 and revived_node.execution_count == 1
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -852,6 +901,37 @@ async def test_flag_off_without_the_preview_runs_no_v2_discovery(world, monkeypa
         result = await service.aggregate_daily_stats()
         assert "dates_selected" not in result, "flag off must take the legacy path"
         assert discoveries == [], "the preview is a diagnostic and must stay off by default"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_flag_off_backfill_stays_upsert_only_and_never_reconciles(world, monkeypatch):
+    monkeypatch.setattr(settings, "ANALYTICS_AGG_V2", False)
+    async with world.maker() as session:
+        await _seed_conversation(
+            world,
+            session,
+            updated_at=datetime.combine(D1, time(10, 0), tzinfo=timezone.utc),
+            log_at=[datetime.combine(D1, time(10, 0), tzinfo=timezone.utc)],
+        )
+        _add_agent_phantom(session, world.agent2_id, D1)
+        session.add(NodeExecutionDailyStatsModel(agent_id=world.agent2_id, node_type="ghostNode", stat_date=D1))
+        await session.commit()
+        service, repo = _service(world, session)
+
+        async def forbidden(*args, **kwargs):
+            raise AssertionError("the legacy backfill must not reconcile")
+
+        repo.reconcile_agent_daily_stats = forbidden
+        repo.reconcile_node_daily_stats = forbidden
+        result = await service.aggregate_daily_stats(force_full=True, from_date=D1, to_date=D1)
+
+        assert result == {"agent_stats_upserted": 1, "node_stats_upserted": 1}, "legacy shape, one date rebuilt"
+        rebuilt = await _agent_row(session, world.agent_id, D1)
+        assert rebuilt is not None and rebuilt.execution_count == 1, "the legacy upsert still lands"
+        phantom = await _agent_row(session, world.agent2_id, D1)
+        assert phantom is not None and phantom.execution_count == 3, "flag off leaves phantoms active and intact"
+        assert len(await _node_rows(session, world.agent2_id, D1)) == 1
+        assert await _get_cursor(session) is None, "the legacy backfill never writes the V2 cursor"
 
 
 @pytest.mark.asyncio(loop_scope="module")

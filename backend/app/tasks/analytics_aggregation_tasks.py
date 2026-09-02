@@ -103,8 +103,9 @@ def backfill_agent_analytics(tenant_id: str, from_date: str | None = None, to_da
     to run open-ended. At large scale, run it in slices (e.g. one month per call).
     Idempotent, but not non-destructive: every past date in the window is rebuilt
     authoritatively and reconciled, so agent rows the rebuild no longer produces are
-    deleted when they carry no token/cost data and zeroed when they do, and absent node
-    rows are deleted.
+    soft-deleted when they carry no token/cost data and zeroed when they do, and absent
+    node rows are soft-deleted. With ``ANALYTICS_AGG_V2`` off the backfill stays
+    upsert-only and touches no other row.
     """
     return run_async_in_celery(
         backfill_agent_analytics_async_with_scope(tenant_id=tenant_id, from_date=from_date, to_date=to_date),

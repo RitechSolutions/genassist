@@ -33,8 +33,10 @@ class AnalyticsAggregationService:
         """
         Main entry point for the Celery task.
 
-        ``ANALYTICS_AGG_V2`` off: watermark path. On: cursor-based discovery with per-date
-        rebuild, reconciliation, and phantom date selection.
+        ``ANALYTICS_AGG_V2`` off: watermark path, upsert-only (the backfill included). On:
+        cursor-based discovery with per-date rebuild, soft-delete reconciliation, and phantom
+        date selection. Turning the flag off again stops reconciling but does not revive rows
+        it already hid; the next upsert of the same key does.
         """
         if not settings.ANALYTICS_AGG_V2:
             if not force_full and settings.ANALYTICS_AGG_PREVIEW_ENABLED:
@@ -324,7 +326,7 @@ class AnalyticsAggregationService:
 
     async def _process_past_date(self, stat_date: date) -> tuple[int, int, bool]:
         """Rebuild + upsert + reconcile one past date; the whole date commits atomically.
-        Reconciliation deletes and zeroes whatever the rebuild did not produce, and an
+        Reconciliation soft-deletes and zeroes whatever the rebuild did not produce, and an
         unreadable log's agent is exactly what it did not produce, so it is skipped
         whenever any log stayed unattributed.
         """
@@ -340,17 +342,17 @@ class AnalyticsAggregationService:
             return len(agent_stats), len(node_stats), True
 
         stamped_at = utc_now()
-        deleted, zeroed = await self.repo.reconcile_agent_daily_stats(
+        soft_deleted, zeroed = await self.repo.reconcile_agent_daily_stats(
             stat_date, [s["agent_id"] for s in agent_stats], stamped_at
         )
-        nodes_deleted = await self.repo.reconcile_node_daily_stats(
-            stat_date, [(s["agent_id"], s["node_type"]) for s in node_stats]
+        nodes_soft_deleted = await self.repo.reconcile_node_daily_stats(
+            stat_date, [(s["agent_id"], s["node_type"]) for s in node_stats], stamped_at
         )
         await self.db.commit()
-        if deleted or zeroed or nodes_deleted:
+        if soft_deleted or zeroed or nodes_soft_deleted:
             logger.info(
                 f"[analytics-agg] tenant={get_tenant_context()}: reconciled {stat_date}: "
-                f"agent deleted={deleted} zeroed={zeroed}, node deleted={nodes_deleted}"
+                f"agent soft_deleted={soft_deleted} zeroed={zeroed}, node soft_deleted={nodes_soft_deleted}"
             )
         return len(agent_stats), len(node_stats), False
 

@@ -111,8 +111,8 @@ async def trigger_analytics_backfill(
     Returns the Celery task id for monitoring (e.g. in Flower).
     Idempotent, but not non-destructive: with ``ANALYTICS_AGG_V2`` enabled every past
     date in the window is rebuilt authoritatively and reconciled, so stats rows that
-    the current non-deleted source data no longer supports are deleted (or zeroed,
-    when they carry token/cost data).
+    the current non-deleted source data no longer supports are soft-deleted (or zeroed,
+    when they carry token/cost data). With the flag off the backfill is upsert-only.
     """
     from app.core.tenant_scope import get_tenant_context
     from app.tasks.analytics_aggregation_tasks import backfill_agent_analytics
