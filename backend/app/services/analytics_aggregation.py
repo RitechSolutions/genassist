@@ -468,6 +468,7 @@ class AnalyticsAggregationService:
                 unattributed += 1
                 continue
             if not isinstance(payload, dict):
+                logger.warning(f"raw_response is not a JSON object for log id={log.id}")
                 unattributed += 1
                 continue
 
@@ -476,6 +477,7 @@ class AnalyticsAggregationService:
             except ValueError:
                 agent_id = agent_by_conversation.get(log.conversation_id) if agent_by_conversation else None
             if agent_id is None:
+                logger.warning(f"Could not resolve an agent for log id={log.id} conversation_id={log.conversation_id}")
                 unattributed += 1
                 continue
 
