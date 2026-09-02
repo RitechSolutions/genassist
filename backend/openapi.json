@@ -9779,6 +9779,28 @@
         ],
         "summary": "Export Cost Rates Csv",
         "operationId": "export_cost_rates_csv_api_llm_cost_rates_export_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_cache_rates",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Add the cache rate columns. Off keeps the 4-column layout older tools expect.",
+              "default": false,
+              "title": "Include Cache Rates"
+            },
+            "description": "Add the cache rate columns. Off keeps the 4-column layout older tools expect."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9787,16 +9809,18 @@
                 "schema": {}
               }
             }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
           },
-          {
-            "OAuth2PasswordBearer": []
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        ]
+        }
       }
     },
     "/api/llm-model-catalog": {
@@ -36870,6 +36894,36 @@
               }
             ],
             "title": "Output Per 1K"
+          },
+          "cache_read_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Per 1K"
+          },
+          "cache_creation_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Per 1K"
           }
         },
         "type": "object",
@@ -36932,6 +36986,28 @@
             "type": "string",
             "title": "Output Per 1K"
           },
+          "cache_read_per_1k": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Per 1K"
+          },
+          "cache_creation_per_1k": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Per 1K"
+          },
           "updated_at": {
             "type": "string",
             "format": "date-time",
@@ -36974,6 +37050,36 @@
               }
             ],
             "title": "Output Per 1K"
+          },
+          "cache_read_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Per 1K"
+          },
+          "cache_creation_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Per 1K"
           }
         },
         "type": "object",
@@ -36982,7 +37088,7 @@
           "output_per_1k"
         ],
         "title": "LlmCostRateUpdate",
-        "description": "Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate"
+        "description": "Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate.\nBase rates are full-replace; a cache rate is only touched when the payload carries\nits key. Sent blank it clears back to the provider default, omitted it is kept"
       },
       "LlmModelCatalogCreate": {
         "properties": {
@@ -37436,11 +37542,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
+          },
+          "prompt_caching_mode": {
+            "type": "string",
+            "title": "Prompt Caching Mode",
+            "description": "Backend-derived caching capability (\"explicit\" | \"automatic\" | \"none\")",
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
-          "id"
+          "id",
+          "prompt_caching_mode"
         ],
         "title": "LlmProviderRead"
       },
@@ -37757,6 +37870,16 @@
             "type": "integer",
             "title": "Total Tokens"
           },
+          "total_cache_read_tokens": {
+            "type": "integer",
+            "title": "Total Cache Read Tokens",
+            "default": 0
+          },
+          "total_cache_creation_tokens": {
+            "type": "integer",
+            "title": "Total Cache Creation Tokens",
+            "default": 0
+          },
           "total_calls": {
             "type": "integer",
             "title": "Total Calls"
@@ -37810,7 +37933,7 @@
           "priced_token_coverage_pct"
         ],
         "title": "LlmUsageSummaryResponse",
-        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls"
+        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls.\n\nPrompt tokens sent, normalized across providers. Includes cache (already\nin total_input_tokens). If provider reports input minus cache, we add it back\nso input + output = total_tokens."
       },
       "LlmUsageTimeseriesItem": {
         "properties": {
@@ -38933,19 +39056,6 @@
             "maxLength": 255,
             "title": "Target Variable",
             "description": "The prediction target variable"
-          },
-          "inference_params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inference Params",
-            "description": "Key-value pairs for inference configuration"
           }
         },
         "type": "object",
@@ -39427,19 +39537,6 @@
             "title": "Target Variable",
             "description": "The prediction target variable"
           },
-          "inference_params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inference Params",
-            "description": "Key-value pairs for inference configuration"
-          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -39555,19 +39652,6 @@
             ],
             "title": "Target Variable",
             "description": "The prediction target variable"
-          },
-          "inference_params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inference Params",
-            "description": "Key-value pairs for inference configuration"
           }
         },
         "type": "object",
@@ -39655,8 +39739,7 @@
           "logistic_regression",
           "svm",
           "knn",
-          "neural_network",
-          "other"
+          "neural_network"
         ],
         "title": "ModelType"
       },
@@ -45458,8 +45541,7 @@
                   "type": "string",
                   "format": "uuid"
                 },
-                "type": "array",
-                "minItems": 1
+                "type": "array"
               },
               {
                 "type": "null"

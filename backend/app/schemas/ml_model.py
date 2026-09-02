@@ -21,7 +21,6 @@ class ModelType(str, Enum):
     SVM = "svm"
     KNN = "knn"
     NEURAL_NETWORK = "neural_network"
-    OTHER = "other"
 
 
 class MLModelBase(BaseModel):
