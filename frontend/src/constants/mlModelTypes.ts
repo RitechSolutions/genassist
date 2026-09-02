@@ -3,8 +3,7 @@ export interface MLModelTypeOption {
   label: string;
 }
 
-// Keep in sync with backend/app/schemas/ml_model.py::ModelType and
-// backend/app/modules/workflow/engine/nodes/ml/train_model_node.py::valid_model_types
+// Keep in sync with backend/app/modules/workflow/engine/nodes/ml/train_model_node.py::valid_model_types.
 export const ML_MODEL_TYPES: MLModelTypeOption[] = [
   { value: "xgboost", label: "XGBoost" },
   { value: "lightgbm", label: "LightGBM" },
@@ -21,7 +20,6 @@ export const ML_MODEL_TYPES: MLModelTypeOption[] = [
   { value: "svm", label: "Support Vector Machine" },
   { value: "knn", label: "K-Nearest Neighbors" },
   { value: "neural_network", label: "Neural Network" },
-  { value: "other", label: "Other" },
 ];
 
 export const ML_MODEL_TYPE_LABELS: Record<string, string> = ML_MODEL_TYPES.reduce(
@@ -48,5 +46,4 @@ export type MLModelTypeValue =
   | "logistic_regression"
   | "svm"
   | "knn"
-  | "neural_network"
-  | "other";
+  | "neural_network";

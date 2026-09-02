@@ -90,7 +90,7 @@ class TrainModelNode(BaseNode):
                 - modelType: Type of model - "xgboost", "lightgbm", "catboost", "random_forest",
                             "extra_trees", "gradient_boosting", "decision_tree", "linear_regression",
                             "ridge_regression", "lasso_regression", "elastic_net", "logistic_regression",
-                            "svm", "knn", "neural_network" (required)
+                            "svm", "knn", or "neural_network" (required).
                 - fileUrl: Path to CSV file with training data (required)
                 - targetColumn: Name of the target column (required)
                 - featureColumns: List of feature column names (required)
@@ -958,6 +958,7 @@ class TrainModelNode(BaseNode):
         local path on disk that other containers/processes can't see.
 
         Args:
+            local_pkl_path: Local path to the freshly fit model to upload.
             target_model_id: When set (an ML Model Pipeline run targets a
                 specific model), that model is updated directly. Otherwise
                 falls back to looking the model up by ``name`` — which is
@@ -970,13 +971,13 @@ class TrainModelNode(BaseNode):
             that already produced a valid .pkl on disk.
         """
         try:
-            from app.core.config.settings import file_storage_settings
-            from app.dependencies.injector import injector
-            from app.schemas.file import FileBase
             from app.schemas.ml_model import MLModelCreate, MLModelUpdate
+            from app.dependencies.injector import injector
+            from app.services.ml_models import MLModelsService
+            from app.core.config.settings import file_storage_settings
+            from app.schemas.file import FileBase
             from app.services.app_settings import AppSettingsService
             from app.services.file_manager import FileManagerService
-            from app.services.ml_models import MLModelsService
 
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
@@ -1003,21 +1004,23 @@ class TrainModelNode(BaseNode):
                 mime_type="application/octet-stream",
                 delete_source=False,
             )
+            resolved_pkl_file_id = str(uploaded_file.id)
 
             ml_service = injector.get(MLModelsService)
             # Marker recorded in the description of any model this node registers, so a
             # later run can recognize "its own" row by name. Node IDs are unique per node
             # instance, unlike the (often generic, e.g. "Train Model") display name.
             node_marker = f"[train-model-node:{self.node_id}]"
+            description = (
+                f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
+                f"{node_marker}"
+            )
             model_fields = {
-                "description": (
-                    f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
-                    f"{node_marker}"
-                ),
+                "description": description,
                 "model_type": model_type,
                 "features": feature_columns,
                 "target_variable": target_column,
-                "pkl_file_id": str(uploaded_file.id),
+                "pkl_file_id": resolved_pkl_file_id,
                 # The uploaded file is now the source of truth; a stale local
                 # path from a previous run shouldn't be preferred over it.
                 "pkl_file": None,
