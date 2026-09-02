@@ -13,6 +13,9 @@ FRAME_VERSION = 1
 FRAME_TTL_HOURS = 24
 
 SUB_AGENT_RESUME_KEY = "__sub_agent_resume"
+# Rides inside the frame's free-form request_context, so ParentResume keeps its schema
+# and an older pod can still resume a frame written by a newer one
+SUB_AGENT_DIAGNOSTICS_KEY = "__prompt_caching_diagnostics"
 
 MAX_TASK_CHARS = 4000
 MAX_USER_PROMPT_CHARS = 4000

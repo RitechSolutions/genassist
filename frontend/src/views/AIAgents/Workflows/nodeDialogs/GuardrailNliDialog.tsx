@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
@@ -10,12 +10,10 @@ import {
   SelectValue,
 } from "@/components/select";
 import { BaseNodeDialogProps } from "./base";
-import {
-  GuardrailNliNodeData,
-  NodeData,
-} from "../types/nodes";
+import { GuardrailNliNodeData } from "../types/nodes";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type Props = BaseNodeDialogProps<
   GuardrailNliNodeData,
@@ -34,27 +32,17 @@ const NLI_MODEL_OPTIONS = [
 ];
 
 export const GuardrailNliDialog: React.FC<Props> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
-  const [localData, setLocalData] = useState<GuardrailNliNodeData>(data);
+  const { onClose, data } = props;
 
-  useEffect(() => {
-    if (isOpen) {
-      setLocalData(data);
-    }
-  }, [isOpen, data]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      ...localData,
-    } as GuardrailNliNodeData & NodeData);
-    onClose();
-  };
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => data
+  );
 
   return (
     <NodeConfigPanel
       {...props}
-      data={localData as unknown as NodeData}
+      data={merged}
       footer={
         <div className="flex justify-end gap-2">
           <button
@@ -78,13 +66,8 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
         <div className="space-y-2">
           <Label>Answer</Label>
           <DraggableTextArea
-            value={localData.answer_field || ""}
-            onChange={(e) =>
-              setLocalData((prev) => ({
-                ...prev,
-                answer_field: e.target.value,
-              }))
-            }
+            value={values.answer_field || ""}
+            onChange={(e) => setField("answer_field", e.target.value)}
             placeholder="answer"
             rows={2}
           />
@@ -92,13 +75,8 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
         <div className="space-y-2">
           <Label>Evidence</Label>
           <DraggableTextArea
-            value={localData.evidence_field || ""}
-            onChange={(e) =>
-              setLocalData((prev) => ({
-                ...prev,
-                evidence_field: e.target.value,
-              }))
-            }
+            value={values.evidence_field || ""}
+            onChange={(e) => setField("evidence_field", e.target.value)}
             placeholder="context"
             rows={2}
           />
@@ -107,15 +85,10 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
           <Label>NLI model</Label>
           <Select
             value={
-              localData.nli_model_name ||
+              values.nli_model_name ||
               "cross-encoder/nli-deberta-v3-base"
             }
-            onValueChange={(value) =>
-              setLocalData((prev) => ({
-                ...prev,
-                nli_model_name: value,
-              }))
-            }
+            onValueChange={(value) => setField("nli_model_name", value)}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select NLI model" />
@@ -136,12 +109,9 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
             step="0.01"
             min={0}
             max={1}
-            value={localData.min_entail_score ?? 0.5}
+            value={values.min_entail_score ?? 0.5}
             onChange={(e) =>
-              setLocalData((prev) => ({
-                ...prev,
-                min_entail_score: Number(e.target.value),
-              }))
+              setField("min_entail_score", Number(e.target.value))
             }
           />
         </div>
@@ -154,12 +124,9 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
               </p>
             </div>
             <Switch
-              checked={localData.fail_on_contradiction ?? false}
+              checked={values.fail_on_contradiction ?? false}
               onCheckedChange={(checked) =>
-                setLocalData((prev) => ({
-                  ...prev,
-                  fail_on_contradiction: checked,
-                }))
+                setField("fail_on_contradiction", checked)
               }
             />
           </div>
@@ -172,26 +139,18 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
             </p>
           </div>
           <Switch
-            checked={localData.fallback_answer_enabled ?? false}
+            checked={values.fallback_answer_enabled ?? false}
             onCheckedChange={(checked) =>
-              setLocalData((prev) => ({
-                ...prev,
-                fallback_answer_enabled: checked,
-              }))
+              setField("fallback_answer_enabled", checked)
             }
           />
         </div>
-        {localData.fallback_answer_enabled && (
+        {values.fallback_answer_enabled && (
           <div className="space-y-2">
             <Label>Fallback answer text</Label>
             <DraggableTextArea
-              value={localData.fallback_answer ?? ""}
-              onChange={(e) =>
-                setLocalData((prev) => ({
-                  ...prev,
-                  fallback_answer: e.target.value,
-                }))
-              }
+              value={values.fallback_answer ?? ""}
+              onChange={(e) => setField("fallback_answer", e.target.value)}
               placeholder="e.g. I'm sorry, I cannot provide an answer based on the available information."
               rows={3}
             />

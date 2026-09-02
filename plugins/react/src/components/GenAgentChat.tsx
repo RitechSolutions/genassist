@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallba
 import { ChatMessageComponent } from './ChatMessage';
 import { AttachmentPreview } from './common/AttachmentPreview';
 import { useChat } from '../hooks/useChat';
+import { useReadReporter, messageIdentityKey } from '../hooks/useReadReporter';
 import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useThinkingAnimation } from '../hooks/useThinkingAnimation';
 import { useViewportManager } from '../hooks/useViewportManager';
@@ -11,7 +12,7 @@ import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle, Fullscreen, ChevronDown } from 'lucide-react';
+import { Paperclip, MoreHorizontal, RefreshCw, Globe, X, ArrowUp, ArrowDown, Maximize2, Minimize2, AlertCircle, Fullscreen, ChevronDown } from 'lucide-react';
 import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
@@ -42,8 +43,8 @@ import {
   getMenuPopupStyle,
   getMenuItemStyle,
   chatContainerStyle,
-  inputContainerStyle,
-  inputWrapperStyle,
+  getInputContainerStyle,
+  getInputWrapperStyle,
   getTextAreaStyle,
   getLiveVoiceHintStyle,
   attachButtonStyle,
@@ -66,6 +67,7 @@ import {
   getInputBarReplyCardStyle,
   getInputBarPanelStyle,
   getInputBarPanelHeaderStyle,
+  getScrollToBottomButtonStyle,
   CSS_KEYFRAMES,
 } from '../styles/genAgentChatStyles';
 
@@ -113,6 +115,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   serverUnavailableContactLabel,
   formDisplay = 'footer',
   onConfigLoaded,
+  readReceipts = false,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -189,6 +192,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // Latest agent reply that arrived while the panel was closed — surfaced as a compact
   // preview card above the bar instead of forcing the whole conversation open.
   const [barReplyPreview, setBarReplyPreview] = useState<string | null>(null);
+  // Hover reveals the dismiss (X) affordance on the closed-chat reply preview card.
+  const [replyPreviewHovered, setReplyPreviewHovered] = useState(false);
   const inputBarRootRef = useRef<HTMLDivElement>(null);
   // Guards the auto "Start Conversation" that fires the first time the bar is focused on a
   // fresh session, so a single focus can't kick off multiple starts.
@@ -223,6 +228,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     isFinalized,
     isAgentTyping,
     addFeedback,
+    readState,
+    markRead,
     availableLanguages: agentAvailableLanguages,
     agentId,
     agentLiveVoiceEnabled,
@@ -260,7 +267,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     translations,
   });
 
-  const { messagesEndRef, chatContainerRef } = useScrollManagement({
+  const { messagesEndRef, chatContainerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
     isAgentTyping,
     currentThinkingPartIndex,
@@ -269,6 +276,64 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     isFloatingOpen: mode === 'inputbar' ? barPanelOpen : isFloatingOpen,
     mode,
   });
+
+  // Report the visitor's read state upstream (so a supervisor sees when their reply
+  // was read). Emits only while the chat surface is open, its bottom is on screen,
+  // and the tab is focused.
+  const { unreadCount, dividerBeforeKey, registerBottom } = useReadReporter({
+    enabled: readReceipts,
+    active: mode === 'floating' ? isFloatingOpen : mode === 'inputbar' ? barPanelOpen : true,
+    messages,
+    conversationId,
+    isFinalized,
+    markRead,
+    persistKey:
+      readReceipts && conversationId
+        ? `genassist_unread_seen:${apiKey}:${conversationId}`
+        : null,
+  });
+
+  // Attach both the scroll-management ref and the read-tracker's visibility observer
+  // to the single bottom sentinel. The observer is driven by this callback (fires on
+  // mount/unmount), so it works even when the panel mounts a render after it opens.
+  const setBottomSentinelRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      (messagesEndRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+      registerBottom(el);
+    },
+    [messagesEndRef, registerBottom],
+  );
+
+  // Sequence of the visitor's most recent message (anchored from the update
+  // response) — the one that carries the read receipt.
+  const lastCustomerSequence = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].speaker === 'customer') {
+        return messages[i].sequence_number;
+      }
+    }
+    return undefined;
+  }, [messages]);
+
+  // "Seen" only when a human supervisor's marker has reached this message; otherwise
+  // "Delivered" once the server assigned it a sequence; "Sent" while still in flight.
+  const lastCustomerReceipt = useMemo<'sent' | 'delivered' | 'seen' | undefined>(() => {
+    if (!readReceipts) return undefined;
+    if (typeof lastCustomerSequence !== 'number') return 'sent';
+    const supervisorSeq = readState?.supervisor_last_read_sequence;
+    if (typeof supervisorSeq === 'number' && supervisorSeq >= lastCustomerSequence) {
+      return 'seen';
+    }
+    return 'delivered';
+  }, [readReceipts, lastCustomerSequence, readState]);
+
+  // Index of the visitor's most recent message, so only it shows the receipt.
+  const lastCustomerIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].speaker === 'customer') return i;
+    }
+    return -1;
+  }, [messages]);
 
   const {
     windowWidth,
@@ -452,7 +517,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     let lastAgent: ChatMessage | undefined;
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
-      if (m.speaker === 'agent' && m.text && m.text.trim() && (!m.type || m.type === 'text')) {
+      // Any textual agent/supervisor reply — the backend's default segment type is
+      // "message", so allow that plus "text"/none; only skip non-text payloads
+      // (voice, file, HITL form) that shouldn't preview as a one-line notification.
+      if (
+        m.speaker === 'agent' &&
+        m.text &&
+        m.text.trim() &&
+        m.type !== 'audio' &&
+        m.type !== 'file' &&
+        m.type !== 'form_request'
+      ) {
         lastAgent = m;
         break;
       }
@@ -466,11 +541,27 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
     if (key && key !== barLastAgentKeyRef.current) {
       barLastAgentKeyRef.current = key;
-      if (!barPanelOpen) {
+      // Only preview a genuinely just-arrived reply (create_time ≈ now for WS/poll
+      // messages), never an older one surfaced when messages hydrate from storage.
+      const nowSec = Date.now() / 1000;
+      const isFresh =
+        !!lastAgent &&
+        typeof lastAgent.create_time === 'number' &&
+        nowSec - lastAgent.create_time < 60;
+      if (!barPanelOpen && isFresh) {
         setBarReplyPreview(lastAgent!.text);
+        // Collapse the docked bar so the arriving preview never leaves it expanded
+        // (as if auto-focused). Clicking the bar or the card opens the full chat.
+        setBarFocused(false);
       }
     }
   }, [messages, mode, barPanelOpen]);
+
+  // Reset the hover state whenever the preview goes away, so the next one doesn't
+  // appear with its dismiss button already revealed.
+  useEffect(() => {
+    if (!barReplyPreview) setReplyPreviewHovered(false);
+  }, [barReplyPreview]);
 
   // A new conversation clears any stale reply preview.
   useEffect(() => {
@@ -864,6 +955,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // pick a suggestion or type right away. A reply preview keeps the panel closed so the
   // visitor can read it / reply inline.
   const handleBarFocus = () => {
+    // While a reply preview is showing, ignore focus entirely — expanding or opening
+    // the chat must come from an explicit click (the bar or the card), never a
+    // possibly-programmatic focus. Keeps the docked bar compact until the visitor acts.
+    if (barReplyPreview) return;
     setBarFocused(true);
     // Finalized conversation: the previous chat is over, so focusing the docked bar starts a
     // fresh one (the old "Start Conversation" action) rather than reopening the ended panel.
@@ -888,7 +983,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       }
       return;
     }
-    if (hasUserMessages && !barReplyPreview) {
+    if (hasUserMessages) {
       openBarPanel();
       return;
     }
@@ -1025,7 +1120,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   // Resolve theme values
   const themeParams = resolveTheme(theme);
-  const { primaryColor, backgroundColor, textColor, fontFamily, fontSize } = themeParams;
+  const { primaryColor, secondaryColor, backgroundColor, textColor, fontFamily, fontSize, borderColor, mutedTextColor, inputBackgroundColor } = themeParams;
   const fontSizeNumber = typeof fontSize === 'string' ? parseInt(fontSize, 10) : (typeof fontSize === 'number' ? fontSize : 14);
 
   const position = floatingConfig.position || 'bottom-right';
@@ -1038,24 +1133,46 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // Computed styles
   const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams });
   const headerStyle = getHeaderStyle(themeParams);
-  const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily);
-  const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily);
+  const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily, textColor);
+  const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily, mutedTextColor);
   const headerDescription = (description ?? t('header.subtitle') ?? '').trim();
   const brandLogo = brandLogoUrl?.trim() ?? '';
   const hasBrandLogo = brandLogo.length > 0;
   // Description reveal only applies to the small-logo layout; the full brand logo replaces the text.
   const hasHeaderDescription = !hasBrandLogo && headerDescription.length > 0;
-  const menuPopupStyle = getMenuPopupStyle(backgroundColor);
+  const menuPopupStyle = getMenuPopupStyle(backgroundColor, borderColor);
   const menuItemStyle = getMenuItemStyle(themeParams);
   // Hover fill for menu items / outline buttons — theme-aware, matches the web app's bg-accent.
   const menuHoverBg = theme?.secondaryColor || '#f4f4f5';
   const contentCardStyle = getContentCardStyle(backgroundColor);
   const sendButtonStyle = getSendButtonStyle(primaryColor);
+
+  // "New messages" separator rendered above the first message the visitor hasn't
+  // seen since they last left the conversation (read receipts only).
+  const renderNewMessagesDivider = () => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', margin: '12px 0' }}>
+      <div style={{ flex: 1, height: 1, backgroundColor: primaryColor, opacity: 0.35 }} />
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: primaryColor,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {t('receipts.newMessages', 'New messages')}
+      </span>
+      <div style={{ flex: 1, height: 1, backgroundColor: primaryColor, opacity: 0.35 }} />
+    </div>
+  );
+
   const possibleQueriesContainerStyle = getPossibleQueriesContainerStyle(fontFamily);
   const queryButtonStyle = getQueryButtonStyle(themeParams);
   const confirmOverlayStyle = getConfirmOverlayStyle(showResetConfirm);
   const confirmDialogStyle = getConfirmDialogStyle(themeParams);
-  const disclaimerStyle = getDisclaimerStyle(fontFamily);
+  const disclaimerStyle = getDisclaimerStyle(fontFamily, mutedTextColor);
+  const inputContainerStyle = getInputContainerStyle(inputBackgroundColor);
+  const inputWrapperStyle = getInputWrapperStyle(inputBackgroundColor, borderColor);
 
   const textAreaFontSize = useMemo(() => {
     if (windowWidth <= 768) {
@@ -1242,6 +1359,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         }
 
         return messages.filter(applyMessageFilter).map((message, index) => {
+          const showNewDivider = !!dividerBeforeKey && messageIdentityKey(message) === dividerBeforeKey;
           if (message.type === 'form_request' && message.speaker === 'agent') {
             try {
               const formSchema = localizeForm(JSON.parse(message.text));
@@ -1250,34 +1368,42 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               const originalIndex = messages.indexOf(message);
               const isPending = !isFormAnswered(originalIndex);
               return (
-                <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
-                    {agentName || 'Agent'}
-                  </div>
-                  {formDisplay === 'inline' && isPending ? (
-                    <DynamicFormMessage
-                      schema={formSchema}
-                      onSubmit={(data) => handleFormSubmit(data, originalIndex)}
-                      onCancel={() => handleFormCancel(originalIndex)}
-                      isSubmitting={submittingFormIndex === originalIndex}
-                      isSubmitted={false}
-                      primaryColor={primaryColor}
-                      fontFamily={fontFamily}
-                      variant="card"
-                    />
-                  ) : (
-                    <div style={{
-                      backgroundColor: '#f3f4f6',
-                      borderRadius: '12px',
-                      padding: '10px 14px',
-                      fontSize: '14px',
-                      color: '#374151',
-                      fontFamily,
-                    }}>
-                      {formSchema.message || 'Please fill the form below.'}
+                <React.Fragment key={index}>
+                  {showNewDivider && renderNewMessagesDivider()}
+                  <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '14px', color: textColor, fontWeight: 600, marginBottom: 4 }}>
+                      {agentName || 'Agent'}
                     </div>
-                  )}
-                </div>
+                    {formDisplay === 'inline' && isPending ? (
+                      <DynamicFormMessage
+                        schema={formSchema}
+                        onSubmit={(data) => handleFormSubmit(data, originalIndex)}
+                        onCancel={() => handleFormCancel(originalIndex)}
+                        isSubmitting={submittingFormIndex === originalIndex}
+                        isSubmitted={false}
+                        primaryColor={primaryColor}
+                        fontFamily={fontFamily}
+                        backgroundColor={backgroundColor}
+                        textColor={textColor}
+                        borderColor={borderColor}
+                        mutedTextColor={mutedTextColor}
+                        inputBackgroundColor={inputBackgroundColor}
+                        variant="card"
+                      />
+                    ) : (
+                      <div style={{
+                        backgroundColor: secondaryColor,
+                        borderRadius: '12px',
+                        padding: '10px 14px',
+                        fontSize: '14px',
+                        color: textColor,
+                        fontFamily,
+                      }}>
+                        {formSchema.message || 'Please fill the form below.'}
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
               );
             } catch {
               // Fall through to normal rendering if JSON parse fails
@@ -1297,32 +1423,35 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               : message;
 
           return (
-            <ChatMessageComponent
-              key={index}
-              message={displayMessage}
-              theme={theme}
-              onPlayAudio={message.speaker === 'agent' ? playResponseAudio : undefined}
-              isPlayingAudio={isPlayingAudio}
-              isFirstMessage={isFirstAgentMessage}
-              isNextSameSpeaker={isNextSameSpeaker}
-              isPrevSameSpeaker={isPrevSameSpeaker}
-              onFeedback={(messageId, value) => addFeedback(messageId, value)}
-              enableTypewriter={index === messages.length - 1 && message.speaker === 'agent'}
-              welcomeImageUrl={isFirstAgentMessage ? (welcomeImageUrl || undefined) : undefined}
-              welcomeTitle={isFirstAgentMessage ? (welcomeTitle || undefined) : undefined}
-              possibleQueries={isFirstAgentMessage ? possibleQueries : undefined}
-              onQuickQuery={handleQueryClick}
-              onQuickAction={handleQuickAction}
-              onScheduleConfirm={handleScheduleConfirm}
-              isLastMessage={index === messages.length - 1 && message.speaker === 'agent'}
-              translations={translations}
-              language={resolvedLanguage}
-              agentName={agentName}
-              isAgentTyping={isAgentTyping}
-              audioUrlBuilder={message.type === 'audio' && useAudio ? audioUrlBuilder : undefined}
-              audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
-              autoPlayAudioMessageId={autoPlayAudioMessageId}
-            />
+            <React.Fragment key={index}>
+              {showNewDivider && renderNewMessagesDivider()}
+              <ChatMessageComponent
+                message={displayMessage}
+                theme={theme}
+                onPlayAudio={message.speaker === 'agent' ? playResponseAudio : undefined}
+                isPlayingAudio={isPlayingAudio}
+                isFirstMessage={isFirstAgentMessage}
+                isNextSameSpeaker={isNextSameSpeaker}
+                isPrevSameSpeaker={isPrevSameSpeaker}
+                onFeedback={(messageId, value) => addFeedback(messageId, value)}
+                enableTypewriter={index === messages.length - 1 && message.speaker === 'agent'}
+                welcomeImageUrl={isFirstAgentMessage ? (welcomeImageUrl || undefined) : undefined}
+                welcomeTitle={isFirstAgentMessage ? (welcomeTitle || undefined) : undefined}
+                possibleQueries={isFirstAgentMessage ? possibleQueries : undefined}
+                onQuickQuery={handleQueryClick}
+                onQuickAction={handleQuickAction}
+                onScheduleConfirm={handleScheduleConfirm}
+                isLastMessage={index === messages.length - 1 && message.speaker === 'agent'}
+                translations={translations}
+                language={resolvedLanguage}
+                agentName={agentName}
+                isAgentTyping={isAgentTyping}
+                audioUrlBuilder={message.type === 'audio' && useAudio ? audioUrlBuilder : undefined}
+                audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
+                autoPlayAudioMessageId={autoPlayAudioMessageId}
+                receiptStatus={index === lastCustomerIndex ? lastCustomerReceipt : undefined}
+              />
+            </React.Fragment>
           );
         });
       })()}
@@ -1340,7 +1469,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               style={{
                 animation: 'ga-think-change 220ms ease',
                 willChange: 'transform, opacity',
-                color: '#6b7280',
+                color: mutedTextColor,
                 fontSize: '13px',
               }}
             >
@@ -1365,7 +1494,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         renderLiveBubble('customer', liveCaption.user, liveCaption.createTime, '__live_caption_user__')}
       {liveVoice.isActive && liveCaption.agent.trim() !== '' &&
         renderLiveBubble('agent', liveCaption.agent, liveCaption.createTime, '__live_caption_agent__')}
-      <div ref={messagesEndRef} />
+      <div ref={setBottomSentinelRef} />
     </>
   );
 
@@ -1385,9 +1514,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               aria-label={isExpanded ? t('menu.collapse', 'Collapse') : t('menu.expand', 'Expand')}
             >
               {isExpanded ? (
-                <Minimize2 size={20} color="#111111" />
+                <Minimize2 size={20} color={textColor} />
               ) : (
-                <Maximize2 size={20} color="#111111" />
+                <Maximize2 size={20} color={textColor} />
               )}
             </button>
           )}
@@ -1429,7 +1558,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             onClick={handleMenuClick}
             title={t('menu.title')}
           >
-            <MoreHorizontal size={22} color="#111111" />
+            <MoreHorizontal size={22} color={textColor} />
           </button>
           {mode === 'floating' && (
             <button
@@ -1438,7 +1567,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               onClick={() => setIsFloatingOpen(false)}
               title="Close chat"
             >
-              <X size={22} color="#111111" />
+              <X size={22} color={textColor} />
             </button>
           )}
         </div>
@@ -1507,7 +1636,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     marginTop: '4px',
                     backgroundColor: backgroundColor,
                     borderRadius: '10px',
-                    border: '1px solid #e4e4e7',
+                    border: `1px solid ${borderColor}`,
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
                     padding: '4px',
                     minWidth: '180px',
@@ -1646,6 +1775,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 file={att.file}
                 onRemove={() => handleRemoveAttachment(att.file.name)}
                 uploading={uploadingFiles.has(att.file.name)}
+                backgroundColor={secondaryColor}
+                textColor={textColor}
+                mutedTextColor={mutedTextColor}
               />
             ))}
           </div>
@@ -1668,7 +1800,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           <div style={inputContainerStyle}>
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
               <div style={inputWrapperStyle}>
-                <span style={getLiveVoiceHintStyle(textAreaFontSize, fontFamily)}>
+                <span style={getLiveVoiceHintStyle(textAreaFontSize, fontFamily, mutedTextColor)}>
                   {liveVoiceReady
                     ? t('liveVoice.tapToStart', 'Tap to start a voice conversation')
                     : t('liveVoice.unavailable', 'Voice is currently unavailable')}
@@ -1701,7 +1833,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     title="Attach"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <Paperclip size={22} color="#757575" />
+                    <Paperclip size={22} color={mutedTextColor} />
                   </button>
                   <input
                     type="file"
@@ -1791,6 +1923,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               isSubmitted={false}
               primaryColor={primaryColor}
               fontFamily={fontFamily}
+              backgroundColor={backgroundColor}
+              textColor={textColor}
+              borderColor={borderColor}
+              mutedTextColor={mutedTextColor}
+              inputBackgroundColor={inputBackgroundColor}
               variant="fullscreen"
               title={agentName || undefined}
             />
@@ -1801,7 +1938,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
           <h3 style={{ fontFamily, margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('dialog.resetConversation.title')}</h3>
-          <p style={{ fontFamily, fontSize: '14px', color: '#71717a', margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
+          <p style={{ fontFamily, fontSize: '14px', color: mutedTextColor, margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
           <div style={confirmButtonsStyle}>
             <button className="ga-confirm-btn--cancel" style={{ ...getConfirmButtonStyle(false, themeParams), color: textColor }} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
             <button className="ga-confirm-btn--danger" style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
@@ -1843,7 +1980,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         ref={inputBarRootRef}
         data-genassist-root="true"
         data-genassist-container="inputbar"
-        style={{ ...getInputBarRootStyle(fontFamily), ['--ga-hover' as string]: menuHoverBg }}
+        style={{
+          // Dock the bar to the bottom-center of the viewport so it stays visible on
+          // scroll. Always centered — the input bar ignores floatingConfig corners.
+          ...getInputBarRootStyle(fontFamily, offsetY),
+          ['--ga-hover' as string]: menuHoverBg,
+        }}
       >
         <style>{CSS_KEYFRAMES}</style>
 
@@ -1855,7 +1997,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               if (e.target !== e.currentTarget) return;
               if (barPanelClosing) setBarPanelMounted(false);
             }}
-            style={getInputBarPanelStyle(backgroundColor)}
+            style={getInputBarPanelStyle(backgroundColor, borderColor)}
             data-genassist-container="inputbar-panel"
           >
             <div style={getInputBarPanelHeaderStyle(backgroundColor)} ref={headerRef}>
@@ -1882,7 +2024,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 title={t('menu.title')}
                 aria-label={t('menu.title')}
               >
-                <MoreHorizontal size={22} color="#111111" />
+                <MoreHorizontal size={22} color={textColor} />
               </button>
               <button
                 className="ga-header-btn"
@@ -1891,7 +2033,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 title={t('menu.collapse', 'Collapse')}
                 aria-label={t('menu.collapse', 'Collapse')}
               >
-                <ChevronDown size={20} color="#111111" />
+                <ChevronDown size={20} color={textColor} />
               </button>
 
               {/* Same 3-dots menu as the standard chat, minus fullscreen/maximize. */}
@@ -1921,7 +2063,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                             marginTop: '4px',
                             backgroundColor: backgroundColor,
                             borderRadius: '10px',
-                            border: '1px solid #e4e4e7',
+                            border: `1px solid ${borderColor}`,
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
                             padding: '4px',
                             minWidth: '180px',
@@ -1999,6 +2141,21 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 }}
               />
 
+              {/* Jump-to-latest: appears when the visitor scrolls up in a scrollable
+                  conversation; clicking snaps back to the newest message. */}
+              {showScrollButton && (
+                <button
+                  type="button"
+                  className="ga-scroll-bottom-btn"
+                  style={getScrollToBottomButtonStyle(backgroundColor)}
+                  onClick={() => scrollToLatest()}
+                  title={t('inputbar.scrollToBottom', 'Scroll to latest')}
+                  aria-label={t('inputbar.scrollToBottom', 'Scroll to latest')}
+                >
+                  <ArrowDown size={18} color={textColor} />
+                </button>
+              )}
+
               {fileErrorToast && (
                 <div
                   style={{
@@ -2040,6 +2197,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     isSubmitted={false}
                     primaryColor={primaryColor}
                     fontFamily={fontFamily}
+                    backgroundColor={backgroundColor}
+                    textColor={textColor}
+                    borderColor={borderColor}
+                    mutedTextColor={mutedTextColor}
+                    inputBackgroundColor={inputBackgroundColor}
                     variant="fullscreen"
                     title={agentName || undefined}
                   />
@@ -2050,7 +2212,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <div style={confirmOverlayStyle}>
               <div style={confirmDialogStyle}>
                 <h3 style={{ fontFamily, margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('dialog.resetConversation.title')}</h3>
-                <p style={{ fontFamily, fontSize: '14px', color: '#71717a', margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
+                <p style={{ fontFamily, fontSize: '14px', color: mutedTextColor, margin: '8px 0 0' }}>{t('dialog.resetConversation.message')}</p>
                 <div style={confirmButtonsStyle}>
                   <button className="ga-confirm-btn--cancel" style={{ ...getConfirmButtonStyle(false, themeParams), color: textColor }} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
                   <button className="ga-confirm-btn--danger" style={getConfirmButtonStyle(true, themeParams)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
@@ -2063,16 +2225,25 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         {/* Agent-reply preview — shown when a response arrives while the panel is closed.
             Clicking it opens the full conversation. */}
         {showReplyPreview && (
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             className="ga-inbar-reply"
             style={{
-              ...getInputBarReplyCardStyle(backgroundColor),
-              width: isBarActive ? '100%' : 'min(400px, 100%)',
+              ...getInputBarReplyCardStyle(backgroundColor, borderColor),
+              // Fixed compact notification width — never expands with the bar's active state.
+              width: 'min(400px, 100%)',
               margin: '0 auto',
-              transition: 'width 280ms cubic-bezier(0.16, 1, 0.3, 1)',
             }}
             onClick={openBarFromPreview}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openBarFromPreview();
+              }
+            }}
+            onMouseEnter={() => setReplyPreviewHovered(true)}
+            onMouseLeave={() => setReplyPreviewHovered(false)}
             aria-label={t('inputbar.viewReply', 'View reply')}
           >
             {hasBrandLogo ? (
@@ -2094,11 +2265,41 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               >
                 {barReplyPreview}
               </span>
-              <span style={{ fontSize: '13px', color: '#6b7280', fontFamily, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ fontSize: '13px', color: mutedTextColor, fontFamily, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {(headerTitle || agentName || t('labels.agent')) + ' · ' + t('inputbar.justNow', 'Just now')}
               </span>
             </div>
-          </button>
+            {(replyPreviewHovered || windowWidth <= 768) && (
+              <button
+                type="button"
+                aria-label={t('inputbar.dismissReply', 'Dismiss')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setBarReplyPreview(null);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: -8,
+                  right: -8,
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  background: backgroundColor,
+                  border: `1px solid ${borderColor}`,
+                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  padding: 0,
+                  color: mutedTextColor,
+                  zIndex: 1,
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
         )}
 
         {/* FAQ chips — shown on focus for a fresh session. */}
@@ -2127,7 +2328,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           className="ga-inbar-bar"
           onSubmit={(e) => { e.preventDefault(); submitBarMessage(); }}
           style={{
-            ...getInputBarBarStyle(),
+            ...getInputBarBarStyle(inputBackgroundColor, borderColor),
             flexDirection: 'column',
             alignItems: 'stretch',
             gap: attachments.length > 0 ? '6px' : '0px',
@@ -2142,7 +2343,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             zIndex: 45,
             transition: 'width 280ms cubic-bezier(0.16, 1, 0.3, 1)',
           }}
-          onClick={() => { if (!isBarActive) textAreaRef.current?.focus(); }}
+          onClick={() => {
+            // Explicit click with a pending reply preview → open the full conversation.
+            if (barReplyPreview) { openBarPanel(); return; }
+            if (!isBarActive) textAreaRef.current?.focus();
+          }}
         >
           {useFile && attachments.length > 0 && (
             <div
@@ -2158,6 +2363,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   file={att.file}
                   onRemove={() => handleRemoveAttachment(att.file.name)}
                   uploading={uploadingFiles.has(att.file.name)}
+                  backgroundColor={secondaryColor}
+                  textColor={textColor}
+                  mutedTextColor={mutedTextColor}
                 />
               ))}
             </div>
@@ -2191,7 +2399,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => { e.stopPropagation(); handleBarAttachClick(); }}
                 >
-                  <Paperclip size={20} color="#757575" />
+                  <Paperclip size={20} color={mutedTextColor} />
                 </button>
                 <input
                   type="file"
@@ -2264,8 +2472,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             placeholder={inputPlaceholder}
             fontFamily={fontFamily}
             fontSize={fontSize}
+            inputBackgroundColor={inputBackgroundColor}
+            borderColor={borderColor}
+            textColor={textColor}
             chatBubbleIcon={theme?.chatBubbleIcon}
             showQuickInput={quickInput && !quickInputDismissed && Boolean(conversationId) && !isFinalized}
+            unreadCount={unreadCount}
             onOpen={() => setIsFloatingOpen(true)}
             onSend={handleQuickInputSend}
             onDismissQuickInput={handleDismissQuickInput}

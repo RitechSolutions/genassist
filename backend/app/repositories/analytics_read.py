@@ -97,15 +97,24 @@ class AnalyticsReadRepository:
         from_date: date | None,
         to_date: date | None,
         group_id: UUID | None = None,
+        activity_from_datetime: datetime | None = None,
+        activity_to_datetime: datetime | None = None,
     ):
-        """One row per (conversation, agent) with activity in the date range."""
+        """One row per (conversation, agent) with activity in the range."""
+        if (activity_from_datetime is None) != (activity_to_datetime is None):
+            raise ValueError("activity bounds must be supplied together")
+
         conditions = [AgentResponseLogModel.is_deleted == 0]
-        if from_date is not None:
-            start = datetime.combine(from_date, time.min, tzinfo=timezone.utc)
-            conditions.append(AgentResponseLogModel.logged_at >= start)
-        if to_date is not None:
-            end = datetime.combine(to_date, time.max, tzinfo=timezone.utc)
-            conditions.append(AgentResponseLogModel.logged_at <= end)
+        if activity_from_datetime is not None and activity_to_datetime is not None:
+            conditions.append(AgentResponseLogModel.logged_at >= activity_from_datetime)
+            conditions.append(AgentResponseLogModel.logged_at < activity_to_datetime)
+        else:
+            if from_date is not None:
+                start = datetime.combine(from_date, time.min, tzinfo=timezone.utc)
+                conditions.append(AgentResponseLogModel.logged_at >= start)
+            if to_date is not None:
+                end = datetime.combine(to_date, time.max, tzinfo=timezone.utc)
+                conditions.append(AgentResponseLogModel.logged_at <= end)
 
         stmt = (
             select(
@@ -142,6 +151,8 @@ class AnalyticsReadRepository:
         to_date: date | None = None,
         *,
         group_by_agent: bool = False,
+        activity_from_datetime: datetime | None = None,
+        activity_to_datetime: datetime | None = None,
     ) -> list[dict]:
         """
         Distinct conversations with agent activity in the period, split by current status.
@@ -167,7 +178,12 @@ class AnalyticsReadRepository:
             ConversationStatus.TAKE_OVER.value,
         )
         activity = self._conversations_with_activity_subquery(
-            agent_ids, from_date, to_date, group_id=group_id
+            agent_ids,
+            from_date,
+            to_date,
+            group_id=group_id,
+            activity_from_datetime=activity_from_datetime,
+            activity_to_datetime=activity_to_datetime,
         )
 
         if group_by_agent:
@@ -223,7 +239,12 @@ class AnalyticsReadRepository:
         group_id: UUID | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+        *,
+        activity_from_datetime: datetime | None = None,
+        activity_to_datetime: datetime | None = None,
+        include_conversation_counts: bool = True,
     ) -> dict:
+        """Daily-stat totals for the period, plus the conversation counts for the same window"""
         agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
         if agent_ids is not None and not agent_ids and group_id is None:
             return {
@@ -279,14 +300,17 @@ class AnalyticsReadRepository:
             result = await self.db.execute(stmt)
             row = dict(result.mappings().one())
 
-        conv_rows = await self.get_conversation_status_counts(
-            agent_id=agent_id,
-            group_id=group_id,
-            from_date=from_date,
-            to_date=to_date,
-            group_by_agent=False,
-        )
-        row.update(conv_rows[0])
+        if include_conversation_counts:
+            conv_rows = await self.get_conversation_status_counts(
+                agent_id=agent_id,
+                group_id=group_id,
+                from_date=from_date,
+                to_date=to_date,
+                group_by_agent=False,
+                activity_from_datetime=activity_from_datetime,
+                activity_to_datetime=activity_to_datetime,
+            )
+            row.update(conv_rows[0])
         return row
 
     async def get_agent_stats_summary_with_comparison(

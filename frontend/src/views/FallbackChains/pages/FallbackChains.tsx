@@ -44,6 +44,7 @@ export default function FallbackChains() {
       <FallbackChainCard
         searchQuery={searchQuery}
         refreshKey={refreshKey}
+        onCreate={handleCreate}
         onEdit={handleEdit}
       />
 

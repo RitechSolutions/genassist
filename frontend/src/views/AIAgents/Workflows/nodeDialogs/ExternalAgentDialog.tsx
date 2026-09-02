@@ -18,6 +18,7 @@ import { DraggableAceEditor } from "../components/custom/DraggableAceEditor";
 import { RichInput } from "@/components/richInput";
 import "ace-builds/src-noconflict/mode-python";
 import "ace-builds/src-noconflict/theme-twilight";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH"] as const;
 const AUTH_TYPES = ["none", "bearer", "api_key", "basic"] as const;
@@ -26,94 +27,48 @@ type AuthType = (typeof AUTH_TYPES)[number];
 export const ExternalAgentDialog: React.FC<
   BaseNodeDialogProps<ExternalAgentNodeData, ExternalAgentNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [endpoint, setEndpoint] = useState(data.endpoint || "");
-  const [method, setMethod] = useState(data.method || "POST");
-  const [headers, setHeaders] = useState<Record<string, string>>(data.headers || {});
-  const [requestBody, setRequestBody] = useState(data.requestBody || "");
-  const [authType, setAuthType] = useState<AuthType>((data.authType as AuthType) || "none");
-  const [authToken, setAuthToken] = useState(data.authToken || "");
-  const [authHeader, setAuthHeader] = useState(data.authHeader || "Authorization");
-  const [authUsername, setAuthUsername] = useState(data.authUsername || "");
-  const [authPassword, setAuthPassword] = useState(data.authPassword || "");
-  const [messageField, setMessageField] = useState(data.messageField || "message");
-  const [stepsField, setStepsField] = useState(data.stepsField || "steps");
-  const [timeout, setTimeout] = useState<number>(data.timeout ?? 30);
-  const [mappingScript, setMappingScript] = useState(data.mappingScript || "");
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      endpoint: data.endpoint || "",
+      method: data.method || "POST",
+      headers: data.headers || {},
+      requestBody: data.requestBody || "",
+      authType: (data.authType as AuthType) || "none",
+      authToken: data.authToken || "",
+      authHeader: data.authHeader || "Authorization",
+      authUsername: data.authUsername || "",
+      authPassword: data.authPassword || "",
+      messageField: data.messageField || "message",
+      stepsField: data.stepsField || "steps",
+      timeout: data.timeout ?? 30,
+      mappingScript: data.mappingScript || "",
+    })
+  );
+
   const [showAdvanced, setShowAdvanced] = useState(!!data.mappingScript);
 
   useEffect(() => {
-    setName(data.name || "");
-    setEndpoint(data.endpoint || "");
-    setMethod(data.method || "POST");
-    setHeaders(data.headers || {});
-    setRequestBody(data.requestBody || "");
-    setAuthType((data.authType as AuthType) || "none");
-    setAuthToken(data.authToken || "");
-    setAuthHeader(data.authHeader || "Authorization");
-    setAuthUsername(data.authUsername || "");
-    setAuthPassword(data.authPassword || "");
-    setMessageField(data.messageField || "message");
-    setStepsField(data.stepsField || "steps");
-    setTimeout(data.timeout ?? 30);
-    setMappingScript(data.mappingScript || "");
     setShowAdvanced(!!data.mappingScript);
-  }, [isOpen]);
+  }, [isOpen, data]);
 
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      endpoint,
-      method,
-      headers,
-      requestBody,
-      authType,
-      authToken,
-      authHeader,
-      authUsername,
-      authPassword,
-      timeout,
-      messageField,
-      stepsField,
-      mappingScript,
-    });
-    onClose();
-  };
-
-  const addHeader = () => setHeaders({ ...headers, "": "" });
+  const addHeader = () => setField("headers", { ...values.headers, "": "" });
 
   const updateHeader = (oldKey: string, newKey: string, value: string) => {
     const updated: Record<string, string> = {};
-    for (const [k, v] of Object.entries(headers)) {
+    for (const [k, v] of Object.entries(values.headers)) {
       updated[k === oldKey ? newKey : k] = k === oldKey ? value : v;
     }
-    setHeaders(updated);
+    setField("headers", updated);
   };
 
   const removeHeader = (key: string) => {
-    const updated = { ...headers };
+    const updated = { ...values.headers };
     delete updated[key];
-    setHeaders(updated);
-  };
-
-  const previewData = {
-    ...data,
-    name,
-    endpoint,
-    method,
-    headers,
-    requestBody,
-    authType,
-    authToken,
-    authHeader,
-    authUsername,
-    authPassword,
-    messageField,
-    stepsField,
-    mappingScript,
+    setField("headers", updated);
   };
 
   return (
@@ -130,15 +85,15 @@ export const ExternalAgentDialog: React.FC<
         </>
       }
       {...props}
-      data={previewData}
+      data={merged}
     >
       {/* Name */}
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="External Agent"
           className="w-full"
         />
@@ -149,8 +104,8 @@ export const ExternalAgentDialog: React.FC<
         <Label htmlFor="endpoint">Endpoint URL</Label>
         <DraggableInput
           id="endpoint"
-          value={endpoint}
-          onChange={(e) => setEndpoint(e.target.value)}
+          value={values.endpoint}
+          onChange={(e) => setField("endpoint", e.target.value)}
           placeholder="https://api.example.com/agent"
           className="w-full"
         />
@@ -159,7 +114,7 @@ export const ExternalAgentDialog: React.FC<
 
       <div className="space-y-2">
         <Label htmlFor="method">HTTP Method</Label>
-        <Select value={method} onValueChange={setMethod}>
+        <Select value={values.method} onValueChange={(v) => setField("method", v)}>
           <SelectTrigger>
             <SelectValue placeholder="Select method" />
           </SelectTrigger>
@@ -178,8 +133,8 @@ export const ExternalAgentDialog: React.FC<
         <RichInput
           id="timeout"
           type="number"
-          value={String(timeout)}
-          onChange={(e) => setTimeout(Math.max(1, parseInt(e.target.value) || 30))}
+          value={String(values.timeout)}
+          onChange={(e) => setField("timeout", Math.max(1, parseInt(e.target.value) || 30))}
           placeholder="30"
           className="w-full"
         />
@@ -188,7 +143,7 @@ export const ExternalAgentDialog: React.FC<
       {/* Authentication */}
       <div className="space-y-2">
         <Label>Authentication</Label>
-        <Select value={authType} onValueChange={(v) => setAuthType(v as AuthType)}>
+        <Select value={values.authType} onValueChange={(v) => setField("authType", v as AuthType)}>
           <SelectTrigger>
             <SelectValue placeholder="Auth type" />
           </SelectTrigger>
@@ -200,38 +155,38 @@ export const ExternalAgentDialog: React.FC<
           </SelectContent>
         </Select>
 
-        {(authType === "bearer" || authType === "api_key") && (
+        {(values.authType === "bearer" || values.authType === "api_key") && (
           <div className="space-y-2 pl-2 border-l-2 border-border">
-            {authType === "api_key" && (
+            {values.authType === "api_key" && (
               <div className="space-y-1">
                 <Label className="text-xs">Header Name</Label>
                 <DraggableInput
-                  value={authHeader}
-                  onChange={(e) => setAuthHeader(e.target.value)}
+                  value={values.authHeader}
+                  onChange={(e) => setField("authHeader", e.target.value)}
                   placeholder="Authorization"
                   className="text-xs w-full"
                 />
               </div>
             )}
             <div className="space-y-1">
-              <Label className="text-xs">{authType === "bearer" ? "Token" : "API Key Value"}</Label>
+              <Label className="text-xs">{values.authType === "bearer" ? "Token" : "API Key Value"}</Label>
               <DraggableInput
-                value={authToken}
-                onChange={(e) => setAuthToken(e.target.value)}
-                placeholder={authType === "bearer" ? "{{session.token}}" : "{{session.apiKey}}"}
+                value={values.authToken}
+                onChange={(e) => setField("authToken", e.target.value)}
+                placeholder={values.authType === "bearer" ? "{{session.token}}" : "{{session.apiKey}}"}
                 className="text-xs w-full"
               />
             </div>
           </div>
         )}
 
-        {authType === "basic" && (
+        {values.authType === "basic" && (
           <div className="space-y-2 pl-2 border-l-2 border-border">
             <div className="space-y-1">
               <Label className="text-xs">Username</Label>
               <DraggableInput
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
+                value={values.authUsername}
+                onChange={(e) => setField("authUsername", e.target.value)}
                 placeholder="{{session.username}}"
                 className="text-xs w-full"
               />
@@ -239,8 +194,8 @@ export const ExternalAgentDialog: React.FC<
             <div className="space-y-1">
               <Label className="text-xs">Password</Label>
               <DraggableInput
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
+                value={values.authPassword}
+                onChange={(e) => setField("authPassword", e.target.value)}
                 placeholder="{{session.password}}"
                 className="text-xs w-full"
               />
@@ -258,7 +213,7 @@ export const ExternalAgentDialog: React.FC<
           </Button>
         </div>
         <div className="space-y-2">
-          {Object.entries(headers).map(([key, value], idx) => (
+          {Object.entries(values.headers).map(([key, value], idx) => (
             <div key={`header-${idx}`} className="flex items-center gap-2 w-full">
               <DraggableInput
                 placeholder="Header name"
@@ -286,13 +241,13 @@ export const ExternalAgentDialog: React.FC<
       </div>
 
       {/* Request body */}
-      {(method === "POST" || method === "PUT" || method === "PATCH") && (
+      {(values.method === "POST" || values.method === "PUT" || values.method === "PATCH") && (
         <div className="space-y-2">
           <Label htmlFor="requestBody">Request Body (JSON)</Label>
           <DraggableTextArea
             id="requestBody"
-            value={requestBody}
-            onChange={(e) => setRequestBody(e.target.value)}
+            value={values.requestBody}
+            onChange={(e) => setField("requestBody", e.target.value)}
             placeholder='{"message": "{{source.message}}"}'
             className="font-mono text-xs h-24 resize-none w-full"
           />
@@ -306,12 +261,12 @@ export const ExternalAgentDialog: React.FC<
         <div className="text-xs text-muted-foreground mb-1">
           Point to where the message lives in the JSON response using dot-notation (e.g. <code>output.text</code>). Use the Python script below if you need to combine fields, add fallback logic, or transform the data.
         </div>
-        <div className={`space-y-2 ${mappingScript ? "opacity-40 pointer-events-none" : ""}`}>
+        <div className={`space-y-2 ${values.mappingScript ? "opacity-40 pointer-events-none" : ""}`}>
           <div className="space-y-1">
             <Label className="text-xs">Message field path</Label>
             <DraggableInput
-              value={messageField}
-              onChange={(e) => setMessageField(e.target.value)}
+              value={values.messageField}
+              onChange={(e) => setField("messageField", e.target.value)}
               placeholder="message"
               className="text-xs w-full"
             />
@@ -319,14 +274,14 @@ export const ExternalAgentDialog: React.FC<
           <div className="space-y-1">
             <Label className="text-xs">Steps field path (optional)</Label>
             <DraggableInput
-              value={stepsField}
-              onChange={(e) => setStepsField(e.target.value)}
+              value={values.stepsField}
+              onChange={(e) => setField("stepsField", e.target.value)}
               placeholder="steps"
               className="text-xs w-full"
             />
           </div>
         </div>
-        {mappingScript && (
+        {values.mappingScript && (
           <p className="text-xs text-amber-600 dark:text-amber-400">Field paths are ignored — Python script is active.</p>
         )}
       </div>
@@ -370,8 +325,8 @@ result = {
               name="mapping-script-editor"
               mode="python"
               theme="twilight"
-              value={mappingScript}
-              onChange={setMappingScript}
+              value={values.mappingScript}
+              onChange={(value) => setField("mappingScript", value)}
               width="100%"
               height="100%"
             />

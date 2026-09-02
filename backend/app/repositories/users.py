@@ -23,6 +23,7 @@ from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.db.models.user import UserModel
+from app.db.models.user_supervised_group import UserSupervisedGroupModel
 from app.db.models.user_type import UserTypeModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
@@ -64,7 +65,7 @@ class UserRepository(DbRepository[UserModel]):
             user_role = UserRoleModel(user_id=new_user.id, role_id=role_id)
             self.db.add(user_role)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_user)
         return new_user
 
@@ -151,7 +152,7 @@ class UserRepository(DbRepository[UserModel]):
             .values(entra_oid=entra_oid)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         if result.rowcount:
             await self._clear_user_full_cache(user_id)
 
@@ -188,10 +189,12 @@ class UserRepository(DbRepository[UserModel]):
         for role_id in role_ids:
             self.db.add(UserRoleModel(user_id=new_user.id, role_id=role_id))
         try:
-            await self.db.commit()
+            # SAVEPOINT so a role-assignment conflict rolls back only these inserts,
+            # not the whole request transaction (the boundary owns the commit).
+            async with self.db.begin_nested():
+                await self.db.flush()
             await self.db.refresh(new_user)
         except IntegrityError as err:
-            await self.db.rollback()
             logger.warning("create_from_microsoft_sso integrity error: %s", err)
             raise AppException(error_key=ErrorKey.SSO_MICROSOFT_OAUTH_ERROR, status_code=409) from None
         return new_user
@@ -253,16 +256,36 @@ class UserRepository(DbRepository[UserModel]):
 
         # Update roles
         if data.role_ids is not None:
+            was_supervisor = (
+                await self.db.execute(
+                    select(RoleModel.name)
+                    .join(UserRoleModel, UserRoleModel.role_id == RoleModel.id)
+                    .where(UserRoleModel.user_id == user.id, RoleModel.name == "supervisor")
+                    .limit(1)
+                )
+            ).scalars().first() is not None
+
             await self.db.execute(
                     delete(UserRoleModel).where(UserRoleModel.user_id == user.id)
                     )
+            role_names = set()
             for role_id in data.role_ids:
                 role = await self.db.get(RoleModel, role_id)
                 if not role:
                     raise AppException(error_key=ErrorKey.ROLE_NOT_FOUND)
+                role_names.add(role.name)
                 self.db.add(UserRoleModel(user_id=user.id, role_id=role_id))
 
-        await self.db.commit()
+            # Demotion drops the assignments; promotion starts from a clean slate so
+            # assignments from an earlier stint cannot silently reactivate.
+            if "supervisor" not in role_names or not was_supervisor:
+                await self.db.execute(
+                    delete(UserSupervisedGroupModel).where(
+                        UserSupervisedGroupModel.user_id == user.id
+                    )
+                )
+
+        await self.db.flush()
         await self.db.refresh(user)
 
         await self._clear_user_full_cache(user_id)
@@ -284,7 +307,7 @@ class UserRepository(DbRepository[UserModel]):
             .values(is_deleted=1)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         if result.rowcount:
             await self._clear_user_full_cache(user_id)
             return True
@@ -297,7 +320,7 @@ class UserRepository(DbRepository[UserModel]):
             .values(is_deleted=0)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         if result.rowcount:
             await self._clear_user_full_cache(user_id)
             return True
@@ -311,4 +334,4 @@ class UserRepository(DbRepository[UserModel]):
             .values(hashed_password=new_hashed, force_upd_pass_date=next_update_date)
         )
         await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()

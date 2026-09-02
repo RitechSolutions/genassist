@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { GmailNodeData, GmailOperation } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
@@ -18,6 +18,7 @@ import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 interface GmailDialogProps
   extends BaseNodeDialogProps<GmailNodeData, GmailNodeData> {
@@ -25,52 +26,23 @@ interface GmailDialogProps
 }
 
 export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate, connectors } = props;
-  const [name, setName] = useState(data.name || "");
-  const [subject, setSubject] = useState(data.subject || "");
-  const [body, setBody] = useState(data.body || "");
-  const [to, setTo] = useState(data.to || "");
-  const [cc, setCc] = useState(data.cc || "");
-  const [bcc, setBcc] = useState(data.bcc || "");
-  const [dataSourceId, setDataSourceId] = useState(
-    data.dataSourceId?.toString() || ""
-  );
-  const [attachments, setAttachments] = useState<string[]>([]);
-  const [operation, setOperation] = useState<GmailOperation>(
-    (data.operation as GmailOperation) || "send_email"
-  );
+  const { onClose, data, connectors } = props;
+
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(props, () => ({
+      name: data.name || "",
+      subject: data.subject || "",
+      body: data.body || "",
+      to: data.to || "",
+      cc: data.cc || "",
+      bcc: data.bcc || "",
+      dataSourceId: data.dataSourceId?.toString() || "",
+      operation: (data.operation as GmailOperation) || "send_email",
+      attachments: data.attachments || [],
+    }));
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCreateDataSourceOpen, setIsCreateDataSourceOpen] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "");
-      setSubject(data.subject || "");
-      setBody(data.body || "");
-      setTo(data.to || "");
-      setCc(data.cc || "");
-      setBcc(data.bcc || "");
-      setDataSourceId(data.dataSourceId?.toString() || "");
-      setAttachments(data.attachments || []);
-      setOperation((data.operation as GmailOperation) || "send_email");
-    }
-  }, [isOpen, data]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      subject,
-      body,
-      to,
-      cc,
-      bcc,
-      dataSourceId,
-      operation,
-      attachments,
-    });
-    onClose();
-  };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -79,7 +51,10 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
         const reader = new FileReader();
         reader.onload = (e) => {
           const base64Content = e.target?.result as string;
-          setAttachments((prev) => [...prev, base64Content]);
+          setValues((v) => ({
+            ...v,
+            attachments: [...v.attachments, base64Content],
+          }));
         };
         reader.readAsDataURL(file);
       });
@@ -87,7 +62,10 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
   };
 
   const removeAttachment = (index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
+    setValues((v) => ({
+      ...v,
+      attachments: v.attachments.filter((_, i) => i !== index),
+    }));
   };
 
   const triggerFileSelect = () => {
@@ -109,27 +87,14 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={
-          {
-            ...data,
-            name,
-            subject,
-            body,
-            to,
-            cc,
-            bcc,
-            dataSourceId,
-            operation,
-            attachments,
-          } as GmailNodeData
-        }
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
           <RichInput
             id="node-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -138,13 +103,13 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="connector-select">Select Connector</Label>
           <Select
-            value={dataSourceId}
+            value={values.dataSourceId}
             onValueChange={(val) => {
               if (val === "__create__") {
                 setIsCreateDataSourceOpen(true);
                 return;
               }
-              setDataSourceId(val);
+              setField("dataSourceId", val);
             }}
           >
             <SelectTrigger id="connector-select">
@@ -164,8 +129,10 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="operation-select">Operation</Label>
           <Select
-            value={operation}
-            onValueChange={(value) => setOperation(value as GmailOperation)}
+            value={values.operation}
+            onValueChange={(value) =>
+              setField("operation", value as GmailOperation)
+            }
           >
             <SelectTrigger id="operation-select">
               <SelectValue placeholder="Select operation" />
@@ -189,8 +156,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
               <DraggableInput
                 id="to"
                 type="email"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
+                value={values.to}
+                onChange={(e) => setField("to", e.target.value)}
                 placeholder="e.g., recipient@example.com"
                 className="w-full break-all"
               />
@@ -201,8 +168,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
                 <DraggableInput
                   id="cc"
                   type="email"
-                  value={cc}
-                  onChange={(e) => setCc(e.target.value)}
+                  value={values.cc}
+                  onChange={(e) => setField("cc", e.target.value)}
                   placeholder="e.g., cc@example.com"
                   className="w-full break-all"
                 />
@@ -212,8 +179,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
                 <DraggableInput
                   id="bcc"
                   type="email"
-                  value={bcc}
-                  onChange={(e) => setBcc(e.target.value)}
+                  value={values.bcc}
+                  onChange={(e) => setField("bcc", e.target.value)}
                   placeholder="e.g., bcc@example.com"
                   className="w-full break-all"
                 />
@@ -229,8 +196,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
               <Label htmlFor="subject">Subject</Label>
               <DraggableInput
                 id="subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                value={values.subject}
+                onChange={(e) => setField("subject", e.target.value)}
                 placeholder="Enter email subject"
                 className="w-full"
               />
@@ -240,8 +207,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
               <DraggableTextArea
                 id="body"
                 rows={6}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
+                value={values.body}
+                onChange={(e) => setField("body", e.target.value)}
                 placeholder="Enter message content"
                 className="w-full resize-none"
               />
@@ -270,8 +237,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
             accept="*/*"
           />
           <div className="space-y-2">
-            {attachments.length > 0 ? (
-              attachments.map((attachment, index) => (
+            {values.attachments.length > 0 ? (
+              values.attachments.map((attachment, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between p-2 bg-muted rounded-md w-full"
@@ -310,7 +277,7 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
         isOpen={isCreateDataSourceOpen}
         onOpenChange={setIsCreateDataSourceOpen}
         onDataSourceSaved={(created) => {
-          if (created?.id) setDataSourceId(created.id);
+          if (created?.id) setField("dataSourceId", created.id);
         }}
         mode="create"
         defaultSourceType="gmail"

@@ -21,6 +21,7 @@ import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
+import { useNodeDialogState } from "../useNodeDialogState";
 
 type TrainModelDialogProps = BaseNodeDialogProps<
   TrainModelNodeData,
@@ -31,59 +32,59 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   const { isOpen, onClose, data, onUpdate, nodeId } = props;
   const { getAvailableDataForNode } = useWorkflowExecution();
 
-  const [name, setName] = useState(data.name || "Train Model");
-  const [fileUrl, setFileUrl] = useState(data.fileUrl || "");
-  const [modelType, setModelType] = useState(data.modelType || "xgboost");
-  const [targetColumn, setTargetColumn] = useState(data.targetColumn || "");
-  const [featureColumns, setFeatureColumns] = useState<string[]>(
-    data.featureColumns || []
+  const { values, setField, setValues, merged } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "Train Model",
+      fileUrl: data.fileUrl || "",
+      modelType: data.modelType || "xgboost",
+      targetColumn: data.targetColumn || "",
+      featureColumns: data.featureColumns || [],
+      modelParameters: data.modelParameters || {},
+      validationSplit: data.validationSplit || 0.2,
+      analysisResult: data.analysisResult || null,
+      splitMethod: data.splitMethod || "random",
+      dateColumn: data.dateColumn || "",
+    }),
+    (v) => ({
+      name: v.name,
+      fileUrl: v.fileUrl,
+      analysisResult: v.analysisResult || undefined,
+      modelType: v.modelType,
+      targetColumn: v.targetColumn,
+      featureColumns: v.featureColumns,
+      modelParameters: v.modelParameters,
+      validationSplit: v.validationSplit,
+      splitMethod: v.splitMethod,
+      dateColumn: v.splitMethod === "time_based" ? v.dateColumn : undefined,
+    })
   );
-  const [modelParameters, setModelParameters] = useState<Record<string, unknown>>(
-    data.modelParameters || {}
-  );
-  const [validationSplit, setValidationSplit] = useState(
-    data.validationSplit || 0.2
-  );
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<CSVAnalysisResult | null>(null);
-  const { toast } = useToast();
 
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "Train Model");
-      setFileUrl(data.fileUrl || "");
-      setModelType(data.modelType || "xgboost");
-      setTargetColumn(data.targetColumn || "");
-      setFeatureColumns(data.featureColumns || []);
-      setModelParameters(data.modelParameters || {});
-      setValidationSplit(data.validationSplit || 0.2);
-      setAnalysisResult(data.analysisResult || null);
-    }
-  }, [isOpen, data]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const { toast } = useToast();
 
   // Clean up featureColumns: remove targetColumn and invalid columns
   useEffect(() => {
-    setFeatureColumns((prev) => {
-      let cleaned = [...prev];
-      
+    setValues((v) => {
+      let cleaned = [...v.featureColumns];
+
       // Remove targetColumn if it's in featureColumns
-      if (targetColumn) {
-        cleaned = cleaned.filter((col) => col !== targetColumn);
+      if (v.targetColumn) {
+        cleaned = cleaned.filter((col) => col !== v.targetColumn);
       }
-      
+
       // If we have analysisResult, only keep columns that exist in the analysis
-      if (analysisResult) {
-        cleaned = cleaned.filter((col) =>
-          analysisResult.column_names.includes(col)
-        );
+      if (v.analysisResult) {
+        const analysis = v.analysisResult;
+        cleaned = cleaned.filter((col) => analysis.column_names.includes(col));
       }
-      
-      return cleaned;
+
+      return { ...v, featureColumns: cleaned };
     });
-  }, [targetColumn, analysisResult]);
+  }, [values.targetColumn, values.analysisResult, setValues]);
 
   const handleSave = () => {
-    if (!targetColumn.trim()) {
+    if (!values.targetColumn.trim()) {
       toast({
         title: "Validation Error",
         description: "Please specify the target column",
@@ -92,7 +93,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       return;
     }
 
-    if (featureColumns.length === 0) {
+    if (values.featureColumns.length === 0) {
       toast({
         title: "Validation Error",
         description: "Please select at least one feature column",
@@ -101,22 +102,21 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       return;
     }
 
-    onUpdate({
-      ...data,
-      name,
-      fileUrl,
-      analysisResult: analysisResult || undefined,
-      modelType,
-      targetColumn,
-      featureColumns,
-      modelParameters,
-      validationSplit,
-    });
+    if (values.splitMethod === "time_based" && !values.dateColumn.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please specify a date column for a time-based split",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    onUpdate(merged);
     onClose();
   };
 
   const handleAnalyzeCSV = async () => {
-    if (!fileUrl.trim()) {
+    if (!values.fileUrl.trim()) {
       toast({
         title: "Validation Error",
         description: "Please provide a file URL to analyze",
@@ -127,23 +127,23 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
 
     try {
       setIsAnalyzing(true);
-      
-      let resolvedFileUrl = fileUrl;
-      const variables = extractDynamicVariables(fileUrl);
-      
+
+      let resolvedFileUrl = values.fileUrl;
+      const variables = extractDynamicVariables(values.fileUrl);
+
       if (variables.size > 0 && nodeId) {
         const availableData = getAvailableDataForNode(nodeId);
-        
+
         if (availableData) {
           variables.forEach((variable) => {
             const value = getValueFromPath(availableData, variable);
             if (value !== undefined) {
-              const stringValue = typeof value === "string" 
-                ? value 
-                : typeof value === "object" 
+              const stringValue = typeof value === "string"
+                ? value
+                : typeof value === "object"
                   ? JSON.stringify(value)
                   : String(value);
-              
+
               resolvedFileUrl = resolvedFileUrl.replace(
                 new RegExp(`{{${variable}}}`, "g"),
                 stringValue
@@ -152,10 +152,10 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
           });
         }
       }
-      
+
       const result = await analyzeCSV(resolvedFileUrl);
-      setAnalysisResult(result);
-      
+      setField("analysisResult", result);
+
       toast({
         title: "Analysis Complete",
         description: `Found ${result.column_count} columns and ${result.row_count} rows`,
@@ -173,29 +173,35 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
 
 
   const addFeatureColumn = () => {
-    setFeatureColumns([...featureColumns, ""]);
+    setField("featureColumns", [...values.featureColumns, ""]);
   };
 
   const updateFeatureColumn = (index: number, value: string) => {
-    const newColumns = [...featureColumns];
+    const newColumns = [...values.featureColumns];
     newColumns[index] = value;
-    setFeatureColumns(newColumns);
+    setField("featureColumns", newColumns);
   };
 
   const removeFeatureColumn = (index: number) => {
-    setFeatureColumns(featureColumns.filter((_, i) => i !== index));
+    setField(
+      "featureColumns",
+      values.featureColumns.filter((_, i) => i !== index)
+    );
   };
 
   const handleFeatureColumnToggle = (columnName: string) => {
     // Prevent adding targetColumn as a feature
-    if (columnName === targetColumn) {
+    if (columnName === values.targetColumn) {
       return;
     }
-    const isSelected = featureColumns.includes(columnName);
+    const isSelected = values.featureColumns.includes(columnName);
     if (isSelected) {
-      setFeatureColumns(featureColumns.filter((col) => col !== columnName));
+      setField(
+        "featureColumns",
+        values.featureColumns.filter((col) => col !== columnName)
+      );
     } else {
-      setFeatureColumns([...featureColumns, columnName]);
+      setField("featureColumns", [...values.featureColumns, columnName]);
     }
   };
 
@@ -205,11 +211,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       .split(",")
       .map((col) => col.trim())
       .filter((col) => col.length > 0);
-    setFeatureColumns(parsedColumns);
+    setField("featureColumns", parsedColumns);
   };
 
   const handleModelTypeChange = (value: string) => {
-    setModelType(value as TrainModelNodeData["modelType"]);
+    setField("modelType", value as TrainModelNodeData["modelType"]);
+  };
+
+  const handleSplitMethodChange = (value: string) => {
+    setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
   };
 
   return (
@@ -229,17 +239,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          fileUrl,
-          analysisResult: analysisResult || undefined,
-          modelType,
-          targetColumn,
-          featureColumns,
-          modelParameters,
-          validationSplit,
-        }}
+        data={merged}
       >
         <div className="space-y-4">
           {/* Node Name */}
@@ -247,8 +247,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             <Label htmlFor="name">Node Name</Label>
             <RichInput
               id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={values.name}
+              onChange={(e) => setField("name", e.target.value)}
               placeholder="Enter the name of this node"
               className="w-full"
             />
@@ -261,8 +261,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 <DraggableInput
                   id="fileUrl"
                   label="File URL"
-                  value={fileUrl}
-                  onChange={(e) => setFileUrl(e.target.value)}
+                  value={values.fileUrl}
+                  onChange={(e) => setField("fileUrl", e.target.value)}
                   placeholder="Enter file URL or drag variable"
                   className="w-full"
                 />
@@ -271,22 +271,22 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 type="button"
                 variant="outline"
                 onClick={handleAnalyzeCSV}
-                disabled={isAnalyzing || !fileUrl.trim()}
+                disabled={isAnalyzing || !values.fileUrl.trim()}
                 className="mb-0"
               >
                 <Search className="h-4 w-4 mr-2" />
                 {isAnalyzing ? "Analyzing..." : "Analyze"}
               </Button>
             </div>
-            {analysisResult && (
-              <CSVAnalysisDisplay analysisResult={analysisResult} />
+            {values.analysisResult && (
+              <CSVAnalysisDisplay analysisResult={values.analysisResult} />
             )}
           </div>
 
           {/* Model Type */}
           <div className="space-y-2">
             <Label htmlFor="modelType">Model Type *</Label>
-            <Select value={modelType} onValueChange={handleModelTypeChange}>
+            <Select value={values.modelType} onValueChange={handleModelTypeChange}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select model type" />
               </SelectTrigger>
@@ -313,13 +313,16 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
           {/* Target Column */}
           <div className="space-y-2">
             <Label htmlFor="targetColumn">Target Column *</Label>
-            {analysisResult ? (
-              <Select value={targetColumn} onValueChange={setTargetColumn}>
+            {values.analysisResult ? (
+              <Select
+                value={values.targetColumn}
+                onValueChange={(v) => setField("targetColumn", v)}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select target column" />
                 </SelectTrigger>
                 <SelectContent>
-                  {analysisResult.column_names.map((columnName) => (
+                  {values.analysisResult.column_names.map((columnName) => (
                     <SelectItem key={columnName} value={columnName}>
                       {columnName}
                     </SelectItem>
@@ -329,8 +332,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             ) : (
               <DraggableInput
                 id="targetColumn"
-                value={targetColumn}
-                onChange={(e) => setTargetColumn(e.target.value)}
+                value={values.targetColumn}
+                onChange={(e) => setField("targetColumn", e.target.value)}
                 placeholder="Enter target column name"
                 className="w-full"
               />
@@ -343,14 +346,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
           {/* Feature Columns */}
           <div className="space-y-2">
             <Label>Feature Columns *</Label>
-            {analysisResult ? (
+            {values.analysisResult ? (
               /* Badge view when column names are available */
               <div className="space-y-3">
                 <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-2 border rounded">
-                  {analysisResult.column_names
-                    .filter((columnName) => columnName !== targetColumn)
+                  {values.analysisResult.column_names
+                    .filter((columnName) => columnName !== values.targetColumn)
                     .map((columnName) => {
-                      const isSelected = featureColumns.includes(columnName);
+                      const isSelected =
+                        values.featureColumns.includes(columnName);
                       return (
                         <Badge
                           key={columnName}
@@ -364,9 +368,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                     })}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {featureColumns.length} of{" "}
-                  {analysisResult.column_names.filter(
-                    (col) => col !== targetColumn
+                  {values.featureColumns.length} of{" "}
+                  {values.analysisResult.column_names.filter(
+                    (col) => col !== values.targetColumn
                   ).length}{" "}
                   columns selected. Click badges to toggle selection.
                 </p>
@@ -388,17 +392,17 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 </div>
                 <div className="space-y-2">
                   <RichInput
-                    value={featureColumns.join(", ")}
+                    value={values.featureColumns.join(", ")}
                     onChange={(e) =>
                       handleCommaSeparatedInputChange(e.target.value)
                     }
                     placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
                     className="w-full"
                   />
-                  {featureColumns.length > 0 && (
+                  {values.featureColumns.length > 0 && (
                     <>
                       <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
-                        {featureColumns.map((column, index) => (
+                        {values.featureColumns.map((column, index) => (
                           <div key={index} className="flex items-center gap-1">
                             <Badge variant="default">{column}</Badge>
                             <Button
@@ -413,12 +417,12 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {featureColumns.length} column
-                        {featureColumns.length !== 1 ? "s" : ""} added
+                        {values.featureColumns.length} column
+                        {values.featureColumns.length !== 1 ? "s" : ""} added
                       </p>
                     </>
                   )}
-                  {featureColumns.length === 0 && (
+                  {values.featureColumns.length === 0 && (
                     <p className="text-sm text-muted-foreground italic">
                       No feature columns defined. Add columns to specify which
                       features to use for training.
@@ -432,21 +436,77 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             </p>
           </div>
 
+          {/* Split Method */}
+          <div className="space-y-2">
+            <Label htmlFor="splitMethod">Split Method</Label>
+            <Select value={values.splitMethod} onValueChange={handleSplitMethodChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select split method" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="random">Random</SelectItem>
+                <SelectItem value="time_based">Time-based</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Random shuffles rows before splitting. Time-based sorts by a date
+              column and reserves the most recent rows for validation — use this
+              for time-series data.
+            </p>
+          </div>
+
+          {/* Date Column (time-based split only) */}
+          {values.splitMethod === "time_based" && (
+            <div className="space-y-2">
+              <Label htmlFor="dateColumn">Date Column *</Label>
+              {values.analysisResult ? (
+                <Select
+                  value={values.dateColumn}
+                  onValueChange={(v) => setField("dateColumn", v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select date column" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {values.analysisResult.column_names.map((columnName) => (
+                      <SelectItem key={columnName} value={columnName}>
+                        {columnName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <DraggableInput
+                  id="dateColumn"
+                  value={values.dateColumn}
+                  onChange={(e) => setField("dateColumn", e.target.value)}
+                  placeholder="Enter date/timestamp column name"
+                  className="w-full"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Column used to sort rows chronologically before splitting
+              </p>
+            </div>
+          )}
+
           {/* Validation Split */}
           <div className="space-y-2">
             <Label>
-              Validation Split: {Math.round(validationSplit * 100)}%
+              Validation Split: {Math.round(values.validationSplit * 100)}%
             </Label>
             <Slider
-              value={[validationSplit]}
-              onValueChange={(value) => setValidationSplit(value[0])}
+              value={[values.validationSplit]}
+              onValueChange={(value) => setField("validationSplit", value[0])}
               max={0.5}
               min={0.1}
               step={0.05}
               className="w-full"
             />
             <p className="text-xs text-muted-foreground">
-              Fraction of data to use for validation (10% - 50%)
+              {values.splitMethod === "time_based"
+                ? "Fraction of the most recent rows to reserve for validation (10% - 50%)"
+                : "Fraction of data to use for validation (10% - 50%)"}
             </p>
           </div>
         </div>

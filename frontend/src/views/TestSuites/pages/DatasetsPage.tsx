@@ -18,6 +18,7 @@ import {Textarea} from "@/components/ui/textarea";
 import {Label} from "@/components/label";
 import {useNavigate} from "react-router-dom";
 import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/dialog";
+import {CRUDDialog} from "@/components/ui/crud-dialog";
 import {ChevronDown, ChevronRight, Clock, Database, Import, Pencil, Plus, Trash2} from "lucide-react";
 import {ConfirmDialog} from "@/components/ConfirmDialog";
 import {fetchConversationById, fetchTranscripts} from "@/services/transcripts";
@@ -42,6 +43,26 @@ const getTimeAgo = (date: Date): string => {
   if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
   if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
   return date.toLocaleDateString();
+};
+
+// Named after the agent, as the workflow picker does; the version keeps two
+// entries apart, and the workflow name settles versions that still collide.
+const workflowFilterOptions = (workflows: WorkflowMinimal[]) => {
+  const options = workflows.map((workflow) => ({
+    id: workflow.id,
+    label: `${workflow.agent_name || workflow.name} · v${workflow.version}`,
+    workflowName: workflow.name,
+  }));
+  const counts = new Map<string, number>();
+  options.forEach((o) => counts.set(o.label, (counts.get(o.label) ?? 0) + 1));
+
+  return options
+    .map((option) =>
+      (counts.get(option.label) ?? 0) > 1
+        ? { ...option, label: `${option.label} (${option.workflowName})` }
+        : option,
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
 };
 
 const DatasetsPage: React.FC = () => {
@@ -110,21 +131,6 @@ const DatasetsPage: React.FC = () => {
 
   // ---- Dataset CRUD -------------------------------------------------------
 
-  const handleCreateDataset = async () => {
-    if (!suiteName.trim()) return;
-    const created = await createTestSuite({
-      name: suiteName.trim(),
-      description: suiteDescription.trim() || undefined,
-    });
-    if (created) {
-      setSuites((prev) => [created, ...prev]);
-      setSuiteName("");
-      setSuiteDescription("");
-      setIsCreateDialogOpen(false);
-      if (created.id) navigate(`/tests/datasets/${created.id}`);
-    }
-  };
-
   const handleOpenEditDataset = (suite: TestSuite) => {
     setEditingDatasetId(suite.id ?? null);
     setSuiteName(suite.name);
@@ -132,13 +138,8 @@ const DatasetsPage: React.FC = () => {
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveEditDataset = async () => {
-    if (!editingDatasetId || !suiteName.trim()) return;
-    const updated = await updateTestSuite(editingDatasetId, {
-      name: suiteName.trim(),
-      description: suiteDescription.trim() || undefined,
-    });
-    setSuites((prev) => prev.map((s) => (s.id === editingDatasetId ? updated : s)));
+  const closeDatasetDialog = () => {
+    setIsCreateDialogOpen(false);
     setIsEditDialogOpen(false);
     setEditingDatasetId(null);
     setSuiteName("");
@@ -418,67 +419,70 @@ const DatasetsPage: React.FC = () => {
         )}
       </div>
 
-      {/* Create dataset dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden">
-          <DialogHeader className="p-6 pb-4">
-            <DialogTitle>Create Dataset</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 px-6 pb-6">
+      {/* Create / edit dataset dialog */}
+      <CRUDDialog<{ name: string; description: string }>
+        open={isCreateDialogOpen || isEditDialogOpen}
+        onOpenChange={(next) => {
+          if (!next) closeDatasetDialog();
+        }}
+        mode={isEditDialogOpen ? "edit" : "create"}
+        maxWidth="560px"
+        resetKey={isEditDialogOpen ? editingDatasetId : "create"}
+        initialValues={{ name: "", description: "" }}
+        editValues={
+          isEditDialogOpen
+            ? { name: suiteName, description: suiteDescription }
+            : null
+        }
+        title={{ create: "Create Dataset", edit: "Edit Dataset" }}
+        submitLabel={{ create: "Create Dataset", edit: "Save Changes" }}
+        loadingLabel={{ create: "Creating...", edit: "Saving..." }}
+        successMessage={null}
+        errorMessage="Failed to save dataset."
+        submitDisabled={(form) => !form.values.name.trim()}
+        onSubmit={async (values, { mode }) => {
+          if (mode === "create") {
+            const created = await createTestSuite({
+              name: values.name.trim(),
+              description: values.description.trim() || undefined,
+            });
+            if (created) {
+              setSuites((prev) => [created, ...prev]);
+              if (created.id) navigate(`/tests/datasets/${created.id}`);
+            }
+          } else {
+            if (!editingDatasetId) return;
+            const updated = await updateTestSuite(editingDatasetId, {
+              name: values.name.trim(),
+              description: values.description.trim() || undefined,
+            });
+            setSuites((prev) =>
+              prev.map((s) => (s.id === editingDatasetId ? updated : s))
+            );
+          }
+        }}
+      >
+        {({ values, setField }) => (
+          <>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Dataset name</Label>
               <Input
-                value={suiteName}
-                onChange={(e) => setSuiteName(e.target.value)}
+                value={values.name}
+                onChange={(e) => setField("name", e.target.value)}
                 placeholder="e.g. FAQ Gold Set"
               />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Description</Label>
               <Textarea
-                value={suiteDescription}
-                onChange={(e) => setSuiteDescription(e.target.value)}
+                value={values.description}
+                onChange={(e) => setField("description", e.target.value)}
                 rows={2}
               />
             </div>
-          </div>
-          <DialogFooter className="border-t px-6 py-4">
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreateDataset} disabled={!suiteName.trim()}>
-              Create Dataset
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit dataset dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden">
-          <DialogHeader className="p-6 pb-4">
-            <DialogTitle>Edit Dataset</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 px-6 pb-6">
-            <Label className="text-xs">Dataset name</Label>
-            <Input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} />
-            <Label className="text-xs">Description</Label>
-            <Textarea
-              value={suiteDescription}
-              onChange={(e) => setSuiteDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <DialogFooter className="border-t px-6 py-4">
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEditDataset} disabled={!suiteName.trim()}>
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        )}
+      </CRUDDialog>
 
       {/* Import from conversation dialog */}
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
@@ -510,9 +514,9 @@ const DatasetsPage: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all__">All workflows</SelectItem>
-                  {workflows.map((wf) => (
-                    <SelectItem key={wf.id} value={wf.id ?? ""}>
-                      {wf.name}
+                  {workflowFilterOptions(workflows).map((option) => (
+                    <SelectItem key={option.id} value={option.id ?? ""}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

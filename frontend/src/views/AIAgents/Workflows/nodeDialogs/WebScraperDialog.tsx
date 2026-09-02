@@ -19,6 +19,7 @@ import { Plus, X, Save, ChevronDown, ChevronUp } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 // open the advanced section when any advanced option is set away from its default
 const hasAdvancedOptions = (data: WebScraperNodeData): boolean =>
@@ -27,77 +28,50 @@ const hasAdvancedOptions = (data: WebScraperNodeData): boolean =>
 export const WebScraperDialog: React.FC<
   BaseNodeDialogProps<WebScraperNodeData, WebScraperNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [url, setUrl] = useState(data.url || "");
-  const [format, setFormat] = useState<WebScraperFormat>(
-    data.format || "markdown"
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      url: data.url || "",
+      format: data.format || "markdown",
+      onlyMainContent: data.onlyMainContent ?? true,
+      screenshot: data.screenshot || "off",
+      headers: data.headers || {},
+      waitFor: data.waitFor ?? 0,
+      scrollToBottom: data.scrollToBottom ?? false,
+      maxAge: data.maxAge ?? 0,
+    })
   );
-  const [onlyMainContent, setOnlyMainContent] = useState<boolean>(
-    data.onlyMainContent ?? true
-  );
-  const [screenshot, setScreenshot] = useState<WebScraperScreenshot>(
-    data.screenshot || "off"
-  );
-  const [headers, setHeaders] = useState<Record<string, string>>(
-    data.headers || {}
-  );
-  const [waitFor, setWaitFor] = useState<number>(data.waitFor ?? 0);
-  const [scrollToBottom, setScrollToBottom] = useState<boolean>(
-    data.scrollToBottom ?? false
-  );
-  const [maxAge, setMaxAge] = useState<number>(data.maxAge ?? 0);
+
   const [showAdvanced, setShowAdvanced] = useState(hasAdvancedOptions(data));
   useEffect(() => {
-    setName(data.name || "");
-    setUrl(data.url || "");
-    setFormat(data.format || "markdown");
-    setOnlyMainContent(data.onlyMainContent ?? true);
-    setScreenshot(data.screenshot || "off");
-    setHeaders(data.headers || {});
-    setWaitFor(data.waitFor ?? 0);
-    setScrollToBottom(data.scrollToBottom ?? false);
-    setMaxAge(data.maxAge ?? 0);
-    setShowAdvanced(hasAdvancedOptions(data));
-  }, [isOpen]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      url,
-      format,
-      onlyMainContent,
-      screenshot,
-      headers,
-      waitFor,
-      scrollToBottom,
-      maxAge,
-    });
-    onClose();
-  };
+    if (isOpen) {
+      setShowAdvanced(hasAdvancedOptions(data));
+    }
+  }, [isOpen, data]);
 
   const addHeader = () => {
-    setHeaders({ ...headers, "": "" });
+    setField("headers", { ...values.headers, "": "" });
   };
 
   const updateHeader = (oldKey: string, newKey: string, value: string) => {
     const newHeaders: Record<string, string> = {};
-    for (const [key, val] of Object.entries(headers)) {
+    for (const [key, val] of Object.entries(values.headers)) {
       if (key === oldKey) {
         newHeaders[newKey] = value;
       } else {
         newHeaders[key] = val;
       }
     }
-    setHeaders(newHeaders);
+    setField("headers", newHeaders);
   };
 
   const removeHeader = (key: string) => {
-    const newHeaders = { ...headers };
+    const newHeaders = { ...values.headers };
     delete newHeaders[key];
-    setHeaders(newHeaders);
+    setField("headers", newHeaders);
   };
 
   return (
@@ -114,25 +88,14 @@ export const WebScraperDialog: React.FC<
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        url,
-        format,
-        onlyMainContent,
-        screenshot,
-        headers,
-        waitFor,
-        scrollToBottom,
-        maxAge,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="Web Scraper"
           className="break-all w-full"
         />
@@ -142,8 +105,8 @@ export const WebScraperDialog: React.FC<
         <Label htmlFor="url">URL</Label>
         <DraggableInput
           id="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          value={values.url}
+          onChange={(e) => setField("url", e.target.value)}
           placeholder="https://example.com"
           className="break-all w-full"
         />
@@ -155,8 +118,10 @@ export const WebScraperDialog: React.FC<
       <div className="space-y-2">
         <Label htmlFor="format">Output Format</Label>
         <Select
-          value={format}
-          onValueChange={(value) => setFormat(value as WebScraperFormat)}
+          value={values.format}
+          onValueChange={(value) =>
+            setField("format", value as WebScraperFormat)
+          }
         >
           <SelectTrigger>
             <SelectValue placeholder="Select output format" />
@@ -172,8 +137,10 @@ export const WebScraperDialog: React.FC<
       <div className="space-y-2">
         <Label htmlFor="screenshot">Screenshot</Label>
         <Select
-          value={screenshot}
-          onValueChange={(value) => setScreenshot(value as WebScraperScreenshot)}
+          value={values.screenshot}
+          onValueChange={(value) =>
+            setField("screenshot", value as WebScraperScreenshot)
+          }
         >
           <SelectTrigger>
             <SelectValue placeholder="Select screenshot mode" />
@@ -198,8 +165,8 @@ export const WebScraperDialog: React.FC<
           </p>
         </div>
         <Switch
-          checked={onlyMainContent}
-          onCheckedChange={setOnlyMainContent}
+          checked={values.onlyMainContent}
+          onCheckedChange={(checked) => setField("onlyMainContent", checked)}
         />
       </div>
 
@@ -217,7 +184,7 @@ export const WebScraperDialog: React.FC<
         </div>
 
         <div className="space-y-2">
-          {Object.entries(headers).map(([key, value], idx) => (
+          {Object.entries(values.headers).map(([key, value], idx) => (
             <div
               key={`header-${idx}`}
               className="flex items-center gap-2 w-full"
@@ -268,9 +235,9 @@ export const WebScraperDialog: React.FC<
               <RichInput
                 id="waitFor"
                 type="number"
-                value={String(waitFor)}
+                value={String(values.waitFor)}
                 onChange={(e) =>
-                  setWaitFor(Math.max(0, parseInt(e.target.value) || 0))
+                  setField("waitFor", Math.max(0, parseInt(e.target.value) || 0))
                 }
                 placeholder="0"
                 className="w-full"
@@ -290,8 +257,10 @@ export const WebScraperDialog: React.FC<
                 </p>
               </div>
               <Switch
-                checked={scrollToBottom}
-                onCheckedChange={setScrollToBottom}
+                checked={values.scrollToBottom}
+                onCheckedChange={(checked) =>
+                  setField("scrollToBottom", checked)
+                }
               />
             </div>
 
@@ -300,9 +269,9 @@ export const WebScraperDialog: React.FC<
               <RichInput
                 id="maxAge"
                 type="number"
-                value={String(maxAge)}
+                value={String(values.maxAge)}
                 onChange={(e) =>
-                  setMaxAge(Math.max(0, parseInt(e.target.value) || 0))
+                  setField("maxAge", Math.max(0, parseInt(e.target.value) || 0))
                 }
                 placeholder="0"
                 className="w-full"

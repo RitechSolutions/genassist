@@ -61,7 +61,9 @@ export const NodeContent: React.FC<NodeContentProps> = ({ data }) => {
         Object.keys(row.value).length > 0 &&
         !Object.keys(row.value).includes("direct_input")
       ) {
-        return <ParameterBadges params={transformParams(row.value)} />;
+        return (
+          <ParameterBadges params={transformParams(row.value)} collapse />
+        );
       } else {
         return (
           <div className="text-sm text-accent-foreground italic">

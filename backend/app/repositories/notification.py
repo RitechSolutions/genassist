@@ -49,7 +49,7 @@ class NotificationRepository:
                 )
                 self.db.add(row)
                 by_key[key] = row
-            await self.db.commit()
+            await self.db.flush()
             for row in by_key.values():
                 await self.db.refresh(row)
 
@@ -82,7 +82,7 @@ class NotificationRepository:
         )
         current[type_key] = bool(is_enabled)
         user.notification_settings = current
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
         return {str(k): bool(v) for k, v in current.items()}
 
@@ -90,7 +90,7 @@ class NotificationRepository:
         self, notification_type: NotificationTypeModel, is_enabled: bool
     ) -> NotificationTypeModel:
         notification_type.is_enabled = is_enabled
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(notification_type)
         return notification_type
 
@@ -247,7 +247,7 @@ class NotificationRepository:
                 )
             )
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(nt)
         users_map, groups_map = await self._recipients_by_type_id([nt.id])
         return nt, users_map.get(nt.id, set()), groups_map.get(nt.id, set())
@@ -323,10 +323,15 @@ class NotificationRepository:
                             UserSupervisedGroupModel,
                             UserSupervisedGroupModel.user_id == UserModel.id,
                         )
+                        .join(UserRoleModel, UserRoleModel.user_id == UserModel.id)
+                        .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
                         .where(
                             UserSupervisedGroupModel.group_id.in_(explicit_group_ids),
+                            UserSupervisedGroupModel.is_deleted == 0,
+                            RoleModel.name == "supervisor",
                             UserModel.is_deleted == 0,
                         )
+                        .distinct()
                     )
                 ).all()
                 user_rows.extend(supervisors)
@@ -349,9 +354,13 @@ class NotificationRepository:
             pre_group_filter = dict(dedup)
             supervisors_for_group = (
                 await self.db.execute(
-                    select(UserSupervisedGroupModel.user_id).where(
+                    select(UserSupervisedGroupModel.user_id)
+                    .join(UserRoleModel, UserRoleModel.user_id == UserSupervisedGroupModel.user_id)
+                    .join(RoleModel, RoleModel.id == UserRoleModel.role_id)
+                    .where(
                         UserSupervisedGroupModel.group_id == group_id,
                         UserSupervisedGroupModel.is_deleted == 0,
+                        RoleModel.name == "supervisor",
                     )
                 )
             ).scalars().all()

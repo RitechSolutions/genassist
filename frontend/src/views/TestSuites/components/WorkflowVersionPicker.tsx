@@ -106,9 +106,8 @@ export const WorkflowVersionPicker: React.FC<WorkflowVersionPickerProps> = ({
                           Current
                         </span>
                       )}
-                      {/* A version's own name is what tells two apart once a
-                          workflow has been renamed between saves. */}
-                      {workflow.name !== group.name && (
+                      {/* A version's own name tells two apart after a rename. */}
+                      {workflow.name !== group.workflowName && (
                         <span className="truncate text-xs text-muted-foreground">
                           {workflow.name}
                         </span>

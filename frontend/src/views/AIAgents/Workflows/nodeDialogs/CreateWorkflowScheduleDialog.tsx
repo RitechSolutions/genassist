@@ -19,6 +19,7 @@ import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { getAgentConfigsList } from "@/services/api";
 import { AgentListItem } from "@/interfaces/ai-agent.interface";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type CreateWorkflowScheduleDialogProps = BaseNodeDialogProps<
   CreateWorkflowScheduleNodeData,
@@ -28,36 +29,32 @@ type CreateWorkflowScheduleDialogProps = BaseNodeDialogProps<
 export const CreateWorkflowScheduleDialog: React.FC<
   CreateWorkflowScheduleDialogProps
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [scheduleName, setScheduleName] = useState(data.scheduleName || "");
-  const [agentId, setAgentId] = useState(data.agentId || "");
-  const [cronSchedule, setCronSchedule] = useState(
-    data.cronSchedule || "0 0 * * *"
+  // Note: we intentionally do NOT hard-validate the additional-input JSON on
+  // save. The field supports dropped source variables (e.g. {{source.id}}),
+  // which aren't valid JSON at design time; the backend resolves templates
+  // first and then parses leniently, ignoring anything it can't read.
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      scheduleName: data.scheduleName || "",
+      agentId: data.agentId || "",
+      cronSchedule: data.cronSchedule || "0 0 * * *",
+      isActive: data.isActive ?? true,
+      threadIdMode: (data.threadIdMode || "per_run") as "per_run" | "fixed",
+      fixedThreadId: data.fixedThreadId || "",
+      message: data.message || "",
+      inputData: data.inputData || "",
+    })
   );
-  const [isActive, setIsActive] = useState(data.isActive ?? true);
-  const [threadIdMode, setThreadIdMode] = useState<"per_run" | "fixed">(
-    data.threadIdMode || "per_run"
-  );
-  const [fixedThreadId, setFixedThreadId] = useState(data.fixedThreadId || "");
-  const [message, setMessage] = useState(data.message || "");
-  const [inputData, setInputData] = useState(data.inputData || "");
+
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setScheduleName(data.scheduleName || "");
-      setAgentId(data.agentId || "");
-      setCronSchedule(data.cronSchedule || "0 0 * * *");
-      setIsActive(data.isActive ?? true);
-      setThreadIdMode(data.threadIdMode || "per_run");
-      setFixedThreadId(data.fixedThreadId || "");
-      setMessage(data.message || "");
-      setInputData(data.inputData || "");
-
       const loadAgents = async () => {
         try {
           const res = await getAgentConfigsList(1, 100);
@@ -73,39 +70,6 @@ export const CreateWorkflowScheduleDialog: React.FC<
       loadAgents();
     }
   }, [isOpen, data, toast]);
-
-  const handleSave = () => {
-    // Note: we intentionally do NOT hard-validate the additional-input JSON
-    // here. The field supports dropped source variables (e.g. {{source.id}}),
-    // which aren't valid JSON at design time; the backend resolves templates
-    // first and then parses leniently, ignoring anything it can't read.
-    onUpdate({
-      ...data,
-      name,
-      scheduleName,
-      agentId,
-      cronSchedule,
-      isActive,
-      threadIdMode,
-      fixedThreadId,
-      message,
-      inputData,
-    });
-    onClose();
-  };
-
-  const currentData = {
-    ...data,
-    name,
-    scheduleName,
-    agentId,
-    cronSchedule,
-    isActive,
-    threadIdMode,
-    fixedThreadId,
-    message,
-    inputData,
-  };
 
   return (
     <NodeConfigPanel
@@ -123,14 +87,14 @@ export const CreateWorkflowScheduleDialog: React.FC<
         </>
       }
       {...props}
-      data={currentData}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Node Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="Enter the name of this node"
           className="w-full"
         />
@@ -138,7 +102,10 @@ export const CreateWorkflowScheduleDialog: React.FC<
 
       <div className="space-y-2">
         <Label htmlFor="workflow">Workflow</Label>
-        <Select value={agentId} onValueChange={setAgentId}>
+        <Select
+          value={values.agentId}
+          onValueChange={(value) => setField("agentId", value)}
+        >
           <SelectTrigger id="workflow">
             <SelectValue placeholder="Select a workflow" />
           </SelectTrigger>
@@ -160,8 +127,8 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <Label htmlFor="scheduleName">Schedule Name</Label>
         <DraggableInput
           id="scheduleName"
-          value={scheduleName}
-          onChange={(e) => setScheduleName(e.target.value)}
+          value={values.scheduleName}
+          onChange={(e) => setField("scheduleName", e.target.value)}
           placeholder="Name shown for the created schedule"
           className="w-full"
         />
@@ -171,8 +138,8 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <Label htmlFor="cron">Cron Schedule</Label>
         <DraggableInput
           id="cron"
-          value={cronSchedule}
-          onChange={(e) => setCronSchedule(e.target.value)}
+          value={values.cronSchedule}
+          onChange={(e) => setField("cronSchedule", e.target.value)}
           placeholder="0 0 * * *"
           className="w-full"
         />
@@ -185,8 +152,8 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <Label htmlFor="message">Message</Label>
         <DraggableTextArea
           id="message"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          value={values.message}
+          onChange={(e) => setField("message", e.target.value)}
           placeholder="Message passed to the workflow's input node on each run"
           className="w-full"
         />
@@ -196,8 +163,8 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <Label htmlFor="inputData">Additional input fields (JSON)</Label>
         <DraggableTextArea
           id="inputData"
-          value={inputData}
-          onChange={(e) => setInputData(e.target.value)}
+          value={values.inputData}
+          onChange={(e) => setField("inputData", e.target.value)}
           placeholder='{ "customer_id": "123" }'
           className="w-full font-mono text-xs"
         />
@@ -209,8 +176,10 @@ export const CreateWorkflowScheduleDialog: React.FC<
       <div className="space-y-2">
         <Label htmlFor="threadIdMode">Conversation Thread</Label>
         <Select
-          value={threadIdMode}
-          onValueChange={(v) => setThreadIdMode(v as "per_run" | "fixed")}
+          value={values.threadIdMode}
+          onValueChange={(v) =>
+            setField("threadIdMode", v as "per_run" | "fixed")
+          }
         >
           <SelectTrigger id="threadIdMode">
             <SelectValue />
@@ -224,13 +193,13 @@ export const CreateWorkflowScheduleDialog: React.FC<
         </Select>
       </div>
 
-      {threadIdMode === "fixed" && (
+      {values.threadIdMode === "fixed" && (
         <div className="space-y-2">
           <Label htmlFor="fixedThreadId">Fixed Thread ID</Label>
           <DraggableInput
             id="fixedThreadId"
-            value={fixedThreadId}
-            onChange={(e) => setFixedThreadId(e.target.value)}
+            value={values.fixedThreadId}
+            onChange={(e) => setField("fixedThreadId", e.target.value)}
             placeholder="Leave blank to auto-generate on first run"
             className="w-full"
           />
@@ -242,8 +211,10 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <div className="flex items-center space-x-2 h-10">
           <Checkbox
             id="isActive"
-            checked={isActive}
-            onCheckedChange={(checked) => setIsActive(checked as boolean)}
+            checked={values.isActive}
+            onCheckedChange={(checked) =>
+              setField("isActive", checked as boolean)
+            }
           />
           <Label
             htmlFor="isActive"

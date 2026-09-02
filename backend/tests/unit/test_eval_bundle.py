@@ -518,6 +518,39 @@ class TestRewriting:
         assert rules[2]["target_case_id"] == "old-3"
         assert len(warnings) == 1
 
+    def test_case_refs_remap_for_route_and_action_rules_too(self):
+        configs = {
+            "route_taken": {
+                "rules": [
+                    {"id": "r1", "router": "src-router", "expected": "hr",
+                     "scope": "specific_turn", "target_case_id": "old-1"},
+                ]
+            },
+            "action_taken": {
+                "rules": [
+                    {"id": "a1", "node": "src-ticket", "scope": "specific_turn",
+                     "target_case_id": "gone"},
+                ]
+            },
+        }
+
+        rewritten, warnings = rewrite_case_refs(configs, {"old-1": "new-1"})
+
+        assert rewritten["route_taken"]["rules"][0]["target_case_id"] == "new-1"
+        assert rewritten["action_taken"]["rules"][0]["target_case_id"] == "gone"
+        assert warnings == [
+            "Action Taken rule 'a1' targets a test case that is not part of the "
+            "bundle; it will grade as not evaluated."
+        ]
+
+    def test_collects_case_ids_from_every_rule_technique(self):
+        configs = {
+            "tool_used": {"rules": [{"id": "r1", "target_case_id": "case-1"}]},
+            "action_taken": {"rules": [{"id": "a1", "node": "n", "target_case_id": "case-2"}]},
+        }
+
+        assert collect_case_ids(configs) == ["case-1", "case-2"]
+
 
 def _service(**overrides) -> EvalBundleService:
     service = EvalBundleService(

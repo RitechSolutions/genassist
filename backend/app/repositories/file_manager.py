@@ -43,7 +43,7 @@ class FileManagerRepository(DbRepository[FileModel]):
 
         # avoid null values when creating the file
         self.db.add(new_file)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_file)
         return new_file
 
@@ -118,7 +118,7 @@ class FileManagerRepository(DbRepository[FileModel]):
             setattr(file, key, value)
         
         file.updated_by = context.get("user_id")
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(file)
         
         # Invalidate cache (safe for Redis Cluster: Lua scripts without keys not supported)
@@ -137,7 +137,7 @@ class FileManagerRepository(DbRepository[FileModel]):
         file = await self.get_file_by_id(file_id)
         file.is_deleted = 1
         file.updated_by = context.get("user_id")
-        await self.db.commit()
+        await self.db.flush()
         
         # Invalidate cache (safe for Redis Cluster: Lua scripts without keys not supported)
         cache_key = f"file_manager:file:{file_id}"

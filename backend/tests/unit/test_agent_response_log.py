@@ -86,13 +86,15 @@ async def _log(session, execution_id="exec-1"):
 
 class TestLogResponse:
     @pytest.mark.asyncio
-    async def test_writes_inside_a_savepoint_and_commits(self):
+    async def test_writes_inside_a_savepoint_and_defers_commit_to_boundary(self):
         session = FakeSession()
         entry = await _log(session)
 
         assert session.savepoints_opened == 1
         assert session.savepoints_released == 1
-        assert session.committed == 1
+        # Repositories flush inside the savepoint; the request/task transaction
+        # boundary owns the commit, so the repo itself never commits.
+        assert session.committed == 0
         assert entry.workflow_execution_id == "exec-1"
         assert entry.total_tokens == 15
 

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from fastapi_injector import Injected
 
@@ -15,7 +15,11 @@ from app.schemas.llm_cost_rate import (
     LlmCostRateRead,
     LlmCostRateUpdate,
 )
-from app.services.llm_cost_rates import LlmCostRateService
+from app.services.llm_cost_rates import (
+    MAX_IMPORT_BYTES,
+    LlmCostRateService,
+    import_exceeds_byte_cap,
+)
 
 router = APIRouter()
 
@@ -77,9 +81,15 @@ async def import_cost_rates_csv(
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise AppException(error_key=ErrorKey.INVALID_FILE_FORMAT, status_code=400, error_detail="File must be a CSV file")
-    raw = await file.read()
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
     if not raw:
         raise AppException(error_key=ErrorKey.INVALID_FILE_FORMAT, status_code=400, error_detail="Empty file")
+    if import_exceeds_byte_cap(raw):
+        raise AppException(
+            error_key=ErrorKey.INVALID_FILE_FORMAT,
+            status_code=400,
+            error_detail=f"File must be {MAX_IMPORT_BYTES // (1024 * 1024)} MB or smaller",
+        )
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as e:
@@ -96,9 +106,12 @@ async def import_cost_rates_csv(
     dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
 )
 async def export_cost_rates_csv(
+    include_cache_rates: bool = Query(
+        False, description="Add the cache rate columns. Off keeps the 4-column layout older tools expect."
+    ),
     service: LlmCostRateService = Injected(LlmCostRateService),
 ):
-    csv_text = await service.export_csv()
+    csv_text = await service.export_csv(include_cache_rates)
     return StreamingResponse(
         iter([csv_text]),
         media_type="text/csv; charset=utf-8",

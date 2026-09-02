@@ -294,6 +294,32 @@ class LegacyPermissions:
     WRITE_APP_SETTINGS = "write:app_settings"
 
 
+# Name of the built-in role that is allowed to hold admin-only permissions.
+ADMIN_ROLE_NAME = "admin"
+
+
+# Permissions that must never be granted to a non-admin role. These govern
+# tenant-wide configuration (File Manager provider, Security/data-residency
+# settings, and Feature Flags) and are reserved for the `admin` role only.
+ADMIN_ONLY_PERMISSIONS: set[str] = {
+    AppSettingsPermissions.CREATE,
+    AppSettingsPermissions.READ,
+    AppSettingsPermissions.WRITE,
+    AppSettingsPermissions.UPDATE,
+    AppSettingsPermissions.DELETE,
+    LegacyPermissions.WRITE_APP_SETTINGS,
+    FeatureFlagPermissions.CREATE,
+    FeatureFlagPermissions.READ,
+    FeatureFlagPermissions.UPDATE,
+    FeatureFlagPermissions.DELETE,
+}
+
+
+def is_admin_only_permission(permission_name: str) -> bool:
+    """Return True if the permission is reserved for the admin role."""
+    return permission_name in ADMIN_ONLY_PERMISSIONS
+
+
 def get_all_permission_constants() -> set[str]:
     """
     Get all permission string constants defined in this module.

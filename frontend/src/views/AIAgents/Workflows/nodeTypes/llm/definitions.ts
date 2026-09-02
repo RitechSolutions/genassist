@@ -44,6 +44,7 @@ export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
     type: "ToolSelector",
     memory: false,
     piiMasking: false,
+    promptCaching: false,
     systemPrompt: "",
     userPrompt: "{{source.message}}",
     maxIterations: 7,
@@ -104,6 +105,7 @@ export const SUB_AGENT_NODE_DEFINITION: NodeTypeDefinition<SubAgentNodeData> = {
     description: "",
     memory: true,
     piiMasking: false,
+    promptCaching: false,
     systemPrompt: "",
     // Kept in data (hidden in the dialog): the child always runs on the delegated task
     userPrompt: "{{session.message}}",
@@ -215,6 +217,7 @@ export const MODEL_NODE_DEFINITION: NodeTypeDefinition<LLMModelNodeData> = {
     providerId: undefined,
     memory: false,
     piiMasking: false,
+    promptCaching: false,
     type: "Base",
     systemPrompt: "",
     userPrompt: "{{source.message}}",

@@ -1,15 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import type { DateRange } from "react-day-picker";
 import { StatsOverviewCard } from "./StatsOverviewCard";
 
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
-import { fetchDashboardSummary } from "@/services/dashboard";
+import { fetchDashboardSummary, type DashboardSummaryRange } from "@/services/dashboard";
 import type { DashboardSummaryStats } from "@/interfaces/dashboard.interface";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import { formatUsd } from "@/helpers/formatCurrency";
+import { toExactActivityParams } from "@/helpers/dateRange";
 
 interface KPISectionProps {
-  days: number;
+  dateRange: DateRange | undefined;
 }
 
 const formatResponseTime = (ms: number): string => {
@@ -22,8 +24,14 @@ const formatResponseTime = (ms: number): string => {
 const formatNumber = (num: number): string => {
   return num.toLocaleString();
 };
+/** No dates picked means show all-time, otherwise use the exact local-day range picked */ 
+function toSummaryRange(dateRange: DateRange | undefined): DashboardSummaryRange {
+  const { activity_from_datetime, activity_to_datetime } = toExactActivityParams(dateRange);
+  if (!activity_from_datetime || !activity_to_datetime) return { all_time: true };
+  return { from_datetime: activity_from_datetime, to_datetime: activity_to_datetime };
+}
 
-export function KPISection({ days }: KPISectionProps) {
+export function KPISection({ dateRange }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
   const showCostPerConversation = useFeatureFlagVisible(
@@ -31,6 +39,11 @@ export function KPISection({ days }: KPISectionProps) {
   );
   const [summaryStats, setSummaryStats] = useState<DashboardSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
+
+  const fromTime = dateRange?.from?.getTime();
+  const toTime = dateRange?.to?.getTime();
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -40,14 +53,20 @@ export function KPISection({ days }: KPISectionProps) {
 
       // Check for dashboard permission or wildcard
       if (permissions.includes("read:dashboard") || permissions.includes("*")) {
+        const currentRequest = ++requestId.current;
         setLoading(true);
         try {
-          const data = await fetchDashboardSummary(days);
+          const data = await fetchDashboardSummary(toSummaryRange(dateRange));
+          if (currentRequest !== requestId.current) return; // a newer range won
           setSummaryStats(data);
+          setError(data ? null : "Summary unavailable");
         } catch (err) {
           console.error("Error fetching dashboard summary:", err);
+          if (currentRequest !== requestId.current) return;
+          setSummaryStats(null);
+          setError("Summary unavailable");
         } finally {
-          setLoading(false);
+          if (currentRequest === requestId.current) setLoading(false);
         }
       } else {
         setLoading(false);
@@ -55,25 +74,25 @@ export function KPISection({ days }: KPISectionProps) {
     };
 
     fetchStats();
-  }, [isLoadingPermissions, permissions, days]);
+  }, [isLoadingPermissions, permissions, fromTime, toTime]);
 
   // Transform summary stats for the stats overview card
   const statsMetrics = [
     {
       label: "Active Agents",
-      value: summaryStats?.active_agents?.toString() || "0",
+      value: (summaryStats?.active_agents ?? 0).toString(),
       change: 0,
       changeType: "neutral" as const,
     },
     {
-      label: "Workflow Runs",
-      value: formatNumber(summaryStats?.workflow_runs || 0),
+      label: "Conversations",
+      value: formatNumber(summaryStats?.conversations ?? 0),
       change: 0,
       changeType: "neutral" as const,
     },
     {
       label: "Avg Response Time",
-      value: formatResponseTime(summaryStats?.avg_response_time_ms || 0),
+      value: formatResponseTime(summaryStats?.avg_response_time_ms ?? 0),
       change: 0,
       changeType: "neutral" as const,
     },
@@ -91,7 +110,7 @@ export function KPISection({ days }: KPISectionProps) {
 
   return (
     <section className="mb-5">
-      <StatsOverviewCard metrics={statsMetrics} loading={loading} />
+      <StatsOverviewCard metrics={statsMetrics} loading={loading} error={error} />
     </section>
   );
 }

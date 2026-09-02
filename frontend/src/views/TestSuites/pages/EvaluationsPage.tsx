@@ -41,6 +41,19 @@ interface WorkflowRow {
   isUnassigned: boolean;
 }
 
+// Rows are named after the agent, matching Agent Studio and the workflow picker.
+// Two versions of one agent would then read identically, so those keep a version.
+const nameRows = (rows: WorkflowRow[], workflows: WorkflowMinimal[]): WorkflowRow[] => {
+  const counts = new Map<string, number>();
+  rows.forEach((row) => counts.set(row.name, (counts.get(row.name) ?? 0) + 1));
+
+  return rows.map((row) => {
+    if ((counts.get(row.name) ?? 0) < 2) return row;
+    const version = workflows.find((w) => w.id === row.workflowId)?.version;
+    return version ? { ...row, name: `${row.name} · v${version}` } : row;
+  });
+};
+
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
   const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
@@ -104,11 +117,13 @@ const EvaluationsPage: React.FC = () => {
   const rows = useMemo<WorkflowRow[]>(() => {
     const nameFor = (workflowId: string | null): string => {
       if (workflowId === null) return "Unassigned evaluations";
-      return workflows.find((w) => w.id === workflowId)?.name ?? "Unknown workflow";
+      const workflow = workflows.find((w) => w.id === workflowId);
+      if (!workflow) return "Unknown workflow";
+      return workflow.agent_name || workflow.name;
     };
     const query = searchQuery.trim().toLowerCase();
-    return summaries
-      .map((summary) => ({
+    const named = nameRows(
+      summaries.map((summary) => ({
         key: summary.workflow_id ?? UNASSIGNED,
         workflowId: summary.workflow_id,
         name: nameFor(summary.workflow_id),
@@ -117,7 +132,10 @@ const EvaluationsPage: React.FC = () => {
         finishedCount: summary.finished_count,
         anyRunning: summary.any_running,
         isUnassigned: summary.workflow_id === null,
-      }))
+      })),
+      workflows,
+    );
+    return named
       .filter((row) => !query || row.name.toLowerCase().includes(query))
       .sort((a, b) => {
         if (a.isUnassigned) return 1;

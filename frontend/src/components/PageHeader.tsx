@@ -6,6 +6,8 @@ import { PageTitle } from "@/components/Heading";
 interface PageHeaderProps {
   title: string;
   subtitle: string;
+  /** Optional controls (e.g. a status/type <Select>) rendered before the search input. */
+  filters?: React.ReactNode;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchPlaceholder: string;
@@ -13,11 +15,15 @@ interface PageHeaderProps {
   onActionClick?: () => void;
   secondaryActionButtonText?: React.ReactNode;
   onSecondaryActionClick?: () => void;
+  secondaryActionDisabled?: boolean;
+  /** Rendered after the primary action, e.g. an overflow menu of secondary tools. */
+  trailingActions?: React.ReactNode;
 }
 
 export function PageHeader({
   title,
   subtitle,
+  filters,
   searchQuery,
   onSearchChange,
   searchPlaceholder,
@@ -25,6 +31,8 @@ export function PageHeader({
   onActionClick,
   secondaryActionButtonText,
   onSecondaryActionClick,
+  secondaryActionDisabled,
+  trailingActions,
 }: PageHeaderProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
@@ -33,6 +41,7 @@ export function PageHeader({
         <p className="text-sm md:text-base text-muted-foreground animate-fade-up">{subtitle}</p>
       </div>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+        {filters}
         <SearchInput
           value={searchQuery}
           onChange={onSearchChange}
@@ -45,6 +54,7 @@ export function PageHeader({
               variant="outline"
               className="flex items-center gap-2 w-full sm:w-auto justify-center rounded-full"
               onClick={onSecondaryActionClick}
+              disabled={secondaryActionDisabled}
             >
               {secondaryActionButtonText}
             </Button>
@@ -55,6 +65,7 @@ export function PageHeader({
               {actionButtonText}
             </Button>
           )}
+          {trailingActions}
         </div>
       </div>
     </div>

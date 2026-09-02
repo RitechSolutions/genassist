@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { TemplateNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -7,6 +7,7 @@ import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type TemplateNodeDialogProps = BaseNodeDialogProps<
   TemplateNodeData,
@@ -16,33 +17,15 @@ type TemplateNodeDialogProps = BaseNodeDialogProps<
 export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
   props
 ) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { onClose, data } = props;
 
-  const [templateData, setTemplateData] = useState<{
-    name: string;
-    template: string;
-  }>({
-    name: data.name || "",
-    template: data.template || "",
-  });
-
-  useEffect(() => {
-    if (isOpen) {
-      setTemplateData({
-        name: data.name || "",
-        template: data.template || "",
-      });
-    }
-  }, [isOpen, data]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name: templateData.name,
-      template: templateData.template,
-    });
-    onClose();
-  };
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      template: data.template || "",
+    })
+  );
 
   return (
     <NodeConfigPanel
@@ -58,21 +41,15 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name: templateData.name,
-        template: templateData.template,
-      }}
+      data={merged}
     >
       <div className="space-y-4">
         <div>
           <Label htmlFor="name">Node Name</Label>
           <RichInput
             id="name"
-            value={templateData.name}
-            onChange={(e) =>
-              setTemplateData({ ...templateData, name: e.target.value })
-            }
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="e.g., Template"
             className="w-full"
           />
@@ -81,10 +58,8 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
           <Label htmlFor="template">Template</Label>
           <DraggableTextArea
             id="template"
-            value={templateData.template}
-            onChange={(e) =>
-              setTemplateData({ ...templateData, template: e.target.value })
-            }
+            value={values.template}
+            onChange={(e) => setField("template", e.target.value)}
             placeholder="Enter your template here... Use {{session.message}} or drag variables from the left panel"
             className="h-32 font-mono text-sm"
             rows={8}

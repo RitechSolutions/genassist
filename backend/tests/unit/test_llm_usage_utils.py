@@ -2,6 +2,7 @@
 
 from app.core.utils.llm_usage_utils import (
     USAGE_METADATA_MISSING,
+    extract_cache_tokens,
     extract_usage_from_aimessage,
     extract_usage_from_response_metadata,
     is_usage_metadata_missing,
@@ -268,3 +269,71 @@ class TestUsagePlaceholder:
         assert is_usage_metadata_missing(None) is False
         assert is_usage_metadata_missing("junk") is False
         assert is_usage_metadata_missing({"cache_read": 1}) is False
+
+
+class TestExtractCacheTokens:
+    def test_standard_nested_details(self):
+        details = {"input_token_details": {"cache_read": 3697, "cache_creation": 60}}
+        assert extract_cache_tokens(details) == (3697, 60)
+
+    def test_flat_details_shape(self):
+        assert extract_cache_tokens({"cache_read": 12, "cache_creation": 34}) == (12, 34)
+
+    def test_nested_wins_over_flat_when_both_present(self):
+        details = {"cache_read": 1, "input_token_details": {"cache_read": 500, "cache_creation": 7}}
+        assert extract_cache_tokens(details) == (500, 7)
+
+    def test_empty_nested_details_fall_back_to_the_blob(self):
+        assert extract_cache_tokens({"input_token_details": {}, "cache_read": 9}) == (9, 0)
+
+    def test_non_dict_nested_details_fall_back_to_the_blob(self):
+        assert extract_cache_tokens({"input_token_details": "junk", "cache_creation": 4}) == (0, 4)
+
+    def test_missing_buckets_are_zero(self):
+        assert extract_cache_tokens({"input_token_details": {"audio": 10}}) == (0, 0)
+        assert extract_cache_tokens({}) == (0, 0)
+
+    def test_partial_buckets_keep_the_reported_one(self):
+        assert extract_cache_tokens({"input_token_details": {"cache_read": 500}}) == (500, 0)
+        assert extract_cache_tokens({"input_token_details": {"cache_creation": 500}}) == (0, 500)
+
+    def test_explicit_zeros_are_zero(self):
+        assert extract_cache_tokens({"input_token_details": {"cache_read": 0, "cache_creation": 0}}) == (0, 0)
+
+    def test_none_and_non_dicts(self):
+        assert extract_cache_tokens(None) == (0, 0)
+        assert extract_cache_tokens("junk") == (0, 0)
+        assert extract_cache_tokens(42) == (0, 0)
+        assert extract_cache_tokens([{"cache_read": 5}]) == (0, 0)
+
+    def test_usage_metadata_missing_sentinel(self):
+        assert extract_cache_tokens({USAGE_METADATA_MISSING: True}) == (0, 0)
+
+    def test_junk_values_count_as_zero(self):
+        details = {"input_token_details": {"cache_read": "500", "cache_creation": None}}
+        assert extract_cache_tokens(details) == (0, 0)
+
+    def test_booleans_are_not_token_counts(self):
+        assert extract_cache_tokens({"input_token_details": {"cache_read": True}}) == (0, 0)
+
+    def test_non_finite_values_count_as_zero(self):
+        details = {"input_token_details": {"cache_read": float("inf"), "cache_creation": float("nan")}}
+        assert extract_cache_tokens(details) == (0, 0)
+
+    def test_negative_counts_clamp_to_zero(self):
+        details = {"input_token_details": {"cache_read": -5, "cache_creation": -1}}
+        assert extract_cache_tokens(details) == (0, 0)
+
+    def test_anthropic_ephemeral_keys_are_ignored(self):
+        details = {
+            "input_token_details": {
+                "cache_read": 100,
+                "cache_creation": 200,
+                "ephemeral_5m_input_tokens": 200,
+                "ephemeral_1h_input_tokens": None,
+            }
+        }
+        assert extract_cache_tokens(details) == (100, 200)
+
+    def test_floats_truncate_to_int(self):
+        assert extract_cache_tokens({"input_token_details": {"cache_read": 12.9}}) == (12, 0)

@@ -14,6 +14,7 @@ export interface LanguageSelectorProps {
     textColor?: string;
     fontFamily?: string;
     fontSize?: string;
+    borderColor?: string;
   };
 }
 
@@ -32,6 +33,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   const primaryColor = theme?.primaryColor || '#2962FF';
   const backgroundColor = theme?.backgroundColor || '#ffffff';
   const textColor = theme?.textColor || '#000000';
+  const borderColor = theme?.borderColor || '#e5e7eb';
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
 
   const containerStyle: React.CSSProperties = {
@@ -66,7 +68,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
     padding: '10px 16px',
     backgroundColor: isActive ? primaryColor : backgroundColor,
     color: isActive ? '#ffffff' : textColor,
-    border: isActive ? `1px solid ${primaryColor}` : '1px solid #e5e7eb',
+    border: isActive ? `1px solid ${primaryColor}` : `1px solid ${borderColor}`,
     borderRadius: '8px',
     fontSize: '13px',
     fontFamily,

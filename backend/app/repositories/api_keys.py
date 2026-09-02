@@ -80,7 +80,7 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         for role_id in api_key_create.role_ids:
             self.db.add(ApiKeyRoleModel(api_key_id=new_key.id, role_id=role_id))
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_key)
         return await self.get_by_id(new_key.id)
 
@@ -123,7 +123,7 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
 
     async def delete(self, api_key: ApiKeyModel):
         await self.db.delete(api_key)
-        await self.db.commit()
+        await self.db.flush()
         return {"message": f"API key {api_key.id} deleted."}
 
 
@@ -160,7 +160,7 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         api_key.updated_by = user_id
 
         self.db.add(api_key)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(api_key)
         return api_key
 
@@ -211,7 +211,7 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         api_key.updated_by = user_id
 
         self.db.add(api_key)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(api_key)
         return await self.get_by_id(api_key_id)
 
@@ -222,4 +222,4 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
                 .values(is_deleted=True)
                 .execution_options(synchronize_session="fetch")  # keep session in sync
                 )
-        await self.db.commit()
+        await self.db.flush()

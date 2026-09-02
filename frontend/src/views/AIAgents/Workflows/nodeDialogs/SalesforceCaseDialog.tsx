@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import { SalesforceCaseNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
@@ -20,6 +20,7 @@ import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialo
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type SalesforceCaseDialogProps = BaseNodeDialogProps<
   SalesforceCaseNodeData,
@@ -29,22 +30,43 @@ type SalesforceCaseDialogProps = BaseNodeDialogProps<
 export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
   props
 ) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [subject, setSubject] = useState(data.subject || "");
-  const [description, setDescription] = useState(data.description || "");
-  const [labelsCsv, setLabelsCsv] = useState((data.labels || []).join(", "));
-  const [appSettingsId, setAppSettingsId] = useState(
-    data.app_settings_id || ""
-  );
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => ({
+        name: data.name || "",
+        subject: data.subject || "",
+        description: data.description || "",
+        labelsCsv: (data.labels || []).join(", "),
+        custom_fields: (data.custom_fields || []) as Array<{
+          key: string;
+          value: string;
+        }>,
+        app_settings_id: data.app_settings_id || "",
+      }),
+      (v) => {
+        const labelsArr = v.labelsCsv
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        return {
+          name: v.name,
+          subject: v.subject,
+          description: v.description,
+          labels: labelsArr.length > 0 ? labelsArr : undefined,
+          custom_fields:
+            v.custom_fields.length > 0 ? v.custom_fields : undefined,
+          app_settings_id: v.app_settings_id || undefined,
+        };
+      }
+    );
+
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingAppSettings, setIsLoadingAppSettings] = useState(false);
   const [appSettingsError, setAppSettingsError] = useState(false);
   const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
-  const [customFields, setCustomFields] = useState<
-    Array<{ key: string; value: string }>
-  >(data.custom_fields || []);
 
   const fetchAppSettings = async () => {
     setIsLoadingAppSettings(true);
@@ -61,14 +83,6 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setSubject(data.subject || "");
-      setDescription(data.description || "");
-      setLabelsCsv((data.labels || []).join(", "));
-      setCustomFields(data.custom_fields || []);
-
-      setAppSettingsId(data.app_settings_id || "");
-
       fetchAppSettings();
     }
   }, [isOpen, data]);
@@ -78,45 +92,33 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
     return settingTypeLower === "salesforce" && setting.is_active === 1;
   });
 
-  const labelsArr = useMemo(
-    () =>
-      labelsCsv
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-    [labelsCsv]
-  );
-
-  const handleSave = () => {
+  const handleSaveClick = () => {
     // The backend node schema marks these required — block save with a clear
     // message instead of persisting a node that only fails at run time.
     const missing: string[] = [];
-    if (!appSettingsId) missing.push("Configuration Vars");
-    if (!subject.trim()) missing.push("Subject");
-    if (!description.trim()) missing.push("Description");
+    if (!values.app_settings_id) missing.push("Configuration Vars");
+    if (!values.subject.trim()) missing.push("Subject");
+    if (!values.description.trim()) missing.push("Description");
     if (missing.length > 0) {
       toast.error(`Please provide: ${missing.join(", ")}.`);
       return;
     }
 
-    onUpdate({
-      ...data,
-      name,
-      subject,
-      description,
-      labels: labelsArr.length > 0 ? labelsArr : undefined,
-      custom_fields: customFields.length > 0 ? customFields : undefined,
-      app_settings_id: appSettingsId || undefined,
-    });
-    onClose();
+    handleSave();
   };
 
   const addCustomField = () => {
-    setCustomFields((prev) => [...prev, { key: "", value: "" }]);
+    setValues((v) => ({
+      ...v,
+      custom_fields: [...v.custom_fields, { key: "", value: "" }],
+    }));
   };
 
   const removeCustomField = (index: number) => {
-    setCustomFields((prev) => prev.filter((_, i) => i !== index));
+    setValues((v) => ({
+      ...v,
+      custom_fields: v.custom_fields.filter((_, i) => i !== index),
+    }));
   };
 
   const updateCustomField = (
@@ -124,10 +126,10 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
     field: "key" | "value",
     value: string
   ) => {
-    setCustomFields((prev) => {
-      const updated = [...prev];
+    setValues((v) => {
+      const updated = [...v.custom_fields];
       updated[index] = { ...updated[index], [field]: value };
-      return updated;
+      return { ...v, custom_fields: updated };
     });
   };
 
@@ -139,31 +141,21 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={handleSave}>
+            <Button onClick={handleSaveClick}>
               <Save className="h-4 w-4 mr-2" />
               Save Changes
             </Button>
           </>
         }
         {...props}
-        data={
-          {
-            ...data,
-            name,
-            subject,
-            description,
-            labels: labelsArr.length > 0 ? labelsArr : undefined,
-            custom_fields: customFields.length > 0 ? customFields : undefined,
-            app_settings_id: appSettingsId || undefined,
-          } as SalesforceCaseNodeData
-        }
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
           <RichInput
             id="node-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -187,13 +179,13 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
             </div>
           ) : (
             <Select
-              value={appSettingsId || ""}
+              value={values.app_settings_id || ""}
               onValueChange={(value) => {
                 if (value === "__create__") {
                   setIsCreateSettingOpen(true);
                   return;
                 }
-                setAppSettingsId(value || "");
+                setField("app_settings_id", value || "");
               }}
               disabled={isLoadingAppSettings}
             >
@@ -231,8 +223,8 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
               <Label htmlFor="subject">Subject</Label>
               <DraggableInput
                 id="subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                value={values.subject}
+                onChange={(e) => setField("subject", e.target.value)}
                 placeholder="Enter case subject"
                 className="w-full"
               />
@@ -242,8 +234,8 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
               <DraggableTextArea
                 id="description"
                 rows={4}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={values.description}
+                onChange={(e) => setField("description", e.target.value)}
                 placeholder="Enter the issue or request description"
                 className="w-full resize-none"
               />
@@ -257,8 +249,8 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
           </Label>
           <DraggableInput
             id="labels"
-            value={labelsCsv}
-            onChange={(e) => setLabelsCsv(e.target.value)}
+            value={values.labelsCsv}
+            onChange={(e) => setField("labelsCsv", e.target.value)}
             placeholder="e.g., billing, urgent, follow-up"
             className="w-full"
           />
@@ -282,7 +274,7 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
             </Button>
           </div>
           <div className="space-y-2">
-            {customFields.map((field, index) => (
+            {values.custom_fields.map((field, index) => (
               <div key={index} className="flex gap-2 items-end">
                 <div className="flex-1 space-y-2">
                   <Label htmlFor={`custom-field-key-${index}`}>
@@ -321,7 +313,7 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
                 </Button>
               </div>
             ))}
-            {customFields.length === 0 && (
+            {values.custom_fields.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 No custom fields added. Click "Add Field" to add one.
               </p>
@@ -343,7 +335,7 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
           } catch (e) {
             // ignore
           }
-          if (created?.id) setAppSettingsId(created.id);
+          if (created?.id) setField("app_settings_id", created.id);
         }}
       />
     </>

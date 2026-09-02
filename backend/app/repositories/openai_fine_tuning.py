@@ -41,7 +41,7 @@ class FineTuningRepository(DbRepository[FineTuningJobModel]):
                 bytes=bytes,
                 )
         self.db.add(file_record)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(file_record)
         logger.info(f"Created file record for OpenAI file {openai_file_id}")
         return file_record
@@ -94,7 +94,7 @@ class FineTuningRepository(DbRepository[FineTuningJobModel]):
                 last_synced_at=utc_now()
                 )
         self.db.add(job_record)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(job_record)
         logger.info(f"Created job record for OpenAI job {openai_job_id}")
         return job_record
@@ -153,7 +153,7 @@ class FineTuningRepository(DbRepository[FineTuningJobModel]):
         if error_code:
             job.error_code = error_code
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(job)
         logger.info(f"Updated job {id} status to {status}")
         return job
@@ -228,4 +228,4 @@ class FineTuningRepository(DbRepository[FineTuningJobModel]):
                 .values(is_deleted=True)
                 .execution_options(synchronize_session="fetch")  # keep session in sync
                 )
-        await self.db.commit()
+        await self.db.flush()

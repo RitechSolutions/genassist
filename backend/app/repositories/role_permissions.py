@@ -30,8 +30,6 @@ class RolePermissionsRepository(DbRepository[RolePermissionModel]):
         )
         self.db.add(rp)
         await self.db.flush()
-
-        await self.db.commit()
         await self.db.refresh(rp)
         return rp
 
@@ -52,7 +50,7 @@ class RolePermissionsRepository(DbRepository[RolePermissionModel]):
             rp.permission_id = data.permission_id
 
         self.db.add(rp)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(rp)
         return rp
 

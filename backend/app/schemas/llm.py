@@ -2,8 +2,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from app.core.config import llm_prompt_cache_capabilities
 from app.schemas.common import ConnectionStatus
 
 
@@ -42,6 +43,12 @@ class LlmProviderCreate(LlmProviderBase):
 
 class LlmProviderRead(LlmProviderBase):
     id: UUID
+
+    @computed_field
+    @property
+    def prompt_caching_mode(self) -> str:
+        """Backend-derived caching capability ("explicit" | "automatic" | "none")"""
+        return llm_prompt_cache_capabilities.prompt_caching_mode(self.llm_model_provider, self.llm_model)
 
 
 class LlmProviderUpdate(LlmProviderBase):

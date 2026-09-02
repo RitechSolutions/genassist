@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { subDays } from "date-fns";
-import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
+import { toExactActivityParams, toUtcBucketDateParams } from "@/helpers/dateRange";
 import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import {
@@ -25,6 +25,11 @@ import {
 import { AgentPerformancePageSkeleton } from "../components/skeletons";
 import { cn } from "@/helpers/utils";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
+import {
+  aggregateAgentRows,
+  toConversationCountsByAgent,
+  type AgentAggregated,
+} from "../helpers/agentRows";
 import { usePersistedDateRange, COMPARE_DATE_RANGE_STORAGE_KEY } from "@/hooks/usePersistedDateRange";
 import {
   fetchAgentStatsSummary,
@@ -49,22 +54,6 @@ function getResponseTimeColor(ms: number): string {
 function formatResponseTime(ms: number | null): string {
   if (ms == null) return "—";
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)}s`;
-}
-
-interface AgentAggregated {
-  id: string;
-  agent_id: string;
-  unique_conversations: number;
-  finalized_conversations: number;
-  in_progress_conversations: number;
-  execution_count: number;
-  success_count: number;
-  error_count: number;
-  avg_response_ms: number | null;
-  total_nodes_executed: number;
-  rag_used_count: number;
-  thumbs_up_count: number;
-  thumbs_down_count: number;
 }
 
 const AgentPerformancePage = () => {
@@ -99,23 +88,28 @@ const AgentPerformancePage = () => {
   const [nodeBreakdown, setNodeBreakdown] = useState<NodeTypeBreakdownItem[]>([]);
   const [escalationNode, setEscalationNode] = useState<string>("");
 
+  const dataRequestId = useRef(0);
+  const breakdownRequestId = useRef(0);
+
   const loadData = async (
     range: DateRange | undefined,
     filters: { agent_id?: string; group_id?: string },
     compareRange: DateRange | undefined,
   ) => {
+    // The picker can fire again before the last request finishes
+    const request = ++dataRequestId.current;
     setLoading(true);
     setError(null);
     try {
-      const { from_date, to_date } = toExpandedUTCDateRange(range);
       const params = {
-        from_date,
-        to_date,
+        ...toUtcBucketDateParams(range),
+        ...toExactActivityParams(range),
         ...filters,
       };
-      const compareParams = compareRange?.from && compareRange?.to
+      const compareParams = compareRange?.from
         ? {
-            ...toExpandedUTCDateRange(compareRange),
+            ...toUtcBucketDateParams(compareRange),
+            ...toExactActivityParams(compareRange),
             ...filters,
           }
         : undefined;
@@ -125,34 +119,49 @@ const AgentPerformancePage = () => {
         compareParams ? fetchAgentStatsSummary(compareParams) : Promise.resolve(null),
         fetchAgentDailyStats(params),
       ]);
+      if (request !== dataRequestId.current) return;
       setSummary(currentData);
       setPreviousSummary(previousData);
       setItems(dailyData?.items ?? []);
     } catch {
+      if (request !== dataRequestId.current) return;
       setError("Failed to load analytics data.");
     } finally {
-      setLoading(false);
+      if (request === dataRequestId.current) setLoading(false);
     }
   };
+
+  const fromTime = dateRange?.from?.getTime();
+  const toTime = dateRange?.to?.getTime();
+  const compareFromTime = compareDateRange?.from?.getTime();
+  const compareToTime = compareDateRange?.to?.getTime();
 
   useEffect(() => {
     loadData(dateRange, filterParams, compareDateRange);
 
     if (agentFilter !== "all") {
+      const request = ++breakdownRequestId.current;
       setEscalationNode(localStorage.getItem(LS_KEY(agentFilter)) ?? "");
-      fetchAgentNodeBreakdown(agentFilter, toExpandedUTCDateRange(dateRange))
-        .then((data) => setNodeBreakdown(data?.items ?? []))
-        .catch(() => setNodeBreakdown([]));
+      fetchAgentNodeBreakdown(agentFilter, toUtcBucketDateParams(dateRange))
+        .then((data) => {
+          if (request === breakdownRequestId.current) setNodeBreakdown(data?.items ?? []);
+        })
+        .catch(() => {
+          if (request === breakdownRequestId.current) setNodeBreakdown([]);
+        });
     } else {
+      breakdownRequestId.current++;
       setEscalationNode("");
       setNodeBreakdown([]);
     }
   }, [
-    dateRange,
+    fromTime,
+    toTime,
     agentFilter,
     filterParams.agent_id,
     filterParams.group_id,
-    compareDateRange,
+    compareFromTime,
+    compareToTime,
   ]);
 
   const handleEscalationNodeChange = (value: string) => {
@@ -185,73 +194,23 @@ const AgentPerformancePage = () => {
       : null;
   const containmentRate = escalationRate !== null ? 1 - escalationRate : null;
 
-  const conversationStatusByAgent = useMemo(() => {
-    const map = new Map<string, { unique_conversations: number; finalized_conversations: number; in_progress_conversations: number }>();
-    for (const row of summary?.conversation_status_by_agent ?? []) {
-      map.set(row.agent_id, {
-        unique_conversations: row.unique_conversations,
-        finalized_conversations: row.finalized_conversations,
-        in_progress_conversations: row.in_progress_conversations,
-      });
-    }
-    return map;
-  }, [summary?.conversation_status_by_agent]);
+  const conversationStatusByAgent = useMemo(
+    () => toConversationCountsByAgent(summary?.conversation_status_by_agent),
+    [summary?.conversation_status_by_agent],
+  );
 
-  // When all agents shown: aggregate daily rows into one row per agent
-  const aggregatedItems = useMemo<AgentAggregated[]>(() => {
-    const map = new Map<string, AgentAggregated & { _totalMs: number; _msCount: number }>();
-    for (const item of items) {
-      const existing = map.get(item.agent_id);
-      if (existing) {
-        existing.execution_count += item.execution_count;
-        existing.success_count += item.success_count;
-        existing.error_count += item.error_count;
-        existing.total_nodes_executed += item.total_nodes_executed;
-        existing.rag_used_count += item.rag_used_count;
-        existing.thumbs_up_count += item.thumbs_up_count;
-        existing.thumbs_down_count += item.thumbs_down_count;
-        if (item.avg_response_ms != null) {
-          existing._totalMs += item.avg_response_ms * item.execution_count;
-          existing._msCount += item.execution_count;
-        }
-      } else {
-        map.set(item.agent_id, {
-          id: item.agent_id,
-          agent_id: item.agent_id,
-          unique_conversations: item.unique_conversations,
-          finalized_conversations: item.finalized_conversations,
-          in_progress_conversations: item.in_progress_conversations,
-          execution_count: item.execution_count,
-          success_count: item.success_count,
-          error_count: item.error_count,
-          avg_response_ms: item.avg_response_ms,
-          total_nodes_executed: item.total_nodes_executed,
-          rag_used_count: item.rag_used_count,
-          thumbs_up_count: item.thumbs_up_count,
-          thumbs_down_count: item.thumbs_down_count,
-          _totalMs: item.avg_response_ms != null ? item.avg_response_ms * item.execution_count : 0,
-          _msCount: item.avg_response_ms != null ? item.execution_count : 0,
-        });
-      }
-    }
-    return Array.from(map.values()).map((a) => {
-      const conv = conversationStatusByAgent.get(a.agent_id);
-      return {
-        ...a,
-        unique_conversations: conv?.unique_conversations ?? a.unique_conversations,
-        finalized_conversations: conv?.finalized_conversations ?? a.finalized_conversations,
-        in_progress_conversations: conv?.in_progress_conversations ?? a.in_progress_conversations,
-        avg_response_ms: a._msCount > 0 ? a._totalMs / a._msCount : null,
-      };
-    });
-  }, [items, conversationStatusByAgent]);
+  // When all agents shown
+  const aggregatedItems = useMemo(
+    () => aggregateAgentRows(items, conversationStatusByAgent),
+    [items, conversationStatusByAgent],
+  );
 
   const statsColumns = useMemo(() => {
     const statCols: Column<AgentAggregated>[] = [
       {
         header: "Conversations",
         key: "unique_conversations",
-        description: "Unique chat sessions in the period.",
+        description: "Unique chat sessions with agent activity in the selected period.",
         cell: (item: AgentAggregated) => (
           <div className="flex flex-col gap-0.5">
             <span className="font-medium">{item.unique_conversations.toLocaleString()}</span>
@@ -348,7 +307,8 @@ const AgentPerformancePage = () => {
 
   const exportParams = {
     ...filterParams,
-    ...toExpandedUTCDateRange(dateRange),
+    ...toUtcBucketDateParams(dateRange),
+    ...toExactActivityParams(dateRange),
   };
 
   const hasSummary = summary != null;
@@ -549,8 +509,8 @@ const AgentPerformancePage = () => {
           agentId={selectedItem.agent_id}
           agentName={agentNameMap[selectedItem.agent_id] ?? selectedItem.agent_id.slice(0, 8) + "…"}
           totalExecutions={selectedItem.execution_count}
-          fromDate={toExpandedUTCDateRange(dateRange).from_date}
-          toDate={toExpandedUTCDateRange(dateRange).to_date}
+          fromDate={toUtcBucketDateParams(dateRange).from_date}
+          toDate={toUtcBucketDateParams(dateRange).to_date}
         />
       )}
     </>

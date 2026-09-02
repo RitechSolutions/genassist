@@ -40,7 +40,7 @@ class WebhookRepository(DbRepository[WebhookModel]):
             webhook.id = webhook_id
 
         self.db.add(webhook)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(webhook)
         return webhook
 
@@ -88,7 +88,7 @@ class WebhookRepository(DbRepository[WebhookModel]):
             clean_value = str(value) if isinstance(value, (HttpUrl, UUID)) else value
             setattr(webhook, key, clean_value)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(webhook)
         return webhook
 
@@ -99,6 +99,6 @@ class WebhookRepository(DbRepository[WebhookModel]):
             return False
         webhook.is_deleted = 1
         # await self.db.delete(webhook) # Only Soft Delete
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(webhook)
         return True

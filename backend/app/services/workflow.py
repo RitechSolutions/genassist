@@ -43,6 +43,11 @@ class WorkflowService:
         rows = await self.repository.get_all_minimal()
         return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
 
+    async def get_visible_minimal(self) -> List[WorkflowMinimal]:
+        """What the caller may pick from, matching Agent Studio."""
+        rows = await self.repository.get_visible_minimal()
+        return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
+
     async def get_minimal_by_ids(self, ids: List[UUID]) -> List[WorkflowMinimal]:
         rows = await self.repository.get_minimal_by_ids(ids)
         return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
@@ -207,6 +212,10 @@ class WorkflowService:
         if orm_obj.agent:
             await self._invalidate_agent_caches(orm_obj.agent.id)
         await self.repository.delete(orm_obj)
+
+    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
+        """Retire every version of an agent's workflow when the agent is deleted."""
+        await self.repository.soft_delete_by_agent(agent_id, commit=commit)
 
     async def _invalidate_agent_caches(self, agent_id: UUID) -> None:
         """Best-effort bust of every agent cache that embeds the workflow.

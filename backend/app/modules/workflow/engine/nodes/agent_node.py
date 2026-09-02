@@ -6,13 +6,14 @@ import asyncio
 import datetime
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.agents.agent_runtime import run_agent_once
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
+from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.modules.workflow.llm.provider import LLMProvider
 from app.services.llm_providers import LlmProviderService
 
@@ -321,6 +322,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             child_output = child_state.get_node_output(child_id)
             if child_output is not None:
                 state.node_outputs[child_id] = child_output
+            orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
 
             completion = orchestrator.child_completion(child_state)
             message = orchestrator.child_message(child_state)
@@ -339,6 +341,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         return _delegate
 
+    def _timestamped_system_prompt(self, system_prompt: str) -> tuple[str, Optional[tuple[str, str]]]:
+        """Full prompt with the timestamp appended, plus its (stable, volatile) parts.
+        None when the raw template is volatile, so the prompt must not be cached"""
+        suffix = f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        full = system_prompt + suffix
+        if has_volatile_template_vars(self.node_data.get("systemPrompt")):
+            return full, None
+        return full, (system_prompt, suffix)
+
     @staticmethod
     def _drop_child_tools(all_tools, delegation_map, child_ids):
         """Remove delegation tools for children already delegated this turn"""
@@ -349,6 +360,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     async def _run_agent_with_delegations(
         self, *, config, provider_id, fallback_chain_id, agent_type,
         system_prompt, prompt, all_tools, delegation_map, max_iterations, chat_history,
+        stable_volatile_parts: Optional[tuple[str, str]] = None,
+        prompt_caching_enabled: bool = False,
     ) -> Dict[str, Any]:
         """Invoke the agent, resolving delegation tool calls, until it answers or pauses"""
         from app.modules.workflow.agents.sub_agents import orchestrator
@@ -361,6 +374,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         tools_used: list = []
         completed_count = 0
         current_prompt = prompt
+
+        stable_tool_names = None
+        if delegation_map:
+            first_delegation = next((i for i, t in enumerate(all_tools) if t.name in delegation_map), len(all_tools))
+            stable_tool_names = frozenset(t.name for t in all_tools[:first_delegation])
 
         resume = (state.initial_values or {}).get(SUB_AGENT_RESUME_KEY)
         if resume:
@@ -380,6 +398,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 system_prompt=system_prompt, user_prompt=current_prompt,
                 tools=active_tools, max_iterations=max_iterations,
                 chat_history=chat_history, llm_model=llm_model,
+                stable_volatile_parts=stable_volatile_parts,
+                stable_tool_names=stable_tool_names,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
             llm_model = run.llm_model
             steps.extend(run.steps)
@@ -429,6 +450,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         from app.modules.workflow.agents.sub_agents.models import (
             MAX_TASK_CHARS,
             MAX_USER_PROMPT_CHARS,
+            SUB_AGENT_DIAGNOSTICS_KEY,
             ParentResume,
             SubAgentFrame,
             SubAgentStack,
@@ -445,10 +467,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             return self._shape_delegated_message(messages.DELEGATION_DEPTH_REACHED, steps, tools_used)
 
         workflow = state.workflow
+        request_context = state.capture_resume_context()
+        # Added only when there is something to carry, so an unused-caching frame stays
+        # byte-identical to one written before this key existed
+        if state.prompt_caching_diagnostics:
+            request_context[SUB_AGENT_DIAGNOSTICS_KEY] = dict(state.prompt_caching_diagnostics)
         resume = ParentResume(
             node_outputs=_frame_snapshot(state.node_outputs),
             node_execution_status=_frame_snapshot(_without_tool_references(state.node_execution_status)),
-            request_context=_frame_snapshot(state.capture_resume_context()),
+            request_context=_frame_snapshot(request_context),
             user_prompt=current_prompt[:MAX_USER_PROMPT_CHARS],
             completed_count=completed_count,
             accumulated_steps=_frame_snapshot(steps),
@@ -477,6 +504,12 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         state.node_execution_status.update(resume.get("node_execution_status") or {})
         request_context = resume.get("request_context")
         if request_context:
+            from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_DIAGNOSTICS_KEY
+
+            request_context = dict(request_context)
+            carried = request_context.pop(SUB_AGENT_DIAGNOSTICS_KEY, None)
+            if isinstance(carried, dict):
+                state.prompt_caching_diagnostics.update(carried)
             state.restore_resume_context(request_context, drop_keys={"message"})
         steps = list(resume.get("accumulated_steps") or [])
         tools_used = list(resume.get("accumulated_tools_used") or [])
@@ -572,6 +605,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         agent_type: str = config.get("type", "ToolSelector")
         max_iterations = config.get("maxIterations", 7)
         memory_enabled = config.get("memory", False)
+        prompt_caching_enabled = config.get("promptCaching") is True
 
         # Get input data from state (this would typically come from connected nodes)
         # For now, we'll use default values
@@ -595,8 +629,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         if config.get("piiMasking") and all_tools:
             self._wrap_tools_for_pii_unmask(all_tools)
 
-        # Add current time to system prompt
-        system_prompt += f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        # Add current time to system prompt. Forwarded parts mean "the stable half may be
+        # cached", so a prompt built from per-request template variables withholds them.
+        system_prompt, stable_volatile_parts = self._timestamped_system_prompt(system_prompt)
 
         # Set input for tracking
         self.set_node_input({
@@ -630,6 +665,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     delegation_map=delegation_map,
                     max_iterations=max_iterations,
                     chat_history=chat_history,
+                    stable_volatile_parts=stable_volatile_parts,
+                    prompt_caching_enabled=prompt_caching_enabled,
                 )
 
             run = await run_agent_once(
@@ -643,6 +680,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 tools=tools,
                 max_iterations=max_iterations,
                 chat_history=chat_history,
+                stable_volatile_parts=stable_volatile_parts,
+                prompt_caching_enabled=prompt_caching_enabled,
             )
 
             # The agent caught an error internally and returned a standardized error response

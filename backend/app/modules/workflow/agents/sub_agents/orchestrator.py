@@ -118,6 +118,19 @@ def _force_child_pii(nodes: list, child_node_id: str) -> list:
     return out
 
 
+def propagate_prompt_cache_diagnostics(child_state: "WorkflowState", parent_state: "WorkflowState") -> None:
+    """Carry a child's prompt-caching diagnostics up to the parent, out of band"""
+    try:
+        merged = getattr(child_state, "prompt_caching_diagnostics", None)
+        if not isinstance(merged, dict) or not merged:
+            return
+        collected = getattr(parent_state, "prompt_caching_diagnostics", None)
+        if isinstance(collected, dict):
+            collected.update(merged)
+    except Exception:
+        logger.warning("Failed propagating sub-agent prompt-caching diagnostics", exc_info=True)
+
+
 async def run_child_turn(
     *,
     workflow: Dict[str, Any],
@@ -156,6 +169,11 @@ async def run_child_turn(
         input_data["session"] = canonical
 
     tenant = get_tenant_context()
+    from app.core.utils.db_connection_utils import (
+        commit_scope_session,
+        rollback_scope_session,
+    )
+
     factory = injector.get(RequestScopeFactory)
     async with factory.create_scope():
         set_tenant_context(tenant)
@@ -171,6 +189,13 @@ async def run_child_turn(
                 ),
                 timeout=timeout_seconds,
             )
+        except Exception:
+            # Repos only flush; roll back this child turn's writes on error.
+            await rollback_scope_session(context="orchestrator_child_turn")
+            raise
+        else:
+            # Commit this child turn's unit of work (no-op if nothing was written).
+            await commit_scope_session(context="orchestrator_child_turn")
         finally:
             try:
                 session = injector.get(AsyncSession)

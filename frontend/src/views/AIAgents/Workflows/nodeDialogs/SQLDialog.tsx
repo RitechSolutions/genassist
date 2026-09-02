@@ -25,22 +25,27 @@ import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialo
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "../components/PromptEditor/PromptEditorButton";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type SQLDialogProps = BaseNodeDialogProps<SQLNodeData, SQLNodeData>;
 
 export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [dataSourceId, setDatasourceId] = useState(data.dataSourceId || "");
-  const [mode, setMode] = useState<SQLMode | undefined>(undefined);
-  const [sqlQuery, setSqlQuery] = useState("");
-  const [providerId, setProviderId] = useState(data.providerId || "");
-  const [systemPrompt, setSystemPrompt] = useState(data.systemPrompt || "");
-  const [humanQuery, setHumanQuery] = useState("");
-  const [parameters, setParameters] = useState<Record<string, string>>(
-    data.parameters || {},
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      dataSourceId: data.dataSourceId || "",
+      mode: data.mode || undefined,
+      sqlQuery: data.sqlQuery || "",
+      providerId: data.providerId || "",
+      systemPrompt: data.systemPrompt || "",
+      humanQuery: data.humanQuery || "",
+      parameters: data.parameters || {},
+    }),
   );
+
   const [availableProviders, setAvailableProviders] = useState<LLMProvider[]>(
     [],
   );
@@ -54,15 +59,6 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setDatasourceId(data.dataSourceId || "");
-      setMode(data.mode || undefined);
-      setSqlQuery(data.sqlQuery || "");
-      setProviderId(data.providerId || "");
-      setSystemPrompt(data.systemPrompt || "");
-      setHumanQuery(data.humanQuery || "");
-      setParameters(data.parameters || {});
-
       loadProviders();
       loadDataSources();
     }
@@ -104,21 +100,6 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
     }
   };
 
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      dataSourceId,
-      mode,
-      sqlQuery,
-      providerId,
-      systemPrompt,
-      humanQuery,
-      parameters,
-    });
-    onClose();
-  };
-
   return (
     <>
       <NodeConfigPanel
@@ -136,25 +117,15 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          dataSourceId,
-          mode,
-          sqlQuery,
-          providerId,
-          systemPrompt,
-          humanQuery,
-          parameters,
-        }}
+        data={merged}
       >
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Node Name</Label>
             <RichInput
               id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={values.name}
+              onChange={(e) => setField("name", e.target.value)}
               placeholder="Enter the name of this node"
               className="w-full"
             />
@@ -163,13 +134,13 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
           <div className="space-y-2">
             <Label htmlFor="datasource">Data Source</Label>
             <Select
-              value={dataSourceId || ""}
+              value={values.dataSourceId || ""}
               onValueChange={(value) => {
                 if (value === "__create__") {
                   setIsCreateDataSourceOpen(true);
                   return;
                 }
-                setDatasourceId(value);
+                setField("dataSourceId", value);
               }}
             >
               <SelectTrigger className="w-full">
@@ -192,8 +163,8 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
           <div className="space-y-2">
             <Label htmlFor="mode">Mode</Label>
             <Select
-              value={mode || ""}
-              onValueChange={(value) => setMode(value as SQLMode)}
+              value={values.mode || ""}
+              onValueChange={(value) => setField("mode", value as SQLMode)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select mode" />
@@ -210,13 +181,13 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
             </p>
           </div>
 
-          {mode === "sqlQuery" && (
+          {values.mode === "sqlQuery" && (
             <div className="space-y-2">
               <Label htmlFor="sqlQuery">SQL Query</Label>
               <DraggableTextArea
                 id="sqlQuery"
-                value={sqlQuery}
-                onChange={(e) => setSqlQuery(e.target.value)}
+                value={values.sqlQuery}
+                onChange={(e) => setField("sqlQuery", e.target.value)}
                 placeholder="Enter or drag and drop your SQL query here"
                 className="w-full min-h-[150px] font-mono text-sm"
               />
@@ -227,18 +198,18 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
             </div>
           )}
 
-          {mode === "humanQuery" && (
+          {values.mode === "humanQuery" && (
             <>
               <div className="space-y-2">
                 <Label htmlFor="provider">LLM Provider</Label>
                 <Select
-                  value={providerId || ""}
+                  value={values.providerId || ""}
                   onValueChange={(value) => {
                     if (value === "__create__") {
                       setIsCreateProviderOpen(true);
                       return;
                     }
-                    setProviderId(value);
+                    setField("providerId", value);
                   }}
                 >
                   <SelectTrigger className="w-full">
@@ -266,16 +237,16 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                       workflowId={workflow.id}
                       nodeId={props.nodeId}
                       promptField="systemPrompt"
-                      currentValue={systemPrompt}
-                      onPromptChange={(val) => setSystemPrompt(val)}
-                      defaultProviderId={providerId}
+                      currentValue={values.systemPrompt}
+                      onPromptChange={(val) => setField("systemPrompt", val)}
+                      defaultProviderId={values.providerId}
                     />
                   )}
                 </div>
                 <DraggableTextArea
                   id="systemPrompt"
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  value={values.systemPrompt}
+                  onChange={(e) => setField("systemPrompt", e.target.value)}
                   placeholder="Enter system prompt for the SQL generator"
                   className="w-full min-h-[100px] text-sm"
                 />
@@ -288,8 +259,8 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 <Label htmlFor="humanQuery">Query in Plain English</Label>
                 <DraggableTextArea
                   id="humanQuery"
-                  value={humanQuery}
-                  onChange={(e) => setHumanQuery(e.target.value)}
+                  value={values.humanQuery}
+                  onChange={(e) => setField("humanQuery", e.target.value)}
                   placeholder="e.g., Show me all customers who made purchases last month"
                   className="w-full min-h-[100px] text-sm"
                 />
@@ -301,20 +272,20 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
             </>
           )}
 
-          {mode && (
+          {values.mode && (
             <div className="space-y-2">
               <Label htmlFor="parameters">Parameters</Label>
               <div className="space-y-2">
-                {Object.entries(parameters).map(([key, value], index) => (
+                {Object.entries(values.parameters).map(([key, value], index) => (
                   <div key={index} className="flex gap-2">
                     <DraggableInput
                       placeholder="Parameter name"
                       value={key}
                       onChange={(e) => {
-                        const newParameters = { ...parameters };
+                        const newParameters = { ...values.parameters };
                         delete newParameters[key];
                         newParameters[e.target.value] = value;
-                        setParameters(newParameters);
+                        setField("parameters", newParameters);
                       }}
                       className="flex-1"
                     />
@@ -322,8 +293,8 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                       placeholder="Parameter value"
                       value={value}
                       onChange={(e) => {
-                        setParameters({
-                          ...parameters,
+                        setField("parameters", {
+                          ...values.parameters,
                           [key]: e.target.value,
                         });
                       }}
@@ -333,9 +304,9 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const newParameters = { ...parameters };
+                        const newParameters = { ...values.parameters };
                         delete newParameters[key];
-                        setParameters(newParameters);
+                        setField("parameters", newParameters);
                       }}
                     >
                       Remove
@@ -346,8 +317,8 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setParameters({
-                      ...parameters,
+                    setField("parameters", {
+                      ...values.parameters,
                       "": "",
                     });
                   }}
@@ -369,7 +340,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
         onProviderSaved={async (provider) => {
           await loadProviders();
           if (provider?.id) {
-            setProviderId(provider.id);
+            setField("providerId", provider.id);
           }
         }}
         mode="create"
@@ -380,7 +351,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
         onDataSourceSaved={async (created) => {
           await loadDataSources();
           if (created?.id) {
-            setDatasourceId(created.id);
+            setField("dataSourceId", created.id);
           }
         }}
         mode="create"

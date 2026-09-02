@@ -20,7 +20,7 @@ from app.auth.dependencies_conversations import (
     permissions_for_conversation,
     socket_auth_conversation,
 )
-from app.auth.utils import get_current_user_id
+from app.auth.utils import get_current_auth_mode, get_current_user_id
 from app.cache.redis_cache import invalidate_cache
 from app.core.agent_security_utils import apply_agent_cors_headers
 from app.core.config.settings import settings
@@ -33,6 +33,7 @@ from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
+from app.core.utils.enums.reader_role_enum import ReaderRole
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 from app.middlewares.rate_limit_middleware import (
     get_agent_rate_limit_start,
@@ -48,6 +49,8 @@ from app.schemas.agent import AgentRead
 from app.schemas.conversation import (
     ConversationPaginatedResponse,
     ConversationRead,
+    ConversationReadMarker,
+    ConversationReadReceiptState,
     InProgressPollResponse,
 )
 from app.schemas.conversation_transcript import (
@@ -348,7 +351,11 @@ async def get(
     service: ConversationService = Injected(ConversationService),
 ):
     conversation = await service.get_conversation_by_id_full(conversation_id, conversation_filter)
-    return conversation
+    # Attach the per-reader read markers so the console/widget can backfill Seen
+    # state on load (live updates then arrive via the "read" WS event).
+    result = ConversationRead.model_validate(conversation)
+    result.read_state = await service.get_conversation_read_state(conversation_id)
+    return result
 
 
 @router.post(
@@ -544,6 +551,83 @@ async def poll_in_progress(
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
         raise
     json_response = JSONResponse(content=payload.model_dump(mode="json"))
+    agent = getattr(request.state, "agent", None)
+    agent_security_settings = agent.security_settings if agent and hasattr(agent, "security_settings") else None
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+    return json_response
+
+
+def _infer_read_receipt_role() -> str:
+    """Derive who a read receipt belongs to from the authenticated principal.
+
+    A staff member on the agent console authenticates with a real JWT
+    (``auth_mode == "token"``) so their read is a human *supervisor* read — this
+    is what flips the visitor's messages to "Seen". The embedded widget visitor
+    authenticates with a guest token or the agent API key, so their read is a
+    *customer* read. The role is never trusted from the client body.
+    """
+    if get_current_auth_mode() == "token":
+        return ReaderRole.SUPERVISOR.value
+    return ReaderRole.CUSTOMER.value
+
+
+@router.patch(
+    "/in-progress/mark-read/{conversation_id}",
+    response_model=ConversationReadReceiptState,
+    dependencies=[
+        Depends(get_agent_for_update),
+        Depends(auth_for_conversation_update),
+        Depends(permissions_for_conversation(P.Conversation.UPDATE_IN_PROGRESS)),
+    ],
+)
+@limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
+@limiter.limit(get_agent_rate_limit_update_hour, key_func=get_conversation_identifier)
+async def mark_read(
+    request: Request,
+    conversation_id: UUID,
+    marker: ConversationReadMarker,
+    service: ConversationService = Injected(ConversationService),
+    socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
+):
+    """
+    Mark the conversation read up to a message sequence for the calling party.
+
+    The reader role (customer vs supervisor) is derived from the authenticated
+    principal, never trusted from the client. Advances a monotonic per-reader
+    high-water mark (clamped to the newest message) and broadcasts a ``read``
+    event to the conversation room and the dashboard so the other party's live
+    client can render Seen receipts.
+    """
+    reader_role = _infer_read_receipt_role()
+    reader_user_id = get_current_user_id()
+
+    read_state = await service.mark_conversation_read(
+        conversation_id=conversation_id,
+        reader_role=reader_role,
+        reader_user_id=reader_user_id,
+        last_read_sequence=marker.last_read_sequence,
+    )
+
+    tenant_id = get_tenant_context()
+    payload = {
+        "conversation_id": str(conversation_id),
+        "reader_role": reader_role,
+        "reader_user_id": str(reader_user_id) if reader_user_id else None,
+        "read_state": read_state.model_dump(mode="json"),
+    }
+    for room_id in (conversation_id, SocketRoomType.DASHBOARD):
+        _ = asyncio.create_task(
+            socket_connection_manager.broadcast(
+                msg_type="read",
+                payload=payload,
+                room_id=room_id,
+                current_user_id=reader_user_id,
+                required_topic="read",
+                tenant_id=tenant_id,
+            )
+        )
+
+    json_response = JSONResponse(content=read_state.model_dump(mode="json"))
     agent = getattr(request.state, "agent", None)
     agent_security_settings = agent.security_settings if agent and hasattr(agent, "security_settings") else None
     apply_agent_cors_headers(request, json_response, agent_security_settings)

@@ -1,4 +1,4 @@
-import { FC, useState, useEffect } from "react";
+import { FC, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/button";
 import { Plus, Info } from "lucide-react";
 import { RichInput } from "@/components/richInput";
@@ -71,43 +71,179 @@ interface ParameterDialogProps {
 interface ParameterBadgesProps {
   params: Record<string, { type: string; required?: boolean }>;
   className?: string;
+  /**
+   * Clip the badges to a single row and summarise the rest as a "+N" circle.
+   * Used on canvas nodes, whose width is fixed: a long variable list would
+   * otherwise wrap into several rows and make the node very tall.
+   */
+  collapse?: boolean;
 }
+
+interface BadgeEntry {
+  name: string;
+  suggested: boolean;
+}
+
+// Matches the `gap-2` of the badge row.
+const BADGE_GAP = 8;
+// Fallback width for the "+N" circle if it can't be measured.
+const COUNTER_FALLBACK_WIDTH = 32;
+
+/**
+ * Renders as many badges as fit on the first row, followed by a "+N" circle
+ * standing for the ones left out. The fit is measured from the real layout
+ * (first paint renders every badge, hidden behind a layout effect) so the row
+ * stays full whatever the badge lengths are.
+ */
+const CollapsedParameterBadges: FC<{
+  entries: BadgeEntry[];
+  className?: string;
+}> = ({ entries, className = "" }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measuredWidthRef = useRef(0);
+  // `null` means "measuring": everything is rendered so the rows can be read.
+  const [visibleCount, setVisibleCount] = useState<number | null>(null);
+  // Bumped to force a fresh measuring pass (see the resize observer below).
+  const [measureKey, setMeasureKey] = useState(0);
+
+  // The parent keys this component on the variable list, so a changed list
+  // remounts it and measuring starts over.
+  useLayoutEffect(() => {
+    if (visibleCount !== null) return;
+    const container = containerRef.current;
+    if (!container || container.clientWidth === 0) return;
+
+    const children = Array.from(container.children) as HTMLElement[];
+    const badges = children.slice(0, entries.length);
+    if (badges.length === 0) return;
+    measuredWidthRef.current = container.clientWidth;
+
+    const firstRowTop = badges[0].offsetTop;
+    let count = badges.filter((badge) => badge.offsetTop === firstRowTop).length;
+
+    if (count < badges.length) {
+      // Something will be hidden, so the row must also fit the "+N" circle
+      // (rendered last during the measuring pass).
+      const counter = children[entries.length];
+      const counterWidth = counter?.offsetWidth || COUNTER_FALLBACK_WIDTH;
+      while (count > 1) {
+        const last = badges[count - 1];
+        const rowEnd = last.offsetLeft + last.offsetWidth;
+        if (rowEnd + BADGE_GAP + counterWidth <= container.clientWidth) break;
+        count -= 1;
+      }
+    }
+
+    setVisibleCount(count);
+  }, [visibleCount, entries.length, measureKey]);
+
+  // The node width is fixed today, but re-measure if it ever changes (or if the
+  // node was laid out while off-screen, i.e. at zero width).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const width = containerRef.current?.clientWidth ?? 0;
+      if (width !== 0 && width !== measuredWidthRef.current) {
+        setVisibleCount(null);
+        setMeasureKey((key) => key + 1);
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const isMeasuring = visibleCount === null;
+  const visible = isMeasuring ? entries : entries.slice(0, visibleCount);
+  const hidden = entries.slice(visible.length);
+  // During the measuring pass the counter is only there to be measured, so its
+  // label just needs the right order of magnitude.
+  const hiddenCount = isMeasuring ? entries.length - 1 : hidden.length;
+
+  return (
+    <div
+      ref={containerRef}
+      className={`flex gap-2 overflow-hidden ${
+        isMeasuring ? "flex-wrap" : "flex-nowrap"
+      } ${className}`}
+    >
+      {visible.map((entry) => (
+        <Badge
+          key={entry.name}
+          variant="secondary"
+          className={`shrink-0 cursor-pointer hover:bg-secondary/80 ${
+            entry.suggested ? "font-light" : ""
+          }`}
+        >
+          {entry.name}
+        </Badge>
+      ))}
+      {hiddenCount > 0 && (
+        <Badge
+          variant="secondary"
+          className={`shrink-0 h-[22px] min-w-[22px] justify-center px-1.5 ${
+            isMeasuring ? "invisible" : ""
+          }`}
+          title={hidden.map((entry) => entry.name).join("\n")}
+        >
+          +{hiddenCount}
+        </Badge>
+      )}
+    </div>
+  );
+};
 
 export const ParameterBadges: FC<ParameterBadgesProps> = ({
   params,
   className = "",
+  collapse = false,
 }) => {
   const chatInputSchema = useChatInputSchema();
   const suggestedParams = chatInputSchema || {};
-  return (
-    <div className={`flex flex-wrap gap-2 ${className}`}>
-      {Object.entries(params ?? {})
-        .filter(([name, param]) => !suggestedParams[name])
-        .map(([name, param]) => (
-          <Badge
-            key={name}
-            variant="secondary"
-            className="cursor-pointer hover:bg-secondary/80"
-          >
-            {name}
-          </Badge>
-        ))}
-      {Object.entries(params ?? {})
-        .filter(([name, param]) => suggestedParams[name])
-        .map(([name, param]) => (
-          <Badge
-            key={name}
-            variant="secondary"
-            className="cursor-pointer hover:bg-secondary/80 font-light"
-          >
-            {name}
-          </Badge>
-        ))}
-      {Object.keys(params || {}).length === 0 && (
+  const names = Object.keys(params ?? {});
+  // Suggested params keep their place at the end of the list.
+  const entries: BadgeEntry[] = [
+    ...names
+      .filter((name) => !suggestedParams[name])
+      .map((name) => ({ name, suggested: false })),
+    ...names
+      .filter((name) => suggestedParams[name])
+      .map((name) => ({ name, suggested: true })),
+  ];
+
+  if (entries.length === 0) {
+    return (
+      <div className={`flex flex-wrap gap-2 ${className}`}>
         <span className="text-sm text-muted-foreground italic">
           No variables required
         </span>
-      )}
+      </div>
+    );
+  }
+
+  if (collapse) {
+    return (
+      <CollapsedParameterBadges
+        key={entries.map((entry) => entry.name).join("|")}
+        entries={entries}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      {entries.map((entry) => (
+        <Badge
+          key={entry.name}
+          variant="secondary"
+          className={`cursor-pointer hover:bg-secondary/80 ${
+            entry.suggested ? "font-light" : ""
+          }`}
+        >
+          {entry.name}
+        </Badge>
+      ))}
     </div>
   );
 };

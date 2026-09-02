@@ -33,5 +33,5 @@ class LlmUsageControlRepository(DbRepository[LlmUsageControlModel]):
                 capture_started_at=func.coalesce(LlmUsageControlModel.capture_started_at, func.now()),
             )
         )
-        await self.db.commit()
+        await self.db.flush()
         return await self.get_singleton()

@@ -8,16 +8,17 @@ import {
 import { Button } from '@/components/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
 import {
-  Database,
   Pencil,
   AlertCircle,
   Plus,
   FileText,
   Trash2,
   RefreshCw,
+  BookText,
 } from 'lucide-react';
 import { SearchInput } from '@/components/SearchInput';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ListEmptyState } from '@/components/ListEmptyState';
 import { PageListSkeleton } from '@/components/skeletons';
 import { KBListItem, FileItem } from '../types/knowledgeBase';
 
@@ -140,6 +141,8 @@ const KnowledgeBaseManager: React.FC = () => {
     return matchesQuery && (item.type.toLowerCase() === typeFilter || typeFilter === 'all');
   });
 
+  const isFiltering = searchQuery.trim() !== '' || typeFilter !== 'all';
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -187,13 +190,25 @@ const KnowledgeBaseManager: React.FC = () => {
         {loading ? (
           <PageListSkeleton variant="rich" bordered={false} />
         ) : filteredItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-            <Database className="h-12 w-12 text-muted-foreground" />
-            <h3 className="font-medium text-lg">No knowledge base items found</h3>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              {searchQuery ? 'Try adjusting your search query or ' : ''}add your first knowledge item to start building your knowledge base.
-            </p>
-          </div>
+          <ListEmptyState
+            icon={<BookText className="h-12 w-12 text-muted-foreground" />}
+            title={isFiltering ? 'No matching knowledge items' : 'No knowledge items yet'}
+            description={
+              isFiltering
+                ? 'No knowledge items match your search or filter. Try a different query or type.'
+                : 'The knowledge base powers retrieval for your agents. Add your first knowledge item to get started.'
+            }
+            action={
+              isFiltering ? undefined : (
+                <Button
+                  className="rounded-full"
+                  onClick={() => navigate('/knowledge-base/new')}
+                >
+                  Add your first knowledge item
+                </Button>
+              )
+            }
+          />
         ) : (
           <div className="divide-y divide-border">
             {filteredItems.map((item) => (

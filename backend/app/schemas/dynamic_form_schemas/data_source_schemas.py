@@ -261,12 +261,31 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 placeholder="yourcompany.zendesk.com",
             ),
             FieldSchema(
+                name="auth_method",
+                type="select",
+                label="Authentication Method",
+                required=True,
+                default="oauth_client_credentials",
+                options=[
+                    {
+                        "value": "oauth_client_credentials",
+                        "label": "OAuth Client Credentials (Recommended)",
+                    },
+                    {"value": "api_token", "label": "API Token (Legacy)"},
+                ],
+                description=(
+                    "Zendesk is removing API tokens on 2027-04-30. Use OAuth client "
+                    "credentials for new connections."
+                ),
+            ),
+            FieldSchema(
                 name="email",
                 type="text",
                 label="Email",
                 required=True,
                 description="Zendesk account email address",
                 placeholder="user@example.com",
+                conditional=ConditionalField(field="auth_method", value="api_token"),
             ),
             FieldSchema(
                 name="api_token",
@@ -274,6 +293,27 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 label="API Token",
                 required=True,
                 description="Zendesk API token for authentication",
+                conditional=ConditionalField(field="auth_method", value="api_token"),
+            ),
+            FieldSchema(
+                name="client_id",
+                type="text",
+                label="Client ID",
+                required=True,
+                description="OAuth client (unique identifier) from Zendesk Admin Center",
+                conditional=ConditionalField(
+                    field="auth_method", value="oauth_client_credentials"
+                ),
+            ),
+            FieldSchema(
+                name="client_secret",
+                type="password",
+                label="Client Secret",
+                required=True,
+                description="OAuth client secret (client-credentials flow)",
+                conditional=ConditionalField(
+                    field="auth_method", value="oauth_client_credentials"
+                ),
             ),
             FieldSchema(
                 name="locale",

@@ -27,6 +27,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _validate_activity_bounds(
+    from_date: date | None,
+    to_date: date | None,
+    activity_from_datetime: datetime | None,
+    activity_to_datetime: datetime | None,
+    compare: bool = False,
+) -> None:
+    if activity_from_datetime is None and activity_to_datetime is None:
+        return
+    if compare:
+        raise HTTPException(
+            status_code=422,
+            detail="compare cannot be combined with exact activity boundaries",
+        )
+    if activity_from_datetime is None or activity_to_datetime is None:
+        raise HTTPException(
+            status_code=422,
+            detail="activity_from_datetime and activity_to_datetime must be supplied together",
+        )
+    if activity_from_datetime.utcoffset() is None or activity_to_datetime.utcoffset() is None:
+        raise HTTPException(
+            status_code=422,
+            detail="activity_from_datetime and activity_to_datetime must include a timezone offset",
+        )
+    if activity_from_datetime >= activity_to_datetime:
+        raise HTTPException(
+            status_code=422,
+            detail="activity_from_datetime must be earlier than activity_to_datetime",
+        )
+    if from_date is None or to_date is None:
+        raise HTTPException(
+            status_code=422,
+            detail="exact activity boundaries require both from_date and to_date",
+        )
+
+
 @router.get(
     "/agents",
     response_model=AgentDailyStatsListResponse,
@@ -106,14 +142,29 @@ async def get_agent_stats_summary(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     compare: bool = Query(default=False),
+    activity_from_datetime: datetime | None = Query(
+        default=None,
+        description="Inclusive start of the exact conversation-activity interval",
+    ),
+    activity_to_datetime: datetime | None = Query(
+        default=None,
+        description="Exclusive end of the exact conversation-activity interval",
+    ),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
 ):
+    _validate_activity_bounds(from_date, to_date, activity_from_datetime, activity_to_datetime, compare)
+
     if compare:
         return await service.get_agent_stats_summary_with_comparison(
             agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
         )
     return await service.get_agent_stats_summary(
-        agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
+        agent_id=agent_id,
+        group_id=group_id,
+        from_date=from_date,
+        to_date=to_date,
+        activity_from_datetime=activity_from_datetime,
+        activity_to_datetime=activity_to_datetime,
     )
 
 
@@ -131,14 +182,32 @@ async def export_agent_performance(
     group_id: UUID | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
+    activity_from_datetime: datetime | None = Query(
+        default=None,
+        description="Inclusive start of the exact conversation-activity interval",
+    ),
+    activity_to_datetime: datetime | None = Query(
+        default=None,
+        description="Exclusive end of the exact conversation-activity interval",
+    ),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
     agent_repo: AgentRepository = Injected(AgentRepository),
 ) -> StreamingResponse:
     if fmt not in VALID_FORMATS:
         raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(VALID_FORMATS))}")
 
+    _validate_activity_bounds(from_date, to_date, activity_from_datetime, activity_to_datetime)
+
     try:
-        summary, daily = await _fetch_agent_data(service, agent_id, group_id, from_date, to_date)
+        summary, daily = await _fetch_agent_data(
+            service,
+            agent_id,
+            group_id,
+            from_date,
+            to_date,
+            activity_from_datetime,
+            activity_to_datetime,
+        )
         agent_names = await get_agent_names(agent_repo)
 
         node_breakdown = None
@@ -386,10 +455,17 @@ async def _fetch_agent_data(
     group_id: UUID | None,
     from_date: date | None,
     to_date: date | None,
+    activity_from_datetime: datetime | None = None,
+    activity_to_datetime: datetime | None = None,
 ) -> tuple[AgentStatsSummaryResponse, AgentDailyStatsListResponse]:
     # Sequential — same SQLAlchemy session cannot handle concurrent operations
     summary = await service.get_agent_stats_summary(
-        agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date
+        agent_id=agent_id,
+        group_id=group_id,
+        from_date=from_date,
+        to_date=to_date,
+        activity_from_datetime=activity_from_datetime,
+        activity_to_datetime=activity_to_datetime,
     )
     daily = await service.get_agent_daily_stats(
         agent_id=agent_id, group_id=group_id, from_date=from_date, to_date=to_date

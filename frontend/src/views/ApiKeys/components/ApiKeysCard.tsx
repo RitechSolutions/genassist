@@ -3,7 +3,8 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { LIST_PAGE_SIZE } from '@/constants/pagination';
 import { Button } from '@/components/button';
 import { Badge } from '@/components/badge';
-import { Pencil, RefreshCw, Trash } from 'lucide-react';
+import { KeyRound, Pencil, RefreshCw, Trash } from 'lucide-react';
+import { ListEmptyState } from '@/components/ListEmptyState';
 import { ApiKeyExpiryLines } from '@/components/api-keys/ApiKeyExpiryLines';
 import { RotateApiKeyDialog, type RotateApiKeyTarget } from '@/components/api-keys/RotateApiKeyDialog';
 import { ApiKey } from '@/interfaces/api-key.interface';
@@ -18,6 +19,7 @@ import { TooltipButton } from '@/components/tooltip-button';
 interface ApiKeysCardProps {
   searchQuery: string;
   refreshKey?: number;
+  onCreateApiKey?: () => void;
   onEditApiKey: (apiKey: ApiKey) => void;
   updatedApiKey?: ApiKey | null;
   onApiKeyRotated?: (apiKey: ApiKey) => void;
@@ -27,6 +29,7 @@ interface ApiKeysCardProps {
 export function ApiKeysCard({
   searchQuery,
   refreshKey = 0,
+  onCreateApiKey,
   onEditApiKey,
   updatedApiKey = null,
   onApiKeyRotated,
@@ -150,10 +153,27 @@ export function ApiKeysCard({
         columns={columns}
         loading={loading}
         error={error}
+        onRetry={fetchData}
         searchQuery={searchQuery}
         pageSize={LIST_PAGE_SIZE}
-        emptyMessage="No API keys found"
-        notFoundMessage="No API keys found matching your search"
+        emptyState={
+          <ListEmptyState
+            icon={<KeyRound className="h-12 w-12 text-muted-foreground" />}
+            title={searchQuery ? "No matching API keys" : "No API keys yet"}
+            description={
+              searchQuery
+                ? "No API keys match your search. Try a different name."
+                : "API keys let external services authenticate with the platform. Create one to grant programmatic access."
+            }
+            action={
+              !searchQuery && onCreateApiKey ? (
+                <Button className="rounded-full" onClick={onCreateApiKey}>
+                  Generate your first API key
+                </Button>
+              ) : undefined
+            }
+          />
+        }
       />
       <RotateApiKeyDialog
         open={rotateTarget !== null}

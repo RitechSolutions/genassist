@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Save, HelpCircle, Plus, Trash2 } from "lucide-react";
@@ -21,28 +21,49 @@ import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { useNodes } from "reactflow";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type SetStateDialogProps = BaseNodeDialogProps<
   SetStateNodeData,
   SetStateNodeData
 >;
 
-interface StateEntry {
-  key: string;
-  value: string;
-}
-
 export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { onClose, data } = props;
   const nodes = useNodes();
 
-  const [name, setName] = useState(data.name);
-  const [states, setStates] = useState<StateEntry[]>([]);
+  const { values, setValues, setField, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => ({
+        name: data.name,
+        // Migrate legacy single state to array format, or use existing states
+        states:
+          data.states && data.states.length > 0
+            ? [...data.states]
+            : data.stateKey && data.stateValue
+              ? // Migrate legacy format
+                [{ key: data.stateKey, value: data.stateValue }]
+              : [{ key: "", value: "" }],
+      }),
+      (v) => {
+        // Filter out empty entries
+        const validStates = v.states.filter((s) => s.key.trim() !== "");
+        const updatedData = {
+          name: v.name,
+          states: validStates,
+          // Clear legacy fields
+          stateKey: undefined,
+          stateValue: undefined,
+        };
+        return updatedData;
+      },
+    );
 
   // Get all stateful parameters from chat input nodes
   const statefulParams = useMemo(() => {
     const params: string[] = [];
-    
+
     nodes.forEach((node) => {
       if (node.type === "chatInputNode") {
         const nodeData = node.data as ChatInputNodeData;
@@ -56,52 +77,30 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
         }
       }
     });
-    
+
     return params;
   }, [nodes]); // Re-run when nodes change
 
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name);
-      // Migrate legacy single state to array format, or use existing states
-      if (data.states && data.states.length > 0) {
-        setStates([...data.states]);
-      } else if (data.stateKey && data.stateValue) {
-        // Migrate legacy format
-        setStates([{ key: data.stateKey, value: data.stateValue }]);
-      } else {
-        setStates([{ key: "", value: "" }]);
-      }
-    }
-  }, [isOpen, data]);
-
   const addStateEntry = () => {
-    setStates([...states, { key: "", value: "" }]);
+    setValues((prev) => ({
+      ...prev,
+      states: [...prev.states, { key: "", value: "" }],
+    }));
   };
 
   const removeStateEntry = (index: number) => {
-    setStates(states.filter((_, i) => i !== index));
+    setValues((prev) => ({
+      ...prev,
+      states: prev.states.filter((_, i) => i !== index),
+    }));
   };
 
   const updateStateEntry = (index: number, field: "key" | "value", value: string) => {
-    const updated = [...states];
-    updated[index] = { ...updated[index], [field]: value };
-    setStates(updated);
-  };
-
-  const handleSave = () => {
-    // Filter out empty entries
-    const validStates = states.filter((s) => s.key.trim() !== "");
-    const updatedData = {
-      ...data,
-      name,
-      states: validStates,
-      // Clear legacy fields
-      stateKey: undefined,
-      stateValue: undefined,
-    };
-    onUpdate(updatedData);
-    onClose();
+    setValues((prev) => {
+      const updated = [...prev.states];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, states: updated };
+    });
   };
 
   return (
@@ -113,7 +112,10 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
           </Button>
           <Button
             onClick={handleSave}
-            disabled={states.length === 0 || states.every((s) => !s.key.trim())}
+            disabled={
+              values.states.length === 0 ||
+              values.states.every((s) => !s.key.trim())
+            }
           >
             <Save className="h-4 w-4 mr-2" />
             Save Changes
@@ -121,18 +123,14 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        states,
-      }}
+      data={merged}
     >
       <div className="space-y-4">
         <div>
           <Label>Node Name</Label>
           <RichInput
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
@@ -182,14 +180,14 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
           </Button>
         </div>
 
-        {states.length === 0 && (
+        {values.states.length === 0 && (
           <div className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-md">
             No state entries. Click "Add State" to add one.
           </div>
         )}
 
         <div className="space-y-4">
-          {states.map((state, index) => (
+          {values.states.map((state, index) => (
             <div
               key={index}
               className="p-4 border border-border rounded-md space-y-3 bg-muted"
@@ -198,7 +196,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
                 <Label className="text-sm font-medium">
                   State Entry {index + 1}
                 </Label>
-                {states.length > 1 && (
+                {values.states.length > 1 && (
                   <Button
                     type="button"
                     variant="ghost"

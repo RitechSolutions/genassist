@@ -5,8 +5,9 @@ Custom tenant-aware scope for dependency injection
 from injector import ScopeDecorator
 import logging
 import threading
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Dict, Iterator, Type, TypeVar
 
 from injector import Provider, Scope, InstanceProvider
 
@@ -66,13 +67,48 @@ def set_tenant_context(tenant_id: str) -> None:
 
 
 def get_tenant_context() -> str:
-    """Get the current tenant ID from context"""
+    """Get the current tenant ID from context.
+
+    Lenient accessor: falls back to ``"master"`` when no context is set. Use for
+    non-isolation-critical purposes (cache-key prefixes, storage paths, logging).
+    For paths that route a database session, use :func:`require_tenant_context`
+    instead so a missing context fails closed rather than silently hitting master.
+    """
     try:
         tenant_id = _tenant_id_ctx.get()
         # Return None if tenant_id is None (explicitly set)
         return tenant_id if tenant_id is not None else "master"
     except LookupError:
         return "master"
+
+
+class TenantContextError(RuntimeError):
+    """Raised when a tenant-scoped operation runs without an explicit tenant context."""
+
+
+def require_tenant_context() -> str:
+    """Strict, fail-closed accessor for isolation-critical paths (DB routing).
+
+    Unlike :func:`get_tenant_context`, this raises when no tenant context has been
+    explicitly set, instead of silently defaulting to the master database. Callers
+    that genuinely intend the master DB must opt in explicitly via
+    ``set_tenant_context("master")`` or ``clear_tenant_context()`` (both of which
+    set the context to ``"master"``, so they satisfy this check).
+    """
+    try:
+        tenant_id = _tenant_id_ctx.get()
+    except LookupError:
+        raise TenantContextError(
+            "No tenant context set for a tenant-scoped DB operation. Callers that "
+            'intend the master database must set it explicitly (set_tenant_context("master") '
+            "or clear_tenant_context())."
+        )
+    if tenant_id is None:
+        raise TenantContextError(
+            "Tenant context is None for a tenant-scoped DB operation; expected an "
+            'explicit tenant slug or "master".'
+        )
+    return tenant_id
 
 
 def clear_tenant_context() -> None:
@@ -82,4 +118,30 @@ def clear_tenant_context() -> None:
         _tenant_id_ctx.set("master")
     except LookupError:
         pass
+
+
+# ───────────── background-task scope ─────────────
+# Marks the current execution as a background (Celery) task so DB engine
+# selection can use a NullPool engine. Context-local (ContextVar) rather than a
+# mutable global on ``settings`` so concurrent tasks in one worker can't race.
+_background_task_ctx: ContextVar[bool] = ContextVar("background_task", default=False)
+
+
+def is_background_task() -> bool:
+    """Return whether the current context is running inside a background task."""
+    return _background_task_ctx.get()
+
+
+@contextmanager
+def background_task_context() -> Iterator[None]:
+    """Mark the enclosed block as a background task, restoring the prior value on exit.
+
+    Replaces the previous ``settings.BACKGROUND_TASK`` global mutation, which was
+    shared mutable state and raced under concurrency.
+    """
+    token = _background_task_ctx.set(True)
+    try:
+        yield
+    finally:
+        _background_task_ctx.reset(token)
 

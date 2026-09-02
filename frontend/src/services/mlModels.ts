@@ -1,4 +1,4 @@
-import { apiRequest, getApiUrl } from "@/config/api";
+import { apiRequest, getApiUrl, API_PREPROCESSING_TIMEOUT_MS } from "@/config/api";
 import { MLModel, MLModelFormData } from "@/interfaces/ml-model.interface";
 
 const BASE = "ml-models";
@@ -133,6 +133,7 @@ export const analyzeCSV = async (
       "POST",
       `${BASE}/analyze-csv`,
       body,
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
     );
     if (!response) throw new Error("Failed to analyze CSV");
     return response;
@@ -140,4 +141,25 @@ export const analyzeCSV = async (
     console.error("Error analyzing CSV:", error);
     throw error;
   }
+};
+
+/** Runs data profiling on a CSV file and downloads the resulting HTML report. */
+export const profileCSV = async (
+  fileUrl: string,
+  downloadFilename: string,
+): Promise<void> => {
+  const blob = await apiRequest<Blob>(
+    "POST",
+    `${BASE}/profile-csv`,
+    { file_url: fileUrl },
+    { timeout: API_PREPROCESSING_TIMEOUT_MS, responseType: "blob" },
+  );
+  if (!blob) throw new Error("Failed to generate data profile");
+
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = downloadFilename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
 };

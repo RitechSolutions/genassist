@@ -157,7 +157,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
 
             # ---- enumerate files ----
             try:
-                result = sp_client.list_files()
+                result = await sp_client.list_files()
             except Exception as e:
                 logger.error(f"Failed to list files: {e}")
                 errors.append(f"{kb.id} file listing failed: {str(e)}")
@@ -190,7 +190,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             # ---- add new files ----
             for file_info in new_files:
                 try:
-                    file_content = sp_client.get_file_content(
+                    file_content = await sp_client.get_file_content(
                         file_info["download_url"])
                     if len(file_content) == 0:
                         logger.warning(

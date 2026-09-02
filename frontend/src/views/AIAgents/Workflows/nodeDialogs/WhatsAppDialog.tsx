@@ -18,6 +18,7 @@ import { AppSetting } from "@/interfaces/app-setting.interface";
 import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { DraggableInput } from "../components/custom/DraggableInput";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type WhatsAppDialogProps = BaseNodeDialogProps<
   WhatsappNodeData,
@@ -25,24 +26,30 @@ type WhatsAppDialogProps = BaseNodeDialogProps<
 >;
 
 export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
-  const [name, setName] = useState(data.name);
-  const [textMsg, setMessage] = useState(data.message || "");
-  const [toNumber, setToNumber] = useState(data.recipient_number || "");
-  const [appSettingsId, setAppSettingsId] = useState(
-    data.app_settings_id || ""
+  const { isOpen, onClose, data } = props;
+
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name,
+      message: data.message || "",
+      recipient_number: data.recipient_number || "",
+      app_settings_id: data.app_settings_id || "",
+    }),
+    (v) => ({
+      name: v.name,
+      message: v.message,
+      recipient_number: v.recipient_number,
+      app_settings_id: v.app_settings_id || undefined,
+    })
   );
+
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingAppSettings, setIsLoadingAppSettings] = useState(false);
   const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name);
-      setMessage(data.message || "");
-      setToNumber(data.recipient_number || "");
-      setAppSettingsId(data.app_settings_id || "");
-
       // Fetch app settings
       const fetchAppSettings = async () => {
         setIsLoadingAppSettings(true);
@@ -60,17 +67,6 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      message: textMsg,
-      recipient_number: toNumber,
-      app_settings_id: appSettingsId || undefined,
-    });
-    onClose();
-  };
-
   return (
     <>
       <NodeConfigPanel
@@ -86,19 +82,14 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{
-          ...data,
-          name,
-          message: textMsg,
-          recipient_number: toNumber,
-        }}
+        data={merged}
       >
         <div className="space-y-2">
           <Label htmlFor="name">Tool Name</Label>
           <RichInput
             id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="e.g., WhatsApp Message"
             className="w-full"
           />
@@ -106,13 +97,13 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
         <div className="space-y-2">
           <Label htmlFor="app-settings-id">Configuration Vars (Optional)</Label>
           <Select
-            value={appSettingsId || ""}
+            value={values.app_settings_id || ""}
             onValueChange={(value) => {
               if (value === "__create__") {
                 setIsCreateSettingOpen(true);
                 return;
               }
-              setAppSettingsId(value || "");
+              setField("app_settings_id", value || "");
             }}
             disabled={isLoadingAppSettings}
           >
@@ -140,8 +131,8 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
           <Label htmlFor="toNumber">Recipient Number</Label>
           <DraggableInput
             id="toNumber"
-            value={toNumber}
-            onChange={(e) => setToNumber(e.target.value)}
+            value={values.recipient_number}
+            onChange={(e) => setField("recipient_number", e.target.value)}
             placeholder="e.g., 15551234567"
             className="w-full"
           />
@@ -155,8 +146,8 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
           <Label htmlFor="textMsg">Message</Label>
           <DraggableInput
             id="textMsg"
-            value={textMsg}
-            onChange={(e) => setMessage(e.target.value)}
+            value={values.message}
+            onChange={(e) => setField("message", e.target.value)}
             placeholder="e.g., Please call me!"
             className="w-full"
           />
@@ -175,7 +166,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
           } catch (e) {
             // ignore
           }
-          if (created?.id) setAppSettingsId(created.id);
+          if (created?.id) setField("app_settings_id", created.id);
         }}
       />
     </>

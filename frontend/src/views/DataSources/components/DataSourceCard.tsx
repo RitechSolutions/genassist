@@ -1,18 +1,18 @@
-import { useState } from "react";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { LIST_PAGE_SIZE } from "@/constants/pagination";
-import { ActionButtons } from "@/components/ActionButtons";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Column } from "@/components/ui/data-table";
+import { EntityTableCard } from "@/components/EntityTableCard";
 import { Badge } from "@/components/badge";
+import { Button } from "@/components/button";
 import { DataSource } from "@/interfaces/dataSource.interface";
-import { toast } from "react-hot-toast";
-import { CheckCircle, AlertCircle, HelpCircle } from "lucide-react";
+import { CheckCircle, AlertCircle, HelpCircle, Database } from "lucide-react";
 
 interface DataSourceCardProps {
   dataSources: DataSource[];
   searchQuery: string;
   refreshKey: number;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onCreateDataSource?: () => void;
   onEditDataSource?: (dataSource: DataSource) => void;
   onDeleteDataSource?: (id: string) => Promise<void>;
 }
@@ -21,52 +21,18 @@ export function DataSourceCard({
   searchQuery,
   dataSources,
   loading = false,
+  error = null,
+  onRetry,
+  onCreateDataSource,
   onEditDataSource,
   onDeleteDataSource,
 }: DataSourceCardProps) {
-  const [error, setError] = useState<string | null>(null);
-  const [dataSourceToDelete, setDataSourceToDelete] =
-    useState<DataSource | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const filteredDataSources = dataSources.filter((dataSource) => {
-    const name = dataSource.name?.toLowerCase() || "";
-    const sourceType = dataSource.source_type?.toLowerCase() || "";
-
-    return (
-      name.includes(searchQuery.toLowerCase()) ||
-      sourceType.includes(searchQuery.toLowerCase())
-    );
-  });
-
-  const handleDeleteClick = (dataSource: DataSource) => {
-    setDataSourceToDelete(dataSource);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!dataSourceToDelete?.id || !onDeleteDataSource) return;
-
-    try {
-      setIsDeleting(true);
-      await onDeleteDataSource(dataSourceToDelete.id);
-      toast.success("Data source deleted successfully.");
-    } catch (error) {
-      toast.error("Failed to delete data source.");
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setDataSourceToDelete(null);
-    }
-  };
-
   const getConnectionBadge = (dataSource: DataSource) => {
-    const status = ['gmail', 'o365'].includes(dataSource.source_type)
+    const status = ["gmail", "o365"].includes(dataSource.source_type)
       ? dataSource.connection_data.user_email !== undefined
-        ? 'Connected'
-        : 'Error'
-      : (dataSource.connection_status?.status ?? 'Untested');
+        ? "Connected"
+        : "Error"
+      : (dataSource.connection_status?.status ?? "Untested");
 
     if (status === "Connected") {
       return (
@@ -123,41 +89,54 @@ export function DataSourceCard({
       className: "overflow-hidden whitespace-nowrap text-clip",
       cell: (dataSource) => getConnectionBadge(dataSource),
     },
-    {
-      header: "Action",
-      key: "action",
-      cell: (dataSource) => (
-        <ActionButtons
-          onEdit={() => onEditDataSource?.(dataSource)}
-          onDelete={() => handleDeleteClick(dataSource)}
-          editTitle="Edit Data Source"
-          deleteTitle="Delete Data Source"
-        />
-      ),
-    },
   ];
 
   return (
-    <>
-      <DataTable
-        data={filteredDataSources}
-        columns={columns}
-        loading={loading}
-        error={error}
-        searchQuery={searchQuery}
-        pageSize={LIST_PAGE_SIZE}
-        emptyMessage="No data sources found"
-        notFoundMessage="No data sources found matching your search"
-      />
+    <EntityTableCard<DataSource>
+      entityName="data source"
+      searchQuery={searchQuery}
+      filterFn={(dataSource, query) => {
+        const name = dataSource.name?.toLowerCase() || "";
+        const sourceType = dataSource.source_type?.toLowerCase() || "";
+        const q = query.toLowerCase();
 
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={dataSourceToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete the data source "${dataSourceToDelete?.name}".`}
-      />
-    </>
+        return name.includes(q) || sourceType.includes(q);
+      }}
+      data={dataSources}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      deleteFn={
+        onDeleteDataSource
+          ? (dataSource) => onDeleteDataSource(dataSource.id!)
+          : undefined
+      }
+      getItemName={(dataSource) => dataSource.name}
+      deleteDescription={(dataSource) =>
+        `This action cannot be undone. This will permanently delete the data source "${dataSource.name}".`
+      }
+      emptyState={{
+        icon: <Database className="h-12 w-12 text-muted-foreground" />,
+        title: "No data sources yet",
+        description:
+          "Connect a data source to let your agents read from and act on your systems. Add one to get started.",
+        searchTitle: "No matching data sources",
+        searchDescription:
+          "No data sources match your search. Try a different name or source type.",
+        action: onCreateDataSource ? (
+          <Button className="rounded-full" onClick={onCreateDataSource}>
+            Create your first data source
+          </Button>
+        ) : undefined,
+      }}
+      columns={columns}
+      rowActions={{
+        header: "Action",
+        key: "action",
+        onEdit: (dataSource) => onEditDataSource?.(dataSource),
+        editTitle: "Edit Data Source",
+        deleteTitle: "Delete Data Source",
+      }}
+    />
   );
 }

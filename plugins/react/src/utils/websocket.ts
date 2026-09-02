@@ -98,7 +98,7 @@ export function createWebSocketConversationUrl(
   authParam: string,
   tenant: string | undefined,
   language: string,
-  topics: string[] = ["message", "takeover", "finalize"]
+  topics: string[] = ["message", "takeover", "finalize", "read"]
 ): string {
   const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
   const tenantParam = tenant

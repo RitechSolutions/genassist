@@ -27,7 +27,7 @@ class DataSourcesRepository(DbRepository[DataSourceModel]):
             is_active=datasource_data.is_active,
         )
         self.db.add(new_datasource)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_datasource)
         return new_datasource
 
@@ -59,7 +59,7 @@ class DataSourcesRepository(DbRepository[DataSourceModel]):
             setattr(datasource, key, value)
         
         datasource.updated_by = context.get("user_id")
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(datasource)
         return datasource
 
@@ -67,7 +67,7 @@ class DataSourcesRepository(DbRepository[DataSourceModel]):
         """Delete a datasource."""
         datasource = await self.get_by_id(datasource_id)
         await self.db.delete(datasource)
-        await self.db.commit()
+        await self.db.flush()
 
     async def get_active(self) -> List[DataSourceModel]:
         """Fetch all active datasources."""

@@ -24,7 +24,7 @@ class OperatorStatisticsRepository(DbRepository[OperatorStatisticsModel]):
     async def create(self, operator_id: UUID):
         new_stats = OperatorStatisticsModel(id=operator_id)
         self.db.add(new_stats)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_stats)
         return new_stats
 
@@ -42,4 +42,4 @@ class OperatorStatisticsRepository(DbRepository[OperatorStatisticsModel]):
                 .where(OperatorStatisticsModel.id == statistics_id)
                 .values(**kwargs)
                 )
-        await self.db.commit()
+        await self.db.flush()

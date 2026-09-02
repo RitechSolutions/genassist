@@ -284,14 +284,31 @@ async def import_zendesk_articles_to_kb_async(
         conn_data = ds.connection_data
 
         subdomain = conn_data.get("subdomain")
-        email = conn_data.get("email")
-        api_token = conn_data.get("api_token")
+        # OAuth client-credentials fields (Zendesk removes API tokens on 2027-04-30).
+        # conn_data is decrypted (get_by_id(..., True)), so client_secret is plaintext.
         locale = conn_data.get("locale")  # Optional
         category_ids = _parse_zendesk_category_ids(conn_data)
         section_id = conn_data.get("section_id")  # Optional
 
-        if not subdomain or not email or not api_token:
-            err = "Incomplete Zendesk connection (subdomain, email, and api_token required)"
+        # Build the connector up front so it is the single source of truth for the
+        # resolved auth method, then validate the credentials that method needs.
+        zendesk_connector = ZendeskConnector(
+            subdomain=subdomain,
+            email=conn_data.get("email"),
+            api_token=conn_data.get("api_token"),
+            auth_method=conn_data.get("auth_method"),
+            client_id=conn_data.get("client_id"),
+            client_secret=conn_data.get("client_secret"),
+        )
+        try:
+            if not subdomain:
+                raise ValueError("Zendesk subdomain is required")
+            zendesk_connector._require_credentials()
+            creds_ok, err = True, ""
+        except ValueError as e:
+            creds_ok, err = False, f"Incomplete Zendesk connection ({e})"
+
+        if not creds_ok:
             logger.error(f"Knowledge base {kb.id}: {err}")
             ku = _kb_update_dict(kb)
             ku["last_synced"] = datetime.now()
@@ -309,11 +326,6 @@ async def import_zendesk_articles_to_kb_async(
             continue
 
         try:
-            # Fetch articles from Zendesk using ZendeskConnector
-            zendesk_connector = ZendeskConnector(
-                subdomain=subdomain, email=email, api_token=api_token
-            )
-
             fetched_articles = await zendesk_connector.fetch_articles(
                 locale=locale,
                 category_ids=category_ids,

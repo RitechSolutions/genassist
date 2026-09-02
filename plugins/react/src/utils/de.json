@@ -33,6 +33,12 @@
     "thumbsUp": "Daumen hoch",
     "thumbsDown": "Daumen runter"
   },
+  "receipts": {
+    "sent": "Gesendet",
+    "delivered": "Zugestellt",
+    "seen": "Gesehen",
+    "newMessages": "Neue Nachrichten"
+  },
   "thinking": {
     "messages": [
       "Denken…",

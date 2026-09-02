@@ -102,7 +102,7 @@ class FineTuningEventRepository(DbRepository[FineTuningEventModel]):
             List of created events
         """
         self.db.add_all(events)
-        await self.db.commit()
+        await self.db.flush()
 
         for event in events:
             await self.db.refresh(event)

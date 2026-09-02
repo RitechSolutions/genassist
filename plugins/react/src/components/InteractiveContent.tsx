@@ -41,6 +41,12 @@ interface InteractiveContentProps {
   blocks: ChatContentBlock[];
   primaryColor: string;
   textColor: string;
+  /** Background of interactive item/schedule cards. Defaults to #f8fafc. */
+  cardBackgroundColor?: string;
+  /** Card and control borders. Defaults to #e5e7eb. */
+  borderColor?: string;
+  /** Muted text (category labels). Defaults to #6b7280. */
+  mutedTextColor?: string;
   isActionable: boolean;
   onQuickAction?: (text: string) => void;
   onScheduleConfirm?: (schedule: ScheduleItem) => void;
@@ -50,6 +56,9 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
   blocks,
   primaryColor,
   textColor,
+  cardBackgroundColor = '#f8fafc',
+  borderColor = '#e5e7eb',
+  mutedTextColor = '#6b7280',
   isActionable,
   onQuickAction,
   onScheduleConfirm,
@@ -87,6 +96,9 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
                 items={block.items}
                 primaryColor={primaryColor}
                 textColor={textColor}
+                cardBackgroundColor={cardBackgroundColor}
+                borderColor={borderColor}
+                mutedTextColor={mutedTextColor}
                 isActionable={isActionable}
                 onSelect={onQuickAction}
               />
@@ -98,6 +110,9 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
                 schedule={block.schedule}
                 primaryColor={primaryColor}
                 textColor={textColor}
+                cardBackgroundColor={cardBackgroundColor}
+                borderColor={borderColor}
+                mutedTextColor={mutedTextColor}
                 isActionable={isActionable}
                 onQuickAction={onQuickAction}
                 onConfirm={onScheduleConfirm}
@@ -180,6 +195,9 @@ interface DynamicItemsListProps {
   items: DynamicChatItem[];
   primaryColor: string;
   textColor: string;
+  cardBackgroundColor: string;
+  borderColor: string;
+  mutedTextColor: string;
   isActionable: boolean;
   onSelect?: (text: string) => void;
 }
@@ -188,6 +206,9 @@ const DynamicItemsList: React.FC<DynamicItemsListProps> = ({
   items,
   primaryColor,
   textColor,
+  cardBackgroundColor,
+  borderColor,
+  mutedTextColor,
   isActionable,
   onSelect,
 }) => {
@@ -199,6 +220,9 @@ const DynamicItemsList: React.FC<DynamicItemsListProps> = ({
           item={item}
           primaryColor={primaryColor}
           textColor={textColor}
+          cardBackgroundColor={cardBackgroundColor}
+          borderColor={borderColor}
+          mutedTextColor={mutedTextColor}
           isActionable={isActionable}
           onSelect={() => isActionable && onSelect?.(item.name)}
         />
@@ -211,6 +235,9 @@ interface DynamicItemCardProps {
   item: DynamicChatItem;
   primaryColor: string;
   textColor: string;
+  cardBackgroundColor: string;
+  borderColor: string;
+  mutedTextColor: string;
   isActionable: boolean;
   onSelect?: () => void;
   onSlotSelect?: (slot: string) => void;
@@ -221,6 +248,9 @@ const DynamicItemCard: React.FC<DynamicItemCardProps> = ({
   item,
   primaryColor,
   textColor,
+  cardBackgroundColor,
+  borderColor,
+  mutedTextColor,
   isActionable,
   onSelect,
   onSlotSelect,
@@ -242,8 +272,8 @@ const DynamicItemCard: React.FC<DynamicItemCardProps> = ({
         gap: 12,
         padding: 12,
         borderRadius: 12,
-        border: '1px solid #e5e7eb',
-        backgroundColor: '#f8fafc',
+        border: `1px solid ${borderColor}`,
+        backgroundColor: cardBackgroundColor,
         cursor: isActionable ? 'pointer' : 'default',
         boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
       }}
@@ -268,9 +298,9 @@ const DynamicItemCard: React.FC<DynamicItemCardProps> = ({
                 onRemove();
               }}
               style={{
-                background: '#f1f5f9',
+                background: cardBackgroundColor,
                 borderRadius: 9999,
-                border: '1px solid #e2e8f0',
+                border: `1px solid ${borderColor}`,
                 width: 28,
                 height: 28,
                 display: 'flex',
@@ -284,14 +314,14 @@ const DynamicItemCard: React.FC<DynamicItemCardProps> = ({
           )}
         </div>
         {item.category && (
-          <div style={{ color: '#6b7280', fontSize: 13, fontWeight: 500 }}>
+          <div style={{ color: mutedTextColor, fontSize: 13, fontWeight: 500 }}>
             {item.category}
           </div>
         )}
         {item.description && (
           <div
             style={{
-              color: '#374151',
+              color: textColor,
               fontSize: 13,
               lineHeight: 1.5,
               display: '-webkit-box',
@@ -319,9 +349,9 @@ const DynamicItemCard: React.FC<DynamicItemCardProps> = ({
                   }}
                   style={{
                     borderRadius: 9999,
-                    border: `1px solid ${isSelected ? primaryColor : '#e5e7eb'}`,
-                    backgroundColor: isSelected ? primaryColor : '#ffffff',
-                    color: isSelected ? '#ffffff' : '#111827',
+                    border: `1px solid ${isSelected ? primaryColor : borderColor}`,
+                    backgroundColor: isSelected ? primaryColor : cardBackgroundColor,
+                    color: isSelected ? '#ffffff' : textColor,
                     padding: '6px 12px',
                     cursor: isActionable ? 'pointer' : 'not-allowed',
                     fontSize: 13,
@@ -343,6 +373,9 @@ interface ScheduleBlockProps {
   schedule: ScheduleItem;
   primaryColor: string;
   textColor: string;
+  cardBackgroundColor: string;
+  borderColor: string;
+  mutedTextColor: string;
   isActionable: boolean;
   onQuickAction?: (text: string) => void;
   onConfirm?: (schedule: ScheduleItem) => void;
@@ -352,6 +385,9 @@ const ScheduleBlock: React.FC<ScheduleBlockProps> = ({
   schedule,
   primaryColor,
   textColor,
+  cardBackgroundColor,
+  borderColor,
+  mutedTextColor,
   isActionable,
   onQuickAction,
   onConfirm,
@@ -384,8 +420,8 @@ const ScheduleBlock: React.FC<ScheduleBlockProps> = ({
         style={{
           padding: 12,
           borderRadius: 12,
-          backgroundColor: '#f8fafc',
-          border: '1px solid #e5e7eb',
+          backgroundColor: cardBackgroundColor,
+          border: `1px solid ${borderColor}`,
           fontWeight: 700,
           color: textColor,
         }}
@@ -400,6 +436,9 @@ const ScheduleBlock: React.FC<ScheduleBlockProps> = ({
             item={restaurant}
             primaryColor={primaryColor}
             textColor={textColor}
+            cardBackgroundColor={cardBackgroundColor}
+            borderColor={borderColor}
+            mutedTextColor={mutedTextColor}
             isActionable={isActionable}
             onSelect={() => isActionable && onQuickAction?.(restaurant.name)}
             onSlotSelect={(slot) =>

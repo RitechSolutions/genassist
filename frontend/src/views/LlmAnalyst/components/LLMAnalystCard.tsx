@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { LIST_PAGE_SIZE } from "@/constants/pagination";
-import { ActionButtons } from "@/components/ActionButtons";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Column } from "@/components/ui/data-table";
+import { EntityTableCard } from "@/components/EntityTableCard";
 import { Badge } from "@/components/badge";
 import {
   Tooltip,
@@ -11,12 +9,16 @@ import {
   TooltipProvider,
 } from "@/components/RadixTooltip";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
-import { toast } from "react-hot-toast";
+import { Brain } from "lucide-react";
+import { Button } from "@/components/button";
 
 interface LLMAnalystCardProps {
   analysts: LLMAnalyst[];
   searchQuery: string;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onCreate?: () => void;
   onEdit: (analyst: LLMAnalyst) => void;
   onDelete: (id: string) => Promise<void>;
 }
@@ -37,18 +39,20 @@ function PromptCell({ prompt }: { prompt: string }) {
   }, [prompt]);
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span ref={ref} className="block truncate">
-          {prompt}
-        </span>
-      </TooltipTrigger>
-      {isTruncated && (
-        <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
-          {prompt}
-        </TooltipContent>
-      )}
-    </Tooltip>
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span ref={ref} className="block truncate">
+            {prompt}
+          </span>
+        </TooltipTrigger>
+        {isTruncated && (
+          <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
+            {prompt}
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -56,45 +60,12 @@ export function LLMAnalystCard({
   analysts,
   searchQuery,
   loading = false,
+  error = null,
+  onRetry,
+  onCreate,
   onEdit,
   onDelete,
 }: LLMAnalystCardProps) {
-  const [analystToDelete, setAnalystToDelete] = useState<LLMAnalyst | null>(
-    null
-  );
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const filtered = analysts.filter((a) => {
-    const name = a.name?.toLowerCase() || "";
-    const provider = a.llm_provider?.name?.toLowerCase() || "";
-    return (
-      name.includes(searchQuery.toLowerCase()) ||
-      provider.includes(searchQuery.toLowerCase())
-    );
-  });
-
-  const handleDeleteClick = (analyst: LLMAnalyst) => {
-    setAnalystToDelete(analyst);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!analystToDelete?.id) return;
-
-    try {
-      setIsDeleting(true);
-      await onDelete(analystToDelete.id);
-      toast.success("LLM analyst deleted successfully.");
-    } catch (error) {
-      toast.error("Failed to delete LLM analyst.");
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setAnalystToDelete(null);
-    }
-  };
-
   const columns: Column<LLMAnalyst>[] = [
     {
       header: "Name",
@@ -125,42 +96,48 @@ export function LLMAnalystCard({
         </Badge>
       ),
     },
-    {
-      header: "Actions",
-      key: "actions",
-      cell: (analyst) => (
-        <ActionButtons
-          onEdit={() => onEdit(analyst)}
-          onDelete={() => handleDeleteClick(analyst)}
-          editTitle="Edit"
-          deleteTitle="Delete"
-        />
-      ),
-    },
   ];
 
   return (
-    <>
-      <TooltipProvider delayDuration={200}>
-        <DataTable
-          data={filtered}
-          columns={columns}
-          loading={loading}
-          searchQuery={searchQuery}
-          pageSize={LIST_PAGE_SIZE}
-          emptyMessage="No LLM Analysts found"
-          notFoundMessage="No LLM Analysts found matching your search"
-        />
-      </TooltipProvider>
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={analystToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete the LLM Analyst "${analystToDelete?.name}".`}
-      />
-    </>
+    <EntityTableCard<LLMAnalyst>
+      data={analysts}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      searchQuery={searchQuery}
+      filterFn={(analyst, query) => {
+        const q = query.toLowerCase();
+        const name = analyst.name?.toLowerCase() || "";
+        const provider = analyst.llm_provider?.name?.toLowerCase() || "";
+        return name.includes(q) || provider.includes(q);
+      }}
+      deleteFn={(analyst) => onDelete(analyst.id!)}
+      getItemName={(analyst) => analyst.name}
+      deleteDescription={(analyst) =>
+        `This action cannot be undone. This will permanently delete the LLM Analyst "${analyst.name}".`
+      }
+      deleteSuccessMessage="LLM analyst deleted successfully."
+      deleteErrorMessage="Failed to delete LLM analyst."
+      emptyState={{
+        icon: <Brain className="h-12 w-12 text-muted-foreground" />,
+        title: "No LLM analysts yet",
+        description:
+          "LLM analysts evaluate and score conversations against your criteria. Add one to start analyzing.",
+        searchTitle: "No matching LLM analysts",
+        searchDescription:
+          "No LLM analysts match your search. Try a different name or provider.",
+        action: onCreate ? (
+          <Button className="rounded-full" onClick={onCreate}>
+            Create your first LLM analyst
+          </Button>
+        ) : undefined,
+      }}
+      columns={columns}
+      rowActions={{
+        onEdit,
+        editTitle: "Edit",
+        deleteTitle: "Delete",
+      }}
+    />
   );
 }

@@ -11,10 +11,12 @@ import app.db.models.test_suite
 from app.repositories.dashboard import DashboardRepository, _ledger_window
 from app.repositories.llm_usage_read import LlmUsageReadRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
-from app.services.llm_usage_read import _DIMENSION_COLUMNS, _EXTRA_BREAKDOWN_CONDITIONS
+from app.services.llm_usage_read import _DIMENSION_COLUMNS, _EXTRA_BREAKDOWN_CONDITIONS, LlmUsageReadService
 
 WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 WINDOW_END = datetime(2026, 1, 31, tzinfo=timezone.utc)
+BUCKET_FROM = date(2026, 1, 1)
+BUCKET_TO = date(2026, 1, 31)
 
 
 class _Result:
@@ -24,8 +26,11 @@ class _Result:
     def all(self):
         return []
 
+    def mappings(self):
+        return self
+
     def one(self):
-        return ()
+        return {}
 
 
 class CapturingDb:
@@ -92,6 +97,33 @@ async def test_summary_counts_each_pricing_status():
         assert f"pricing_status = '{status}'" in sql
 
 
+@pytest.mark.asyncio
+async def test_summary_sums_the_cache_token_buckets():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
+    sql = _sql(db.statements[0])
+    assert "sum(llm_usage_events.cache_read_tokens)" in sql
+    assert "sum(llm_usage_events.cache_creation_tokens)" in sql
+
+
+@pytest.mark.asyncio
+async def test_summary_reads_the_stored_prompt_total_instead_of_deriving_it():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
+    sql = _sql(db.statements[0])
+    assert "sum(llm_usage_events.prompt_tokens)" in sql
+    assert "provider_key IN" not in sql, "reads must not reapply provider reporting rules"
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["timeseries", "breakdown"])
+async def test_every_token_aggregate_shares_the_derived_total(query):
+    db = CapturingDb()
+    repo = LlmUsageReadRepository(db)
+    if query == "timeseries":
+        await repo.timeseries(LlmUsageQueryParams(), None)
+    else:
+        await repo.breakdown(LlmUsageQueryParams(), None, _DIMENSION_COLUMNS["provider"])
+    sql = _sql(db.statements[0])
+    assert "greatest(llm_usage_events.total_tokens, llm_usage_events.prompt_tokens" in sql
 @pytest.mark.asyncio
 async def test_summary_scopes_agent_studio_cost_to_the_two_studio_test_sources():
     db = CapturingDb()
@@ -216,6 +248,37 @@ async def test_dashboard_ledger_total_restricts_to_the_visible_agents():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_ledger_total_in_exact_mode_keeps_the_caller_instants():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(
+        datetime(2026, 1, 1, 15, 30, tzinfo=timezone.utc),
+        datetime(2026, 1, 31, 9, 0, tzinfo=timezone.utc),
+        agent_ids=None,
+        exact=True,
+    )
+    sql = _sql(db.statements[0])
+    assert "occurred_at >= '2026-01-01 15:30:00+00:00'" in sql
+    assert "occurred_at < '2026-01-31 09:00:00+00:00'" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_without_bounds_has_no_date_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_total_cost_usd(agent_ids=None)
+    sql = _sql(db.statements[0])
+    assert "occurred_at" not in sql
+    assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ledger_total_rejects_a_half_supplied_range():
+    db = CapturingDb()
+    with pytest.raises(ValueError):
+        await DashboardRepository(db).get_total_cost_usd(WINDOW_START, None, agent_ids=None)
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
 async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
     db = CapturingDb()
     total = await DashboardRepository(db).get_total_cost_usd(WINDOW_START, WINDOW_END, agent_ids=[])
@@ -226,22 +289,39 @@ async def test_dashboard_ledger_total_short_circuits_on_an_empty_scope():
 @pytest.mark.asyncio
 async def test_dashboard_response_time_without_a_scope_has_no_agent_predicate():
     db = CapturingDb()
-    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=None)
+    await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=None)
     assert "agent_id" not in _sql(db.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_filters_on_inclusive_bucket_dates():
+    db = CapturingDb()
+    await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=None)
+    sql = _sql(db.statements[0])
+    assert "stat_date >= '2026-01-01'" in sql
+    assert "stat_date <= '2026-01-31'" in sql
+    assert "is_deleted = 0" in sql
+
+
+@pytest.mark.asyncio
+async def test_dashboard_response_time_without_bounds_has_no_date_predicate():
+    db = CapturingDb()
+    await DashboardRepository(db).get_avg_response_time(agent_ids=None)
+    assert "stat_date" not in _sql(db.statements[0])
 
 
 @pytest.mark.asyncio
 async def test_dashboard_response_time_restricts_to_the_visible_agents():
     db = CapturingDb()
     scope = [uuid4(), uuid4()]
-    await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=scope)
+    await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=scope)
     assert "agent_id IN" in _sql(db.statements[0])
 
 
 @pytest.mark.asyncio
 async def test_dashboard_response_time_short_circuits_on_an_empty_scope():
     db = CapturingDb()
-    avg = await DashboardRepository(db).get_avg_response_time(WINDOW_START, WINDOW_END, agent_ids=[])
+    avg = await DashboardRepository(db).get_avg_response_time(BUCKET_FROM, BUCKET_TO, agent_ids=[])
     assert avg == 0
     assert db.statements == []
 
@@ -282,3 +362,20 @@ def test_ledger_window_includes_the_whole_upper_bound_day():
 def test_ledger_window_of_a_single_day_covers_that_day():
     day = datetime(2026, 1, 15, tzinfo=timezone.utc)
     assert _ledger_window(day, day) == (day, day + timedelta(days=1))
+
+
+@pytest.mark.asyncio
+async def test_the_service_reads_exactly_the_labels_the_summary_selects():
+    db = CapturingDb()
+    await LlmUsageReadRepository(db).summary(LlmUsageQueryParams(), None)
+    labels = {column.name: 0 for column in db.statements[0].selected_columns}
+
+    class _Repo:
+        async def summary(self, params, scope):
+            return labels
+
+        async def last_unpriced_at(self):
+            return None
+
+    summary = await LlmUsageReadService(_Repo(), None, None)._summary(LlmUsageQueryParams(), None)
+    assert summary.total_calls == 0

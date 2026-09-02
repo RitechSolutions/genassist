@@ -1,12 +1,5 @@
-import { useState, useMemo } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
-import { Button } from "@/components/button";
+import { useState } from "react";
+import { Dialog, DialogContent } from "@/components/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -32,6 +25,10 @@ import { Badge } from "@/components/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixTooltip";
 import { getApiUrl } from "@/config/api";
 import { isAxiosError } from "axios";
+import { FormField } from "@/components/ui/form-field";
+import { CRUDDialog, FieldErrors } from "@/components/ui/crud-dialog";
+import { areUserRolesRequired } from "@/views/Users/helpers/userFormRules";
+import { isSupervisorUser } from "../helpers/supervision";
 
 // Value for the "No group" option, since Radix SelectItem cannot use an empty string value.
 const NO_GROUP_VALUE = "__none__";
@@ -45,6 +42,17 @@ interface UserDialogProps {
   mode?: "create" | "edit";
 }
 
+type UserFormValues = {
+  username: string;
+  email: string;
+  password: string;
+  apiKey: string;
+  isActive: boolean;
+  userTypeId: string;
+  selectedRoleIds: string[];
+  entraOid: string;
+};
+
 export function UserDialog({
   isOpen,
   onOpenChange,
@@ -53,24 +61,22 @@ export function UserDialog({
   userToEdit = null,
   mode = "create",
 }: UserDialogProps) {
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [isActive, setIsActive] = useState(true);
-  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
-  const [userTypeId, setUserTypeId] = useState<string>("");
+  // Fetched reference data (not part of the form values).
   const [roles, setRoles] = useState<Role[]>([]);
   const [userTypes, setUserTypes] = useState<UserType[]>([]);
   const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  // Group + supervised-group selection are kept in component state because they
+  // are interdependent (a group cannot supervise itself) and drive a body-level
+  // effect that CRUDDialog's render-prop cannot host.
   const [groupId, setGroupId] = useState<string>("");
   const [supervisedGroupIds, setSupervisedGroupIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userId, setUserId] = useState<string | undefined>("");
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
-  const [entraOid, setEntraOid] = useState("");
   const [microsoftSsoEnabled, setMicrosoftSsoEnabled] = useState(false);
+  // The fully-fetched user drives CRUDDialog's edit values; resetSeq forces a
+  // re-initialization once the async fetch resolves after the dialog is open.
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [resetSeq, setResetSeq] = useState(0);
 
   useEffect(() => {
     setDialogMode(mode);
@@ -103,43 +109,13 @@ export function UserDialog({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadFormData();
-      resetForm();
-
-      if (userToEdit && dialogMode === "edit") {
-        if (userToEdit.id) {
-          (async () => {
-            try {
-              const full = await getUser(userToEdit.id!);
-              populateFormWithUserData(full || userToEdit);
-            } catch {
-              populateFormWithUserData(userToEdit);
-            }
-          })();
-        } else {
-          populateFormWithUserData(userToEdit);
-        }
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, userToEdit, dialogMode]);
-
-  const populateFormWithUserData = (user: User) => {
-    setUserId(user.id);
-    setUsername(user.username || "");
-    setEmail(user.email || "");
-    setEntraOid(user.entra_oid ?? "");
-    setPassword("");
-    setApiKey("");
-    setIsActive(user.is_active === 1);
-    setUserTypeId(user.user_type_id || user.user_type?.id || "");
-    setSelectedRoleIds(
-      user.role_ids || user.roles?.map((role) => role.id) || []
-    );
+  const applyUser = (user: User) => {
+    setEditUser(user);
     setGroupId(user.group_id ?? "");
-    setSupervisedGroupIds(user.supervised_group_ids ?? []);
+    // Assignments only survive while the role does, a demoted user starts empty
+    // so re-promotion cannot silently restore a previous stint's groups.
+    setSupervisedGroupIds(isSupervisorUser(user) ? (user.supervised_group_ids ?? []) : []);
+    setResetSeq((seq) => seq + 1);
   };
 
   const loadFormData = async () => {
@@ -167,163 +143,34 @@ export function UserDialog({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    let requiredFields = [
-      { label: "Username", isEmpty: !username },
-      { label: "Email", isEmpty: !email },
-      { label: "Type", isEmpty: !userTypeId },
-      { label: "Password", isEmpty: !password },
-      { label: "Roles", isEmpty: selectedRoleIds.length === 0 },
-    ];
-
-    if (dialogMode !== "create" || apiKey || isConsoleUserType) {
-      requiredFields = requiredFields.filter(
-        (field) => field.label !== "Password"
-      );
-    }
-
-    const missingFields = requiredFields
-      .filter((field) => field.isEmpty)
-      .map((field) => field.label);
-
-    if (missingFields.length > 0) {
-      if (missingFields.length === 1) {
-        toast.error(`${missingFields[0]} is required.`);
-      } else {
-        toast.error(`Please provide: ${missingFields.join(", ")}.`);
-      }
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const userData: Partial<User> = {
-        username,
-        email,
-        is_active: isActive ? 1 : 0,
-        user_type_id: userTypeId,
-        role_ids: selectedRoleIds,
-        group_id: groupId || null,
-      };
-
-      if (dialogMode === "create" || password) {
-        userData.password = password || apiKey || email;
-      }
-
-      if (microsoftSsoEnabled) {
-        userData.entra_oid = entraOid.trim() ? entraOid.trim() : null;
-      }
+  useEffect(() => {
+    if (isOpen) {
+      loadFormData();
 
       if (dialogMode === "create") {
-        await createUser(userData as User);
-        toast.success("User created successfully.");
-        onUserCreated();
-      } else {
-        if (!userId) {
-          toast.error("User ID is required.");
-          return;
-        }
-        await updateUser(userId, userData);
-
-        // Sync supervised groups: add newly selected, remove deselected
-        const previousIds = userToEdit?.supervised_group_ids ?? [];
-        const toAdd = supervisedGroupIds.filter((id) => !previousIds.includes(id));
-        const toRemove = previousIds.filter((id) => !supervisedGroupIds.includes(id));
-        await Promise.all([
-          ...toAdd.map((gid) => addGroupSupervisor(gid, userId)),
-          ...toRemove.map((gid) => removeGroupSupervisor(gid, userId)),
-        ]);
-
-        toast.success("User updated successfully.");
-
-        // Call onUserUpdated for edit mode with userData
-        if (onUserUpdated && userToEdit) {
-          const updatedUser: User = {
-            ...userToEdit,
-            ...userData,
-            user_type:
-              userTypes.find((type) => type.id === userTypeId) ||
-              userToEdit.user_type,
-            roles: roles.filter((role) => selectedRoleIds.includes(role.id)),
-            supervised_group_ids: supervisedGroupIds,
-          };
-          onUserUpdated(updatedUser);
-        }
+        // CRUDDialog resets its own form values on open; reset the state it
+        // does not own here.
+        setEditUser(null);
+        setGroupId("");
+        setSupervisedGroupIds([]);
       }
 
-      onOpenChange(false);
-      resetForm();
-    } catch (error: unknown) {
-      const data = isAxiosError(error) ? (error.response?.data as Record<string, unknown> | undefined) : undefined;
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      let errorMessage = "";
-
-      if (status === 400) {
-        if (data?.error_key === "EMAIL_ALREADY_EXISTS") {
-          errorMessage = "A user with this email already exists.";
-        } else if (data?.error_key === "USER_ROLES_REQUIRED") {
-          errorMessage = "At least one role is required.";
+      if (userToEdit && dialogMode === "edit") {
+        if (userToEdit.id) {
+          (async () => {
+            try {
+              const full = await getUser(userToEdit.id!);
+              applyUser(full || userToEdit);
+            } catch {
+              applyUser(userToEdit);
+            }
+          })();
         } else {
-          errorMessage = "A user with this username already exists.";
+          applyUser(userToEdit);
         }
-      } else if (status === 409 && data?.error_key === "ENTRA_OID_IN_USE") {
-        errorMessage = "This Microsoft Entra object ID is already linked to another user.";
-      } else if (data && typeof data.error === "string") {
-        errorMessage = data.error;
-      } else if (data?.detail && Array.isArray(data.detail) && data.detail[0] && typeof (data.detail[0] as { ctx?: { reason?: string } }).ctx?.reason === "string") {
-        errorMessage = (data.detail[0] as { ctx: { reason: string } }).ctx.reason;
       }
-
-      toast.error(
-        `Failed to ${dialogMode} user${
-          errorMessage ? `: ${errorMessage}` : "."
-        }`
-      );
-    } finally {
-      setIsSubmitting(false);
     }
-  };
-
-  const resetForm = () => {
-    if (dialogMode === "create") {
-      setUserId(undefined);
-      setUsername("");
-      setEmail("");
-      setPassword("");
-      setApiKey("");
-      setIsActive(true);
-      setSelectedRoleIds([]);
-      setUserTypeId("");
-      setGroupId("");
-      setSupervisedGroupIds([]);
-      setEntraOid("");
-    }
-  };
-
-  const handleRoleToggle = (roleId: string) => {
-    setSelectedRoleIds((prev) => {
-      if (prev.includes(roleId) && prev.length === 1) {
-        toast.error("At least one role is required.");
-        return prev;
-      }
-      return prev.includes(roleId)
-        ? prev.filter((id) => id !== roleId)
-        : [...prev, roleId];
-    });
-  };
-
-  const isConsoleUserType = useMemo(() => {
-    const selectedUserType = userTypes.find((type) => type.id === userTypeId);
-    return selectedUserType?.name?.toLowerCase() === "console";
-  }, [userTypes, userTypeId]);
-
-  const isSupervisor = useMemo(() => {
-    return roles.some(
-      (r) => selectedRoleIds.includes(r.id) && r.name?.toLowerCase() === "supervisor"
-    );
-  }, [roles, selectedRoleIds]);
+  }, [isOpen, userToEdit, dialogMode]);
 
   useEffect(() => {
     setSupervisedGroupIds((prev) => prev.filter((id) => id !== groupId));
@@ -342,75 +189,263 @@ export function UserDialog({
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden">
-        <form
-          onSubmit={handleSubmit}
-          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
-        >
-          <DialogHeader className="p-6 pb-4">
-            <div className="flex justify-between items-center">
-              <DialogTitle>
-                {dialogMode === "create" ? "Create New User" : "Edit User"}
-              </DialogTitle>
-            </div>
-          </DialogHeader>
-          <div className="px-6 pb-6 space-y-4">
+    <CRUDDialog<UserFormValues>
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      mode={dialogMode}
+      maxWidth="600px"
+      bodyClassName="space-y-4"
+      resetKey={resetSeq}
+      preventCloseWhileSubmitting={false}
+      initialValues={{
+        username: "",
+        email: "",
+        password: "",
+        apiKey: "",
+        isActive: true,
+        userTypeId: "",
+        selectedRoleIds: [],
+        entraOid: "",
+      }}
+      editValues={
+        editUser
+          ? {
+              username: editUser.username || "",
+              email: editUser.email || "",
+              password: "",
+              apiKey: "",
+              isActive: editUser.is_active === 1,
+              userTypeId: editUser.user_type_id || editUser.user_type?.id || "",
+              selectedRoleIds:
+                editUser.role_ids || editUser.roles?.map((role) => role.id) || [],
+              entraOid: editUser.entra_oid ?? "",
+            }
+          : null
+      }
+      title={{ create: "Create New User", edit: "Edit User" }}
+      submitLabel={{ create: "Create User", edit: "Update User" }}
+      loadingLabel={{ create: "Creating...", edit: "Updating..." }}
+      successMessage={{
+        create: "User created successfully.",
+        edit: "User updated successfully.",
+      }}
+      errorMessage={(err, m) => {
+        if ((err as { __userIdMissing?: boolean })?.__userIdMissing) {
+          return "User ID is required.";
+        }
+        if ((err as { __supervisedSyncFailed?: boolean })?.__supervisedSyncFailed) {
+          return "User saved, but supervised groups could not be updated. Reopen to retry.";
+        }
+        const data = isAxiosError(err)
+          ? (err.response?.data as Record<string, unknown> | undefined)
+          : undefined;
+        const status = isAxiosError(err) ? err.response?.status : undefined;
+        let detail = "";
+
+        if (status === 400) {
+          if (data?.error_key === "EMAIL_ALREADY_EXISTS") {
+            detail = "A user with this email already exists.";
+          } else if (data?.error_key === "USER_ROLES_REQUIRED") {
+            detail = "At least one role is required.";
+          } else {
+            detail = "A user with this username already exists.";
+          }
+        } else if (status === 409 && data?.error_key === "ENTRA_OID_IN_USE") {
+          detail = "This Microsoft Entra object ID is already linked to another user.";
+        } else if (data && typeof data.error === "string") {
+          detail = data.error;
+        } else if (
+          data?.detail &&
+          Array.isArray(data.detail) &&
+          data.detail[0] &&
+          typeof (data.detail[0] as { ctx?: { reason?: string } }).ctx?.reason === "string"
+        ) {
+          detail = (data.detail[0] as { ctx: { reason: string } }).ctx.reason;
+        }
+
+        return `Failed to ${m} user${detail ? `: ${detail}` : "."}`;
+      }}
+      validate={(values) => {
+        const selectedUserType = userTypes.find(
+          (type) => type.id === values.userTypeId
+        );
+        const isConsole = selectedUserType?.name?.toLowerCase() === "console";
+        const passwordRequired =
+          dialogMode === "create" && !values.apiKey && !isConsole;
+
+        const validationErrors: FieldErrors<UserFormValues> = {};
+        if (!values.username) validationErrors.username = "Username is required.";
+        if (!values.email) validationErrors.email = "Email is required.";
+        if (!values.userTypeId) validationErrors.userTypeId = "Type is required.";
+        if (passwordRequired && !values.password) {
+          validationErrors.password = "Password is required.";
+        }
+        if (
+          areUserRolesRequired(dialogMode, selectedUserType?.name) &&
+          values.selectedRoleIds.length === 0
+        ) {
+          validationErrors.selectedRoleIds = "Roles is required.";
+        }
+
+        return Object.keys(validationErrors).length ? validationErrors : null;
+      }}
+      onSubmit={async (values, { mode: m }) => {
+        const userData: Partial<User> = {
+          username: values.username,
+          email: values.email,
+          is_active: values.isActive ? 1 : 0,
+          user_type_id: values.userTypeId,
+          role_ids: values.selectedRoleIds,
+          group_id: groupId || null,
+        };
+
+        if (m === "create" || values.password) {
+          userData.password = values.password || values.apiKey || values.email;
+        }
+
+        if (microsoftSsoEnabled) {
+          userData.entra_oid = values.entraOid.trim() ? values.entraOid.trim() : null;
+        }
+
+        if (m === "create") {
+          await createUser(userData as User);
+          onUserCreated();
+        } else {
+          const uid = editUser?.id;
+          if (!uid) {
+            throw Object.assign(new Error("User ID is required."), {
+              __userIdMissing: true,
+            });
+          }
+          await updateUser(uid, userData);
+
+          const stillSupervisor = roles
+            .filter((r) => values.selectedRoleIds.includes(r.id))
+            .some((r) => r.name?.toLowerCase() === "supervisor");
+
+          if (stillSupervisor) {
+            // The PUT resolves before these run, and a promotion clears prior
+            // assignments server-side, so the diff needs the post-update record.
+            // Without it a deselection would diff against nothing and be dropped.
+            const current = await getUser(uid).catch(() => null);
+            if (!current) {
+              throw Object.assign(new Error("Supervised groups not synced."), {
+                __supervisedSyncFailed: true,
+              });
+            }
+            const previousIds = current.supervised_group_ids ?? [];
+            const toAdd = supervisedGroupIds.filter((id) => !previousIds.includes(id));
+            const toRemove = previousIds.filter((id) => !supervisedGroupIds.includes(id));
+            await Promise.all([
+              ...toAdd.map((gid) => addGroupSupervisor(gid, uid)),
+              ...toRemove.map((gid) => removeGroupSupervisor(gid, uid)),
+            ]);
+          }
+
+          if (onUserUpdated) {
+            // The save is already committed — a failed read-back only leaves the
+            // row stale, so it must not surface as a failed edit.
+            const finalUser = await getUser(uid).catch(() => null);
+            if (finalUser) onUserUpdated(finalUser);
+          }
+        }
+      }}
+    >
+      {(form) => {
+        const { values, setField, errors, mode: m } = form;
+        const selectedUserType = userTypes.find(
+          (type) => type.id === values.userTypeId
+        );
+        const isConsoleUserType =
+          selectedUserType?.name?.toLowerCase() === "console";
+        const isSupervisor = roles.some(
+          (r) =>
+            values.selectedRoleIds.includes(r.id) &&
+            r.name?.toLowerCase() === "supervisor"
+        );
+
+        const rolesRequired = areUserRolesRequired(m, selectedUserType?.name);
+
+        const handleRoleToggle = (roleId: string) => {
+          form.setValues((prev) => {
+            if (
+              rolesRequired &&
+              prev.selectedRoleIds.includes(roleId) &&
+              prev.selectedRoleIds.length === 1
+            ) {
+              toast.error("At least one role is required.");
+              return prev;
+            }
+            return {
+              ...prev,
+              selectedRoleIds: prev.selectedRoleIds.includes(roleId)
+                ? prev.selectedRoleIds.filter((id) => id !== roleId)
+                : [...prev.selectedRoleIds, roleId],
+            };
+          });
+          form.setFieldError("selectedRoleIds", undefined);
+        };
+
+        return (
+          <>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+              <FormField id="username" label="Username" error={errors.username}>
                 <Input
                   id="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  value={values.username}
+                  onChange={(e) => setField("username", e.target.value)}
                   placeholder="Enter username"
-                  disabled={dialogMode === "edit"}
+                  disabled={m === "edit"}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+              </FormField>
+              <FormField id="email" label="Email" error={errors.email}>
                 <Input
                   id="email"
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={values.email}
+                  onChange={(e) => setField("email", e.target.value)}
                   placeholder="Enter email"
                 />
-              </div>
+              </FormField>
             </div>
+
             {microsoftSsoEnabled && (
-              <div className="space-y-2">
-                <Label htmlFor="entra-oid">Microsoft Entra ID</Label>
-                <Input
-                  id="entra-oid"
-                  value={entraOid}
-                  onChange={(e) => setEntraOid(e.target.value)}
-                  placeholder="Entra ID — optional, for SSO pre-linking"
-                  autoComplete="off"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Must match the user&apos;s <code className="text-xs">oid</code> claim from the ID token.
-                  {dialogMode === "edit"
-                    ? " Clear the field to unlink this account from Entra SSO."
-                    : " Leave blank to link automatically on first sign-in when the email matches."}
-                </p>
-              </div>
+              <FormField id="entra-oid" label="Microsoft Entra ID">
+                <div className="space-y-2">
+                  <Input
+                    id="entra-oid"
+                    value={values.entraOid}
+                    onChange={(e) => setField("entraOid", e.target.value)}
+                    placeholder="Entra ID — optional, for SSO pre-linking"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Must match the user&apos;s <code className="text-xs">oid</code> claim from the ID token.
+                    {m === "edit"
+                      ? " Clear the field to unlink this account from Entra SSO."
+                      : " Leave blank to link automatically on first sign-in when the email matches."}
+                  </p>
+                </div>
+              </FormField>
             )}
+
             <div
               className={`grid gap-4 ${
                 isConsoleUserType ? "grid-cols-1" : "grid-cols-2"
               }`}
             >
-              <div className="space-y-2">
-                <Label htmlFor="userType">Type</Label>
+              <FormField id="userType" label="Type" error={errors.userTypeId}>
                 {userTypes.length === 0 ? (
                   <div className="text-sm text-muted-foreground italic">
                     No user types available
                   </div>
                 ) : (
                   <Select
-                    value={userTypeId}
-                    onValueChange={(value) => setUserTypeId(value)}
+                    value={values.userTypeId}
+                    onValueChange={(value) => {
+                      setField("userTypeId", value);
+                      form.setFieldError("selectedRoleIds", undefined);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />
@@ -424,41 +459,43 @@ export function UserDialog({
                     </SelectContent>
                   </Select>
                 )}
-              </div>
+              </FormField>
               {!isConsoleUserType && (
-                <div className="space-y-2">
-                  <Label htmlFor="password">
-                    {dialogMode === "create" ? "Password" : "New Password"}
-                  </Label>
+                <FormField
+                  id="password"
+                  label={m === "create" ? "Password" : "New Password"}
+                  error={errors.password}
+                >
                   <Input
                     id="password"
                     type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={values.password}
+                    onChange={(e) => setField("password", e.target.value)}
                     placeholder={
-                      dialogMode === "create"
+                      m === "create"
                         ? "Enter password"
                         : "Enter new password (optional)"
                     }
                   />
-                </div>
+                </FormField>
               )}
             </div>
+
             <div className="flex items-center gap-2">
               <Label htmlFor="is-active">Active</Label>
               <Switch
                 id="is-active"
-                checked={isActive}
-                onCheckedChange={setIsActive}
+                checked={values.isActive}
+                onCheckedChange={(checked) => setField("isActive", checked)}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Roles</Label>
+
+            <FormField label="Roles" error={errors.selectedRoleIds}>
               <div className="grid grid-cols-2 gap-2 border rounded-lg p-4">
                 {roles
                   .filter((role) => role.role_type !== "internal")
                   .map((role) => {
-                    const isChecked = selectedRoleIds.includes(role.id);
+                    const isChecked = values.selectedRoleIds.includes(role.id);
                     return (
                       <div key={role.id} className="flex items-center space-x-2">
                         <input
@@ -479,7 +516,7 @@ export function UserDialog({
                     );
                   })}
               </div>
-            </div>
+            </FormField>
 
             {userGroups.length > 0 && (
               <div className="space-y-2">
@@ -572,34 +609,9 @@ export function UserDialog({
                 )}
               </div>
             )}
-          </div>
-
-          <DialogFooter className="px-6 py-4 border-t">
-            <div className="flex justify-end gap-3 w-full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {dialogMode === "create" ? "Creating..." : "Updating..."}
-                  </>
-                ) : dialogMode === "create" ? (
-                  "Create User"
-                ) : (
-                  "Update User"
-                )}
-              </Button>
-            </div>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </>
+        );
+      }}
+    </CRUDDialog>
   );
 }

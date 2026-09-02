@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, NamedTuple
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -24,11 +24,65 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+DEFAULT_SUMMARY_DAYS = 30
+
+
+class SummaryRange(NamedTuple):
+    """Resolved summary bounds"""
+    from_date: datetime | None
+    to_date: datetime | None
+    exact: bool
+
+
 def parse_date_range(days: int = 30) -> tuple[datetime, datetime]:
     """Parse days parameter into date range."""
     to_date = datetime.now(timezone.utc)
     from_date = to_date - timedelta(days=days)
     return from_date, to_date
+
+
+def resolve_summary_range(
+    days: int | None,
+    from_datetime: datetime | None,
+    to_datetime: datetime | None,
+    all_time: bool,
+) -> SummaryRange:
+    """Resolve the summary range into bounds, rejecting mixed modes with a 422"""
+    has_exact_boundary = from_datetime is not None or to_datetime is not None
+
+    if all_time:
+        if days is not None or has_exact_boundary:
+            raise HTTPException(
+                status_code=422,
+                detail="all_time cannot be combined with days, from_datetime or to_datetime",
+            )
+        return SummaryRange(None, None, exact=False)
+
+    if has_exact_boundary:
+        if days is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="days cannot be combined with from_datetime or to_datetime",
+            )
+        if from_datetime is None or to_datetime is None:
+            raise HTTPException(
+                status_code=422,
+                detail="from_datetime and to_datetime must be supplied together",
+            )
+        if from_datetime.utcoffset() is None or to_datetime.utcoffset() is None:
+            raise HTTPException(
+                status_code=422,
+                detail="from_datetime and to_datetime must include a timezone offset",
+            )
+        if from_datetime >= to_datetime:
+            raise HTTPException(
+                status_code=422,
+                detail="from_datetime must be earlier than to_datetime",
+            )
+        return SummaryRange(from_datetime, to_datetime, exact=True)
+
+    rolling_from, rolling_to = parse_date_range(days if days is not None else DEFAULT_SUMMARY_DAYS)
+    return SummaryRange(rolling_from, rolling_to, exact=False)
 
 
 @router.get(
@@ -50,7 +104,7 @@ async def get_dashboard(
 ) -> DashboardResponse:
     """
     Get complete dashboard data including:
-    - Summary statistics (active agents, workflow runs, avg response time)
+    - Summary statistics (active agents, conversations with agent activity, avg response time)
     - Active conversations with feedback counts (paginated)
     - Agent statistics (conversations today, resolution rate, etc.)
     - Active integrations
@@ -71,21 +125,43 @@ async def get_dashboard(
         Depends(permissions(P.Dashboard.READ)),
     ],
     summary="Get dashboard summary statistics",
-    description="Returns summary statistics: active agents count, workflow runs, and average response time.",
+    description=(
+        "Returns summary statistics: active agents count, conversations with agent activity, "
+        "and average response time."
+    ),
 )
 async def get_summary_stats(
-    days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
+    days: int | None = Query(
+        default=None,
+        ge=1,
+        le=365,
+        description="Number of days to look back, defaults to 30 when no other range is supplied",
+    ),
+    from_datetime: datetime | None = Query(
+        default=None,
+        description="Inclusive start of an exact range, requires to_datetime and a timezone offset",
+    ),
+    to_datetime: datetime | None = Query(
+        default=None,
+        description="Exclusive end of an exact range, requires from_datetime and a timezone offset",
+    ),
+    all_time: bool = Query(
+        default=False,
+        description="Drop all date filtering, cannot be combined with days or an exact boundary",
+    ),
     dashboard_service: DashboardService = Injected(DashboardService),
 ) -> DashboardSummaryStats:
     """
     Get dashboard summary statistics:
     - Number of active agents
-    - Total workflow runs in the period
+    - Conversations with agent activity in the period
     - Average response time in milliseconds
     - Total cost in USD
     """
-    from_date, to_date = parse_date_range(days)
-    return await dashboard_service.get_summary_stats(from_date, to_date)
+    summary_range = resolve_summary_range(days, from_datetime, to_datetime, all_time)
+    return await dashboard_service.get_summary_stats(
+        summary_range.from_date, summary_range.to_date, exact=summary_range.exact
+    )
 
 
 @router.get(

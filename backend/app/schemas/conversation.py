@@ -1,5 +1,5 @@
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import Any, Optional
 
@@ -9,10 +9,49 @@ from app.schemas.transcript_message import TranscriptMessageRead
 from app.schemas.agent_security_settings import AgentSecuritySettingsUpdate
 
 
+class ConversationReadMarker(BaseModel):
+    """Request body for marking a conversation read up to a message sequence.
+
+    The reader's role (customer vs supervisor) is derived server-side from the
+    authenticated principal, never trusted from the client — only the high-water
+    ``last_read_sequence`` is supplied.
+    """
+    last_read_sequence: int = Field(..., ge=0)
+
+
+class ConversationReadReceiptState(BaseModel):
+    """Aggregate read state for a conversation: the last message sequence each
+    human reader has seen. ``*_last_read_sequence`` is ``None`` when that reader
+    has never sent a receipt. A message is "seen by role R" when its
+    ``sequence_number <= R_last_read_sequence``."""
+    customer_last_read_sequence: Optional[int] = None
+    customer_last_read_at: Optional[datetime] = None
+    supervisor_last_read_sequence: Optional[int] = None
+    supervisor_last_read_at: Optional[datetime] = None
+    supervisor_user_id: Optional[UUID] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_receipts(cls, receipts) -> "ConversationReadReceiptState":
+        """Fold the per-role receipt rows into a single flat state object."""
+        state = cls()
+        for receipt in receipts or []:
+            if receipt.reader_role == "customer":
+                state.customer_last_read_sequence = receipt.last_read_sequence
+                state.customer_last_read_at = receipt.last_read_at
+            elif receipt.reader_role == "supervisor":
+                state.supervisor_last_read_sequence = receipt.last_read_sequence
+                state.supervisor_last_read_at = receipt.last_read_at
+                state.supervisor_user_id = receipt.reader_user_id
+        return state
+
+
 class InProgressPollResponse(BaseModel):
     """Lightweight response for in-progress conversation heartbeat polling (no WebSocket)."""
     status: str
     messages: list[TranscriptMessageRead] = []
+    read_state: Optional[ConversationReadReceiptState] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +126,7 @@ class ConversationRead(ConversationBase):
     custom_attributes: Optional[dict[str, Any]] = None
     agent_id: Optional[UUID] = None
     agent_name: Optional[str] = None
+    read_state: Optional[ConversationReadReceiptState] = None
 
     model_config = ConfigDict(
         from_attributes = True

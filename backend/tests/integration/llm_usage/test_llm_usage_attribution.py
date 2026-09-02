@@ -234,8 +234,8 @@ async def test_agent_filtered_summary_sees_derived_studio_test_cost(world):
     async with world.maker() as session:
         row = await LlmUsageReadRepository(session).summary(LlmUsageQueryParams(), [world.agent_id("owner")])
 
-    total_cost, _, _, _, total_calls = row[:5]
-    studio_test_cost = row[11]
+    total_cost, total_calls = row["sum_cost"], row["total_calls"]
+    studio_test_cost = row["agent_studio_test_cost"]
     assert total_calls == 1, "the other agent's run and the unattributed run must stay out of scope"
     assert float(total_cost) == pytest.approx(CALL_COST)
     assert float(studio_test_cost) == pytest.approx(CALL_COST)
@@ -250,8 +250,8 @@ async def test_studio_test_cost_counts_only_studio_test_sources(world):
     async with world.maker() as session:
         row = await LlmUsageReadRepository(session).summary(LlmUsageQueryParams(), [world.agent_id("owner")])
 
-    total_cost, _, _, _, total_calls = row[:5]
-    studio_test_cost = row[11]
+    total_cost, total_calls = row["sum_cost"], row["total_calls"]
+    studio_test_cost = row["agent_studio_test_cost"]
     assert total_calls == 5
     assert float(total_cost) == pytest.approx(CALL_COST * 5)
     assert float(studio_test_cost) == pytest.approx(CALL_COST * 2), "only /test and /test-node runs count"

@@ -2,6 +2,7 @@ import { api, apiRequest, getApiUrl } from "@/config/api";
 import { setServerUp } from "@/config/serverStatus";
 import { FileManagerFileRecord } from "@/interfaces/file-manager.interface";
 import { AxiosError } from "axios";
+import { downloadBlob } from "@/helpers/utils";
 
 export interface ListFileManagerFilesParams {
   storage_provider?: string;
@@ -280,4 +281,28 @@ export const deleteFileRecord = async (fileId: string): Promise<void> => {
       "Delete failed";
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
+};
+
+/**
+ * Downloads a file-manager file through the API and saves it locally.
+ *
+ * Deliberately not an `<a href>` to the file endpoint: for S3-backed files that
+ * endpoint 302s to a presigned URL on the storage host, which Chrome refuses as
+ * an "insecure download" when that hop is plain HTTP, and which also makes the
+ * browser ignore the `download` attribute (it is only honoured same-origin), so
+ * the file lands named after its storage key instead of `filename`.
+ * `force_proxy=true` makes the API stream the bytes itself, keeping the request
+ * same-origin and authenticated.
+ */
+export const downloadFileManagerFile = async (
+  fileId: string,
+  filename: string
+): Promise<void> => {
+  const baseURL = await getApiUrl();
+  const response = await api.request<Blob>({
+    method: "GET",
+    url: `${baseURL}file-manager/files/${fileId}/source?force_proxy=true`,
+    responseType: "blob",
+  });
+  downloadBlob(response.data, filename);
 };

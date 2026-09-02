@@ -29,6 +29,7 @@ from app.repositories.agent import AgentRepository
 from app.repositories.analytics_read import AnalyticsReadRepository
 from app.repositories.dashboard import DashboardRepository
 from app.repositories.llm_usage_read import LlmUsageReadRepository
+from app.repositories.workflow import WorkflowRepository
 from app.schemas.llm_usage import LlmUsageQueryParams
 from app.services.llm_usage_read import LlmUsageReadService
 
@@ -92,6 +93,7 @@ def _event(agent_id, *, provider: str, occurred_at: datetime, cost: Decimal) -> 
         provider_key=provider,
         model_key=f"{provider}-model",
         input_tokens=100,
+        prompt_tokens=100,
         output_tokens=50,
         total_tokens=150,
         cost_usd=cost,
@@ -353,8 +355,8 @@ async def test_admin_reads_remain_tenant_wide_including_unattributed_spend(world
             row = await repo.summary(world.params, scope)
 
     assert scope is None
-    assert float(row[0]) == pytest.approx(TOTAL_COST)
-    assert row[4] == len(COST)
+    assert float(row["sum_cost"]) == pytest.approx(TOTAL_COST)
+    assert row["total_calls"] == len(COST)
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -458,13 +460,13 @@ async def test_group_agent_dropdown_only_lists_agents_the_caller_can_see(world):
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_supervisor_context_grants_all_supervised_groups(world):
+async def test_supervisor_context_grants_supervised_groups_and_their_own(world):
     async with world.maker() as session:
         repo = AnalyticsReadRepository(session)
         with caller(
             user_id=world.user_id("u1"),
             group_id=world.group_id("g1"),
-            supervised=[world.group_id("g1"), world.group_id("g2")],
+            supervised=[world.group_id("g2")],
         ):
             rows = await repo.get_agent_daily_stats(from_date=world.day, to_date=world.day)
 
@@ -516,7 +518,9 @@ async def test_custom_attribute_keys_are_limited_to_visible_workflows(world):
 @pytest.mark.asyncio(loop_scope="module")
 async def test_llm_usage_filter_options_expose_only_visible_providers_models_and_agents(world):
     async with world.maker() as session:
-        service = LlmUsageReadService(LlmUsageReadRepository(session), AgentRepository(session))
+        service = LlmUsageReadService(
+            LlmUsageReadRepository(session), AgentRepository(session), WorkflowRepository(session)
+        )
         with caller(user_id=world.user_id("u1"), group_id=world.group_id("g1")):
             options = await service.get_filter_options(world.params)
 
@@ -534,8 +538,8 @@ async def test_llm_usage_scope_excludes_foreign_and_unattributed_events(world):
             row = await repo.summary(world.params, scope)
 
     assert scope == [world.agent_id("a1")]
-    assert row[4] == 1
-    assert float(row[0]) == pytest.approx(float(COST["a1"]))
+    assert row["total_calls"] == 1
+    assert float(row["sum_cost"]) == pytest.approx(float(COST["a1"]))
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -543,18 +547,20 @@ async def test_dashboard_cost_and_response_time_follow_the_visible_scope(world):
     start, end = world.window
     async with world.maker() as session:
         dashboard = DashboardRepository(session)
-        service = LlmUsageReadService(LlmUsageReadRepository(session), AgentRepository(session))
+        service = LlmUsageReadService(
+            LlmUsageReadRepository(session), AgentRepository(session), WorkflowRepository(session)
+        )
 
         with caller(user_id=uuid4(), admin=True):
             admin_scope = await dashboard.resolve_visible_agent_ids()
             admin_cost = await dashboard.get_total_cost_usd(start, end, agent_ids=admin_scope)
-            admin_ms = await dashboard.get_avg_response_time(start, end, agent_ids=admin_scope)
+            admin_ms = await dashboard.get_avg_response_time(world.day, world.day, agent_ids=admin_scope)
             admin_explorer = (await service.get_summary(world.params)).total_cost_usd
 
         with caller(user_id=world.user_id("u1"), group_id=world.group_id("g1")):
             user_scope = await dashboard.resolve_visible_agent_ids()
             user_cost = await dashboard.get_total_cost_usd(start, end, agent_ids=user_scope)
-            user_ms = await dashboard.get_avg_response_time(start, end, agent_ids=user_scope)
+            user_ms = await dashboard.get_avg_response_time(world.day, world.day, agent_ids=user_scope)
             user_explorer = (await service.get_summary(world.params)).total_cost_usd
 
     assert admin_scope is None and user_scope == [world.agent_id("a1")]

@@ -267,6 +267,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
   fallbackChainId?: string;
   memory: boolean;
   piiMasking?: boolean;
+  promptCaching?: boolean;
   systemPrompt?: string;
   userPrompt?: string;
   type:
@@ -421,7 +422,7 @@ export interface JiraNodeData extends BaseNodeData {
 export interface MLModelInferenceNodeData extends BaseNodeData {
   modelId: string; // ID of the selected ML model
   modelName?: string; // Name of the selected model (for display)
-  inferenceInputs: Record<string, string>; // Dynamic inputs based on model's inference_params
+  inferenceInputs: Record<string, string>; // Values supplied for each of the model's features
 }
 
 // Train Data Source Node Data
@@ -434,6 +435,7 @@ export interface TrainDataSourceNodeData extends BaseNodeData {
   csvFilePath?: string; // Server path to the uploaded CSV file
   csvFileId?: string; // ID of the uploaded CSV file
   csvFileUrl?: string; // URL of the uploaded CSV file
+  analysisResult?: CSVAnalysisResult; // Preview/analysis of the uploaded file
 }
 
 // Preprocessing Node Data
@@ -445,6 +447,8 @@ export interface PreprocessingNodeData extends BaseNodeData {
 }
 
 // Train Model Node Data
+export type SplitMethod = "random" | "time_based";
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
@@ -459,6 +463,8 @@ export interface TrainModelNodeData extends BaseNodeData {
   featureColumns: string[]; // Feature column names
   modelParameters: Record<string, any>; // Model-specific parameters
   validationSplit: number; // Train/validation split ratio
+  splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
+  dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
 }
 
 // Per Chat RAG Node Data

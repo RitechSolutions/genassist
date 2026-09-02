@@ -1395,7 +1395,7 @@ export const AgentFormDialog = ({
               <SheetDescription>
                 {data?.id
                   ? "Update your agent's configuration and settings."
-                  : "Configure your new AI agent with a name, description, and welcome settings."}
+                  : "Configure your new AI agent."}
               </SheetDescription>
             </SheetTitle>
             <SheetClose className="ml-auto self-start" onClick={onClose}>

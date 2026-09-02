@@ -9,6 +9,7 @@ import {
 } from "@/components/table";
 import { Card } from "@/components/card";
 import { TableSkeleton } from "@/components/skeletons";
+import { ListErrorState } from "@/components/ListErrorState";
 import { ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
 import {
@@ -65,6 +66,10 @@ export interface DataTableProps<T> {
   columns: Column<T>[];
   loading?: boolean;
   error?: string | null;
+  /** Heading shown above the error message in the error state. */
+  errorTitle?: string;
+  /** When set, the error state shows a "Try again" button that calls this. */
+  onRetry?: () => void;
   searchQuery?: string;
   emptyMessage?: string;
   notFoundMessage?: string;
@@ -101,6 +106,8 @@ export function DataTable<T extends { id?: string | number }>({
   columns,
   loading = false,
   error = null,
+  errorTitle,
+  onRetry,
   searchQuery = "",
   emptyMessage = "No data available",
   notFoundMessage = "No results found",
@@ -183,15 +190,15 @@ export function DataTable<T extends { id?: string | number }>({
 
   if (error) {
     return (
-      <Card className="p-8">
-        <div className="text-center text-destructive">{error}</div>
+      <Card className="overflow-hidden shadow-sm dark:bg-zinc-900">
+        <ListErrorState title={errorTitle} message={error} onRetry={onRetry} />
       </Card>
     );
   }
 
   if (data.length === 0) {
     return (
-      <Card className="overflow-hidden shadow-sm">
+      <Card className="overflow-hidden shadow-sm dark:bg-zinc-900">
         {emptyState ?? (
           <div className="p-8">
             <div className="text-center text-muted-foreground">
