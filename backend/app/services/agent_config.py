@@ -291,7 +291,10 @@ class AgentConfigService:
         agent_delete = await self.repository.get_by_id_full(agent_id)
         if not agent_delete:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
-        await self.repository.soft_delete(agent_delete)
+        # One transaction: a live workflow must never outlive its deleted agent.
+        await self.repository.soft_delete(agent_delete, commit=False)
+        await self.workflow_service.soft_delete_by_agent(agent_id, commit=False)
+        await self.db.commit()
 
         # Invalidate cache entries for this agent
         await invalidate_agent_cache(agent_id, agent_delete.operator.user.id)

@@ -14,20 +14,22 @@ import {
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
-import { useAudioProviderConfig } from "../hooks/useAudioProviderConfig";
+import { useAudioProviderConfig, useAudioProvidersEnabled } from "../hooks/useAudioProviderConfig";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type STTDialogProps = BaseNodeDialogProps<STTNodeData, STTNodeData>;
 
 export const STTDialog: React.FC<STTDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "Speech to Text");
-  const [audioSource, setAudioSource] = useState(data.audio_source || "");
-  const [audioProviderId, setAudioProviderId] = useState(data.audioProviderId || "");
-  const [model, setModel] = useState(data.model || "whisper-1");
-  const [language, setLanguage] = useState(data.language ?? "");
-  const [responseFormat, setResponseFormat] = useState(data.response_format || "text");
-  const [temperature, setTemperature] = useState(data.temperature ?? 0.0);
+  // `audioProviderId` drives `useAudioProviderConfig` (below), so it must be resolved
+  // before that hook runs. `useNodeDialogState` computes its `merged`/`toPayload` eagerly
+  // and `toPayload` reads `providerType` from the audio-config hook, so the config hook
+  // must run first — which means this field stays as local state (re-seeded by its own
+  // effect) rather than living inside the dialog-state hook.
+  const [audioProviderId, setAudioProviderId] = useState(
+    data.audioProviderId || "",
+  );
 
   const {
     providers: audioProviders,
@@ -38,15 +40,38 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
     getDefaultsForProvider,
   } = useAudioProviderConfig({ capability: "stt", audioProviderId, enabled: isOpen });
 
+  // Without the feature the provider list is never fetched, so hide the picker and
+  // let the node run on the built-in defaults instead of showing an empty select.
+  const audioProvidersEnabled = useAudioProvidersEnabled();
+
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(
+      props,
+      () => ({
+        name: data.name || "Speech to Text",
+        audio_source: data.audio_source || "",
+        model: data.model || "whisper-1",
+        language: data.language ?? "",
+        response_format: data.response_format || "text",
+        temperature: data.temperature ?? 0.0,
+      }),
+      (v) => ({
+        name: v.name,
+        audio_source: v.audio_source,
+        provider: providerType || "openai",
+        audioProviderId: audioProviderId || undefined,
+        model: v.model,
+        language: v.language || undefined,
+        response_format: v.response_format,
+        temperature: v.temperature,
+      }),
+    );
+
+  // Re-seed the externally-held `audioProviderId` when the panel (re)opens or the node
+  // data changes — mirrors the hook's re-seed for the remaining fields.
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "Speech to Text");
-      setAudioSource(data.audio_source || "");
       setAudioProviderId(data.audioProviderId || "");
-      setModel(data.model || "whisper-1");
-      setLanguage(data.language ?? "");
-      setResponseFormat(data.response_format || "text");
-      setTemperature(data.temperature ?? 0.0);
     }
   }, [isOpen, data]);
 
@@ -54,26 +79,12 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
     setAudioProviderId(id);
     const defaults = getDefaultsForProvider(id);
     if (defaults) {
-      setModel(defaults.model);
-      setResponseFormat(defaults.responseFormat);
+      setValues((v) => ({
+        ...v,
+        model: defaults.model,
+        response_format: defaults.responseFormat,
+      }));
     }
-  };
-
-  const buildNodeData = (): STTNodeData => ({
-    ...data,
-    name,
-    audio_source: audioSource,
-    provider: providerType || "openai",
-    audioProviderId: audioProviderId || undefined,
-    model,
-    language: language || undefined,
-    response_format: responseFormat,
-    temperature,
-  });
-
-  const handleSave = () => {
-    onUpdate(buildNodeData());
-    onClose();
   };
 
   return (
@@ -90,15 +101,15 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={buildNodeData()}
+      data={merged}
     >
       <div className="space-y-4">
         <div>
           <Label htmlFor="name">Node Name</Label>
           <RichInput
             id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
             placeholder="e.g., Speech to Text"
             className="w-full"
           />
@@ -108,33 +119,38 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
           <Label htmlFor="audio_source">Audio Source</Label>
           <DraggableTextArea
             id="audio_source"
-            value={audioSource}
-            onChange={(e) => setAudioSource(e.target.value)}
+            value={values.audio_source}
+            onChange={(e) => setField("audio_source", e.target.value)}
             placeholder="Drag the audio output variable from a connected TTS node, e.g. {{source.output}}"
             className="h-20 font-mono text-sm"
             rows={3}
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="audioProviderId">Audio Provider</Label>
-          <Select value={audioProviderId} onValueChange={handleProviderChange}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select audio provider" />
-            </SelectTrigger>
-            <SelectContent>
-              {audioProviders?.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} ({p.provider_type})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {audioProvidersEnabled && (
+          <div className="space-y-2">
+            <Label htmlFor="audioProviderId">Audio Provider</Label>
+            <Select value={audioProviderId} onValueChange={handleProviderChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select audio provider" />
+              </SelectTrigger>
+              <SelectContent>
+                {audioProviders?.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} ({p.provider_type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="model">Model</Label>
-          <Select value={model} onValueChange={setModel}>
+          <Select
+            value={values.model}
+            onValueChange={(value) => setField("model", value)}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select model" />
             </SelectTrigger>
@@ -155,8 +171,8 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
           </p>
           <RichInput
             id="language"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
+            value={values.language}
+            onChange={(e) => setField("language", e.target.value)}
             placeholder="e.g., en, es, fr"
             className="w-full"
           />
@@ -164,7 +180,10 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
 
         <div className="space-y-2">
           <Label htmlFor="response_format">Response Format</Label>
-          <Select value={responseFormat} onValueChange={setResponseFormat}>
+          <Select
+            value={values.response_format}
+            onValueChange={(value) => setField("response_format", value)}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select format" />
             </SelectTrigger>
@@ -180,18 +199,18 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
 
         {supportsTemperature && (
           <div>
-            <Label htmlFor="temperature">Temperature ({temperature})</Label>
+            <Label htmlFor="temperature">Temperature ({values.temperature})</Label>
             <p className="text-xs text-muted-foreground mb-1">
               Sampling temperature (0.0 for deterministic)
             </p>
             <RichInput
               id="temperature"
               type="number"
-              value={String(temperature)}
+              value={String(values.temperature)}
               onChange={(e) => {
                 const val = parseFloat(e.target.value);
                 if (!isNaN(val) && val >= 0.0 && val <= 1.0) {
-                  setTemperature(val);
+                  setField("temperature", val);
                 }
               }}
               min={0.0}

@@ -172,7 +172,10 @@ class PgVectorDB(BaseVectorDB):
                 return True
 
             async with self.engine.begin() as conn:
-                await conn.execute(text(f"DROP TABLE IF EXISTS {self.table_name}"))
+                # Quote the identifier via the dialect's preparer instead of raw
+                # interpolation to avoid SQL identifier injection.
+                quoted_table = self.engine.dialect.identifier_preparer.quote(self.table_name)
+                await conn.execute(text(f"DROP TABLE IF EXISTS {quoted_table}"))
 
             logger.info(f"Deleted pgvector table: {self.table_name}")
             self.table_name = None

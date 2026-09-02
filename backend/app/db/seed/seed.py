@@ -33,7 +33,7 @@ from app.db.models.user import UserModel
 from app.db.models.user_role import UserRoleModel
 from app.db.models.user_type import UserTypeModel
 from app.db.seed.seed_data_config import seed_test_data
-from app.schemas.agent import AgentCreate
+from app.schemas.agent import AgentCreate, AgentRead
 from app.schemas.agent_knowledge import KBCreate, KBRead
 from app.schemas.agent_tool import ToolConfigBase
 from app.schemas.app_settings import AppSettingsCreate
@@ -1588,7 +1588,7 @@ async def seed_workflow_builder_agent(
     config_service = injector.get(AgentConfigService)
     agent_model = await config_service.create(builder_agent, user_id=owner_user_id)
     agent_model.is_system = True
-    full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
+    full_agent: AgentRead = await config_service.get_by_id_full(agent_model.id)
 
     workflow_update_data = WorkflowUpdate(
         name=workflow_model.name,
@@ -1603,7 +1603,6 @@ async def seed_workflow_builder_agent(
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     # Create operator role
-    await session.refresh(full_agent.operator, ["user"])
     await session.refresh(agent_role)
 
     urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)

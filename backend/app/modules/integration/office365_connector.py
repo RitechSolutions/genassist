@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 import httpx
-import requests
 import logging
 from msal import ConfidentialClientApplication
 from urllib.parse import quote, urlparse, unquote
@@ -44,9 +43,8 @@ class Office365Connector:
         }
         self.for_sharepoint = for_sharepoint
         self._client: httpx.AsyncClient | None = None
-
-        if (self.site_id is None or self.drive_id is None) and self.for_sharepoint:
-            self.resolve_sharepoint_url(self.sharepoint_url)
+        # SharePoint site/drive resolution issues blocking HTTP calls, so it is
+        # done lazily from the async paths (list_files) instead of __init__.
 
     def refresh_access_token(self) -> str:
 
@@ -105,22 +103,25 @@ class Office365Connector:
         # logger.info("Successfully refreshed access token.")
         # return new_token
 
-    def list_files(self, folder_path: Optional[str] = None) -> dict:
+    async def list_files(self, folder_path: Optional[str] = None) -> dict:
         """
         Recursively list all files in the specified SharePoint folder.
         folder_path = "Shared Documents/MyFolder"
         """
+        if (self.site_id is None or self.drive_id is None) and self.for_sharepoint:
+            await self.resolve_sharepoint_url(self.sharepoint_url)
         if folder_path==None:
             folder_path=self.folder_path
         logger.info(f"Listing files from folder (recursively): {folder_path}")
         files = []
-        self._list_files_recursive(folder_path, files)
+        await self._list_files_recursive(folder_path, files)
         return {"files": files}
 
-    def _list_files_recursive(self, folder_path: str, files_accumulator: list):
+    async def _list_files_recursive(self, folder_path: str, files_accumulator: list):
         url=f"{self.base_url}/sites/{self.site_id}/drives/{self.drive_id}/root:/{folder_path}:/children"
 
-        response = requests.get(url, headers=self.headers)
+        async with self._session() as client:
+            response = await client.get(url, headers=self.headers)
 
         if response.status_code != 200:
             raise Exception(f"Error listing folder {folder_path}: {response.text}")
@@ -128,7 +129,7 @@ class Office365Connector:
         for item in response.json().get("value", []):
             if "folder" in item:
                 sub_path = f"{folder_path}/{item['name']}"
-                self._list_files_recursive(sub_path, files_accumulator)
+                await self._list_files_recursive(sub_path, files_accumulator)
             elif "file" in item:
                 files_accumulator.append({
                     "name": item["name"],
@@ -136,14 +137,15 @@ class Office365Connector:
                     "download_url": item["@microsoft.graph.downloadUrl"]
                 })
 
-    def get_file_content(self, download_url: str):
-        response = requests.get(download_url)
+    async def get_file_content(self, download_url: str):
+        async with self._session() as client:
+            response = await client.get(download_url)
         if response.status_code != 200:
             raise Exception(f"Error downloading file: {response.status_code} - {response.text}")
         return response.content
 
 
-    def resolve_sharepoint_url(self, sharepoint_url: str):
+    async def resolve_sharepoint_url(self, sharepoint_url: str):
         """
         Resolves a SharePoint folder URL to Microsoft Graph-compatible site_id, drive_id, and folder_path.
         """
@@ -164,18 +166,20 @@ class Office365Connector:
             raise Exception("Invalid SharePoint URL: cannot find 'sites/<site-name>' path.")
 
         # Step 1: Get site ID
-        site_resp = requests.get(
-            f"https://graph.microsoft.com/v1.0/sites/{hostname}:/{site_path}",
-            headers=headers
-        )
+        async with self._session() as client:
+            site_resp = await client.get(
+                f"https://graph.microsoft.com/v1.0/sites/{hostname}:/{site_path}",
+                headers=headers
+            )
         site_resp.raise_for_status()
         self.site_id = site_resp.json()["id"]
 
         # Step 2: Get drive ID (default is 'Documents' or 'Shared Documents')
-        drives_resp = requests.get(
-            f"https://graph.microsoft.com/v1.0/sites/{self.site_id}/drives",
-            headers=headers
-        )
+        async with self._session() as client:
+            drives_resp = await client.get(
+                f"https://graph.microsoft.com/v1.0/sites/{self.site_id}/drives",
+                headers=headers
+            )
         drives_resp.raise_for_status()
 
         drives = drives_resp.json()["value"]

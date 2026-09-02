@@ -53,7 +53,7 @@ class MCPServerRepository(DbRepository[MCPServerModel]):
                 )
                 self.db.add(workflow)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(mcp_server)
         return await self.get_by_id(mcp_server.id)
 
@@ -199,7 +199,7 @@ class MCPServerRepository(DbRepository[MCPServerModel]):
                         )
                     )
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(mcp_server)
         return await self.get_by_id(mcp_server_id, user_id)
 
@@ -209,6 +209,6 @@ class MCPServerRepository(DbRepository[MCPServerModel]):
         if not mcp_server:
             return False
         mcp_server.is_deleted = 1
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(mcp_server)
         return True

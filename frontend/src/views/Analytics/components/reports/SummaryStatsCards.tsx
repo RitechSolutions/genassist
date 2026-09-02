@@ -95,7 +95,7 @@ function buildMetrics(
         summary.total_finalized_conversations + summary.total_in_progress_conversations > 0
           ? `${summary.total_finalized_conversations} completed · ${summary.total_in_progress_conversations} in progress`
           : undefined,
-      description: "Unique chat sessions in the selected period.",
+      description: "Unique chat sessions with agent activity in the selected period.",
       delta: previous
         ? pctChange(summary.total_unique_conversations, previous.total_unique_conversations)
         : null,

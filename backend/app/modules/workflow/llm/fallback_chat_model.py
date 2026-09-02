@@ -39,7 +39,21 @@ logger = logging.getLogger(__name__)
 
 # Re-exported for callers that import it from here (defined in fallback_exceptions
 # so lightweight modules like llm_usage_utils can use it without importing langchain).
-__all__ = ["FallbackChatModel", "FALLBACK_PROVIDER_ID_KEY"]
+__all__ = ["FallbackChatModel", "FALLBACK_PROVIDER_ID_KEY", "child_callback_config"]
+
+
+def child_callback_config(run_manager: Optional[Any]) -> Optional[dict]:
+    """Config that nests a delegated call under the caller's run"""
+    if run_manager is None:
+        return None
+    from langchain_core.callbacks import AsyncCallbackManager, CallbackManager
+
+    manager_cls = AsyncCallbackManager if isinstance(run_manager, AsyncCallbackManagerForLLMRun) else CallbackManager
+    manager = manager_cls(handlers=[], parent_run_id=run_manager.run_id)
+    manager.set_handlers(run_manager.inheritable_handlers)
+    manager.add_tags(list(run_manager.inheritable_tags or []))
+    manager.add_metadata(dict(run_manager.inheritable_metadata or {}))
+    return {"callbacks": manager}
 
 
 class FallbackChatModel(BaseChatModel):
@@ -116,7 +130,7 @@ class FallbackChatModel(BaseChatModel):
         )
 
     async def _ainvoke_one(
-        self, model: Any, messages: List[BaseMessage], invoke_kwargs: dict, timeout: float
+        self, model: Any, messages: List[BaseMessage], config: Optional[dict], invoke_kwargs: dict, timeout: float
     ) -> AIMessage:
         """Invoke a single child, enforcing this provider's timeout if set.
 
@@ -125,10 +139,10 @@ class FallbackChatModel(BaseChatModel):
         """
         if timeout and timeout > 0:
             return await asyncio.wait_for(
-                model.ainvoke(messages, **invoke_kwargs),
+                model.ainvoke(messages, config=config, **invoke_kwargs),
                 timeout=timeout,
             )
-        return await model.ainvoke(messages, **invoke_kwargs)
+        return await model.ainvoke(messages, config=config, **invoke_kwargs)
 
     # ----- async (primary path) --------------------------------------------
 
@@ -142,13 +156,14 @@ class FallbackChatModel(BaseChatModel):
         invoke_kwargs = dict(kwargs)
         if stop is not None:
             invoke_kwargs["stop"] = stop
+        config = child_callback_config(run_manager)
 
         last_exc: Optional[BaseException] = None
         for idx, model in enumerate(self.models):
             timeout = self._timeout_at(idx)
             for attempt in range(self.retry_count + 1):
                 try:
-                    ai = await self._ainvoke_one(model, messages, invoke_kwargs, timeout)
+                    ai = await self._ainvoke_one(model, messages, config, invoke_kwargs, timeout)
                 except BaseException as exc:  # noqa: BLE001 - re-raised below when not retryable
                     if not is_retryable(exc):
                         raise
@@ -186,6 +201,7 @@ class FallbackChatModel(BaseChatModel):
         invoke_kwargs = dict(kwargs)
         if stop is not None:
             invoke_kwargs["stop"] = stop
+        config = child_callback_config(run_manager)
 
         last_exc: Optional[BaseException] = None
         for idx, model in enumerate(self.models):
@@ -194,7 +210,7 @@ class FallbackChatModel(BaseChatModel):
             for attempt in range(self.retry_count + 1):
                 emitted = False
                 try:
-                    aiter = model.astream(messages, **invoke_kwargs).__aiter__()
+                    aiter = model.astream(messages, config=config, **invoke_kwargs).__aiter__()
                     while True:
                         # Bound time-to-first-token by the request timeout. Subsequent
                         # chunks are not individually timed (mid-stream stalls are rare
@@ -242,12 +258,13 @@ class FallbackChatModel(BaseChatModel):
         invoke_kwargs = dict(kwargs)
         if stop is not None:
             invoke_kwargs["stop"] = stop
+        config = child_callback_config(run_manager)
 
         last_exc: Optional[BaseException] = None
         for idx, model in enumerate(self.models):
             for attempt in range(self.retry_count + 1):
                 try:
-                    ai = model.invoke(messages, **invoke_kwargs)
+                    ai = model.invoke(messages, config=config, **invoke_kwargs)
                 except BaseException as exc:  # noqa: BLE001
                     if not is_retryable(exc):
                         raise
@@ -274,13 +291,14 @@ class FallbackChatModel(BaseChatModel):
         invoke_kwargs = dict(kwargs)
         if stop is not None:
             invoke_kwargs["stop"] = stop
+        config = child_callback_config(run_manager)
 
         last_exc: Optional[BaseException] = None
         for idx, model in enumerate(self.models):
             for attempt in range(self.retry_count + 1):
                 emitted = False
                 try:
-                    for chunk in model.stream(messages, **invoke_kwargs):
+                    for chunk in model.stream(messages, config=config, **invoke_kwargs):
                         if not emitted:
                             self._stamp(chunk, idx)
                             emitted = True

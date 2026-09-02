@@ -5,6 +5,7 @@ import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
 import { VoiceAgentDialog } from "../../nodeDialogs/VoiceAgentDialog";
 import { getAudioProvider } from "@/services/audioProviders";
+import { useAudioProvidersEnabled } from "../../hooks/useAudioProviderConfig";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
 
@@ -23,8 +24,12 @@ const VoiceAgentNode: React.FC<NodeProps<VoiceAgentNodeData>> = ({
   const [connectedToolsCount, setConnectedToolsCount] = useState(0);
   const color = getNodeColor(nodeDefinition.category);
 
+  // Every voice-agent node on the canvas resolves its provider name; skip it where
+  // the Audio Providers feature is off so the canvas doesn't fan out failing calls.
+  const audioProvidersEnabled = useAudioProvidersEnabled();
+
   useEffect(() => {
-    if (data.voiceProviderId) {
+    if (audioProvidersEnabled && data.voiceProviderId) {
       getAudioProvider(data.voiceProviderId).then((provider) => {
         if (provider) {
           setProviderName(`${provider.name} (${provider.provider_type})`);
@@ -33,7 +38,7 @@ const VoiceAgentNode: React.FC<NodeProps<VoiceAgentNodeData>> = ({
     } else {
       setProviderName("");
     }
-  }, [data.voiceProviderId]);
+  }, [audioProvidersEnabled, data.voiceProviderId]);
 
   // Count tools connected via the input_tools handle
   useEffect(() => {

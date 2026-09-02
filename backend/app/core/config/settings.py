@@ -211,6 +211,12 @@ class ProjectSettings(BaseSettings):
     ZENDESK_SUBDOMAIN: Optional[str] = "<enter-value-here>"
     ZENDESK_EMAIL: Optional[str] = "<enter-value-here>"
     ZENDESK_API_TOKEN: Optional[str] = "<enter-value-here>"
+    # Zendesk is deprecating API tokens (removed 2027-04-30). OAuth2 client-credentials
+    # is the forward path; "api_token" stays the default for backward compatibility.
+    ZENDESK_AUTH_METHOD: Optional[str] = "api_token"
+    ZENDESK_CLIENT_ID: Optional[str] = None
+    ZENDESK_CLIENT_SECRET: Optional[str] = None
+    ZENDESK_OAUTH_SCOPE: Optional[str] = "read write"
     ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
 
     SALESFORCE_INSTANCE_URL: Optional[str] = None
@@ -255,13 +261,19 @@ class ProjectSettings(BaseSettings):
     TEST_USERNAME: Optional[str] = "test"
     TEST_PASSWORD: Optional[str] = "test"
 
-    # Check if inside celery container
-    BACKGROUND_TASK: bool = False
+    # NOTE: the former mutable ``BACKGROUND_TASK`` global was removed. Background-task
+    # state is now context-local — see ``app.core.tenant_scope.background_task_context``
+    # / ``is_background_task`` (avoids the cross-task race under concurrency).
     BEDROCK_MAX_RETRY_QUERY_EMBEDDING: int = 3
     BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
+    # Optional regex an *unknown* (per-agent) Origin must match before AgentCORSMiddleware
+    # will reflect it with Access-Control-Allow-Credentials. When unset, dynamic origins are
+    # reflected unrestricted (current behavior) — set this to close the CSRF vector if agent
+    # endpoints ever move to cookie-based auth. Example: r"https://.*\.example\.com"
+    CORS_AGENT_ALLOWED_ORIGIN_REGEX: Optional[str] = None
 
     # === WebSocket Configuration ===
     USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)

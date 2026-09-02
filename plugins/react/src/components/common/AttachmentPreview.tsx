@@ -6,9 +6,22 @@ interface AttachmentPreviewProps {
   file: File;
   onRemove: () => void;
   uploading?: boolean;
+  /** Chip background. Defaults to #f0f0f0. */
+  backgroundColor?: string;
+  /** File name text. Defaults to inherit. */
+  textColor?: string;
+  /** File size text. Defaults to #666. */
+  mutedTextColor?: string;
 }
 
-export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({ file, onRemove, uploading = false }) => {
+export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
+  file,
+  onRemove,
+  uploading = false,
+  backgroundColor = '#f0f0f0',
+  textColor,
+  mutedTextColor = '#666',
+}) => {
   const fileType = file.type;
   const isImage = fileType.startsWith('image/');
   const [imagePreview, setImagePreview] = React.useState<string | null>(null);
@@ -27,10 +40,11 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({ file, onRe
     display: 'flex',
     alignItems: 'center',
     padding: '8px',
-    backgroundColor: '#f0f0f0',
+    backgroundColor,
     borderRadius: '8px',
     position: 'relative',
     maxWidth: '250px',
+    ...(textColor ? { color: textColor } : {}),
   };
 
   const imageStyle: React.CSSProperties = {
@@ -60,7 +74,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({ file, onRe
 
   const fileSizeStyle: React.CSSProperties = {
     fontSize: '12px',
-    color: '#666',
+    color: mutedTextColor,
   };
 
   const removeButtonStyle: React.CSSProperties = {

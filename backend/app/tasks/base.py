@@ -5,8 +5,11 @@ import logging
 from typing import Callable, List, Any, Awaitable, Coroutine, Optional
 
 from app.services.tenant import TenantService
-from app.core.tenant_scope import set_tenant_context, clear_tenant_context
-from app.core.config.settings import settings
+from app.core.tenant_scope import (
+    set_tenant_context,
+    clear_tenant_context,
+    background_task_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +115,23 @@ def create_task_wrapper(task_func: Callable[..., Awaitable[Any]]) -> Callable:
         
         request_scope_factory = injector.get(RequestScopeFactory)
         
+        from app.core.utils.db_connection_utils import (
+            commit_scope_session,
+            rollback_scope_session,
+        )
+
         async with request_scope_factory.create_scope():
             try:
                 # Call the actual task function with the provided kwargs
-                return await task_func(**kwargs)
+                result = await task_func(**kwargs)
+            except Exception:
+                # Repos only flush; roll back this task's pending writes on error.
+                await rollback_scope_session(context="celery_task")
+                raise
+            else:
+                # Commit the task's unit of work (no-op if nothing was written).
+                await commit_scope_session(context="celery_task")
+                return result
             finally:
                 # Ensure any sessions created via DI are closed
                 try:
@@ -203,30 +219,29 @@ async def run_task_for_tenant(
         tenant_id: Tenant slug to scope execution to (from ``get_tenant_context()``).
         **kwargs: Arguments forwarded to the task function.
     """
-    settings.BACKGROUND_TASK = True
-    try:
-        logger.debug(f"Starting {task_name} task for tenant '{tenant_id}'...")
+    with background_task_context():
+        try:
+            logger.debug(f"Starting {task_name} task for tenant '{tenant_id}'...")
 
-        if tenant_id and tenant_id != "master":
-            set_tenant_context(tenant_id)
-        else:
+            if tenant_id and tenant_id != "master":
+                set_tenant_context(tenant_id)
+            else:
+                clear_tenant_context()
+
+            wrapper = create_task_wrapper(task_func)
+            result = await wrapper(**kwargs)
+
+            logger.info(f"{task_name} completed for tenant '{tenant_id}'")
+            return {"status": "success", "tenant_id": tenant_id, "result": result}
+        except Exception as e:
+            logger.error(
+                f"Error in {task_name} task for tenant '{tenant_id}': {str(e)}",
+                exc_info=True,
+            )
+            return {"status": "failed", "tenant_id": tenant_id, "error": str(e)}
+        finally:
             clear_tenant_context()
-
-        wrapper = create_task_wrapper(task_func)
-        result = await wrapper(**kwargs)
-
-        logger.info(f"{task_name} completed for tenant '{tenant_id}'")
-        return {"status": "success", "tenant_id": tenant_id, "result": result}
-    except Exception as e:
-        logger.error(
-            f"Error in {task_name} task for tenant '{tenant_id}': {str(e)}",
-            exc_info=True,
-        )
-        return {"status": "failed", "tenant_id": tenant_id, "error": str(e)}
-    finally:
-        clear_tenant_context()
-        settings.BACKGROUND_TASK = False
-        logger.debug(f"{task_name} task finished for tenant '{tenant_id}'.")
+            logger.debug(f"{task_name} task finished for tenant '{tenant_id}'.")
 
 
 async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
@@ -241,100 +256,98 @@ async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
         List of results for each tenant and master
     """
     results = []
-    settings.BACKGROUND_TASK = True
 
-    try:
-        from app.db.multi_tenant_session import multi_tenant_manager
-        from app.repositories.tenant import TenantRepository
+    with background_task_context():
+        try:
+            from app.db.multi_tenant_session import multi_tenant_manager
+            from app.repositories.tenant import TenantRepository
 
-        session_factory = multi_tenant_manager.get_tenant_session_factory("master")
-        async with session_factory() as session:
-            try:
-                repository = TenantRepository(session)
-                tenant_service = TenantService(repository=repository)
-                tenants = await tenant_service.get_all_tenants()
-
-                # First, run for master database (no tenant context)
+            session_factory = multi_tenant_manager.get_tenant_session_factory("master")
+            async with session_factory() as session:
                 try:
-                    logger.debug("Running task for master database")
-                    clear_tenant_context()  # Ensure no tenant context
+                    repository = TenantRepository(session)
+                    tenant_service = TenantService(repository=repository)
+                    tenants = await tenant_service.get_all_tenants()
 
-                    result = await task_func(**kwargs)
-                    if result:
+                    # First, run for master database (no tenant context)
+                    try:
+                        logger.debug("Running task for master database")
+                        clear_tenant_context()  # Ensure no tenant context
+
+                        result = await task_func(**kwargs)
+                        if result:
+                            results.append(
+                                {
+                                    "tenant_id": "master",
+                                    "tenant_name": "Master Database",
+                                    "tenant_slug": "master",
+                                    "result": result,
+                                }
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"Error running task for master database: {e}", exc_info=True
+                        )
                         results.append(
                             {
                                 "tenant_id": "master",
                                 "tenant_name": "Master Database",
                                 "tenant_slug": "master",
-                                "result": result,
+                                "error": str(e),
                             }
                         )
-                except Exception as e:
-                    logger.error(
-                        f"Error running task for master database: {e}", exc_info=True
-                    )
-                    results.append(
-                        {
-                            "tenant_id": "master",
-                            "tenant_name": "Master Database",
-                            "tenant_slug": "master",
-                            "error": str(e),
-                        }
-                    )
-                finally:
-                    # Ensure tenant context is cleared after master run
-                    clear_tenant_context()
+                    finally:
+                        # Ensure tenant context is cleared after master run
+                        clear_tenant_context()
 
-                if not tenants:
-                    logger.info("No active tenants found")
-                    return results
+                    if not tenants:
+                        logger.info("No active tenants found")
+                        return results
 
-                logger.info(f"Running task for {len(tenants)} tenant(s)")
+                    logger.info(f"Running task for {len(tenants)} tenant(s)")
 
-                for tenant in tenants:
-                    try:
-                        # Set tenant context for this tenant
-                        set_tenant_context(str(tenant.slug))
-                        logger.debug(
-                            f"Running task for tenant: {tenant.name} ({tenant.slug})"
-                        )
+                    for tenant in tenants:
+                        try:
+                            # Set tenant context for this tenant
+                            set_tenant_context(str(tenant.slug))
+                            logger.debug(
+                                f"Running task for tenant: {tenant.name} ({tenant.slug})"
+                            )
 
-                        # Run the task function with tenant context
-                        result = await task_func(**kwargs)
-                        if result:
+                            # Run the task function with tenant context
+                            result = await task_func(**kwargs)
+                            if result:
+                                results.append(
+                                    {
+                                        "tenant_id": str(tenant.id),
+                                        "tenant_name": tenant.name,
+                                        "tenant_slug": tenant.slug,
+                                        "result": result,
+                                    }
+                                )
+
+                        except Exception as e:
+                            logger.error(
+                                f"Error running task for tenant {tenant.name}: {e}",
+                                exc_info=True,
+                            )
                             results.append(
                                 {
                                     "tenant_id": str(tenant.id),
                                     "tenant_name": tenant.name,
                                     "tenant_slug": tenant.slug,
-                                    "result": result,
+                                    "error": str(e),
                                 }
                             )
+                finally:
+                    # Clear tenant context after each tenant
+                    clear_tenant_context()
+                # Session is automatically closed by the async context manager
 
-                    except Exception as e:
-                        logger.error(
-                            f"Error running task for tenant {tenant.name}: {e}",
-                            exc_info=True,
-                        )
-                        results.append(
-                            {
-                                "tenant_id": str(tenant.id),
-                                "tenant_name": tenant.name,
-                                "tenant_slug": tenant.slug,
-                                "error": str(e),
-                            }
-                        )
-            finally:
-                # Clear tenant context after each tenant
-                clear_tenant_context()
-            # Session is automatically closed by the async context manager
-
-    except Exception as e:
-        logger.error(f"Error in run_task_for_all_tenants: {e}", exc_info=True)
-    finally:
-        # Ensure context is cleared
-        clear_tenant_context()
-        # Reset BACKGROUND_TASK flag
-        settings.BACKGROUND_TASK = False
+        except Exception as e:
+            logger.error(f"Error in run_task_for_all_tenants: {e}", exc_info=True)
+        finally:
+            # Ensure context is cleared
+            clear_tenant_context()
 
     return results

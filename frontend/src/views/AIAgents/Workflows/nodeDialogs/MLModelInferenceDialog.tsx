@@ -16,19 +16,30 @@ import { DraggableInput } from "../components/custom/DraggableInput";
 import toast from "react-hot-toast";
 import { getAllMLModels } from "@/services/mlModels";
 import { MLModel } from "@/interfaces/ml-model.interface";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 export const MLModelInferenceDialog: React.FC<
   BaseNodeDialogProps<MLModelInferenceNodeData, MLModelInferenceNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
   const [mlModels, setMlModels] = useState<MLModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<MLModel | null>(null);
-  const [modelId, setModelId] = useState(data.modelId || "");
-  const [inferenceInputs, setInferenceInputs] = useState<
-    Record<string, string>
-  >(data.inferenceInputs || {});
   const [loading, setLoading] = useState(false);
+
+  const { values, setField, setValues, merged, handleSave: saveNode } =
+    useNodeDialogState(
+      props,
+      () => ({
+        modelId: data.modelId || "",
+        inferenceInputs: data.inferenceInputs || {},
+      }),
+      (v) => ({
+        modelId: v.modelId,
+        modelName: selectedModel?.name,
+        inferenceInputs: v.inferenceInputs,
+      }),
+    );
 
   // Fetch ML models on mount
   useEffect(() => {
@@ -57,52 +68,43 @@ export const MLModelInferenceDialog: React.FC<
     }
   }, [isOpen, data.modelId]);
 
-  // Update state when data changes
-  useEffect(() => {
-    setModelId(data.modelId || "");
-    setInferenceInputs(data.inferenceInputs || {});
-  }, [data, isOpen]);
-
   // Handle model selection change
   const handleModelChange = (value: string) => {
-    setModelId(value);
+    setField("modelId", value);
     const model = mlModels.find((m) => m.id === value);
     setSelectedModel(model || null);
 
     if (model) {
-      // Initialize inference inputs based on model's inference_params
+      // Initialize inference inputs based on the model's features
       const newInferenceInputs: Record<string, string> = {};
       if (model.features) {
         model.features.forEach((key) => {
-          newInferenceInputs[key] = inferenceInputs[key] || "";
+          newInferenceInputs[key] = values.inferenceInputs[key] || "";
         });
       }
-      setInferenceInputs(newInferenceInputs);
+      setField("inferenceInputs", newInferenceInputs);
     }
   };
 
   // Update inference input value
   const updateInferenceInput = (key: string, value: string) => {
-    setInferenceInputs((prev) => ({
+    setValues((prev) => ({
       ...prev,
-      [key]: value,
+      inferenceInputs: {
+        ...prev.inferenceInputs,
+        [key]: value,
+      },
     }));
   };
 
   // Handle save
   const handleSave = () => {
-    if (!modelId) {
+    if (!values.modelId) {
       toast.error("Please select an ML model");
       return;
     }
 
-    onUpdate({
-      ...data,
-      modelId,
-      modelName: selectedModel?.name,
-      inferenceInputs,
-    });
-    onClose();
+    saveNode();
   };
 
   return (
@@ -119,18 +121,14 @@ export const MLModelInferenceDialog: React.FC<
         </>
       }
       {...props}
-      data={{
-        ...data,
-        modelId,
-        inferenceInputs,
-      }}
+      data={merged}
     >
       <div className="space-y-4">
         {/* Model Selection */}
         <div className="space-y-2">
           <Label htmlFor="model">ML Model</Label>
           <Select
-            value={modelId}
+            value={values.modelId}
             onValueChange={handleModelChange}
             disabled={loading}
           >
@@ -161,7 +159,7 @@ export const MLModelInferenceDialog: React.FC<
           )}
         </div>
 
-        {/* Inference Parameters */}
+        {/* Inference Values */}
         {selectedModel &&
           selectedModel.features &&
           selectedModel.features.length > 0 && (
@@ -178,7 +176,7 @@ export const MLModelInferenceDialog: React.FC<
                     </Label>
                     <DraggableInput
                       id={`param-${key}`}
-                      value={inferenceInputs[key] || ""}
+                      value={values.inferenceInputs[key] || ""}
                       onChange={(e) =>
                         updateInferenceInput(key, e.target.value)
                       }
@@ -196,7 +194,7 @@ export const MLModelInferenceDialog: React.FC<
 
         {!selectedModel && !loading && (
           <div className="text-sm text-muted-foreground text-center py-4">
-            Select an ML model to configure inference parameters
+            Select an ML model to configure Inference Values
           </div>
         )}
       </div>

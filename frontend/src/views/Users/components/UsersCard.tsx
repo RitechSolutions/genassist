@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { LIST_PAGE_SIZE } from "@/constants/pagination";
-import { ActionButtons } from "@/components/ActionButtons";
+import { Column } from "@/components/ui/data-table";
+import { EntityTableCard } from "@/components/EntityTableCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Label } from "@/components/label";
@@ -13,6 +12,7 @@ import { currentUserIsAdmin, getCurrentUserId } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { User } from "@/interfaces/user.interface";
 import { UserGroup } from "@/interfaces/userGroup.interface";
+import { activeSupervisedGroupIds } from "../helpers/supervision";
 
 interface UsersCardProps {
   searchQuery: string;
@@ -33,9 +33,6 @@ export function UsersCard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [userToRevert, setUserToRevert] = useState<User | null>(null);
   const [isRevertDialogOpen, setIsRevertDialogOpen] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
@@ -86,43 +83,7 @@ export function UsersCard({
     }
   }, [updatedUser]);
 
-  const filteredUsers = users.filter((user) => {
-    const q = searchQuery.toLowerCase();
-    if (!q) return true;
-    const groupName = user.group_id ? (groupMap[user.group_id] ?? "") : "";
-    return (
-      user.username.toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q) ||
-      (user.roles ?? []).some((r) => r.name?.toLowerCase().includes(q)) ||
-      groupName.toLowerCase().includes(q)
-    );
-  });
-
   const currentUserId = getCurrentUserId();
-
-  const handleDeleteClick = (user: User) => {
-    setUserToDelete(user);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!userToDelete?.id) return;
-
-    try {
-      setIsDeleting(true);
-      await deleteUser(userToDelete.id);
-      toast.success("User deleted successfully.");
-      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
-    } catch (error) {
-      const axiosError = error as AxiosError<{ error?: string }>;
-      const apiMessage = axiosError.response?.data?.error;
-      toast.error(apiMessage ?? "Failed to delete user.");
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setUserToDelete(null);
-    }
-  };
 
   const handleRevertClick = (user: User) => {
     setUserToRevert(user);
@@ -208,11 +169,7 @@ export function UsersCard({
       key: "group",
       className: "truncate",
       cell: (user) => {
-        const additionalGroupCount = new Set(
-          (user.supervised_group_ids ?? []).filter(
-            (id) => id && id !== user.group_id
-          )
-        ).size;
+        const additionalGroupCount = new Set(activeSupervisedGroupIds(user)).size;
         return user.group_id ? (
           <div className="inline-flex items-center gap-1">
             <span>{groupMap[user.group_id] ?? "—"}</span>
@@ -224,27 +181,6 @@ export function UsersCard({
           </div>
         ) : (
           "—"
-        );
-      },
-    },
-    {
-      header: "Action",
-      key: "action",
-      cell: (user) => {
-        const isDeleted = user.is_deleted === 1;
-        const isSelf = Boolean(currentUserId && user.id === currentUserId);
-        return (
-          <ActionButtons
-            canEdit={!isDeleted}
-            canDelete={!isDeleted && !isSelf}
-            canRevert={Boolean(isDeleted && isAdmin)}
-            onEdit={() => onEditUser(user)}
-            onDelete={() => handleDeleteClick(user)}
-            onRevert={() => handleRevertClick(user)}
-            editTitle="Edit User"
-            deleteTitle="Delete User"
-            revertTitle="Revert user"
-          />
         );
       },
     },
@@ -265,28 +201,51 @@ export function UsersCard({
         </div>
       )}
 
-      <DataTable
-        data={filteredUsers}
-        columns={columns}
+      <EntityTableCard<User>
+        entityName="user"
+        data={users}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
-        pageSize={LIST_PAGE_SIZE}
+        filterFn={(user, query) => {
+          const q = query.toLowerCase();
+          const groupName = user.group_id
+            ? (groupMap[user.group_id] ?? "")
+            : "";
+          return (
+            user.username.toLowerCase().includes(q) ||
+            user.email.toLowerCase().includes(q) ||
+            (user.roles ?? []).some((r) => r.name?.toLowerCase().includes(q)) ||
+            groupName.toLowerCase().includes(q)
+          );
+        }}
+        deleteFn={(user) => deleteUser(user.id!)}
+        getItemName={(user) => user.username}
+        deleteDescription={(user) =>
+          isAdmin
+            ? `This will soft-delete the user "${user.username}". They will be removed from the active list; admins can view them with "Show deleted users".`
+            : `This will soft-delete the user "${user.username}". They will be removed from the active list.`
+        }
+        onDeleted={(user) =>
+          setUsers((prev) => prev.filter((u) => u.id !== user.id))
+        }
         emptyMessage="No users found"
         notFoundMessage="No users found matching your search"
-      />
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={userToDelete?.username || ""}
-        description={
-          isAdmin
-            ? `This will soft-delete the user "${userToDelete?.username}". They will be removed from the active list; admins can view them with "Show deleted users".`
-            : `This will soft-delete the user "${userToDelete?.username}". They will be removed from the active list.`
-        }
+        columns={columns}
+        rowActions={{
+          header: "Action",
+          key: "action",
+          onEdit: onEditUser,
+          onRevert: handleRevertClick,
+          editTitle: "Edit User",
+          deleteTitle: "Delete User",
+          revertTitle: "Revert user",
+          canEdit: (user) => user.is_deleted !== 1,
+          canDelete: (user) =>
+            user.is_deleted !== 1 &&
+            !(currentUserId && user.id === currentUserId),
+          canRevert: (user) => Boolean(user.is_deleted === 1 && isAdmin),
+        }}
       />
 
       <ConfirmDialog

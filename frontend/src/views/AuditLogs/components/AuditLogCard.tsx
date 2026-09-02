@@ -8,11 +8,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/table";
-import { Loader2, View, XCircle } from "lucide-react";
+import { Loader2, View, ScrollText } from "lucide-react";
 import { Button } from "@/components/button";
 import { formatDate, getTimeFromDatetime } from "@/helpers/utils";
 import { AuditLogCardProps } from "@/interfaces/audit-log.interface";
 import { TableSkeleton } from "@/components/skeletons";
+import { ListEmptyState } from "@/components/ListEmptyState";
+import { ListErrorState } from "@/components/ListErrorState";
 import Can from "@/hooks/Can";
 
 const AUDIT_LOG_TABLE_COLUMNS = 6;
@@ -25,6 +27,8 @@ export function AuditLogCard({
   onViewDetails,
   loading = false,
   isRefreshing = false,
+  error = null,
+  onRetry,
 }: AuditLogCardProps) {
   const filteredAuditLogs = useMemo(() => {
     return auditLogs.filter((log) => {
@@ -48,17 +52,26 @@ export function AuditLogCard({
     return <TableSkeleton columns={AUDIT_LOG_TABLE_COLUMNS} rows={8} />;
   }
 
+  if (error) {
+    return (
+      <Card className="overflow-hidden shadow-sm dark:bg-zinc-900">
+        <ListErrorState message={error} onRetry={onRetry} />
+      </Card>
+    );
+  }
+
   if (filteredAuditLogs.length === 0) {
     return (
-      <Card className="p-8">
-        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-          <XCircle className="w-5 h-5" />
-          <span>
-            {searchQuery
-              ? "No results found for this search query."
-              : "No audit logs available."}
-          </span>
-        </div>
+      <Card className="overflow-hidden shadow-sm dark:bg-zinc-900">
+        <ListEmptyState
+          icon={<ScrollText className="h-12 w-12 text-muted-foreground" />}
+          title={searchQuery ? "No matching audit logs" : "No audit logs yet"}
+          description={
+            searchQuery
+              ? "No audit logs match your search or filters. Try widening the date range or clearing a filter."
+              : "System changes are recorded here. Adjust the date range or filters if you expected to see entries."
+          }
+        />
       </Card>
     );
   }

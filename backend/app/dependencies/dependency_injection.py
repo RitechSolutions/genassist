@@ -20,6 +20,7 @@ from app.core.config.settings import settings
 # Multi-tenant session manager
 from app.core.tenant_scope import tenant_scope
 from app.db.multi_tenant_session import multi_tenant_manager
+from app.db.transaction_manager import TransactionManager
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.workflow.llm.provider import LLMProvider
@@ -31,6 +32,7 @@ from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.app_settings import AppSettingsRepository
 from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
+from app.repositories.conversation_read_receipt import ConversationReadReceiptRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.datasources import DataSourcesRepository
 from app.repositories.feature_flag import FeatureFlagRepository
@@ -39,6 +41,7 @@ from app.repositories.file_upload_session import FileUploadSessionRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.llm_cost_rates import LlmCostRateRepository
+from app.repositories.llm_model_catalog import LlmModelCatalogRepository
 from app.repositories.llm_usage_backfill import LlmUsageBackfillRepository
 from app.repositories.llm_usage_control import LlmUsageControlRepository
 from app.repositories.llm_usage_read import LlmUsageReadRepository
@@ -84,6 +87,7 @@ from app.services.gpt_questions import QuestionAnswerer
 from app.services.gpt_speaker_separator import SpeakerSeparator
 from app.services.llm_analysts import LlmAnalystService
 from app.services.llm_cost_rates import LlmCostRateService
+from app.services.llm_model_catalog import LlmModelCatalogService
 from app.services.llm_usage_backfill import LlmUsageBackfillService
 from app.services.llm_usage_control import LlmUsageControlService
 from app.services.llm_usage_read import LlmUsageReadService
@@ -193,9 +197,12 @@ class Dependencies(Module):
         Returns an AsyncSession instance managed by fastapi-injector's request scope.
         Note: Sessions must be properly closed via middleware or cleanup mechanism.
         """
-        from app.core.tenant_scope import get_tenant_context
+        from app.core.tenant_scope import require_tenant_context
 
-        tenant_id = get_tenant_context()
+        # Fail closed: a missing tenant context must not silently route this
+        # session to the master database. Intentional master access sets the
+        # context explicitly (set_tenant_context("master") / clear_tenant_context()).
+        tenant_id = require_tenant_context()
         logger.debug(f"DI: Tenant context: {tenant_id}")
 
         session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
@@ -204,6 +211,11 @@ class Dependencies(Module):
         return session
 
     def configure(self, binder):
+        # Request-scoped transaction boundary shared by the transaction middleware,
+        # the background-task scope helpers, and any service that opts into an
+        # explicit unit of work. Same request-scoped AsyncSession as the repositories.
+        binder.bind(TransactionManager, scope=request_scope)
+
         binder.bind(ToolService, scope=request_scope)
         binder.bind(ToolRepository, scope=request_scope)
 
@@ -260,6 +272,7 @@ class Dependencies(Module):
 
         binder.bind(ConversationService, scope=request_scope)
         binder.bind(ConversationRepository, scope=request_scope)
+        binder.bind(ConversationReadReceiptRepository, scope=request_scope)
 
         binder.bind(ConversationAnalysisService, scope=request_scope)
         binder.bind(ConversationAnalysisRepository, scope=request_scope)
@@ -286,6 +299,8 @@ class Dependencies(Module):
 
         binder.bind(LlmCostRateService, scope=request_scope)
         binder.bind(LlmCostRateRepository, scope=request_scope)
+        binder.bind(LlmModelCatalogService, scope=request_scope)
+        binder.bind(LlmModelCatalogRepository, scope=request_scope)
 
         binder.bind(LlmUsageControlService, scope=request_scope)
         binder.bind(LlmUsageControlRepository, scope=request_scope)

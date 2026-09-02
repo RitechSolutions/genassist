@@ -16,7 +16,7 @@ class LlmAnalystRepository(DbRepository[LlmAnalystModel]):
     async def create(self, data: LlmAnalystCreate) -> LlmAnalystModel:
         obj = LlmAnalystModel(**data.model_dump())
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -36,7 +36,7 @@ class LlmAnalystRepository(DbRepository[LlmAnalystModel]):
     async def update(self, obj: LlmAnalystModel):
         obj.updated_by = context["user_id"]
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 

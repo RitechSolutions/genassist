@@ -1,34 +1,35 @@
 import datetime
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
+
 from injector import inject
-from sqlalchemy import asc, cast, desc, distinct, func, and_, or_, nulls_last, String, update
+from sqlalchemy import String, and_, asc, cast, desc, distinct, func, nulls_last, or_, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import contains_eager, joinedload, selectinload
+from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.bi_utils import (
+    filter_conversation_date,
+    filter_conversation_messages_create_time,
+)
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
-from app.db.models.conversation import ConversationModel
-from starlette_context import context
-from starlette_context.errors import ContextDoesNotExistError
-from app.db.models.message_model import TranscriptMessageModel
-from app.schemas.conversation import ConversationCreate
-from app.schemas.filter import ConversationFilter
-from app.core.utils.bi_utils import (
-    filter_conversation_date,
-    filter_conversation_messages_create_time,
-)
-from app.db.models.conversation import ConversationAnalysisModel
-from app.db.models.operator import OperatorModel
 from app.db.models import AgentModel
+from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
+from app.db.models.message_model import TranscriptMessageModel
+from app.db.models.operator import OperatorModel
 from app.db.models.user import UserModel
 from app.repositories.db_repository import DbRepository
+from app.schemas.conversation import ConversationCreate
+from app.schemas.filter import ConversationFilter
 
 # KPI score fields on ConversationAnalysisModel (0-10 scale).
 # Used for sorting, filtering, and join detection.
@@ -79,7 +80,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
             data["group_id"] = await self.resolve_group_id_for_operator(conversation_data.operator_id)
         new_conversation = ConversationModel(**data)
         self.db.add(new_conversation)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_conversation)
         return new_conversation
 
@@ -215,22 +216,6 @@ class ConversationRepository(DbRepository[ConversationModel]):
         result = await self.db.execute(query)
         return result.scalars().first()
 
-    async def get_latest_conversation_with_analysis_for_operator(
-        self, operator_id: UUID
-    ) -> Optional[ConversationModel]:
-        query = (
-            select(ConversationModel)
-            .options(
-                joinedload(ConversationModel.analysis),
-                joinedload(ConversationModel.recording),  # ← Load recording too
-            )
-            .where(ConversationModel.operator_id == operator_id)
-            .order_by(ConversationModel.created_at.desc())
-            .limit(1)
-        )
-        result = await self.db.execute(query)
-        return result.scalars().first()
-
     async def update_conversation(
         self, conversation: ConversationModel
     ) -> ConversationModel:
@@ -238,7 +223,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
         Updates an existing conversation in DB
         """
         self.db.add(conversation)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(conversation)
         return conversation
 
@@ -265,7 +250,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
             .values(custom_attributes=custom_attributes)
         )
         await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
 
     def _apply_base_filters(self, query, conversation_filter: ConversationFilter):
         """Apply all shared WHERE clauses so fetch and count stay in sync."""
@@ -585,7 +570,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
 
     async def delete_conversation(self, conversation: ConversationModel):
         await self.db.delete(conversation)
-        await self.db.commit()
+        await self.db.flush()
 
     async def get_topics_count(self) -> List[Tuple[str, int]]:
         """
@@ -624,7 +609,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
         if not conv:
             return None
         conv.zendesk_ticket_id = zendesk_ticket_id
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(conv)
         return conv
 

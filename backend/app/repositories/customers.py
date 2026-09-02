@@ -35,7 +35,7 @@ class CustomersRepository(DbRepository[CustomerModel]):
             source_ref=customer_create.source_ref,
         )
         self.db.add(new_customer)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(new_customer)
         return new_customer
 
@@ -72,7 +72,7 @@ class CustomersRepository(DbRepository[CustomerModel]):
             customer.source_ref = data.source_ref
 
         self.db.add(customer)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(customer)
         return customer
 
@@ -83,4 +83,4 @@ class CustomersRepository(DbRepository[CustomerModel]):
             .values(is_deleted=True)
             .execution_options(synchronize_session="fetch")
         )
-        await self.db.commit()
+        await self.db.flush()

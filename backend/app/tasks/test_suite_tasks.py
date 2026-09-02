@@ -10,7 +10,11 @@ from uuid import UUID
 from celery import shared_task
 
 from app.core.config.settings import settings
-from app.core.tenant_scope import set_tenant_context, clear_tenant_context
+from app.core.tenant_scope import (
+    set_tenant_context,
+    clear_tenant_context,
+    background_task_context,
+)
 from app.tasks.base import create_task_wrapper, run_async_in_celery
 from app.core.tenant_scope import get_tenant_context
 from app.db.multi_tenant_session import multi_tenant_manager
@@ -107,34 +111,35 @@ def execute_test_suite_run_task(
     # the pooled one, so this task never reuses a connection whose event loop
     # run_async_in_celery already closed (a stale pooled connection hangs silently
     # rather than erroring — see the ml-worker asyncio-loop crash history).
-    settings.BACKGROUND_TASK = True
-    try:
-        async def _run():
-            async def task(**kwargs):
-                await _execute_test_suite_run_async(
-                    UUID(kwargs["run_id"]),
-                    kwargs.get("input_metadata"),
-                    kwargs.get("technique_configs"),
+    # Context-local (propagates into the run_async_in_celery event loop) so it can't
+    # race with other tasks in the same worker.
+    with background_task_context():
+        try:
+            async def _run():
+                async def task(**kwargs):
+                    await _execute_test_suite_run_async(
+                        UUID(kwargs["run_id"]),
+                        kwargs.get("input_metadata"),
+                        kwargs.get("technique_configs"),
+                    )
+
+                wrapper = create_task_wrapper(task)
+                await wrapper(
+                    run_id=run_id,
+                    input_metadata=input_metadata,
+                    technique_configs=technique_configs,
                 )
 
-            wrapper = create_task_wrapper(task)
-            await wrapper(
-                run_id=run_id,
-                input_metadata=input_metadata,
-                technique_configs=technique_configs,
+            run_async_in_celery(
+                _run(),
+                timeout=2 * 60 * 60,
+                task_name=f"execute_test_suite_run_task[{run_id}]",
             )
-
-        run_async_in_celery(
-            _run(),
-            timeout=2 * 60 * 60,
-            task_name=f"execute_test_suite_run_task[{run_id}]",
-        )
-    except Exception as exc:
-        logger.error("Error in test suite run task %s: %s", run_id, exc, exc_info=True)
-        raise
-    finally:
-        clear_tenant_context()
-        settings.BACKGROUND_TASK = False
+        except Exception as exc:
+            logger.error("Error in test suite run task %s: %s", run_id, exc, exc_info=True)
+            raise
+        finally:
+            clear_tenant_context()
 
 
 async def reconcile_stuck_test_runs_async() -> None:
@@ -157,6 +162,8 @@ async def reconcile_stuck_test_runs_async() -> None:
                 running_before=running_before,
                 error_message=_STUCK_TEST_RUN_ERROR,
             )
+            # Repos only flush now; this out-of-band session owns its commit.
+            await session.commit()
             if failed:
                 logger.warning(
                     "Reconciled %s stuck evaluation run(s) as failed for tenant %s",
@@ -164,6 +171,7 @@ async def reconcile_stuck_test_runs_async() -> None:
                     tenant_id,
                 )
         except Exception as exc:
+            await session.rollback()
             logger.error("Error reconciling stuck evaluation runs: %s", exc, exc_info=True)
         finally:
             await session.close()

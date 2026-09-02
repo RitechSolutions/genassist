@@ -1,19 +1,9 @@
-import { useEffect, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/dialog";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
-import { Button } from "@/components/button";
 import { Switch } from "@/components/switch";
+import { CRUDDialog } from "@/components/ui/crud-dialog";
 import { createApiKey, updateApiKey } from "@/services/apiKeys";
 import { ApiKey } from "@/interfaces/api-key.interface";
-import toast from "react-hot-toast";
 import {
   Select,
   SelectContent,
@@ -35,6 +25,12 @@ interface Props {
   onSaved: (key: ApiKey) => void;
 }
 
+type ApiKeyFormValues = {
+  name: string;
+  isActive: boolean;
+  expiryPreset: string;
+};
+
 export default function ApiKeyForm({
   agentId,
   userId,
@@ -43,127 +39,107 @@ export default function ApiKeyForm({
   onClose,
   onSaved,
 }: Props) {
-  const [name, setName] = useState("");
-  const [isActive, setIsActive] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [expiryPreset, setExpiryPreset] = useState<string>("never");
-
-  useEffect(() => {
-    if (existingKey) {
-      setName(existingKey.name);
-      setIsActive(existingKey.is_active === 1);
-    } else {
-      setName("");
-      setIsActive(true);
-      setExpiryPreset("never");
-    }
-  }, [existingKey, open]);
-
-  async function handleSubmit() {
-    setSaving(true);
-    try {
-      let saved: ApiKey;
-      if (existingKey) {
-        saved = await updateApiKey(existingKey.id, {
-          name,
-          is_active: isActive ? 1 : 0,
-          user_id: userId,
-          agent_id: agentId,
-        });
-        toast.success("API key updated successfully.");
-      } else {
-        const expiresInDays = presetToExpiresInDays(expiryPreset);
-        saved = await createApiKey({
-          name,
-          is_active: isActive ? 1 : 0,
-          user_id: userId,
-          role_ids: [],
-          agent_id: agentId,
-          ...(expiresInDays !== undefined ? { expires_in_days: expiresInDays } : {}),
-        });
-        toast.success("API key generated successfully.");
+  return (
+    <CRUDDialog<ApiKeyFormValues>
+      open={open}
+      onOpenChange={(next) => !next && onClose()}
+      mode={existingKey ? "edit" : "create"}
+      maxWidth="672px"
+      resetKey={existingKey?.id ?? null}
+      initialValues={{ name: "", isActive: true, expiryPreset: "never" }}
+      editValues={
+        existingKey
+          ? { name: existingKey.name, isActive: existingKey.is_active === 1 }
+          : null
       }
-      onSaved(saved);
-      onClose();
-    } catch (error) {
-      toast.error(
-        `Failed to ${existingKey ? "update" : "create"} API key${
-          error.status === 400
+      title={{ create: "New API Key", edit: "Edit API Key" }}
+      description={{
+        create: "Create a new API key",
+        edit: "Update the API key details",
+      }}
+      submitLabel="Save"
+      loadingLabel="Saving…"
+      successMessage={{
+        create: "API key generated successfully.",
+        edit: "API key updated successfully.",
+      }}
+      errorMessage={(err, m) =>
+        `Failed to ${m === "create" ? "create" : "update"} API key${
+          (err as { status?: number })?.status === 400
             ? ": An API key with this name already exists"
             : ""
         }.`
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSubmit();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{existingKey ? "Edit" : "New"} API Key</DialogTitle>
-            <DialogDescription>
-              {existingKey
-                ? "Update the API key details"
-                : "Create a new API key"}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <RichInput
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-
-            {!existingKey ? (
-              <div className="space-y-2">
-                <Label htmlFor="credential-expiry">Credential expires</Label>
-                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
-                  <SelectTrigger id="credential-expiry">
-                    <SelectValue placeholder="Expiry" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Key stops working after this unless rotated earlier.
-                </p>
-              </div>
-            ) : null}
-
-            <div className="flex items-center gap-2">
-              <Label htmlFor="is_active">Active</Label>
-              <Switch
-                id="is_active"
-                checked={isActive}
-                onCheckedChange={setIsActive}
-              />
-            </div>
+      }
+      onSubmit={async (values, { mode: m }) => {
+        let saved: ApiKey;
+        if (m === "edit" && existingKey) {
+          saved = await updateApiKey(existingKey.id, {
+            name: values.name,
+            is_active: values.isActive ? 1 : 0,
+            user_id: userId,
+            agent_id: agentId,
+          });
+        } else {
+          const expiresInDays = presetToExpiresInDays(values.expiryPreset);
+          saved = await createApiKey({
+            name: values.name,
+            is_active: values.isActive ? 1 : 0,
+            user_id: userId,
+            role_ids: [],
+            agent_id: agentId,
+            ...(expiresInDays !== undefined
+              ? { expires_in_days: expiresInDays }
+              : {}),
+          });
+        }
+        onSaved(saved);
+      }}
+    >
+      {({ values, setField, mode: m }) => (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="name">Name</Label>
+            <RichInput
+              id="name"
+              value={values.name}
+              onChange={(e) => setField("name", e.target.value)}
+            />
           </div>
 
-          <DialogFooter>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          {m === "create" ? (
+            <div className="space-y-2">
+              <Label htmlFor="credential-expiry">Credential expires</Label>
+              <Select
+                value={values.expiryPreset}
+                onValueChange={(v) => setField("expiryPreset", v)}
+              >
+                <SelectTrigger id="credential-expiry">
+                  <SelectValue placeholder="Expiry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Key stops working after this unless rotated earlier.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-2">
+            <Label htmlFor="is_active">Active</Label>
+            <Switch
+              id="is_active"
+              checked={values.isActive}
+              onCheckedChange={(checked) => setField("isActive", checked)}
+            />
+          </div>
+        </>
+      )}
+    </CRUDDialog>
   );
 }

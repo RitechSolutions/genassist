@@ -9,6 +9,10 @@ from app.core.utils.bi_utils import make_async_web_call
 logger = logging.getLogger(__name__)
 
 
+class SlackApiError(Exception):
+    """Raised when the Slack API returns a logical error (``ok: false``)."""
+
+
 class SlackConnector:
 
     def __init__(self, token: str, channel: str):
@@ -42,10 +46,13 @@ class SlackConnector:
         response = await make_async_web_call(
             method="POST", url=url, headers=headers, payload=payload
         )
-        if response["status"] != 200:
-            logger.error(f"Slack Error opening conversation with user: {user_id}")
-            return None
-        return response["data"]["channel"]["id"]
+        data = response.get("data") or {}
+        if response["status"] != 200 or not data.get("ok"):
+            slack_error = data.get("error", "unknown_error")
+            message = f"Slack: can't open DM with user '{user_id}' ({slack_error})"
+            logger.error(message)
+            raise SlackApiError(message)
+        return data["channel"]["id"]
 
     async def lookup_user_by_email(self, email: str) -> str:
         """Look up a Slack user by email address."""
@@ -55,10 +62,15 @@ class SlackConnector:
         response = await make_async_web_call(
             method="GET", url=url, headers=headers, payload=None
         )
-        if response["status"] != 200:
-            logger.error(f"Slack Error looking up user by email: {email}")
-            return None
-        return response["data"]["user"]["id"]
+        data = response.get("data") or {}
+        if response["status"] != 200 or not data.get("ok"):
+            slack_error = data.get("error", "unknown_error")
+            message = f"Slack: can't find user by email '{email}' ({slack_error})"
+            if slack_error == "missing_scope":
+                message += "; bot token needs the 'users:read.email' scope"
+            logger.error(message)
+            raise SlackApiError(message)
+        return data["user"]["id"]
 
     async def send_slack_message(self, text: str) -> Dict[str, Any]:
         """Send a Slack message to a channel or user."""
@@ -69,9 +81,18 @@ class SlackConnector:
         }
         payload = {"channel": self.channel, "text": text}
 
-        return await make_async_web_call(
+        response = await make_async_web_call(
             method="POST", url=url, headers=headers, payload=payload
         )
+        data = response.get("data") or {}
+        if response["status"] != 200 or not data.get("ok"):
+            slack_error = data.get("error", "unknown_error")
+            message = (
+                f"Slack: can't send to channel '{self.channel}' ({slack_error})"
+            )
+            logger.error(message)
+            raise SlackApiError(message)
+        return response
 
 def verify_slack_request(
     request_body: str,

@@ -7,6 +7,7 @@ from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.audio_provider import AudioProvidersModel
 from app.db.models.audit_log import AuditLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
+from app.db.models.conversation_read_receipt import ConversationReadReceiptModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
 from app.db.models.fallback_chain import FallbackChainModel
@@ -14,6 +15,7 @@ from app.db.models.job import JobModel
 from app.db.models.job_logs import JobLogsModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
 from app.db.models.llm_cost_rate import LlmCostRateModel
+from app.db.models.llm_model_catalog import LlmModelCatalogModel
 from app.db.models.llm_usage import (
     LlmUsageCaptureRunModel,
     LlmUsageControlModel,
@@ -93,6 +95,7 @@ __all__ = [
     "LlmAnalystModel",
     "LlmProvidersModel",
     "LlmCostRateModel",
+    "LlmModelCatalogModel",
     "LlmUsageEventModel",
     "LlmUsageCaptureRunModel",
     "LlmUsageControlModel",
@@ -104,6 +107,7 @@ __all__ = [
     "ApiKeyRoleModel",
     "ConversationModel",
     "ConversationAnalysisModel",
+    "ConversationReadReceiptModel",
     "AgentResponseLogModel",
     "AgentExecutionDailyStatsModel",
     "NodeExecutionDailyStatsModel",
@@ -152,6 +156,7 @@ __all__ = [
 models = [
     ConversationModel,
     ConversationAnalysisModel,
+    ConversationReadReceiptModel,
     AgentResponseLogModel,
     AgentExecutionDailyStatsModel,
     NodeExecutionDailyStatsModel,
@@ -169,6 +174,7 @@ models = [
     LlmAnalystModel,
     LlmProvidersModel,
     LlmCostRateModel,
+    LlmModelCatalogModel,
     JobLogsModel,
     JobModel,
     DataSourceModel,

@@ -46,7 +46,7 @@ class ConversationAnalysisRepository(DbRepository[ConversationAnalysisModel]):
                     )
             self.db.add(analysis)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(analysis)
         return analysis
 

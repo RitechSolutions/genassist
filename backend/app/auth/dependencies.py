@@ -8,7 +8,13 @@ from fastapi_injector import Injected
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from starlette_context import context
 
-from app.auth.utils import api_key_header, current_user_is_admin, has_permission, oauth2
+from app.auth.utils import (
+    api_key_header,
+    authorized_supervised_group_ids,
+    current_user_is_admin,
+    has_permission,
+    oauth2,
+)
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -52,11 +58,7 @@ def _set_user_context(user, roles) -> None:
     context["user_roles"] = roles
     context["operator_id"] = user.operator.id if user and user.operator else None
     context["group_id"] = user.group_id if user and hasattr(user, "group_id") else None
-    context["supervised_group_ids"] = (
-        list(user.supervised_group_ids)
-        if user and hasattr(user, "supervised_group_ids")
-        else []
-    )
+    context["supervised_group_ids"] = authorized_supervised_group_ids(user)
 
 
 async def auth(

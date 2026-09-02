@@ -18,15 +18,19 @@ export default function AppSettings() {
 
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+        setError(null);
         const data = await getAllAppSettings();
         setAppSettings(data);
       } catch (error) {
-        // ignore
+        setError(
+          "We couldn't load your configuration variables. Please try again."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -34,6 +38,8 @@ export default function AppSettings() {
 
     fetchData();
   }, [refreshKey]);
+
+  const handleRetry = () => setRefreshKey((prevKey) => prevKey + 1);
 
   const handleSettingSaved = (_?: AppSetting) => {
     setRefreshKey((prevKey) => prevKey + 1);
@@ -77,6 +83,9 @@ export default function AppSettings() {
         refreshKey={refreshKey}
         appSettings={appSettings}
         loading={isLoading}
+        error={error}
+        onRetry={handleRetry}
+        onCreateSetting={handleCreateSetting}
         onEditSetting={handleEditSetting}
         onDeleteSetting={handleDeleteSetting}
       />

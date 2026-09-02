@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { ToolBuilderNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { ToolDefinitionSection } from "../components/ToolDefinitionSection";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type ToolBuilderDialogProps = BaseNodeDialogProps<
   ToolBuilderNodeData,
@@ -12,29 +13,12 @@ type ToolBuilderDialogProps = BaseNodeDialogProps<
 >;
 
 export const ToolBuilderDialog: React.FC<ToolBuilderDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { onClose, data } = props;
 
-  const [toolDefinition, setToolDefinition] = useState<ToolBuilderNodeData>({
-    name: data.name || "Tool Builder",
-    description: data.description || "Custom tool for parameter forwarding",
-    inputSchema: data.inputSchema || {},
-    returnDirect: data.returnDirect || false,
-  });
-
-  useEffect(() => {
-    setToolDefinition({
-      ...data,
-    });
-  }, [isOpen, data]);
-
-  // Handle save
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      ...toolDefinition,
-    });
-    onClose();
-  };
+  const { values, setValues, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({ ...data })
+  );
 
   return (
     <NodeConfigPanel
@@ -50,16 +34,13 @@ export const ToolBuilderDialog: React.FC<ToolBuilderDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        ...toolDefinition,
-      }}
+      data={merged}
       showJsonState={false}
       className="max-w-4xl"
     >
       <ToolDefinitionSection
-        toolDefinition={toolDefinition}
-        onToolDefinitionChange={setToolDefinition}
+        toolDefinition={values}
+        onToolDefinitionChange={setValues}
       />
     </NodeConfigPanel>
   );

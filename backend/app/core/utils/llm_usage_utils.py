@@ -36,6 +36,20 @@ def _first_present(data: Any, *keys: str) -> Optional[int]:
     return None
 
 
+def extract_cache_tokens(token_details: Any) -> tuple[int, int]:
+    """Cache read and cache creation counts from a stored ``token_details``
+
+    Returns:
+        ``(cache_read, cache_creation)``
+    """
+    if not isinstance(token_details, dict):
+        return 0, 0
+    details = token_details.get("input_token_details")
+    if not isinstance(details, dict) or not details:
+        details = token_details
+    return _coerce_count(details.get("cache_read")) or 0, _coerce_count(details.get("cache_creation")) or 0
+
+
 def _provider_total(metadata: Dict[str, Any]) -> Optional[int]:
     """Provider-reported total"""
     for source in (

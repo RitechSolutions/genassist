@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime, time, timezone
+from uuid import UUID
 
 from injector import inject
 from sqlalchemy import func, select
@@ -8,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils.date_time_utils import utc_now
 from app.db.base import generate_sequential_uuid
+from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
+from app.db.models.conversation import ConversationModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,272 @@ class AnalyticsAggregationRepository:
     @inject
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    # ───────────── real-time incremental upserts ─────────────
+    # Single-execution counterparts of the batch aggregation below. Each issues one
+    # INSERT ... ON CONFLICT DO UPDATE with atomic += increments. They do NOT commit;
+    # the caller owns the transaction boundary (one commit per unit of work).
+    async def increment_agent_daily_stats(self, data: dict) -> None:
+        """Upsert a single execution's contribution into agent_execution_daily_stats."""
+        now = datetime.now(timezone.utc)
+        response_ms = data["response_ms"]
+        nodes = data["nodes"]
+
+        # Compute per-execution node success rate
+        node_success_rate = None
+        if nodes:
+            success_nodes = sum(1 for n in nodes if n["is_success"])
+            node_success_rate = success_nodes / len(nodes)
+
+        input_tokens = data.get("input_tokens")
+        output_tokens = data.get("output_tokens")
+        cost_usd = data.get("cost_usd") or 0.0
+
+        row = {
+            "id": generate_sequential_uuid(),
+            "agent_id": data["agent_id"],
+            "stat_date": data["stat_date"],
+            "execution_count": 1,
+            "success_count": 1 if data["is_success"] else 0,
+            "error_count": 0 if data["is_success"] else 1,
+            "avg_response_ms": response_ms,
+            "min_response_ms": response_ms,
+            "max_response_ms": response_ms,
+            "total_response_ms": response_ms,
+            "total_nodes_executed": data["total_nodes_executed"],
+            "avg_success_rate": node_success_rate,
+            "total_success_rate_sum": node_success_rate,
+            "rag_used_count": 1 if data["rag_used"] else 0,
+            "unique_conversations": 0,
+            "finalized_conversations": 0,
+            "in_progress_conversations": 0,
+            "thumbs_up_count": 0,
+            "thumbs_down_count": 0,
+            "total_input_tokens": input_tokens or 0,
+            "total_output_tokens": output_tokens or 0,
+            "total_cost_usd": cost_usd,
+            "last_aggregated_at": now,
+            "is_deleted": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        stmt = insert(AgentExecutionDailyStatsModel).values(row)
+        tbl = AgentExecutionDailyStatsModel.__table__
+
+        update_set = {
+            "execution_count": tbl.c.execution_count + stmt.excluded.execution_count,
+            "success_count": tbl.c.success_count + stmt.excluded.success_count,
+            "error_count": tbl.c.error_count + stmt.excluded.error_count,
+            "total_nodes_executed": tbl.c.total_nodes_executed + stmt.excluded.total_nodes_executed,
+            "rag_used_count": tbl.c.rag_used_count + stmt.excluded.rag_used_count,
+            "total_input_tokens": func.coalesce(tbl.c.total_input_tokens, 0) + (input_tokens or 0),
+            "total_output_tokens": func.coalesce(tbl.c.total_output_tokens, 0) + (output_tokens or 0),
+            "total_cost_usd": func.coalesce(tbl.c.total_cost_usd, 0.0) + cost_usd,
+            "last_aggregated_at": stmt.excluded.last_aggregated_at,
+            "updated_at": stmt.excluded.updated_at,
+        }
+
+        if response_ms is not None:
+            update_set["total_response_ms"] = (
+                func.coalesce(tbl.c.total_response_ms, 0.0) + response_ms
+            )
+            update_set["avg_response_ms"] = (
+                (func.coalesce(tbl.c.total_response_ms, 0.0) + response_ms)
+                / (tbl.c.execution_count + 1)
+            )
+            update_set["min_response_ms"] = func.least(
+                func.coalesce(tbl.c.min_response_ms, response_ms), response_ms
+            )
+            update_set["max_response_ms"] = func.greatest(
+                func.coalesce(tbl.c.max_response_ms, response_ms), response_ms
+            )
+
+        if node_success_rate is not None:
+            update_set["total_success_rate_sum"] = (
+                func.coalesce(tbl.c.total_success_rate_sum, 0.0) + node_success_rate
+            )
+            update_set["avg_success_rate"] = (
+                (func.coalesce(tbl.c.total_success_rate_sum, 0.0) + node_success_rate)
+                / (tbl.c.execution_count + 1)
+            )
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_execution_daily_stats_agent_date",
+            set_=update_set,
+        )
+        await self.db.execute(stmt)
+
+    async def increment_node_daily_stats(self, data: dict) -> None:
+        """Upsert each node's contribution into node_execution_daily_stats."""
+        now = datetime.now(timezone.utc)
+
+        for node in data["nodes"]:
+            exec_ms = node["execution_ms"]
+
+            row = {
+                "id": generate_sequential_uuid(),
+                "agent_id": data["agent_id"],
+                "node_type": node["type"],
+                "stat_date": data["stat_date"],
+                "execution_count": 1,
+                "success_count": 1 if node["is_success"] else 0,
+                "failure_count": 0 if node["is_success"] else 1,
+                "avg_execution_ms": exec_ms,
+                "min_execution_ms": exec_ms,
+                "max_execution_ms": exec_ms,
+                "total_execution_ms": exec_ms,
+                "is_deleted": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            stmt = insert(NodeExecutionDailyStatsModel).values(row)
+            tbl = NodeExecutionDailyStatsModel.__table__
+
+            update_set = {
+                "execution_count": tbl.c.execution_count + stmt.excluded.execution_count,
+                "success_count": tbl.c.success_count + stmt.excluded.success_count,
+                "failure_count": tbl.c.failure_count + stmt.excluded.failure_count,
+                "updated_at": stmt.excluded.updated_at,
+            }
+
+            if exec_ms is not None:
+                update_set["total_execution_ms"] = (
+                    func.coalesce(tbl.c.total_execution_ms, 0.0) + exec_ms
+                )
+                update_set["avg_execution_ms"] = (
+                    (func.coalesce(tbl.c.total_execution_ms, 0.0) + exec_ms)
+                    / (tbl.c.execution_count + 1)
+                )
+                update_set["min_execution_ms"] = func.least(
+                    func.coalesce(tbl.c.min_execution_ms, exec_ms), exec_ms
+                )
+                update_set["max_execution_ms"] = func.greatest(
+                    func.coalesce(tbl.c.max_execution_ms, exec_ms), exec_ms
+                )
+
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_node_execution_daily_stats_agent_node_date",
+                set_=update_set,
+            )
+            await self.db.execute(stmt)
+
+    async def increment_conversation_counts(self, agent_id: UUID, event: str) -> None:
+        """Increment conversation counters on agent_execution_daily_stats.
+
+        event: "start"    → unique_conversations += 1, in_progress_conversations += 1
+        event: "finalize" → finalized_conversations += 1, in_progress_conversations -= 1
+        """
+        now = datetime.now(timezone.utc)
+        stat_date = now.date()
+
+        row = {
+            "id": generate_sequential_uuid(),
+            "agent_id": agent_id,
+            "stat_date": stat_date,
+            "execution_count": 0,
+            "success_count": 0,
+            "error_count": 0,
+            "total_nodes_executed": 0,
+            "avg_success_rate": None,
+            "rag_used_count": 0,
+            "unique_conversations": 1 if event == "start" else 0,
+            "finalized_conversations": 1 if event == "finalize" else 0,
+            "in_progress_conversations": 1 if event == "start" else 0,
+            "thumbs_up_count": 0,
+            "thumbs_down_count": 0,
+            "last_aggregated_at": now,
+            "is_deleted": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        stmt = insert(AgentExecutionDailyStatsModel).values(row)
+        tbl = AgentExecutionDailyStatsModel.__table__
+
+        if event == "start":
+            update_set = {
+                "unique_conversations": tbl.c.unique_conversations + 1,
+                "in_progress_conversations": tbl.c.in_progress_conversations + 1,
+                "updated_at": stmt.excluded.updated_at,
+            }
+        else:  # finalize
+            update_set = {
+                "finalized_conversations": tbl.c.finalized_conversations + 1,
+                "in_progress_conversations": func.greatest(
+                    tbl.c.in_progress_conversations - 1, 0
+                ),
+                "updated_at": stmt.excluded.updated_at,
+            }
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_execution_daily_stats_agent_date",
+            set_=update_set,
+        )
+        await self.db.execute(stmt)
+
+    async def get_agent_id_for_conversation(self, conversation_id: UUID) -> UUID | None:
+        """Look up the agent_id for a conversation via its operator_id."""
+        result = await self.db.execute(
+            select(ConversationModel.operator_id).where(
+                ConversationModel.id == conversation_id
+            )
+        )
+        operator_id = result.scalar_one_or_none()
+        if not operator_id:
+            return None
+
+        result = await self.db.execute(
+            select(AgentModel.id).where(AgentModel.operator_id == operator_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def increment_thumbs(self, agent_id: UUID, is_thumbs_up: bool) -> None:
+        """Increment thumbs_up_count or thumbs_down_count on agent_execution_daily_stats."""
+        now = datetime.now(timezone.utc)
+        stat_date = now.date()
+
+        row = {
+            "id": generate_sequential_uuid(),
+            "agent_id": agent_id,
+            "stat_date": stat_date,
+            "execution_count": 0,
+            "success_count": 0,
+            "error_count": 0,
+            "total_nodes_executed": 0,
+            "avg_success_rate": None,
+            "rag_used_count": 0,
+            "unique_conversations": 0,
+            "finalized_conversations": 0,
+            "in_progress_conversations": 0,
+            "thumbs_up_count": 1 if is_thumbs_up else 0,
+            "thumbs_down_count": 0 if is_thumbs_up else 1,
+            "last_aggregated_at": now,
+            "is_deleted": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        stmt = insert(AgentExecutionDailyStatsModel).values(row)
+        tbl = AgentExecutionDailyStatsModel.__table__
+
+        if is_thumbs_up:
+            update_set = {
+                "thumbs_up_count": tbl.c.thumbs_up_count + 1,
+                "updated_at": stmt.excluded.updated_at,
+            }
+        else:
+            update_set = {
+                "thumbs_down_count": tbl.c.thumbs_down_count + 1,
+                "updated_at": stmt.excluded.updated_at,
+            }
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_execution_daily_stats_agent_date",
+            set_=update_set,
+        )
+        await self.db.execute(stmt)
 
     async def get_last_aggregation_timestamp(self) -> datetime | None:
         """Return the latest last_aggregated_at across all agent daily stats rows."""
@@ -156,7 +425,7 @@ class AnalyticsAggregationRepository:
                 },
             )
             await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
 
     async def upsert_node_daily_stats(self, stats_list: list[dict]) -> None:
         """
@@ -212,4 +481,4 @@ class AnalyticsAggregationRepository:
                 },
             )
             await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()

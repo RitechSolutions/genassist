@@ -7,6 +7,14 @@ export interface ThemeParams {
   textColor: string;
   fontFamily: string;
   fontSize: string;
+  /** Background of the visitor's (customer) message bubble. */
+  userBubbleColor: string;
+  /** Background of the input field / docked bar / voice overlay. */
+  inputBackgroundColor: string;
+  /** Border color used across the container, inputs, menus and dialogs. */
+  borderColor: string;
+  /** Secondary/muted text: timestamps, descriptions, disclaimers, placeholders. */
+  mutedTextColor: string;
 }
 
 export function resolveTheme(theme?: Partial<ThemeParams>): ThemeParams {
@@ -17,6 +25,10 @@ export function resolveTheme(theme?: Partial<ThemeParams>): ThemeParams {
     fontFamily: theme?.fontFamily || 'Roboto, Arial, sans-serif',
     fontSize: theme?.fontSize || '14px',
     secondaryColor: theme?.secondaryColor || '#f5f5f5',
+    userBubbleColor: theme?.userBubbleColor || '#E4E4E7',
+    inputBackgroundColor: theme?.inputBackgroundColor || '#ffffff',
+    borderColor: theme?.borderColor || '#e5e7eb',
+    mutedTextColor: theme?.mutedTextColor || '#6b7280',
   };
 }
 
@@ -50,7 +62,7 @@ export function getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth,
     // When docked, fill the floating wrapper so its (possibly expanded) width drives the size.
     width: isFullscreen ? '100vw' : isFloatingDocked ? '100%' : '380px',
     maxWidth: isFullscreen ? '100vw' : isFloatingDocked ? '100%' : '400px',
-    border: isFullscreen ? 'none' : '1px solid #e0e0e0',
+    border: isFullscreen ? 'none' : `1px solid ${t.borderColor}`,
     borderRadius: isFullscreen ? '0' : '32px',
     overflow: 'hidden',
     backgroundColor: t.secondaryColor,
@@ -69,7 +81,7 @@ export function getHeaderStyle(t: ThemeParams): React.CSSProperties {
   return {
     padding: '12px 14px',
     backgroundColor: t.secondaryColor,
-    color: '#111111',
+    color: t.textColor,
     fontWeight: 'bold',
     display: 'flex',
     justifyContent: 'space-between',
@@ -136,11 +148,11 @@ export const brandLogoStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
-export function getHeaderPillTitleStyle(fontFamily: string): React.CSSProperties {
+export function getHeaderPillTitleStyle(fontFamily: string, textColor: string = '#111111'): React.CSSProperties {
   return {
     fontSize: '15px',
     fontWeight: 700,
-    color: '#111111',
+    color: textColor,
     margin: 0,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
@@ -156,11 +168,11 @@ export const headerPillTextColumnStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
-export function getHeaderDescriptionTextStyle(fontFamily: string): React.CSSProperties {
+export function getHeaderDescriptionTextStyle(fontFamily: string, mutedTextColor: string = '#6b7280'): React.CSSProperties {
   return {
     fontSize: '12px',
     fontWeight: 400,
-    color: '#6b7280',
+    color: mutedTextColor,
     margin: 0,
     paddingTop: '1px',
     whiteSpace: 'nowrap',
@@ -188,14 +200,14 @@ export const menuButtonStyle: React.CSSProperties = {
 
 // Popover styling mirrors the web app's shadcn dropdown-menu: rounded-md (10px),
 // 1px border, shadow-md, p-1 (4px) padding around rounded, hover-highlighted items.
-export function getMenuPopupStyle(backgroundColor: string): React.CSSProperties {
+export function getMenuPopupStyle(backgroundColor: string, borderColor: string = '#e4e4e7'): React.CSSProperties {
   return {
     position: 'absolute',
     top: '50px',
     right: '15px',
     backgroundColor,
     borderRadius: '10px',
-    border: '1px solid #e4e4e7',
+    border: `1px solid ${borderColor}`,
     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
     padding: '4px',
     zIndex: 1000,
@@ -230,31 +242,35 @@ export const chatContainerStyle: React.CSSProperties = {
   flexDirection: 'column',
 };
 
-export const inputContainerStyle: React.CSSProperties = {
-  display: 'flex',
-  padding: '12px 15px',
-  backgroundColor: '#ffffff',
-  alignItems: 'center',
-  gap: '8px',
-  flexShrink: 0,
-  overflowX: 'hidden',
-  minWidth: 0,
-};
+export function getInputContainerStyle(inputBackgroundColor: string = '#ffffff'): React.CSSProperties {
+  return {
+    display: 'flex',
+    padding: '12px 15px',
+    backgroundColor: inputBackgroundColor,
+    alignItems: 'center',
+    gap: '8px',
+    flexShrink: 0,
+    overflowX: 'hidden',
+    minWidth: 0,
+  };
+}
 
-export const inputWrapperStyle: React.CSSProperties = {
-  display: 'flex',
-  flex: 1,
-  alignItems: 'center',
-  backgroundColor: '#ffffff',
-  borderRadius: '24px',
-  border: '1px solid #e5e7eb',
-  padding: '0 12px',
-  minHeight: '50px',
-  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-  position: 'relative',
-  overflowX: 'hidden',
-  minWidth: 0,
-};
+export function getInputWrapperStyle(inputBackgroundColor: string = '#ffffff', borderColor: string = '#e5e7eb'): React.CSSProperties {
+  return {
+    display: 'flex',
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: inputBackgroundColor,
+    borderRadius: '24px',
+    border: `1px solid ${borderColor}`,
+    padding: '0 12px',
+    minHeight: '50px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+    position: 'relative',
+    overflowX: 'hidden',
+    minWidth: 0,
+  };
+}
 
 interface TextAreaStyleParams {
   textAreaFontSize: string;
@@ -287,10 +303,10 @@ export function getTextAreaStyle(p: TextAreaStyleParams): React.CSSProperties {
 }
 
 /** Placeholder hint shown in the voice-only footer ("Tap to start a voice conversation"). */
-export function getLiveVoiceHintStyle(fontSize: string, fontFamily: string): React.CSSProperties {
+export function getLiveVoiceHintStyle(fontSize: string, fontFamily: string, mutedTextColor: string = '#9ca3af'): React.CSSProperties {
   return {
     flex: 1,
-    color: '#9ca3af',
+    color: mutedTextColor,
     fontSize,
     fontFamily,
     paddingRight: 44,
@@ -404,7 +420,7 @@ export function getConfirmDialogStyle(t: ThemeParams): React.CSSProperties {
     backgroundColor: t.backgroundColor,
     padding: '24px',
     borderRadius: '12px',
-    border: '1px solid #e4e4e7',
+    border: `1px solid ${t.borderColor}`,
     boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
     maxWidth: '320px',
     width: '100%',
@@ -428,7 +444,7 @@ export function getConfirmButtonStyle(isConfirm: boolean, t: ThemeParams): React
     padding: '8px 16px',
     backgroundColor: isConfirm ? '#dc2626' : 'transparent',
     color: isConfirm ? '#ffffff' : t.textColor,
-    border: isConfirm ? 'none' : '1px solid #e4e4e7',
+    border: isConfirm ? 'none' : `1px solid ${t.borderColor}`,
     borderRadius: '9999px',
     cursor: 'pointer',
     fontFamily: t.fontFamily,
@@ -454,11 +470,11 @@ export function getContentCardStyle(backgroundColor: string): React.CSSPropertie
   };
 }
 
-export function getDisclaimerStyle(fontFamily: string): React.CSSProperties {
+export function getDisclaimerStyle(fontFamily: string, mutedTextColor: string = '#9ca3af'): React.CSSProperties {
   return {
     textAlign: 'left',
     fontSize: '12px',
-    color: '#9ca3af',
+    color: mutedTextColor,
     margin: '12px 4px 2px 4px',
     fontFamily,
   };
@@ -623,28 +639,38 @@ export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSS
 
 /* ===== Input-bar variant styles ===== */
 
-// Outer wrapper: relative so the FAQ list / conversation panel can float above the bar.
-export function getInputBarRootStyle(fontFamily: string): React.CSSProperties {
+// Outer wrapper: fixed to the viewport so the bar stays docked and visible on scroll
+// (like the floating launcher), regardless of where the host places the component in the
+// page. It's still a positioned element, so the FAQ list / conversation panel keep floating
+// above the bar. Always docked bottom-center — the input bar ignores floatingConfig corners.
+// Margin-auto centering (rather than a transform) keeps the element from becoming a
+// containing block for any fixed-position descendants.
+export function getInputBarRootStyle(fontFamily: string, offsetY: number = 24): React.CSSProperties {
   return {
-    position: 'relative',
-    width: '100%',
+    position: 'fixed',
+    zIndex: 1000,
+    bottom: offsetY,
+    left: 0,
+    right: 0,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    width: 'calc(100vw - 40px)',
     maxWidth: '680px',
-    margin: '0 auto',
     boxSizing: 'border-box',
     fontFamily,
   };
 }
 
 // The docked "Chat Input" pill itself.
-export function getInputBarBarStyle(): React.CSSProperties {
+export function getInputBarBarStyle(inputBackgroundColor: string = '#ffffff', borderColor: string = '#e5e7eb'): React.CSSProperties {
   return {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
     width: '100%',
     boxSizing: 'border-box',
-    background: '#ffffff',
-    border: '1px solid #e5e7eb',
+    background: inputBackgroundColor,
+    border: `1px solid ${borderColor}`,
     borderRadius: '28px',
     padding: '6px 8px 6px 16px',
     boxShadow: '0 6px 24px rgba(0, 0, 0, 0.10)',
@@ -696,7 +722,7 @@ export function getInputBarFaqChipStyle(t: ThemeParams): React.CSSProperties {
 // Compact "agent replied" preview shown above the collapsed bar when a response arrives
 // while the conversation panel is closed. Width/margin are set by the caller so it tracks
 // the bar's collapsed/expanded width.
-export function getInputBarReplyCardStyle(backgroundColor: string): React.CSSProperties {
+export function getInputBarReplyCardStyle(backgroundColor: string, borderColor: string = '#ececec'): React.CSSProperties {
   return {
     ...inputBarFloatingBase,
     display: 'flex',
@@ -705,7 +731,7 @@ export function getInputBarReplyCardStyle(backgroundColor: string): React.CSSPro
     textAlign: 'left',
     padding: '12px 16px',
     background: backgroundColor,
-    border: '1px solid #ececec',
+    border: `1px solid ${borderColor}`,
     borderRadius: '22px',
     boxShadow: '0 10px 32px rgba(0, 0, 0, 0.12)',
     cursor: 'pointer',
@@ -714,7 +740,7 @@ export function getInputBarReplyCardStyle(backgroundColor: string): React.CSSPro
   };
 }
 
-export function getInputBarPanelStyle(backgroundColor: string): React.CSSProperties {
+export function getInputBarPanelStyle(backgroundColor: string, borderColor: string = '#ececec'): React.CSSProperties {
   return {
     ...inputBarFloatingBase,
     transformOrigin: 'bottom center',
@@ -723,7 +749,7 @@ export function getInputBarPanelStyle(backgroundColor: string): React.CSSPropert
     height: 'min(70vh, 520px)',
     maxHeight: 'min(70vh, 520px)',
     background: backgroundColor,
-    border: '1px solid #ececec',
+    border: `1px solid ${borderColor}`,
     borderRadius: '20px',
     boxShadow: '0 14px 44px rgba(0, 0, 0, 0.16)',
     overflow: 'hidden',
@@ -745,8 +771,36 @@ export function getInputBarPanelHeaderStyle(backgroundColor: string): React.CSSP
   };
 }
 
+// Circular "jump to latest" button, docked bottom-center over the message list. Uses the
+// panel background so it stays theme-aware; keep the translateX(-50%) in sync with the
+// .ga-scroll-bottom-btn CSS below (hover/entrance transforms must preserve the centering).
+export function getScrollToBottomButtonStyle(backgroundColor: string): React.CSSProperties {
+  return {
+    position: 'absolute',
+    bottom: '14px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 20,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '34px',
+    height: '34px',
+    borderRadius: '50%',
+    background: backgroundColor || '#ffffff',
+    border: '1px solid #e5e7eb',
+    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.16)',
+    color: '#374151',
+    cursor: 'pointer',
+    padding: 0,
+  };
+}
+
 export const CSS_KEYFRAMES = `
   @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
+  @keyframes ga-scroll-btn-in { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  .ga-scroll-bottom-btn { animation: ga-scroll-btn-in 180ms ease; transition: transform 160ms ease, box-shadow 160ms ease; }
+  .ga-scroll-bottom-btn:hover { transform: translateX(-50%) translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22); }
   .ga-textarea-nosb {
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -822,7 +876,8 @@ export const CSS_KEYFRAMES = `
     pointer-events: auto;
   }
   .ga-header-btn { background-color: transparent; transition: background-color 0.15s ease; }
-  .ga-header-btn:hover { background-color: rgba(0, 0, 0, 0.06); }
+  /* Neutral overlay so the hover reads on both light and dark themes. */
+  .ga-header-btn:hover { background-color: rgba(127, 127, 127, 0.16); }
   /* Menu popover items: shadcn-style hover highlight (bg-accent). --ga-hover is the
      theme's secondary color, set on the widget root. */
   .ga-menu-item { transition: background-color 0.15s ease; }

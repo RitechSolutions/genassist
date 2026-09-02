@@ -13,9 +13,39 @@ from fastapi_injector import RequestScopeFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
+from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
 
 logger = logging.getLogger(__name__)
+
+
+async def commit_scope_session(context: Optional[str] = None) -> None:
+    """
+    Commit the current scope's request-scoped session if it has an open transaction.
+
+    Repositories flush instead of commit, so background/Celery/workflow scopes (which do
+    not pass through the HTTP transaction middleware) must commit their own unit of work
+    at the end of a successful scope. Safe to call when no session/transaction exists.
+    """
+    try:
+        tx = injector.get(TransactionManager)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(f"No transaction manager to commit ({context}): {e}")
+        return
+    await tx.commit()
+
+
+async def rollback_scope_session(context: Optional[str] = None) -> None:
+    """Roll back the current scope's request-scoped session on error. Safe if none exists."""
+    try:
+        tx = injector.get(TransactionManager)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(f"No transaction manager to roll back ({context}): {e}")
+        return
+    try:
+        await tx.rollback()
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(f"Scope rollback skipped/failed ({context}): {e}")
 
 
 async def release_db_connection(
@@ -108,6 +138,13 @@ async def create_tenant_request_scope() -> AsyncGenerator[None, None]:
         set_tenant_context(tenant_id)
         try:
             yield
+        except Exception:
+            # Repos only flush; roll back this scope's pending writes on error.
+            await rollback_scope_session(context="create_tenant_request_scope")
+            raise
+        else:
+            # Commit the scope's unit of work (no-op if nothing was written).
+            await commit_scope_session(context="create_tenant_request_scope")
         finally:
-            # Cleanup is handled by the scope context manager
+            # Session close is handled by the scope context manager.
             pass

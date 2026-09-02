@@ -108,6 +108,13 @@ class RecordingFilter(BaseFilterModel):
     operator_id: Optional[UUID] = None
 
 
+class OperatorListFilter(BaseModel):
+    """Query params for the paginated operator list"""
+    skip: int = Field(0, ge=0, description="The number of rows to skip before returning results")
+    limit: int = Field(20, ge=1, le=100, description="The number of rows to return per page")
+    search: Optional[str] = Field(None, description="Case-insensitive substring match on operator first or last name")
+
+
 class AgentResponseLogFilter(BaseModel):
     conversation_id: UUID
     node_type: Optional[str] = Field(None, description="Filter by node type found in state.nodeExecutionStatus[*].type")

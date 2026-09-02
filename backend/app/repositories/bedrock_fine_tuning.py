@@ -55,7 +55,7 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
             last_synced_at=utc_now(),
         )
         self.db.add(job_record)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(job_record)
         logger.info(f"Created Bedrock fine-tuning job record for {job_arn}")
         return job_record
@@ -105,7 +105,7 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
         if error_message:
             job.error_message = error_message
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(job)
         logger.info(f"Updated Bedrock job {id} status to {status}")
         return job
@@ -127,7 +127,7 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
         if failure_message:
             job.error_message = failure_message
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(job)
         logger.info(f"Updated Bedrock job {id} deployment to {deployment_status}")
         return job
@@ -145,7 +145,7 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
         job.deployment_status = BedrockDeploymentStatus.NOT_DEPLOYED
         job.deployment_arn = None
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(job)
         logger.info(f"Cleared Bedrock job {id} deployment")
         return job
@@ -185,4 +185,4 @@ class BedrockFineTuningRepository(DbRepository[BedrockFineTuningJobModel]):
             .values(is_deleted=True)
             .execution_options(synchronize_session="fetch")
         )
-        await self.db.commit()
+        await self.db.flush()

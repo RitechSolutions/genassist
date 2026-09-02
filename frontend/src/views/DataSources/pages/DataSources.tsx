@@ -18,15 +18,17 @@ export default function DataSources() {
 
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+        setError(null);
         const data = await getAllDataSources();
         setDataSources(data);
       } catch (error) {
-        // ignore
+        setError("We couldn't load your data sources. Please try again.");
       } finally {
         setIsLoading(false);
       }
@@ -34,6 +36,8 @@ export default function DataSources() {
 
     fetchData();
   }, [refreshKey]);
+
+  const handleRetry = () => setRefreshKey((prevKey) => prevKey + 1);
 
   const handleDataSourceSaved = () => {
     setRefreshKey((prevKey) => prevKey + 1);
@@ -78,6 +82,9 @@ export default function DataSources() {
         refreshKey={refreshKey}
         dataSources={dataSources}
         loading={isLoading}
+        error={error}
+        onRetry={handleRetry}
+        onCreateDataSource={handleCreateDataSource}
         onEditDataSource={handleEditDataSource}
         onDeleteDataSource={handleDeleteDataSource}
       />

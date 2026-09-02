@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -299,3 +300,77 @@ async def test_run_child_turn_without_usage_threading_stays_uncaptured():
 
     _, kwargs = engine.execute_from_node.call_args
     assert kwargs["usage_sink"] is None and kwargs["usage_context"] is None
+
+
+def _diag(applied=False):
+    return {"requested": True, "applied": applied}
+
+
+def _state_with(entries=None, collected=None):
+    return SimpleNamespace(
+        node_execution_status=entries if entries is not None else {},
+        prompt_caching_diagnostics=collected if collected is not None else {},
+    )
+
+
+class TestPropagatePromptCacheDiagnostics:
+
+    def test_the_childs_collection_reaches_the_parent(self):
+        child = _state_with(collected={"child": _diag()})
+        parent = _state_with()
+
+        orchestrator.propagate_prompt_cache_diagnostics(child, parent)
+
+        assert parent.prompt_caching_diagnostics == {"child": _diag()}
+
+    def test_the_parents_execution_map_is_left_alone(self):
+        child = _state_with({"child": {"status": "failed"}}, {"child": _diag()})
+        parent = _state_with({"parent": {"status": "success"}})
+
+        orchestrator.propagate_prompt_cache_diagnostics(child, parent)
+
+        assert parent.node_execution_status == {"parent": {"status": "success"}}
+
+    def test_descendant_diagnostics_chain_upward(self):
+        child = _state_with(collected={"child": _diag(), "grandchild": _diag()})
+        parent = _state_with()
+
+        orchestrator.propagate_prompt_cache_diagnostics(child, parent)
+
+        assert set(parent.prompt_caching_diagnostics) == {"child", "grandchild"}
+
+    def test_the_childs_entry_wins_over_a_stale_parent_copy(self):
+        child = _state_with(collected={"child": _diag(applied=True)})
+        parent = _state_with(collected={"child": _diag()})
+
+        orchestrator.propagate_prompt_cache_diagnostics(child, parent)
+
+        assert parent.prompt_caching_diagnostics["child"]["applied"] is True
+
+    def test_existing_parent_entries_survive(self):
+        child = _state_with(collected={"child": _diag()})
+        parent = _state_with(collected={"earlier": _diag()})
+
+        orchestrator.propagate_prompt_cache_diagnostics(child, parent)
+
+        assert set(parent.prompt_caching_diagnostics) == {"earlier", "child"}
+
+    def test_a_child_without_diagnostics_writes_nothing(self):
+        parent = _state_with()
+
+        orchestrator.propagate_prompt_cache_diagnostics(_state_with({"child": {"status": "success"}}), parent)
+
+        assert parent.prompt_caching_diagnostics == {}
+
+    def test_a_malformed_child_collection_is_ignored(self):
+        parent = _state_with()
+
+        orchestrator.propagate_prompt_cache_diagnostics(_state_with(collected="junk"), parent)
+
+        assert parent.prompt_caching_diagnostics == {}
+
+    def test_a_state_without_the_collection_never_raises(self):
+        child = _state_with(collected={"child": _diag()})
+
+        orchestrator.propagate_prompt_cache_diagnostics(child, SimpleNamespace())
+        orchestrator.propagate_prompt_cache_diagnostics(SimpleNamespace(), _state_with())

@@ -1,12 +1,4 @@
 import { useState, useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
@@ -20,7 +12,9 @@ import {
 } from "@/services/permission";
 import { Checkbox } from "@/components/checkbox";
 import { Skeleton } from "@/components/skeleton";
-import { Button } from "@/components/button";
+import { FormField } from "@/components/ui/form-field";
+import { CRUDDialog } from "@/components/ui/crud-dialog";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -33,6 +27,11 @@ interface RoleDialogProps {
   mode?: "create" | "edit";
 }
 
+type RoleFormValues = {
+  name: string;
+  is_active: boolean;
+};
+
 export function RoleDialog({
   isOpen,
   onOpenChange,
@@ -41,18 +40,14 @@ export function RoleDialog({
   roleToEdit = null,
   mode = "create",
 }: RoleDialogProps) {
-  const [name, setName] = useState("");
-  const [isActive, setIsActive] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [roleId, setRoleId] = useState<string | undefined>("");
-  const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>(
     []
   );
   const [permissionsLoading, setPermissionsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [areAllPermissionsSelected, setAreAllPermissionsSelected] = useState(false);
+  const [areAllPermissionsSelected, setAreAllPermissionsSelected] =
+    useState(false);
 
   const handleToggleAllPermissions = () => {
     if (areAllPermissionsSelected) {
@@ -65,28 +60,19 @@ export function RoleDialog({
   };
 
   useEffect(() => {
-    setDialogMode(mode);
-  }, [mode]);
-
-  useEffect(() => {
     if (isOpen) {
-      resetForm();
-
       setAllPermissions([]);
       setSelectedPermissionIds([]);
       setSearchQuery("");
-
-      if (roleToEdit && dialogMode === "edit") {
-        populateFormWithRoleData(roleToEdit);
-      }
       fetchPermissions();
     }
-  }, [isOpen, roleToEdit, dialogMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, roleToEdit, mode]);
 
   const fetchPermissions = async () => {
     setPermissionsLoading(true);
     try {
-      const permissions = await getAllPermissions(dialogMode);
+      const permissions = await getAllPermissions(mode);
       setAllPermissions(permissions);
 
       if (roleToEdit && roleToEdit.id) {
@@ -100,115 +86,78 @@ export function RoleDialog({
     }
   };
 
-  const populateFormWithRoleData = (role: Role) => {
-    setRoleId(role.id);
-    setName(role.name || "");
-    setIsActive(role.is_active === 1);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!name.trim()) {
-      toast.error("Name is required.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const roleData: Partial<Role> = {
-        name: name.trim(),
-        is_active: isActive ? 1 : 0,
-      };
-
-      let savedRoleId = roleId;
-      if (dialogMode === "create") {
-        const createdRole = await createRole(roleData);
-        savedRoleId = createdRole.id;
-        toast.success("Role created successfully.");
-        await saveRolePermissions(savedRoleId, selectedPermissionIds);
-        onRoleSaved();
-      } else {
-        if (!roleId) {
-          toast.error("Role ID is required.");
-          return;
-        }
-        await updateRole(roleId, roleData);
-        await saveRolePermissions(savedRoleId, selectedPermissionIds);
-        toast.success("Role updated successfully.");
-        if (onRoleUpdated && roleToEdit) {
-          const updatedRole: Role = {
-            ...roleToEdit,
-            ...roleData,
-          };
-          onRoleUpdated(updatedRole);
-        }
-      }
-
-      onOpenChange(false);
-      resetForm();
-    } catch (err) {
-      const data = err.response.data;
-      let errorMessage = "";
-
-      if (err.status === 400) {
-        errorMessage = "A role with this name already exists.";
-      } else if (data.error) {
-        errorMessage = data.error;
-      } else if (data.detail) {
-        errorMessage = data.detail["0"].msg;
-      }
-
-      toast.error(
-        `Failed to ${dialogMode} role${
-          errorMessage ? `: ${errorMessage}` : "."
-        }`
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const resetForm = () => {
-    if (dialogMode === "create") {
-      setRoleId(undefined);
-      setName("");
-      setIsActive(true);
-      setSelectedPermissionIds([]);
-    }
-  };
-  const title = dialogMode === "create" ? "Create New Role" : "Edit Role";
-  const submitButtonText =
-    dialogMode === "create" ? "Create Role" : "Update Role";
-  const loadingText = dialogMode === "create" ? "Creating..." : "Updating...";
-
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader className="p-6 pb-4">
-            <DialogTitle className="text-xl">{title}</DialogTitle>
-          </DialogHeader>
+    <CRUDDialog<RoleFormValues>
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      mode={mode}
+      maxWidth="700px"
+      resetKey={roleToEdit?.id ?? null}
+      initialValues={{ name: "", is_active: true }}
+      editValues={
+        roleToEdit
+          ? { name: roleToEdit.name || "", is_active: roleToEdit.is_active === 1 }
+          : null
+      }
+      title={{ create: "Create New Role", edit: "Edit Role" }}
+      submitLabel={{ create: "Create Role", edit: "Update Role" }}
+      loadingLabel={{ create: "Creating...", edit: "Updating..." }}
+      successMessage={{
+        create: "Role created successfully.",
+        edit: "Role updated successfully.",
+      }}
+      errorMessage={(err, m) => {
+        const status = (err as { status?: number })?.status;
+        const detail =
+          status === 400
+            ? "A role with this name already exists."
+            : extractErrorMessage(err, "");
+        return `Failed to ${m} role${detail ? `: ${detail}` : "."}`;
+      }}
+      validate={(values) =>
+        !values.name.trim() ? { name: "Name is required." } : null
+      }
+      onSubmit={async (values, { mode: m }) => {
+        const roleData: Partial<Role> = {
+          name: values.name.trim(),
+          is_active: values.is_active ? 1 : 0,
+        };
 
-          <div className="px-6 pb-6 space-y-6 max-h-[calc(90vh-160px)] overflow-y-auto overflow-x-hidden">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter role name"
-                autoFocus
-              />
+        if (m === "create") {
+          const createdRole = await createRole(roleData);
+          await saveRolePermissions(createdRole.id, selectedPermissionIds);
+          onRoleSaved();
+        } else {
+          if (!roleToEdit?.id) {
+            throw new Error("Role ID is required.");
+          }
+          await updateRole(roleToEdit.id, roleData);
+          await saveRolePermissions(roleToEdit.id, selectedPermissionIds);
+          onRoleUpdated?.({ ...roleToEdit, ...roleData });
+        }
+      }}
+    >
+      {({ values, setField, errors }) => (
+        <>
+          <FormField id="name" label="Name" error={errors.name}>
+            <Input
+              id="name"
+              value={values.name}
+              onChange={(e) => setField("name", e.target.value)}
+              placeholder="Enter role name"
+              autoFocus
+            />
+          </FormField>
+
+          {/* Permissions */}
+          {permissionsLoading ? (
+            <div className="flex flex-col gap-4 items-center justify-center p-4">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span className="text-sm text-muted-foreground font-medium">
+                Loading permissions...
+              </span>
             </div>
-
-            {/* Permissions */}
-            {permissionsLoading ? (
-              <div className="flex flex-col gap-4 items-center justify-center p-4">
-                <Loader2 className="w-6 h-6 animate-spin" />
-                <span className="text-sm text-muted-foreground font-medium">Loading permissions...</span>
-              </div>
-            ) : (
+          ) : (
             <div className="space-y-4">
               <div className="mb-3">
                 <Label className="mt-2 mb-0.5" htmlFor="permission-search">
@@ -280,45 +229,20 @@ export function RoleDialog({
                           </label>
                         </div>
                       ))}
-                </div>
               </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <Label htmlFor="is-active">Active</Label>
-              <Switch
-                id="is-active"
-                checked={isActive}
-                onCheckedChange={setIsActive}
-              />
             </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Label htmlFor="is-active">Active</Label>
+            <Switch
+              id="is-active"
+              checked={values.is_active}
+              onCheckedChange={(checked) => setField("is_active", checked)}
+            />
           </div>
-
-          <DialogFooter className="px-6 py-4 border-t">
-            <div className="flex justify-end gap-3 w-full">
-              <Button
-                type="button"
-                variant="outline"
-                className="px-4"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting} className="px-4">
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {loadingText}
-                  </>
-                ) : (
-                  submitButtonText
-                )}
-              </Button>
-            </div>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </>
+      )}
+    </CRUDDialog>
   );
 }

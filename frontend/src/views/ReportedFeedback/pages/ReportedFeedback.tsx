@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { MessageSquare } from "lucide-react";
+import { MessageSquareDot } from "lucide-react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { useQuery } from "@tanstack/react-query";
@@ -35,7 +34,6 @@ import { formatDateTime } from "@/helpers/utils";
 const PAGE_SIZE = 20;
 
 export default function ReportedFeedback() {
-  const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">(
     "all",
@@ -81,14 +79,21 @@ export default function ReportedFeedback() {
     setIsDialogOpen(true);
   };
 
+  // The dialog embeds the conversation itself; these are the "see everything" escape
+  // hatches. They open in a new tab so the reviewer keeps their filters, page and
+  // scroll position — and the open dialog — on this one.
+  const openInNewTab = (path: string) => {
+    window.open(`${window.location.origin}${path}`, "_blank", "noopener,noreferrer");
+  };
+
   const openConversation = (conversationId: string) => {
     if (!conversationId) return;
-    navigate(`/transcripts?conversation=${encodeURIComponent(conversationId)}`);
+    openInNewTab(`/transcripts?conversation=${encodeURIComponent(conversationId)}`);
   };
 
   const openWorkflow = (agentId: string | null) => {
     if (!agentId) return;
-    navigate(`/ai-agents/workflow/${agentId}`);
+    openInNewTab(`/ai-agents/workflow/${agentId}`);
   };
 
   const handleStatusChange = async (
@@ -259,9 +264,9 @@ export default function ReportedFeedback() {
         searchQuery={statusFilter === "all" ? "" : statusFilter}
         emptyState={
           <ListEmptyState
-            icon={<MessageSquare className="h-12 w-12 text-muted-foreground" />}
+            icon={<MessageSquareDot className="h-12 w-12 text-muted-foreground" />}
             title={
-              hasActiveFilters ? "No matching feedback" : "No reported feedback yet"
+              hasActiveFilters ? "No matching feedback yet" : "No reported feedback yet"
             }
             description={
               hasActiveFilters

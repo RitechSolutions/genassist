@@ -186,7 +186,7 @@ export function ActiveConversationsModule({
 
         {/* Right Section - Conversation List */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex flex-col rounded-2xl overflow-hidden bg-muted/40 min-w-0 w-full">
+          <div className="flex flex-1 flex-col rounded-2xl overflow-hidden bg-muted/40 min-w-0 w-full">
             <ActiveConversationsList
               items={pageItems.map((i) => ({ ...i, transcript: getLatestMessagePreview(i.transcript) }))}
               isLoading={isLoading}
