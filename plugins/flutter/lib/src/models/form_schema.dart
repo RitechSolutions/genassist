@@ -1,6 +1,6 @@
 /// Models for dynamic form schemas used in chat interactions.
 
-enum FormFieldType { text, number, select, boolean, date }
+enum FormFieldType { text, textarea, number, select, boolean, date }
 
 extension FormFieldTypeExtension on FormFieldType {
   String toJson() => name;
@@ -9,6 +9,9 @@ extension FormFieldTypeExtension on FormFieldType {
     switch (value) {
       case 'text':
         return FormFieldType.text;
+      case 'textarea':
+      case 'long_text':
+        return FormFieldType.textarea;
       case 'number':
         return FormFieldType.number;
       case 'select':

@@ -1187,7 +1187,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [windowWidth, fontSizeNumber]);
 
   const textAreaMaxHeightCalculated = useMemo(() => {
-    return textAreaLineHeight * 3;
+    return textAreaLineHeight * 5;
   }, [textAreaLineHeight]);
 
   const textAreaStyle = getTextAreaStyle({

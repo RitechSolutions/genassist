@@ -304,7 +304,8 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
               updateSearchCriteriaField("custom_query", e.target.value)
             }
             placeholder="e.g., has:nouserlabels -in:Sent"
-            className="h-20 font-mono text-xs w-full resize-none"
+            size="description"
+            className="font-mono text-xs w-full"
           />
           <p className="text-xs text-muted-foreground break-words">
             Enter raw Gmail search query (overrides other filters).

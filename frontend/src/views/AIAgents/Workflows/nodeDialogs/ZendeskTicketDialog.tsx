@@ -197,11 +197,11 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
               <Label htmlFor="description">Description</Label>
               <DraggableTextArea
                 id="description"
-                rows={4}
+                size="body"
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="Enter the issue or request description"
-                className="w-full resize-none"
+                className="w-full"
               />
             </div>
           </div>

@@ -11,8 +11,20 @@ EXTERNAL_AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(name="authHeader", type="text", label="Auth Header Name", required=False, default="Authorization"),
     FieldSchema(name="authUsername", type="text", label="Username (Basic Auth)", required=False),
     FieldSchema(name="authPassword", type="text", label="Password (Basic Auth)", required=False),
-    FieldSchema(name="requestBody", type="text", label="Request Body (JSON)", required=False),
+    FieldSchema(
+        name="requestBody",
+        type="textarea",
+        size="code",
+        label="Request Body (JSON)",
+        required=False,
+    ),
     FieldSchema(name="messageField", type="text", label="Message Field Path", required=False, default="message"),
     FieldSchema(name="stepsField", type="text", label="Steps Field Path", required=False, default="steps"),
-    FieldSchema(name="mappingScript", type="code", label="Advanced Mapping Script (Python)", required=False),
+    FieldSchema(
+        name="mappingScript",
+        type="textarea",
+        size="code",
+        label="Advanced Mapping Script (Python)",
+        required=False,
+    ),
 ]

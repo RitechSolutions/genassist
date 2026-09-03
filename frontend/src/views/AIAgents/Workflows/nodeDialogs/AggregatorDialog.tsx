@@ -19,7 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/RadixTooltip";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
-import { DraggableInput } from "../components/custom/DraggableInput";
+import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { BaseNodeDialogProps } from "./base";
 import { useNodeDialogState } from "./useNodeDialogState";
@@ -142,12 +142,13 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
 
       <div className="space-y-2">
         <Label htmlFor="forward-template">Forward Template</Label>
-        <DraggableInput
+        <DraggableTextArea
           id="forward-template"
+          size="hint"
           value={values.forwardTemplate}
           onChange={(e) => setField("forwardTemplate", e.target.value)}
           placeholder="Enter forward template (optional)"
-          className="w-full"
+          className="w-full font-mono text-sm"
         />
         <p className="text-sm text-muted-foreground">
           Template for forwarding aggregated results to downstream nodes

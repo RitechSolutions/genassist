@@ -285,7 +285,7 @@ export const EvaluateOptimizeTab: React.FC<EvaluateOptimizeTabProps> = ({
             value={optimizeInstructions}
             onChange={(e) => setOptimizeInstructions(e.target.value)}
             placeholder="e.g., Make the tone more professional, add examples..."
-            rows={2}
+            size="description"
             className="text-sm"
           />
         </div>
