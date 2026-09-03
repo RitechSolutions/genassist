@@ -11,6 +11,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.dependencies.injector import injector
 from app.modules.integration.database import db_provider_manager, translate_to_query
+from app.modules.integration.database.read_only_sql import validate_read_only_sql
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.llm.provider import LLMProvider
@@ -74,9 +75,7 @@ class SQLNode(BaseNode):
             return node_failure(str(e), code=500, output=output)
 
         if not db_manager:
-            logger.error(
-                "Database manager not found for datasource_id: %s", datasource_id
-            )
+            logger.error("Database manager not found for datasource_id: %s", datasource_id)
             output = {
                 "status": 500,
                 "data": {
@@ -138,17 +137,30 @@ class SQLNode(BaseNode):
                     "formatted_query": sql_query,
                 }
 
-            results, error_msg = await db_manager.execute_query(
-                db_query["formatted_query"]
-            )
+            query = db_query["formatted_query"]
+            validation = validate_read_only_sql(query, db_manager.get_db_type())
+            if not validation.is_valid:
+                reason = validation.error_message or "Only read-only queries are permitted."
+                error = f"SQL execution blocked: {reason}"
+                logger.warning(error)
+                output = {
+                    "status": 400,
+                    "data": {"error": error},
+                    "query": db_query,
+                    "parameters": {
+                        "node_parameters": node_parameters,
+                        "datasource_id": datasource_id,
+                    },
+                }
+                return node_failure(error, code=400, output=output)
+
+            results, error_msg = await db_manager.execute_read_query(query)
 
             if error_msg:
                 logger.error("Database query execution failed: %s", error_msg)
                 output = {
                     "status": 500,
-                    "data": {
-                        "error": (f"Database query execution failed: {error_msg}")
-                    },
+                    "data": {"error": (f"Database query execution failed: {error_msg}")},
                     "query": db_query,
                     "parameters": {
                         "node_parameters": node_parameters,
@@ -173,8 +185,7 @@ class SQLNode(BaseNode):
                 "status": 500,
                 "data": {
                     "error": (
-                        f"SQL node execution failed: {str(e)}. Please check query syntax "
-                        "and database connectivity."
+                        f"SQL node execution failed: {str(e)}. Please check query syntax and database connectivity."
                     )
                 },
                 "parameters": {

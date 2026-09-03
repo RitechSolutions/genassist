@@ -15,6 +15,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.integration.database.read_only_sql import validate_read_only_sql
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
 
@@ -65,9 +66,7 @@ class TrainDataSourceNode(BaseNode):
                     error_detail="sourceType must be 'datasource' or 'csv'",
                 )
 
-            logger.info(
-                f"Processing train data source node: {name} (type: {source_type})"
-            )
+            logger.info(f"Processing train data source node: {name} (type: {source_type})")
 
             if source_type == "datasource":
                 return await self._process_database_source(config)
@@ -84,9 +83,7 @@ class TrainDataSourceNode(BaseNode):
             # Re-raise AppException as is
             raise
         except Exception as e:
-            logger.error(
-                f"Unexpected error in train data source node: {str(e)}", exc_info=True
-            )
+            logger.error(f"Unexpected error in train data source node: {str(e)}", exc_info=True)
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"Train data source processing failed: {str(e)}",
@@ -132,18 +129,28 @@ class TrainDataSourceNode(BaseNode):
                     error_detail=f"Database connection not available for datasource {data_source_id}",
                 )
 
-            # Log database type for debugging (supports TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
-            db_type = getattr(db_manager, "db_type", "unknown")
-            logger.debug(f"Using database manager for {db_type} database")
+            db_type = db_manager.get_db_type()
+            logger.debug("Using database manager for %s database", db_type)
 
             substituted_query = query
             logger.debug(f"Substituted query: {substituted_query}")
+
+            validation = validate_read_only_sql(substituted_query, db_type)
+            if not validation.is_valid:
+                reason = validation.error_message or "Only read-only queries are permitted."
+                error = f"SQL execution blocked: {reason}"
+                logger.warning(error)
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    status_code=400,
+                    error_detail=error,
+                )
 
             # Execute query with timeout
             # Note: For Snowflake, this automatically routes to SnowflakeManager.execute_query()
             try:
                 results, error_msg = await asyncio.wait_for(
-                    db_manager.execute_query(substituted_query),
+                    db_manager.execute_read_query(substituted_query),
                     timeout=30.0,  # 30 second timeout
                 )
             except asyncio.TimeoutError as exc:
@@ -164,14 +171,10 @@ class TrainDataSourceNode(BaseNode):
             if not results:
                 logger.warning("Database query returned no results")
             else:
-                logger.info(
-                    f"Database query successful: {len(results)} rows, {len(columns)} columns"
-                )
+                logger.info(f"Database query successful: {len(results)} rows, {len(columns)} columns")
 
             # Save all results to CSV using thread_id and timestamp
-            csv_file_path = await ml_utils.save_data_to_csv(
-                results, columns, self.state.thread_id
-            )
+            csv_file_path = await ml_utils.save_data_to_csv(results, columns, self.state.thread_id)
 
             # Get first 3 and last 3 records for response
             sample_data = ml_utils.get_sample_data(results)
@@ -228,9 +231,7 @@ class TrainDataSourceNode(BaseNode):
                 logger.info(f"Downloading CSV file to: {dest_file_path}")
 
                 # download the file to the destination path
-                await file_manager_service.download_file_to_path(
-                    csv_file_id, dest_file_path
-                )
+                await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
 
                 # set the csv file path to the destination path
                 csv_file_path = dest_file_path
@@ -255,15 +256,11 @@ class TrainDataSourceNode(BaseNode):
             # Extract column names from first row
             columns = list(results[0].keys()) if results else []
 
-            logger.info(
-                f"CSV parsing successful: {len(results)} rows, {len(columns)} columns"
-            )
+            logger.info(f"CSV parsing successful: {len(results)} rows, {len(columns)} columns")
 
             # Save parsed data to CSV using thread_id and timestamp
             # This ensures consistent naming regardless of source type
-            saved_csv_path = await ml_utils.save_data_to_csv(
-                results, columns, self.state.thread_id
-            )
+            saved_csv_path = await ml_utils.save_data_to_csv(results, columns, self.state.thread_id)
 
             # Get first 3 and last 3 records for response
             sample_data = ml_utils.get_sample_data(results)
