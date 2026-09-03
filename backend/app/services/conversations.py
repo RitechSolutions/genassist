@@ -689,7 +689,8 @@ class ConversationService:
           existing internal ``delete_conversation`` path, which cascades to
           ``transcript_messages`` and ``conversation_analysis``. Supporting
           stores (Redis memory, RAG, recordings, audit snapshots) are purged as
-          before. Already-aggregated daily analytics counts are unaffected.
+          before. Daily analytics are rebuilt from the remaining logs; see
+          ``GdprDeleteMode.HARD``.
 
         Always emits a structured log line ``gdpr.conversation_deleted`` so the
         action is traceable without introducing a dedicated audit table.
