@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 from uuid import UUID, uuid4
 from app.services.llm_analysts import LlmAnalystService
 from app.repositories.llm_analysts import LlmAnalystRepository
@@ -60,7 +60,7 @@ async def test_get_by_id_success(llm_analyst_service, mock_repository, sample_ll
     result = await llm_analyst_service.get_by_id(analyst_id)
 
     # Assert
-    mock_repository.get_by_id.assert_called_once_with(analyst_id)
+    mock_repository.get_by_id.assert_called_once_with(analyst_id, include_inactive=False)
     assert result.id == analyst_id
     assert result.name == sample_llm_analyst_data["name"]
 
@@ -75,7 +75,24 @@ async def test_get_by_id_not_found(llm_analyst_service, mock_repository):
         await llm_analyst_service.get_by_id(analyst_id)
     
     assert exc_info.value.error_key == ErrorKey.LLM_ANALYST_NOT_FOUND
-    mock_repository.get_by_id.assert_called_once_with(analyst_id)
+    assert mock_repository.get_by_id.await_args_list == [
+        call(analyst_id, include_inactive=False),
+        call(analyst_id, include_inactive=True),
+    ]
+
+@pytest.mark.asyncio
+async def test_get_by_id_inactive(llm_analyst_service, mock_repository, sample_llm_analyst_data):
+    # Setup
+    analyst_id = uuid4()
+    inactive_analyst = LlmAnalystModel(id=analyst_id, **{**sample_llm_analyst_data, "is_active": 0})
+    mock_repository.get_by_id.side_effect = [None, inactive_analyst]
+
+    # Execute and Assert
+    with pytest.raises(AppException) as exc_info:
+        await llm_analyst_service.get_by_id(analyst_id)
+
+    assert exc_info.value.error_key == ErrorKey.LLM_ANALYST_INACTIVE
+    assert exc_info.value.status_code == 409
 
 @pytest.mark.asyncio
 async def test_get_all_success(llm_analyst_service, mock_repository, sample_llm_analyst_data):
@@ -116,7 +133,7 @@ async def test_update_success(llm_analyst_service, mock_repository, sample_llm_a
     result = await llm_analyst_service.update(analyst_id, update_data)
 
     # Assert
-    mock_repository.get_by_id.assert_called_once_with(analyst_id)
+    mock_repository.get_by_id.assert_called_once_with(analyst_id, include_inactive=True)
     mock_repository.update.assert_called_once()
     assert result.id == analyst_id
     assert result.name == update_data.name
@@ -133,6 +150,6 @@ async def test_delete_success(llm_analyst_service, mock_repository, sample_llm_a
     result = await llm_analyst_service.delete(analyst_id)
 
     # Assert
-    mock_repository.get_by_id.assert_called_once_with(analyst_id)
+    mock_repository.get_by_id.assert_called_once_with(analyst_id, include_inactive=True)
     mock_repository.delete.assert_called_once_with(mock_analyst)
     assert result["message"] == f"LlmAnalyst with ID {analyst_id} has been deleted." 
