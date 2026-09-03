@@ -227,7 +227,7 @@ async def validate_model_file(
     # Get model from database
     ml_model = await service.get_by_id(ml_model_id)
 
-    if not ml_model.pkl_file or not ml_model.pkl_file_id:
+    if not ml_model.pkl_file and not ml_model.pkl_file_id:
         raise HTTPException(
             status_code=400,
             detail="Model has no PKL file configured"
