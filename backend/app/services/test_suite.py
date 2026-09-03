@@ -1948,6 +1948,8 @@ class TestSuiteService:
         )
 
         created = await self.run_repo.create(run)
+        # Commit so the row exists before the caller dispatches the Celery task
+        await self.run_repo.db.commit()
         return TestRunInDB.model_validate(created, from_attributes=True)
 
     async def _fail_run(self, run: TestRunModel, error: str) -> None:
@@ -2065,6 +2067,8 @@ class TestSuiteService:
         # Mark running
         run.status = "running"
         await self.run_repo.update(run)
+        # Commit the RUNNING marker so it is visible during the long execution
+        await self.run_repo.db.commit()
 
         # Load cases
         cases = await self.list_cases_for_suite(suite.id)
