@@ -5,6 +5,7 @@ Fired as a background asyncio.create_task after each agent_response_log is saved
 If this fails, the Celery worker's next run does a full recount — no data is lost.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
@@ -20,6 +21,16 @@ from app.db.models.conversation import ConversationModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 
 logger = logging.getLogger(__name__)
+
+# All four public entry points below upsert into agent_execution_daily_stats,
+# a single row per (agent_id, stat_date). Each is fired fire-and-forget via
+# asyncio.create_task with no bound on how many can run at once, so a burst of
+# concurrent events for one hot agent piles up serialized on that row's lock in
+# Postgres, each one holding a pooled connection the whole time it waits.
+# This semaphore caps how many run concurrently, keeping worst case queuing
+# in-process instead of exhausting the DB connection pool.
+_MAX_CONCURRENT_ANALYTICS_WRITES = 8
+_analytics_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_ANALYTICS_WRITES)
 
 
 def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
@@ -359,17 +370,18 @@ async def update_stats_incrementally(agent_response: dict) -> None:
         if data is None:
             return
 
-        async with create_tenant_request_scope():
-            session = injector.get(AsyncSession)
-            try:
-                await _increment_agent_daily_stats(session, data)
-                await _increment_node_daily_stats(session, data)
-                await session.commit()
-                logger.debug(
-                    "Incremental analytics update for agent %s", data["agent_id"]
-                )
-            finally:
-                await session.close()
+        async with _analytics_semaphore:
+            async with create_tenant_request_scope():
+                session = injector.get(AsyncSession)
+                try:
+                    await _increment_agent_daily_stats(session, data)
+                    await _increment_node_daily_stats(session, data)
+                    await session.commit()
+                    logger.debug(
+                        "Incremental analytics update for agent %s", data["agent_id"]
+                    )
+                finally:
+                    await session.close()
 
     except Exception:
         logger.warning(
@@ -384,14 +396,15 @@ async def update_conversation_started(agent_id: UUID) -> None:
         from app.core.utils.db_connection_utils import create_tenant_request_scope
         from app.dependencies.injector import injector
 
-        async with create_tenant_request_scope():
-            session = injector.get(AsyncSession)
-            try:
-                await _increment_conversation_counts(session, agent_id, "start")
-                await session.commit()
-                logger.debug("Conversation started for agent %s", agent_id)
-            finally:
-                await session.close()
+        async with _analytics_semaphore:
+            async with create_tenant_request_scope():
+                session = injector.get(AsyncSession)
+                try:
+                    await _increment_conversation_counts(session, agent_id, "start")
+                    await session.commit()
+                    logger.debug("Conversation started for agent %s", agent_id)
+                finally:
+                    await session.close()
 
     except Exception:
         logger.warning(
@@ -406,21 +419,22 @@ async def update_conversation_finalized(conversation_id: UUID) -> None:
         from app.core.utils.db_connection_utils import create_tenant_request_scope
         from app.dependencies.injector import injector
 
-        async with create_tenant_request_scope():
-            session = injector.get(AsyncSession)
-            try:
-                agent_id = await _get_agent_id_for_conversation(
-                    session, conversation_id
-                )
-                if agent_id is None:
-                    return
-                await _increment_conversation_counts(session, agent_id, "finalize")
-                await session.commit()
-                logger.debug(
-                    "Conversation finalized for agent %s", agent_id
-                )
-            finally:
-                await session.close()
+        async with _analytics_semaphore:
+            async with create_tenant_request_scope():
+                session = injector.get(AsyncSession)
+                try:
+                    agent_id = await _get_agent_id_for_conversation(
+                        session, conversation_id
+                    )
+                    if agent_id is None:
+                        return
+                    await _increment_conversation_counts(session, agent_id, "finalize")
+                    await session.commit()
+                    logger.debug(
+                        "Conversation finalized for agent %s", agent_id
+                    )
+                finally:
+                    await session.close()
 
     except Exception:
         logger.warning(
@@ -488,23 +502,24 @@ async def update_feedback_given(
         from app.core.utils.db_connection_utils import create_tenant_request_scope
         from app.dependencies.injector import injector
 
-        async with create_tenant_request_scope():
-            session = injector.get(AsyncSession)
-            try:
-                agent_id = await _get_agent_id_for_conversation(
-                    session, conversation_id
-                )
-                if agent_id is None:
-                    return
-                await _increment_thumbs(session, agent_id, is_thumbs_up)
-                await session.commit()
-                logger.debug(
-                    "Feedback (%s) recorded for agent %s",
-                    "thumbs_up" if is_thumbs_up else "thumbs_down",
-                    agent_id,
-                )
-            finally:
-                await session.close()
+        async with _analytics_semaphore:
+            async with create_tenant_request_scope():
+                session = injector.get(AsyncSession)
+                try:
+                    agent_id = await _get_agent_id_for_conversation(
+                        session, conversation_id
+                    )
+                    if agent_id is None:
+                        return
+                    await _increment_thumbs(session, agent_id, is_thumbs_up)
+                    await session.commit()
+                    logger.debug(
+                        "Feedback (%s) recorded for agent %s",
+                        "thumbs_up" if is_thumbs_up else "thumbs_down",
+                        agent_id,
+                    )
+                finally:
+                    await session.close()
 
     except Exception:
         logger.warning(
