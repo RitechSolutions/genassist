@@ -717,7 +717,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                     Code runs in a sandboxed environment with limited resources
                   </li>
                   <li className="break-words">
-                    Maximum execution time: 30 seconds
+                    Maximum execution time: 10 minutes
                   </li>
                 </ul>
               </div>

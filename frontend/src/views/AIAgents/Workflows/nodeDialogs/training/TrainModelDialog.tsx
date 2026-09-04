@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrainModelNodeData } from "../../types/nodes";
+import { TrainModelNodeData, HyperparameterOptimizationMethod, OptimizationConfig } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -22,6 +22,30 @@ import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
 import { useNodeDialogState } from "../useNodeDialogState";
+import { ML_MODEL_TYPES } from "@/constants/mlModelTypes";
+
+const HYPERPARAMETER_OPTIMIZATION_METHODS: {
+  value: HyperparameterOptimizationMethod;
+  label: string;
+  description: string;
+}[] = [
+  { value: "none", label: "No Optimization", description: "Train once with the fixed parameters above." },
+  {
+    value: "random_search",
+    label: "Random Search",
+    description: "Randomly samples parameter combinations from a curated search space.",
+  },
+  {
+    value: "grid_search",
+    label: "Grid Search",
+    description: "Exhaustively tries every combination on a discretized grid. Slower, thorough.",
+  },
+  {
+    value: "bayesian_optimization",
+    label: "Bayesian Optimization",
+    description: "Uses Optuna to sequentially focus the search on promising regions.",
+  },
+];
 
 type TrainModelDialogProps = BaseNodeDialogProps<
   TrainModelNodeData,
@@ -45,6 +69,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       analysisResult: data.analysisResult || null,
       splitMethod: data.splitMethod || "random",
       dateColumn: data.dateColumn || "",
+      hyperparameterOptimization: data.hyperparameterOptimization || "none",
+      optimizationConfig: data.optimizationConfig || {},
     }),
     (v) => ({
       name: v.name,
@@ -57,6 +83,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       validationSplit: v.validationSplit,
       splitMethod: v.splitMethod,
       dateColumn: v.splitMethod === "time_based" ? v.dateColumn : undefined,
+      hyperparameterOptimization: v.hyperparameterOptimization,
+      optimizationConfig:
+        v.hyperparameterOptimization === "none" ? undefined : v.optimizationConfig,
     })
   );
 
@@ -222,6 +251,14 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
   };
 
+  const handleHyperparameterOptimizationChange = (value: string) => {
+    setField("hyperparameterOptimization", value as HyperparameterOptimizationMethod);
+  };
+
+  const updateOptimizationConfig = (patch: Partial<OptimizationConfig>) => {
+    setField("optimizationConfig", { ...values.optimizationConfig, ...patch });
+  };
+
   return (
     <>
       <NodeConfigPanel
@@ -291,23 +328,156 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 <SelectValue placeholder="Select model type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="xgboost">XGBoost</SelectItem>
-                <SelectItem value="random_forest">Random Forest</SelectItem>
-                <SelectItem value="linear_regression">
-                  Linear Regression
-                </SelectItem>
-                <SelectItem value="logistic_regression">
-                  Logistic Regression
-                </SelectItem>
-                <SelectItem value="neural_network">
-                  Neural Network
-                </SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                {ML_MODEL_TYPES.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
               Select the machine learning algorithm to use
             </p>
+          </div>
+
+          {/* Hyperparameter Optimization */}
+          <div className="space-y-2">
+            <Label htmlFor="hyperparameterOptimization">Hyperparameter Optimization</Label>
+            <Select
+              value={values.hyperparameterOptimization}
+              onValueChange={handleHyperparameterOptimizationChange}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select optimization method" />
+              </SelectTrigger>
+              <SelectContent>
+                {HYPERPARAMETER_OPTIMIZATION_METHODS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {
+                HYPERPARAMETER_OPTIMIZATION_METHODS.find(
+                  (m) => m.value === values.hyperparameterOptimization
+                )?.description
+              }{" "}
+              Any parameter set in Model Parameters is fixed and excluded from the search.
+            </p>
+
+            {values.hyperparameterOptimization !== "none" && (
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="space-y-1">
+                  <Label htmlFor="cvFolds" className="text-xs">
+                    CV Folds
+                  </Label>
+                  <RichInput
+                    id="cvFolds"
+                    type="number"
+                    min="2"
+                    max="10"
+                    value={values.optimizationConfig.cvFolds ?? 3}
+                    onChange={(e) =>
+                      updateOptimizationConfig({
+                        cvFolds: e.target.value ? Number(e.target.value) : undefined,
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="scoring" className="text-xs">
+                    Scoring Metric
+                  </Label>
+                  <RichInput
+                    id="scoring"
+                    value={values.optimizationConfig.scoring ?? ""}
+                    onChange={(e) => updateOptimizationConfig({ scoring: e.target.value })}
+                    placeholder="auto (accuracy / r2)"
+                    className="w-full"
+                  />
+                </div>
+
+                {values.hyperparameterOptimization === "random_search" && (
+                  <div className="space-y-1">
+                    <Label htmlFor="nIter" className="text-xs">
+                      Iterations
+                    </Label>
+                    <RichInput
+                      id="nIter"
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={values.optimizationConfig.nIter ?? 20}
+                      onChange={(e) =>
+                        updateOptimizationConfig({ nIter: Number(e.target.value) })
+                      }
+                      className="w-full"
+                    />
+                  </div>
+                )}
+
+                {values.hyperparameterOptimization === "grid_search" && (
+                  <div className="space-y-1">
+                    <Label htmlFor="gridPoints" className="text-xs">
+                      Grid Points / Parameter
+                    </Label>
+                    <RichInput
+                      id="gridPoints"
+                      type="number"
+                      min="2"
+                      max="6"
+                      value={values.optimizationConfig.gridPoints ?? 3}
+                      onChange={(e) =>
+                        updateOptimizationConfig({ gridPoints: Number(e.target.value) })
+                      }
+                      className="w-full"
+                    />
+                  </div>
+                )}
+
+                {values.hyperparameterOptimization === "bayesian_optimization" && (
+                  <>
+                    <div className="space-y-1">
+                      <Label htmlFor="nTrials" className="text-xs">
+                        Trials
+                      </Label>
+                      <RichInput
+                        id="nTrials"
+                        type="number"
+                        min="1"
+                        max="200"
+                        value={values.optimizationConfig.nTrials ?? 30}
+                        onChange={(e) =>
+                          updateOptimizationConfig({ nTrials: Number(e.target.value) })
+                        }
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="timeoutSeconds" className="text-xs">
+                        Timeout (seconds)
+                      </Label>
+                      <RichInput
+                        id="timeoutSeconds"
+                        type="number"
+                        min="1"
+                        value={values.optimizationConfig.timeoutSeconds ?? ""}
+                        placeholder="none"
+                        onChange={(e) =>
+                          updateOptimizationConfig({
+                            timeoutSeconds: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        className="w-full"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Target Column */}

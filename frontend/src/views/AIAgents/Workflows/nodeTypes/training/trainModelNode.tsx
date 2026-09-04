@@ -6,6 +6,7 @@ import BaseNodeContainer from "../BaseNodeContainer";
 import { TrainModelDialog } from "../../nodeDialogs/training/TrainModelDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
+import { getMLModelTypeLabel } from "@/constants/mlModelTypes";
 
 export const TRAIN_MODEL_NODE_TYPE = "trainModelNode";
 
@@ -30,19 +31,7 @@ const TrainModelNode: React.FC<NodeProps<TrainModelNodeData>> = ({
     }
   };
 
-  const getModelTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      xgboost: "XGBoost",
-      random_forest: "Random Forest",
-      linear_regression: "Linear Regression",
-      logistic_regression: "Logistic Regression",
-      neural_network: "Neural Network",
-      other: "Other",
-    };
-    return labels[type] || type;
-  };
-
-  const modelTypeInfo = data.modelType ? getModelTypeLabel(data.modelType) : "";
+  const modelTypeInfo = data.modelType ? getMLModelTypeLabel(data.modelType) : "";
 
   const numberOfFeatures = data.featureColumns ? data.featureColumns.length : 0;
 
