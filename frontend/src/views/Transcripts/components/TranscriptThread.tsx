@@ -21,11 +21,13 @@ function MessageFeedbackButton({
   messageId,
   localTranscript,
   setLocalTranscript,
+  collisionBoundary,
   onOpenChange,
 }: {
   messageId: string;
   localTranscript: Transcript | null;
   setLocalTranscript: Dispatch<SetStateAction<Transcript | null>>;
+  collisionBoundary: Element | null;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -98,6 +100,7 @@ function MessageFeedbackButton({
       isOpen={isOpen}
       hasFeedbackMessage={hasFeedbackMessage}
       text={text}
+      collisionBoundary={collisionBoundary}
       onOpenChange={handleOpenChange}
       onTextChange={setText}
       onSave={handleSave}
@@ -149,7 +152,7 @@ export function TranscriptThread({
   style,
 }: TranscriptThreadProps) {
   const [openPopoverMessageId, setOpenPopoverMessageId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const isInteractive = variant === 'full';
@@ -159,23 +162,22 @@ export function TranscriptThread({
   // Centre the flagged message inside this pane only — scrollIntoView() would walk up the
   // ancestor chain and drag the surrounding dialog along with it.
   useEffect(() => {
-    if (!highlightMessageId) return;
+    if (!highlightMessageId || !scrollEl) return;
 
     const raf = requestAnimationFrame(() => {
-      const container = scrollRef.current;
       const node = messageRefs.current.get(highlightMessageId);
-      if (!container || !node) return;
+      if (!node) return;
 
-      const top = node.offsetTop - container.clientHeight / 2 + node.offsetHeight / 2;
-      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      const top = node.offsetTop - scrollEl.clientHeight / 2 + node.offsetHeight / 2;
+      scrollEl.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [highlightMessageId, transcript.id, messages.length]);
+  }, [highlightMessageId, transcript.id, messages.length, scrollEl]);
 
   return (
     <div
-      ref={scrollRef}
+      ref={setScrollEl}
       className={cn('relative overflow-y-auto p-3 text-[13px] sm:text-[12px]', className)}
       style={style}
     >
@@ -282,6 +284,7 @@ export function TranscriptThread({
                         messageId={messageId}
                         localTranscript={transcript}
                         setLocalTranscript={onTranscriptChange}
+                        collisionBoundary={scrollEl}
                         onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
                       />
                     )}

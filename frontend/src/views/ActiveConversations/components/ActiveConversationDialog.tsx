@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { getCurrentUserId } from "@/services/auth";
 import { useWebSocketTranscript } from "../hooks/useWebsocket";
 import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmAnalyst";
@@ -633,7 +634,7 @@ function TranscriptDialogContent({
       if (refetchConversations) refetchConversations();
     } catch (err) {
       toast.dismiss(processingToast);
-      toast.error("Failed to finalize conversation.");
+      toast.error(extractErrorMessage(err, "Failed to finalize conversation."));
     } finally {
       setIsFinalizing(false);
     }
