@@ -26,6 +26,7 @@ from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
 from app.services.translations import TranslationsService
+from app.core.utils.db_connection_utils import release_db_connection
 from app.core.utils.custom_attributes import extract_custom_attributes, get_hidden_keys
 from app.core.utils.sensitive_data_utils import build_hidden_value_map, mask_hidden_values
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
@@ -385,6 +386,12 @@ async def process_conversation_update_with_agent(
             )
         else:
             session_message = model.messages[-1].text
+
+        # All pre-LLM reads are done; return this request's pooled connection
+        # before the workflow run (LLM + tools, potentially tens of seconds).
+        # expire_on_commit=False keeps loaded objects usable, and the session
+        # re-acquires a connection on the next query after the run.
+        await release_db_connection(context=f"conversation {conversation_id}")
 
         agent_response = await run_query_agent_logic(
             agent_service,
