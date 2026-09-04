@@ -1,5 +1,6 @@
 import pytest
 import logging
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -67,3 +68,33 @@ async def test_delete_api_key(authorized_client, new_api_key_data):
     # Confirm deletion
     get_response = authorized_client.get(f"/api/api-keys/{id}")
     assert get_response.status_code == 404 
+
+
+@pytest.fixture
+def listed_api_key(authorized_client):
+    name = f"zz_list_{uuid4().hex[:8]}"
+    created = authorized_client.post("/api/api-keys", json={"name": name, "role_ids": []}).json()
+    yield created
+    authorized_client.delete(f"/api/api-keys/{created['id']}")
+
+
+@pytest.mark.asyncio
+async def test_get_api_keys_paginated(authorized_client, listed_api_key):
+    response = authorized_client.get("/api/api-keys/list", params={"limit": 5, "search": listed_api_key["name"]})
+    assert response.status_code == 200
+
+    body = response.json()
+    assert set(body) >= {"items", "total", "page", "page_size", "total_pages"}
+    assert body["page"] == 1 and body["page_size"] == 5 and body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [listed_api_key["id"]]
+
+    item = body["items"][0]
+    assert "roles" in item and "key_val" not in item and "hashed_value" not in item
+
+
+@pytest.mark.asyncio
+async def test_get_api_keys_paginated_excludes_deleted(authorized_client, listed_api_key):
+    authorized_client.delete(f"/api/api-keys/{listed_api_key['id']}")
+
+    body = authorized_client.get("/api/api-keys/list", params={"search": listed_api_key["name"]}).json()
+    assert body["total"] == 0 and body["items"] == []

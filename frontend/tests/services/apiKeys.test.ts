@@ -13,6 +13,7 @@ vi.mock("@/config/api", () => ({
 import { apiRequest } from "@/config/api";
 import {
   getAllApiKeys,
+  getApiKeysPaginated,
   getApiKey,
   createApiKey,
   updateApiKey,
@@ -46,6 +47,95 @@ describe("getAllApiKeys", () => {
     mockApiRequest.mockResolvedValue({ not: "array" } as never);
 
     await expect(getAllApiKeys()).resolves.toEqual([]);
+  });
+});
+
+describe("getApiKeysPaginated", () => {
+  const page = <T,>(items: T[]) => ({
+    items,
+    total: items.length,
+    page: 1,
+    page_size: 20,
+    total_pages: 1,
+  });
+
+  const requestedUrl = () => String(mockApiRequest.mock.calls[0][1]);
+
+  it("defaults to the first page of 20", async () => {
+    mockApiRequest.mockResolvedValue(page([{ id: "k1" }]) as never);
+
+    await getApiKeysPaginated();
+
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "api-keys/list?skip=0&limit=20");
+  });
+
+  it("converts page and pageSize into skip and limit", async () => {
+    mockApiRequest.mockResolvedValue(page([]) as never);
+
+    await getApiKeysPaginated(3, 10);
+
+    expect(requestedUrl()).toBe("api-keys/list?skip=20&limit=10");
+  });
+
+  it("clamps pageSize to the backend maximum of 100", async () => {
+    mockApiRequest.mockResolvedValue(page([]) as never);
+
+    await getApiKeysPaginated(1, 500);
+
+    expect(requestedUrl()).toContain("limit=100");
+  });
+
+  it("clamps page and pageSize to their minimums", async () => {
+    mockApiRequest.mockResolvedValue(page([]) as never);
+
+    await getApiKeysPaginated(0, 0);
+
+    expect(requestedUrl()).toBe("api-keys/list?skip=0&limit=1");
+  });
+
+  it("passes a trimmed search term", async () => {
+    mockApiRequest.mockResolvedValue(page([]) as never);
+
+    await getApiKeysPaginated(1, 20, "  ana  ");
+
+    expect(requestedUrl()).toBe("api-keys/list?skip=0&limit=20&search=ana");
+  });
+
+  it("omits the search param when it is absent or blank", async () => {
+    mockApiRequest.mockResolvedValue(page([]) as never);
+
+    await getApiKeysPaginated(1, 20, "   ");
+    expect(requestedUrl()).not.toContain("search");
+
+    vi.clearAllMocks();
+    mockApiRequest.mockResolvedValue(page([]) as never);
+    await getApiKeysPaginated(1, 20, undefined);
+    expect(requestedUrl()).not.toContain("search");
+  });
+
+  it("returns the paginated body unchanged", async () => {
+    const body = page([{ id: "k1" }, { id: "k2" }]);
+    mockApiRequest.mockResolvedValue(body as never);
+
+    await expect(getApiKeysPaginated()).resolves.toEqual(body);
+  });
+
+  it("returns an empty page when the response is null (403)", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+
+    await expect(getApiKeysPaginated(2, 50)).resolves.toEqual({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 50,
+      total_pages: 0,
+    });
+  });
+
+  it("propagates non-403 errors", async () => {
+    mockApiRequest.mockRejectedValue(new Error("boom"));
+
+    await expect(getApiKeysPaginated()).rejects.toThrow("boom");
   });
 });
 
