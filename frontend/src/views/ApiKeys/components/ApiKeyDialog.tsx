@@ -4,10 +4,12 @@ import { Label } from "@/components/label";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
 import { Eye, EyeOff, Copy } from "lucide-react";
+import { useApiKeyDialogState } from "./ApiKeyDialogLogic";
 import {
-  useApiKeyDialogState,
-  inferPresetFromApiKey,
-} from "./ApiKeyDialogLogic";
+  ApiKeyDialogFormValues,
+  KEEP_EXPIRY_VALUE,
+  buildApiKeyUpdatePayload,
+} from "../helpers/apiKeyUpdatePayload";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { ApiRoleSelection } from "./ApiRoleSelection";
 import { Switch } from "@/components/switch";
@@ -33,13 +35,6 @@ interface ApiKeyDialogProps {
   mode?: "create" | "edit";
   apiKeyToEdit?: ApiKey | null;
 }
-
-type ApiKeyFormValues = {
-  name: string;
-  is_active: boolean;
-  role_ids: string[];
-  expiry_preset: string;
-};
 
 export function ApiKeyDialog({
   isOpen,
@@ -94,7 +89,7 @@ export function ApiKeyDialog({
       : null;
 
   return (
-    <CRUDDialog<ApiKeyFormValues>
+    <CRUDDialog<ApiKeyDialogFormValues>
       open={isOpen}
       onOpenChange={onOpenChange}
       mode={dialogMode}
@@ -115,7 +110,7 @@ export function ApiKeyDialog({
                 apiKeyToEdit.roles?.map((r) => r.id) ||
                 apiKeyToEdit.role_ids ||
                 [],
-              expiry_preset: inferPresetFromApiKey(apiKeyToEdit),
+              expiry_preset: KEEP_EXPIRY_VALUE,
             }
           : null
       }
@@ -165,16 +160,10 @@ export function ApiKeyDialog({
           if (!apiKeyToEdit || !userId) {
             throw new Error("User information is not available.");
           }
-          const expiresInDays = presetToExpiresInDays(values.expiry_preset);
-          const updateData: Partial<ApiKey> & { role_ids?: string[] } = {
-            name: values.name,
-            user_id: userId,
-            is_active: values.is_active ? 1 : 0,
-            role_ids: values.role_ids,
-            // undefined ("never") => backend expects 0 to clear/store Never.
-            expires_in_days: expiresInDays ?? 0,
-          };
-          const updatedFromApi = await updateApiKey(apiKeyToEdit.id, updateData);
+          const updatedFromApi = await updateApiKey(
+            apiKeyToEdit.id,
+            buildApiKeyUpdatePayload(values)
+          );
           onApiKeyUpdated?.(updatedFromApi);
         }
       }}
@@ -195,7 +184,7 @@ export function ApiKeyDialog({
               </Button>
             )}
             {dialogMode === "edit" && (
-              <Button type="submit" disabled={busy || !hasGeneratedKey}>
+              <Button type="submit" disabled={busy}>
                 {busy ? "Updating..." : "Update Key"}
               </Button>
             )}
@@ -243,7 +232,7 @@ export function ApiKeyDialog({
 
             {dialogMode === "edit" ? (
               <div className="space-y-2">
-                <Label>Credential expires</Label>
+                <Label htmlFor="credential-expiry-edit">Credential expires</Label>
                 <Select
                   value={values.expiry_preset}
                   onValueChange={(v) => setField("expiry_preset", v)}
@@ -252,6 +241,9 @@ export function ApiKeyDialog({
                     <SelectValue placeholder="Expiry" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={KEEP_EXPIRY_VALUE}>
+                      Keep current expiry
+                    </SelectItem>
                     {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
@@ -270,6 +262,12 @@ export function ApiKeyDialog({
                     ) : (
                       <span>Expiration is set.</span>
                     )}
+                    {apiKeyToEdit.credential_expiry_days ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({apiKeyToEdit.credential_expiry_days}-day policy)
+                      </span>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
@@ -278,8 +276,9 @@ export function ApiKeyDialog({
                 )}
 
                 <p className="text-xs text-muted-foreground">
-                  On rotate, expiration will be recalculated from now based on
-                  this setting (unless set to Never).
+                  Keep current expiry leaves it unchanged. A duration restarts it
+                  from now; Never removes it. Rotation restarts the saved
+                  duration.
                 </p>
               </div>
             ) : null}
