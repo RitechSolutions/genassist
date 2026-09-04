@@ -87,7 +87,7 @@ export default function ApiKeys() {
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         onApiKeyCreated={handleApiKeySaved}
-        onApiKeyUpdated={handleApiKeyUpdated}
+        onApiKeyUpdated={handleApiKeySaved}
         apiKeyToEdit={apiKeyToEdit}
         mode={dialogMode}
       />

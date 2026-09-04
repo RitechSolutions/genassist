@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +18,7 @@ from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.api_key import ApiKeyCreate, ApiKeyUpdate
-from app.schemas.filter import ApiKeysFilter
+from app.schemas.filter import ApiKeyListFilter, ApiKeysFilter
 
 api_key_key_builder  = make_key_builder("api_key")
 
@@ -119,6 +119,40 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         result = await self.db.execute(query)
 
         return result.scalars().all()
+
+
+    def _search_condition(self, search: Optional[str]):
+        """Case-insensitive substring match on the key name"""
+        if not search or not search.strip():
+            return None
+
+        term = search.strip()
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return ApiKeyModel.name.ilike(f"%{escaped}%", escape="\\")
+
+
+    async def get_list_paginated(self, filter_obj: ApiKeyListFilter) -> tuple[list[ApiKeyModel], int]:
+        """Return one page of API keys, newest first, plus the unpaginated total"""
+        search_condition = self._search_condition(filter_obj.search)
+
+        count_stmt = select(func.count(ApiKeyModel.id)).where(ApiKeyModel.is_deleted == 0)
+        if search_condition is not None:
+            count_stmt = count_stmt.where(search_condition)
+        total = (await self.db.execute(count_stmt)).scalar() or 0
+
+        data_stmt = (
+            select(ApiKeyModel)
+            .options(selectinload(ApiKeyModel.api_key_roles).selectinload(ApiKeyRoleModel.role))
+            .where(ApiKeyModel.is_deleted == 0)
+        )
+        if search_condition is not None:
+            data_stmt = data_stmt.where(search_condition)
+
+        data_stmt = data_stmt.order_by(ApiKeyModel.created_at.desc(), ApiKeyModel.id.desc())
+        data_stmt = self._apply_pagination(data_stmt, filter_obj)
+
+        result = await self.db.execute(data_stmt)
+        return result.scalars().all(), total
 
 
     async def delete(self, api_key: ApiKeyModel):

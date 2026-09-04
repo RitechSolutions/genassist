@@ -115,6 +115,13 @@ class OperatorListFilter(BaseModel):
     search: Optional[str] = Field(None, description="Case-insensitive substring match on operator first or last name")
 
 
+class ApiKeyListFilter(BaseModel):
+    """Query params for the paginated API key list"""
+    skip: int = Field(0, ge=0, description="The number of rows to skip before returning results")
+    limit: int = Field(20, ge=1, le=100, description="The number of rows to return per page")
+    search: Optional[str] = Field(None, description="Case-insensitive substring match on API key name")
+
+
 class AgentResponseLogFilter(BaseModel):
     conversation_id: UUID
     node_type: Optional[str] = Field(None, description="Filter by node type found in state.nodeExecutionStatus[*].type")
