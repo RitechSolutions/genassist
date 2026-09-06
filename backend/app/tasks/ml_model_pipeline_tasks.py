@@ -18,7 +18,6 @@ from app.repositories.ml_model_pipeline import (
 )
 from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models.ml_model_pipeline import PipelineRunStatus, ArtifactType
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
@@ -139,7 +138,9 @@ async def execute_pipeline_run_async(run_id: UUID):
                     "edges": workflow.edges or [],
                 }
 
-                # Build workflow engine with configuration
+                # Imported lazily so the worker master never loads ML libs before forking
+                from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+
                 workflow_engine = WorkflowEngine(workflow_config)
 
                 # Prepare input data with model context

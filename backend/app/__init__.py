@@ -266,6 +266,41 @@ async def output_open_api(app):
     Path("openapi.json").write_text(json.dumps(schema, indent=2))
 
 
+# Internal asyncio timeout of each long task. Celery's soft and hard limits sit 5 and
+# 10 minutes above it, so a task is always stopped by its own timeout first.
+LONG_TASK_TIMEOUTS = {
+    "execute_test_suite_run": 2 * 60 * 60,
+    "execute_workflow_run": 2 * 60 * 60,
+    "execute_pipeline_run": 2 * 60 * 60,
+    "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics": 110 * 60,
+    "app.tasks.analytics_aggregation_tasks.backfill_agent_analytics": 110 * 60,
+    "app.tasks.backfill_llm_usage_tasks.backfill_llm_usage_ledger": 110 * 60,
+    "app.tasks.zendesk_tasks.analyze_zendesk_tickets_task": 50 * 60,
+    "app.tasks.audio_tasks.transcribe_audio_files_from_s3": 45 * 60,
+    "app.tasks.s3_tasks.import_s3_files_to_kb": 45 * 60,
+    "app.tasks.share_folder_tasks.transcribe_audio_files_from_smb": 45 * 60,
+    "app.tasks.sharepoint_tasks.import_sharepoint_files_to_kb": 45 * 60,
+    "app.tasks.salesforce_article_sync_tasks.import_salesforce_articles_to_kb": 15 * 60,
+    "app.tasks.zendesk_article_sync_tasks.import_zendesk_articles_to_kb": 15 * 60,
+    "app.tasks.fine_tune_job_sync_tasks.sync_all_fine_tuning_jobs": 10 * 60,
+    "app.tasks.conversations_tasks.backfill_missing_conversation_analyses": 9 * 60,
+    "app.tasks.conversations_tasks.cleanup_stale_conversations": 9 * 60,
+}
+TIME_LIMIT_SOFT_MARGIN_SECONDS = 5 * 60
+TIME_LIMIT_HARD_MARGIN_SECONDS = 10 * 60
+
+
+def _long_task_time_limits() -> dict:
+    """Per-task Celery time limits derived from each long task's internal timeout."""
+    return {
+        name: {
+            "soft_time_limit": timeout + TIME_LIMIT_SOFT_MARGIN_SECONDS,
+            "time_limit": timeout + TIME_LIMIT_HARD_MARGIN_SECONDS,
+        }
+        for name, timeout in LONG_TASK_TIMEOUTS.items()
+    }
+
+
 def create_celery():
     """
     Create and configure the Celery application.
@@ -273,10 +308,9 @@ def create_celery():
     logger.debug("Creating new Celery app instance")
     logger.debug(f"Redis URL: {settings.REDIS_URL}")
 
-    # Task modules that top-level import the workflow engine (-> sklearn at boot).
-    # They run only on the dedicated "ml" (solo) worker and are routed to the "ml"
-    # queue. The prefork "default" worker excludes them (CELERY_INCLUDE_ML_TASKS=False)
-    # so its master process never loads ML libs and is safe to fork.
+    # Task modules for the dedicated "ml" worker. They import the workflow engine
+    # lazily, so including them keeps the worker master free of ML libs and fork-safe.
+    # The "default" worker excludes them (CELERY_INCLUDE_ML_TASKS=False).
     ML_TASK_MODULES = [
         "app.tasks.ml_model_pipeline_tasks",
         "app.tasks.test_suite_tasks",
@@ -351,19 +385,18 @@ def create_celery():
         # Ack after completion so a job survives a worker killed or moved mid-task
         task_acks_late=True,
         task_reject_on_worker_lost=True,
-        task_time_limit=300,  # 5 minutes
-        task_soft_time_limit=240,  # 4 minutes (soft limit)
-        # Hard time limits above don't apply to the solo pool we run with;
-        # enforcement happens via asyncio.wait_for inside each task body
-        # (see app/tasks/base.py::run_async_in_celery). Bound result-backend
-        # growth so a slow/wedged worker doesn't pile up Redis keys.
+        # Backstop for hangs the per-task asyncio timeouts cannot see. Enforced by the
+        # prefork pool only; the global pair covers every task without its own entry.
+        task_time_limit=480,
+        task_soft_time_limit=420,
+        task_annotations=_long_task_time_limits(),
+        # Bound result-backend growth so a slow/wedged worker doesn't pile up Redis keys
         result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,
-        # Queue routing for the two-worker split. Everything defaults to "default"
-        # (consumed by the prefork worker); the ML/evaluation tasks are pinned to the
-        # "ml" queue, consumed only by the solo worker that can safely import ML libs.
+        # Queue routing for the two-worker split. Everything defaults to "default";
+        # the ML/evaluation tasks are pinned to the "ml" queue and its dedicated worker.
         task_default_queue="default",
         task_routes={
             "execute_pipeline_run": {"queue": "ml"},

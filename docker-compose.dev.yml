@@ -223,12 +223,12 @@ services:
     restart: unless-stopped
 
   # ML Celery worker — ML pipeline / evaluation / local fine-tuning tasks on the "ml"
-  # queue. MUST stay on the solo pool: these tasks import torch/sklearn/transformers,
-  # which are fork-unsafe. Solo never forks. Scale by adding replicas/pods.
+  # queue. Prefork with one child: the task modules import torch/sklearn lazily, so
+  # the master stays fork-safe, and Celery's time limits and health pings work.
   celery_worker_ml:
     image: genassist-app-image
     container_name: genassist-celery-worker-ml-dev
-    command: python /src/run_celery.py worker -l DEBUG --pool=solo -Q ml
+    command: python /src/run_celery.py worker -l DEBUG --pool=prefork -c 1 -Q ml
     env_file:
       - ./backend/.env
     environment:
@@ -237,7 +237,8 @@ services:
       - REDIS_DB=0
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - CELERY_TRACE_APP=1
-      - CELERY_WORKER_POOL=solo
+      - CELERY_WORKER_POOL=prefork
+      - CELERY_WORKER_CONCURRENCY=1
       - CELERY_INCLUDE_ML_TASKS=true
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
       - DB_HOST=db

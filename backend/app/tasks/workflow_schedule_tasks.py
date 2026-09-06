@@ -25,7 +25,6 @@ from app.core.utils.uuid_utils import coerce_uuid
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.agent import AgentRepository
 from app.repositories.workflow_schedule import WorkflowScheduleRepository
@@ -139,6 +138,9 @@ async def execute_workflow_run_async(run_id: UUID):
                     "nodes": workflow.nodes or [],
                     "edges": workflow.edges or [],
                 }
+                # Imported lazily so the worker master never loads ML libs before forking
+                from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+
                 workflow_engine = WorkflowEngine(workflow_config)
 
                 state = await workflow_engine.execute_from_node(
