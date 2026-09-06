@@ -32,7 +32,7 @@ from app.repositories.agent import AgentRepository
 from app.repositories.workflow_schedule import WorkflowScheduleRepository
 from app.repositories.workflow_schedule_run import WorkflowScheduleRunRepository
 from app.services.realtime_notifications import emit_notification, notification_payload
-from app.tasks.base import run_async_in_celery
+from app.tasks.base import run_async_in_celery, should_execute_run
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,8 @@ async def execute_workflow_run_async(run_id: UUID):
                         )
                         return None
                     raise
+                if not should_execute_run("Workflow schedule run", run_id, run.status):
+                    return None
 
                 await run_repository.update_status(
                     run_id, WorkflowScheduleRunStatus.RUNNING

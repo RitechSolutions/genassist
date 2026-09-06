@@ -24,7 +24,7 @@ from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
 from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
-from app.tasks.base import run_task_for_all_tenants, run_async_in_celery
+from app.tasks.base import run_task_for_all_tenants, run_async_in_celery, should_execute_run
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 from app.dependencies.injector import injector
@@ -115,6 +115,8 @@ async def execute_pipeline_run_async(run_id: UUID):
                         )
                         return None  # Skip this tenant - run doesn't belong to it
                     raise
+                if not should_execute_run("Pipeline run", run_id, run.status):
+                    return None
 
                 # Update status to running
                 await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)

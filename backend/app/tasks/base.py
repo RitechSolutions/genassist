@@ -13,6 +13,23 @@ from app.core.tenant_scope import (
 
 logger = logging.getLogger(__name__)
 
+TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
+
+
+def should_execute_run(kind: str, run_id, status) -> bool:
+    """Skip terminal runs; re-run one left "running" by a lost worker."""
+    status_value = getattr(status, "value", status)
+    if status_value in TERMINAL_RUN_STATUSES:
+        logger.info("%s %s is already %s; skipping", kind, run_id, status_value)
+        return False
+    if status_value == "running":
+        logger.warning(
+            "%s %s was left running by a lost worker; re-running it from scratch",
+            kind,
+            run_id,
+        )
+    return True
+
 
 def run_async_in_celery(
     coro: Coroutine[Any, Any, Any],

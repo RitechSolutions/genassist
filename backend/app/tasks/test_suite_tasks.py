@@ -15,7 +15,7 @@ from app.core.tenant_scope import (
     clear_tenant_context,
     background_task_context,
 )
-from app.tasks.base import create_task_wrapper, run_async_in_celery
+from app.tasks.base import create_task_wrapper, run_async_in_celery, should_execute_run
 from app.core.tenant_scope import get_tenant_context
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.dependencies.injector import injector
@@ -49,6 +49,8 @@ async def _execute_test_suite_run_async(
     run = await service.run_repo.get_by_id(run_id)
     if not run:
         logger.warning("TestRun %s not found — skipping", run_id)
+        return
+    if not should_execute_run("TestRun", run_id, run.status):
         return
 
     suite = await service.suite_repo.get_by_id(run.suite_id)

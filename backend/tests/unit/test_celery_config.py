@@ -1,8 +1,9 @@
-"""Locks the LLM usage slice of the Celery task and beat configuration"""
+"""Locks the Celery task, delivery, and beat configuration"""
 
 import pytest
 
 from app import create_celery
+from app.core.config.settings import settings
 
 
 @pytest.fixture(scope="module")
@@ -18,3 +19,19 @@ def test_no_llm_usage_task_is_scheduled(celery_conf):
     """The backfill is operator-triggered, so nothing in this area runs on a timer"""
     beat = celery_conf.beat_schedule or {}
     assert [name for name, entry in beat.items() if "llm_usage" in str(entry.get("task", ""))] == []
+
+
+def test_messages_are_acknowledged_only_after_the_task_finishes(celery_conf):
+    """A worker killed mid-task must leave its message in the queue for redelivery"""
+    assert celery_conf.task_acks_late is True
+    assert celery_conf.task_reject_on_worker_lost is True
+
+
+def test_redelivery_delay_sits_between_task_timeout_and_reconciler(celery_conf):
+    """Redelivery must never duplicate a running 2h job, and must precede the reconciler"""
+    two_hours = 2 * 60 * 60
+    visibility_timeout = celery_conf.broker_transport_options["visibility_timeout"]
+
+    assert visibility_timeout > two_hours
+    assert visibility_timeout < settings.TEST_RUN_RUNNING_MAX_AGE_SECONDS
+    assert visibility_timeout < settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS

@@ -317,7 +317,7 @@ def create_celery():
         result_backend=settings.REDIS_URL,  # Explicitly set result backend
         broker_connection_retry_on_startup=True,  # Retain pre-Celery 6.0 startup retry behavior
         broker_transport_options={
-            "visibility_timeout": 3600,  # 1 hour
+            "visibility_timeout": settings.CELERY_BROKER_VISIBILITY_TIMEOUT,
             "fanout_prefix": True,
             "fanout_patterns": True,
             "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
@@ -347,6 +347,9 @@ def create_celery():
         timezone="UTC",
         enable_utc=True,
         task_track_started=True,
+        # Ack after completion so a job survives a worker killed or moved mid-task
+        task_acks_late=True,
+        task_reject_on_worker_lost=True,
         task_time_limit=300,  # 5 minutes
         task_soft_time_limit=240,  # 4 minutes (soft limit)
         # Hard time limits above don't apply to the solo pool we run with;

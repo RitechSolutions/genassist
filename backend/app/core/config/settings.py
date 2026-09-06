@@ -41,6 +41,8 @@ class ProjectSettings(BaseSettings):
     # them a silently dead connection blocks the worker or beat indefinitely.
     CELERY_REDIS_SOCKET_TIMEOUT: int = 30
     CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15
+    # Redelivery delay for unacknowledged messages; above the 2h task timeout
+    CELERY_BROKER_VISIBILITY_TIMEOUT: int = 8400
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
@@ -62,13 +64,13 @@ class ProjectSettings(BaseSettings):
     # (its worker never picked it up / crashed before starting) and marked FAILED.
     WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS: int = 900  # 15 minutes
     # A scheduled run still RUNNING after this many seconds is presumed orphaned
-    # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
-    # genuinely long run is never failed prematurely.
-    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
+    # (worker died mid-run). Kept above the 2h execution timeout and the broker
+    # redelivery delay so a lost run is re-run before it is declared dead.
+    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
     # Evaluation (test) runs use the same orphaned-run reconciliation.
     CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
     TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
-    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m, above the 2h task timeout
+    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m, above the broker redelivery delay
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True

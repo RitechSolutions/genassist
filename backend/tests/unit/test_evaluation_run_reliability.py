@@ -619,6 +619,45 @@ class TestPausedConversationExecution:
         assert run.summary_metrics["_totals"]["skipped"] == 1
 
 
+class TestRunPickupGuard:
+    """A redelivered message must not re-run a finished run, but must re-run a lost one."""
+
+    @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+    def test_terminal_runs_are_skipped(self, status):
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("TestRun", uuid4(), status) is False
+
+    @pytest.mark.parametrize("status", ["queued", "pending", "running"])
+    def test_open_runs_execute(self, status):
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("TestRun", uuid4(), status) is True
+
+    def test_enum_statuses_are_understood(self):
+        from app.core.utils.enums.workflow_schedule_enum import WorkflowScheduleRunStatus
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.COMPLETED) is False
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.RUNNING) is True
+
+    @pytest.mark.asyncio
+    async def test_redelivered_completed_evaluation_is_not_re_executed(self):
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        service = MagicMock()
+        service.run_repo.get_by_id = AsyncMock(return_value=_run(status="completed"))
+        service.suite_repo.get_by_id = AsyncMock()
+        service._execute_run = AsyncMock()
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service.suite_repo.get_by_id.assert_not_awaited()
+        service._execute_run.assert_not_awaited()
+
+
 class TestWatchdogRepo:
     @pytest.mark.asyncio
     async def test_mark_stuck_as_failed_flushes_and_returns_rowcount(self):
