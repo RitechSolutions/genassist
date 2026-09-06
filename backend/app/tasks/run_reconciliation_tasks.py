@@ -39,6 +39,10 @@ STUCK_WORKFLOW_RUN_ERROR = (
 )
 
 
+class BrokerScanError(RuntimeError):
+    """The queue holds messages the scan could not read; nothing may be reaped from it."""
+
+
 @dataclass(frozen=True)
 class RunReconciliation:
     kind: str
@@ -72,6 +76,9 @@ def _read_broker_messages(queue: str) -> list:
         client = channel.client
         waiting = client.lrange(f"{prefix}{queue}", 0, -1)
         reserved = client.hvals(f"{prefix}{channel.unacked_key}")
+        # kombu prefixes LLEN itself, so a mismatch means the raw keys above are wrong
+        if not waiting and not reserved and client.llen(queue) > 0:
+            raise BrokerScanError(f"queue '{queue}' holds messages the scan cannot read")
         return waiting + reserved
 
 
@@ -84,7 +91,15 @@ async def run_ids_in_broker(task_name: str, queue: str = RUN_QUEUE) -> Set[str]:
     return ids
 
 
-def _orphaned(candidates: List[str], present: Set[str]) -> List[str]:
+async def orphaned_waiting_runs(candidates: List[str], task_name: str) -> List[str]:
+    """Waiting runs whose job is gone; none when the broker cannot be read safely."""
+    if not candidates:
+        return []
+    try:
+        present = await run_ids_in_broker(task_name)
+    except BrokerScanError as exc:
+        logger.warning("%s; leaving waiting runs untouched this round", exc)
+        return []
     return [run_id for run_id in candidates if run_id not in present]
 
 
@@ -100,9 +115,8 @@ async def _reconcile_runs(spec: RunReconciliation) -> None:
         try:
             repository = spec.repository(session)
             candidates = await repository.get_waiting_ids_older_than(waiting_before)
-            present = await run_ids_in_broker(spec.task_name) if candidates else set()
             failed = await repository.mark_orphaned_as_failed(
-                waiting_ids=_orphaned(candidates, present),
+                waiting_ids=await orphaned_waiting_runs(candidates, spec.task_name),
                 running_before=running_before,
                 error_message=spec.error_message,
             )

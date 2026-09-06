@@ -29,11 +29,20 @@ logger = logging.getLogger(__name__)
 async def _persist_failure(service, run, exc: Exception) -> None:
     """Commit the failed status on its own; the task wrapper rolls back on raise."""
     session = service.run_repo.db
+    # The service may already have failed the run in memory and notified the user
+    already_notified = run.status in TERMINAL_RUN_STATUSES
+    error = (run.summary_metrics or {}).get("error") or f"Run failed unexpectedly: {exc}"
     try:
         await session.rollback()
         await session.refresh(run)
-        if run.status not in TERMINAL_RUN_STATUSES:
-            await service._fail_run(run, f"Run failed unexpectedly: {exc}")
+        if run.status in TERMINAL_RUN_STATUSES:
+            return
+        if already_notified:
+            run.status = "failed"
+            run.summary_metrics = {"error": error}
+            await service.run_repo.update(run)
+        else:
+            await service._fail_run(run, error)
         await session.commit()
     except Exception:
         logger.error("Could not persist the failed status of TestRun %s", run.id, exc_info=True)

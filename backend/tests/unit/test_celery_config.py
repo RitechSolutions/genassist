@@ -1,12 +1,18 @@
 """Locks the Celery task, delivery, and beat configuration"""
 
 import importlib
+import math
+import re
+from pathlib import Path
 
 import pytest
 
+import app
 from app import LONG_TASK_TIMEOUTS, create_celery
 from app.core.config.settings import settings
 
+TASK_DECORATOR = re.compile(r"@shared_task(\((.*?)\))?\s*\ndef\s+(\w+)\s*\(", re.S)
+TIMEOUT_LITERAL = re.compile(r"timeout\s*=\s*([0-9][0-9 *+]*)")
 ML_TASK_MODULES = (
     "app.tasks.ml_model_pipeline_tasks",
     "app.tasks.test_suite_tasks",
@@ -38,7 +44,50 @@ def test_no_llm_usage_task_is_scheduled(celery_conf):
 def test_messages_are_acknowledged_only_after_the_task_finishes(celery_conf):
     """A worker killed mid-task must leave its message in the queue for redelivery"""
     assert celery_conf.task_acks_late is True
-    assert celery_conf.task_reject_on_worker_lost is True
+
+
+def test_a_job_that_kills_its_child_process_is_not_requeued(celery_conf):
+    """Requeueing a deterministic crash would jam the queue in an endless loop"""
+    assert celery_conf.task_reject_on_worker_lost is False
+
+
+def _arithmetic(expression: str) -> int:
+    return sum(
+        math.prod(int(factor) for factor in term.split("*"))
+        for term in expression.replace(" ", "").split("+")
+    )
+
+
+def _internal_task_timeouts(included_modules):
+    """(task name, internal asyncio timeout) for every included task module that declares one"""
+    tasks_dir = Path(app.__file__).parent / "tasks"
+    for path in sorted(tasks_dir.glob("*.py")):
+        if f"app.tasks.{path.stem}" not in included_modules:
+            continue
+        source = path.read_text()
+        decorators = list(TASK_DECORATOR.finditer(source))
+        for index, match in enumerate(decorators):
+            decorator_args, function = match.group(2) or "", match.group(3)
+            explicit_name = re.search(r"name\s*=\s*['\"]([^'\"]+)['\"]", decorator_args)
+            name = explicit_name.group(1) if explicit_name else f"app.tasks.{path.stem}.{function}"
+            body_end = decorators[index + 1].start() if index + 1 < len(decorators) else len(source)
+            timeout = TIMEOUT_LITERAL.search(source[match.end():body_end])
+            if timeout:
+                yield name, _arithmetic(timeout.group(1))
+
+
+def test_every_task_with_a_long_internal_timeout_has_its_own_limit(celery_conf):
+    """The table must mirror the task modules, so no long task slips to the global limit"""
+    included_modules = set(celery_conf.include) | set(ML_TASK_MODULES)
+    long_tasks = {
+        name: timeout
+        for name, timeout in _internal_task_timeouts(included_modules)
+        if timeout >= celery_conf.task_soft_time_limit
+    }
+
+    assert long_tasks
+    for name, timeout in long_tasks.items():
+        assert LONG_TASK_TIMEOUTS.get(name) == timeout, name
 
 
 def test_reconcilers_run_on_the_default_queue(celery_conf):

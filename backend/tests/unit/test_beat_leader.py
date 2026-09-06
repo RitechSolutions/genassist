@@ -22,7 +22,11 @@ class FakeRedis:
         return True
 
     def eval(self, script, numkeys, key, token, ttl):
+        self.renewals = getattr(self, "renewals", 0) + 1
         return 1 if self.store.get(key) == token else 0
+
+    def get(self, key):
+        return self.store.get(key)
 
     def release(self, key):
         self.store.pop(key, None)
@@ -52,6 +56,22 @@ class TestLeaderLock:
 
         assert len(waits) == 3
         assert client.store[beat_leader.LEADER_KEY] == "beat-b"
+
+    def test_standby_keeps_writing_the_heartbeat(self):
+        """A liveness probe on the heartbeat file must not restart a healthy standby."""
+        client = FakeRedis()
+        client.store[beat_leader.LEADER_KEY] = "someone-else"
+        waits = []
+
+        def sleep(seconds):
+            waits.append(seconds)
+            if len(waits) == 2:
+                client.release(beat_leader.LEADER_KEY)
+
+        with patch.object(beat_leader, "write_heartbeat") as heartbeat:
+            BeatLeaderLock(client, "me", ttl_seconds=60, sleep=sleep).wait_until_leader()
+
+        assert heartbeat.call_count == 2
 
     def test_redis_errors_while_waiting_are_retried(self):
         client = MagicMock()
@@ -86,6 +106,52 @@ class TestLeaderLock:
 
         assert _lock(client, step_down=step_down).renew_once() is True
         step_down.assert_not_called()
+
+    def test_a_frozen_loop_stops_renewing_but_keeps_running_while_still_owner(self):
+        """The lock must be allowed to expire so a standby can take over."""
+        client = FakeRedis()
+        step_down = MagicMock()
+        lock = _lock(client, step_down=step_down, loop_is_alive=lambda: False)
+        lock.wait_until_leader()
+
+        assert lock.renew_once() is True
+        assert getattr(client, "renewals", 0) == 0
+        step_down.assert_not_called()
+
+    def test_a_frozen_loop_steps_down_once_the_lock_has_expired(self):
+        client = FakeRedis()
+        step_down = MagicMock()
+        lock = _lock(client, step_down=step_down, loop_is_alive=lambda: False)
+        lock.wait_until_leader()
+        client.release(beat_leader.LEADER_KEY)
+
+        assert lock.renew_once() is False
+        step_down.assert_called_once()
+
+
+class TestTickMonitor:
+    def test_reports_stale_only_after_the_max_age(self):
+        now = [1000.0]
+        monitor = beat_leader.TickMonitor(clock=lambda: now[0])
+
+        now[0] += beat_leader.STALE_SCHEDULER_SECONDS - 1
+        assert monitor.is_alive() is True
+        now[0] += 2
+        assert monitor.is_alive() is False
+
+        monitor.record_tick()
+        assert monitor.is_alive() is True
+
+    def test_installed_heartbeat_records_each_tick(self, tmp_path):
+        now = [50.0]
+        monitor = beat_leader.TickMonitor(clock=lambda: now[0])
+        scheduler = MagicMock()
+        beat_leader.install_tick_heartbeat(scheduler, str(tmp_path / "hb"), monitor)
+
+        now[0] = 900.0
+        scheduler.tick()
+
+        assert monitor.last_tick_at == 900.0
 
 
 class TestTickHeartbeat:

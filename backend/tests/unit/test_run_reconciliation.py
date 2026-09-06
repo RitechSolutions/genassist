@@ -50,6 +50,38 @@ class TestMessageParsing:
             assert await reconciliation.run_ids_in_broker(EVAL_TASK) == {first, second}
 
 
+class TestBrokerScanFailSafe:
+    def _channel(self, waiting, reserved, length):
+        client = MagicMock()
+        client.lrange.return_value = waiting
+        client.hvals.return_value = reserved
+        client.llen.return_value = length
+        channel = MagicMock(client=client, global_keyprefix="{celery}", unacked_key="unacked")
+        connection = MagicMock()
+        connection.__enter__ = MagicMock(return_value=MagicMock(default_channel=channel))
+        connection.__exit__ = MagicMock(return_value=False)
+        return connection
+
+    def test_an_unreadable_non_empty_queue_raises_instead_of_reporting_empty(self):
+        with patch.object(reconciliation, "current_app") as app:
+            app.connection_for_read.return_value = self._channel([], [], 3)
+            with pytest.raises(reconciliation.BrokerScanError):
+                reconciliation._read_broker_messages("ml")
+
+    def test_a_truly_empty_queue_is_fine(self):
+        with patch.object(reconciliation, "current_app") as app:
+            app.connection_for_read.return_value = self._channel([], [], 0)
+            assert reconciliation._read_broker_messages("ml") == []
+
+    @pytest.mark.asyncio
+    async def test_scan_failure_leaves_waiting_runs_alone(self):
+        candidates = [str(uuid4()), str(uuid4())]
+        with patch.object(
+            reconciliation, "run_ids_in_broker", AsyncMock(side_effect=reconciliation.BrokerScanError("x"))
+        ):
+            assert await reconciliation.orphaned_waiting_runs(candidates, EVAL_TASK) == []
+
+
 def _session_factory(session):
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=session)

@@ -681,6 +681,18 @@ class TestOrphanRepo:
         db.flush.assert_awaited_once()
 
 
+def _failing_service(run, failure):
+    service = MagicMock()
+    service.run_repo.db = AsyncMock()
+    service.run_repo.get_by_id = AsyncMock(return_value=run)
+    service.run_repo.update = AsyncMock()
+    service.suite_repo.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+    service.workflow_service.get_by_id = AsyncMock(return_value=MagicMock())
+    service._execute_run = AsyncMock(side_effect=failure)
+    service._fail_run = AsyncMock()
+    return service
+
+
 class TestFailureIsPersisted:
     @pytest.mark.asyncio
     async def test_failed_status_is_committed_when_the_run_raises(self):
@@ -690,13 +702,7 @@ class TestFailureIsPersisted:
         run = SimpleNamespace(
             id=uuid4(), status="running", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
         )
-        service = MagicMock()
-        service.run_repo.db = AsyncMock()
-        service.run_repo.get_by_id = AsyncMock(return_value=run)
-        service.suite_repo.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
-        service.workflow_service.get_by_id = AsyncMock(return_value=MagicMock())
-        service._execute_run = AsyncMock(side_effect=RuntimeError("kaboom"))
-        service._fail_run = AsyncMock()
+        service = _failing_service(run, RuntimeError("kaboom"))
 
         with patch("app.dependencies.injector.injector") as injector:
             injector.get.return_value = service
@@ -705,5 +711,36 @@ class TestFailureIsPersisted:
 
         service.run_repo.db.rollback.assert_awaited_once()
         service.run_repo.db.refresh.assert_awaited_once_with(run)
-        service._fail_run.assert_awaited_once()
+        service._fail_run.assert_awaited_once_with(run, "Run failed unexpectedly: kaboom")
+        service.run_repo.db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_run_the_service_already_failed_is_written_without_a_second_notification(self):
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        run = SimpleNamespace(
+            id=uuid4(), status="running", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+        )
+
+        async def service_fails_the_run(*_args, **_kwargs):
+            run.status = "failed"
+            run.summary_metrics = {"error": "Run failed unexpectedly: judge down"}
+            raise RuntimeError("judge down")
+
+        service = _failing_service(run, service_fails_the_run)
+
+        async def refresh(instance):
+            instance.status = "running"
+
+        service.run_repo.db.refresh = AsyncMock(side_effect=refresh)
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            with pytest.raises(RuntimeError):
+                await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service._fail_run.assert_not_awaited()
+        service.run_repo.update.assert_awaited_once_with(run)
+        assert run.status == "failed"
+        assert run.summary_metrics == {"error": "Run failed unexpectedly: judge down"}
         service.run_repo.db.commit.assert_awaited_once()
