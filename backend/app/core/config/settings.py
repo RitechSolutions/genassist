@@ -43,6 +43,9 @@ class ProjectSettings(BaseSettings):
     CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15
     # Redelivery delay for unacknowledged messages; above the 2h task timeout
     CELERY_BROKER_VISIBILITY_TIMEOUT: int = 8400
+    # Only one beat replica dispatches; the others stand by and take over within the TTL
+    CELERY_BEAT_LEADER_LOCK_ENABLED: bool = True
+    CELERY_BEAT_LEADER_LOCK_TTL_SECONDS: int = 60
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True

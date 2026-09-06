@@ -533,6 +533,8 @@ def create_celery():
         beat_schedule["check-scheduled-pipeline-runs"] = {
             "task": "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs",
             "schedule": 60.0,  # Every minute (60 seconds)
+            # Expire before the next tick so ticks never pile up behind a long ml job
+            "options": {"expires": 55},
         }
 
     # Check for scheduled workflow runs every minute
@@ -540,6 +542,7 @@ def create_celery():
         beat_schedule["check-scheduled-workflow-runs"] = {
             "task": "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs",
             "schedule": 60.0,  # Every minute (60 seconds)
+            "options": {"expires": 55},
         }
 
     # Reconcile runs orphaned by a lost worker every 5 minutes. These run on the
@@ -548,12 +551,14 @@ def create_celery():
         beat_schedule["reconcile-stuck-workflow-runs"] = {
             "task": "app.tasks.run_reconciliation_tasks.reconcile_stuck_workflow_runs",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
+            "options": {"expires": 290},
         }
 
     if settings.CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK:
         beat_schedule["reconcile-stuck-test-runs"] = {
             "task": "app.tasks.run_reconciliation_tasks.reconcile_stuck_test_runs",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
+            "options": {"expires": 290},
         }
 
     # Sync active KB's jobs every 5 minutes

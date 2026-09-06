@@ -83,6 +83,19 @@ def test_every_time_limited_task_name_is_a_registered_task(celery_app):
     assert set(LONG_TASK_TIMEOUTS) <= set(celery_app.tasks)
 
 
+def test_frequent_scheduled_ticks_expire_before_the_next_one(celery_conf):
+    """A tick that missed its slot is dropped instead of queuing behind a long ml job"""
+    beat = celery_conf.beat_schedule or {}
+    for name in (
+        "check-scheduled-pipeline-runs",
+        "check-scheduled-workflow-runs",
+        "reconcile-stuck-workflow-runs",
+        "reconcile-stuck-test-runs",
+    ):
+        entry = beat[name]
+        assert entry["options"]["expires"] < entry["schedule"], name
+
+
 def test_redelivery_delay_sits_between_task_timeout_and_reconciler(celery_conf):
     """Redelivery must never duplicate a running 2h job, and must precede the reconciler"""
     two_hours = 2 * 60 * 60
