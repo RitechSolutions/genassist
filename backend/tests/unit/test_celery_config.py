@@ -27,6 +27,21 @@ def test_messages_are_acknowledged_only_after_the_task_finishes(celery_conf):
     assert celery_conf.task_reject_on_worker_lost is True
 
 
+def test_reconcilers_run_on_the_default_queue(celery_conf):
+    """The cleanup must never queue behind the ml jam it is meant to clear"""
+    assert "app.tasks.run_reconciliation_tasks" in celery_conf.include
+    assert not [name for name in celery_conf.task_routes if "reconcile_stuck" in name]
+
+    beat = celery_conf.beat_schedule or {}
+    reconcile_tasks = [
+        entry["task"] for name, entry in beat.items() if name.startswith("reconcile-stuck")
+    ]
+    assert reconcile_tasks == [
+        "app.tasks.run_reconciliation_tasks.reconcile_stuck_workflow_runs",
+        "app.tasks.run_reconciliation_tasks.reconcile_stuck_test_runs",
+    ]
+
+
 def test_redelivery_delay_sits_between_task_timeout_and_reconciler(celery_conf):
     """Redelivery must never duplicate a running 2h job, and must precede the reconciler"""
     two_hours = 2 * 60 * 60

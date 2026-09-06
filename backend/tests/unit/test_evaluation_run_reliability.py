@@ -658,9 +658,10 @@ class TestRunPickupGuard:
         service._execute_run.assert_not_awaited()
 
 
-class TestWatchdogRepo:
+class TestOrphanRepo:
     @pytest.mark.asyncio
-    async def test_mark_stuck_as_failed_flushes_and_returns_rowcount(self):
+    @pytest.mark.parametrize("waiting_ids", [[], [str(uuid4())]])
+    async def test_mark_orphaned_as_failed_flushes_and_returns_rowcount(self, waiting_ids):
         from app.repositories.test_suite import TestRunRepository
 
         db = MagicMock()
@@ -669,9 +670,10 @@ class TestWatchdogRepo:
         db.flush = AsyncMock()
         repo = TestRunRepository(db)
 
-        now = datetime.now(timezone.utc)
-        failed = await repo.mark_stuck_as_failed(
-            queued_before=now, running_before=now, error_message="stuck"
+        failed = await repo.mark_orphaned_as_failed(
+            waiting_ids=waiting_ids,
+            running_before=datetime.now(timezone.utc),
+            error_message="stuck",
         )
 
         assert failed == 3
@@ -679,33 +681,29 @@ class TestWatchdogRepo:
         db.flush.assert_awaited_once()
 
 
-class TestWatchdogTask:
+class TestFailureIsPersisted:
     @pytest.mark.asyncio
-    async def test_reconcile_calls_repo_with_thresholds(self):
-        from app.tasks import test_suite_tasks
+    async def test_failed_status_is_committed_when_the_run_raises(self):
+        """The task wrapper rolls back on raise, so the failed status needs its own commit."""
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
 
-        repo = MagicMock()
-        repo.mark_stuck_as_failed = AsyncMock(return_value=2)
+        run = SimpleNamespace(
+            id=uuid4(), status="running", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+        )
+        service = MagicMock()
+        service.run_repo.db = AsyncMock()
+        service.run_repo.get_by_id = AsyncMock(return_value=run)
+        service.suite_repo.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+        service.workflow_service.get_by_id = AsyncMock(return_value=MagicMock())
+        service._execute_run = AsyncMock(side_effect=RuntimeError("kaboom"))
+        service._fail_run = AsyncMock()
 
-        session = AsyncMock()
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=session)
-        session_cm.__aexit__ = AsyncMock(return_value=False)
-        factory = MagicMock(return_value=session_cm)
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            with pytest.raises(RuntimeError):
+                await _execute_test_suite_run_async(uuid4(), None, None)
 
-        with patch.object(
-            test_suite_tasks.multi_tenant_manager,
-            "get_tenant_session_factory",
-            return_value=factory,
-        ), patch.object(
-            test_suite_tasks, "TestRunRepository", return_value=repo
-        ), patch.object(
-            test_suite_tasks, "get_tenant_context", return_value="tenant_a"
-        ):
-            await test_suite_tasks.reconcile_stuck_test_runs_async()
-
-        repo.mark_stuck_as_failed.assert_awaited_once()
-        kwargs = repo.mark_stuck_as_failed.await_args.kwargs
-        # 15-min queued cutoff is more recent than the 2h10m running cutoff.
-        assert kwargs["queued_before"] > kwargs["running_before"]
-        assert kwargs["error_message"]
+        service.run_repo.db.rollback.assert_awaited_once()
+        service.run_repo.db.refresh.assert_awaited_once_with(run)
+        service._fail_run.assert_awaited_once()
+        service.run_repo.db.commit.assert_awaited_once()

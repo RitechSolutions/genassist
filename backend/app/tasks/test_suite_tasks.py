@@ -3,32 +3,40 @@ Celery tasks for test suite run execution.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 from uuid import UUID
 
 from celery import shared_task
 
-from app.core.config.settings import settings
 from app.core.tenant_scope import (
     set_tenant_context,
     clear_tenant_context,
     background_task_context,
 )
-from app.tasks.base import create_task_wrapper, run_async_in_celery, should_execute_run
+from app.tasks.base import (
+    TERMINAL_RUN_STATUSES,
+    create_task_wrapper,
+    run_async_in_celery,
+    should_execute_run,
+)
 from app.core.tenant_scope import get_tenant_context
-from app.db.multi_tenant_session import multi_tenant_manager
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.repositories.test_suite import TestRunRepository
 from app.services.realtime_notifications import emit_notification, notification_payload
 
 logger = logging.getLogger(__name__)
 
-_STUCK_TEST_RUN_ERROR = (
-    "Run stopped unexpectedly (its worker crashed or was restarted) and was "
-    "marked failed by the reconciliation job."
-)
+async def _persist_failure(service, run, exc: Exception) -> None:
+    """Commit the failed status on its own; the task wrapper rolls back on raise."""
+    session = service.run_repo.db
+    try:
+        await session.rollback()
+        await session.refresh(run)
+        if run.status not in TERMINAL_RUN_STATUSES:
+            await service._fail_run(run, f"Run failed unexpectedly: {exc}")
+        await session.commit()
+    except Exception:
+        logger.error("Could not persist the failed status of TestRun %s", run.id, exc_info=True)
 
 
 async def _execute_test_suite_run_async(
@@ -86,8 +94,7 @@ async def _execute_test_suite_run_async(
         )
     except Exception as exc:
         logger.error("Test run %s failed: %s", run_id, exc, exc_info=True)
-        if run.status not in ("completed", "failed"):
-            await service._fail_run(run, f"Run failed unexpectedly: {exc}")
+        await _persist_failure(service, run, exc)
         raise
 
 
@@ -142,62 +149,3 @@ def execute_test_suite_run_task(
             raise
         finally:
             clear_tenant_context()
-
-
-async def reconcile_stuck_test_runs_async() -> None:
-    """Fail evaluation runs left stuck by a crashed worker for the current tenant."""
-    tenant_id = get_tenant_context()
-    session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
-
-    async with session_factory() as session:
-        try:
-            run_repository = TestRunRepository(session)
-            now = datetime.now(timezone.utc)
-            queued_before = now - timedelta(
-                seconds=settings.TEST_RUN_QUEUED_MAX_AGE_SECONDS
-            )
-            running_before = now - timedelta(
-                seconds=settings.TEST_RUN_RUNNING_MAX_AGE_SECONDS
-            )
-            failed = await run_repository.mark_stuck_as_failed(
-                queued_before=queued_before,
-                running_before=running_before,
-                error_message=_STUCK_TEST_RUN_ERROR,
-            )
-            # Repos only flush now; this out-of-band session owns its commit.
-            await session.commit()
-            if failed:
-                logger.warning(
-                    "Reconciled %s stuck evaluation run(s) as failed for tenant %s",
-                    failed,
-                    tenant_id,
-                )
-        except Exception as exc:
-            await session.rollback()
-            logger.error("Error reconciling stuck evaluation runs: %s", exc, exc_info=True)
-        finally:
-            await session.close()
-
-
-async def reconcile_stuck_test_runs_async_with_scope():
-    """Run the stuck-run reconciliation for all tenants."""
-    from app.tasks.base import run_task_with_tenant_support
-
-    return await run_task_with_tenant_support(
-        reconcile_stuck_test_runs_async,
-        "reconcile stuck evaluation runs",
-    )
-
-
-@shared_task
-def reconcile_stuck_test_runs():
-    """Celery beat task to fail evaluation runs orphaned by a worker/pod crash."""
-    try:
-        run_async_in_celery(
-            reconcile_stuck_test_runs_async_with_scope(),
-            timeout=50,
-            task_name="reconcile_stuck_test_runs",
-        )
-    except Exception as exc:
-        logger.error("Error in stuck evaluation-run reconciliation task: %s", exc, exc_info=True)
-        raise
