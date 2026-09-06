@@ -322,10 +322,23 @@ def create_celery():
             "fanout_patterns": True,
             "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
             "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
+            # Bound socket operations so a dead connection raises and retries
+            # instead of blocking the process indefinitely
+            "socket_timeout": settings.CELERY_REDIS_SOCKET_TIMEOUT,
+            "socket_connect_timeout": settings.CELERY_REDIS_SOCKET_CONNECT_TIMEOUT,
+            "socket_keepalive": True,
+            "retry_on_timeout": True,
+            "health_check_interval": 30,
         },
         result_backend_transport_options={
             "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
         },
+        # Same socket bounds for the result-backend client
+        redis_socket_timeout=settings.CELERY_REDIS_SOCKET_TIMEOUT,
+        redis_socket_connect_timeout=settings.CELERY_REDIS_SOCKET_CONNECT_TIMEOUT,
+        redis_socket_keepalive=True,
+        redis_retry_on_timeout=True,
+        redis_backend_health_check_interval=25,
         redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
         worker_enable_mingle=False,  # Disable mingle to avoid cross-slot errors on startup
         task_serializer="json",

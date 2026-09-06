@@ -37,6 +37,10 @@ class ProjectSettings(BaseSettings):
 
     # Celery Redis connection pool settings
     CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
+    # Socket bounds for Celery's broker/result-backend Redis connections; without
+    # them a silently dead connection blocks the worker or beat indefinitely.
+    CELERY_REDIS_SOCKET_TIMEOUT: int = 30
+    CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
