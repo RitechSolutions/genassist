@@ -83,9 +83,10 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
     # Worker pool. Only "prefork" enforces task time limits and answers health pings
-    # during a task. It is fork-safe for both workers because every task module loads
-    # the ML libs (torch/sklearn/transformers) lazily, inside the task, so the master
-    # process stays clean; test_celery_worker_boot_clean.py guards this.
+    # during a task; the default worker runs it. The ml worker stays "solo": workflow
+    # Python code nodes run user code in a subprocess, which a prefork child (daemonic)
+    # is not allowed to start. Task modules load ML libs lazily so the master stays
+    # fork-safe either way; test_celery_worker_boot_clean.py guards this.
     CELERY_WORKER_POOL: str = "solo"
 
     # Role selector for the two-worker split. When True (default), the app includes

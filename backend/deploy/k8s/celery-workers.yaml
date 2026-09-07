@@ -2,15 +2,17 @@
 # Celery workers — two-pool split for EKS
 #
 # Why two deployments:
-#   * worker-ml      : runs the ML / evaluation / local-fine-tuning tasks on the "ml" queue,
-#                      one child process so evaluations run one at a time.
-#   * worker-default : runs everything else on the "default" queue with two children.
+#   * worker-ml      : runs the ML / evaluation / local-fine-tuning tasks on the "ml" queue
+#                      on the SOLO pool. Workflow Python code nodes execute user code in a
+#                      subprocess, and a prefork child (daemonic) may not start children,
+#                      so this worker cannot run prefork until that executor is adapted.
+#   * worker-default : runs everything else on the "default" queue on the PREFORK pool with
+#                      two children. Prefork is the only pool that enforces task time limits
+#                      and answers `celery inspect ping` during a task.
 #
-# Both use the PREFORK pool. It is the only pool that enforces task time limits and
-# answers `celery inspect ping` during a task (solo does neither). Fork safety: the ML libs
-# (torch/sklearn/transformers) spawn native threads at import and would crash a forked
-# child, so every task module imports them lazily inside the task and the master process
-# stays clean; test_celery_worker_boot_clean.py guards this for both worker configs.
+# Fork safety: the ML libs (torch/sklearn/transformers) spawn native threads at import and
+# would crash a forked child, so every task module imports them lazily inside the task and
+# the master process stays clean; test_celery_worker_boot_clean.py guards this.
 #
 # Routing is configured in app/__init__.py (create_celery): task_default_queue="default",
 # task_routes pins execute_pipeline_run / execute_test_suite_run / execute_workflow_run and
@@ -56,7 +58,7 @@ metadata:
   name: genassist-celery-worker-ml
   labels: { app: genassist, service: celery-worker-ml }
 spec:
-  replicas: 1   # scale ML throughput horizontally (one evaluation per replica)
+  replicas: 1   # scale ML throughput horizontally (solo = one task per process)
   selector:
     matchLabels: { app: genassist, service: celery-worker-ml }
   template:
@@ -66,13 +68,12 @@ spec:
       containers:
         - name: celery-worker-ml
           image: <IMAGE>
-          command: ["python", "/src/run_celery.py", "worker", "--loglevel=info", "--pool=prefork", "-Q", "ml"]
+          command: ["python", "/src/run_celery.py", "worker", "--loglevel=info", "--pool=solo", "-Q", "ml"]
           envFrom:
             - secretRef: { name: genassist-env }
           env:
-            - { name: CELERY_WORKER_POOL,        value: "prefork" }
-            - { name: CELERY_WORKER_CONCURRENCY, value: "1" }
-            - { name: CELERY_INCLUDE_ML_TASKS,   value: "true" }
+            - { name: CELERY_WORKER_POOL,      value: "solo" }
+            - { name: CELERY_INCLUDE_ML_TASKS, value: "true" }
           resources:
             # ML models + torch are memory-hungry; size generously.
             requests: { cpu: "1",  memory: "2Gi" }
