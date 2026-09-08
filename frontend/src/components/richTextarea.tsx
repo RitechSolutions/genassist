@@ -23,7 +23,10 @@ const OVERLAY_BASE_CLASS =
   "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 overflow-hidden text-foreground"
 
 const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
+  (
+    { className, value, onFocus, onChange, onMouseUp, onKeyDown, onKeyUp, ...props },
+    ref
+  ) => {
     const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
     const overlayRef = React.useRef<HTMLDivElement | null>(null)
     const pendingCursorRef = React.useRef<number | null>(null)
@@ -81,8 +84,9 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           value,
           onChange,
           pendingCursorRef,
+          onKeyDown,
         }),
-      [useOverlay, value, onChange]
+      [useOverlay, value, onChange, onKeyDown]
     )
 
     const handleKeyUp = React.useMemo(
@@ -90,8 +94,9 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         createVariableKeyUpHandler<HTMLTextAreaElement>({
           useOverlay,
           value,
+          onKeyUp,
         }),
-      [useOverlay, value]
+      [useOverlay, value, onKeyUp]
     )
 
     const handleMouseUp = React.useMemo(

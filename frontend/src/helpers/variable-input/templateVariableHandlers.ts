@@ -8,7 +8,7 @@ import {
   snapToVariableBoundary,
 } from "./templateVariableCaret"
 
-export interface VariableHandlersOptions<TEl extends HTMLInputElement | HTMLTextAreaElement> {
+interface VariableHandlersOptions<TEl extends HTMLInputElement | HTMLTextAreaElement> {
   /** Whether variable overlay/logic is active for this value */
   useOverlay: boolean
   /** Current value of the field */
@@ -19,6 +19,10 @@ export interface VariableHandlersOptions<TEl extends HTMLInputElement | HTMLText
   onFocus?: React.FocusEventHandler<TEl>
   /** Forwarded user handler */
   onMouseUp?: React.MouseEventHandler<TEl>
+  /** Forwarded user handler */
+  onKeyDown?: React.KeyboardEventHandler<TEl>
+  /** Forwarded user handler */
+  onKeyUp?: React.KeyboardEventHandler<TEl>
   /** Cursor restore after programmatic deletion */
   pendingCursorRef: React.MutableRefObject<number | null>
 }
@@ -35,65 +39,84 @@ export function createVariableFocusHandler<TEl extends HTMLInputElement | HTMLTe
 }
 
 export function createVariableKeyDownHandler<TEl extends HTMLInputElement | HTMLTextAreaElement>(
-  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value" | "onChange" | "pendingCursorRef">
+  opts: Pick<
+    VariableHandlersOptions<TEl>,
+    "useOverlay" | "value" | "onChange" | "pendingCursorRef" | "onKeyDown"
+  >
 ): React.KeyboardEventHandler<TEl> {
   return (e) => {
-    if (!opts.useOverlay || typeof opts.value !== "string") return
-    const el = e.currentTarget
-    const start = el.selectionStart ?? 0
-    const end = el.selectionEnd ?? 0
+    handleVariableKeyDown(e, opts)
+    opts.onKeyDown?.(e)
+  }
+}
 
-    if (e.key === "Backspace" || e.key === "Delete") {
-      if (start !== end) {
-        const { newValue, newCursor } = deleteSelectionWithVariables(opts.value, start, end)
-        e.preventDefault()
-        opts.pendingCursorRef.current = newCursor
-        opts.onChange?.({ target: { value: newValue } } as React.ChangeEvent<TEl>)
-        return
-      }
-      const result =
-        e.key === "Backspace"
-          ? removeVariableAtCursor(opts.value, start, true)
-          : removeVariableAtCursor(opts.value, start, false)
-      if (result) {
-        e.preventDefault()
-        opts.pendingCursorRef.current = result.newCursor
-        opts.onChange?.({ target: { value: result.newValue } } as React.ChangeEvent<TEl>)
-        return
-      }
+function handleVariableKeyDown<TEl extends HTMLInputElement | HTMLTextAreaElement>(
+  e: React.KeyboardEvent<TEl>,
+  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value" | "onChange" | "pendingCursorRef">
+): void {
+  if (!opts.useOverlay || typeof opts.value !== "string") return
+  const el = e.currentTarget
+  const start = el.selectionStart ?? 0
+  const end = el.selectionEnd ?? 0
+
+  if (e.key === "Backspace" || e.key === "Delete") {
+    if (start !== end) {
+      const { newValue, newCursor } = deleteSelectionWithVariables(opts.value, start, end)
+      e.preventDefault()
+      opts.pendingCursorRef.current = newCursor
+      opts.onChange?.({ target: { value: newValue } } as React.ChangeEvent<TEl>)
+      return
     }
+    const result =
+      e.key === "Backspace"
+        ? removeVariableAtCursor(opts.value, start, true)
+        : removeVariableAtCursor(opts.value, start, false)
+    if (result) {
+      e.preventDefault()
+      opts.pendingCursorRef.current = result.newCursor
+      opts.onChange?.({ target: { value: result.newValue } } as React.ChangeEvent<TEl>)
+      return
+    }
+  }
 
-    if (start === end) {
-      const insideVariable = findVariableAtPosition(opts.value, start)
-      if (
-        insideVariable &&
-        e.key.length === 1 &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey
-      ) {
-        // Allow manual creation of {{...}} by typing braces
-        if (e.key === "{" || e.key === "}") return
-        e.preventDefault()
-        opts.pendingCursorRef.current = insideVariable.end
-        el.setSelectionRange(insideVariable.end, insideVariable.end)
-      }
+  if (start === end) {
+    const insideVariable = findVariableAtPosition(opts.value, start)
+    if (
+      insideVariable &&
+      e.key.length === 1 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
+      // Allow manual creation of {{...}} by typing braces
+      if (e.key === "{" || e.key === "}") return
+      e.preventDefault()
+      opts.pendingCursorRef.current = insideVariable.end
+      el.setSelectionRange(insideVariable.end, insideVariable.end)
     }
   }
 }
 
 export function createVariableKeyUpHandler<TEl extends HTMLInputElement | HTMLTextAreaElement>(
-  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value">
+  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value" | "onKeyUp">
 ): React.KeyboardEventHandler<TEl> {
   return (e) => {
-    if (!opts.useOverlay || typeof opts.value !== "string") return
-    const el = e.currentTarget
-    if (el.selectionStart !== el.selectionEnd) return
-    const pos = el.selectionStart ?? 0
-    const snapped = snapCaretOutOfVariable(opts.value, pos)
-    if (snapped !== pos) {
-      el.setSelectionRange(snapped, snapped)
-    }
+    handleVariableKeyUp(e, opts)
+    opts.onKeyUp?.(e)
+  }
+}
+
+function handleVariableKeyUp<TEl extends HTMLInputElement | HTMLTextAreaElement>(
+  e: React.KeyboardEvent<TEl>,
+  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value">
+): void {
+  if (!opts.useOverlay || typeof opts.value !== "string") return
+  const el = e.currentTarget
+  if (el.selectionStart !== el.selectionEnd) return
+  const pos = el.selectionStart ?? 0
+  const snapped = snapCaretOutOfVariable(opts.value, pos)
+  if (snapped !== pos) {
+    el.setSelectionRange(snapped, snapped)
   }
 }
 
