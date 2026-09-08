@@ -2,19 +2,6 @@ import { apiRequest } from "@/config/api";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { PaginatedResponse } from "@/interfaces/common.interface";
 
-export const getAllApiKeys = async (): Promise<ApiKey[]> => {
-  const data = await apiRequest<ApiKey[]>("GET", "api-keys/");
-  if (!data) {
-    return [];
-  }
-
-  if (!Array.isArray(data)) {
-    return [];
-  }
-
-  return data;
-};
-
 export const getApiKeysPaginated = async (
   page: number = 1,
   pageSize: number = 20,

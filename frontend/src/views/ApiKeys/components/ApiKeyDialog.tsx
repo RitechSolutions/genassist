@@ -7,7 +7,8 @@ import { Eye, EyeOff, Copy } from "lucide-react";
 import { useApiKeyDialogState } from "./ApiKeyDialogLogic";
 import {
   ApiKeyDialogFormValues,
-  KEEP_EXPIRY_VALUE,
+  apiKeyExpiryPreset,
+  apiKeyRoleIds,
   buildApiKeyUpdatePayload,
 } from "../helpers/apiKeyUpdatePayload";
 import { ApiKey } from "@/interfaces/api-key.interface";
@@ -106,11 +107,8 @@ export function ApiKeyDialog({
           ? {
               name: apiKeyToEdit.name || "",
               is_active: apiKeyToEdit.is_active === 1,
-              role_ids:
-                apiKeyToEdit.roles?.map((r) => r.id) ||
-                apiKeyToEdit.role_ids ||
-                [],
-              expiry_preset: KEEP_EXPIRY_VALUE,
+              role_ids: apiKeyRoleIds(apiKeyToEdit),
+              expiry_preset: apiKeyExpiryPreset(apiKeyToEdit),
             }
           : null
       }
@@ -157,12 +155,12 @@ export function ApiKeyDialog({
           setHasGeneratedKey(true);
           onApiKeyCreated?.();
         } else {
-          if (!apiKeyToEdit || !userId) {
-            throw new Error("User information is not available.");
+          if (!apiKeyToEdit) {
+            throw new Error("No API key selected.");
           }
           const updatedFromApi = await updateApiKey(
             apiKeyToEdit.id,
-            buildApiKeyUpdatePayload(values)
+            buildApiKeyUpdatePayload(values, apiKeyToEdit)
           );
           onApiKeyUpdated?.(updatedFromApi);
         }
@@ -241,9 +239,6 @@ export function ApiKeyDialog({
                     <SelectValue placeholder="Expiry" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={KEEP_EXPIRY_VALUE}>
-                      Keep current expiry
-                    </SelectItem>
                     {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
@@ -276,9 +271,8 @@ export function ApiKeyDialog({
                 )}
 
                 <p className="text-xs text-muted-foreground">
-                  Keep current expiry leaves it unchanged. A duration restarts it
-                  from now; Never removes it. Rotation restarts the saved
-                  duration.
+                  Changing this restarts the expiry from now; Never removes it.
+                  Rotation restarts the saved duration.
                 </p>
               </div>
             ) : null}

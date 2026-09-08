@@ -96,6 +96,7 @@ async def seeded_api_keys(db_session):
             "visible_ids": set(key_ids) - {deleted.id},
         }
     finally:
+        await session.rollback()
         await session.execute(delete(ApiKeyRoleModel).where(ApiKeyRoleModel.api_key_id.in_(key_ids)))
         await session.execute(delete(ApiKeyModel).where(ApiKeyModel.id.in_(key_ids)))
         await session.execute(delete(UserModel).where(UserModel.id == user.id))
