@@ -8,13 +8,13 @@ import {
 } from "@/components/sheet";
 import { cn } from "@/lib/utils";
 
-import { JsonViewer, NodeMetadata } from "./custom/JsonViewer";
+import { VariableNodeNames } from "@/helpers/variable-input/variableTree";
 import { GenericTestDialog } from "./GenericTestDialog";
 import { Button } from "@/components/button";
-import { Play, GripVertical, Lock, LockOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Play, GripVertical, Lock, LockOpen, PanelLeftOpen } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
-import { Node, Edge, useNodes } from "reactflow";
+import { useNodes } from "reactflow";
 import { Checkbox } from "@/components/checkbox";
 import { Label } from "@/components/label";
 import nodeRegistry from "../registry/nodeRegistry";
@@ -32,6 +32,8 @@ import {
 } from "@/components/alert-dialog";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import { renderIcon } from "../utils/iconUtils";
+import { WorkflowVariablesProvider } from "../context/WorkflowVariablesContext";
+import { VariablesPanel } from "./custom/VariablesPanel";
 
 const DEFAULT_SHEET_WIDTH_PX = 896;
 const MIN_SHEET_WIDTH_PX = 480;
@@ -51,21 +53,14 @@ interface WorkflowNodesPanelProps {
   children: React.ReactNode;
   footer: React.ReactNode;
   className?: string;
-  // New props for the JSON state section
+  // Data offered to fields as variables
   showJsonState?: boolean;
-  jsonStateTitle?: string;
   jsonStateData?: Record<string, unknown> | string | null;
-  jsonStateType?: "predecessor-outputs" | "input-schemas" | "test-results";
   // Node ID for calculating predecessor state
   nodeId?: string;
   // New props for testing functionality
   nodeType?: string;
   data?: NodeData;
-  showHelp?: boolean;
-  // Workflow context props
-  nodes?: Node[];
-  edges?: Edge[];
-
   // Unwrap field props
   showUnwrap?: boolean;
   onUnwrapChange?: (unwrap: boolean) => void;
@@ -80,16 +75,12 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   children,
   footer,
   className,
-  // New props for the JSON state section
   showJsonState = true,
-  jsonStateTitle = "Node State",
   jsonStateData = null,
-  jsonStateType = "predecessor-outputs",
   nodeId,
   // New props for testing functionality
   nodeType,
   data,
-  showHelp = false,
   // Unwrap field props
   showUnwrap = false,
   onUnwrapChange,
@@ -103,10 +94,12 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   );
   const [sheetWidth, setSheetWidth] = useState<number | null>(null);
   const [isPinned, setIsPinned] = useState(false);
-  const [isJsonPanelVisible, setIsJsonPanelVisible] = useState(true);
+  // Collapsed by default: fields reach the same variables inline via "{{",
+  // so the tree only needs to open for browsing or dragging.
+  const [isVariablesPanelOpen, setIsVariablesPanelOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
+  const { getAvailableDataForNode, nodes: workflowNodes } =
     useWorkflowExecution();
 
   // --- Unsaved changes detection ---
@@ -173,9 +166,9 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     onClose();
   }, [onClose]);
 
-  // Build node metadata for JsonViewer to display node names instead of IDs
-  const nodeMetadata: NodeMetadata = React.useMemo(() => {
-    const metadata: NodeMetadata = {};
+  // Node ids are opaque in variable paths, so map them to readable names
+  const nodeMetadata: VariableNodeNames = React.useMemo(() => {
+    const metadata: VariableNodeNames = {};
     workflowNodes.forEach((node) => {
       metadata[node.id] = {
         name: node.data?.name || node.type || "Unknown",
@@ -197,68 +190,18 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     setIsTestDialogOpen(true);
   };
 
-  // Determine what data to show in the JSON state section
-  const getJsonStateDisplayData = () => {
-    if (jsonStateData) {
-      // Use custom data if provided
-      return {
-        title: jsonStateTitle,
-        data: jsonStateData,
-        type: jsonStateType,
-      };
-    }
-
-    if (nodeId && showJsonState) {
-      // Use calculated available data from workflow execution context
-      const availableData = getAvailableDataForNode(nodeId);
-      return {
-        title: "Available Data",
-        data: availableData,
-        type: "predecessor-outputs" as const,
-      };
-    }
-
+  // Data the fields can offer as variables. Memoised because
+  // getAvailableDataForNode rebuilds the object on every call, and the variable
+  // tree is rebuilt from it whenever the reference changes.
+  const availableData = useMemo(() => {
+    if (jsonStateData) return jsonStateData;
+    if (nodeId && showJsonState) return getAvailableDataForNode(nodeId);
     return null;
-  };
+  }, [jsonStateData, nodeId, showJsonState, getAvailableDataForNode]);
 
-  const jsonStateDisplay = getJsonStateDisplayData();
-
-  const handleDragStart = (
-    e: React.DragEvent,
-    path: string,
-    value: unknown
-  ) => {
-    const reference = path.startsWith("{{") ? path : `{{${path}}}`;
-    // JSON only — omit text/plain so Ace Editor does not also insert on drop
-    e.dataTransfer.setData(
-      "application/json",
-      JSON.stringify({ path: reference.slice(2, -2), value })
-    );
-
-    e.dataTransfer.effectAllowed = "copy";
-
-    // Use a single custom drag image so the cursor shows one clear pill instead of default + HTML
-    const dragImage = document.createElement("div");
-    dragImage.textContent = reference;
-    Object.assign(dragImage.style, {
-      position: "absolute",
-      top: "-9999px",
-      left: "0",
-      padding: "6px 12px",
-      background: "#2563eb",
-      color: "white",
-      borderRadius: "9999px",
-      fontSize: "12px",
-      fontWeight: "500",
-      whiteSpace: "nowrap",
-      boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-      pointerEvents: "none",
-      fontFamily: "inherit",
-    });
-    document.body.appendChild(dragImage);
-    e.dataTransfer.setDragImage(dragImage, 0, 0);
-    requestAnimationFrame(() => dragImage.remove());
-  };
+  // Mirrors the old panel's rule: shown wherever variables apply at all
+  const variablesApplicable =
+    jsonStateData != null || Boolean(nodeId && showJsonState);
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -366,6 +309,10 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
               <GripVertical className="h-4 w-4 text-muted-foreground" />
             </div>
           </div>
+          <WorkflowVariablesProvider
+            data={availableData}
+            nodeNames={nodeMetadata}
+          >
           <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl pointer-events-none [&>*]:pointer-events-auto">
           <SheetHeader className="p-6 pb-4 border-b shrink-0">
             <div className="flex items-center justify-between mr-4">
@@ -407,105 +354,30 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
             </div>
           </SheetHeader>
 
-          <div className="flex flex-1 gap-6 overflow-hidden px-6 pl-8">
-            {/* Left side - JSON State section */}
-            {jsonStateDisplay && isJsonPanelVisible && (
-              <div className="min-w-80 flex-1 border-r border-border pr-6 flex flex-col py-6">
-                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-border">
-                  <p className="text-xs text-muted-foreground">
-                    Drag variables to input fields
-                  </p>
+          <div className="flex flex-1 gap-4 overflow-hidden px-6">
+            {/* Left side - browsable variables, collapsed by default */}
+            {variablesApplicable &&
+              (isVariablesPanelOpen ? (
+                <VariablesPanel onCollapse={() => setIsVariablesPanelOpen(false)} />
+              ) : (
+                <div className="w-10 shrink-0 border-r border-border flex flex-col items-center py-6">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={() => setIsJsonPanelVisible(false)}
-                    title="Hide variables panel"
-                    aria-label="Hide variables panel"
+                    className="h-8 w-8"
+                    onClick={() => setIsVariablesPanelOpen(true)}
+                    title="Show variables panel"
+                    aria-label="Show variables panel"
                   >
-                    <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
+                    <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />
                   </Button>
                 </div>
+              ))}
 
-                <div className="flex-1 bg-card rounded-lg border border-border overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
-                  <div className="p-3 bg-card min-w-max">
-                    {jsonStateDisplay.data ? (
-                      <JsonViewer
-                        data={jsonStateDisplay.data as Record<string, unknown>}
-                        onDragStart={handleDragStart}
-                        nodeMetadata={nodeMetadata}
-                      />
-                    ) : (
-                      <div className="text-sm text-center font-extrabold text-red-500">
-                        Connect this node to workflow to see available data
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {showHelp && (
-                  <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/30">
-                    <div className="flex items-start gap-2">
-                      <div className="text-blue-600 mt-0.5 dark:text-blue-400">
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                      </div>
-                      <div className="text-xs text-blue-800 dark:text-blue-400">
-                        <p className="font-medium mb-1">💡 How to use:</p>
-                        <ul className="space-y-0.5">
-                          <li>
-                            • <strong>Drag</strong> any key badge to input
-                            fields
-                          </li>
-                          <li>
-                            • <strong>Click</strong> badges to copy reference
-                            paths
-                          </li>
-                          <li>
-                            • <strong>Expand</strong> objects to see nested
-                            values
-                          </li>
-                          <li>
-                            • <strong>All levels</strong> are draggable
-                            (objects, arrays, values)
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {jsonStateDisplay && !isJsonPanelVisible && (
-              <div className="w-10 flex-shrink-0 border-r border-border flex flex-col items-center py-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setIsJsonPanelVisible(true)}
-                  title="Show variables panel"
-                  aria-label="Show variables panel"
-                >
-                  <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </div>
-            )}
-
-            {/* Right side - Main content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 min-w-0 pl-4 pr-2">
+            {/* px-1.5 keeps the focus ring (2px ring + 2px offset) off the
+                clipping edge, which would otherwise flatten it on both sides */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 py-6 px-1.5">
               <div className="flex flex-col space-y-4 min-w-0 w-full">
                 {children}
               </div>
@@ -518,6 +390,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
             <div className="flex justify-end gap-2">{footer}</div>
           </div>
           </div>
+          </WorkflowVariablesProvider>
           {/* Lock toggle */}
           <Button
             type="button"
