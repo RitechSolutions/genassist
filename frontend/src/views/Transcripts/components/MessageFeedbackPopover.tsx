@@ -7,6 +7,7 @@ type MessageFeedbackPopoverProps = {
   isOpen: boolean;
   hasFeedbackMessage: boolean;
   text: string;
+  collisionBoundary: Element | null;
   onOpenChange: (open: boolean) => void;
   onTextChange: (value: string) => void;
   onSave: () => void;
@@ -17,6 +18,7 @@ export function MessageFeedbackPopover({
   isOpen,
   hasFeedbackMessage,
   text,
+  collisionBoundary,
   onOpenChange,
   onTextChange,
   onSave,
@@ -44,6 +46,9 @@ export function MessageFeedbackPopover({
         className="w-80 z-[1401]"
         side="bottom"
         align="start"
+        // Collision detection defaults to the viewport, not the transcript pane.
+        collisionBoundary={collisionBoundary}
+        hideWhenDetached
         // The popover is portaled to <body>, so the host Dialog's scroll lock
         // (react-remove-scroll) treats wheel/touch here as "outside" and cancels it,
         // which kills scrolling inside the textarea. Keep the events local.

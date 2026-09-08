@@ -24,6 +24,7 @@ from app.cache.redis_cache import clear_conversation_memory_cache
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.db_connection_utils import release_db_connection
 from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
@@ -591,6 +592,12 @@ class ConversationService:
             conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
                 conversation.id)
             agent_id = conv_with_agent.agent_id if conv_with_agent else None
+
+            # Release the pooled connection before the tone-analysis GPT call so it
+            # isn't held idle-in-transaction for the duration of the call (see
+            # genassist-outage-report-2026-09-03.md, release point #3).
+            await release_db_connection(context=f"conversation {conversation.id}")
+
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
                         conversation_id=conversation.id, agent_id=agent_id))
