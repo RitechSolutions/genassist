@@ -73,7 +73,9 @@ async def test_delete_api_key(authorized_client, new_api_key_data):
 @pytest.fixture
 def listed_api_key(authorized_client):
     name = f"zz_list_{uuid4().hex[:8]}"
-    created = authorized_client.post("/api/api-keys", json={"name": name, "role_ids": []}).json()
+    response = authorized_client.post("/api/api-keys", json={"name": name, "role_ids": []})
+    assert response.status_code == 200, response.text
+    created = response.json()
     yield created
     authorized_client.delete(f"/api/api-keys/{created['id']}")
 

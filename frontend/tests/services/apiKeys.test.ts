@@ -12,7 +12,6 @@ vi.mock("@/config/api", () => ({
 
 import { apiRequest } from "@/config/api";
 import {
-  getAllApiKeys,
   getApiKeysPaginated,
   getApiKey,
   createApiKey,
@@ -25,30 +24,6 @@ import {
 
 const mockApiRequest = vi.mocked(apiRequest);
 beforeEach(() => vi.clearAllMocks());
-
-describe("getAllApiKeys", () => {
-  it("requests the api-keys list and returns the array", async () => {
-    const keys = [{ id: "k1" }];
-    mockApiRequest.mockResolvedValue(keys as never);
-
-    const result = await getAllApiKeys();
-
-    expect(mockApiRequest).toHaveBeenCalledWith("GET", "api-keys/");
-    expect(result).toBe(keys);
-  });
-
-  it("returns an empty array when the response is null", async () => {
-    mockApiRequest.mockResolvedValue(null as never);
-
-    await expect(getAllApiKeys()).resolves.toEqual([]);
-  });
-
-  it("returns an empty array when the response is not an array", async () => {
-    mockApiRequest.mockResolvedValue({ not: "array" } as never);
-
-    await expect(getAllApiKeys()).resolves.toEqual([]);
-  });
-});
 
 describe("getApiKeysPaginated", () => {
   const page = <T,>(items: T[]) => ({

@@ -140,15 +140,6 @@ async function mockApiKeys(page: Page, store: StoredKey[], onList?: ListHook): P
       return route.fulfill({ json: { ...created, key_val: 'mock-secret-value' } });
     }
 
-    if (method === 'PATCH' && /\/api-keys\/[^/]+$/.test(url.pathname)) {
-      const id = url.pathname.split('/').pop();
-      const body = request.postDataJSON() as { name?: string };
-      const row = store.find((key) => key.id === id);
-      if (!row) return route.fulfill({ status: 404, json: { detail: 'not found' } });
-      if (typeof body.name === 'string') row.name = body.name;
-      return route.fulfill({ json: row });
-    }
-
     return route.fallback();
   });
 
