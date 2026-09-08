@@ -24,7 +24,6 @@ from app.cache.redis_cache import clear_conversation_memory_cache
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.db_connection_utils import release_db_connection
 from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
@@ -543,6 +542,11 @@ class ConversationService:
             # Release the pooled connection before the tone-analysis GPT call so it
             # isn't held idle-in-transaction for the duration of the call (see
             # genassist-outage-report-2026-09-03.md, release point #3).
+            # Import kept local: conversations.py loads early in app bootstrap
+            # (injector -> dependency_injection -> services.audio -> here), and
+            # db_connection_utils imports app.dependencies.injector itself, so a
+            # top-level import here is circular.
+            from app.core.utils.db_connection_utils import release_db_connection
             await release_db_connection(context=f"conversation {conversation.id}")
 
             analysis_result = (
