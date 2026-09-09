@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.modules.integration.database.read_only_sql import read_only_sql_blocked_message, validate_read_only_sql
 from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes import sql_node as sql_module
 from app.modules.workflow.engine.nodes.sql_node import SQLNode
@@ -89,6 +91,10 @@ async def test_sql_query_delete_never_executes():
     failure = is_node_failure(result)
     assert failure is not None
     assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
+    assert failure["error"] == read_only_sql_blocked_message(
+        validate_read_only_sql("DELETE FROM users WHERE id = 1", "postgresql")
+    )
     assert "SQL execution blocked" in failure["error"]
     assert "Delete" in failure["error"]
     db_manager.execute_read_query.assert_not_awaited()
@@ -104,6 +110,7 @@ async def test_sql_query_stacked_write_never_executes():
     failure = is_node_failure(result)
     assert failure is not None
     assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
     assert "SQL execution blocked" in failure["error"]
     assert "Multiple SQL statements" in failure["error"]
     db_manager.execute_read_query.assert_not_awaited()
@@ -119,6 +126,7 @@ async def test_sql_query_two_selects_never_executes():
     failure = is_node_failure(result)
     assert failure is not None
     assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
     assert "Multiple SQL statements" in failure["error"]
     db_manager.execute_read_query.assert_not_awaited()
     db_manager.execute_query.assert_not_awaited()
@@ -156,6 +164,7 @@ async def test_human_query_update_never_executes():
     failure = is_node_failure(result)
     assert failure is not None
     assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
     assert "SQL execution blocked" in failure["error"]
     assert "Update" in failure["error"]
     db_manager.execute_read_query.assert_not_awaited()
@@ -179,6 +188,7 @@ async def test_human_query_stacked_sql_never_executes():
     failure = is_node_failure(result)
     assert failure is not None
     assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
     assert "Multiple SQL statements" in failure["error"]
     db_manager.execute_read_query.assert_not_awaited()
     db_manager.execute_query.assert_not_awaited()
@@ -193,7 +203,27 @@ async def test_unsupported_db_type_never_executes():
     failure = is_node_failure(result)
     assert failure is not None
     assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
     assert "SQL execution blocked" in failure["error"]
     assert "Unsupported database type" in failure["error"]
+    db_manager.execute_read_query.assert_not_awaited()
+    db_manager.execute_query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mysql_executable_comment_never_executes():
+    db_manager = _db_manager(db_type="mysql")
+    sql = "SELECT 1 /*!50000 INTO OUTFILE '/tmp/x' */"
+    with _patch_db(db_manager):
+        result = await _node().process(_sql_config(sql))
+
+    failure = is_node_failure(result)
+    assert failure is not None
+    assert failure["code"] == 400
+    assert failure["details"]["error_key"] == ErrorKey.READ_ONLY_SQL_BLOCKED.value
+    assert failure["error"] == read_only_sql_blocked_message(
+        validate_read_only_sql(sql, "mysql")
+    )
+    assert "executable comment" in failure["error"].lower()
     db_manager.execute_read_query.assert_not_awaited()
     db_manager.execute_query.assert_not_awaited()

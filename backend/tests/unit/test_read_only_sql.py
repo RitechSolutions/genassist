@@ -4,6 +4,8 @@ Matrix and dialect behavior come from the sqlglot 26.33.0 spike. Tests do not
 execute SQL against a database.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from app.modules.integration.database.read_only_sql import (
@@ -210,6 +212,46 @@ def test_unsupported_db_type_rejected(db_type):
 def test_malformed_sql_rejected():
     result = validate_read_only_sql("SELCT 1 FROM", "postgresql")
     _assert_invalid(result, "could not be safely parsed")
+    assert result.error_message == "SQL query could not be safely parsed."
+
+
+def test_unexpected_parser_exception_fails_closed():
+    with patch(
+        "app.modules.integration.database.read_only_sql.sqlglot.parse",
+        side_effect=RuntimeError("boom"),
+    ):
+        result = validate_read_only_sql("SELECT 1", "postgresql")
+    _assert_invalid(result, "could not be safely parsed")
+    assert result.error_message == "SQL query could not be safely parsed."
+
+
+def test_select_into_rejected_with_specific_message_and_query_type():
+    result = validate_read_only_sql("SELECT * INTO new_users FROM users", "postgresql")
+    assert result.is_valid is False
+    assert result.error_message == "SELECT INTO is not allowed in read-only SQL."
+    assert result.query_type == "Select"
+    assert result.warnings is None
+    assert result.tables_used is None
+    assert result.columns_used is None
+
+
+def test_locking_select_rejected_with_specific_message_and_query_type():
+    result = validate_read_only_sql("SELECT * FROM users FOR UPDATE", "postgresql")
+    assert result.is_valid is False
+    assert result.error_message == "Row-locking SELECT statements are not allowed."
+    assert result.query_type == "Select"
+    assert result.warnings is None
+    assert result.tables_used is None
+    assert result.columns_used is None
+
+
+def test_valid_select_sets_query_type_without_mutating_other_fields():
+    result = validate_read_only_sql("SELECT 1", "postgresql")
+    _assert_valid(result)
+    assert result.query_type == "Select"
+    assert result.warnings is None
+    assert result.tables_used is None
+    assert result.columns_used is None
 
 
 def test_sql_alias_maps_to_mysql():
@@ -253,10 +295,21 @@ def test_mysql_executable_comments_rejected(db_type, sql):
         "SELECT `/*!weird*/`",
         "SELECT /* ! not an executable comment */ 1",
         "SELECT 1 # /*! not executable",
+        "SELECT 1 # /*! not executable\r",
     ],
 )
 def test_mysql_ordinary_comments_and_literal_markers_remain_valid(db_type, sql):
     _assert_valid(validate_read_only_sql(sql, db_type))
+
+
+def test_mysql_executable_comment_after_crlf_line_comment_is_still_detected():
+    _assert_invalid(
+        validate_read_only_sql(
+            "SELECT 1 # ignored\r\nSELECT 2 /*! UNION SELECT 3 */",
+            "mysql",
+        ),
+        "executable comment",
+    )
 
 
 @pytest.mark.parametrize("db_type", ["postgresql", "sqlite"])
@@ -264,3 +317,24 @@ def test_mysql_executable_comment_guard_is_not_applied_to_other_dialects(db_type
     # PostgreSQL/SQLite treat /*! ... */ as an ordinary block comment; the
     # lexical guard must stay MySQL-mapping-only so this remains a Select.
     _assert_valid(validate_read_only_sql("SELECT 1 /*!50000 INTO OUTFILE '/tmp/x' */", db_type))
+
+
+def test_blocked_message_uses_policy_reason():
+    from app.modules.integration.database.read_only_sql import read_only_sql_blocked_message
+
+    validation = validate_read_only_sql("DELETE FROM users", "postgresql")
+    message = read_only_sql_blocked_message(validation)
+    assert message.startswith("SQL execution blocked: ")
+    assert validation.error_message in message
+
+
+def test_blocked_message_uses_centralized_fallback_when_reason_missing():
+    from app.modules.integration.database.read_only_sql import (
+        READ_ONLY_SQL_FALLBACK_REASON,
+        read_only_sql_blocked_message,
+    )
+    from app.modules.integration.database.validation_result import ValidationResult
+
+    message = read_only_sql_blocked_message(ValidationResult(False))
+    assert message == f"SQL execution blocked: {READ_ONLY_SQL_FALLBACK_REASON}"
+    assert "Only read-only queries are permitted." in message
