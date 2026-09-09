@@ -1,4 +1,5 @@
 import base64
+import logging
 import uuid
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -34,6 +35,7 @@ from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ==================== Settings Endpoints ====================
@@ -332,7 +334,15 @@ async def upload_files(
             file_base=file_base,
             max_file_size=max_file_size,
         )
-        file_url = await file_manager_service.get_file_source_url(created.id)
+        # The file itself is already saved at this point - a failure to build
+        # its source URL (e.g. storage provider misconfigured/uninitialized)
+        # shouldn't throw away an otherwise-successful upload, especially
+        # since local storage callers prefer `file_path` over `file_url` anyway.
+        try:
+            file_url = await file_manager_service.get_file_source_url(created.id)
+        except Exception as e:
+            logger.warning(f"Could not build source URL for uploaded file {created.id}: {e}")
+            file_url = ""
         result = {
             "filename": unique_name,
             "original_filename": f.filename or unique_name,
