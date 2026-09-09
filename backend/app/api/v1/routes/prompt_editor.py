@@ -1,7 +1,7 @@
-from typing import List
+from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Path, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -11,6 +11,7 @@ from app.schemas.prompt_editor import (
     PromptConfigRead,
     PromptEvalRequest,
     PromptEvalResponse,
+    PromptHistoryRead,
     PromptOptimizeRequest,
     PromptOptimizeResponse,
     PromptVersionCreate,
@@ -20,21 +21,42 @@ from app.services.prompt_editor import PromptEditorService
 
 router = APIRouter()
 
+# Bounded at the column widths, so an over-long id is a 422 instead of a
+# database error the caller cannot read
+NodeIdPath = Annotated[str, Path(max_length=100)]
+PromptFieldPath = Annotated[str, Path(max_length=50)]
+
 
 # ---- Versions ----------------------------------------------------------------
 
 
 @router.get(
+    "/history/{workflow_id}/{node_id}/{prompt_field}",
+    response_model=PromptHistoryRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def get_history(
+    workflow_id: UUID,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
+    service: PromptEditorService = Injected(PromptEditorService),
+):
+    return await service.get_history(workflow_id, node_id, prompt_field)
+
+
+@router.get(
     "/versions/{workflow_id}/{node_id}/{prompt_field}",
     response_model=List[PromptVersionRead],
+    deprecated=True,
     dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def list_versions(
     workflow_id: UUID,
-    node_id: str,
-    prompt_field: str,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
+    """Deprecated in favour of /history; kept one release for un-reloaded tabs"""
     return await service.list_versions(workflow_id, node_id, prompt_field)
 
 
@@ -46,24 +68,12 @@ async def list_versions(
 )
 async def create_version(
     workflow_id: UUID,
-    node_id: str,
-    prompt_field: str,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
     data: PromptVersionCreate,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
     return await service.create_version(workflow_id, node_id, prompt_field, data)
-
-
-@router.post(
-    "/versions/{version_id}/restore",
-    response_model=PromptVersionRead,
-    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
-)
-async def restore_version(
-    version_id: UUID,
-    service: PromptEditorService = Injected(PromptEditorService),
-):
-    return await service.restore_version(version_id)
 
 
 @router.delete(
@@ -78,18 +88,6 @@ async def delete_version(
     await service.delete_version(version_id)
 
 
-@router.delete(
-    "/versions/{version_id}/hard",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
-)
-async def hard_delete_version(
-    version_id: UUID,
-    service: PromptEditorService = Injected(PromptEditorService),
-):
-    await service.hard_delete_version(version_id)
-
-
 # ---- Config / Gold Suite -----------------------------------------------------
 
 
@@ -100,11 +98,11 @@ async def hard_delete_version(
 )
 async def get_config(
     workflow_id: UUID,
-    node_id: str,
-    prompt_field: str,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.get_or_create_config(workflow_id, node_id, prompt_field)
+    return await service.get_config(workflow_id, node_id, prompt_field)
 
 
 @router.put(
@@ -114,8 +112,8 @@ async def get_config(
 )
 async def link_gold_suite(
     workflow_id: UUID,
-    node_id: str,
-    prompt_field: str,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
     data: GoldSuiteLinkRequest,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
@@ -136,8 +134,8 @@ async def link_gold_suite(
 )
 async def evaluate_prompt(
     workflow_id: UUID,
-    node_id: str,
-    prompt_field: str,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
     data: PromptEvalRequest,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
@@ -158,8 +156,8 @@ async def evaluate_prompt(
 )
 async def optimize_prompt(
     workflow_id: UUID,
-    node_id: str,
-    prompt_field: str,
+    node_id: NodeIdPath,
+    prompt_field: PromptFieldPath,
     data: PromptOptimizeRequest,
     service: PromptEditorService = Injected(PromptEditorService),
 ):

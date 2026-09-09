@@ -182,6 +182,9 @@ class ErrorKey(Enum):
     LLM_CATALOG_MODEL_ALREADY_EXISTS = "LLM_CATALOG_MODEL_ALREADY_EXISTS"
     LLM_CATALOG_UNKNOWN_PROVIDER = "LLM_CATALOG_UNKNOWN_PROVIDER"
     LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD = "LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD"
+    PROMPT_CONTEXT_INVALID = "PROMPT_CONTEXT_INVALID"
+    PROMPT_FIELD_NOT_SUPPORTED = "PROMPT_FIELD_NOT_SUPPORTED"
+    PROMPT_VERSION_CONFLICT = "PROMPT_VERSION_CONFLICT"
 
 
 ERROR_MESSAGES = {
@@ -364,6 +367,9 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
+        ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
+        ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

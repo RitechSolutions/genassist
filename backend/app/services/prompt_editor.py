@@ -1,29 +1,56 @@
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from injector import inject
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.db.models.prompt_editor import PromptConfigModel, PromptVersionModel
+from app.db.models.prompt_editor import PromptVersionModel
 from app.db.models.test_suite import TestSuiteModel
+from app.modules.workflow.prompt_fields import (
+    LEGACY_BUCKET_FOR_NODE_TYPE,
+    LEGACY_SHARED_NODE_IDS,
+    PromptFieldSpec,
+    get_spec,
+)
 from app.repositories.prompt_editor import PromptConfigRepository, PromptVersionRepository
 from app.repositories.test_suite import TestCaseRepository, TestSuiteRepository
+from app.repositories.workflow import WorkflowRepository
 from app.schemas.prompt_editor import (
+    LegacyHistoryRead,
     PromptConfigRead,
     PromptEvalCaseResult,
     PromptEvalResponse,
     PromptEvalSummary,
+    PromptHistoryRead,
     PromptOptimizeResponse,
     PromptVersionCreate,
     PromptVersionRead,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PromptContext:
+    """A prompt field matched against the stored workflow graph
+    ``node_missing`` = node not in saved workflow (newly added or removed;
+    graph can't tell which). ``spec`` is None when the node is missing
+    """
+
+    workflow_id: UUID
+    agent_id: Optional[UUID]
+    node_id: str
+    prompt_field: str
+    node_type: Optional[str]
+    node_missing: bool
+    spec: Optional[PromptFieldSpec]
 
 
 @inject
@@ -34,27 +61,124 @@ class PromptEditorService:
         config_repo: PromptConfigRepository,
         suite_repo: TestSuiteRepository,
         case_repo: TestCaseRepository,
+        workflow_repo: WorkflowRepository,
         db: AsyncSession,
     ) -> None:
         self.version_repo = version_repo
         self.config_repo = config_repo
         self.suite_repo = suite_repo
         self.case_repo = case_repo
+        self.workflow_repo = workflow_repo
         self.db = db
         # Lazy import to avoid circular dependency (test_suite imports injector at module level)
         from app.services.test_suite import SimpleEvaluatorRegistry
 
         self.evaluators = SimpleEvaluatorRegistry()
 
+    # ---- Context -------------------------------------------------------------
+
+    async def _context(
+        self,
+        workflow_id: UUID,
+        node_id: str,
+        prompt_field: str,
+        *,
+        require_live_node: bool,
+    ) -> PromptContext:
+        """Resolve a prompt field against the stored workflow.
+        Reads allow missing nodes so history stays readable after deletion.
+        Writes reject nodes not in the saved graph.
+        """
+        row = await self.workflow_repo.get_access_row(workflow_id)
+        if row is None:
+            raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
+
+        node = next((n for n in (row.nodes or []) if n.get("id") == node_id), None)
+        node_type = node.get("type") if node else None
+        spec = get_spec(node_type, prompt_field) if node_type else None
+
+        if node is not None and spec is None:
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
+                error_detail=f"{node_type or 'This node'} has no editable prompt field '{prompt_field}'.",
+            )
+        if node is None and require_live_node:
+            detail = (
+                "This history belongs to the old shared agent configuration and is read-only. "
+                "Copy a version into the node's own history first."
+                if node_id in LEGACY_SHARED_NODE_IDS
+                else "This node isn't in the saved workflow. If it was just added, save the workflow "
+                "before saving prompt versions or running checks."
+            )
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.PROMPT_CONTEXT_INVALID,
+                error_detail=detail,
+            )
+
+        return PromptContext(
+            workflow_id=workflow_id,
+            agent_id=row.agent_id,
+            node_id=node_id,
+            prompt_field=prompt_field,
+            node_type=node_type,
+            node_missing=node is None,
+            spec=spec,
+        )
+
     # ---- Versions ------------------------------------------------------------
 
     async def list_versions(
         self, workflow_id: UUID, node_id: str, prompt_field: str
     ) -> List[PromptVersionRead]:
+        """Deprecated for get_history. Kept one release for backward compatibility"""
         rows = await self.version_repo.get_versions_for_context(
             workflow_id, node_id, prompt_field
         )
         return [PromptVersionRead.model_validate(r, from_attributes=True) for r in rows]
+
+    async def get_history(
+        self, workflow_id: UUID, node_id: str, prompt_field: str
+    ) -> PromptHistoryRead:
+        ctx = await self._context(workflow_id, node_id, prompt_field, require_live_node=False)
+        rows = await self.version_repo.get_versions_for_context(
+            workflow_id, node_id, prompt_field
+        )
+        config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
+
+        legacy = None
+        bucket = LEGACY_BUCKET_FOR_NODE_TYPE.get(ctx.node_type) if ctx.node_type else None
+        if bucket is not None:
+            legacy_rows = await self.version_repo.get_versions_for_context(
+                workflow_id, bucket, prompt_field
+            )
+            legacy_config = await self.config_repo.get_by_context(
+                workflow_id, bucket, prompt_field
+            )
+            legacy_suite = legacy_config.gold_suite_id if legacy_config else None
+            if legacy_rows or legacy_suite:
+                legacy = LegacyHistoryRead(
+                    node_id=bucket,
+                    versions=[
+                        PromptVersionRead.model_validate(r, from_attributes=True)
+                        for r in legacy_rows
+                    ],
+                    gold_suite_id=legacy_suite,
+                )
+
+        return PromptHistoryRead(
+            versions=[
+                PromptVersionRead.model_validate(r, from_attributes=True) for r in rows
+            ],
+            gold_suite_id=config.gold_suite_id if config else None,
+            node_type=ctx.node_type,
+            node_missing=ctx.node_missing,
+            field_label=ctx.spec.label if ctx.spec else None,
+            inline_check_supported=bool(ctx.spec and ctx.spec.inline_check),
+            unsupported_reason=ctx.spec.unsupported_reason if ctx.spec else None,
+            legacy_shared=legacy,
+        )
 
     async def create_version(
         self,
@@ -63,84 +187,60 @@ class PromptEditorService:
         prompt_field: str,
         data: PromptVersionCreate,
     ) -> PromptVersionRead:
-        # Backward-compatible behavior: create a new version.
-        #
-        # Override behavior: if a version with the same label already exists in this
-        # context, update (override) its content instead of creating a new version.
-        #
-        # This is especially useful when the UI re-saves a "named" version.
-        existing: Optional[PromptVersionModel] = None
-        if data.label:
-            versions = await self.version_repo.get_versions_for_context(
-                workflow_id, node_id, prompt_field
-            )
-            existing = next((v for v in versions if v.label == data.label), None)
-
-        # Deactivate previous versions (we want exactly one active)
-        await self.version_repo.deactivate_all_for_context(
-            workflow_id, node_id, prompt_field
-        )
-
-        if existing:
-            existing.content = data.content
-            existing.label = data.label
-            existing.is_active = True
-            updated = await self.version_repo.update(existing)
-            return PromptVersionRead.model_validate(updated, from_attributes=True)
-
-        version_number = await self.version_repo.get_next_version_number(
-            workflow_id, node_id, prompt_field
-        )
-        orm = PromptVersionModel(
-            workflow_id=workflow_id,
-            node_id=node_id,
-            prompt_field=prompt_field,
-            version_number=version_number,
-            content=data.content,
-            label=data.label,
-            is_active=True,
-        )
-        created = await self.version_repo.create(orm)
+        """Append a version. Labels don't prevent duplicates; same label adds a new row"""
+        await self._context(workflow_id, node_id, prompt_field, require_live_node=True)
+        try:
+            # SAVEPOINT for deactivate+number+insert prevents no-active-version state on race
+            async with self.db.begin_nested():
+                await self.version_repo.deactivate_all_for_context(
+                    workflow_id, node_id, prompt_field
+                )
+                version_number = await self.version_repo.next_version_number(
+                    workflow_id, node_id, prompt_field
+                )
+                created = await self.version_repo.create(
+                    PromptVersionModel(
+                        workflow_id=workflow_id,
+                        node_id=node_id,
+                        prompt_field=prompt_field,
+                        version_number=version_number,
+                        content=data.content,
+                        label=data.label,
+                        is_active=True,
+                    )
+                )
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != "23505":
+                raise
+            raise AppException(
+                status_code=409,
+                error_key=ErrorKey.PROMPT_VERSION_CONFLICT,
+                error_detail="Another save completed first. Try again.",
+            ) from exc
         return PromptVersionRead.model_validate(created, from_attributes=True)
 
-    async def restore_version(self, version_id: UUID) -> PromptVersionRead:
-        version = await self.version_repo.get_by_id(version_id)
-        if not version:
-            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        await self.version_repo.deactivate_all_for_context(
-            version.workflow_id, version.node_id, version.prompt_field
-        )
-        version.is_active = True
-        await self.db.commit()
-        return PromptVersionRead.model_validate(version, from_attributes=True)
-
     async def delete_version(self, version_id: UUID) -> None:
+        """Scoped to the version only: legacy buckets, removed nodes and
+        histories under a retired workflow all stay cleanable."""
         version = await self.version_repo.get_by_id(version_id)
         if not version:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.version_repo.soft_delete(version)
 
-    async def hard_delete_version(self, version_id: UUID) -> None:
-        version = await self.version_repo.get_by_id(version_id)
-        if not version:
-            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        await self.version_repo.delete(version)
-
     # ---- Config / Gold Suite -------------------------------------------------
 
-    async def get_or_create_config(
+    async def get_config(
         self, workflow_id: UUID, node_id: str, prompt_field: str
     ) -> PromptConfigRead:
+        """Read-only. Returns null id if the context has no row"""
+        await self._context(workflow_id, node_id, prompt_field, require_live_node=False)
         config = await self.config_repo.get_by_context(
             workflow_id, node_id, prompt_field
         )
-        if not config:
-            config = PromptConfigModel(
-                workflow_id=workflow_id,
-                node_id=node_id,
-                prompt_field=prompt_field,
+        if config is None:
+            return PromptConfigRead(
+                workflow_id=workflow_id, node_id=node_id, prompt_field=prompt_field
             )
-            config = await self.config_repo.create(config)
         return PromptConfigRead.model_validate(config, from_attributes=True)
 
     async def link_gold_suite(
@@ -151,16 +251,8 @@ class PromptEditorService:
         suite_id: Optional[UUID] = None,
         name: Optional[str] = None,
     ) -> PromptConfigRead:
-        config = await self.config_repo.get_by_context(
-            workflow_id, node_id, prompt_field
-        )
-        if not config:
-            config = PromptConfigModel(
-                workflow_id=workflow_id,
-                node_id=node_id,
-                prompt_field=prompt_field,
-            )
-            config = await self.config_repo.create(config)
+        await self._context(workflow_id, node_id, prompt_field, require_live_node=True)
+        config = await self.config_repo.get_or_create(workflow_id, node_id, prompt_field)
 
         if suite_id:
             suite = await self.suite_repo.get_by_id(suite_id)
@@ -173,7 +265,6 @@ class PromptEditorService:
             suite = await self.suite_repo.create(suite)
             config.gold_suite_id = suite.id
 
-        await self.db.commit()
         return PromptConfigRead.model_validate(config, from_attributes=True)
 
     # ---- Evaluate ------------------------------------------------------------

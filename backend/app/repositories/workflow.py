@@ -48,6 +48,21 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
             stmt = stmt.where(WorkflowModel.is_deleted == 0)
         return stmt.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
 
+    def _access_select(self):
+        """A live workflow with its stored graph"""
+        # Keep is_deleted explicit; enables include_deleted toggle
+        return select(
+            WorkflowModel.id,
+            WorkflowModel.agent_id,
+            WorkflowModel.nodes,
+        ).where(WorkflowModel.is_deleted == 0)
+
+    async def get_access_row(self, workflow_id: UUID):
+        """One workflow's stored graph, for callers that resolve a node against
+        the saved version"""
+        result = await self.db.execute(self._access_select().where(WorkflowModel.id == workflow_id))
+        return result.first()
+
     async def get_all_minimal(self) -> List[WorkflowModel]:
         """Every workflow. Internal callers rely on seeing them all, e.g. to find
         a workflow's sibling versions; user-facing lists use the visible variant."""
