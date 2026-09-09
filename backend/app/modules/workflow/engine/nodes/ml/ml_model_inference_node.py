@@ -268,6 +268,7 @@ class MLModelInferenceNode(BaseNode):
             normalized_inputs = _normalize_inference_inputs(inference_inputs)
 
             # Check if model_response has a "version" key for v2.0 format vs legacy
+            metadata: Dict[str, Any] = {}
             if "version" in model_response and model_response["version"] == "v2.0":
                 model = model_response.get("model", {})
                 metadata = model_response.get("metadata", {})
@@ -288,6 +289,18 @@ class MLModelInferenceNode(BaseNode):
                     "Inference input: batch_size=%d, features=%d, expected=%s",
                     batch_size, input_data.shape[1] if input_data.ndim == 2 else 0, list(feature_names),
                 )
+
+                # Reapply the scaler fitted at training time (if any) so scaled
+                # features match what the model was trained on. No-op for
+                # models trained with scalingMethod "none" or legacy models
+                # that predate this metadata.
+                scaler = metadata.get("scaler")
+                scaled_columns = metadata.get("scaled_columns") or []
+                if scaler is not None and scaled_columns:
+                    scaled_indices = [feature_names.index(c) for c in scaled_columns if c in feature_names]
+                    if scaled_indices:
+                        input_data = input_data.astype(float)
+                        input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
                 raise AppException(

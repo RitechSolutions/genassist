@@ -11,9 +11,23 @@ from app.db.base import Base
 
 class ModelType(str, enum.Enum):
     XGBOOST = "xgboost"
+    LIGHTGBM = "lightgbm"
+    CATBOOST = "catboost"
     RANDOM_FOREST = "random_forest"
+    EXTRA_TREES = "extra_trees"
+    GRADIENT_BOOSTING = "gradient_boosting"
+    DECISION_TREE = "decision_tree"
     LINEAR_REGRESSION = "linear_regression"
+    RIDGE_REGRESSION = "ridge_regression"
+    LASSO_REGRESSION = "lasso_regression"
+    ELASTIC_NET = "elastic_net"
     LOGISTIC_REGRESSION = "logistic_regression"
+    SVM = "svm"
+    KNN = "knn"
+    NEURAL_NETWORK = "neural_network"
+    # Retained only so rows created before this type was retired still
+    # deserialize (the Postgres enum type can't drop the value). New/updated
+    # models are blocked from using it - see app.schemas.ml_model.
     OTHER = "other"
 
 
