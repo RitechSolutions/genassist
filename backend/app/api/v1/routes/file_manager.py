@@ -341,7 +341,10 @@ async def upload_files(
         try:
             file_url = await file_manager_service.get_file_source_url(created.id)
         except Exception as e:
-            logger.warning(f"Could not build source URL for uploaded file {created.id}: {e}")
+            logger.error(
+                f"Could not build source URL for uploaded file {created.id}; "
+                f"file was saved but file_url will be empty in the response: {e}"
+            )
             file_url = ""
         result = {
             "filename": unique_name,
