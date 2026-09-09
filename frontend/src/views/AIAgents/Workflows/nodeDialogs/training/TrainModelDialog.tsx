@@ -72,6 +72,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       dateColumn: data.dateColumn || "",
       hyperparameterOptimization: data.hyperparameterOptimization || "none",
       optimizationConfig: data.optimizationConfig || {},
+      scalingMethod: data.scalingMethod || "auto",
     }),
     (v) => ({
       name: v.name,
@@ -87,6 +88,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       hyperparameterOptimization: v.hyperparameterOptimization,
       optimizationConfig:
         v.hyperparameterOptimization === "none" ? undefined : v.optimizationConfig,
+      scalingMethod: v.scalingMethod,
     })
   );
 
@@ -240,6 +242,10 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
 
   const handleModelTypeChange = (value: string) => {
     setField("modelType", value as TrainModelNodeData["modelType"]);
+  };
+
+  const handleScalingMethodChange = (value: string) => {
+    setField("scalingMethod", value as TrainModelNodeData["scalingMethod"]);
   };
 
   const handleSplitMethodChange = (value: string) => {
@@ -473,6 +479,26 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 )}
               </div>
             )}
+          {/* Feature Scaling */}
+          <div className="space-y-2">
+            <Label htmlFor="scalingMethod">Feature Scaling</Label>
+            <Select value={values.scalingMethod} onValueChange={handleScalingMethodChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select feature scaling" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="standard">Standardized (Z-score)</SelectItem>
+                <SelectItem value="minmax">Min-Max</SelectItem>
+                <SelectItem value="maxabs">Abs-Max</SelectItem>
+                <SelectItem value="robust">Robust</SelectItem>
+                <SelectItem value="auto">Auto (Recommended)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Auto selects a scaling method based on the model type and dataset
+              (e.g. Robust for outlier-heavy data, None for tree-based models)
+            </p>
           </div>
 
           {/* Target Column */}

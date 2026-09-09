@@ -555,6 +555,7 @@ export interface TrainModelNodeData extends BaseNodeData {
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
   hyperparameterOptimization?: HyperparameterOptimizationMethod; // Search method (default: "none")
   optimizationConfig?: OptimizationConfig; // Overrides for the selected search method
+  scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
 }
 
 // Per Chat RAG Node Data

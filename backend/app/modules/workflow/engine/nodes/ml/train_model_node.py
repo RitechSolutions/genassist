@@ -25,6 +25,7 @@ from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.preprocessing import MaxAbsScaler, MinMaxScaler, RobustScaler, StandardScaler
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -65,6 +66,14 @@ _OPTIONAL_MODEL_DEPENDENCIES = {
     "lightgbm": ("LightGBM", lambda: LIGHTGBM_AVAILABLE),
     "catboost": ("CatBoost", lambda: CATBOOST_AVAILABLE),
 }
+# Scale-invariant: splits on raw feature values, unaffected by monotonic scaling.
+# Covers all 15 registry model types (see ModelType in app/schemas/ml_model.py),
+# not just the 5 trainable today, so this needs no changes when this node grows
+# to support the rest.
+TREE_BASED_MODEL_TYPES = frozenset({
+    "decision_tree", "random_forest", "extra_trees", "gradient_boosting",
+    "xgboost", "lightgbm", "catboost",
+})
 
 
 class TrainModelNode(BaseNode):
@@ -110,6 +119,11 @@ class TrainModelNode(BaseNode):
                 - optimizationConfig: Optional dict of search overrides — scoring, cvFolds,
                             nIter (random search), nTrials (bayesian), timeoutSeconds (bayesian),
                             gridPoints (grid search resolution per param).
+                - scalingMethod: Feature scaling for numeric feature columns - "none",
+                            "standard", "minmax", "maxabs", "robust", or "auto" (default:
+                            "auto"). "auto" picks "none" for tree-based model types and
+                            otherwise "robust" or "standard" depending on outliers in the
+                            training data.
 
         Returns:
             Dictionary with training results and model file path
@@ -127,6 +141,7 @@ class TrainModelNode(BaseNode):
             date_column = config.get("dateColumn")
             hyperparameter_optimization = config.get("hyperparameterOptimization") or "none"
             optimization_config = config.get("optimizationConfig") or {}
+            scaling_method = config.get("scalingMethod", "auto").lower()
 
             # Validate required parameters
             if not name:
@@ -195,6 +210,13 @@ class TrainModelNode(BaseNode):
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail=f"Invalid modelType: {model_type}. Must be one of: {', '.join(valid_model_types)}",
+                )
+
+            valid_scaling_methods = ["none", "standard", "minmax", "maxabs", "robust", "auto"]
+            if scaling_method not in valid_scaling_methods:
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=f"Invalid scalingMethod: {scaling_method}. Must be one of: {', '.join(valid_scaling_methods)}",
                 )
 
             # Check if an optional ML library dependency is installed when needed
@@ -312,6 +334,11 @@ class TrainModelNode(BaseNode):
                     if X_val is not None:
                         X_val[col].fillna(fill_value, inplace=True)
 
+            # Capture the numeric feature columns before one-hot encoding turns
+            # categoricals into dummy int/bool columns, so scaling below only
+            # touches genuinely-numeric original features.
+            numeric_feature_columns = X_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
+
             # Handle categorical variables by one-hot encoding. Categories are
             # derived from the training split only; validation is reindexed to
             # the same columns, so a category only seen in validation is
@@ -331,6 +358,24 @@ class TrainModelNode(BaseNode):
                 X_train[boolean_columns] = X_train[boolean_columns].astype(int)
                 if X_val is not None:
                     X_val[boolean_columns] = X_val[boolean_columns].astype(int)
+
+            # Scale numeric features. As with imputation and one-hot encoding
+            # above, the scaler is fit on the training split only and applied
+            # (not re-fit) to validation, so no validation-distribution
+            # statistics leak into training.
+            resolved_scaling_method = "none"
+            scaler = None
+            if numeric_feature_columns:
+                resolved_scaling_method = (
+                    self._resolve_auto_scaling_method(model_type, X_train, numeric_feature_columns)
+                    if scaling_method == "auto" else scaling_method
+                )
+                if resolved_scaling_method != "none":
+                    scaler = self._fit_scaler(resolved_scaling_method)
+                    X_train[numeric_feature_columns] = scaler.fit_transform(X_train[numeric_feature_columns])
+                    if X_val is not None:
+                        X_val[numeric_feature_columns] = scaler.transform(X_val[numeric_feature_columns])
+            logger.info(f"Scaling method: requested='{scaling_method}', resolved='{resolved_scaling_method}'")
 
             # Train the model — either a plain single fit with fixed params, or a
             # hyperparameter search over the curated space for this model type.
@@ -391,6 +436,11 @@ class TrainModelNode(BaseNode):
                     "model_type": model_type,
                     "model_parameters": model_parameters,
                     "hyperparameter_optimization": search_metadata,
+                    "scaling_method": resolved_scaling_method,
+                    **(
+                        {"scaler": scaler, "scaled_columns": numeric_feature_columns}
+                        if scaler is not None else {}
+                    ),
                 },
             )
 
@@ -425,6 +475,7 @@ class TrainModelNode(BaseNode):
                 "feature_columns": feature_columns,
                 "training_samples": len(X_train),
                 "validation_samples": len(X_val) if X_val is not None else 0,
+                "scaling_method": resolved_scaling_method,
                 "metrics": metrics,
                 "ml_model_id": ml_model_id,
                 "model_parameters": model_parameters,
@@ -460,6 +511,44 @@ class TrainModelNode(BaseNode):
             True if classification, False if regression
         """
         return ml_utils.is_classification_task(y, model_type)
+
+    def _fit_scaler(self, method: str):
+        """Return a fresh, unfitted scaler instance for the given method."""
+        return {
+            "standard": StandardScaler(),
+            "minmax": MinMaxScaler(),
+            "maxabs": MaxAbsScaler(),
+            "robust": RobustScaler(),
+        }[method]
+
+    def _resolve_auto_scaling_method(
+        self, model_type: str, X_train: pd.DataFrame, numeric_columns: list
+    ) -> str:
+        """
+        Resolve "auto" feature scaling to a concrete method based on model type
+        and the training data's outlier profile.
+
+        Tree-based models are scale-invariant, so scaling is skipped for them.
+        Other (distance- or gradient-sensitive) models get Robust scaling when
+        the training data has significant outliers, otherwise Standard.
+        """
+        if model_type in TREE_BASED_MODEL_TYPES:
+            return "none"
+        return "robust" if self._has_significant_outliers(X_train, numeric_columns) else "standard"
+
+    def _has_significant_outliers(
+        self, X_train: pd.DataFrame, numeric_columns: list, threshold: float = 0.05
+    ) -> bool:
+        """
+        True when more than `threshold` fraction of numeric feature values fall
+        outside the IQR fence [Q1 - 1.5*IQR, Q3 + 1.5*IQR].
+        """
+        numeric_df = X_train[numeric_columns]
+        q1 = numeric_df.quantile(0.25)
+        q3 = numeric_df.quantile(0.75)
+        iqr = q3 - q1
+        is_outlier = (numeric_df < q1 - 1.5 * iqr) | (numeric_df > q3 + 1.5 * iqr)
+        return bool(is_outlier.to_numpy().mean() > threshold) if is_outlier.size else False
 
     async def _train_model(
         self,
