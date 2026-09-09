@@ -28,11 +28,19 @@ def _session_factory_for_tenant(tenant: str) -> sessionmaker[Any]:
     with _lock:
         if tenant not in _sync_session_factories:
             url = settings.get_tenant_database_url_sync(tenant)
+            connect_args = {}
+            if settings.DB_STATEMENT_TIMEOUT > 0:
+                # psycopg2 equivalent of the asyncpg server_settings timeout in
+                # multi_tenant_session.py; keeps this sync path under the same cap.
+                connect_args["options"] = (
+                    f"-c statement_timeout={settings.DB_STATEMENT_TIMEOUT * 1000}"
+                )
             engine = create_engine(
                 url,
                 pool_pre_ping=True,
                 pool_size=2,
                 max_overflow=2,
+                connect_args=connect_args,
             )
             _sync_session_factories[tenant] = sessionmaker(bind=engine)
         return _sync_session_factories[tenant]
