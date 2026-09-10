@@ -452,7 +452,7 @@ export function WebhookDialog({
               id="description"
               value={values.description}
               onChange={(e) => setField("description", e.target.value)}
-              rows={3}
+              size="hint"
               placeholder="Enter description (optional)"
             />
           </FormField>
