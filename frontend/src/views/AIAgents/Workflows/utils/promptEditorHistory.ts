@@ -22,10 +22,17 @@ export const findPromptVersion = (
 /** The previewed row is one endpoint; the other is another row or the draft */
 export type DiffTarget = HistoryEntry | "draft";
 
-export interface DiffSides {
-  before: string;
-  after: string;
+/** One endpoint of the diff. `isPreview` marks the sidebar-selected row */
+export interface DiffEndpoint {
+  content: string;
   label: string;
+  isPreview: boolean;
+}
+
+/** Chronologically ordered endpoints: `before` is always the older one */
+export interface DiffSides {
+  before: DiffEndpoint;
+  after: DiffEndpoint;
 }
 
 // Product ordering (not DB constraint): legacy → node history → draft
@@ -59,9 +66,16 @@ export const diffSides = (
   const newer: DiffTarget = previewedIsOlder ? target : previewed;
 
   return {
-    before: contentOf(older, draft),
-    after: contentOf(newer, draft),
-    label: `${labelOf(older)} → ${labelOf(newer)}`,
+    before: {
+      content: contentOf(older, draft),
+      label: labelOf(older),
+      isPreview: previewedIsOlder,
+    },
+    after: {
+      content: contentOf(newer, draft),
+      label: labelOf(newer),
+      isPreview: !previewedIsOlder,
+    },
   };
 };
 

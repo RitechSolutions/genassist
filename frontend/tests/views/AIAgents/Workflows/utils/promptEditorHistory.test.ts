@@ -52,38 +52,66 @@ describe("diffSides", () => {
   const legacyV1 = entry(version("l1", "legacy one", 1), true);
   const legacyV2 = entry(version("l2", "legacy two", 2), true);
 
-  const bothDirections = (a: HistoryEntry, b: HistoryEntry) => [
-    diffSides(a, b, DRAFT),
-    diffSides(b, a, DRAFT),
-  ];
-
   it("treats legacy rows as older than the node's own history", () => {
-    for (const sides of bothDirections(ownV3, legacyV1)) {
-      expect(sides).toEqual({
-        before: "legacy one",
-        after: "own three",
-        label: "v1 · Legacy → v3",
-      });
-    }
+    const previewOwn = diffSides(ownV3, legacyV1, DRAFT);
+    expect(previewOwn.before).toEqual({
+      content: "legacy one",
+      label: "v1 · Legacy",
+      isPreview: false,
+    });
+    expect(previewOwn.after).toEqual({
+      content: "own three",
+      label: "v3",
+      isPreview: true,
+    });
+
+    const previewLegacy = diffSides(legacyV1, ownV3, DRAFT);
+    expect(previewLegacy.before).toEqual({
+      content: "legacy one",
+      label: "v1 · Legacy",
+      isPreview: true,
+    });
+    expect(previewLegacy.after).toEqual({
+      content: "own three",
+      label: "v3",
+      isPreview: false,
+    });
   });
 
   it("orders rows of one history by version number", () => {
-    for (const sides of bothDirections(ownV2, ownV5)) {
-      expect(sides.label).toBe("v2 → v5");
-    }
-    for (const sides of bothDirections(legacyV1, legacyV2)) {
-      expect(sides.label).toBe("v1 · Legacy → v2 · Legacy");
-    }
+    const previewNewer = diffSides(ownV5, ownV2, DRAFT);
+    expect(previewNewer.before).toEqual({
+      content: "own two",
+      label: "v2",
+      isPreview: false,
+    });
+    expect(previewNewer.after).toEqual({
+      content: "own five",
+      label: "v5",
+      isPreview: true,
+    });
+
+    const previewOlder = diffSides(ownV2, ownV5, DRAFT);
+    expect(previewOlder.before.label).toBe("v2");
+    expect(previewOlder.before.isPreview).toBe(true);
+    expect(previewOlder.after.label).toBe("v5");
+    expect(previewOlder.after.isPreview).toBe(false);
+  });
+
+  it("orders two legacy rows by version number", () => {
+    const sides = diffSides(legacyV2, legacyV1, DRAFT);
+    expect(sides.before.label).toBe("v1 · Legacy");
+    expect(sides.after.label).toBe("v2 · Legacy");
+    expect(sides.after.isPreview).toBe(true);
   });
 
   it("puts the draft on the newer side", () => {
     expect(diffSides(ownV3, "draft", DRAFT)).toEqual({
-      before: "own three",
-      after: DRAFT,
-      label: "v3 → Current draft",
+      before: { content: "own three", label: "v3", isPreview: true },
+      after: { content: DRAFT, label: "Current draft", isPreview: false },
     });
-    expect(diffSides(legacyV1, "draft", DRAFT).label).toBe(
-      "v1 · Legacy → Current draft",
+    expect(diffSides(legacyV1, "draft", DRAFT).before.label).toBe(
+      "v1 · Legacy",
     );
   });
 });

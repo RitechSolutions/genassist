@@ -10,6 +10,8 @@ export interface FieldChangeRowProps {
   className?: string;
   /** Word overlap threshold for replace vs edit */
   minSimilarity?: number;
+  /** `embedded` drops the border and field header for hosts that supply their own */
+  variant?: 'card' | 'embedded';
 }
 
 interface LeafChange {
@@ -224,7 +226,12 @@ const ChangeBody: React.FC<{ before: unknown; after: unknown; minSimilarity?: nu
   );
 };
 
-const FieldChangeRow: React.FC<FieldChangeRowProps> = ({ change, className, minSimilarity }) => {
+const FieldChangeRow: React.FC<FieldChangeRowProps> = ({
+  change,
+  className,
+  minSimilarity,
+  variant = 'card',
+}) => {
   // For object/array values, surface only the nested leaves that changed rather than the whole blob.
   const leaves = useMemo(() => {
     if (!isObj(change.before) || !isObj(change.after)) return null;
@@ -234,6 +241,31 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({ change, className, minS
   }, [change.before, change.after]);
 
   const fieldSide = presentSide(change.before, change.after);
+
+  const body = leaves ? (
+    leaves.length > 0 ? (
+      <div className="divide-y divide-border">
+        {leaves.map((leaf) => {
+          const leafSide = presentSide(leaf.before, leaf.after);
+          return (
+            <div key={leaf.path}>
+              <div className="flex items-center gap-1.5 bg-card px-2.5 py-2">
+                <span className="truncate font-mono text-[10px] text-muted-foreground">{leaf.path}</span>
+                {leafSide && <NameBadge side={leafSide} />}
+              </div>
+              <ChangeBody before={leaf.before} after={leaf.after} minSimilarity={minSimilarity} />
+            </div>
+          );
+        })}
+      </div>
+    ) : (
+      <div className="px-2.5 py-2 text-[11px] italic text-muted-foreground">Reordered — same values.</div>
+    )
+  ) : (
+    <ChangeBody before={change.before} after={change.after} minSimilarity={minSimilarity} />
+  );
+
+  if (variant === 'embedded') return <div className={cn('min-w-0', className)}>{body}</div>;
 
   return (
     <div className={cn('overflow-hidden rounded-md border border-border bg-card', className)}>
@@ -249,28 +281,7 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({ change, className, minS
         )}
       </div>
 
-      {leaves ? (
-        leaves.length > 0 ? (
-          <div className="divide-y divide-border">
-            {leaves.map((leaf) => {
-              const leafSide = presentSide(leaf.before, leaf.after);
-              return (
-                <div key={leaf.path}>
-                  <div className="flex items-center gap-1.5 bg-card px-2.5 py-2">
-                    <span className="truncate font-mono text-[10px] text-muted-foreground">{leaf.path}</span>
-                    {leafSide && <NameBadge side={leafSide} />}
-                  </div>
-                  <ChangeBody before={leaf.before} after={leaf.after} minSimilarity={minSimilarity} />
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="px-2.5 py-2 text-[11px] italic text-muted-foreground">Reordered — same values.</div>
-        )
-      ) : (
-        <ChangeBody before={change.before} after={change.after} minSimilarity={minSimilarity} />
-      )}
+      {body}
     </div>
   );
 };
