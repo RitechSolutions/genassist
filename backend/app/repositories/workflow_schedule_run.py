@@ -127,45 +127,46 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
 
         return await super().update(run)
 
-    async def mark_stuck_as_failed(
+    async def get_waiting_ids_older_than(self, before: datetime) -> List[str]:
+        """Ids of pending runs created before ``before``."""
+        stmt = select(WorkflowScheduleRunModel.id).where(
+            WorkflowScheduleRunModel.is_deleted == 0,
+            WorkflowScheduleRunModel.status == WorkflowScheduleRunStatus.PENDING,
+            WorkflowScheduleRunModel.created_at < before,
+        )
+        result = await self.db.execute(stmt)
+        return [str(run_id) for run_id in result.scalars().all()]
+
+    async def mark_orphaned_as_failed(
         self,
-        pending_before: datetime,
+        waiting_ids: List[str],
         running_before: datetime,
         error_message: str,
     ) -> int:
-        """Atomically fail runs left stuck by a worker/pod crash:
-        - PENDING created before `pending_before` (never picked up), and
-        - RUNNING whose start (or creation) precedes `running_before` (the
-          worker died mid-execution; past the max execution time).
-
-        A single UPDATE avoids races with a run that completes concurrently.
-        Returns the number of rows transitioned to FAILED.
-        """
-        now = datetime.now(timezone.utc)
+        """Fail pending runs whose job left the broker and runs past the max run age."""
+        conditions = [
+            and_(
+                WorkflowScheduleRunModel.status == WorkflowScheduleRunStatus.RUNNING,
+                func.coalesce(
+                    WorkflowScheduleRunModel.started_at,
+                    WorkflowScheduleRunModel.created_at,
+                )
+                < running_before,
+            )
+        ]
+        if waiting_ids:
+            conditions.append(
+                and_(
+                    WorkflowScheduleRunModel.status == WorkflowScheduleRunStatus.PENDING,
+                    WorkflowScheduleRunModel.id.in_(waiting_ids),
+                )
+            )
         stmt = (
             update(WorkflowScheduleRunModel)
-            .where(
-                WorkflowScheduleRunModel.is_deleted == 0,
-                or_(
-                    and_(
-                        WorkflowScheduleRunModel.status
-                        == WorkflowScheduleRunStatus.PENDING,
-                        WorkflowScheduleRunModel.created_at < pending_before,
-                    ),
-                    and_(
-                        WorkflowScheduleRunModel.status
-                        == WorkflowScheduleRunStatus.RUNNING,
-                        func.coalesce(
-                            WorkflowScheduleRunModel.started_at,
-                            WorkflowScheduleRunModel.created_at,
-                        )
-                        < running_before,
-                    ),
-                ),
-            )
+            .where(WorkflowScheduleRunModel.is_deleted == 0, or_(*conditions))
             .values(
                 status=WorkflowScheduleRunStatus.FAILED,
-                completed_at=now,
+                completed_at=datetime.now(timezone.utc),
                 error_message=error_message,
             )
             .execution_options(synchronize_session=False)
@@ -173,3 +174,4 @@ class WorkflowScheduleRunRepository(DbRepository[WorkflowScheduleRunModel]):
         result = await self.db.execute(stmt)
         await self.db.flush()
         return result.rowcount or 0
+

@@ -5,6 +5,8 @@ import time
 from celery.signals import worker_process_init
 from app import create_celery
 from app.core.config.settings import settings
+# Registers the beat leader lock and tick heartbeat (beat_init signal)
+import app.tasks.beat_leader  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -82,9 +84,8 @@ if __name__ == "__main__":
     import sys
     from celery.__main__ import main as celery_main
 
-    # Only the worker needs a liveness heartbeat (beat/flower are separate
-    # processes with their own concerns). The solo pool runs the worker in this
-    # main process, so a daemon thread here reflects worker liveness directly.
+    # The worker heartbeat thread lives here; beat writes its own heartbeat from
+    # the scheduler loop (see app/tasks/beat_leader.py).
     if "worker" in sys.argv:
         _start_heartbeat_thread()
 

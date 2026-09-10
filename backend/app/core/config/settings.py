@@ -37,6 +37,15 @@ class ProjectSettings(BaseSettings):
 
     # Celery Redis connection pool settings
     CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
+    # Socket bounds for Celery's broker/result-backend Redis connections; without
+    # them a silently dead connection blocks the worker or beat indefinitely.
+    CELERY_REDIS_SOCKET_TIMEOUT: int = 30
+    CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15
+    # Redelivery delay for unacknowledged messages; above the 2h task timeout
+    CELERY_BROKER_VISIBILITY_TIMEOUT: int = 8400
+    # Only one beat replica dispatches; the others stand by and take over within the TTL
+    CELERY_BEAT_LEADER_LOCK_ENABLED: bool = True
+    CELERY_BEAT_LEADER_LOCK_TTL_SECONDS: int = 60
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
@@ -58,13 +67,13 @@ class ProjectSettings(BaseSettings):
     # (its worker never picked it up / crashed before starting) and marked FAILED.
     WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS: int = 900  # 15 minutes
     # A scheduled run still RUNNING after this many seconds is presumed orphaned
-    # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
-    # genuinely long run is never failed prematurely.
-    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
+    # (worker died mid-run). Kept above the 2h execution timeout and the broker
+    # redelivery delay so a lost run is re-run before it is declared dead.
+    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
     # Evaluation (test) runs use the same orphaned-run reconciliation.
     CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
     TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
-    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m, above the 2h task timeout
+    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m, above the broker redelivery delay
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
@@ -73,21 +82,16 @@ class ProjectSettings(BaseSettings):
     # flag is off: with no direct-S3 rows the task simply finds nothing to do.
     CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
-    # Worker pool. "solo" is required for the ML worker: ML libs (torch/sklearn/
-    # transformers) spawn native OpenMP/MKL threads at import, and fork() copies
-    # only the calling thread, leaving the child with locked mutexes -> SIGSEGV.
-    # The "default" worker can run "prefork" for true concurrency *because* its boot
-    # import graph is ML-free (see CELERY_INCLUDE_ML_TASKS and the lean worker
-    # bootstrap in run_celery.py): prefork children may lazily import ML libs after
-    # fork safely; only the parent (master) must stay clean.
+    # Worker pool. Only "prefork" enforces task time limits and answers health pings
+    # during a task; the default worker runs it. The ml worker stays "solo": workflow
+    # Python code nodes run user code in a subprocess, which a prefork child (daemonic)
+    # is not allowed to start. Task modules load ML libs lazily so the master stays
+    # fork-safe either way; test_celery_worker_boot_clean.py guards this.
     CELERY_WORKER_POOL: str = "solo"
 
-    # Role selector for the two-worker split. When True (default — preserves the
-    # legacy single-worker behavior), the Celery app includes the ML/evaluation task
-    # modules (ml_model_pipeline_tasks, test_suite_tasks), which top-level import the
-    # workflow engine and therefore pull sklearn into the process at boot. The
-    # prefork "default" worker MUST set this False so its master process never imports
-    # those modules; ML/eval tasks are routed to the dedicated "ml" queue instead.
+    # Role selector for the two-worker split. When True (default), the app includes
+    # the ML/evaluation task modules; the "default" worker sets it False and those
+    # tasks are routed to the dedicated "ml" queue instead.
     CELERY_INCLUDE_ML_TASKS: bool = True
 
     # Explicit prefork concurrency (number of child worker processes). Leave None to

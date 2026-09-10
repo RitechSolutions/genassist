@@ -2,24 +2,21 @@
 # Celery workers — two-pool split for EKS
 #
 # Why two deployments:
-#   ML libs (torch/sklearn/transformers) spawn native OpenMP/MKL threads at import.
-#   Celery's prefork pool uses fork(), which copies only the calling thread and leaves
-#   children holding mutexes locked by threads that no longer exist -> SIGSEGV. So:
+#   * worker-ml      : runs the ML / evaluation / local-fine-tuning tasks on the "ml" queue
+#                      on the SOLO pool. Workflow Python code nodes execute user code in a
+#                      subprocess, and a prefork child (daemonic) may not start children,
+#                      so this worker cannot run prefork until that executor is adapted.
+#   * worker-default : runs everything else on the "default" queue on the PREFORK pool with
+#                      two children. Prefork is the only pool that enforces task time limits
+#                      and answers `celery inspect ping` during a task.
 #
-#   * worker-ml      : runs the segfault-prone ML / evaluation / local-fine-tuning tasks
-#                      on the SOLO pool (never forks -> safe). Consumes the "ml" queue.
-#                      Scale throughput by raising `replicas` (each replica is a process).
-#
-#   * worker-default : runs everything else on the PREFORK pool for real in-process
-#                      concurrency. Safe because its image entrypoint (run_celery.py ->
-#                      create_celery(), no HTTP routers) plus CELERY_INCLUDE_ML_TASKS=false
-#                      keep the master process free of ML libs; prefork children may import
-#                      them lazily AFTER fork (e.g. KB ingestion), which is safe.
-#                      Consumes the "default" queue.
+# Fork safety: the ML libs (torch/sklearn/transformers) spawn native threads at import and
+# would crash a forked child, so every task module imports them lazily inside the task and
+# the master process stays clean; test_celery_worker_boot_clean.py guards this.
 #
 # Routing is configured in app/__init__.py (create_celery): task_default_queue="default",
-# task_routes pins execute_pipeline_run / execute_test_suite_run /
-# check_scheduled_pipeline_runs to the "ml" queue.
+# task_routes pins execute_pipeline_run / execute_test_suite_run / execute_workflow_run and
+# the scheduled-run checks to the "ml" queue.
 #
 # This is a reference template — replace <IMAGE>, namespace, env/secret refs and resource
 # requests with your cluster's values. The fields that matter for the split are the

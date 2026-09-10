@@ -223,8 +223,8 @@ services:
     restart: unless-stopped
 
   # ML Celery worker — ML pipeline / evaluation / local fine-tuning tasks on the "ml"
-  # queue. MUST stay on the solo pool: these tasks import torch/sklearn/transformers,
-  # which are fork-unsafe. Solo never forks. Scale by adding replicas/pods.
+  # queue. Stays on the solo pool: workflow Python code nodes run user code in a
+  # subprocess, and a prefork child (daemonic) is not allowed to start children.
   celery_worker_ml:
     image: genassist-app-image
     container_name: genassist-celery-worker-ml-dev
