@@ -413,8 +413,8 @@ export function TranslationDialog({
                   value={row.value}
                   onChange={(e) => handleValueChange(index, e.target.value)}
                   placeholder="Translation value"
-                  rows={1}
-                  className="flex-1 min-h-[40px]"
+                  size="compact"
+                  className="flex-1"
                 />
                 <Button
                   type="button"

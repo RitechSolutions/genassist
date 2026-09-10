@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCallDuration,
+  parsePercentValue,
+  formatExactDuration,
+  parseDurationToSeconds,
   formatTimeAgo,
   formatPercentage,
   getInitials,
@@ -56,6 +59,91 @@ describe("formatCallDuration", () => {
   });
 });
 
+describe("formatExactDuration", () => {
+  describe("numeric seconds input", () => {
+    it("formats seconds only", () => {
+      expect(formatExactDuration(0)).toBe("0s");
+      expect(formatExactDuration(45)).toBe("45s");
+    });
+
+    it("formats minutes and seconds", () => {
+      expect(formatExactDuration(514)).toBe("8m 34s");
+      expect(formatExactDuration(600)).toBe("10m 0s");
+    });
+
+    it("formats hours, minutes and seconds", () => {
+      expect(formatExactDuration(3600)).toBe("1h 0m 0s");
+      expect(formatExactDuration(3725)).toBe("1h 2m 5s");
+    });
+  });
+
+  describe("HH:MM:SS string input", () => {
+    it("does not round leftover seconds up to the next minute", () => {
+      expect(formatExactDuration("0:08:34")).toBe("8m 34s");
+      expect(formatExactDuration("00:00:30")).toBe("30s");
+      expect(formatExactDuration("00:45:01")).toBe("45m 1s");
+    });
+
+    it("keeps seconds past the hour mark", () => {
+      expect(formatExactDuration("01:30:12")).toBe("1h 30m 12s");
+      expect(formatExactDuration("23:59:59")).toBe("23h 59m 59s");
+    });
+  });
+
+  describe("day-prefixed string input from the backend", () => {
+    it("parses totals of 24h and beyond", () => {
+      expect(formatExactDuration("1 day, 0:00:00")).toBe("24h 0m 0s");
+      expect(formatExactDuration("2 days, 7:33:20")).toBe("55h 33m 20s");
+    });
+  });
+
+  describe("invalid input", () => {
+    it("falls back to 0s", () => {
+      expect(formatExactDuration(null)).toBe("0s");
+      expect(formatExactDuration(undefined)).toBe("0s");
+      expect(formatExactDuration("")).toBe("0s");
+      expect(formatExactDuration("abc")).toBe("0s");
+      expect(formatExactDuration("1:2")).toBe("0s");
+      expect(formatExactDuration(-5)).toBe("0s");
+    });
+  });
+});
+
+describe("parseDurationToSeconds", () => {
+  it("converts supported shapes to seconds", () => {
+    expect(parseDurationToSeconds(514)).toBe(514);
+    expect(parseDurationToSeconds("0:08:34")).toBe(514);
+    expect(parseDurationToSeconds("1 day, 0:00:00")).toBe(86400);
+    expect(parseDurationToSeconds("2 days, 7:33:20")).toBe(200000);
+  });
+
+  it("returns null for unparseable input", () => {
+    expect(parseDurationToSeconds("aa:bb:cc")).toBeNull();
+    expect(parseDurationToSeconds(null)).toBeNull();
+  });
+});
+
+describe("parsePercentValue", () => {
+  it("strips the percent suffix the backend adds", () => {
+    expect(parsePercentValue("86.0%")).toBe(86);
+    expect(parsePercentValue("0.00%")).toBe(0);
+    expect(parsePercentValue(" 42.5% ")).toBe(42.5);
+  });
+
+  it("passes finite numbers through", () => {
+    expect(parsePercentValue(90)).toBe(90);
+    expect(parsePercentValue(0)).toBe(0);
+  });
+
+  it("returns null rather than NaN for unusable input", () => {
+    expect(parsePercentValue("N/A")).toBeNull();
+    expect(parsePercentValue("")).toBeNull();
+    expect(parsePercentValue(null)).toBeNull();
+    expect(parsePercentValue(undefined)).toBeNull();
+    expect(parsePercentValue(NaN)).toBeNull();
+  });
+});
+
 describe("formatTimeAgo", () => {
   const secondsAgoIso = (s: number) =>
     new Date(Date.now() - s * 1000).toISOString();
@@ -78,6 +166,12 @@ describe("formatTimeAgo", () => {
 
   it("returns weeks beyond a week", () => {
     expect(formatTimeAgo(secondsAgoIso(2 * 604800))).toBe("2 weeks ago");
+  });
+
+  it("drops the plural 's' for a single unit", () => {
+    expect(formatTimeAgo(secondsAgoIso(3600))).toBe("1 hour ago");
+    expect(formatTimeAgo(secondsAgoIso(86400))).toBe("1 day ago");
+    expect(formatTimeAgo(secondsAgoIso(604800))).toBe("1 week ago");
   });
 });
 
