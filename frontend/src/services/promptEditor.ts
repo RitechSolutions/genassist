@@ -5,6 +5,7 @@ import type {
   PromptConfig,
   PromptEvalRequestPayload,
   PromptEvalResponse,
+  PromptHistory,
   PromptOptimizeRequestPayload,
   PromptOptimizeResponse,
   PromptVersion,
@@ -16,17 +17,19 @@ function contextPath(workflowId: string, nodeId: string, promptField: string) {
   return `${workflowId}/${encodeURIComponent(nodeId)}/${encodeURIComponent(promptField)}`;
 }
 
-// ---- Versions ---------------------------------------------------------------
+// ---- History ----------------------------------------------------------------
 
-export const listPromptVersions = (
+export const getPromptHistory = (
   workflowId: string,
   nodeId: string,
   promptField: string,
 ) =>
-  apiRequest<PromptVersion[]>(
+  apiRequest<PromptHistory>(
     "GET",
-    `${BASE}/versions/${contextPath(workflowId, nodeId, promptField)}`,
+    `${BASE}/history/${contextPath(workflowId, nodeId, promptField)}`,
   );
+
+// ---- Versions ---------------------------------------------------------------
 
 export const createPromptVersion = (
   workflowId: string,
@@ -40,23 +43,13 @@ export const createPromptVersion = (
     payload as unknown as Record<string, unknown>,
   );
 
-export const restorePromptVersion = (versionId: string) =>
-  apiRequest<PromptVersion>("POST", `${BASE}/versions/${versionId}/restore`);
-
-export const deletePromptVersion = (versionId: string) =>
-  apiRequest<void>("DELETE", `${BASE}/versions/${versionId}`);
+export const deletePromptVersion = async (versionId: string): Promise<void> => {
+  // apiRequest: 403 returns null (forbidden), 204 returns "" (no content)
+  const result = await apiRequest<void>("DELETE", `${BASE}/versions/${versionId}`);
+  if (result === null) throw new Error("Not allowed to delete this prompt version");
+};
 
 // ---- Config / Gold Suite ----------------------------------------------------
-
-export const getPromptConfig = (
-  workflowId: string,
-  nodeId: string,
-  promptField: string,
-) =>
-  apiRequest<PromptConfig>(
-    "GET",
-    `${BASE}/config/${contextPath(workflowId, nodeId, promptField)}`,
-  );
 
 export const linkGoldSuite = (
   workflowId: string,
