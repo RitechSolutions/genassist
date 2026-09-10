@@ -22,6 +22,24 @@ describe("extractErrorMessage", () => {
     ).toBe("D");
   });
 
+  it("prefers error_detail, the AppException's case-specific text", () => {
+    expect(
+      extractErrorMessage(
+        { response: { data: { error_detail: "Another save completed first.", error: "E" } } },
+        FALLBACK
+      )
+    ).toBe("Another save completed first.");
+  });
+
+  it("falls through to error when error_detail is null", () => {
+    expect(
+      extractErrorMessage(
+        { response: { data: { error_detail: null, error: "E" } } },
+        FALLBACK
+      )
+    ).toBe("E");
+  });
+
   it("honors precedence when several fields are present", () => {
     expect(
       extractErrorMessage(

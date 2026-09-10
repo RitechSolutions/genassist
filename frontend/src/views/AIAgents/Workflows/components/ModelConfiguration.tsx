@@ -46,6 +46,8 @@ const DEFAULT_AGENT_TYPE_OPTIONS: string[] = [
 
 export interface ModelConfigurationProps {
   id: string;
+  nodeId: string;
+  nodeType: string;
   config: BaseLLMNodeData;
   onConfigChange: (config: BaseLLMNodeData) => void;
   typeSelect: "agent" | "model";
@@ -59,6 +61,8 @@ export interface ModelConfigurationProps {
 
 export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   id,
+  nodeId,
+  nodeType,
   config,
   onConfigChange,
   typeSelect = "model",
@@ -381,7 +385,9 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           {workflow?.id && (
             <PromptEditorButton
               workflowId={workflow.id}
-              nodeId={id}
+              nodeId={nodeId}
+              nodeType={nodeType}
+              nodeLabel={config.name}
               promptField="systemPrompt"
               currentValue={systemPrompt || ""}
               onPromptChange={(val) => {
@@ -406,7 +412,9 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
             {workflow?.id && (
               <PromptEditorButton
                 workflowId={workflow.id}
-                nodeId={id}
+                nodeId={nodeId}
+                nodeType={nodeType}
+                nodeLabel={config.name}
                 promptField="userPrompt"
                 currentValue={userPrompt || ""}
                 onPromptChange={(val) => {
