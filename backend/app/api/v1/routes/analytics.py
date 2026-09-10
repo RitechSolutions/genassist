@@ -107,8 +107,12 @@ async def trigger_analytics_backfill(
     Recomputes agent and node daily stats for the caller's tenant over the given
     window, repopulating columns that were added after rows were first aggregated
     (e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs
-    asynchronously and is idempotent — at large scale, call it in slices (e.g. one
-    month per request). Returns the Celery task id for monitoring (e.g. in Flower).
+    asynchronously, at large scale, call it in slices (e.g. one month per request).
+    Returns the Celery task id for monitoring (e.g. in Flower).
+    Idempotent, but not non-destructive: with ``ANALYTICS_AGG_V2`` enabled every past
+    date in the window is rebuilt authoritatively and reconciled, so stats rows that
+    the current non-deleted source data no longer supports are soft-deleted (or zeroed,
+    when they carry token/cost data). With the flag off the backfill is upsert-only.
     """
     from app.core.tenant_scope import get_tenant_context
     from app.tasks.analytics_aggregation_tasks import backfill_agent_analytics

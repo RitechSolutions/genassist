@@ -343,6 +343,16 @@ class ProjectSettings(BaseSettings):
     # search counts; duplicate in-flight requests reuse that result and are not charged.
     WEB_SEARCH_TENANT_PER_MINUTE: int = 30
 
+    # === Analytics Aggregation ===
+    # Rollout flag: off restores the legacy discovery strategy. Not a full revert,
+    # the shared UTC date alignment stays active either way.
+    ANALYTICS_AGG_V2: bool = False
+    ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
+    # First-cutover seed window below the MAX(last_aggregated_at).
+    ANALYTICS_AGG_HEAL_LOOKBACK_HOURS: int = 12
+    # Discovery overlap absorbing in-flight commits; recompute is idempotent.
+    ANALYTICS_AGG_SCAN_OVERLAP_MINUTES: int = 15
+
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"

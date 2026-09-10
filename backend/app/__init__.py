@@ -336,10 +336,11 @@ def create_celery():
         task_track_started=True,
         task_time_limit=300,  # 5 minutes
         task_soft_time_limit=240,  # 4 minutes (soft limit)
-        # Hard time limits above don't apply to the solo pool we run with;
-        # enforcement happens via asyncio.wait_for inside each task body
-        # (see app/tasks/base.py::run_async_in_celery). Bound result-backend
-        # growth so a slow/wedged worker doesn't pile up Redis keys.
+        # Prefork workers enforce these limits (SoftTimeLimitExceeded at 240s,
+        # hard worker termination at 300s); solo workers rely on the asyncio.wait_for inside each
+        # task body (app/tasks/base.py::run_async_in_celery).
+        # Bound result-backend growth so a slow/wedged worker doesn't pile up
+        # Redis keys.
         result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,

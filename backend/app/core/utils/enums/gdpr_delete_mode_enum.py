@@ -14,9 +14,13 @@ class GdprDeleteMode(str, Enum):
       payloads with placeholders, and run ``redact_sensitive_substrings`` on
       other message text. Stamps ``conversations.pii_redacted_at`` for auditing.
     - ``HARD``: purge File Manager attachments, then remove the conversation row
-      (cascades to ``transcript_messages`` and ``conversation_analysis``) and
-      supporting stores (Redis memory, RAG, recordings, audit snapshots).
-      Already-aggregated daily analytics counts are unaffected.
+      (cascades to ``transcript_messages``, ``conversation_analysis`` and
+      ``agent_response_logs``) and supporting stores (Redis memory, RAG,
+      recordings, audit snapshots). Daily analytics are rebuilt from the
+      remaining logs: with ``ANALYTICS_AGG_V2`` on, the conversation drops out
+      of today's and yesterday's counts on the next scheduled runs, and out of
+      older dates whenever those are backfilled. Legacy aggregation only
+      revisits a date that receives new logs, so older counts usually keep it.
     """
 
     SOFT = "soft"
