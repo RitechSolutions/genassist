@@ -4,8 +4,9 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
-from app.schemas.api_key import ApiKeyCreateRead, ApiKeySafeRead, ApiKeyCreate, ApiKeyRotate, ApiKeyUpdate
-from app.schemas.filter import ApiKeysFilter
+from app.schemas.api_key import ApiKeyCreate, ApiKeyCreateRead, ApiKeyRotate, ApiKeySafeRead, ApiKeyUpdate
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import ApiKeyListFilter, ApiKeysFilter
 from app.services.api_keys import ApiKeysService
 
 router = APIRouter()
@@ -27,6 +28,15 @@ async def create(api_key: ApiKeyCreate, service: ApiKeysService = Injected(ApiKe
 ])
 async def get_all(api_keys_filter: ApiKeysFilter = Depends(), service: ApiKeysService = Injected(ApiKeysService)):
     return await service.get_all(api_keys_filter)
+
+# Declared before /{api_key_id} so "list" is not matched as a UUID path param.
+@router.get("/list", response_model=PaginatedResponse[ApiKeySafeRead], dependencies=[
+    Depends(auth),
+    Depends(permissions(P.ApiKey.READ))
+])
+async def get_list(filter_obj: ApiKeyListFilter = Depends(), service: ApiKeysService = Injected(ApiKeysService)):
+    """Paginated API key list, newest first, with optional name search"""
+    return await service.get_list_paginated(filter_obj)
 
 @router.get("/{api_key_id}", response_model=ApiKeySafeRead, dependencies=[
     Depends(auth),
