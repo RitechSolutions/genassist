@@ -43,6 +43,7 @@ class WorkflowManager:
     # define default values for different field types
     _DEFAULT_BY_TYPE = {
         "text": "",
+        "textarea": "",
         "select": None,
         "number": 0,
         "boolean": False,
