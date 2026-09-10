@@ -31,8 +31,8 @@ import nodeRegistry from "../../registry/nodeRegistry";
 import { promptEditorCapabilities } from "../../utils/promptEditorCapabilities";
 import { saveGate, type HistoryState } from "../../utils/promptEditorGates";
 import {
+  findPromptVersion,
   isCurrentDraft as isDraftEqual,
-  resolveSelectedVersion,
 } from "../../utils/promptEditorHistory";
 import {
   promptHistoryKey,
@@ -125,13 +125,9 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   };
   const historyReady = historyState.status === "ready";
 
-  const selectedVersion = resolveSelectedVersion(
-    versions,
-    legacyVersions,
-    selectedVersionId,
-  );
-  const isSelectedLegacy =
-    !!selectedVersion && legacyVersions.some((v) => v.id === selectedVersion.id);
+  const selected = findPromptVersion(versions, legacyVersions, selectedVersionId);
+  const selectedVersion = selected?.version ?? null;
+  const isSelectedLegacy = selected?.isLegacy ?? false;
 
   const resolvedNodeLabel =
     nodeLabel?.trim() || nodeRegistry.getNodeType(nodeType)?.label || nodeType;
@@ -151,6 +147,13 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const handleApplyVersion = (content: string) => {
     setUndoSnapshot(localPrompt);
     commitDraft(content);
+  };
+
+  // Clicking the previewed row again closes the panel; a new pick reveals it on the Editor tab
+  const handleVersionSelect = (id: string) => {
+    const isDeselect = selectedVersionId === id;
+    setSelectedVersionId(isDeselect ? null : id);
+    if (!isDeselect) setActiveTab("editor");
   };
 
   const handleUndoApply = () => {
@@ -191,7 +194,11 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   });
 
   const copyVersionMutation = useMutation({
-    mutationFn: async (vars: { content: string; label: string | undefined }) => {
+    mutationFn: async (vars: {
+      content: string;
+      label: string | undefined;
+      sourceVersionId: string;
+    }) => {
       setCopyError(null);
       const result = await createPromptVersion(workflowId, nodeId, promptField, {
         content: vars.content,
@@ -200,9 +207,12 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
       if (!result) throw new Error("Not allowed to save a version");
       return result;
     },
-    onSuccess: (created) => {
-      invalidateNodeHistory();
-      setSelectedVersionId(created.id);
+    // Follow the copy only if the source row is still previewed
+    onSuccess: async (created, variables) => {
+      await invalidateNodeHistory();
+      setSelectedVersionId((currentId) =>
+        currentId === variables.sourceVersionId ? created.id : currentId,
+      );
     },
     onError: (err) =>
       setCopyError(extractErrorMessage(err, "Failed to copy the version")),
@@ -358,7 +368,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                           versions={versions}
                           legacy={legacy}
                           selectedVersionId={selectedVersion?.id ?? null}
-                          onSelect={setSelectedVersionId}
+                          onSelect={handleVersionSelect}
                           canEditPrompt={caps.canEditPrompt && historyReady}
                           currentGoldSuiteId={historyState.goldSuiteId}
                           onLinkLegacyDataset={() => {
@@ -475,11 +485,13 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                     <TabsContent value="editor" className="mt-0">
                       {selectedVersion && (
                         <VersionPreviewPanel
+                          key={selectedVersion.id}
                           version={selectedVersion}
                           isLegacy={isSelectedLegacy}
+                          versions={versions}
+                          legacyVersions={legacyVersions}
                           draft={localPrompt}
                           isCurrentDraft={isDraftEqual(selectedVersion, localPrompt)}
-                          fieldLabel={fieldLabel}
                           canEdit={caps.canEditPrompt}
                           canUndo={undoSnapshot !== null}
                           nodeMissing={historyState.nodeMissing}
@@ -490,6 +502,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                             copyVersionMutation.mutate({
                               content: selectedVersion.content,
                               label: selectedVersion.label ?? undefined,
+                              sourceVersionId: selectedVersion.id,
                             })
                           }
                           onDelete={(versionId) =>
