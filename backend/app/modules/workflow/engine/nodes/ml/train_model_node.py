@@ -13,7 +13,7 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier, MLPRegressor
-from sklearn.preprocessing import MaxAbsScaler, MinMaxScaler, RobustScaler, StandardScaler
+from sklearn.preprocessing import MaxAbsScaler, MinMaxScaler, OneHotEncoder, RobustScaler, StandardScaler
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -261,21 +261,44 @@ class TrainModelNode(BaseNode):
                         X_val[col].fillna(fill_value, inplace=True)
 
             # Capture the numeric feature columns before one-hot encoding turns
-            # categoricals into dummy int/bool columns, so scaling below only
-            # touches genuinely-numeric original features.
+            # categoricals into dummy columns, so scaling below only touches
+            # genuinely-numeric original features.
             numeric_feature_columns = X_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
 
-            # Handle categorical variables by one-hot encoding. Categories are
-            # derived from the training split only; validation is reindexed to
-            # the same columns, so a category only seen in validation is
-            # dropped rather than leaking into the encoder's vocabulary.
-            categorical_columns = X_train.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                logger.info(f"One-hot encoding categorical columns: {list(categorical_columns)}")
-                X_train = pd.get_dummies(X_train, columns=categorical_columns, drop_first=True)
+            # One-hot encode categorical variables with a fitted OneHotEncoder
+            # (not pd.get_dummies) and save both the encoder and the raw column
+            # names it applies to in the model metadata. Without this, the
+            # saved feature_columns list stays at the original (pre-encoding)
+            # names while the model is actually fit on the expanded dummy
+            # columns, which breaks inference for any model trained with
+            # categorical features (metadata.feature_columns wouldn't line up
+            # with what model.predict() expects). The encoder is fit on the
+            # training split only; unseen categories at inference/validation
+            # map to all-zeros (handle_unknown="ignore") rather than leaking
+            # into its vocabulary.
+            categorical_columns = X_train.select_dtypes(include=['object']).columns.tolist()
+            encoder = None
+            if categorical_columns:
+                logger.info(f"One-hot encoding categorical columns: {categorical_columns}")
+                encoder = OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False)
+                encoded_train = encoder.fit_transform(X_train[categorical_columns])
+                encoded_columns = encoder.get_feature_names_out(categorical_columns).tolist()
+                X_train = pd.concat(
+                    [
+                        X_train.drop(columns=categorical_columns).reset_index(drop=True),
+                        pd.DataFrame(encoded_train, columns=encoded_columns),
+                    ],
+                    axis=1,
+                )
                 if X_val is not None:
-                    X_val = pd.get_dummies(X_val, columns=categorical_columns, drop_first=True)
-                    X_val = X_val.reindex(columns=X_train.columns, fill_value=0)
+                    encoded_val = encoder.transform(X_val[categorical_columns])
+                    X_val = pd.concat(
+                        [
+                            X_val.drop(columns=categorical_columns).reset_index(drop=True),
+                            pd.DataFrame(encoded_val, columns=encoded_columns),
+                        ],
+                        axis=1,
+                    )
 
             # Handle boolean columns
             boolean_columns = X_train.select_dtypes(include=['bool']).columns
@@ -327,7 +350,7 @@ class TrainModelNode(BaseNode):
                 thread_id=self.state.thread_id,
                 metadata={
                     # Marker used to distinguish "new payload PKL" vs legacy "raw model PKL"
-                    "metadata_schema_version": 1,
+                    "metadata_schema_version": 2,
                     # Three core fields inference can rely on:
                     "feature_columns": feature_columns,
                     "target_column": target_column,
@@ -336,6 +359,10 @@ class TrainModelNode(BaseNode):
                     **(
                         {"scaler": scaler, "scaled_columns": numeric_feature_columns}
                         if scaler is not None else {}
+                    ),
+                    **(
+                        {"encoder": encoder, "categorical_columns": categorical_columns}
+                        if encoder is not None else {}
                     ),
                 },
             )

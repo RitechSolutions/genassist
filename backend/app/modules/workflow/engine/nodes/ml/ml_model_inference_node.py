@@ -283,12 +283,37 @@ class MLModelInferenceNode(BaseNode):
             if len(feature_names) == 0:
                 feature_names = list(normalized_inputs.keys())
             try:
-                input_data = _build_input_array(normalized_inputs, feature_names)
-                batch_size = input_data.shape[0]
+                # Raw values as supplied by the caller, aligned to feature_names -
+                # used below to build the model-ready matrix and for the
+                # human-readable "input_data" echoed back in the response.
+                raw_input_data = _build_input_array(normalized_inputs, feature_names)
+                batch_size = raw_input_data.shape[0]
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
-                    batch_size, input_data.shape[1] if input_data.ndim == 2 else 0, list(feature_names),
+                    batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
                 )
+
+                # Reapply the same one-hot encoding fitted at training time (if
+                # any) so the matrix handed to the model has the exact columns
+                # it was trained on, instead of the raw (pre-encoding) feature
+                # names. No-op for models with no categorical features or
+                # legacy models that predate this metadata.
+                categorical_columns: List[str] = metadata.get("categorical_columns") or []
+                encoder = metadata.get("encoder")
+                if encoder is not None and categorical_columns:
+                    numeric_order = [f for f in feature_names if f not in categorical_columns]
+                    numeric_data = (
+                        _build_input_array(normalized_inputs, numeric_order).astype(float)
+                        if numeric_order else np.empty((batch_size, 0))
+                    )
+                    cat_data = _build_input_array(normalized_inputs, categorical_columns)
+                    encoded = encoder.transform(cat_data)
+                    encoded_columns = encoder.get_feature_names_out(categorical_columns).tolist()
+                    input_data = np.column_stack([numeric_data, encoded])
+                    model_feature_names = numeric_order + encoded_columns
+                else:
+                    input_data = raw_input_data
+                    model_feature_names = list(feature_names)
 
                 # Reapply the scaler fitted at training time (if any) so scaled
                 # features match what the model was trained on. No-op for
@@ -297,7 +322,9 @@ class MLModelInferenceNode(BaseNode):
                 scaler = metadata.get("scaler")
                 scaled_columns = metadata.get("scaled_columns") or []
                 if scaler is not None and scaled_columns:
-                    scaled_indices = [feature_names.index(c) for c in scaled_columns if c in feature_names]
+                    scaled_indices = [
+                        model_feature_names.index(c) for c in scaled_columns if c in model_feature_names
+                    ]
                     if scaled_indices:
                         input_data = input_data.astype(float)
                         input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
@@ -329,9 +356,12 @@ class MLModelInferenceNode(BaseNode):
                     predictions = model.predict(input_data)
 
                 # Build response (always batch format)
-                # Convert input_data to column-wise dictionary (columns ordered by feature_names)
+                # Convert the raw (pre-encoding) input to a column-wise dictionary
+                # (columns ordered by feature_names) so the echoed input reflects
+                # what the caller actually submitted, not the expanded matrix
+                # handed to the model.
                 input_data_by_column = {
-                    feature_names[i]: input_data[:, i].tolist()
+                    feature_names[i]: raw_input_data[:, i].tolist()
                     for i in range(len(feature_names))
                 }
 
