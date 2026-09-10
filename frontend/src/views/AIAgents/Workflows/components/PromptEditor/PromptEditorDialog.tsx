@@ -378,6 +378,15 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                           linkPending={linkLegacyDatasetMutation.isPending}
                           linkError={linkError}
                           status={historyState.status}
+                          onDelete={(versionId, isLegacy) =>
+                            deleteVersionMutation.mutate({ versionId, isLegacy })
+                          }
+                          deletingVersionId={
+                            deleteVersionMutation.isPending
+                              ? (deleteVersionMutation.variables?.versionId ?? null)
+                              : null
+                          }
+                          deleteError={deleteError}
                         />
                       </div>
 
@@ -505,16 +514,8 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                               sourceVersionId: selectedVersion.id,
                             })
                           }
-                          onDelete={(versionId) =>
-                            deleteVersionMutation.mutate({
-                              versionId,
-                              isLegacy: isSelectedLegacy,
-                            })
-                          }
                           isCopying={copyVersionMutation.isPending}
                           copyError={copyError}
-                          isDeleting={deleteVersionMutation.isPending}
-                          deleteError={deleteError}
                         />
                       )}
 
