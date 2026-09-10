@@ -131,6 +131,37 @@ def _broadcast_column(values: List[Any], batch_size: int, feature_name: str) -> 
     )
 
 
+def _validate_categorical_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    categorical_columns: Sequence[str],
+    categories: Sequence[np.ndarray],
+) -> None:
+    """Reject a caller-supplied categorical value the encoder wasn't trained on,
+    instead of silently encoding it as the dropped baseline category (which is
+    indistinguishable from a legitimate prediction for that category).
+
+    A column the caller left unset is skipped here - normalized_inputs already
+    excludes it (see _is_empty_input), and it's filled with 0 by
+    _build_input_array, the same as a missing numeric feature - not treated as
+    an invalid category.
+    """
+    for col, known in zip(categorical_columns, categories):
+        if col not in normalized_inputs:
+            continue
+        known_values = {str(v) for v in known.tolist()}
+        invalid_values = sorted({str(v) for v in normalized_inputs[col] if str(v) not in known_values})
+        if invalid_values:
+            allowed = ", ".join(str(v) for v in known.tolist())
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=(
+                    f"Invalid value(s) for feature '{col}': {', '.join(invalid_values)}. "
+                    f"Please enter a correct value, otherwise this field will be ignored. "
+                    f"Expected one of: {allowed}."
+                ),
+            )
+
+
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
@@ -306,7 +337,12 @@ class MLModelInferenceNode(BaseNode):
                         _build_input_array(normalized_inputs, numeric_order).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
                     )
-                    cat_data = _build_input_array(normalized_inputs, categorical_columns)
+                    # object dtype - a categorical column left entirely unset comes
+                    # back as a plain numeric (int) array of 0-fillers, which trips
+                    # an internal numpy isnan check in OneHotEncoder.transform when
+                    # compared against its (string) fitted categories.
+                    cat_data = _build_input_array(normalized_inputs, categorical_columns).astype(object)
+                    _validate_categorical_inputs(normalized_inputs, categorical_columns, encoder.categories_)
                     encoded = encoder.transform(cat_data)
                     encoded_columns = encoder.get_feature_names_out(categorical_columns).tolist()
                     input_data = np.column_stack([numeric_data, encoded])
@@ -328,6 +364,8 @@ class MLModelInferenceNode(BaseNode):
                     if scaled_indices:
                         input_data = input_data.astype(float)
                         input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
+            except AppException:
+                raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
                 raise AppException(
