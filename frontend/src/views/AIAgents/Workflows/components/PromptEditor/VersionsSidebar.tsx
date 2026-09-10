@@ -86,8 +86,8 @@ const VersionRow: React.FC<VersionRowProps> = ({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <span className="text-sm font-medium">v{version.version_number}</span>
-          <div className="text-xs text-muted-foreground truncate">
-            {version.label || formatFeedbackDate(version.created_at)}
+          <div className="min-h-4 text-xs text-muted-foreground truncate">
+            {version.label}
           </div>
         </div>
         <div className="text-xs text-muted-foreground shrink-0">
