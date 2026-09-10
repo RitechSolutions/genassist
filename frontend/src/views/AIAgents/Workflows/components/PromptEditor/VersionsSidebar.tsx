@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   AlertCircle,
   ChevronDown,
@@ -36,8 +36,9 @@ interface VersionsSidebarProps {
   linkPending: boolean;
   linkError: string | null;
   status: HistoryState["status"];
-  /** Legacy rows live under another node, so the caller routes the cache refresh */
-  onDelete: (versionId: string, isLegacy: boolean) => void;
+  /** Legacy rows live under another node, so the caller routes the cache refresh.
+   *  Resolves once the refreshed history has landed, which keeps the confirm open */
+  onDelete: (versionId: string, isLegacy: boolean) => Promise<void>;
   deletingVersionId: string | null;
   deleteError: string | null;
 }
@@ -147,6 +148,9 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
   const [isLegacyOpen, setIsLegacyOpen] = useState(false);
   // Captured at confirm; prevents retargeting to another row
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // Radix closes on Action click before the mutation reports pending, so the
+  // guard has to be synchronous
+  const isDeletingRef = useRef(false);
 
   if (status !== "ready") {
     // Unreadable history ≠ empty
@@ -250,7 +254,7 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
       <DeleteConfirmationDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open && !isDeletingRef.current) setDeleteTarget(null);
         }}
         title="Delete version?"
         description={
@@ -259,9 +263,16 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
           : "This version will no longer show in the history. This can't be undone."
         }
 
-        onConfirm={() => {
-          if (deleteTarget)
-            onDelete(deleteTarget.version.id, deleteTarget.isLegacy);
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          isDeletingRef.current = true;
+          try {
+            await onDelete(deleteTarget.version.id, deleteTarget.isLegacy);
+          } finally {
+            isDeletingRef.current = false;
+            // Close on failure; shows deleteError
+            setDeleteTarget(null);
+          }
         }}
         isDeleting={deletingVersionId === deleteTarget?.version.id}
       />

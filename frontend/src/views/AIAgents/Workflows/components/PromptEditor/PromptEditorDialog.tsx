@@ -29,7 +29,12 @@ import { usePermissions } from "@/context/PermissionContext";
 import { useWorkflow } from "../../context/WorkflowContext";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { promptEditorCapabilities } from "../../utils/promptEditorCapabilities";
-import { saveGate, type HistoryState } from "../../utils/promptEditorGates";
+import {
+  HISTORY_ERROR_REASON,
+  HISTORY_FORBIDDEN_REASON,
+  saveGate,
+  type HistoryState,
+} from "../../utils/promptEditorGates";
 import {
   findPromptVersion,
   isCurrentDraft as isDraftEqual,
@@ -94,7 +99,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const latestDraftRef = useRef(localPrompt);
   latestDraftRef.current = localPrompt;
 
-  const historyQuery = usePromptHistory(workflowId, nodeId, promptField);
+  const historyQuery = usePromptHistory(workflowId, nodeId, promptField, nodeType);
   const { history } = historyQuery;
 
   const nodeKey = promptHistoryKey(workflowId, nodeId, promptField);
@@ -223,9 +228,11 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
       setDeleteError(null);
       await deletePromptVersion(vars.versionId);
     },
-    onSuccess: (_result, vars) => {
-      if (vars.isLegacy) invalidateWorkflowHistory();
-      else invalidateNodeHistory();
+    // Wait for delete before closing dialog
+    onSuccess: async (_result, vars) => {
+      await (vars.isLegacy
+        ? invalidateWorkflowHistory()
+        : invalidateNodeHistory());
       setSelectedVersionId((current) =>
         current === vars.versionId ? null : current,
       );
@@ -271,12 +278,9 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const banner = historyQuery.isPending
     ? null
     : historyQuery.isError
-      ? extractErrorMessage(
-          historyQuery.error,
-          "Prompt history could not be loaded.",
-        )
+      ? extractErrorMessage(historyQuery.error, HISTORY_ERROR_REASON)
       : historyQuery.isForbidden
-        ? "You don't have permission to view prompt history."
+        ? HISTORY_FORBIDDEN_REASON
         : history?.node_missing
           ? "This node isn't in the saved workflow. If it was just added, save the workflow before saving prompt versions or running checks."
           : null;
@@ -379,7 +383,10 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                           linkError={linkError}
                           status={historyState.status}
                           onDelete={(versionId, isLegacy) =>
-                            deleteVersionMutation.mutate({ versionId, isLegacy })
+                            deleteVersionMutation.mutateAsync({
+                              versionId,
+                              isLegacy,
+                            })
                           }
                           deletingVersionId={
                             deleteVersionMutation.isPending

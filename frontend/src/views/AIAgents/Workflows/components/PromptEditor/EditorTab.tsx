@@ -16,10 +16,69 @@ import type { LLMProvider } from '@/interfaces/llmProvider.interface';
 import type { PromptEvalResponse, PromptOptimizeResponse } from '@/interfaces/promptEditor.interface';
 import type { PromptEditorCapabilities } from '../../utils/promptEditorCapabilities';
 import { acceptGate, evaluateGate, optimizeGate } from '../../utils/promptEditorGates';
-import type { CasesState, HistoryState } from '../../utils/promptEditorGates';
+import type { CasesState, EvalInputs, HistoryState } from '../../utils/promptEditorGates';
 import { draftUnchangedSince } from '../../utils/promptEditorHistory';
+import {
+  evalKeyOf,
+  failedCasesOf,
+  failuresKeyOf,
+  isOptimizeCurrent,
+  type EvalRequest,
+  type OptimizeRequest,
+} from '../../utils/promptEditorRuns';
 import { GateTooltip } from './GateTooltip';
 import { promptHistoryKey } from './usePromptHistory';
+
+const TECHNIQUES = [
+  { key: 'exact_match', label: 'Exact Match' },
+  { key: 'contains', label: 'Contains' },
+  { key: 'nli_eval', label: 'NLI Semantic Match' },
+];
+
+const EvaluationResults: React.FC<{ results: PromptEvalResponse; title?: string }> = ({ results, title }) => (
+  <div className="space-y-3">
+    <div className="flex flex-wrap items-center gap-3">
+      {title && <p className="text-sm font-medium">{title}</p>}
+      <Badge variant="secondary">
+        {results.summary.passed}/{results.summary.total} passed
+      </Badge>
+      <Badge variant="secondary">Avg Score: {(results.summary.avg_score * 100).toFixed(1)}%</Badge>
+    </div>
+    <div className="space-y-2 max-h-60 overflow-y-auto">
+      {results.results.map((r, i) => (
+        <div
+          key={r.case_id || i}
+          className={`border rounded p-3 text-sm ${
+            r.passed ? 'border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15' : 'border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            {r.passed ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            )}
+            <span className="font-medium">{r.passed ? 'Passed' : 'Failed'}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div>
+              <p className="font-medium text-muted-foreground">Input</p>
+              <p className="line-clamp-3">{r.input}</p>
+            </div>
+            <div>
+              <p className="font-medium text-muted-foreground">Expected</p>
+              <p className="line-clamp-3">{r.expected}</p>
+            </div>
+            <div>
+              <p className="font-medium text-muted-foreground">Actual</p>
+              <p className="line-clamp-3">{r.actual}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 interface EditorTabProps {
   workflowId: string;
@@ -53,28 +112,31 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const queryClient = useQueryClient();
 
   const [error, setError] = useState<string | null>(null);
-  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState(defaultProviderId || '');
   const [selectedTechniques, setSelectedTechniques] = useState<string[]>(['contains']);
-  const [evalResults, setEvalResults] = useState<PromptEvalResponse | null>(null);
-  const [optimizeResult, setOptimizeResult] = useState<PromptOptimizeResponse | null>(null);
-  const [optimizedEvalResults, setOptimizedEvalResults] = useState<PromptEvalResponse | null>(null);
+  // Each run keeps the inputs it was produced from, so changing any of them makes it stale
+  const [evalRun, setEvalRun] = useState<{ key: string; results: PromptEvalResponse } | null>(null);
+  const [optimizeRun, setOptimizeRun] = useState<{
+    request: OptimizeRequest;
+    result: PromptOptimizeResponse;
+  } | null>(null);
+  const [suggestedEvalRun, setSuggestedEvalRun] = useState<{
+    key: string;
+    results: PromptEvalResponse;
+  } | null>(null);
   const [optimizeInstructions, setOptimizeInstructions] = useState('');
   // Bumped on Accept/Dismiss/new suggestions to prevent stale applies
   const acceptTokenRef = useRef(0);
 
-  const TECHNIQUES = [
-    { key: 'exact_match', label: 'Exact Match' },
-    { key: 'contains', label: 'Contains' },
-    { key: 'nli_eval', label: 'NLI Semantic Match' },
-  ];
-
-  const { data: providers = [] } = useQuery({
+  const providersQuery = useQuery({
     queryKey: ['llmProviders'],
     queryFn: getAllLLMProviders,
     select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
+  const providers = providersQuery.data ?? [];
+  // A default pointing at a deactivated provider must never reach a request
+  const activeProviderId = providers.some((p) => p.id === selectedProviderId) ? selectedProviderId : '';
 
   const goldSuiteId = historyState.goldSuiteId;
 
@@ -105,67 +167,78 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
   const showError = (action: string, err: unknown) => {
     setError(`Failed to ${action}: ${extractErrorMessage(err, 'Request failed')}`);
-    setWarningMessage(null);
     setSuccessMessage(null);
   };
 
+  const currentEvalKey = evalKeyOf(value, activeProviderId, selectedTechniques);
+  const evalResults = evalRun?.key === currentEvalKey ? evalRun.results : null;
+  const failedCases = evalResults ? failedCasesOf(evalResults.results) : [];
+  const failuresKey = failuresKeyOf(failedCases);
+
+  const optimizeResult =
+    optimizeRun !== null &&
+    isOptimizeCurrent(optimizeRun.request, {
+      prompt: value,
+      providerId: activeProviderId,
+      instructions: optimizeInstructions,
+      failuresKey,
+    })
+      ? optimizeRun.result
+      : null;
+  const suggestion = optimizeResult?.suggested_prompt ?? '';
+
+  const currentSuggestedKey =
+    suggestion === '' ? null : evalKeyOf(suggestion, activeProviderId, selectedTechniques);
+  const optimizedEvalResults =
+    currentSuggestedKey !== null && suggestedEvalRun?.key === currentSuggestedKey
+      ? suggestedEvalRun.results
+      : null;
+
+  const runEvaluation = async (vars: EvalRequest) => {
+    setError(null);
+    const result = await evaluatePrompt(workflowId, nodeId, promptField, {
+      prompt_content: vars.prompt,
+      techniques: vars.techniques,
+      provider_id: vars.providerId,
+    });
+    if (!result) throw new Error('Server returned empty response — check permissions.');
+    return result;
+  };
+
   const evalMutation = useMutation({
-    mutationFn: async () => {
-      setError(null);
-      const result = await evaluatePrompt(workflowId, nodeId, promptField, {
-        prompt_content: value,
-        techniques: selectedTechniques,
-        provider_id: selectedProviderId,
-      });
-      if (!result) throw new Error('Server returned empty response — check permissions.');
-      return result;
-    },
-    onSuccess: (data) => {
-      setEvalResults(data);
+    mutationFn: runEvaluation,
+    onSuccess: (data, vars) => {
+      setEvalRun({ key: evalKeyOf(vars.prompt, vars.providerId, vars.techniques), results: data });
     },
     onError: (err) => showError('evaluate prompt', err),
   });
 
   const optimizeMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars: OptimizeRequest) => {
       setError(null);
       const result = await optimizePrompt(workflowId, nodeId, promptField, {
-        provider_id: selectedProviderId,
-        current_prompt: value,
-        instructions: optimizeInstructions || undefined,
-        failed_cases: evalResults?.results
-          .filter((r) => !r.passed)
-          .map((r) => ({
-            input: r.input,
-            expected: r.expected,
-            actual: r.actual,
-          })),
+        provider_id: vars.providerId,
+        current_prompt: vars.prompt,
+        instructions: vars.instructions || undefined,
+        failed_cases: vars.failedCases,
       });
       if (!result) throw new Error('Server returned empty response — check permissions.');
       return result;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, vars) => {
       acceptTokenRef.current += 1;
-      setOptimizeResult(data);
-      setOptimizedEvalResults(null);
+      setOptimizeRun({ request: vars, result: data });
     },
     onError: (err) => showError('optimize prompt', err),
   });
 
   const evalOptimizedMutation = useMutation({
-    mutationFn: async () => {
-      if (!optimizeResult) return;
-      setError(null);
-      const result = await evaluatePrompt(workflowId, nodeId, promptField, {
-        prompt_content: optimizeResult.suggested_prompt,
-        techniques: selectedTechniques,
-        provider_id: selectedProviderId,
+    mutationFn: runEvaluation,
+    onSuccess: (data, vars) => {
+      setSuggestedEvalRun({
+        key: evalKeyOf(vars.prompt, vars.providerId, vars.techniques),
+        results: data,
       });
-      if (!result) throw new Error('Server returned empty response — check permissions.');
-      return result;
-    },
-    onSuccess: (data) => {
-      if (data) setOptimizedEvalResults(data);
     },
     onError: (err) => showError('evaluate suggested prompt', err),
   });
@@ -186,11 +259,22 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     onError: (err) => showError('accept optimized prompt', err),
   });
 
-  const evaluate = evaluateGate(historyState, casesState, caps);
-  const optimize = optimizeGate(historyState, caps);
-  const suggestion = optimizeResult?.suggested_prompt ?? '';
+  const runInputs: EvalInputs = {
+    content: value,
+    contentNoun: 'prompt',
+    providerStatus: providersQuery.isPending ? 'pending' : providersQuery.isError ? 'error' : 'ready',
+    providerId: activeProviderId,
+    techniqueCount: selectedTechniques.length,
+  };
+
+  const evaluate = evaluateGate(historyState, casesState, caps, runInputs);
+  const optimize = optimizeGate(historyState, caps, runInputs);
+  const evaluateSuggested = evaluateGate(historyState, casesState, caps, {
+    ...runInputs,
+    content: suggestion,
+    contentNoun: 'suggested prompt',
+  });
   const accept = acceptGate(historyState, caps, acceptOptimizedMutation.isPending, suggestion);
-  const canRunSuggested = evaluate.enabled && !!suggestion.trim();
 
   // Save, then apply (only if draft/suggestion haven't changed)
   // Callbacks drop on unmount, so closing mid-save is safe
@@ -209,8 +293,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             setSuccessMessage(`Saved as v${created.version_number}; the draft was left as it is`);
           }
           if (stillCurrent) {
-            setOptimizeResult(null);
-            setOptimizedEvalResults(null);
+            setOptimizeRun(null);
+            setSuggestedEvalRun(null);
           }
         },
       },
@@ -219,18 +303,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
   return (
     <div className="space-y-4 pt-4 px-2">
-      {(error || warningMessage || successMessage) && (
+      {(error || successMessage) && (
         <div className="space-y-2">
           {error && (
             <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
-            </div>
-          )}
-          {warningMessage && (
-            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{warningMessage}</span>
             </div>
           )}
           {successMessage && (
@@ -244,7 +322,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
       <div className="space-y-2">
         <Label>LLM Provider</Label>
-        <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
+        <Select value={activeProviderId} onValueChange={setSelectedProviderId}>
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select provider for evaluation/optimization" />
           </SelectTrigger>
@@ -317,24 +395,18 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
                     <div className="flex flex-wrap gap-2">
                       {caps.canEvaluate && (
-                        <GateTooltip
-                          reason={
-                            evaluate.reason ??
-                            (suggestion.trim() ? null : 'The suggested prompt is empty.')
-                          }
-                        >
+                        <GateTooltip reason={evaluateSuggested.reason}>
                         <Button
                           size="sm"
                           onClick={() => {
-                            if (!canRunSuggested) return;
-                            evalOptimizedMutation.mutate();
+                            if (!evaluateSuggested.enabled) return;
+                            evalOptimizedMutation.mutate({
+                              prompt: suggestion,
+                              providerId: activeProviderId,
+                              techniques: selectedTechniques,
+                            });
                           }}
-                          disabled={
-                            !canRunSuggested ||
-                            !selectedProviderId ||
-                            selectedTechniques.length === 0 ||
-                            evalOptimizedMutation.isPending
-                          }
+                          disabled={!evaluateSuggested.enabled || evalOptimizedMutation.isPending}
                           variant="outline"
                         >
                           {evalOptimizedMutation.isPending ? (
@@ -362,8 +434,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                         variant="ghost"
                         onClick={() => {
                           acceptTokenRef.current += 1;
-                          setOptimizeResult(null);
-                          setOptimizedEvalResults(null);
+                          setOptimizeRun(null);
+                          setSuggestedEvalRun(null);
                         }}
                       >
                         Dismiss
@@ -371,49 +443,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                     </div>
 
                     {optimizedEvalResults && (
-                      <div className="space-y-3 border-t pt-3">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <p className="text-sm font-medium">Suggested Prompt Evaluation</p>
-                          <Badge variant="secondary">
-                            {optimizedEvalResults.summary.passed}/{optimizedEvalResults.summary.total} passed
-                          </Badge>
-                          <Badge variant="secondary">
-                            Avg Score: {(optimizedEvalResults.summary.avg_score * 100).toFixed(1)}%
-                          </Badge>
-                        </div>
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
-                          {optimizedEvalResults.results.map((r, i) => (
-                            <div
-                              key={r.case_id || i}
-                              className={`border rounded p-3 text-sm ${
-                                r.passed ? 'border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15' : 'border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 mb-2">
-                                {r.passed ? (
-                                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                                ) : (
-                                  <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                                )}
-                                <span className="font-medium">{r.passed ? 'Passed' : 'Failed'}</span>
-                              </div>
-                              <div className="grid grid-cols-3 gap-2 text-xs">
-                                <div>
-                                  <p className="font-medium text-muted-foreground">Input</p>
-                                  <p className="line-clamp-3">{r.input}</p>
-                                </div>
-                                <div>
-                                  <p className="font-medium text-muted-foreground">Expected</p>
-                                  <p className="line-clamp-3">{r.expected}</p>
-                                </div>
-                                <div>
-                                  <p className="font-medium text-muted-foreground">Actual</p>
-                                  <p className="line-clamp-3">{r.actual}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="border-t pt-3">
+                        <EvaluationResults results={optimizedEvalResults} title="Suggested Prompt Evaluation" />
                       </div>
                     )}
                   </div>
@@ -425,9 +456,15 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                       size="sm"
                       onClick={() => {
                         if (!optimize.enabled) return;
-                        optimizeMutation.mutate();
+                        optimizeMutation.mutate({
+                          prompt: value,
+                          providerId: activeProviderId,
+                          instructions: optimizeInstructions,
+                          failedCases: failedCases.length > 0 ? failedCases : undefined,
+                          sourceFailuresKey: failuresKey,
+                        });
                       }}
-                      disabled={!optimize.enabled || !selectedProviderId || !value.trim() || optimizeMutation.isPending}
+                      disabled={!optimize.enabled || optimizeMutation.isPending}
                     >
                       {optimizeMutation.isPending ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -475,20 +512,14 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                       size="sm"
                       variant="default"
                       onClick={() => {
-                        setWarningMessage(null);
-                        if (!evaluate.enabled) {
-                          if (evaluate.reason) setWarningMessage(evaluate.reason);
-                          return;
-                        }
-                        evalMutation.mutate();
+                        if (!evaluate.enabled) return;
+                        evalMutation.mutate({
+                          prompt: value,
+                          providerId: activeProviderId,
+                          techniques: selectedTechniques,
+                        });
                       }}
-                      disabled={
-                        !evaluate.enabled ||
-                        !selectedProviderId ||
-                        selectedTechniques.length === 0 ||
-                        !value.trim() ||
-                        evalMutation.isPending
-                      }
+                      disabled={!evaluate.enabled || evalMutation.isPending}
                     >
                       {evalMutation.isPending ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -501,50 +532,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                   </div>
                 </div>
 
-                {evalResults && (
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <Badge variant="secondary">
-                        {evalResults.summary.passed}/{evalResults.summary.total} passed
-                      </Badge>
-                      <Badge variant="secondary">Avg Score: {(evalResults.summary.avg_score * 100).toFixed(1)}%</Badge>
-                    </div>
-
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {evalResults.results.map((r, i) => (
-                        <div
-                          key={r.case_id || i}
-                          className={`border rounded p-3 text-sm ${
-                            r.passed ? 'border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15' : 'border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            {r.passed ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                            )}
-                            <span className="font-medium">{r.passed ? 'Passed' : 'Failed'}</span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 text-xs">
-                            <div>
-                              <p className="font-medium text-muted-foreground">Input</p>
-                              <p className="line-clamp-3">{r.input}</p>
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground">Expected</p>
-                              <p className="line-clamp-3">{r.expected}</p>
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground">Actual</p>
-                              <p className="line-clamp-3">{r.actual}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {evalResults && <EvaluationResults results={evalResults} />}
               </div>
             </AccordionContent>
           </AccordionItem>

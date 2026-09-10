@@ -37,12 +37,12 @@ describe("promptEditorCapabilities", () => {
   });
 
   it("grants nothing without permissions", () => {
-    expect(Object.values(promptEditorCapabilities([]))).toEqual([
-      false,
-      false,
-      false,
-      false,
-      false,
-    ]);
+    expect(promptEditorCapabilities([])).toEqual({
+      canEditPrompt: false,
+      canOptimize: false,
+      canEvaluate: false,
+      canReadCases: false,
+      canEditCases: false,
+    });
   });
 });

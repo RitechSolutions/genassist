@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 class PromptContext:
     """A prompt field matched against the stored workflow graph
     ``node_missing`` = node not in saved workflow (newly added or removed;
-    graph can't tell which). ``spec`` is None when the node is missing
+    graph can't tell which). ``spec`` is None unless a node type resolved it,
+    which for a missing node means the caller supplied a valid one
     """
 
     workflow_id: UUID
@@ -84,38 +85,45 @@ class PromptEditorService:
         prompt_field: str,
         *,
         require_live_node: bool,
+        requested_node_type: Optional[str] = None,
     ) -> PromptContext:
         """Resolve a prompt field against the stored workflow.
         Reads allow missing nodes so history stays readable after deletion.
         Writes reject nodes not in the saved graph.
+        ``requested_node_type`` is read-only; hints at deleted nodes.
+        Stored type is authoritative; writes ignore it.
         """
         row = await self.workflow_repo.get_access_row(workflow_id)
         if row is None:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
         node = next((n for n in (row.nodes or []) if n.get("id") == node_id), None)
-        node_type = node.get("type") if node else None
-        spec = get_spec(node_type, prompt_field) if node_type else None
-
-        if node is not None and spec is None:
-            raise AppException(
-                status_code=400,
-                error_key=ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
-                error_detail=f"{node_type or 'This node'} has no editable prompt field '{prompt_field}'.",
-            )
-        if node is None and require_live_node:
-            detail = (
-                "This history belongs to the old shared agent configuration and is read-only. "
-                "Copy a version into the node's own history first."
-                if node_id in LEGACY_SHARED_NODE_IDS
-                else "This node isn't in the saved workflow. If it was just added, save the workflow "
-                "before saving prompt versions or running checks."
-            )
-            raise AppException(
-                status_code=400,
-                error_key=ErrorKey.PROMPT_CONTEXT_INVALID,
-                error_detail=detail,
-            )
+        if node is not None:
+            node_type = node.get("type")
+            spec = get_spec(node_type, prompt_field) if node_type else None
+            if spec is None:
+                raise AppException(
+                    status_code=400,
+                    error_key=ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
+                    error_detail=f"{node_type or 'This node'} has no editable prompt field '{prompt_field}'.",
+                )
+        else:
+            # Hint accepted only when it names a field the editor really supports
+            spec = get_spec(requested_node_type, prompt_field) if requested_node_type else None
+            node_type = requested_node_type if spec else None
+            if require_live_node:
+                detail = (
+                    "This history belongs to the old shared agent configuration and is read-only. "
+                    "Copy a version into the node's own history first."
+                    if node_id in LEGACY_SHARED_NODE_IDS
+                    else "This node isn't in the saved workflow. If it was just added, save the workflow "
+                    "before saving prompt versions or running checks."
+                )
+                raise AppException(
+                    status_code=400,
+                    error_key=ErrorKey.PROMPT_CONTEXT_INVALID,
+                    error_detail=detail,
+                )
 
         return PromptContext(
             workflow_id=workflow_id,
@@ -139,9 +147,19 @@ class PromptEditorService:
         return [PromptVersionRead.model_validate(r, from_attributes=True) for r in rows]
 
     async def get_history(
-        self, workflow_id: UUID, node_id: str, prompt_field: str
+        self,
+        workflow_id: UUID,
+        node_id: str,
+        prompt_field: str,
+        node_type: Optional[str] = None,
     ) -> PromptHistoryRead:
-        ctx = await self._context(workflow_id, node_id, prompt_field, require_live_node=False)
+        ctx = await self._context(
+            workflow_id,
+            node_id,
+            prompt_field,
+            require_live_node=False,
+            requested_node_type=node_type,
+        )
         rows = await self.version_repo.get_versions_for_context(
             workflow_id, node_id, prompt_field
         )
