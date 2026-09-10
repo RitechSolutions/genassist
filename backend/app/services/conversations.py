@@ -591,6 +591,17 @@ class ConversationService:
             conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
                 conversation.id)
             agent_id = conv_with_agent.agent_id if conv_with_agent else None
+
+            # Release the pooled connection before the tone-analysis GPT call so it
+            # isn't held idle-in-transaction for the duration of the call (see
+            # genassist-outage-report-2026-09-03.md, release point #3).
+            # Import kept local: conversations.py loads early in app bootstrap
+            # (injector -> dependency_injection -> services.audio -> here), and
+            # db_connection_utils imports app.dependencies.injector itself, so a
+            # top-level import here is circular.
+            from app.core.utils.db_connection_utils import release_db_connection
+            await release_db_connection(context=f"conversation {conversation.id}")
+
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
                         conversation_id=conversation.id, agent_id=agent_id))
