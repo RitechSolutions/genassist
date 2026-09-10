@@ -1,7 +1,22 @@
 import React, { useState } from "react";
-import { AlertCircle, ChevronDown, ChevronRight, History, Link2 } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  History,
+  Link2,
+  MoreVertical,
+  Trash2,
+} from "lucide-react";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { cn } from "@/lib/utils";
 import type {
   LegacyPromptHistory,
@@ -21,45 +36,96 @@ interface VersionsSidebarProps {
   linkPending: boolean;
   linkError: string | null;
   status: HistoryState["status"];
+  /** Legacy rows live under another node, so the caller routes the cache refresh */
+  onDelete: (versionId: string, isLegacy: boolean) => void;
+  deletingVersionId: string | null;
+  deleteError: string | null;
+}
+
+interface DeleteTarget {
+  version: PromptVersion;
+  isLegacy: boolean;
 }
 
 interface VersionRowProps {
   version: PromptVersion;
+  isLegacy: boolean;
   isSelected: boolean;
+  canDelete: boolean;
+  isDeleting: boolean;
+  deletePending: boolean;
   onSelect: (versionId: string) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
 }
 
-const VersionRow: React.FC<VersionRowProps> = ({ version, isSelected, onSelect }) => (
+const VersionRow: React.FC<VersionRowProps> = ({
+  version,
+  isLegacy,
+  isSelected,
+  canDelete,
+  isDeleting,
+  deletePending,
+  onSelect,
+  onRequestDelete,
+}) => (
   <div
     className={cn(
-      "w-full rounded-md border px-3 py-2 transition-colors",
-      "hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-ring",
+      "flex items-start gap-1 rounded-md border py-2 pl-3 pr-1 transition-colors",
+      "hover:bg-muted/40 focus-within:ring-2 focus-within:ring-ring",
       isSelected
         ? "bg-blue-50 border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/30"
         : "bg-card",
     )}
-    aria-pressed={isSelected}
-    role="button"
-    tabIndex={0}
-    onClick={() => onSelect(version.id)}
-    onKeyDown={(e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onSelect(version.id);
-      }
-    }}
   >
-    <div className="flex items-start justify-between gap-2">
-      <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium">v{version.version_number}</span>
-        <div className="text-xs text-muted-foreground truncate">
-          {version.label || formatFeedbackDate(version.created_at)}
+    <button
+      type="button"
+      className="min-w-0 flex-1 text-left focus:outline-none"
+      aria-pressed={isSelected}
+      onClick={() => onSelect(version.id)}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium">v{version.version_number}</span>
+          <div className="text-xs text-muted-foreground truncate">
+            {version.label || formatFeedbackDate(version.created_at)}
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground shrink-0">
+          {formatFeedbackDate(version.created_at)}
         </div>
       </div>
-      <div className="text-xs text-muted-foreground shrink-0">
-        {formatFeedbackDate(version.created_at)}
-      </div>
-    </div>
+    </button>
+
+    {canDelete && (
+      // Non-modal so the confirm dialog stays internal
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            aria-label={`Actions for ${isLegacy ? "legacy " : ""}v${version.version_number}`}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        {/* Above prompt editor (z-[1350]) */}
+        <DropdownMenuContent align="end" className="z-[1400]">
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            disabled={deletePending}
+            // Menu closes on select and would dismiss dialog in the same tick. Defer to next tick
+            onSelect={() =>
+              window.setTimeout(() => onRequestDelete({ version, isLegacy }), 0)
+            }
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            <span>{isDeleting ? "Deleting…" : "Delete"}</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )}
   </div>
 );
 
@@ -74,8 +140,13 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
   linkPending,
   linkError,
   status,
+  onDelete,
+  deletingVersionId,
+  deleteError,
 }) => {
   const [isLegacyOpen, setIsLegacyOpen] = useState(false);
+  // Captured at confirm; prevents retargeting to another row
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   if (status !== "ready") {
     // Unreadable history ≠ empty
@@ -89,8 +160,29 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
   const canLinkLegacyDataset =
     !!legacy?.gold_suite_id && !currentGoldSuiteId && canEditPrompt;
 
+  // One delete at a time; the id match only picks which row reports progress
+  const deletePending = deletingVersionId !== null;
+
+  const rowProps = (version: PromptVersion, isLegacy: boolean) => ({
+    version,
+    isLegacy,
+    isSelected: selectedVersionId === version.id,
+    canDelete: canEditPrompt,
+    isDeleting: deletingVersionId === version.id,
+    deletePending,
+    onSelect,
+    onRequestDelete: setDeleteTarget,
+  });
+
   return (
     <div className="space-y-3">
+      {deleteError && (
+        <div className="flex items-start gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+          <span>{deleteError}</span>
+        </div>
+      )}
+
       {versions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2 text-center">
           <History className="h-7 w-7" />
@@ -102,12 +194,7 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
       ) : (
         <div className="space-y-1 p-1">
           {versions.map((version) => (
-            <VersionRow
-              key={version.id}
-              version={version}
-              isSelected={selectedVersionId === version.id}
-              onSelect={onSelect}
-            />
+            <VersionRow key={version.id} {...rowProps(version, false)} />
           ))}
         </div>
       )}
@@ -134,12 +221,7 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
           {isLegacyOpen && (
             <div className="mt-2 space-y-1 p-1">
               {legacy.versions.map((version) => (
-                <VersionRow
-                  key={version.id}
-                  version={version}
-                  isSelected={selectedVersionId === version.id}
-                  onSelect={onSelect}
-                />
+                <VersionRow key={version.id} {...rowProps(version, true)} />
               ))}
               {canLinkLegacyDataset && (
                 <Button
@@ -164,6 +246,25 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
           )}
         </div>
       )}
+
+      <DeleteConfirmationDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="Delete version?"
+        description={
+          deleteTarget?.isLegacy
+          ? "This version is shared with the other nodes in this workflow. Deleting it removes it from all of them, and this can't be undone."
+          : "This version will no longer show in the history. This can't be undone."
+        }
+
+        onConfirm={() => {
+          if (deleteTarget)
+            onDelete(deleteTarget.version.id, deleteTarget.isLegacy);
+        }}
+        isDeleting={deletingVersionId === deleteTarget?.version.id}
+      />
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useId, useState } from "react";
-import { AlertCircle, Copy, Trash2, Undo2 } from "lucide-react";
+import { AlertCircle, Copy, Undo2 } from "lucide-react";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import {
@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import FieldChangeRow from "../diff/FieldChangeRow";
 import type { PromptVersion } from "@/interfaces/promptEditor.interface";
 import { formatFeedbackDate } from "@/helpers/utils";
@@ -39,11 +38,8 @@ interface VersionPreviewPanelProps {
   onApply: () => void;
   onUndo: () => void;
   onCopy: () => void;
-  onDelete: (versionId: string) => void;
   isCopying: boolean;
   copyError: string | null;
-  isDeleting: boolean;
-  deleteError: string | null;
 }
 
 export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
@@ -60,17 +56,11 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
   onApply,
   onUndo,
   onCopy,
-  onDelete,
   isCopying,
   copyError,
-  isDeleting,
-  deleteError,
 }) => {
   const compareId = useId();
   const [compareTargetId, setCompareTargetId] = useState(NO_TARGET);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  // Captured at confirm; prevents retargeting to another row
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const canCopyToHistory = isLegacy && canEdit && !nodeMissing && historyReady;
 
@@ -140,20 +130,12 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
         </div>
       )}
 
-      {(copyError || deleteError) && (
-        <div className="px-3 pb-2 space-y-2">
-          {[copyError, deleteError].map(
-            (message, index) =>
-              message && (
-                <div
-                  key={index}
-                  className="flex items-start gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1"
-                >
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
-                  <span>{message}</span>
-                </div>
-              ),
-          )}
+      {copyError && (
+        <div className="px-3 pb-2">
+          <div className="flex items-start gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+            <span>{copyError}</span>
+          </div>
         </div>
       )}
 
@@ -214,37 +196,7 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
             {isCopying ? "Copying…" : "Copy into this history"}
           </Button>
         )}
-        {canEdit && historyReady && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={() => {
-              setDeleteTargetId(version.id);
-              setIsDeleteDialogOpen(true);
-            }}
-            disabled={isDeleting}
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-2" />
-            {isDeleting ? "Deleting…" : "Delete"}
-          </Button>
-        )}
       </div>
-
-      <DeleteConfirmationDialog
-        open={isDeleteDialogOpen}
-        onOpenChange={(open) => {
-          setIsDeleteDialogOpen(open);
-          if (!open) setDeleteTargetId(null);
-        }}
-        title="Delete version?"
-        description="The version is hidden from this history."
-        onConfirm={() => {
-          if (deleteTargetId) onDelete(deleteTargetId);
-        }}
-        isDeleting={isDeleting}
-      />
     </div>
   );
 };
