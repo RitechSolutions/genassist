@@ -1,34 +1,90 @@
 import { describe, expect, it } from "vitest";
 import type { PromptVersion } from "@/interfaces/promptEditor.interface";
 import {
+  diffSides,
   draftUnchangedSince,
+  findPromptVersion,
   isCurrentDraft,
-  resolveSelectedVersion,
+  type HistoryEntry,
 } from "@/views/AIAgents/Workflows/utils/promptEditorHistory";
 
-const version = (id: string, content = "text"): PromptVersion =>
-  ({ id, content, version_number: 1 }) as PromptVersion;
+const version = (
+  id: string,
+  content = "text",
+  versionNumber = 1,
+): PromptVersion => ({ id, content, version_number: versionNumber }) as PromptVersion;
+
+const entry = (version: PromptVersion, isLegacy = false): HistoryEntry => ({
+  version,
+  isLegacy,
+});
 
 const OWN = [version("v2", "newest"), version("v1")];
 const LEGACY = [version("legacy-1")];
 
-describe("resolveSelectedVersion", () => {
+describe("findPromptVersion", () => {
   it("finds the selection in the node's own history", () => {
-    expect(resolveSelectedVersion(OWN, LEGACY, "v1")?.id).toBe("v1");
+    expect(findPromptVersion(OWN, LEGACY, "v1")).toEqual({
+      version: OWN[1],
+      isLegacy: false,
+    });
   });
 
   it("finds the selection in the legacy history", () => {
-    expect(resolveSelectedVersion(OWN, LEGACY, "legacy-1")?.id).toBe("legacy-1");
+    expect(findPromptVersion(OWN, LEGACY, "legacy-1")).toEqual({
+      version: LEGACY[0],
+      isLegacy: true,
+    });
   });
 
-  it("falls back to the newest row when the selection is gone", () => {
-    expect(resolveSelectedVersion(OWN, LEGACY, "deleted")?.id).toBe("v2");
-    expect(resolveSelectedVersion(OWN, LEGACY, null)?.id).toBe("v2");
+  it("resolves to nothing when the selection is gone or absent", () => {
+    expect(findPromptVersion(OWN, LEGACY, "deleted")).toBeNull();
+    expect(findPromptVersion(OWN, LEGACY, null)).toBeNull();
+    expect(findPromptVersion([], [], "v1")).toBeNull();
+  });
+});
+
+describe("diffSides", () => {
+  const DRAFT = "draft text";
+  const ownV2 = entry(version("o2", "own two", 2));
+  const ownV3 = entry(version("o3", "own three", 3));
+  const ownV5 = entry(version("o5", "own five", 5));
+  const legacyV1 = entry(version("l1", "legacy one", 1), true);
+  const legacyV2 = entry(version("l2", "legacy two", 2), true);
+
+  const bothDirections = (a: HistoryEntry, b: HistoryEntry) => [
+    diffSides(a, b, DRAFT),
+    diffSides(b, a, DRAFT),
+  ];
+
+  it("treats legacy rows as older than the node's own history", () => {
+    for (const sides of bothDirections(ownV3, legacyV1)) {
+      expect(sides).toEqual({
+        before: "legacy one",
+        after: "own three",
+        label: "v1 · Legacy → v3",
+      });
+    }
   });
 
-  it("resolves to nothing when the node has no versions", () => {
-    expect(resolveSelectedVersion([], [], null)).toBeNull();
-    expect(resolveSelectedVersion([], LEGACY, "missing")).toBeNull();
+  it("orders rows of one history by version number", () => {
+    for (const sides of bothDirections(ownV2, ownV5)) {
+      expect(sides.label).toBe("v2 → v5");
+    }
+    for (const sides of bothDirections(legacyV1, legacyV2)) {
+      expect(sides.label).toBe("v1 · Legacy → v2 · Legacy");
+    }
+  });
+
+  it("puts the draft on the newer side", () => {
+    expect(diffSides(ownV3, "draft", DRAFT)).toEqual({
+      before: "own three",
+      after: DRAFT,
+      label: "v3 → Current draft",
+    });
+    expect(diffSides(legacyV1, "draft", DRAFT).label).toBe(
+      "v1 · Legacy → Current draft",
+    );
   });
 });
 

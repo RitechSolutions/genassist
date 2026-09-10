@@ -38,7 +38,7 @@ const VersionRow: React.FC<VersionRowProps> = ({ version, isSelected, onSelect }
         ? "bg-blue-50 border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/30"
         : "bg-card",
     )}
-    aria-current={isSelected ? "true" : "false"}
+    aria-pressed={isSelected}
     role="button"
     tabIndex={0}
     onClick={() => onSelect(version.id)}
