@@ -2,9 +2,9 @@
 FAISS vector database implementation
 """
 
+import json
 import logging
 import os
-import pickle
 from typing import List, Dict, Any
 import numpy as np
 
@@ -106,9 +106,11 @@ class FaissVectorDB(BaseVectorDB):
             # Delete persisted files
             if self.config.persist_directory:
                 index_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}.index")
-                metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.pkl")
-                
-                for file_path in [index_file, metadata_file]:
+                metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.json")
+                # Also remove legacy pickle metadata if present.
+                legacy_metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.pkl")
+
+                for file_path in [index_file, metadata_file, legacy_metadata_file]:
                     if os.path.exists(file_path):
                         os.remove(file_path)
             
@@ -384,17 +386,18 @@ class FaissVectorDB(BaseVectorDB):
         index_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}.index")
         self.faiss.write_index(self.index, index_file)
         
-        # Save metadata
-        metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.pkl")
+        # Save metadata as JSON (not pickle) to avoid code execution on load (CWE-502).
+        # id_map's integer keys become strings in JSON and are restored on load.
+        metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.json")
         metadata = {
-            "id_map": self.id_map,
+            "id_map": {str(k): v for k, v in self.id_map.items()},
             "metadata_map": self.metadata_map,
             "content_map": self.content_map,
             "next_id": self.next_id,
             "dimension": self.dimension
         }
-        with open(metadata_file, "wb") as f:
-            pickle.dump(metadata, f)
+        with open(metadata_file, "w", encoding="utf-8") as f:
+            json.dump(metadata, f)
     
     def _load_index(self):
         """Load the index and metadata from disk"""
@@ -402,18 +405,19 @@ class FaissVectorDB(BaseVectorDB):
             return
         
         index_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}.index")
-        metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.pkl")
-        
+        metadata_file = os.path.join(self.config.persist_directory, f"{self.config.collection_name}_metadata.json")
+
         if os.path.exists(index_file) and os.path.exists(metadata_file):
             try:
                 # Load FAISS index
                 self.index = self.faiss.read_index(index_file)
-                
-                # Load metadata
-                with open(metadata_file, "rb") as f:
-                    metadata = pickle.load(f)
-                
-                self.id_map = metadata["id_map"]
+
+                # Load metadata from JSON (see _save_index).
+                with open(metadata_file, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+
+                # Restore id_map's integer keys (JSON stores them as strings).
+                self.id_map = {int(k): v for k, v in metadata["id_map"].items()}
                 self.metadata_map = metadata["metadata_map"]
                 self.content_map = metadata["content_map"]
                 self.next_id = metadata["next_id"]
