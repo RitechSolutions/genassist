@@ -42,6 +42,7 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       onChange,
       onMouseUp,
       onKeyDown,
+      onKeyUp,
       ...props
     },
     ref
@@ -120,8 +121,9 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         createVariableKeyUpHandler<HTMLTextAreaElement>({
           useOverlay,
           value,
+          onKeyUp,
         }),
-      [useOverlay, value]
+      [useOverlay, value, onKeyUp]
     )
 
     const handleMouseUp = React.useMemo(
