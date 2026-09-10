@@ -23,10 +23,13 @@ export const getPromptHistory = (
   workflowId: string,
   nodeId: string,
   promptField: string,
+  /** Lets the read stay useful for a node the saved graph no longer has */
+  nodeType?: string,
 ) =>
   apiRequest<PromptHistory>(
     "GET",
-    `${BASE}/history/${contextPath(workflowId, nodeId, promptField)}`,
+    `${BASE}/history/${contextPath(workflowId, nodeId, promptField)}` +
+      (nodeType ? `?node_type=${encodeURIComponent(nodeType)}` : ""),
   );
 
 // ---- Versions ---------------------------------------------------------------

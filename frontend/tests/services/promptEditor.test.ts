@@ -40,6 +40,22 @@ describe("getPromptHistory", () => {
     expect(mockApiRequest).toHaveBeenCalledWith("GET", `${BASE}/history/${CTX}`);
     expect(result).toEqual(history);
   });
+
+  it("appends the node type hint, encoded, only when one is given", async () => {
+    mockApiRequest.mockResolvedValue({} as never);
+
+    await getPromptHistory(WF, NODE, FIELD, "agent/Node");
+    expect(mockApiRequest).toHaveBeenLastCalledWith(
+      "GET",
+      `${BASE}/history/${CTX}?node_type=agent%2FNode`,
+    );
+
+    await getPromptHistory(WF, NODE, FIELD, "");
+    expect(mockApiRequest).toHaveBeenLastCalledWith(
+      "GET",
+      `${BASE}/history/${CTX}`,
+    );
+  });
 });
 
 describe("createPromptVersion", () => {

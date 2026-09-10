@@ -1,7 +1,7 @@
 from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Depends, Path, Query, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -25,6 +25,8 @@ router = APIRouter()
 # database error the caller cannot read
 NodeIdPath = Annotated[str, Path(max_length=100)]
 PromptFieldPath = Annotated[str, Path(max_length=50)]
+# Hint for nodes missing from saved graph; stored type is authoritative
+NodeTypeQuery = Annotated[str | None, Query(max_length=100)]
 
 
 # ---- Versions ----------------------------------------------------------------
@@ -39,9 +41,10 @@ async def get_history(
     workflow_id: UUID,
     node_id: NodeIdPath,
     prompt_field: PromptFieldPath,
+    node_type: NodeTypeQuery = None,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.get_history(workflow_id, node_id, prompt_field)
+    return await service.get_history(workflow_id, node_id, prompt_field, node_type)
 
 
 @router.get(

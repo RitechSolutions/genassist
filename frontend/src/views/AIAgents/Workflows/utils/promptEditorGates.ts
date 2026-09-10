@@ -20,7 +20,26 @@ export interface CasesState {
   count: number;
 }
 
+/** Run inputs formatted to match gate checks */
+export interface RunInputs {
+  content: string;
+  /** Content name in blocking reason ("prompt" or "suggested prompt") */
+  contentNoun: string;
+  providerStatus: "pending" | "error" | "ready";
+  /** Empty when nothing is selected or the selection is no longer active */
+  providerId: string;
+}
+
+export interface EvalInputs extends RunInputs {
+  techniqueCount: number;
+}
+
 export const MAX_PROMPT_LENGTH = 200_000;
+
+/** Shared with the dialog banner, which reports the same failures */
+export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
+export const HISTORY_FORBIDDEN_REASON =
+  "You don't have permission to view prompt history.";
 
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
@@ -37,21 +56,34 @@ const contextGate = (
 ): Gate | null => {
   if (!hasCapability) return blocked(missingCapabilityReason);
   if (history.status === "pending") return blocked("Loading prompt history…");
-  if (history.status === "forbidden")
-    return blocked("You don't have permission to view prompt history.");
-  if (history.status === "error")
-    return blocked("Prompt history could not be loaded.");
+  if (history.status === "forbidden") return blocked(HISTORY_FORBIDDEN_REASON);
+  if (history.status === "error") return blocked(HISTORY_ERROR_REASON);
   if (history.nodeMissing) return blocked(NODE_MISSING_REASON);
   return null;
 };
 
-/** POST body bounds prevent invalid requests */
-const contentGate = (content: string, noun: string): Gate | null => {
-  if (!content.trim()) return blocked(`The ${noun} is empty.`);
+const blankGate = (content: string, noun: string): Gate | null =>
+  content.trim() ? null : blocked(`The ${noun} is empty.`);
+
+/** POST body bounds prevent invalid requests. Version writes only — the
+ *  evaluate and optimize endpoints set no maximum */
+const versionBodyGate = (content: string, noun: string): Gate | null => {
+  const blank = blankGate(content, noun);
+  if (blank) return blank;
   if (content.length > MAX_PROMPT_LENGTH)
     return blocked(
       `The ${noun} is longer than ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`,
     );
+  return null;
+};
+
+/** A run needs a provider the user can actually see selected */
+const providerGate = (run: RunInputs): Gate | null => {
+  if (run.providerStatus === "pending")
+    return blocked("Loading LLM providers…");
+  if (run.providerStatus === "error")
+    return blocked("LLM providers could not be loaded.");
+  if (!run.providerId) return blocked("Select an LLM provider.");
   return null;
 };
 
@@ -75,13 +107,14 @@ export const saveGate = (
     "Saving versions needs the update:evaluation permission.",
   );
   if (context) return context;
-  return contentGate(draft, "prompt") ?? OPEN;
+  return versionBodyGate(draft, "prompt") ?? OPEN;
 };
 
 export const evaluateGate = (
   history: HistoryState,
   cases: CasesState,
   caps: PromptEditorCapabilities,
+  run: EvalInputs,
 ): Gate => {
   const context = contextGate(
     history,
@@ -96,12 +129,17 @@ export const evaluateGate = (
   if (cases.status === "pending") return blocked("Loading cases…");
   if (cases.status === "success" && cases.count === 0)
     return blocked("The gold dataset has no cases yet.");
-  return OPEN;
+  const provider = providerGate(run);
+  if (provider) return provider;
+  if (run.techniqueCount === 0)
+    return blocked("Select at least one matching technique.");
+  return blankGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 export const optimizeGate = (
   history: HistoryState,
   caps: PromptEditorCapabilities,
+  run: RunInputs,
 ): Gate => {
   const context = contextGate(
     history,
@@ -109,7 +147,9 @@ export const optimizeGate = (
     "Optimizing needs the update:evaluation permission.",
   );
   if (context) return context;
-  return inlineCheckGate(history) ?? OPEN;
+  const inline = inlineCheckGate(history);
+  if (inline) return inline;
+  return providerGate(run) ?? blankGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 /**
@@ -129,5 +169,5 @@ export const acceptGate = (
   );
   if (context) return context;
   if (pending) return blocked("A save is already running.");
-  return contentGate(suggestion, "suggested prompt") ?? OPEN;
+  return versionBodyGate(suggestion, "suggested prompt") ?? OPEN;
 };

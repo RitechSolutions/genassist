@@ -6,6 +6,7 @@ import {
   optimizeGate,
   saveGate,
   type CasesState,
+  type EvalInputs,
   type HistoryState,
 } from "@/views/AIAgents/Workflows/utils/promptEditorGates";
 
@@ -27,17 +28,26 @@ const cases = (overrides: Partial<CasesState> = {}): CasesState => ({
   ...overrides,
 });
 
+const run = (overrides: Partial<EvalInputs> = {}): EvalInputs => ({
+  content: "draft",
+  contentNoun: "prompt",
+  providerStatus: "ready",
+  providerId: "provider-1",
+  techniqueCount: 1,
+  ...overrides,
+});
+
 const GATES = [
   { name: "save", run: (h: HistoryState) => saveGate(h, ADMIN, "draft") },
-  { name: "evaluate", run: (h: HistoryState) => evaluateGate(h, cases(), ADMIN) },
-  { name: "optimize", run: (h: HistoryState) => optimizeGate(h, ADMIN) },
+  { name: "evaluate", run: (h: HistoryState) => evaluateGate(h, cases(), ADMIN, run()) },
+  { name: "optimize", run: (h: HistoryState) => optimizeGate(h, ADMIN, run()) },
   { name: "accept", run: (h: HistoryState) => acceptGate(h, ADMIN, false, "suggested") },
 ];
 
 const WITHOUT_CAPABILITY = [
   { name: "save", gate: saveGate(ready(), NONE, "draft") },
-  { name: "evaluate", gate: evaluateGate(ready(), cases(), NONE) },
-  { name: "optimize", gate: optimizeGate(ready(), NONE) },
+  { name: "evaluate", gate: evaluateGate(ready(), cases(), NONE, run()) },
+  { name: "optimize", gate: optimizeGate(ready(), NONE, run()) },
   { name: "accept", gate: acceptGate(ready(), NONE, false, "suggested") },
 ];
 
@@ -81,11 +91,11 @@ describe("unsupported inline check", () => {
   });
 
   it("blocks evaluate and optimize with the field's own reason", () => {
-    expect(evaluateGate(unsupported, cases(), ADMIN)).toEqual({
+    expect(evaluateGate(unsupported, cases(), ADMIN, run())).toEqual({
       enabled: false,
       reason: "Not run as a system prompt.",
     });
-    expect(optimizeGate(unsupported, ADMIN)).toEqual({
+    expect(optimizeGate(unsupported, ADMIN, run())).toEqual({
       enabled: false,
       reason: "Not run as a system prompt.",
     });
@@ -110,7 +120,7 @@ describe("saveGate", () => {
 
 describe("evaluateGate", () => {
   it("needs a linked gold dataset", () => {
-    const gate = evaluateGate(ready({ goldSuiteId: null }), cases(), ADMIN);
+    const gate = evaluateGate(ready({ goldSuiteId: null }), cases(), ADMIN, run());
 
     expect(gate.enabled).toBe(false);
     expect(gate.reason).toMatch(/gold dataset/i);
@@ -118,15 +128,15 @@ describe("evaluateGate", () => {
 
   it("blocks an empty dataset and allows a populated one", () => {
     expect(
-      evaluateGate(ready(), cases({ status: "success", count: 0 }), ADMIN).enabled,
+      evaluateGate(ready(), cases({ status: "success", count: 0 }), ADMIN, run()).enabled,
     ).toBe(false);
     expect(
-      evaluateGate(ready(), cases({ status: "success", count: 3 }), ADMIN).enabled,
+      evaluateGate(ready(), cases({ status: "success", count: 3 }), ADMIN, run()).enabled,
     ).toBe(true);
   });
 
   it("waits while the cases are loading", () => {
-    const gate = evaluateGate(ready(), cases({ status: "pending", count: 0 }), ADMIN);
+    const gate = evaluateGate(ready(), cases({ status: "pending", count: 0 }), ADMIN, run());
 
     expect(gate.enabled).toBe(false);
     expect(gate.reason).toMatch(/Loading cases/);
@@ -135,11 +145,60 @@ describe("evaluateGate", () => {
   it.each(["idle", "error", "forbidden"] as const)(
     "leaves the decision to the server when the cases are %s",
     (status) => {
-      expect(evaluateGate(ready(), cases({ status, count: 0 }), ADMIN).enabled).toBe(
+      expect(evaluateGate(ready(), cases({ status, count: 0 }), ADMIN, run()).enabled).toBe(
         true,
       );
     },
   );
+});
+
+describe("run inputs", () => {
+  const evaluate = (overrides: Partial<EvalInputs>) =>
+    evaluateGate(ready(), cases(), ADMIN, run(overrides));
+
+  it("waits for the provider list and reports a failed load", () => {
+    expect(evaluate({ providerStatus: "pending", providerId: "" }).reason).toMatch(
+      /Loading LLM providers/,
+    );
+    expect(evaluate({ providerStatus: "error", providerId: "" }).reason).toMatch(
+      /could not be loaded/,
+    );
+  });
+
+  it("blocks a provider that is no longer active", () => {
+    const gate = evaluate({ providerId: "" });
+
+    expect(gate.enabled).toBe(false);
+    expect(gate.reason).toMatch(/Select an LLM provider/);
+  });
+
+  it("blocks evaluation without a technique", () => {
+    expect(evaluate({ techniqueCount: 0 }).reason).toMatch(/technique/);
+  });
+
+  it("names the content it blocks on", () => {
+    expect(evaluate({ content: "  " }).reason).toBe("The prompt is empty.");
+    expect(
+      evaluate({ content: "  ", contentNoun: "suggested prompt" }).reason,
+    ).toBe("The suggested prompt is empty.");
+  });
+
+  it("leaves the version-body length limit to save and accept", () => {
+    const long = "x".repeat(200_001);
+
+    expect(evaluate({ content: long }).enabled).toBe(true);
+    expect(optimizeGate(ready(), ADMIN, run({ content: long })).enabled).toBe(
+      true,
+    );
+    expect(saveGate(ready(), ADMIN, long).enabled).toBe(false);
+    expect(acceptGate(ready(), ADMIN, false, long).enabled).toBe(false);
+  });
+
+  it("does not ask optimize for techniques", () => {
+    expect(
+      optimizeGate(ready(), ADMIN, run({ techniqueCount: 0 })).enabled,
+    ).toBe(true);
+  });
 });
 
 describe("acceptGate", () => {

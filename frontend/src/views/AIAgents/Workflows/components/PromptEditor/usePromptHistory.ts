@@ -15,10 +15,12 @@ export const usePromptHistory = (
   workflowId: string,
   nodeId: string,
   promptField: string,
+  nodeType?: string,
 ) => {
   const query = useQuery({
-    queryKey: promptHistoryKey(workflowId, nodeId, promptField),
-    queryFn: () => getPromptHistory(workflowId, nodeId, promptField),
+    // nodeType last so promptHistoryKey stays a usable prefix
+    queryKey: [...promptHistoryKey(workflowId, nodeId, promptField), nodeType ?? null],
+    queryFn: () => getPromptHistory(workflowId, nodeId, promptField, nodeType),
     // node_missing and dataset links change between opens (workflow saves, relinks).
     // Cached data is first-paint only.
     staleTime: 0,
