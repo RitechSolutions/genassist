@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import { Button } from "@/components/button";
@@ -208,8 +209,9 @@ export function FallbackChainDialog({
             </FormField>
 
             <FormField id="chain-description" label="Description">
-              <Input
+              <Textarea
                 id="chain-description"
+                size="description"
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="Optional"

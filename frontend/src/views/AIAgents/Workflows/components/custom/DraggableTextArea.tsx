@@ -7,17 +7,17 @@ import {
 } from "@/helpers/variable-input/variableDragDrop";
 import { insertReferenceAt } from "@/helpers/variable-input/variableReference";
 import { RichTextarea } from "@/components/richTextarea";
+import type { TextareaSizingProps } from "@/components/ui/textarea-sizing";
 import { useVariableAutocomplete } from "../../hooks/useVariableAutocomplete";
 import { VariablePickerButton } from "./VariablePickerButton";
 
-interface DraggableTextAreaProps {
+interface DraggableTextAreaProps extends TextareaSizingProps {
   id?: string;
   label?: string;
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   className?: string;
-  rows?: number;
 }
 
 /**
@@ -32,7 +32,8 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
   onChange,
   placeholder,
   className,
-  rows = 4,
+  size,
+  rows,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -102,6 +103,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           id={id}
           value={value}
           placeholder={placeholder}
+          size={size}
           rows={rows}
           className={cn("w-full pr-10", className)}
           {...fieldProps}

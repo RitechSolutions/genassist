@@ -22,16 +22,22 @@ class LlmAnalystService:
             raise AppException(error_key=ErrorKey.LLM_PROVIDER_NOT_FOUND, status_code=404)
         
         llm_analyst =  await self.repository.create(data)
-        model = await self.repository.get_by_id(llm_analyst.id)
+        model = await self.repository.get_by_id(llm_analyst.id, include_inactive=True)
         return model
 
-    async def get_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True) -> LlmAnalyst:
-        obj = await self._read_by_id(llm_analyst_id, throw_not_found=throw_not_found)
+    async def get_by_id(self, llm_analyst_id: UUID, include_inactive: bool = False,
+                        throw_not_found: bool = True) -> LlmAnalyst:
+        obj = await self._read_by_id(llm_analyst_id, include_inactive=include_inactive,
+                                     throw_not_found=throw_not_found)
         return obj
 
-    async def _read_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True) -> LlmAnalyst:
-        obj = await self.repository.get_by_id(llm_analyst_id)
+    async def _read_by_id(self, llm_analyst_id: UUID, include_inactive: bool = False,
+                          throw_not_found: bool = True) -> LlmAnalyst:
+        obj = await self.repository.get_by_id(llm_analyst_id, include_inactive=include_inactive)
         if not obj and throw_not_found:
+            if not include_inactive and await self.repository.get_by_id(llm_analyst_id,
+                                                                        include_inactive=True):
+                raise AppException(error_key=ErrorKey.LLM_ANALYST_INACTIVE, status_code=409)
             raise AppException(error_key=ErrorKey.LLM_ANALYST_NOT_FOUND, status_code=404)
         return obj
 
@@ -40,13 +46,13 @@ class LlmAnalystService:
         return models
 
     async def update(self, llm_analyst_id: UUID, data: LlmAnalystUpdate):
-        obj = await self._read_by_id(llm_analyst_id)
+        obj = await self._read_by_id(llm_analyst_id, include_inactive=True)
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(obj, field, value)
         model = await self.repository.update(obj)
         return model
 
     async def delete(self, llm_analyst_id: UUID):
-        obj = await self._read_by_id(llm_analyst_id)
+        obj = await self._read_by_id(llm_analyst_id, include_inactive=True)
         await self.repository.delete(obj)
         return {"message": f"LlmAnalyst with ID {llm_analyst_id} has been deleted."}

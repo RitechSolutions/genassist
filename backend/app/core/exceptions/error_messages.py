@@ -74,6 +74,7 @@ class ErrorKey(Enum):
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
+    LLM_ANALYST_INACTIVE = "LLM_ANALYST_INACTIVE"
     FALLBACK_CHAIN_NOT_FOUND = "FALLBACK_CHAIN_NOT_FOUND"
     FALLBACK_CHAIN_INVALID_PROVIDER = "FALLBACK_CHAIN_INVALID_PROVIDER"
     LLM_PROVIDER_IN_USE_BY_CHAIN = "LLM_PROVIDER_IN_USE_BY_CHAIN"
@@ -251,6 +252,7 @@ ERROR_MESSAGES = {
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
+        ErrorKey.LLM_ANALYST_INACTIVE: "LLM Analyst is inactive.",
         ErrorKey.FALLBACK_CHAIN_NOT_FOUND: "Fallback chain not found.",
         ErrorKey.FALLBACK_CHAIN_INVALID_PROVIDER: "Fallback chain references an LLM provider that does not exist.",
         ErrorKey.LLM_PROVIDER_IN_USE_BY_CHAIN: "This LLM provider is used by one or more fallback chains. Remove it from those chains before deleting.",
