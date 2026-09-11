@@ -468,6 +468,7 @@ export interface TrainModelNodeData extends BaseNodeData {
   splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
   scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
+  taskType?: "auto" | "classification" | "regression"; // Override for the classification/regression heuristic (default: "auto")
 }
 
 // Per Chat RAG Node Data

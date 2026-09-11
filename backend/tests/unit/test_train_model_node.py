@@ -45,6 +45,40 @@ class TestHasSignificantOutliers:
         assert node._has_significant_outliers(X_train, ["a"]) is True
 
 
+class TestIsClassificationTask:
+    def test_logistic_regression_is_always_classification(self, node):
+        y = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+        assert node._is_classification_task(y, "logistic_regression", "regression") is True
+
+    def test_linear_regression_is_always_regression(self, node):
+        y = pd.Series(["a", "b", "a", "b"])
+        assert node._is_classification_task(y, "linear_regression", "classification") is False
+
+    def test_explicit_classification_override_wins_over_continuous_target(self, node):
+        y = pd.Series([1.1, 2.2, 3.3, 4.4, 5.5])
+        assert node._is_classification_task(y, "xgboost", "classification") is True
+
+    def test_explicit_regression_override_wins_over_low_cardinality_int_target(self, node):
+        y = pd.Series([1, 2, 1, 2, 1])
+        assert node._is_classification_task(y, "random_forest", "regression") is False
+
+    def test_auto_infers_classification_for_low_cardinality_int_target(self, node):
+        y = pd.Series([1, 2, 1, 2, 1])
+        assert node._is_classification_task(y, "random_forest", "auto") is True
+
+    def test_auto_infers_classification_for_string_target(self, node):
+        y = pd.Series(["a", "b", "a", "b"])
+        assert node._is_classification_task(y, "neural_network", "auto") is True
+
+    def test_auto_infers_regression_for_continuous_target(self, node):
+        y = pd.Series([1.1, 2.2, 3.3, 4.4, 5.5])
+        assert node._is_classification_task(y, "neural_network", "auto") is False
+
+    def test_defaults_to_auto_when_task_type_not_passed(self, node):
+        y = pd.Series([1.1, 2.2, 3.3, 4.4, 5.5])
+        assert node._is_classification_task(y, "neural_network") is False
+
+
 class TestFitScaler:
     @pytest.mark.parametrize(
         "method,expected_class",

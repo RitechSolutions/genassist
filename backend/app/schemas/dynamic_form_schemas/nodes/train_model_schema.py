@@ -42,6 +42,18 @@ TRAIN_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         required=True
     ),
     FieldSchema(
+        name="taskType",
+        type="select",
+        label="Task Type",
+        required=False,
+        default="auto",
+        options=[
+            {"label": "Auto-detect", "value": "auto"},
+            {"label": "Classification", "value": "classification"},
+            {"label": "Regression", "value": "regression"},
+        ]
+    ),
+    FieldSchema(
         name="featureColumns",
         type="tags",
         label="Feature Columns",

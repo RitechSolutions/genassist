@@ -78,6 +78,13 @@ class TrainModelNode(BaseNode):
                             "auto"). "auto" picks "none" for tree-based model types and
                             otherwise "robust" or "standard" depending on outliers in the
                             training data.
+                - taskType: "auto" (default), "classification", or "regression". "auto"
+                            infers the task from the target column's dtype/cardinality.
+                            An explicit value overrides that inference for model types
+                            that support both (e.g. xgboost, random_forest,
+                            neural_network); it's rejected if it conflicts with a model
+                            type that only supports one task (linear_regression,
+                            logistic_regression).
 
         Returns:
             Dictionary with training results and model file path
@@ -94,6 +101,7 @@ class TrainModelNode(BaseNode):
             split_method = config.get("splitMethod", "random")
             date_column = config.get("dateColumn")
             scaling_method = config.get("scalingMethod", "auto").lower()
+            task_type = config.get("taskType", "auto").lower()
 
             # Validate required parameters
             if not name:
@@ -145,6 +153,23 @@ class TrainModelNode(BaseNode):
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail=f"Invalid scalingMethod: {scaling_method}. Must be one of: {', '.join(valid_scaling_methods)}",
+                )
+
+            valid_task_types = ["auto", "classification", "regression"]
+            if task_type not in valid_task_types:
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=f"Invalid taskType: {task_type}. Must be one of: {', '.join(valid_task_types)}",
+                )
+            if model_type == "linear_regression" and task_type == "classification":
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail="taskType 'classification' is incompatible with modelType 'linear_regression', which only supports regression",
+                )
+            if model_type == "logistic_regression" and task_type == "regression":
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail="taskType 'regression' is incompatible with modelType 'logistic_regression', which only supports classification",
                 )
 
             # Check if XGBoost is available when needed
@@ -212,8 +237,9 @@ class TrainModelNode(BaseNode):
                 X = X[mask]
                 y = y[mask]
 
-            # Determine if classification or regression based on target
-            is_classification = self._is_classification_task(y, model_type)
+            # Determine if classification or regression, honoring an explicit
+            # user override before falling back to inference from the target.
+            is_classification = self._is_classification_task(y, model_type, task_type)
 
             # Split BEFORE fitting any preprocessing (imputation medians/modes,
             # one-hot categories) — fitting those on the full dataset would leak
@@ -396,24 +422,34 @@ class TrainModelNode(BaseNode):
                 error_detail=f"Train model processing failed: {str(e)}",
             ) from e
 
-    def _is_classification_task(self, y: pd.Series, model_type: str) -> bool:
+    def _is_classification_task(self, y: pd.Series, model_type: str, task_type: str = "auto") -> bool:
         """
         Determine if this is a classification or regression task.
 
         Args:
             y: Target variable series
             model_type: Type of model
+            task_type: User-selected override - "auto", "classification", or
+                       "regression". Ignored for model types that only support
+                       one task (validated against those before this is called).
 
         Returns:
             True if classification, False if regression
         """
-        # Some models are inherently classification or regression
+        # Some models are inherently classification or regression, regardless
+        # of task_type (a conflicting override is rejected earlier in process()).
         if model_type == "logistic_regression":
             return True
         if model_type == "linear_regression":
             return False
 
-        # For others, infer from target variable
+        # An explicit user selection takes priority over inference.
+        if task_type == "classification":
+            return True
+        if task_type == "regression":
+            return False
+
+        # "auto": infer from target variable
         # If target is integer with few unique values, likely classification
         if y.dtype in ['int64', 'int32'] and y.nunique() <= 20:
             return True
