@@ -5,11 +5,11 @@ This directory contains nodes related to machine learning training workflows.
 ## Available Training Nodes
 
 ### 1. TrainDataSource Node
-Fetches training data from databases or CSV files.
+Fetches training data from databases or uploaded files.
 
 **Features:**
 - **Data Source Method**: Query TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB
-- **CSV Upload Method**: Upload CSV files directly to server
+- **File Upload Method**: Upload CSV, Excel (.xlsx), JSON, or Parquet files directly to server
 - **Variable Substitution**: Use `{{variable}}` syntax in SQL queries
 - **File Management**: Server-side file storage and validation
 
@@ -17,7 +17,7 @@ Fetches training data from databases or CSV files.
 - `sourceType`: "datasource" or "csv"
 - `dataSourceId`: Database connection ID
 - `query`: SQL query with variable support
-- `csvFilePath`: Server path to uploaded CSV file
+- `csvFilePath`: Server path to the uploaded file
 
 ### 2. PreprocessingNode
 Transforms and cleans training data using Python.

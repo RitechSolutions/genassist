@@ -38,6 +38,10 @@ class MLModelsService:
         db_ml_model = await self.repository.get_by_id(ml_model_id)
         return db_ml_model
 
+    async def get_by_name(self, name: str) -> Optional[MLModel]:
+        """Get ML model by name, or None if no such model exists."""
+        return await self.repository.get_by_name(name)
+
     async def get_all(self):
         """Get all ML models."""
         db_ml_models = await self.repository.get_all()

@@ -4216,7 +4216,7 @@
           "Dashboard"
         ],
         "summary": "Get dashboard summary statistics",
-        "description": "Returns summary statistics: active agents count, workflow runs, and average response time.",
+        "description": "Returns summary statistics: active agents count, conversations with agent activity, and average response time.",
         "operationId": "get_summary_stats_api_dashboard_summary_get",
         "security": [
           {
@@ -4232,14 +4232,70 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "maximum": 365,
-              "minimum": 1,
-              "description": "Number of days to look back",
-              "default": 30,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 365,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Number of days to look back, defaults to 30 when no other range is supplied",
               "title": "Days"
             },
-            "description": "Number of days to look back"
+            "description": "Number of days to look back, defaults to 30 when no other range is supplied"
+          },
+          {
+            "name": "from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start of an exact range, requires to_datetime and a timezone offset",
+              "title": "From Datetime"
+            },
+            "description": "Inclusive start of an exact range, requires to_datetime and a timezone offset"
+          },
+          {
+            "name": "to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive end of an exact range, requires from_datetime and a timezone offset",
+              "title": "To Datetime"
+            },
+            "description": "Exclusive end of an exact range, requires from_datetime and a timezone offset"
+          },
+          {
+            "name": "all_time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Drop all date filtering, cannot be combined with days or an exact boundary",
+              "default": false,
+              "title": "All Time"
+            },
+            "description": "Drop all date filtering, cannot be combined with days or an exact boundary"
           }
         ],
         "responses": {
@@ -5284,6 +5340,88 @@
         ]
       }
     },
+    "/api/operators/list": {
+      "get": {
+        "tags": [
+          "v1",
+          "Operators"
+        ],
+        "summary": "Get List",
+        "description": "Paginated operator list ordered by positive sentiment, then score",
+        "operationId": "get_list_api_operators_list_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_OperatorListItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/operators/{operator_id}": {
       "get": {
         "tags": [
@@ -6257,6 +6395,69 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/InProgressPollResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/in-progress/mark-read/{conversation_id}": {
+      "patch": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Mark Read",
+        "description": "Mark the conversation read up to a message sequence for the calling party.\n\nThe reader role (customer vs supervisor) is derived from the authenticated\nprincipal, never trusted from the client. Advances a monotonic per-reader\nhigh-water mark (clamped to the newest message) and broadcasts a ``read``\nevent to the conversation room and the dashboard so the other party's live\nclient can render Seen receipts.",
+        "operationId": "mark_read_api_conversations_in_progress_mark_read__conversation_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationReadMarker"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationReadReceiptState"
                 }
               }
             }
@@ -8333,7 +8534,7 @@
         ],
         "parameters": [
           {
-            "name": "x-tenant-id",
+            "name": "X-Tenant-Id",
             "in": "header",
             "required": false,
             "schema": {
@@ -9578,12 +9779,70 @@
         ],
         "summary": "Export Cost Rates Csv",
         "operationId": "export_cost_rates_csv_api_llm_cost_rates_export_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_cache_rates",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Add the cache rate columns. Off keeps the 4-column layout older tools expect.",
+              "default": false,
+              "title": "Include Cache Rates"
+            },
+            "description": "Add the cache rate columns. Off keeps the 4-column layout older tools expect."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm-model-catalog": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmModelCatalog"
+        ],
+        "summary": "List Models",
+        "operationId": "list_models_api_llm_model_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmModelCatalogRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Models Api Llm Model Catalog Get"
+                }
               }
             }
           }
@@ -9596,6 +9855,194 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "LlmModelCatalog"
+        ],
+        "summary": "Create Model",
+        "operationId": "create_model_api_llm_model_catalog_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmModelCatalogCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmModelCatalogRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-model-catalog/providers": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmModelCatalog"
+        ],
+        "summary": "List Providers",
+        "description": "Provider types that can be extended, with the models already built in.",
+        "operationId": "list_providers_api_llm_model_catalog_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmModelCatalogProvider"
+                  },
+                  "type": "array",
+                  "title": "Response List Providers Api Llm Model Catalog Providers Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-model-catalog/{entry_id}": {
+      "put": {
+        "tags": [
+          "v1",
+          "LlmModelCatalog"
+        ],
+        "summary": "Update Model",
+        "operationId": "update_model_api_llm_model_catalog__entry_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmModelCatalogUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmModelCatalogRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "LlmModelCatalog"
+        ],
+        "summary": "Delete Model",
+        "operationId": "delete_model_api_llm_model_catalog__entry_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/llm-analyst/available-enrichments": {
@@ -11822,7 +12269,7 @@
           "Workflows"
         ],
         "summary": "Get Workflows Minimal",
-        "description": "Get a lightweight list of all workflows (id, name, version only).",
+        "description": "Lightweight list of the workflows the caller can see, matching Agent Studio.",
         "operationId": "get_workflows_minimal_api_genagent_workflow_minimal_get",
         "responses": {
           "200": {
@@ -15759,6 +16206,44 @@
               "default": false,
               "title": "Compare"
             }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start of the exact conversation-activity interval",
+              "title": "Activity From Datetime"
+            },
+            "description": "Inclusive start of the exact conversation-activity interval"
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive end of the exact conversation-activity interval",
+              "title": "Activity To Datetime"
+            },
+            "description": "Exclusive end of the exact conversation-activity interval"
           }
         ],
         "responses": {
@@ -15877,6 +16362,44 @@
               ],
               "title": "To Date"
             }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start of the exact conversation-activity interval",
+              "title": "Activity From Datetime"
+            },
+            "description": "Inclusive start of the exact conversation-activity interval"
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive end of the exact conversation-activity interval",
+              "title": "Activity To Datetime"
+            },
+            "description": "Exclusive end of the exact conversation-activity interval"
           }
         ],
         "responses": {
@@ -20530,6 +21053,55 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/Body_analyze_csv_api_ml_models_analyze_csv_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/ml-models/profile-csv": {
+      "post": {
+        "tags": [
+          "v1",
+          "ML Models"
+        ],
+        "summary": "Profile Csv",
+        "description": "Run pandas/ydata data profiling on a CSV file and return the report as a\ndownloadable HTML file.\n\nThe file_url can be:\n- An absolute path (starting with /)\n- A relative path (will be checked in DATA_VOLUME/train directories)\n- A path within DATA_VOLUME\n- An HTTP(S) URL (downloaded before profiling)",
+        "operationId": "profile_csv_api_ml_models_profile_csv_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_profile_csv_api_ml_models_profile_csv_post"
               }
             }
           },
@@ -29593,6 +30165,20 @@
         ],
         "title": "Body_process_files_api_genagent_knowledge_process_files_post"
       },
+      "Body_profile_csv_api_ml_models_profile_csv_post": {
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "title": "File Url",
+            "description": "Path or URL to CSV file"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_url"
+        ],
+        "title": "Body_profile_csv_api_ml_models_profile_csv_post"
+      },
       "Body_refresh_token_api_auth_refresh_token_post": {
         "properties": {
           "refresh_token": {
@@ -31061,6 +31647,16 @@
               }
             ],
             "title": "Agent Name"
+          },
+          "read_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationReadReceiptState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -31073,6 +31669,86 @@
           "updated_at"
         ],
         "title": "ConversationRead"
+      },
+      "ConversationReadMarker": {
+        "properties": {
+          "last_read_sequence": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Last Read Sequence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_read_sequence"
+        ],
+        "title": "ConversationReadMarker",
+        "description": "Request body for marking a conversation read up to a message sequence.\n\nThe reader's role (customer vs supervisor) is derived server-side from the\nauthenticated principal, never trusted from the client \u2014 only the high-water\n``last_read_sequence`` is supplied."
+      },
+      "ConversationReadReceiptState": {
+        "properties": {
+          "customer_last_read_sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Last Read Sequence"
+          },
+          "customer_last_read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Last Read At"
+          },
+          "supervisor_last_read_sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supervisor Last Read Sequence"
+          },
+          "supervisor_last_read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supervisor Last Read At"
+          },
+          "supervisor_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supervisor User Id"
+          }
+        },
+        "type": "object",
+        "title": "ConversationReadReceiptState",
+        "description": "Aggregate read state for a conversation: the last message sequence each\nhuman reader has seen. ``*_last_read_sequence`` is ``None`` when that reader\nhas never sent a receipt. A message is \"seen by role R\" when its\n``sequence_number <= R_last_read_sequence``."
       },
       "ConversationStartWithRecaptchaToken": {
         "properties": {
@@ -31834,9 +32510,9 @@
             "type": "integer",
             "title": "Active Agents"
           },
-          "workflow_runs": {
+          "conversations": {
             "type": "integer",
-            "title": "Workflow Runs"
+            "title": "Conversations"
           },
           "avg_response_time_ms": {
             "type": "integer",
@@ -31845,14 +32521,22 @@
           "total_cost_usd": {
             "type": "number",
             "title": "Total Cost Usd"
+          },
+          "workflow_runs": {
+            "type": "integer",
+            "title": "Workflow Runs",
+            "description": "Deprecated alias of conversations.",
+            "deprecated": true,
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
           "active_agents",
-          "workflow_runs",
+          "conversations",
           "avg_response_time_ms",
-          "total_cost_usd"
+          "total_cost_usd",
+          "workflow_runs"
         ],
         "title": "DashboardSummaryStats",
         "description": "Summary statistics for the dashboard header."
@@ -34484,6 +35168,16 @@
             "type": "array",
             "title": "Messages",
             "default": []
+          },
+          "read_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationReadReceiptState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -36200,6 +36894,36 @@
               }
             ],
             "title": "Output Per 1K"
+          },
+          "cache_read_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Per 1K"
+          },
+          "cache_creation_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Per 1K"
           }
         },
         "type": "object",
@@ -36262,6 +36986,28 @@
             "type": "string",
             "title": "Output Per 1K"
           },
+          "cache_read_per_1k": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Per 1K"
+          },
+          "cache_creation_per_1k": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Per 1K"
+          },
           "updated_at": {
             "type": "string",
             "format": "date-time",
@@ -36304,6 +37050,36 @@
               }
             ],
             "title": "Output Per 1K"
+          },
+          "cache_read_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Per 1K"
+          },
+          "cache_creation_per_1k": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Per 1K"
           }
         },
         "type": "object",
@@ -36312,7 +37088,165 @@
           "output_per_1k"
         ],
         "title": "LlmCostRateUpdate",
-        "description": "Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate"
+        "description": "Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate.\nBase rates are full-replace; a cache rate is only touched when the payload carries\nits key. Sent blank it clears back to the provider default, omitted it is kept"
+      },
+      "LlmModelCatalogCreate": {
+        "properties": {
+          "provider_key": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider Key"
+          },
+          "model_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Model Key"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "is_active": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_key",
+          "model_key",
+          "label"
+        ],
+        "title": "LlmModelCatalogCreate"
+      },
+      "LlmModelCatalogProvider": {
+        "properties": {
+          "provider_key": {
+            "type": "string",
+            "title": "Provider Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "builtin_model_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Builtin Model Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_key",
+          "name"
+        ],
+        "title": "LlmModelCatalogProvider",
+        "description": "One selectable provider type, for the \"add a model\" form."
+      },
+      "LlmModelCatalogRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "provider_key": {
+            "type": "string",
+            "title": "Provider Key"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "is_active": {
+            "type": "integer",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "is_shadowed_by_builtin": {
+            "type": "boolean",
+            "title": "Is Shadowed By Builtin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "provider_key",
+          "model_key",
+          "label",
+          "is_active"
+        ],
+        "title": "LlmModelCatalogRead"
+      },
+      "LlmModelCatalogUpdate": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "LlmModelCatalogUpdate",
+        "description": "Identity (provider + model key) is fixed. Delete and re-add to move an entry,\nwhich keeps the key stable for the matching llm_cost_rates row."
       },
       "LlmProviderBase": {
         "properties": {
@@ -36608,11 +37542,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
+          },
+          "prompt_caching_mode": {
+            "type": "string",
+            "title": "Prompt Caching Mode",
+            "description": "Backend-derived caching capability (\"explicit\" | \"automatic\" | \"none\")",
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
-          "id"
+          "id",
+          "prompt_caching_mode"
         ],
         "title": "LlmProviderRead"
       },
@@ -36929,6 +37870,16 @@
             "type": "integer",
             "title": "Total Tokens"
           },
+          "total_cache_read_tokens": {
+            "type": "integer",
+            "title": "Total Cache Read Tokens",
+            "default": 0
+          },
+          "total_cache_creation_tokens": {
+            "type": "integer",
+            "title": "Total Cache Creation Tokens",
+            "default": 0
+          },
           "total_calls": {
             "type": "integer",
             "title": "Total Calls"
@@ -36982,7 +37933,7 @@
           "priced_token_coverage_pct"
         ],
         "title": "LlmUsageSummaryResponse",
-        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls"
+        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls.\n\nPrompt tokens sent, normalized across providers. Includes cache (already\nin total_input_tokens). If provider reports input minus cache, we add it back\nso input + output = total_tokens."
       },
       "LlmUsageTimeseriesItem": {
         "properties": {
@@ -38105,19 +39056,6 @@
             "maxLength": 255,
             "title": "Target Variable",
             "description": "The prediction target variable"
-          },
-          "inference_params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inference Params",
-            "description": "Key-value pairs for inference configuration"
           }
         },
         "type": "object",
@@ -38599,19 +39537,6 @@
             "title": "Target Variable",
             "description": "The prediction target variable"
           },
-          "inference_params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inference Params",
-            "description": "Key-value pairs for inference configuration"
-          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -38727,19 +39652,6 @@
             ],
             "title": "Target Variable",
             "description": "The prediction target variable"
-          },
-          "inference_params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inference Params",
-            "description": "Key-value pairs for inference configuration"
           }
         },
         "type": "object",
@@ -38814,10 +39726,20 @@
         "type": "string",
         "enum": [
           "xgboost",
+          "lightgbm",
+          "catboost",
           "random_forest",
+          "extra_trees",
+          "gradient_boosting",
+          "decision_tree",
           "linear_regression",
+          "ridge_regression",
+          "lasso_regression",
+          "elastic_net",
           "logistic_regression",
-          "other"
+          "svm",
+          "knn",
+          "neural_network"
         ],
         "title": "ModelType"
       },
@@ -39470,6 +40392,59 @@
         "title": "OperatorCreate",
         "description": "Used when creating a new Operator with statistics"
       },
+      "OperatorListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "firstName": {
+            "type": "string",
+            "title": "Firstname"
+          },
+          "lastName": {
+            "type": "string",
+            "title": "Lastname"
+          },
+          "avatar": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "operator_statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatisticsRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "created_at"
+        ],
+        "title": "OperatorListItem",
+        "description": "Row of the paginated operator list"
+      },
       "OperatorRead": {
         "properties": {
           "firstName": {
@@ -39959,6 +40934,42 @@
           "total_pages"
         ],
         "title": "PaginatedResponse[KBListItem]"
+      },
+      "PaginatedResponse_OperatorListItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "PaginatedResponse[OperatorListItem]"
       },
       "PaginatedResponse_ReportedIssueRead_": {
         "properties": {
@@ -43569,6 +44580,12 @@
             "format": "uuid",
             "title": "Run Id"
           },
+          "technique": {
+            "type": "string",
+            "title": "Technique",
+            "description": "tool_used | route_taken | action_taken",
+            "default": "tool_used"
+          },
           "rule_id": {
             "type": "string",
             "title": "Rule Id"
@@ -43645,7 +44662,7 @@
           "created_at"
         ],
         "title": "TestToolRuleResult",
-        "description": "One Tool Usage rule outcome for a scope unit (turn or conversation)."
+        "description": "One rule outcome for a scope unit (turn or conversation), for any\nrule-based technique: tool_used, route_taken or action_taken."
       },
       "ThreadIdMode": {
         "type": "string",
@@ -44524,8 +45541,7 @@
                   "type": "string",
                   "format": "uuid"
                 },
-                "type": "array",
-                "minItems": 1
+                "type": "array"
               },
               {
                 "type": "null"
@@ -45432,6 +46448,17 @@
             "type": "boolean",
             "title": "Is Active Version",
             "default": false
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
           }
         },
         "type": "object",
