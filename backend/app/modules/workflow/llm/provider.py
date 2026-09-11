@@ -327,6 +327,22 @@ class LLMProvider:
         )
         await assert_provider_residency(regions, app_settings_service)
 
+        # Release the pooled connection here: this is the last DB read before
+        # the model is handed back to the caller, who then runs the actual
+        # (slow) LLM call on it. get_model()/get_model_with_fallback() are
+        # called from many workflow nodes and services, so fixing it once at
+        # this shared choke point covers all of them.
+        # Import kept local: provider.py loads during injector bootstrap
+        # (dependency_injection.py imports LLMProvider at module top level),
+        # and db_connection_utils imports app.dependencies.injector itself,
+        # so a top-level import here would be circular (see
+        # genassist-outage-report-2026-09-03.md and the release-point-#3 fix
+        # for the same class of bug).
+        from app.core.utils.db_connection_utils import release_db_connection
+        await release_db_connection(
+            context=f"llm provider {getattr(llm_provider, 'id', None)}"
+        )
+
         try:
             # Validate connection data
             validated_data = json.loads(

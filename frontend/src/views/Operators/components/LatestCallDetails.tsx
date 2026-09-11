@@ -1,5 +1,5 @@
-import { Phone } from "lucide-react";
-import { formatCallDuration, formatTimeAgo } from "@/helpers/formatters";
+import { MessageSquare } from "lucide-react";
+import { formatCallDuration, formatTimeAgo, parsePercentValue } from "@/helpers/formatters";
 import { Operator } from "@/interfaces/operator.interface";
 
 interface LatestCallDetailsProps {
@@ -11,18 +11,40 @@ export function LatestCallDetails({ operator }: LatestCallDetailsProps) {
 
   const callDuration = formatCallDuration(operator.latest_conversation_analysis.duration);
 
-  const agentRatio = operator.latest_conversation_analysis.agent_ratio ?? 0;
-  const customerRatio = operator.latest_conversation_analysis.customer_ratio ?? 100 - agentRatio;
+  const { agent_ratio: agentRatioRaw, customer_ratio: customerRatioRaw } =
+    operator.latest_conversation_analysis;
 
-  const customerSatisfaction = operator.latest_conversation_analysis.analysis?.customer_satisfaction !== undefined
-    ? `${operator.latest_conversation_analysis.analysis.customer_satisfaction * 10}%`
-    : operator.operator_statistics?.avg_customer_satisfaction || "N/A";
+  // Conversations are created with 0/0 placeholders and only get real ratios once
+  // the transcript is scored, so 0/0 means "not computed yet", not "nobody spoke".
+  const hasSpeakingRatio =
+    (typeof agentRatioRaw === "number" && agentRatioRaw > 0) ||
+    (typeof customerRatioRaw === "number" && customerRatioRaw > 0);
+
+  const agentRatio =
+    typeof agentRatioRaw === "number" ? agentRatioRaw : 100 - (customerRatioRaw ?? 0);
+  const customerRatio =
+    typeof customerRatioRaw === "number" ? customerRatioRaw : 100 - (agentRatioRaw ?? 0);
+
+  // Conversation-level satisfaction is 0-10; the operator average is already a percent.
+  const conversationSatisfaction = parsePercentValue(
+    operator.latest_conversation_analysis.analysis?.customer_satisfaction
+  );
+  const averageSatisfaction = parsePercentValue(
+    operator.operator_statistics?.avg_customer_satisfaction
+  );
+
+  const customerSatisfaction =
+    conversationSatisfaction !== null
+      ? `${Math.round(conversationSatisfaction * 10 * 10) / 10}%`
+      : averageSatisfaction !== null
+        ? `${averageSatisfaction}%`
+        : "N/A";
 
   return (
     <div className="bg-primary/5 p-4 rounded-lg">
       <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-        <Phone className="w-4 h-4" />
-        Latest Call Details
+        <MessageSquare className="w-4 h-4" />
+        Latest Conversation Details
       </h3>
       <div className="space-y-2">
         <div className="flex justify-between text-sm">
@@ -42,7 +64,9 @@ export function LatestCallDetails({ operator }: LatestCallDetailsProps) {
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Speaking Ratio:</span>
           <span>
-            Operator {agentRatio}% / Customer {customerRatio}%
+            {hasSpeakingRatio
+              ? `Operator ${agentRatio}% / Customer ${customerRatio}%`
+              : "N/A"}
           </span>
         </div>
       </div>

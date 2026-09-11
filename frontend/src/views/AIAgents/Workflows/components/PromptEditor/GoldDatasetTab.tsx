@@ -210,7 +210,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                 value={newInput}
                 onChange={(e) => setNewInput(e.target.value)}
                 placeholder="User input message..."
-                rows={3}
+                size="body"
                 className="text-sm"
               />
             </div>
@@ -220,7 +220,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                 value={newExpected}
                 onChange={(e) => setNewExpected(e.target.value)}
                 placeholder="Expected assistant response..."
-                rows={3}
+                size="body"
                 className="text-sm"
               />
             </div>
@@ -267,7 +267,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                       <RichTextarea
                         value={editInput}
                         onChange={(e) => setEditInput(e.target.value)}
-                        rows={3}
+                        size="body"
                         className="text-sm"
                       />
                     </div>
@@ -276,7 +276,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                       <RichTextarea
                         value={editExpected}
                         onChange={(e) => setEditExpected(e.target.value)}
-                        rows={3}
+                        size="body"
                         className="text-sm"
                       />
                     </div>

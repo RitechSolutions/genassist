@@ -1,5 +1,6 @@
 import { Operator } from "@/interfaces/operator.interface";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
+import { parsePercentValue } from "@/helpers/formatters";
 
 type LatestConversationAnalysis = NonNullable<Operator["latest_conversation_analysis"]>;
 
@@ -17,10 +18,12 @@ export function createConversationAnalysis(
   transcript: BackendTranscript,
   operator: Operator
 ): LatestConversationAnalysis {
-  const fallbackSatisfaction =
-    operator.operator_statistics?.avg_customer_satisfaction != null
-      ? operator.operator_statistics.avg_customer_satisfaction / 10
-      : 8.6;
+  // avg_customer_satisfaction is a percent ("86.0%" / 86) on a 0-100 scale;
+  // conversation-level satisfaction is on a 0-10 scale, hence the divide.
+  const averagePercent = parsePercentValue(
+    operator.operator_statistics?.avg_customer_satisfaction
+  );
+  const fallbackSatisfaction = averagePercent !== null ? averagePercent / 10 : 8.6;
 
   const customerSatisfaction =
     transcript.analysis?.customer_satisfaction ?? fallbackSatisfaction;

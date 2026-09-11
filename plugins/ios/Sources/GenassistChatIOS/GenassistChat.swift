@@ -338,16 +338,26 @@ public struct GenassistChat: View {
                 //         .frame(width: 24, height: 24)
                 // }
                 
-                TextField(placeholder, text: $newMessage)
-                    .textFieldStyle(.plain)
-                    .font(configuration.inputField.textFont)
-                    .foregroundColor(configuration.inputField.textColor)
-                    .padding(.horizontal, 10)
-                    .disabled(connectionState != .connected)
+                // Grows with the message, up to five lines. The vertical axis
+                // needs iOS 16; older systems keep the single-line field.
+                Group {
+                    if #available(iOS 16.0, *) {
+                        TextField(placeholder, text: $newMessage, axis: .vertical)
+                            .lineLimit(1...5)
+                    } else {
+                        TextField(placeholder, text: $newMessage)
+                    }
+                }
+                .textFieldStyle(.plain)
+                .font(configuration.inputField.textFont)
+                .foregroundColor(configuration.inputField.textColor)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 12)
+                .disabled(connectionState != .connected)
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 0)
-            .frame(height: 48)
+            .frame(minHeight: 48)
             .background(Color.white)
             .cornerRadius(configuration.inputField.cornerRadius)
             .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
