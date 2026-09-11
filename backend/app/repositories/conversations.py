@@ -70,6 +70,7 @@ class ConversationRepository(DbRepository[ConversationModel]):
             .join(UserModel, UserModel.id == AgentModel.created_by)
             .where(AgentModel.operator_id == operator_id)
             .limit(1)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
