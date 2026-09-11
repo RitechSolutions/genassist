@@ -37,7 +37,6 @@ const TrainModelNode: React.FC<NodeProps<TrainModelNodeData>> = ({
       linear_regression: "Linear Regression",
       logistic_regression: "Logistic Regression",
       neural_network: "Neural Network",
-      other: "Other",
     };
     return labels[type] || type;
   };

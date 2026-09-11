@@ -46,6 +46,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       analysisResult: data.analysisResult || null,
       splitMethod: data.splitMethod || "random",
       dateColumn: data.dateColumn || "",
+      scalingMethod: data.scalingMethod || "auto",
     }),
     (v) => ({
       name: v.name,
@@ -58,6 +59,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       validationSplit: v.validationSplit,
       splitMethod: v.splitMethod,
       dateColumn: v.splitMethod === "time_based" ? v.dateColumn : undefined,
+      scalingMethod: v.scalingMethod,
     })
   );
 
@@ -219,6 +221,10 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     setField("modelType", value as TrainModelNodeData["modelType"]);
   };
 
+  const handleScalingMethodChange = (value: string) => {
+    setField("scalingMethod", value as TrainModelNodeData["scalingMethod"]);
+  };
+
   const handleSplitMethodChange = (value: string) => {
     setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
   };
@@ -303,11 +309,37 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 <SelectItem value="neural_network">
                   Neural Network
                 </SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                {values.modelType === "other" && (
+                  <SelectItem value="other" disabled>
+                    Other (no longer supported - choose a new type)
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
               Select the machine learning algorithm to use
+            </p>
+          </div>
+
+          {/* Feature Scaling */}
+          <div className="space-y-2">
+            <Label htmlFor="scalingMethod">Feature Scaling</Label>
+            <Select value={values.scalingMethod} onValueChange={handleScalingMethodChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select feature scaling" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="standard">Standardized (Z-score)</SelectItem>
+                <SelectItem value="minmax">Min-Max</SelectItem>
+                <SelectItem value="maxabs">Abs-Max</SelectItem>
+                <SelectItem value="robust">Robust</SelectItem>
+                <SelectItem value="auto">Auto (Recommended)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Auto selects a scaling method based on the model type and dataset
+              (e.g. Robust for outlier-heavy data, None for tree-based models)
             </p>
           </div>
 
