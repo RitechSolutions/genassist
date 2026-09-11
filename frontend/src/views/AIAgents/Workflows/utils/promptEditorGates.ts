@@ -25,7 +25,7 @@ export interface RunInputs {
   content: string;
   /** Content name in blocking reason ("prompt" or "suggested prompt") */
   contentNoun: string;
-  providerStatus: "pending" | "error" | "ready";
+  providerStatus: "pending" | "error" | "empty" | "ready";
   /** Empty when nothing is selected or the selection is no longer active */
   providerId: string;
 }
@@ -35,6 +35,10 @@ export interface EvalInputs extends RunInputs {
 }
 
 export const MAX_PROMPT_LENGTH = 200_000;
+
+/** Code points, matching the backend bound; JS `.length` double-counts astral characters */
+export const promptLength = (content: string): number =>
+  Array.from(content).length;
 
 /** Shared with the dialog banner, which reports the same failures */
 export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
@@ -70,7 +74,11 @@ const blankGate = (content: string, noun: string): Gate | null =>
 const versionBodyGate = (content: string, noun: string): Gate | null => {
   const blank = blankGate(content, noun);
   if (blank) return blank;
-  if (content.length > MAX_PROMPT_LENGTH)
+  // Quick check first; code-point walk only if already over
+  if (
+    content.length > MAX_PROMPT_LENGTH &&
+    promptLength(content) > MAX_PROMPT_LENGTH
+  )
     return blocked(
       `The ${noun} is longer than ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`,
     );
@@ -83,6 +91,8 @@ const providerGate = (run: RunInputs): Gate | null => {
     return blocked("Loading LLM providers…");
   if (run.providerStatus === "error")
     return blocked("LLM providers could not be loaded.");
+  if (run.providerStatus === "empty")
+    return blocked("No active LLM providers are available.");
   if (!run.providerId) return blocked("Select an LLM provider.");
   return null;
 };
