@@ -938,11 +938,11 @@ export function FileManagerFiles() {
           )}
             <div className="space-y-2">
               <Label htmlFor="fm-desc">Description (optional)</Label>
-              <input
+              <Textarea
                 id="fm-desc"
+                size="description"
                 value={descriptionInput}
                 onChange={(e) => setDescriptionInput(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -960,7 +960,8 @@ export function FileManagerFiles() {
                 id="fm-meta"
                 value={metadataInput}
                 onChange={(e) => setMetadataInput(e.target.value)}
-                className="min-h-[88px] font-mono text-xs"
+                size="description"
+                className="font-mono text-xs"
                 placeholder='{"key": "value"}'
               />
             </div>

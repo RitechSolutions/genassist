@@ -215,7 +215,7 @@ const DatasetDetailPage: React.FC = () => {
             <Textarea
               value={caseInput}
               onChange={(e) => setCaseInput(e.target.value)}
-              rows={6}
+              size="body"
               placeholder='{"message":"What are your support hours?"}'
               className="font-mono text-xs"
             />
@@ -223,7 +223,7 @@ const DatasetDetailPage: React.FC = () => {
             <Textarea
               value={caseExpectedOutput}
               onChange={(e) => setCaseExpectedOutput(e.target.value)}
-              rows={6}
+              size="body"
               placeholder='{"text":"We are available 24/7"}'
               className="font-mono text-xs"
             />

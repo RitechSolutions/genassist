@@ -52,6 +52,7 @@ describe("fetchTranscripts", () => {
       order_by: "created_at",
       sort_direction: "desc",
       agent_id: "a1",
+      operator_id: "op1",
       workflow_id: "w1",
       from_date: "2024-01-01",
       to_date: "2024-02-01",
@@ -67,7 +68,7 @@ describe("fetchTranscripts", () => {
       "conversations/?skip=10&limit=100&sentiment=positive&hostility_neutral_max=5" +
         "&hostility_positive_max=3&include_feedback=true&conversation_status=open" +
         "&conversation_status=closed&order_by=created_at&sort_direction=desc&agent_id=a1" +
-        "&workflow_id=w1&from_date=2024-01-01&to_date=2024-02-01&exclude_empty=true" +
+        "&operator_id=op1&workflow_id=w1&from_date=2024-01-01&to_date=2024-02-01&exclude_empty=true" +
         "&id_suffix=abcd&search=hello&customer_satisfaction_min=2" +
         "&custom_attributes=%7B%22plan%22%3A%22gold%22%7D",
       undefined,
@@ -79,6 +80,18 @@ describe("fetchTranscripts", () => {
       page_size: 100,
       has_more: true,
     });
+  });
+
+  it("scopes the query to a single operator when operator_id is given", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] } as never);
+
+    await fetchTranscripts({ operator_id: "op-42", limit: 1 });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "conversations/?limit=1&operator_id=op-42",
+      undefined,
+    );
   });
 
   it("defaults limit to 20 and applies field fallbacks for a sparse response", async () => {

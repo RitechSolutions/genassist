@@ -249,7 +249,8 @@ export const ExternalAgentDialog: React.FC<
             value={values.requestBody}
             onChange={(e) => setField("requestBody", e.target.value)}
             placeholder='{"message": "{{source.message}}"}'
-            className="font-mono text-xs h-24 resize-none w-full"
+            size="code"
+            className="w-full"
           />
           <div className="text-xs text-muted-foreground">Use {"{{field}}"} for dynamic values</div>
         </div>

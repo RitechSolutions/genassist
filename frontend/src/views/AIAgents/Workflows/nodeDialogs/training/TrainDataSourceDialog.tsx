@@ -277,10 +277,11 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             <Label htmlFor="query">Query *</Label>
             <DraggableTextArea
               id="query"
+              size="code"
               value={values.query ?? ""}
               onChange={(e) => setField("query", e.target.value || null)}
               placeholder="SELECT * FROM training_data WHERE ..."
-              className="w-full min-h-[120px] font-mono text-sm"
+              className="w-full font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
               SQL query to fetch training data. Use variables from previous

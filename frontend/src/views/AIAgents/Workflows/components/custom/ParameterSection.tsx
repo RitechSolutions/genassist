@@ -2,6 +2,7 @@ import { FC, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/button";
 import { Plus, Info } from "lucide-react";
 import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import {
   Select,
   SelectTrigger,
@@ -367,7 +368,8 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Description</label>
-            <RichInput
+            <RichTextarea
+              size="hint"
               placeholder="Parameter description"
               value={formData.description}
               onChange={(e) =>

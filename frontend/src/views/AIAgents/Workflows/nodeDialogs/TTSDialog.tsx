@@ -124,8 +124,8 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
             value={values.text}
             onChange={(e) => setField("text", e.target.value)}
             placeholder="Enter text or drag variables from the left panel, e.g. {{source.message}}"
-            className="h-32 font-mono text-sm"
-            rows={5}
+            size="body"
+            className="font-mono text-sm"
           />
         </div>
 

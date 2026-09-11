@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { HumanInTheLoopNodeData, HumanInTheLoopFormField } from "../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -30,6 +31,10 @@ import { useNodeDialogState } from "./useNodeDialogState";
 
 const FIELD_TYPES = [
   { value: "text", label: "Text" },
+  // "Long text" is intentionally not offered yet: the deployed chat widget is
+  // genassist-chat-react 1.0.42, which has no textarea branch. Re-add this once
+  // a build carrying the new field type is published and consumers have upgraded.
+  // { value: "textarea", label: "Long text" },
   { value: "number", label: "Number" },
   { value: "select", label: "Select" },
   { value: "boolean", label: "Checkbox" },
@@ -227,7 +232,8 @@ export const HumanInTheLoopDialog: React.FC<
           value={values.message}
           onChange={(e) => setField("message", e.target.value)}
           placeholder="Message shown above the form..."
-          className="text-sm h-20 resize-none w-full"
+          size="body"
+          className="text-sm w-full"
         />
       </div>
 
@@ -427,7 +433,8 @@ export const HumanInTheLoopDialog: React.FC<
 
             <div>
               <Label className="text-xs">Description</Label>
-              <RichInput
+              <RichTextarea
+                size="hint"
                 value={fieldDialog.field.description || ""}
                 onChange={(e) =>
                   updateDialogField("description", e.target.value)
