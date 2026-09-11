@@ -15,6 +15,7 @@ import { Slider } from "@/components/slider";
 import { useToast } from "@/components/use-toast";
 import { Save, Plus, X, Search } from "lucide-react";
 import { Badge } from "@/components/badge";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableInput } from "../../components/custom/DraggableInput";
@@ -73,6 +74,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       hyperparameterOptimization: data.hyperparameterOptimization || "none",
       optimizationConfig: data.optimizationConfig || {},
       scalingMethod: data.scalingMethod || "auto",
+      taskType: data.taskType || "auto",
     }),
     (v) => ({
       name: v.name,
@@ -89,11 +91,30 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       optimizationConfig:
         v.hyperparameterOptimization === "none" ? undefined : v.optimizationConfig,
       scalingMethod: v.scalingMethod,
+      taskType: v.taskType,
     })
   );
 
+  // linear_regression and logistic_regression only support one task each -
+  // keep taskType in sync with those so it never disagrees with modelType.
+  useEffect(() => {
+    if (values.modelType === "linear_regression" && values.taskType !== "regression") {
+      setField("taskType", "regression");
+    } else if (values.modelType === "logistic_regression" && values.taskType !== "classification") {
+      setField("taskType", "classification");
+    }
+  }, [values.modelType, values.taskType, setField]);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
+
+  const [openSections, setOpenSections] = useState({
+    data: true,
+    model: true,
+    training: true,
+  });
+  const toggleSection = (section: keyof typeof openSections) =>
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
 
   // Clean up featureColumns: remove targetColumn and invalid columns
   useEffect(() => {
@@ -248,6 +269,13 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     setField("scalingMethod", value as TrainModelNodeData["scalingMethod"]);
   };
 
+  const handleTaskTypeChange = (value: string) => {
+    setField("taskType", value as TrainModelNodeData["taskType"]);
+  };
+
+  const isTaskTypeLocked =
+    values.modelType === "linear_regression" || values.modelType === "logistic_regression";
+
   const handleSplitMethodChange = (value: string) => {
     setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
   };
@@ -292,415 +320,467 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             />
           </div>
 
-          {/* File URL */}
-          <div className="space-y-2">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <DraggableInput
-                  id="fileUrl"
-                  label="File URL"
-                  value={values.fileUrl}
-                  onChange={(e) => setField("fileUrl", e.target.value)}
-                  placeholder="Enter file URL or drag variable"
-                  className="w-full"
-                />
+          {/* Data Source */}
+          <CollapsibleSection
+            title="Data Source"
+            open={openSections.data}
+            onOpenChange={() => toggleSection("data")}
+          >
+            <div className="space-y-4">
+              {/* File URL */}
+              <div className="space-y-2">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <DraggableInput
+                      id="fileUrl"
+                      label="File URL"
+                      value={values.fileUrl}
+                      onChange={(e) => setField("fileUrl", e.target.value)}
+                      placeholder="Enter file URL or drag variable"
+                      className="w-full"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAnalyzeCSV}
+                    disabled={isAnalyzing || !values.fileUrl.trim()}
+                    className="mb-0"
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    {isAnalyzing ? "Analyzing..." : "Analyze"}
+                  </Button>
+                </div>
+                {values.analysisResult && (
+                  <CSVAnalysisDisplay analysisResult={values.analysisResult} />
+                )}
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleAnalyzeCSV}
-                disabled={isAnalyzing || !values.fileUrl.trim()}
-                className="mb-0"
-              >
-                <Search className="h-4 w-4 mr-2" />
-                {isAnalyzing ? "Analyzing..." : "Analyze"}
-              </Button>
-            </div>
-            {values.analysisResult && (
-              <CSVAnalysisDisplay analysisResult={values.analysisResult} />
-            )}
-          </div>
 
-          {/* Model Type */}
-          <div className="space-y-2">
-            <Label htmlFor="modelType">Model Type *</Label>
-            <Select value={values.modelType} onValueChange={handleModelTypeChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select model type" />
-              </SelectTrigger>
-              <SelectContent>
-                {ML_MODEL_TYPES.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Select the machine learning algorithm to use
-            </p>
-          </div>
-
-          {/* Hyperparameter Optimization */}
-          <div className="space-y-2">
-            <Label htmlFor="hyperparameterOptimization">Hyperparameter Optimization</Label>
-            <Select
-              value={values.hyperparameterOptimization}
-              onValueChange={handleHyperparameterOptimizationChange}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select optimization method" />
-              </SelectTrigger>
-              <SelectContent>
-                {HYPERPARAMETER_OPTIMIZATION_METHODS.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {
-                HYPERPARAMETER_OPTIMIZATION_METHODS.find(
-                  (m) => m.value === values.hyperparameterOptimization
-                )?.description
-              }{" "}
-              Any parameter set in Model Parameters is fixed and excluded from the search.
-            </p>
-
-            {values.hyperparameterOptimization !== "none" && (
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="space-y-1">
-                  <Label htmlFor="cvFolds" className="text-xs">
-                    CV Folds
-                  </Label>
-                  <RichInput
-                    id="cvFolds"
-                    type="number"
-                    min="2"
-                    max="10"
-                    value={values.optimizationConfig.cvFolds ?? 3}
-                    onChange={(e) =>
-                      updateOptimizationConfig({
-                        cvFolds: e.target.value ? Number(e.target.value) : undefined,
-                      })
-                    }
+              {/* Target Column */}
+              <div className="space-y-2">
+                <Label htmlFor="targetColumn">Target Column *</Label>
+                {values.analysisResult ? (
+                  <Select
+                    value={values.targetColumn}
+                    onValueChange={(v) => setField("targetColumn", v)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select target column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {values.analysisResult.column_names.map((columnName) => (
+                        <SelectItem key={columnName} value={columnName}>
+                          {columnName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <DraggableInput
+                    id="targetColumn"
+                    value={values.targetColumn}
+                    onChange={(e) => setField("targetColumn", e.target.value)}
+                    placeholder="Enter target column name"
                     className="w-full"
                   />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="scoring" className="text-xs">
-                    Scoring Metric
-                  </Label>
-                  <RichInput
-                    id="scoring"
-                    value={values.optimizationConfig.scoring ?? ""}
-                    onChange={(e) => updateOptimizationConfig({ scoring: e.target.value })}
-                    placeholder="auto (accuracy / r2)"
-                    className="w-full"
-                  />
-                </div>
-
-                {values.hyperparameterOptimization === "random_search" && (
-                  <div className="space-y-1">
-                    <Label htmlFor="nIter" className="text-xs">
-                      Iterations
-                    </Label>
-                    <RichInput
-                      id="nIter"
-                      type="number"
-                      min="1"
-                      max="200"
-                      value={values.optimizationConfig.nIter ?? 20}
-                      onChange={(e) =>
-                        updateOptimizationConfig({ nIter: Number(e.target.value) })
-                      }
-                      className="w-full"
-                    />
-                  </div>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  Name of the column containing the target variable to predict
+                </p>
+              </div>
 
-                {values.hyperparameterOptimization === "grid_search" && (
-                  <div className="space-y-1">
-                    <Label htmlFor="gridPoints" className="text-xs">
-                      Grid Points / Parameter
-                    </Label>
-                    <RichInput
-                      id="gridPoints"
-                      type="number"
-                      min="2"
-                      max="6"
-                      value={values.optimizationConfig.gridPoints ?? 3}
-                      onChange={(e) =>
-                        updateOptimizationConfig({ gridPoints: Number(e.target.value) })
-                      }
-                      className="w-full"
-                    />
+              {/* Feature Columns */}
+              <div className="space-y-2">
+                <Label>Feature Columns *</Label>
+                {values.analysisResult ? (
+                  /* Badge view when column names are available */
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-2 border rounded">
+                      {values.analysisResult.column_names
+                        .filter((columnName) => columnName !== values.targetColumn)
+                        .map((columnName) => {
+                          const isSelected =
+                            values.featureColumns.includes(columnName);
+                          return (
+                            <Badge
+                              key={columnName}
+                              variant={isSelected ? "default" : "outline"}
+                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => handleFeatureColumnToggle(columnName)}
+                            >
+                              {columnName}
+                            </Badge>
+                          );
+                        })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {values.featureColumns.length} of{" "}
+                      {values.analysisResult.column_names.filter(
+                        (col) => col !== values.targetColumn
+                      ).length}{" "}
+                      columns selected. Click badges to toggle selection.
+                    </p>
                   </div>
-                )}
-
-                {values.hyperparameterOptimization === "bayesian_optimization" && (
-                  <>
-                    <div className="space-y-1">
-                      <Label htmlFor="nTrials" className="text-xs">
-                        Trials
-                      </Label>
+                ) : (
+                  /* Text input when no column names available */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Columns</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addFeatureColumn}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Feature
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
                       <RichInput
-                        id="nTrials"
-                        type="number"
-                        min="1"
-                        max="200"
-                        value={values.optimizationConfig.nTrials ?? 30}
+                        value={values.featureColumns.join(", ")}
                         onChange={(e) =>
-                          updateOptimizationConfig({ nTrials: Number(e.target.value) })
+                          handleCommaSeparatedInputChange(e.target.value)
                         }
+                        placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
                         className="w-full"
                       />
+                      {values.featureColumns.length > 0 && (
+                        <>
+                          <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
+                            {values.featureColumns.map((column, index) => (
+                              <div key={index} className="flex items-center gap-1">
+                                <Badge variant="default">{column}</Badge>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 w-5 p-0"
+                                  onClick={() => removeFeatureColumn(index)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {values.featureColumns.length} column
+                            {values.featureColumns.length !== 1 ? "s" : ""} added
+                          </p>
+                        </>
+                      )}
+                      {values.featureColumns.length === 0 && (
+                        <p className="text-sm text-muted-foreground italic">
+                          No feature columns defined. Add columns to specify which
+                          features to use for training.
+                        </p>
+                      )}
                     </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Select the columns to use as features for training the model
+                </p>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Model Configuration */}
+          <CollapsibleSection
+            title="Model Configuration"
+            open={openSections.model}
+            onOpenChange={() => toggleSection("model")}
+          >
+            <div className="space-y-4">
+              {/* Model Type */}
+              <div className="space-y-2">
+                <Label htmlFor="modelType">Model Type *</Label>
+                <Select value={values.modelType} onValueChange={handleModelTypeChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select model type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ML_MODEL_TYPES.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select the machine learning algorithm to use
+                </p>
+              </div>
+
+              {/* Task Type */}
+              <div className="space-y-2">
+                <Label htmlFor="taskType">Task Type</Label>
+                <Select
+                  value={values.taskType}
+                  onValueChange={handleTaskTypeChange}
+                  disabled={isTaskTypeLocked}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select task type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto-detect</SelectItem>
+                    <SelectItem value="classification">Classification</SelectItem>
+                    <SelectItem value="regression">Regression</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {isTaskTypeLocked
+                    ? `${values.modelType === "linear_regression" ? "Linear" : "Logistic"} Regression only supports ${values.modelType === "linear_regression" ? "regression" : "classification"}`
+                    : "Auto-detect infers the task from the target column. Override it if the heuristic picks the wrong type for your dataset."}
+                </p>
+              </div>
+
+              {/* Hyperparameter Optimization */}
+              <div className="space-y-2">
+                <Label htmlFor="hyperparameterOptimization">Hyperparameter Optimization</Label>
+                <Select
+                  value={values.hyperparameterOptimization}
+                  onValueChange={handleHyperparameterOptimizationChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select optimization method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HYPERPARAMETER_OPTIMIZATION_METHODS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {
+                    HYPERPARAMETER_OPTIMIZATION_METHODS.find(
+                      (m) => m.value === values.hyperparameterOptimization
+                    )?.description
+                  }{" "}
+                  Any parameter set in Model Parameters is fixed and excluded from the search.
+                </p>
+
+                {values.hyperparameterOptimization !== "none" && (
+                  <div className="grid grid-cols-2 gap-3 pt-2">
                     <div className="space-y-1">
-                      <Label htmlFor="timeoutSeconds" className="text-xs">
-                        Timeout (seconds)
+                      <Label htmlFor="cvFolds" className="text-xs">
+                        CV Folds
                       </Label>
                       <RichInput
-                        id="timeoutSeconds"
+                        id="cvFolds"
                         type="number"
-                        min="1"
-                        value={values.optimizationConfig.timeoutSeconds ?? ""}
-                        placeholder="none"
+                        min="2"
+                        max="10"
+                        value={values.optimizationConfig.cvFolds ?? 3}
                         onChange={(e) =>
                           updateOptimizationConfig({
-                            timeoutSeconds: e.target.value ? Number(e.target.value) : undefined,
+                            cvFolds: e.target.value ? Number(e.target.value) : undefined,
                           })
                         }
                         className="w-full"
                       />
                     </div>
-                  </>
+                    <div className="space-y-1">
+                      <Label htmlFor="scoring" className="text-xs">
+                        Scoring Metric
+                      </Label>
+                      <RichInput
+                        id="scoring"
+                        value={values.optimizationConfig.scoring ?? ""}
+                        onChange={(e) => updateOptimizationConfig({ scoring: e.target.value })}
+                        placeholder="auto (accuracy / r2)"
+                        className="w-full"
+                      />
+                    </div>
+
+                    {values.hyperparameterOptimization === "random_search" && (
+                      <div className="space-y-1">
+                        <Label htmlFor="nIter" className="text-xs">
+                          Iterations
+                        </Label>
+                        <RichInput
+                          id="nIter"
+                          type="number"
+                          min="1"
+                          max="200"
+                          value={values.optimizationConfig.nIter ?? 20}
+                          onChange={(e) =>
+                            updateOptimizationConfig({ nIter: Number(e.target.value) })
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+
+                    {values.hyperparameterOptimization === "grid_search" && (
+                      <div className="space-y-1">
+                        <Label htmlFor="gridPoints" className="text-xs">
+                          Grid Points / Parameter
+                        </Label>
+                        <RichInput
+                          id="gridPoints"
+                          type="number"
+                          min="2"
+                          max="6"
+                          value={values.optimizationConfig.gridPoints ?? 3}
+                          onChange={(e) =>
+                            updateOptimizationConfig({ gridPoints: Number(e.target.value) })
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+
+                    {values.hyperparameterOptimization === "bayesian_optimization" && (
+                      <>
+                        <div className="space-y-1">
+                          <Label htmlFor="nTrials" className="text-xs">
+                            Trials
+                          </Label>
+                          <RichInput
+                            id="nTrials"
+                            type="number"
+                            min="1"
+                            max="200"
+                            value={values.optimizationConfig.nTrials ?? 30}
+                            onChange={(e) =>
+                              updateOptimizationConfig({ nTrials: Number(e.target.value) })
+                            }
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="timeoutSeconds" className="text-xs">
+                            Timeout (seconds)
+                          </Label>
+                          <RichInput
+                            id="timeoutSeconds"
+                            type="number"
+                            min="1"
+                            value={values.optimizationConfig.timeoutSeconds ?? ""}
+                            placeholder="none"
+                            onChange={(e) =>
+                              updateOptimizationConfig({
+                                timeoutSeconds: e.target.value ? Number(e.target.value) : undefined,
+                              })
+                            }
+                            className="w-full"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          {/* Feature Scaling */}
-          <div className="space-y-2">
-            <Label htmlFor="scalingMethod">Feature Scaling</Label>
-            <Select value={values.scalingMethod} onValueChange={handleScalingMethodChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select feature scaling" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="standard">Standardized (Z-score)</SelectItem>
-                <SelectItem value="minmax">Min-Max</SelectItem>
-                <SelectItem value="maxabs">Abs-Max</SelectItem>
-                <SelectItem value="robust">Robust</SelectItem>
-                <SelectItem value="auto">Auto (Recommended)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Auto selects a scaling method based on the model type and dataset
-              (e.g. Robust for outlier-heavy data, None for tree-based models)
-            </p>
-          </div>
+            </div>
+          </CollapsibleSection>
 
-          {/* Target Column */}
-          <div className="space-y-2">
-            <Label htmlFor="targetColumn">Target Column *</Label>
-            {values.analysisResult ? (
-              <Select
-                value={values.targetColumn}
-                onValueChange={(v) => setField("targetColumn", v)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select target column" />
-                </SelectTrigger>
-                <SelectContent>
-                  {values.analysisResult.column_names.map((columnName) => (
-                    <SelectItem key={columnName} value={columnName}>
-                      {columnName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <DraggableInput
-                id="targetColumn"
-                value={values.targetColumn}
-                onChange={(e) => setField("targetColumn", e.target.value)}
-                placeholder="Enter target column name"
-                className="w-full"
-              />
-            )}
-            <p className="text-xs text-muted-foreground">
-              Name of the column containing the target variable to predict
-            </p>
-          </div>
-
-          {/* Feature Columns */}
-          <div className="space-y-2">
-            <Label>Feature Columns *</Label>
-            {values.analysisResult ? (
-              /* Badge view when column names are available */
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-2 border rounded">
-                  {values.analysisResult.column_names
-                    .filter((columnName) => columnName !== values.targetColumn)
-                    .map((columnName) => {
-                      const isSelected =
-                        values.featureColumns.includes(columnName);
-                      return (
-                        <Badge
-                          key={columnName}
-                          variant={isSelected ? "default" : "outline"}
-                          className="cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => handleFeatureColumnToggle(columnName)}
-                        >
-                          {columnName}
-                        </Badge>
-                      );
-                    })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {values.featureColumns.length} of{" "}
-                  {values.analysisResult.column_names.filter(
-                    (col) => col !== values.targetColumn
-                  ).length}{" "}
-                  columns selected. Click badges to toggle selection.
-                </p>
-              </div>
-            ) : (
-              /* Text input when no column names available */
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Columns</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addFeatureColumn}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Feature
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  <RichTextarea
-                    size="hint"
-                    value={values.featureColumns.join(", ")}
-                    onChange={(e) =>
-                      handleCommaSeparatedInputChange(e.target.value)
-                    }
-                    placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
-                    className="w-full font-mono text-sm"
-                  />
-                  {values.featureColumns.length > 0 && (
-                    <>
-                      <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
-                        {values.featureColumns.map((column, index) => (
-                          <div key={index} className="flex items-center gap-1">
-                            <Badge variant="default">{column}</Badge>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0"
-                              onClick={() => removeFeatureColumn(index)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {values.featureColumns.length} column
-                        {values.featureColumns.length !== 1 ? "s" : ""} added
-                      </p>
-                    </>
-                  )}
-                  {values.featureColumns.length === 0 && (
-                    <p className="text-sm text-muted-foreground italic">
-                      No feature columns defined. Add columns to specify which
-                      features to use for training.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Select the columns to use as features for training the model
-            </p>
-          </div>
-
-          {/* Split Method */}
-          <div className="space-y-2">
-            <Label htmlFor="splitMethod">Split Method</Label>
-            <Select value={values.splitMethod} onValueChange={handleSplitMethodChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select split method" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="random">Random</SelectItem>
-                <SelectItem value="time_based">Time-based</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Random shuffles rows before splitting. Time-based sorts by a date
-              column and reserves the most recent rows for validation — use this
-              for time-series data.
-            </p>
-          </div>
-
-          {/* Date Column (time-based split only) */}
-          {values.splitMethod === "time_based" && (
-            <div className="space-y-2">
-              <Label htmlFor="dateColumn">Date Column *</Label>
-              {values.analysisResult ? (
-                <Select
-                  value={values.dateColumn}
-                  onValueChange={(v) => setField("dateColumn", v)}
-                >
+          {/* Training Configuration */}
+          <CollapsibleSection
+            title="Training Configuration"
+            open={openSections.training}
+            onOpenChange={() => toggleSection("training")}
+          >
+            <div className="space-y-4">
+              {/* Feature Scaling */}
+              <div className="space-y-2">
+                <Label htmlFor="scalingMethod">Feature Scaling</Label>
+                <Select value={values.scalingMethod} onValueChange={handleScalingMethodChange}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select date column" />
+                    <SelectValue placeholder="Select feature scaling" />
                   </SelectTrigger>
                   <SelectContent>
-                    {values.analysisResult.column_names.map((columnName) => (
-                      <SelectItem key={columnName} value={columnName}>
-                        {columnName}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="standard">Standardized (Z-score)</SelectItem>
+                    <SelectItem value="minmax">Min-Max</SelectItem>
+                    <SelectItem value="maxabs">Abs-Max</SelectItem>
+                    <SelectItem value="robust">Robust</SelectItem>
+                    <SelectItem value="auto">Auto (Recommended)</SelectItem>
                   </SelectContent>
                 </Select>
-              ) : (
-                <DraggableInput
-                  id="dateColumn"
-                  value={values.dateColumn}
-                  onChange={(e) => setField("dateColumn", e.target.value)}
-                  placeholder="Enter date/timestamp column name"
+                <p className="text-xs text-muted-foreground">
+                  Auto selects a scaling method based on the model type and dataset
+                  (e.g. Robust for outlier-heavy data, None for tree-based models)
+                </p>
+              </div>
+
+              {/* Split Method */}
+              <div className="space-y-2">
+                <Label htmlFor="splitMethod">Split Method</Label>
+                <Select value={values.splitMethod} onValueChange={handleSplitMethodChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select split method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="random">Random</SelectItem>
+                    <SelectItem value="time_based">Time-based</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Random shuffles rows before splitting. Time-based sorts by a date
+                  column and reserves the most recent rows for validation — use this
+                  for time-series data.
+                </p>
+              </div>
+
+              {/* Date Column (time-based split only) */}
+              {values.splitMethod === "time_based" && (
+                <div className="space-y-2">
+                  <Label htmlFor="dateColumn">Date Column *</Label>
+                  {values.analysisResult ? (
+                    <Select
+                      value={values.dateColumn}
+                      onValueChange={(v) => setField("dateColumn", v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select date column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {values.analysisResult.column_names.map((columnName) => (
+                          <SelectItem key={columnName} value={columnName}>
+                            {columnName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <DraggableInput
+                      id="dateColumn"
+                      value={values.dateColumn}
+                      onChange={(e) => setField("dateColumn", e.target.value)}
+                      placeholder="Enter date/timestamp column name"
+                      className="w-full"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Column used to sort rows chronologically before splitting
+                  </p>
+                </div>
+              )}
+
+              {/* Validation Split */}
+              <div className="space-y-2">
+                <Label>
+                  Validation Split: {Math.round(values.validationSplit * 100)}%
+                </Label>
+                <Slider
+                  value={[values.validationSplit]}
+                  onValueChange={(value) => setField("validationSplit", value[0])}
+                  max={0.5}
+                  min={0.1}
+                  step={0.05}
                   className="w-full"
                 />
-              )}
-              <p className="text-xs text-muted-foreground">
-                Column used to sort rows chronologically before splitting
-              </p>
+                <p className="text-xs text-muted-foreground">
+                  {values.splitMethod === "time_based"
+                    ? "Fraction of the most recent rows to reserve for validation (10% - 50%)"
+                    : "Fraction of data to use for validation (10% - 50%)"}
+                </p>
+              </div>
             </div>
-          )}
-
-          {/* Validation Split */}
-          <div className="space-y-2">
-            <Label>
-              Validation Split: {Math.round(values.validationSplit * 100)}%
-            </Label>
-            <Slider
-              value={[values.validationSplit]}
-              onValueChange={(value) => setField("validationSplit", value[0])}
-              max={0.5}
-              min={0.1}
-              step={0.05}
-              className="w-full"
-            />
-            <p className="text-xs text-muted-foreground">
-              {values.splitMethod === "time_based"
-                ? "Fraction of the most recent rows to reserve for validation (10% - 50%)"
-                : "Fraction of data to use for validation (10% - 50%)"}
-            </p>
-          </div>
+          </CollapsibleSection>
         </div>
       </NodeConfigPanel>
     </>

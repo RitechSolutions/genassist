@@ -556,6 +556,7 @@ export interface TrainModelNodeData extends BaseNodeData {
   hyperparameterOptimization?: HyperparameterOptimizationMethod; // Search method (default: "none")
   optimizationConfig?: OptimizationConfig; // Overrides for the selected search method
   scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
+  taskType?: "auto" | "classification" | "regression"; // Override for the classification/regression heuristic (default: "auto")
 }
 
 // Per Chat RAG Node Data
