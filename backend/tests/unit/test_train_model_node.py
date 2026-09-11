@@ -1,3 +1,6 @@
+import uuid
+
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -5,6 +8,7 @@ from app.modules.workflow.engine.nodes.ml.train_model_node import (
     TREE_BASED_MODEL_TYPES,
     TrainModelNode,
 )
+from app.modules.workflow.engine.workflow_state import WorkflowState
 
 
 @pytest.fixture
@@ -77,6 +81,49 @@ class TestIsClassificationTask:
     def test_defaults_to_auto_when_task_type_not_passed(self, node):
         y = pd.Series([1.1, 2.2, 3.3, 4.4, 5.5])
         assert node._is_classification_task(y, "neural_network") is False
+
+
+class TestClassificationOverrideSplitFallback:
+    """
+    A `taskType` override lets a user force is_classification=True on a target
+    the "auto" heuristic would never have called classification (since auto
+    only does so for low-cardinality int/string targets, which the stratified
+    split always handled safely). This covers the resulting edge case: some
+    classes have too few members to stratify, which must fall back to an
+    unstratified split instead of crashing the whole training run.
+    """
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_unstratified_split_when_a_class_has_one_member(self, tmp_path):
+        rng = np.random.default_rng(7)
+        n = 60
+        x1 = rng.normal(0, 1, n)
+        x2 = rng.normal(0, 1, n)
+        # 5 classes, two of which have only a single member - stratify raises
+        # ValueError on this without the fallback.
+        y = np.array([0] * 30 + [1] * 27 + [2] * 1 + [3] * 1 + [4] * 1)
+        rng.shuffle(y)
+        df = pd.DataFrame({"x1": x1, "x2": x2, "target": y})
+        csv_path = tmp_path / "imbalanced.csv"
+        df.to_csv(csv_path, index=False)
+
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"fallback-{uuid.uuid4().hex[:8]}",
+                "modelType": "random_forest",
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1", "x2"],
+                "validationSplit": 0.2,
+                "taskType": "classification",
+            }
+        )
+
+        assert result["success"] is True
+        assert "accuracy" in result["metrics"]
 
 
 class TestFitScaler:
