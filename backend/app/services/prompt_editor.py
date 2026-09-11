@@ -167,7 +167,8 @@ class PromptEditorService:
 
         legacy = None
         bucket = LEGACY_BUCKET_FOR_NODE_TYPE.get(ctx.node_type) if ctx.node_type else None
-        if bucket is not None:
+        # Reading the bucket directly yields its rows (already versions)
+        if bucket is not None and bucket != node_id:
             legacy_rows = await self.version_repo.get_versions_for_context(
                 workflow_id, bucket, prompt_field
             )

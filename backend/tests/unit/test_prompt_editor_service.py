@@ -322,6 +322,23 @@ class TestGetHistory:
         assert service.version_repo.get_versions_for_context.await_count == 1
 
     @pytest.mark.asyncio
+    async def test_reading_a_legacy_bucket_does_not_repeat_it_as_its_own_legacy(self):
+        service = _service(nodes=[])
+        service.version_repo.get_versions_for_context.return_value = [
+            _version(1, node_id="agent-config")
+        ]
+        service.config_repo.get_by_context.return_value = None
+
+        history = await service.get_history(
+            WORKFLOW_ID, "agent-config", FIELD, "agentNode"
+        )
+
+        assert history.legacy_shared is None
+        assert len(history.versions) == 1
+        assert service.version_repo.get_versions_for_context.await_count == 1
+        assert service.config_repo.get_by_context.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_the_stored_type_wins_over_a_conflicting_hint(self):
         service = _service(nodes=[{"id": NODE_ID, "type": "routerNode"}])
         service.version_repo.get_versions_for_context.return_value = []

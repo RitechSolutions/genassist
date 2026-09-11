@@ -15,8 +15,8 @@ import { extractErrorMessage } from '@/helpers/apiError';
 import type { LLMProvider } from '@/interfaces/llmProvider.interface';
 import type { PromptEvalResponse, PromptOptimizeResponse } from '@/interfaces/promptEditor.interface';
 import type { PromptEditorCapabilities } from '../../utils/promptEditorCapabilities';
-import { acceptGate, evaluateGate, optimizeGate } from '../../utils/promptEditorGates';
-import type { CasesState, EvalInputs, HistoryState } from '../../utils/promptEditorGates';
+import { acceptGate, evaluateGate, optimizeGate, promptLength } from '../../utils/promptEditorGates';
+import type { CasesState, EvalInputs, HistoryState, RunInputs } from '../../utils/promptEditorGates';
 import { draftUnchangedSince } from '../../utils/promptEditorHistory';
 import {
   evalKeyOf,
@@ -137,6 +137,13 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const providers = providersQuery.data ?? [];
   // A default pointing at a deactivated provider must never reach a request
   const activeProviderId = providers.some((p) => p.id === selectedProviderId) ? selectedProviderId : '';
+  const providerStatus: RunInputs['providerStatus'] = providersQuery.isPending
+    ? 'pending'
+    : providersQuery.isError
+      ? 'error'
+      : providers.length === 0
+        ? 'empty'
+        : 'ready';
 
   const goldSuiteId = historyState.goldSuiteId;
 
@@ -262,7 +269,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const runInputs: EvalInputs = {
     content: value,
     contentNoun: 'prompt',
-    providerStatus: providersQuery.isPending ? 'pending' : providersQuery.isError ? 'error' : 'ready',
+    providerStatus,
     providerId: activeProviderId,
     techniqueCount: selectedTechniques.length,
   };
@@ -324,7 +331,13 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         <Label>LLM Provider</Label>
         <Select value={activeProviderId} onValueChange={setSelectedProviderId}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select provider for evaluation/optimization" />
+            <SelectValue
+              placeholder={
+                providerStatus === 'empty'
+                  ? 'No active LLM providers are available'
+                  : 'Select provider for evaluation/optimization'
+              }
+            />
           </SelectTrigger>
           <SelectContent>
             {providers.map((provider) => (
@@ -345,7 +358,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
           rows={10}
           className="w-full font-mono text-sm"
         />
-        <div className="text-xs text-muted-foreground text-right">{value.length} characters</div>
+        <div className="text-xs text-muted-foreground text-right">{promptLength(value)} characters</div>
       </div>
 
       <Accordion type="multiple" className="border rounded-lg px-4">

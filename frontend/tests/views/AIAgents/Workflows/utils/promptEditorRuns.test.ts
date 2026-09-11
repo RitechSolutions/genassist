@@ -99,6 +99,12 @@ describe("isOptimizeCurrent", () => {
     );
   });
 
+  it("expires when the evaluation supplying its failures becomes stale", () => {
+    expect(isOptimizeCurrent(request(), current({ failuresKey: null }))).toBe(
+      false,
+    );
+  });
+
   it("survives later failures when it was built without any", () => {
     const withoutFailures = request({ sourceFailuresKey: null });
 

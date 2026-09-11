@@ -165,6 +165,13 @@ describe("run inputs", () => {
     );
   });
 
+  it("says so when the tenant has no active provider to pick", () => {
+    const gate = evaluate({ providerStatus: "empty", providerId: "" });
+
+    expect(gate.enabled).toBe(false);
+    expect(gate.reason).toMatch(/No active LLM providers/);
+  });
+
   it("blocks a provider that is no longer active", () => {
     const gate = evaluate({ providerId: "" });
 
@@ -192,6 +199,15 @@ describe("run inputs", () => {
     );
     expect(saveGate(ready(), ADMIN, long).enabled).toBe(false);
     expect(acceptGate(ready(), ADMIN, false, long).enabled).toBe(false);
+  });
+
+  it("measures the body in code points, as the backend bound does", () => {
+    const emoji = "😀".repeat(200_000);
+
+    expect(emoji.length).toBe(400_000);
+    expect(saveGate(ready(), ADMIN, emoji).enabled).toBe(true);
+    expect(saveGate(ready(), ADMIN, `${emoji}😀`).enabled).toBe(false);
+    expect(saveGate(ready(), ADMIN, "x".repeat(200_000)).enabled).toBe(true);
   });
 
   it("does not ask optimize for techniques", () => {
