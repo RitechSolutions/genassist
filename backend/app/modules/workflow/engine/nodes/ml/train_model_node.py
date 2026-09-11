@@ -256,9 +256,28 @@ class TrainModelNode(BaseNode):
                         f"(earliest), {len(X_val)} validation samples (latest)"
                     )
                 else:
-                    X_train, X_val, y_train, y_val = train_test_split(
-                        X, y, test_size=validation_split, random_state=42, stratify=y if is_classification else None
-                    )
+                    try:
+                        X_train, X_val, y_train, y_val = train_test_split(
+                            X, y, test_size=validation_split, random_state=42,
+                            stratify=y if is_classification else None,
+                        )
+                    except ValueError as split_error:
+                        # Stratification needs every class to have at least 2
+                        # members. A classification taskType override can be
+                        # applied to a target that isn't actually low-cardinality
+                        # (e.g. a near-continuous column), which the "auto"
+                        # heuristic would never have called classification in
+                        # the first place - fall back to an unstratified split
+                        # rather than failing the whole training run.
+                        if not is_classification:
+                            raise
+                        logger.warning(
+                            f"Stratified split failed ({split_error}); falling back to a "
+                            "non-stratified split for this classification target."
+                        )
+                        X_train, X_val, y_train, y_val = train_test_split(
+                            X, y, test_size=validation_split, random_state=42, stratify=None
+                        )
                     logger.info(f"Split data: {len(X_train)} training samples, {len(X_val)} validation samples")
             else:
                 X_train, y_train = X.copy(), y
