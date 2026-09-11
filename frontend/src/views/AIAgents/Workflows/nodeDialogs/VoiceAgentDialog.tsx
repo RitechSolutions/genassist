@@ -229,8 +229,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
             value={values.systemPrompt || ""}
             onChange={(e) => setField("systemPrompt", e.target.value)}
             placeholder="Instructions for how the voice agent should behave"
-            className="h-24 text-sm"
-            rows={4}
+            size="prompt"
+            className="text-sm"
           />
         </div>
 
@@ -244,8 +244,8 @@ export const VoiceAgentDialog: React.FC<VoiceAgentDialogProps> = (props) => {
             value={values.userPrompt || ""}
             onChange={(e) => setField("userPrompt", e.target.value)}
             placeholder="{{session.message}}"
-            className="h-16 font-mono text-sm"
-            rows={2}
+            size="description"
+            className="font-mono text-sm"
           />
         </div>
 

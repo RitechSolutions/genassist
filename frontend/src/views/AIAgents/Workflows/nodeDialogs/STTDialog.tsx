@@ -122,8 +122,8 @@ export const STTDialog: React.FC<STTDialogProps> = (props) => {
             value={values.audio_source}
             onChange={(e) => setField("audio_source", e.target.value)}
             placeholder="Drag the audio output variable from a connected TTS node, e.g. {{source.output}}"
-            className="h-20 font-mono text-sm"
-            rows={3}
+            size="hint"
+            className="font-mono text-sm"
           />
         </div>
 

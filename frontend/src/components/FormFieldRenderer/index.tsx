@@ -1,5 +1,6 @@
 import { Copy, Eraser } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import { FileUploader } from "@/components/FileUploader";
@@ -163,6 +164,19 @@ export function FormFieldRenderer({
               onChange(`${field.name}_original_filename`, "");
             }}
             placeholder={field.placeholder || `Upload ${field.label}`}
+          />
+        );
+
+      case "textarea":
+        return (
+          <Textarea
+            id={field.name}
+            size={field.size ?? "body"}
+            rows={field.rows}
+            value={value as string}
+            onChange={(e) => onChange(field.name, e.target.value)}
+            placeholder={field.placeholder || field.label}
+            disabled={disabled}
           />
         );
 
