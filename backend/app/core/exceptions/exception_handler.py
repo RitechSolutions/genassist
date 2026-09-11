@@ -25,6 +25,11 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         # Says which reference could not be re-linked, or why the import was
         # refused — the whole point is telling the user what to change.
         ErrorKey.EVALUATION_BUNDLE_INVALID,
+        # Prompt editor: says which node or field is wrong and what to do about
+        # it (save the workflow, retry the save).
+        ErrorKey.PROMPT_CONTEXT_INVALID,
+        ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
+        ErrorKey.PROMPT_VERSION_CONFLICT,
     }
 )
 

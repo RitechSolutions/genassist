@@ -240,6 +240,8 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
                   <PromptEditorButton
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
+                    nodeType={props.nodeType}
+                    nodeLabel={values.name}
                     promptField="llm_judge_system_prompt_suffix"
                     currentValue={values.llm_judge_system_prompt_suffix ?? ""}
                     onPromptChange={(val) =>

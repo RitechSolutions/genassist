@@ -12,14 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------------------------------------------------------------------
 
 class PromptVersionCreate(BaseModel):
-    content: str = Field(..., description="The prompt text.")
+    # No min_length; clearing a prompt is considered a change
+    content: str = Field(..., max_length=200_000, description="The prompt text.")
     label: Optional[str] = Field(
         default=None, max_length=200, description="Optional human-readable label."
     )
-
-
-class PromptVersionUpdate(BaseModel):
-    label: Optional[str] = Field(default=None, max_length=200)
 
 
 class PromptVersionRead(BaseModel):
@@ -42,12 +39,12 @@ class PromptVersionRead(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PromptConfigRead(BaseModel):
-    id: UUID
+    id: Optional[UUID] = None
     workflow_id: UUID
     node_id: str
     prompt_field: str
     gold_suite_id: Optional[UUID] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -60,8 +57,33 @@ class GoldSuiteLinkRequest(BaseModel):
     )
     name: Optional[str] = Field(
         default=None,
+        max_length=200,
         description="Name for the new gold suite (used only when suite_id is omitted).",
     )
+
+
+# ---------------------------------------------------------------------------
+# Prompt history
+# ---------------------------------------------------------------------------
+
+class LegacyHistoryRead(BaseModel):
+    """Versions saved under a shared DOM id before nodes carried their own history"""
+    node_id: str
+    versions: List[PromptVersionRead]
+    gold_suite_id: Optional[UUID] = None
+
+
+class PromptHistoryRead(BaseModel):
+    """All data the editor needs: versions, node state, and field metadata
+    that determine which controls are usable"""
+    versions: List[PromptVersionRead]
+    gold_suite_id: Optional[UUID] = None
+    node_type: Optional[str] = None
+    node_missing: bool
+    field_label: Optional[str] = None
+    inline_check_supported: bool = False
+    unsupported_reason: Optional[str] = None
+    legacy_shared: Optional[LegacyHistoryRead] = None
 
 
 # ---------------------------------------------------------------------------
