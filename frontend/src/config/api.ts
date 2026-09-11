@@ -186,7 +186,13 @@ export const apiRequest = async <T>(
   method: Method,
   endpoint: string,
   data?: Record<string, unknown> | URLSearchParams | FormData,
-  config: Partial<AxiosRequestConfig> = {}
+  config: Partial<AxiosRequestConfig> = {},
+  /**
+   * Opt out of the 403-to-null behaviour below. Set this when the endpoint has
+   * more than one reason to answer 403 and the caller needs the server's
+   * message to tell the user what to do about it.
+   */
+  options: { rethrowForbidden?: boolean } = {}
 ): Promise<T | null> => {
   const baseURL = await getApiUrl();
   // remove starting slash from endpoint
@@ -212,6 +218,7 @@ export const apiRequest = async <T>(
 
     if (status === 403) {
       setServerUp();
+      if (options.rethrowForbidden) throw error;
       return null;
     }
 
