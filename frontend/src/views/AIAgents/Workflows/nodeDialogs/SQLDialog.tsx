@@ -186,10 +186,11 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
               <Label htmlFor="sqlQuery">SQL Query</Label>
               <DraggableTextArea
                 id="sqlQuery"
+                size="code"
                 value={values.sqlQuery}
                 onChange={(e) => setField("sqlQuery", e.target.value)}
                 placeholder="Enter or drag and drop your SQL query here"
-                className="w-full min-h-[150px] font-mono text-sm"
+                className="w-full font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
                 Enter the SQL query to execute. Use variables from previous
@@ -245,10 +246,11 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 </div>
                 <DraggableTextArea
                   id="systemPrompt"
+                  size="body"
                   value={values.systemPrompt}
                   onChange={(e) => setField("systemPrompt", e.target.value)}
                   placeholder="Enter system prompt for the SQL generator"
-                  className="w-full min-h-[100px] text-sm"
+                  className="w-full text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
                   Optional system prompt to guide the SQL generation behavior
@@ -259,10 +261,11 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 <Label htmlFor="humanQuery">Query in Plain English</Label>
                 <DraggableTextArea
                   id="humanQuery"
+                  size="body"
                   value={values.humanQuery}
                   onChange={(e) => setField("humanQuery", e.target.value)}
                   placeholder="e.g., Show me all customers who made purchases last month"
-                  className="w-full min-h-[100px] text-sm"
+                  className="w-full text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
                   Describe what you want to query in plain English. AI will

@@ -1,4 +1,8 @@
 import type { ConnectionStatus } from "./connectionStatus.interface";
+import type {
+  ConditionalField,
+  FieldSchema,
+} from "./dynamicFormSchemas.interface";
 
 /** Values stored in data source connection_data (tags fields use string[]). */
 export type ConnectionDataValue = string | number | boolean | string[];
@@ -14,29 +18,10 @@ export interface DataSource {
   oauth_email?: string;
 }
 
-export interface ConditionalField {
-  field: string;
-  value: string | number | boolean;
-}
-
-export interface DataSourceField {
-  name: string;
-  label: string;
-  type:
-    | "text"
-    | "number"
-    | "password"
-    | "select"
-    | "boolean"
-    | "tags"
-    | "files";
-  required: boolean;
-  default?: string | number | boolean | string[];
-  description?: string;
-  options?: { value: string; label: string }[];
-  placeholder?: string;
-  conditional?: ConditionalField;
-}
+// Data source forms are rendered by the same schema pipeline as every other
+// dynamic form, so these are the unified definitions under the older names.
+export type { ConditionalField };
+export type DataSourceField = FieldSchema;
 
 export interface DataSourceConfig {
   name: string;
