@@ -487,6 +487,7 @@ export default function TemplatesPage() {
             <Label htmlFor="reject-reason">Reason (optional)</Label>
             <Textarea
               id="reject-reason"
+              size="description"
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="e.g. Duplicates an existing template."
