@@ -53,7 +53,7 @@ export interface ChatInputNodeData extends BaseNodeData {
 // Human In The Loop node data — collects structured data from the user mid-flow
 export interface HumanInTheLoopFormField {
   name: string;
-  type: "text" | "number" | "select" | "boolean" | "date";
+  type: "text" | "textarea" | "number" | "select" | "boolean" | "date";
   label: string;
   required?: boolean;
   placeholder?: string;

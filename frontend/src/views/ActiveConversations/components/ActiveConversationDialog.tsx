@@ -4,6 +4,59 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Transcript,
+  TranscriptEntry,
+  ConversationFeedbackEntry,
+} from "@/interfaces/transcript.interface";
+import { Button } from "@/components/button";
+import { Badge } from "@/components/badge";
+import { conversationService } from "@/services/liveConversations";
+import { extractErrorMessage } from "@/helpers/apiError";
+import { getCurrentUserId } from "@/services/auth";
+import { useWebSocketTranscript } from "../hooks/useWebsocket";
+import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmAnalyst";
+import toast from "react-hot-toast";
+import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
+import { submitConversationFeedback } from "@/services/transcripts";
+import { isWsEnabled } from "@/config/api";
+import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
+import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
+
+function toEpochMs(ct: string | number | undefined | null): number {
+  if (ct == null) return 0;
+  if (typeof ct === "number") return ct;
+  const t = new Date(ct).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+function areMessagesEquivalent(
+  previous: TranscriptEntry[],
+  next: TranscriptEntry[]
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+
+  for (let index = 0; index < previous.length; index += 1) {
+    const prevMsg = previous[index];
+    const nextMsg = next[index];
+
+    if (
+      prevMsg.type !== nextMsg.type ||
+      prevMsg.speaker !== nextMsg.speaker ||
+      prevMsg.text !== nextMsg.text ||
+      toEpochMs(prevMsg.create_time) !== toEpochMs(nextMsg.create_time)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
 import { Transcript, TranscriptEntry } from "@/interfaces/transcript.interface";
 
 import { useActiveConversationDetail } from "../hooks/useActiveConversationDetail";

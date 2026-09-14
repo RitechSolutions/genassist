@@ -84,6 +84,18 @@ def test_csv_includes_rate_provenance_counts():
     assert "Unpriced calls,1" in text
 
 
+def test_csv_reports_the_cache_token_buckets():
+    text = _csv_text(summary=_summary(total_cache_read_tokens=3697, total_cache_creation_tokens=120))
+    assert "Cache read tokens,3697" in text
+    assert "Cache write tokens,120" in text
+
+
+def test_csv_reports_zero_cache_tokens_for_summaries_without_them():
+    text = _csv_text()
+    assert "Cache read tokens,0" in text
+    assert "Cache write tokens,0" in text
+
+
 def test_csv_labels_agent_studio_test_cost():
     assert "Agent Studio test cost (USD),0.5000" in _csv_text()
 

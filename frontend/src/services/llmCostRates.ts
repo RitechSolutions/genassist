@@ -71,7 +71,8 @@ export async function deleteLlmCostRate(id: string): Promise<void> {
 
 export async function exportLlmCostRatesCsv(): Promise<Blob> {
   const baseURL = (await getApiUrl()).replace(/\/$/, "");
-  const fullUrl = `${baseURL}/llm-cost-rates/export`;
+  // Export defaults to the legacy 4-column layout; the dialog needs cache columns
+  const fullUrl = `${baseURL}/llm-cost-rates/export?include_cache_rates=true`;
 
   const token = localStorage.getItem("access_token");
   const tokenType = localStorage.getItem("token_type") || "Bearer";

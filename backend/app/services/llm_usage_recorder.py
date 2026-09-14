@@ -10,10 +10,16 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.llm_pricing import PricingStatus, resolve_pricing
+from app.core.config.llm_pricing import (
+    PricingStatus,
+    blended_token_cost,
+    canonical_prompt_tokens,
+    inclusive_cache_fallback,
+    resolve_pricing,
+)
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.db_connection_utils import create_tenant_request_scope
-from app.core.utils.llm_usage_utils import is_usage_metadata_missing, usage_or_placeholder
+from app.core.utils.llm_usage_utils import extract_cache_tokens, is_usage_metadata_missing, usage_or_placeholder
 from app.core.utils.uuid_utils import coerce_uuid
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
@@ -35,6 +41,8 @@ logger = logging.getLogger(__name__)
 _UNPRICED = {
     "input_per_1k": None,
     "output_per_1k": None,
+    "cache_read_per_1k": None,
+    "cache_creation_per_1k": None,
     "cost_usd": None,
     "pricing_status": PricingStatus.UNPRICED.value,
 }
@@ -85,6 +93,23 @@ def _total_tokens(entry: dict[str, Any], input_tokens: int, output_tokens: int) 
     return max(reported, input_tokens + output_tokens)
 
 
+def _token_columns(
+    provider: str, entry: dict[str, Any], input_tokens: int, output_tokens: int, token_details: Any
+) -> dict[str, Any]:
+    """Store the provider's token counts as reported, plus the canonical prompt total"""
+    cache_read, cache_creation = extract_cache_tokens(token_details)
+    provider_key = (provider or "").strip().lower()
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
+        "token_details": token_details,
+        "cache_read_tokens": cache_read,
+        "cache_creation_tokens": cache_creation,
+        "prompt_tokens": canonical_prompt_tokens(provider_key, input_tokens, cache_read, cache_creation),
+    }
+
+
 def _resolve_cost(
     provider: str,
     model: str,
@@ -92,22 +117,39 @@ def _resolve_cost(
     output_tokens: int,
     configured_rates: Optional[dict[str, Any]] = None,
     usage_missing: bool = False,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
 ) -> dict[str, Any]:
-    """Snapshot the rate + cost for one call. No rate, or no reported usage → NULL cost"""
+    """Snapshot the rates + cost for one call. No rate, or no reported usage → NULL cost"""
     if usage_missing:
         return dict(_UNPRICED)
     resolution = resolve_pricing(provider, model, configured_rates)
     if resolution.status is PricingStatus.UNPRICED:
         return dict(_UNPRICED)
-    thousand = Decimal(1000)
-    cost = (Decimal(int(input_tokens)) / thousand) * resolution.input_per_1k + (
-        Decimal(int(output_tokens)) / thousand
-    ) * resolution.output_per_1k
+
+    provider_key = (provider or "").strip().lower()
+    read_rate = inclusive_cache_fallback(provider_key, resolution.cache_read_per_1k, resolution.input_per_1k)
+    creation_rate = inclusive_cache_fallback(provider_key, resolution.cache_creation_per_1k, resolution.input_per_1k)
+    cost = blended_token_cost(
+        provider_key,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        resolution.input_per_1k,
+        resolution.output_per_1k,
+        read_rate,
+        creation_rate,
+        Decimal(1000),
+    )
+    cached = max(int(cache_read_tokens), 0) > 0 or max(int(cache_creation_tokens), 0) > 0
     return {
         "input_per_1k": resolution.input_per_1k,
         "output_per_1k": resolution.output_per_1k,
+        "cache_read_per_1k": read_rate if cached else None,
+        "cache_creation_per_1k": creation_rate if cached else None,
         "cost_usd": cost,
-        "pricing_status": resolution.status.value,
+        "pricing_status": resolution.status.value if cost is not None else PricingStatus.UNPRICED.value,
     }
 
 
@@ -144,6 +186,8 @@ class LlmUsageRecorder:
             nested.setdefault(provider_key, {})[model_key] = {
                 "input_per_1k": row.input_per_1k,
                 "output_per_1k": row.output_per_1k,
+                "cache_read_per_1k": getattr(row, "cache_read_per_1k", None),
+                "cache_creation_per_1k": getattr(row, "cache_creation_per_1k", None),
             }
         return nested
 
@@ -222,6 +266,7 @@ class LlmUsageRecorder:
                             output_tokens = int(entry.get("output_tokens", 0) or 0)
                             provider_id = coerce_uuid(entry.get("llm_provider_id"))
                             token_details = entry.get("token_details")
+                            token_columns = _token_columns(provider, entry, input_tokens, output_tokens, token_details)
                             pricing = _resolve_cost(
                                 provider,
                                 model,
@@ -229,6 +274,8 @@ class LlmUsageRecorder:
                                 output_tokens,
                                 configured_rates,
                                 usage_missing=is_usage_metadata_missing(token_details),
+                                cache_read_tokens=token_columns["cache_read_tokens"],
+                                cache_creation_tokens=token_columns["cache_creation_tokens"],
                             )
                             event_rows.append(
                                 {
@@ -245,10 +292,7 @@ class LlmUsageRecorder:
                                     "node_id": _clamp(entry.get("node_id"), 128),
                                     "provider_key": _normalize(provider, 64),
                                     "model_key": _normalize(model, 512),
-                                    "input_tokens": input_tokens,
-                                    "output_tokens": output_tokens,
-                                    "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
-                                    "token_details": token_details,
+                                    **token_columns,
                                     "occurred_at": occurred_at,
                                     **pricing,
                                 }
@@ -334,6 +378,7 @@ class LlmUsageRecorder:
                             provider = entry.get("provider", "") or ""
                             model = entry.get("model", "") or ""
                             provider_id = coerce_uuid(entry.get("llm_provider_id"))
+                            token_columns = _token_columns(provider, usage, input_tokens, output_tokens, token_details)
                             pricing = _resolve_cost(
                                 provider,
                                 model,
@@ -341,6 +386,8 @@ class LlmUsageRecorder:
                                 output_tokens,
                                 configured_rates,
                                 usage_missing=is_usage_metadata_missing(token_details),
+                                cache_read_tokens=token_columns["cache_read_tokens"],
+                                cache_creation_tokens=token_columns["cache_creation_tokens"],
                             )
                             event_rows.append(
                                 {
@@ -357,10 +404,7 @@ class LlmUsageRecorder:
                                     "node_id": None,
                                     "provider_key": _normalize(provider, 64),
                                     "model_key": _normalize(model, 512),
-                                    "input_tokens": input_tokens,
-                                    "output_tokens": output_tokens,
-                                    "total_tokens": _total_tokens(usage, input_tokens, output_tokens),
-                                    "token_details": token_details,
+                                    **token_columns,
                                     "occurred_at": occurred_at,
                                     **pricing,
                                 }
@@ -469,6 +513,7 @@ class LlmUsageRecorder:
                     output_tokens = int(entry.get("output_tokens") or 0)
                     token_details = entry.get("token_details")
                     configured_rates = await self._configured_rates(session)
+                    token_columns = _token_columns(provider, entry, input_tokens, output_tokens, token_details)
                     pricing = _resolve_cost(
                         provider,
                         model,
@@ -476,6 +521,8 @@ class LlmUsageRecorder:
                         output_tokens,
                         configured_rates,
                         usage_missing=is_usage_metadata_missing(token_details),
+                        cache_read_tokens=token_columns["cache_read_tokens"],
+                        cache_creation_tokens=token_columns["cache_creation_tokens"],
                     )
                     event = (
                         insert(LlmUsageEventModel)
@@ -492,10 +539,7 @@ class LlmUsageRecorder:
                                 "conversation_id": conversation_id,
                                 "provider_key": _normalize(provider, 64),
                                 "model_key": _normalize(model, 512),
-                                "input_tokens": input_tokens,
-                                "output_tokens": output_tokens,
-                                "total_tokens": _total_tokens(entry, input_tokens, output_tokens),
-                                "token_details": token_details,
+                                **token_columns,
                                 "occurred_at": occurred_at,
                                 **pricing,
                             }

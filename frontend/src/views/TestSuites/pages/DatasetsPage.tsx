@@ -477,7 +477,7 @@ const DatasetsPage: React.FC = () => {
               <Textarea
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
-                rows={2}
+                size="hint"
               />
             </div>
           </>
