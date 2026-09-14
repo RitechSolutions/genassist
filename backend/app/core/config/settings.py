@@ -170,6 +170,8 @@ class ProjectSettings(BaseSettings):
     DB_PASS: Optional[str]
     DB_NAME: Optional[str]
     DB_PORT: Optional[int]
+    # Aurora cluster reader endpoint. Empty sends every read to DB_HOST.
+    DB_READ_HOST: Optional[str] = None
     CREATE_DB: bool = False
     DB_ASYNC: bool = True
     # SQLAlchemy async engine pool settings
@@ -177,6 +179,9 @@ class ProjectSettings(BaseSettings):
     DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30  # seconds
     DB_POOL_RECYCLE: int = 1800  # seconds
+    # Read-replica pool sizing. None inherits the writer values above.
+    DB_READ_POOL_SIZE: Optional[int] = None
+    DB_READ_MAX_OVERFLOW: Optional[int] = None
     # Hard ceiling on how long a single interactive (FastAPI) query may run.
     # Prevents runaway searches from pinning DB CPU indefinitely. 0 disables.
     DB_STATEMENT_TIMEOUT: int = 1800  # seconds (30 minutes)
@@ -393,13 +398,37 @@ class ProjectSettings(BaseSettings):
         else:
             return f"{self.DB_NAME}_tenant_{tenant.replace('-', '_')}"
 
-    def get_tenant_database_url(self, tenant: str = "master") -> str:
-        """Generate database URL for a specific tenant"""
-        # Sanitize tenant_id for database name (replace hyphens with underscores)
+    @property
+    def read_replica_enabled(self) -> bool:
+        return bool((self.DB_READ_HOST or "").strip())
+
+    @property
+    def read_pool_size(self) -> int:
+        if self.DB_READ_POOL_SIZE is not None:
+            return self.DB_READ_POOL_SIZE
+        return self.DB_POOL_SIZE
+
+    @property
+    def read_max_overflow(self) -> int:
+        if self.DB_READ_MAX_OVERFLOW is not None:
+            return self.DB_READ_MAX_OVERFLOW
+        return self.DB_MAX_OVERFLOW
+
+    def _tenant_async_database_url(self, host: str, tenant: str) -> str:
         tenant_db = self.get_tenant_database_name(tenant)
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return unquote(f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}")
+        return unquote(f"postgresql+asyncpg://{user}:{password}@{host}/{tenant_db}")
+
+    def get_tenant_database_url(self, tenant: str = "master") -> str:
+        """Generate database URL for a specific tenant"""
+        return self._tenant_async_database_url(self.DB_HOST, tenant)
+
+    def get_tenant_read_database_url(self, tenant: str = "master") -> str:
+        """Database URL for read-only queries; the writer URL when no replica is configured"""
+        if not self.read_replica_enabled:
+            return self.get_tenant_database_url(tenant)
+        return self._tenant_async_database_url(self.DB_READ_HOST.strip(), tenant)
 
     def get_tenant_database_url_sync(self, tenant: str = "master") -> str:
         """Generate SYNC database URL for a specific tenant (psycopg2)"""
