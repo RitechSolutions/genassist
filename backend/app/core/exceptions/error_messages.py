@@ -185,6 +185,11 @@ class ErrorKey(Enum):
     PROMPT_CONTEXT_INVALID = "PROMPT_CONTEXT_INVALID"
     PROMPT_FIELD_NOT_SUPPORTED = "PROMPT_FIELD_NOT_SUPPORTED"
     PROMPT_VERSION_CONFLICT = "PROMPT_VERSION_CONFLICT"
+    PROMPT_EVAL_TECHNIQUE_UNSUPPORTED = "PROMPT_EVAL_TECHNIQUE_UNSUPPORTED"
+    PROMPT_CASE_SELECTION_INVALID = "PROMPT_CASE_SELECTION_INVALID"
+    PROMPT_OPTIMIZE_UNUSABLE = "PROMPT_OPTIMIZE_UNUSABLE"
+    PROMPT_EXECUTION_TIMEOUT = "PROMPT_EXECUTION_TIMEOUT"
+    PROMPT_MODEL_CALL_FAILED = "PROMPT_MODEL_CALL_FAILED"
 
 
 ERROR_MESSAGES = {
@@ -273,6 +278,7 @@ ERROR_MESSAGES = {
         ErrorKey.TRANSCRIPT_ERROR_PARSING: "Couldn't parse transcript, please try again later.",
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
         ErrorKey.FEATURE_FLAG_NOT_FOUND: "Feature Flags not found.",
+        ErrorKey.WORKFLOW_NOT_FOUND: "The workflow could not be found.",
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
@@ -370,6 +376,12 @@ ERROR_MESSAGES = {
         ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
         ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
+        # No braces in any message: get_error_message calls .format() unconditionally.
+        ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED: "This matching technique is not available for an isolated prompt check.",
+        ErrorKey.PROMPT_CASE_SELECTION_INVALID: "The selected gold dataset cases are not valid for this run.",
+        ErrorKey.PROMPT_OPTIMIZE_UNUSABLE: "The model did not return a usable prompt suggestion.",
+        ErrorKey.PROMPT_EXECUTION_TIMEOUT: "The prompt check did not finish within the time budget.",
+        ErrorKey.PROMPT_MODEL_CALL_FAILED: "The LLM provider call failed.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

@@ -130,6 +130,16 @@ class EvaluationNLIModel:
             contradiction_index = 0
         return entail_index, contradiction_index
 
+    def is_loaded(self, model_name: Optional[str] = None) -> bool:
+        """Whether the requested model can score right now. Lock-free to avoid stalling the event loop.
+        Can report the outgoing model briefly during swaps. Message-only, not for grading.
+        """
+        return (
+            self._resolve_model_name(model_name) == self._loaded_model_name
+            and self._model is not None
+            and self._tokenizer is not None
+        )
+
     def score_evidence(
         self,
         answer: str,

@@ -30,6 +30,11 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         ErrorKey.PROMPT_CONTEXT_INVALID,
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
         ErrorKey.PROMPT_VERSION_CONFLICT,
+        # Names the technique, the stale cases or the unusable reply, so the user
+        # knows what to change. The 502/504 details stay internal.
+        ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED,
+        ErrorKey.PROMPT_CASE_SELECTION_INVALID,
+        ErrorKey.PROMPT_OPTIMIZE_UNUSABLE,
     }
 )
 

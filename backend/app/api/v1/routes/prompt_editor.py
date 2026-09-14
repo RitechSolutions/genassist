@@ -142,14 +142,7 @@ async def evaluate_prompt(
     data: PromptEvalRequest,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.evaluate_prompt(
-        workflow_id,
-        node_id,
-        prompt_field,
-        prompt_content=data.prompt_content,
-        techniques=data.techniques,
-        provider_id=data.provider_id,
-    )
+    return await service.evaluate_prompt(workflow_id, node_id, prompt_field, data)
 
 
 @router.post(
