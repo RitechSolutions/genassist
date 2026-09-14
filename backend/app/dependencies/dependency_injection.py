@@ -2,7 +2,7 @@ import logging
 from typing import Annotated
 
 from fastapi_injector import RequestScopeFactory, request_scope
-from injector import Module, provider, singleton
+from injector import Module, inject, provider, singleton
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,8 +18,9 @@ RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
 from app.core.config.settings import settings
 
 # Multi-tenant session manager
-from app.core.tenant_scope import tenant_scope
+from app.core.tenant_scope import is_background_task, require_tenant_context, tenant_scope
 from app.db.multi_tenant_session import multi_tenant_manager
+from app.db.session_types import ReadOnlySession
 from app.db.transaction_manager import TransactionManager
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
@@ -34,6 +35,7 @@ from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.repositories.conversation_read_receipt import ConversationReadReceiptRepository
 from app.repositories.conversations import ConversationRepository
+from app.repositories.conversations_read import ConversationReadRepository
 from app.repositories.datasources import DataSourcesRepository
 from app.repositories.feature_flag import FeatureFlagRepository
 from app.repositories.file_manager import FileManagerRepository
@@ -210,11 +212,22 @@ class Dependencies(Module):
 
         return session
 
+    @inject
+    def provide_read_session(self, db: AsyncSession) -> ReadOnlySession:
+        """Provide the read-replica session, or the request write session when no replica is configured."""
+        if not settings.read_replica_enabled or is_background_task():
+            return db
+        tenant_id = require_tenant_context()
+        return multi_tenant_manager.get_tenant_read_session_factory(tenant_id)()
+
     def configure(self, binder):
         # Request-scoped transaction boundary shared by the transaction middleware,
         # the background-task scope helpers, and any service that opts into an
         # explicit unit of work. Same request-scoped AsyncSession as the repositories.
         binder.bind(TransactionManager, scope=request_scope)
+        # ReadOnlySession is a NewType key; bind it explicitly so it stays separate
+        # from the AsyncSession binding above.
+        binder.bind(ReadOnlySession, to=self.provide_read_session, scope=request_scope)
 
         binder.bind(ToolService, scope=request_scope)
         binder.bind(ToolRepository, scope=request_scope)
@@ -272,6 +285,7 @@ class Dependencies(Module):
 
         binder.bind(ConversationService, scope=request_scope)
         binder.bind(ConversationRepository, scope=request_scope)
+        binder.bind(ConversationReadRepository, scope=request_scope)
         binder.bind(ConversationReadReceiptRepository, scope=request_scope)
 
         binder.bind(ConversationAnalysisService, scope=request_scope)

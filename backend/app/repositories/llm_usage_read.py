@@ -3,11 +3,11 @@ from uuid import UUID
 
 from injector import inject
 from sqlalchemy import Date, cast, distinct, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.llm_pricing import PricingStatus
 from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.db.models.llm_usage import LlmUsageEventModel
+from app.db.session_types import ReadOnlySession
 from app.repositories.db_repository import DbRepository
 
 _COST = LlmUsageEventModel.cost_usd
@@ -40,7 +40,7 @@ def _calls_with_status(status: PricingStatus):
 class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
     """Aggregate reads over the ``llm_usage_events`` ledger for the LLM Usage surfaces"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: ReadOnlySession):
         super().__init__(LlmUsageEventModel, db)
 
     async def resolve_scope(self, params) -> list[UUID] | None:
