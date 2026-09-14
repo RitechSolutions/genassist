@@ -46,6 +46,19 @@ import {
   type EvalRequest,
   type OptimizeRequest,
 } from '../../utils/promptEditorRuns';
+import {
+  DIAGNOSTIC_MESSAGES,
+  bindingChangeNote,
+  comparePromptBindings,
+  directPredecessorIds,
+  fanInNote,
+  readPromptBindings,
+  scanBraceCandidates,
+  unknownBindings,
+  unknownDataNote,
+} from '../../utils/templateVariableDiagnostics';
+import { useWorkflowExecution } from '../../context/WorkflowExecutionContext';
+import { useWorkflowVariables } from '../../context/WorkflowVariablesContext';
 import { GateTooltip } from './GateTooltip';
 import { PromptEvalResults } from './PromptEvalResults';
 import { promptHistoryKey } from './usePromptHistory';
@@ -97,6 +110,9 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   defaultProviderId,
 }) => {
   const queryClient = useQueryClient();
+  // Both providers wrap every node dialog that can open this editor
+  const { tree } = useWorkflowVariables();
+  const { nodes: workflowNodes, edges: workflowEdges } = useWorkflowExecution();
 
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -136,6 +152,21 @@ export const EditorTab: React.FC<EditorTabProps> = ({
       : providers.length === 0
         ? 'empty'
         : 'ready';
+
+  // Advisory only: the engine decides what resolves, so none of this gates a run
+  const draftBindings = useMemo(() => readPromptBindings(value), [value]);
+  const braceScan = useMemo(() => scanBraceCandidates(value), [value]);
+  const availabilityNote = useMemo(
+    () => unknownDataNote(unknownBindings(draftBindings, tree)),
+    [draftBindings, tree],
+  );
+  const fanIn = useMemo(
+    () =>
+      fanInNote(draftBindings, directPredecessorIds(nodeId, workflowNodes, workflowEdges)),
+    [draftBindings, nodeId, workflowNodes, workflowEdges],
+  );
+  const hasDiagnostics =
+    braceScan.findings.length > 0 || availabilityNote !== null || fanIn !== null;
 
   const goldSuiteId = historyState.goldSuiteId;
 
@@ -251,6 +282,16 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     optimizeRun !== null &&
     !isOptimizeCurrent(optimizeRun.request, { key: currentOptimizeKey, failuresKey });
   const suggestion = optimizeResult?.suggested_prompt ?? '';
+
+  // Compared against the prompt the optimizer was given, not the live draft: a
+  // changed draft is stale and Accept is already blocked
+  const placeholderNote = useMemo(
+    () =>
+      optimizeRun
+        ? bindingChangeNote(comparePromptBindings(optimizeRun.request.prompt, suggestion))
+        : null,
+    [optimizeRun, suggestion],
+  );
 
   // Off a split the suggestion reuses the current run's cases, so both sides match
   // One value, because the key must be built from exactly what the run is sent
@@ -524,6 +565,25 @@ export const EditorTab: React.FC<EditorTabProps> = ({
           className="w-full font-mono text-sm"
         />
         <div className="text-xs text-muted-foreground text-right">{promptLength(value)} characters</div>
+
+        {hasDiagnostics && (
+          <div className="space-y-1 text-xs">
+            {braceScan.findings.map((finding) => (
+              <p
+                key={`${finding.index}-${finding.kind}`}
+                className="text-amber-700 dark:text-amber-400"
+              >
+                <code className="font-mono">{finding.text}</code>{' '}
+                {DIAGNOSTIC_MESSAGES[finding.kind]}
+              </p>
+            ))}
+            {braceScan.truncated && (
+              <p className="text-amber-700 dark:text-amber-400">…and more.</p>
+            )}
+            {availabilityNote && <p className="text-muted-foreground">{availabilityNote}</p>}
+            {fanIn && <p className="text-muted-foreground">{fanIn}</p>}
+          </div>
+        )}
       </div>
 
       <Accordion type="multiple" className="border rounded-lg px-4">
@@ -587,6 +647,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                       <div className="space-y-1">
                         <Label className="text-sm font-medium">Explanation</Label>
                         <p className="text-sm text-muted-foreground">{optimizeResult.explanation}</p>
+                      </div>
+                    )}
+
+                    {placeholderNote && (
+                      <div className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
+                        {placeholderNote} Check it before accepting.
                       </div>
                     )}
 
