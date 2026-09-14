@@ -1,7 +1,7 @@
 import asyncio
-import json
 import logging
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
@@ -31,6 +31,9 @@ from app.repositories.test_suite import TestCaseRepository, TestSuiteRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.prompt_editor import (
     MAX_ACTUAL_CHARS,
+    MAX_PROMPT_CONTENT,
+    CaseSplit,
+    FailedCaseRef,
     LegacyHistoryRead,
     PromptConfigRead,
     PromptEvalCaseResult,
@@ -38,6 +41,7 @@ from app.schemas.prompt_editor import (
     PromptEvalResponse,
     PromptEvalSummary,
     PromptHistoryRead,
+    PromptOptimizeRequest,
     PromptOptimizeResponse,
     PromptRunProvenance,
     PromptVersionCreate,
@@ -58,6 +62,12 @@ PROMPT_CHECK_MODEL_BUDGET_WITH_NLI = 50
 PROMPT_CHECK_SCORE_BUDGET_SECONDS = 30
 PROMPT_CHECK_METERING_SECONDS = 20
 PROMPT_CHECK_CALL_TIMEOUT_SECONDS = 45
+OPTIMIZE_CALL_TIMEOUT_SECONDS = 80
+MAX_OPTIMIZE_FAILED = 10
+MAX_OPTIMIZE_FAILED_ACTUAL_CHARS = 4_000
+MAX_OPTIMIZE_EXAMPLES = 20
+MAX_OPTIMIZE_EXAMPLE_CHARS = 24_000
+MAX_OPTIMIZE_EXAMPLE_SCAN = 60
 
 TRUNCATION_MARKER = " […shortened by the editor]"
 _GROUNDING_TECHNIQUE = "nli_eval"
@@ -115,11 +125,16 @@ def _case_input_text(input_data: Any) -> str:
     return str(input_data)
 
 
+def _shortened(text: str, limit: int) -> str:
+    """Cut inside the limit so the marker itself cannot breach it"""
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+
+
 def _for_wire(text: str) -> str:
     """input and expected have max_length on response model, so marker must fit inside the bound"""
-    if len(text) <= MAX_ACTUAL_CHARS:
-        return text
-    return text[: MAX_ACTUAL_CHARS - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+    return _shortened(text, MAX_ACTUAL_CHARS)
 
 
 def _generic(exc: Exception) -> str:
@@ -238,20 +253,23 @@ def _bounded_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _usage_entry(response: Any, call_index: int, purpose: str, provider_id: UUID) -> Dict[str, Any]:
+    """usage=None is valid; recorder writes unpriced row. All paid calls counted"""
+    usage = extract_usage_from_aimessage(response)
+    return {
+        "call_index": call_index,
+        "provider_id": (usage or {}).get("provider_id") or str(provider_id),
+        "purpose": purpose,
+        "usage": usage,
+    }
+
+
 def _collect_usage(ref: "PromptUsageRef", runs: List["_CaseRun"], provider_id: UUID) -> None:
     """Response is metered before scoring, so failures don't skip it"""
     for run in runs:
         if run.response is None:
             continue
-        usage = extract_usage_from_aimessage(run.response)
-        ref.entries.append(
-            {
-                "call_index": run.position,
-                "provider_id": (usage or {}).get("provider_id") or str(provider_id),
-                "purpose": "prompt_check",
-                "usage": usage,
-            }
-        )
+        ref.entries.append(_usage_entry(run.response, run.position, "prompt_check", provider_id))
 
 
 def _summarise(rows: List[PromptEvalCaseResult]) -> PromptEvalSummary:
@@ -268,6 +286,152 @@ def _summarise(rows: List[PromptEvalCaseResult]) -> PromptEvalSummary:
         skipped=sum(1 for row in rows if row.status == "skipped"),
         scored=len(scored_rows),
         avg_score=sum(case_scores) / len(case_scores) if case_scores else None,
+    )
+
+
+@dataclass(frozen=True)
+class ValidatedSplit:
+
+    dev: List[UUID]
+    holdout: List[UUID]
+    exploratory: bool
+
+
+def _split_refused(detail: str) -> AppException:
+    return AppException(
+        status_code=400,
+        error_key=ErrorKey.PROMPT_CASE_SELECTION_INVALID,
+        error_detail=detail,
+    )
+
+
+def validate_case_split(
+    split: Optional[CaseSplit],
+    index: List[Tuple[UUID, Optional[UUID], Optional[int]]],
+    failed_ids: List[UUID],
+) -> ValidatedSplit:
+    """Validated against suite index; refused request builds no model.
+    Both sides str()-ed to prevent one conversation appearing as two groups"""
+    known = {str(entry[0]) for entry in index}
+    ordered = [entry[0] for entry in index]
+
+    if any(str(case_id) not in known for case_id in failed_ids):
+        raise _split_refused(
+            "Some failed cases are no longer in the dataset. Reload the cases and run again."
+        )
+
+    if split is None:
+        return ValidatedSplit(dev=ordered, holdout=[], exploratory=True)
+
+    holdout = {str(case_id) for case_id in split.holdout_case_ids}
+    if holdout - known:
+        raise _split_refused(
+            "Some hold-out cases are no longer in the dataset. Reload the cases and run again."
+        )
+
+    groups: Dict[str, List[str]] = defaultdict(list)
+    for case_id, conversation_id, _turn in index:
+        groups[str(conversation_id or case_id)].append(str(case_id))
+    for members in groups.values():
+        held = sum(1 for member in members if member in holdout)
+        if 0 < held < len(members):
+            raise _split_refused("A conversation is split across the development and hold-out sets.")
+
+    if any(str(case_id) in holdout for case_id in failed_ids):
+        raise _split_refused(
+            "A failed case is in the hold-out set; only development failures can be sent."
+        )
+
+    held_groups = sum(1 for members in groups.values() if members[0] in holdout)
+    if held_groups < 2 or len(groups) - held_groups < 2:
+        raise _split_refused("Each side of the split needs at least two conversations or cases.")
+
+    return ValidatedSplit(
+        dev=[case_id for case_id in ordered if str(case_id) not in holdout],
+        holdout=[case_id for case_id in ordered if str(case_id) in holdout],
+        exploratory=False,
+    )
+
+
+def _unusable_suggestion(detail: str) -> AppException:
+    return AppException(
+        status_code=400,
+        error_key=ErrorKey.PROMPT_OPTIMIZE_UNUSABLE,
+        error_detail=detail,
+    )
+
+
+def _parse_suggestion(text: str) -> Tuple[str, str]:
+    """Non-matching envelope refused; never returned as suggestion"""
+    envelope = (
+        "The model did not return the agreed reply: a single JSON object with an "
+        "improved_prompt and an explanation. Try again or pick another provider."
+    )
+    try:
+        parsed = parse_json_object_reply(text)
+    except ValueError as exc:
+        raise _unusable_suggestion(envelope) from exc
+
+    suggested, explanation = parsed.get("improved_prompt"), parsed.get("explanation")
+    if not isinstance(suggested, str) or not isinstance(explanation, str):
+        raise _unusable_suggestion(envelope)
+    if not suggested.strip():
+        raise _unusable_suggestion("The model returned an empty prompt. Try again.")
+    if len(suggested) > MAX_PROMPT_CONTENT:
+        raise _unusable_suggestion(
+            f"The suggested prompt is longer than the {MAX_PROMPT_CONTENT} character limit."
+        )
+    return suggested, explanation
+
+
+@dataclass(frozen=True)
+class _Examples:
+    """What the optimizer was actually shown"""
+
+    gold_text: str
+    failed_text: str
+    case_ids: List[UUID]
+    failure_case_ids: List[UUID]
+    truncated: bool
+
+
+_OPTIMIZE_SYSTEM_PROMPT = (
+    "You are an expert prompt engineer. Your task is to improve a system prompt "
+    "so that when an LLM uses it, the LLM produces responses that match the "
+    "gold dataset expected outputs as closely as possible.\n\n"
+    "Rules:\n"
+    "- Study each gold dataset pair carefully: the Input is what the user will say, "
+    "and the Expected output is the ideal response the LLM should produce\n"
+    "- Rewrite the system prompt so the LLM would naturally produce responses "
+    "matching those expected outputs\n"
+    "- If there are failed cases, pay special attention to fixing those patterns\n"
+    "- Preserve the original intent and domain of the prompt\n"
+    "- Be specific: add formatting instructions, tone guidance, or constraints "
+    "that align with the gold examples\n"
+    "- Return your response as JSON with two fields:\n"
+    '  {"improved_prompt": "the full improved prompt text", '
+    '"explanation": "brief explanation of what you changed and why"}\n'
+    "- Return ONLY the JSON object, no other text"
+)
+
+
+def _optimize_request_text(
+    current_prompt: str, gold_examples: str, failed_section: str, instructions: Optional[str]
+) -> str:
+    failed = (
+        "\n\n## FAILED CASES\n"
+        "These cases failed evaluation with the current prompt:\n\n" + failed_section
+        if failed_section
+        else ""
+    )
+    extra = f"\n\n## ADDITIONAL INSTRUCTIONS\n{instructions}" if instructions else ""
+    return (
+        f"## CURRENT SYSTEM PROMPT\n{current_prompt}\n\n"
+        f"## GOLD DATASET (Input → Expected Output)\n"
+        f"The improved prompt must guide the LLM to produce outputs matching these:\n\n"
+        f"{gold_examples}"
+        f"{failed}"
+        f"{extra}"
     )
 
 
@@ -823,6 +987,18 @@ class PromptEditorService:
             source="prompt_editor",
         )
 
+    async def _flush_usage(self, ref: PromptUsageRef) -> bool:
+        """One hand-over per run (per-case would exceed budget). Returns failure status.
+        False = handed over, not confirmed written"""
+        if not ref.entries:
+            return False
+        try:
+            await asyncio.wait_for(self._persist_usage(ref), PROMPT_CHECK_METERING_SECONDS)
+        except Exception:
+            logger.warning("Recording prompt-editor LLM usage failed", exc_info=True)
+            return True
+        return False
+
     async def evaluate_prompt(
         self,
         workflow_id: UUID,
@@ -833,7 +1009,6 @@ class PromptEditorService:
         check_id = uuid4()
         started = time.monotonic()
         ref = PromptUsageRef(execution_id=f"prompt_editor:{check_id}")
-        metering_handoff_failed = False
 
         try:
             ctx, cases, configs, provider, llm, total_cases = await asyncio.wait_for(
@@ -866,13 +1041,9 @@ class PromptEditorService:
             _collect_usage(ref, runs, request.provider_id)
             rows, deadline_hit = await self._score_all(runs, request, configs, check_id)
         finally:
-            if ref.entries:
-                try:
-                    await asyncio.wait_for(self._persist_usage(ref), PROMPT_CHECK_METERING_SECONDS)
-                except Exception:
-                    metering_handoff_failed = True
-                    logger.warning("Recording prompt-check LLM usage failed", exc_info=True)
+            metering_handoff_failed = await self._flush_usage(ref)
 
+        # Built after the flush; inside it the hand-over flag would be frozen False
         return PromptEvalResponse(
             results=rows,
             summary=_summarise(rows),
@@ -933,106 +1104,207 @@ class PromptEditorService:
 
     # ---- Optimize ------------------------------------------------------------
 
+    async def _case_rows(self, suite_id: UUID, case_ids: List[UUID]) -> Dict[str, Any]:
+        rows = await self.case_repo.get_cases_by_ids(suite_id, case_ids)
+        return {str(row.id): row for row in rows}
+
+    async def _build_examples(
+        self,
+        suite_id: Optional[UUID],
+        split: ValidatedSplit,
+        failed: List[FailedCaseRef],
+    ) -> _Examples:
+        """Failures first, dev cases next, shared budget. No duplicate failed cases.
+        Re-read input/expectation for optimizer accuracy."""
+        shown_failed = failed[:MAX_OPTIMIZE_FAILED]
+        failure_ids = [entry.case_id for entry in shown_failed]
+        already_shown = {str(case_id) for case_id in failure_ids}
+        development = [c for c in split.dev if str(c) not in already_shown]
+        truncated = len(failed) > len(shown_failed)
+
+        if suite_id is None or not (failure_ids or development):
+            return _Examples("", "", [], [], truncated)
+
+        rendered = 0
+        used = 0
+
+        def _fits(block: str) -> bool:
+            nonlocal rendered, used
+            if rendered >= MAX_OPTIMIZE_EXAMPLES or used + len(block) > MAX_OPTIMIZE_EXAMPLE_CHARS:
+                return False
+            rendered += 1
+            used += len(block)
+            return True
+
+        failed_blocks: List[str] = []
+        gold_blocks: List[str] = []
+        case_ids: List[UUID] = []
+        failure_case_ids: List[UUID] = []
+
+        # The first read carries the failures and the first window of development cases
+        window = development[:MAX_OPTIMIZE_EXAMPLES]
+        by_id = await self._case_rows(suite_id, failure_ids + window)
+
+        for entry in shown_failed:
+            row = by_id.get(str(entry.case_id))
+            if row is None:
+                truncated = True
+                continue
+            block = (
+                f"Input: {_case_input_text(row.input_data)}\n"
+                f"Expected: {normalize_text(row.expected_output)}\n"
+                f"Got: {_shortened(entry.actual, MAX_OPTIMIZE_FAILED_ACTUAL_CHARS)}"
+            )
+            if not _fits(block):
+                truncated = True
+                continue
+            failed_blocks.append(block)
+            failure_case_ids.append(row.id)
+            case_ids.append(row.id)
+
+        scanned = 0
+        scan_limit = min(len(development), MAX_OPTIMIZE_EXAMPLE_SCAN)
+        while True:
+            for case_id in window:
+                row = by_id.get(str(case_id))
+                if row is None:
+                    truncated = True
+                    continue
+                block = (
+                    f"Input: {_case_input_text(row.input_data)}\n"
+                    f"Expected: {normalize_text(row.expected_output)}"
+                )
+                if not _fits(block):
+                    truncated = True
+                    continue
+                gold_blocks.append(block)
+                case_ids.append(row.id)
+            scanned += len(window)
+            if rendered >= MAX_OPTIMIZE_EXAMPLES or scanned >= scan_limit:
+                break
+            window = development[scanned : scanned + MAX_OPTIMIZE_EXAMPLES]
+            by_id = await self._case_rows(suite_id, window)
+
+        truncated = truncated or scanned < len(development)
+
+        return _Examples(
+            gold_text="\n\n".join(gold_blocks),
+            failed_text="\n\n---\n".join(failed_blocks),
+            case_ids=case_ids,
+            failure_case_ids=failure_case_ids,
+            truncated=truncated,
+        )
+
+    async def _prepare_optimize(
+        self,
+        workflow_id: UUID,
+        node_id: str,
+        prompt_field: str,
+        request: PromptOptimizeRequest,
+        op_id: UUID,
+    ):
+        """Same gate as check. Allows no dataset (instructions-only is valid)"""
+        from app.dependencies.injector import injector
+        from app.services.llm_providers import LlmProviderService
+
+        ctx = await self._prepare_context(workflow_id, node_id, prompt_field)
+
+        config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
+        suite_id = config.gold_suite_id if config else None
+        index = await self.case_repo.get_case_index_for_suite(suite_id) if suite_id else []
+
+        failed = list(request.failed_cases or [])
+        split = validate_case_split(request.case_split, index, [entry.case_id for entry in failed])
+        examples = await self._build_examples(suite_id, split, failed)
+
+        provider = await injector.get(LlmProviderService).get_by_id(request.provider_id)
+        llm = await self._build_model(provider, op_id)
+        return ctx, provider, llm, split, examples, len(index)
+
     async def optimize_prompt(
         self,
         workflow_id: UUID,
         node_id: str,
         prompt_field: str,
-        current_prompt: str,
-        provider_id: UUID,
-        instructions: Optional[str] = None,
-        failed_cases: Optional[List[Dict[str, Any]]] = None,
+        request: PromptOptimizeRequest,
     ) -> PromptOptimizeResponse:
-        # Load gold cases for context
-        config = await self.config_repo.get_by_context(
-            workflow_id, node_id, prompt_field
-        )
-        gold_examples = ""
-        if config and config.gold_suite_id:
-            cases = await self.case_repo.get_all_for_suite(config.gold_suite_id)
-            if cases:
-                examples = []
-                for c in cases[:20]:  # Limit to 20 examples
-                    inp = c.input_data.get("message", str(c.input_data))
-                    exp = ""
-                    if c.expected_output:
-                        exp = c.expected_output.get("value", str(c.expected_output))
-                    examples.append(f"Input: {inp}\nExpected: {exp}")
-                gold_examples = "\n\n".join(examples)
-
-        failed_section = ""
-        if failed_cases:
-            failed_items = []
-            for fc in failed_cases[:10]:
-                failed_items.append(
-                    f"Input: {fc.get('input', '')}\n"
-                    f"Expected: {fc.get('expected', '')}\n"
-                    f"Got: {fc.get('actual', '')}"
-                )
-            failed_section = (
-                "\n\n## FAILED CASES\n"
-                "These cases failed evaluation with the current prompt:\n\n"
-                + "\n\n---\n".join(failed_items)
-            )
-
-        user_instructions = ""
-        if instructions:
-            user_instructions = f"\n\n## ADDITIONAL INSTRUCTIONS\n{instructions}"
-
-        system_prompt = (
-            "You are an expert prompt engineer. Your task is to improve a system prompt "
-            "so that when an LLM uses it, the LLM produces responses that match the "
-            "gold dataset expected outputs as closely as possible.\n\n"
-            "Rules:\n"
-            "- Study each gold dataset pair carefully: the Input is what the user will say, "
-            "and the Expected output is the ideal response the LLM should produce\n"
-            "- Rewrite the system prompt so the LLM would naturally produce responses "
-            "matching those expected outputs\n"
-            "- If there are failed cases, pay special attention to fixing those patterns\n"
-            "- Preserve the original intent and domain of the prompt\n"
-            "- Be specific: add formatting instructions, tone guidance, or constraints "
-            "that align with the gold examples\n"
-            "- Return your response as JSON with two fields:\n"
-            '  {"improved_prompt": "the full improved prompt text", '
-            '"explanation": "brief explanation of what you changed and why"}\n'
-            "- Return ONLY the JSON object, no other text"
-        )
-
-        human_message = (
-            f"## CURRENT SYSTEM PROMPT\n{current_prompt}\n\n"
-            f"## GOLD DATASET (Input → Expected Output)\n"
-            f"The improved prompt must guide the LLM to produce outputs matching these:\n\n"
-            f"{gold_examples}"
-            f"{failed_section}"
-            f"{user_instructions}"
-        )
-
-        from app.dependencies.injector import injector
-        from app.modules.workflow.llm.provider import LLMProvider
-
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(str(provider_id))
-
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=human_message),
-            ]
-        )
-
-        raw_content = getattr(response, "content", "")
-        if isinstance(raw_content, list):
-            raw_content = " ".join(str(part) for part in raw_content)
+        op_id = uuid4()
+        started = time.monotonic()
+        ref = PromptUsageRef(execution_id=f"prompt_editor:optimize:{op_id}")
 
         try:
-            parsed = json.loads(raw_content)
-            return PromptOptimizeResponse(
-                suggested_prompt=parsed.get("improved_prompt", raw_content),
-                explanation=parsed.get("explanation", ""),
+            ctx, provider, llm, split, examples, total_cases = await asyncio.wait_for(
+                self._prepare_optimize(workflow_id, node_id, prompt_field, request, op_id),
+                PROMPT_CHECK_PREPARE_SECONDS,
             )
-        except (json.JSONDecodeError, ValueError):
-            # If LLM didn't return valid JSON, treat entire response as the prompt
-            return PromptOptimizeResponse(
-                suggested_prompt=raw_content,
-                explanation="The LLM response was returned as-is (JSON parsing failed).",
-            )
+        except asyncio.TimeoutError as exc:
+            raise AppException(
+                status_code=504,
+                error_key=ErrorKey.PROMPT_EXECUTION_TIMEOUT,
+                error_detail="Preparing the rewrite took too long. Try again.",
+            ) from exc
+        ref.workflow_id, ref.agent_id = ctx.workflow_id, ctx.agent_id
+
+        messages = [
+            SystemMessage(content=_OPTIMIZE_SYSTEM_PROMPT),
+            HumanMessage(
+                content=_optimize_request_text(
+                    request.current_prompt,
+                    examples.gold_text,
+                    examples.failed_text,
+                    request.instructions,
+                )
+            ),
+        ]
+
+        try:
+            try:
+                response = await asyncio.wait_for(
+                    llm.ainvoke(messages), timeout=OPTIMIZE_CALL_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError as exc:
+                raise AppException(
+                    status_code=504,
+                    error_key=ErrorKey.PROMPT_EXECUTION_TIMEOUT,
+                    error_detail="The rewrite did not finish within the time budget.",
+                ) from exc
+            except Exception as exc:
+                logger.warning("Prompt optimize %s: model call failed", str(op_id)[:8], exc_info=True)
+                raise AppException(
+                    status_code=502,
+                    error_key=ErrorKey.PROMPT_MODEL_CALL_FAILED,
+                    error_detail=(
+                        "The selected provider did not answer. "
+                        "Choose another provider or check its configuration."
+                    ),
+                ) from exc
+
+            ref.entries.append(_usage_entry(response, 0, "prompt_optimize", request.provider_id))
+            suggested_prompt, explanation = _parse_suggestion(response.text)
+        finally:
+            metering_handoff_failed = await self._flush_usage(ref)
+
+        return PromptOptimizeResponse(
+            suggested_prompt=suggested_prompt,
+            explanation=explanation,
+            exposure={
+                "case_ids": examples.case_ids,
+                "failure_case_ids": examples.failure_case_ids,
+            },
+            examples_truncated=examples.truncated,
+            holdout_case_ids=split.holdout,
+            exploratory=split.exploratory,
+            provenance=PromptRunProvenance(
+                provider_id=request.provider_id,
+                provider_key=provider.llm_model_provider or "",
+                model=provider.llm_model or "",
+                techniques=[],
+                evaluated_case_ids=examples.case_ids,
+                total_cases=total_cases,
+                ran_at=utc_now(),
+                latency_ms_total=int((time.monotonic() - started) * 1000),
+                usage_total=_usage_total(ref),
+                budget_seconds=OPTIMIZE_CALL_TIMEOUT_SECONDS,
+                metering_handoff_failed=metering_handoff_failed,
+            ),
+        )
