@@ -32,6 +32,10 @@ export interface RunInputs {
 
 export interface EvalInputs extends RunInputs {
   techniqueCount: number;
+  /** Why the forbidden-phrase list is not sendable; null or absent when it is */
+  phrasesProblem?: string | null;
+  /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
+  stale?: boolean;
 }
 
 export const MAX_PROMPT_LENGTH = 200_000;
@@ -44,6 +48,9 @@ export const promptLength = (content: string): number =>
 export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
 export const HISTORY_FORBIDDEN_REASON =
   "You don't have permission to view prompt history.";
+
+const SUGGESTION_STALE_REASON =
+  "The draft changed since this suggestion. Run Optimize again.";
 
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
@@ -69,9 +76,8 @@ const contextGate = (
 const blankGate = (content: string, noun: string): Gate | null =>
   content.trim() ? null : blocked(`The ${noun} is empty.`);
 
-/** POST body bounds prevent invalid requests. Version writes only — the
- *  evaluate and optimize endpoints set no maximum */
-const versionBodyGate = (content: string, noun: string): Gate | null => {
+/** POST body bounds, shared by every endpoint that takes a prompt */
+const bodyGate = (content: string, noun: string): Gate | null => {
   const blank = blankGate(content, noun);
   if (blank) return blank;
   // Quick check first; code-point walk only if already over
@@ -117,7 +123,7 @@ export const saveGate = (
     "Saving versions needs the update:evaluation permission.",
   );
   if (context) return context;
-  return versionBodyGate(draft, "prompt") ?? OPEN;
+  return bodyGate(draft, "prompt") ?? OPEN;
 };
 
 export const evaluateGate = (
@@ -134,6 +140,7 @@ export const evaluateGate = (
   if (context) return context;
   const inline = inlineCheckGate(history);
   if (inline) return inline;
+  if (run.stale) return blocked(SUGGESTION_STALE_REASON);
   if (!history.goldSuiteId)
     return blocked("Link a gold dataset before running an evaluation.");
   if (cases.status === "pending") return blocked("Loading cases…");
@@ -143,7 +150,8 @@ export const evaluateGate = (
   if (provider) return provider;
   if (run.techniqueCount === 0)
     return blocked("Select at least one matching technique.");
-  return blankGate(run.content, run.contentNoun) ?? OPEN;
+  if (run.phrasesProblem) return blocked(run.phrasesProblem);
+  return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 export const optimizeGate = (
@@ -159,7 +167,7 @@ export const optimizeGate = (
   if (context) return context;
   const inline = inlineCheckGate(history);
   if (inline) return inline;
-  return providerGate(run) ?? blankGate(run.content, run.contentNoun) ?? OPEN;
+  return providerGate(run) ?? bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 /**
@@ -169,8 +177,8 @@ export const optimizeGate = (
 export const acceptGate = (
   history: HistoryState,
   caps: PromptEditorCapabilities,
-  pending: boolean,
   suggestion: string,
+  state: { pending: boolean; stale: boolean },
 ): Gate => {
   const context = contextGate(
     history,
@@ -178,6 +186,7 @@ export const acceptGate = (
     "Saving versions needs the update:evaluation permission.",
   );
   if (context) return context;
-  if (pending) return blocked("A save is already running.");
-  return versionBodyGate(suggestion, "suggested prompt") ?? OPEN;
+  if (state.pending) return blocked("A save is already running.");
+  if (state.stale) return blocked(SUGGESTION_STALE_REASON);
+  return bodyGate(suggestion, "suggested prompt") ?? OPEN;
 };

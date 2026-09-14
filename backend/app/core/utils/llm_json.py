@@ -7,7 +7,6 @@ import json
 import math
 import re
 
-
 _FENCE_RE = re.compile(r"```(?:json)?(.*?)```", re.DOTALL)
 
 

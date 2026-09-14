@@ -155,7 +155,7 @@ class FieldEqualsConfig(_Forbid):
 
 
 class PromptTechniqueConfigs(_Forbid):
-    """Config for techniques that accept it. nli_eval gets fixed evidence; 
+    """Config for techniques that accept it. nli_eval gets fixed evidence;
     llm_judge/provenance_eval have no model, 422 if named"""
 
     not_contains: Optional[NotContainsConfig] = None

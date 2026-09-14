@@ -215,8 +215,12 @@ export const apiRequest = async <T>(
       return null;
     }
 
+    const body = errObj.response?.data;
+    const isAppEnvelope =
+      typeof body === "object" && body !== null && "error_key" in body;
+
     // Mark server as down for 5xx errors allowed 500, 501
-    if (status && status > 501) {
+    if (status && status > 501 && !isAppEnvelope) {
       setServerDown();
     } else if (hasResponse) {
       setServerUp();

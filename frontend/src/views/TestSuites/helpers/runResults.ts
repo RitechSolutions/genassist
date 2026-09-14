@@ -75,7 +75,7 @@ export const isResultPassed = (result: TestResult): boolean =>
 export const isResultFailed = (result: TestResult): boolean =>
   !isResultPassed(result) && !isResultNotScored(result);
 
-export const notScoredLabel = (result: TestResult): string => {
+export const notScoredLabel = (result: { status?: string | null }): string => {
   if (result.status === "skipped") return "Skipped";
   if (result.status === "scoring_failed") return "Scoring failed";
   if (result.status === "execution_failed") return "Execution failed";

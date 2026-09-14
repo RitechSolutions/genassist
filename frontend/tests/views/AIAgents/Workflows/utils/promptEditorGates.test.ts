@@ -41,14 +41,14 @@ const GATES = [
   { name: "save", run: (h: HistoryState) => saveGate(h, ADMIN, "draft") },
   { name: "evaluate", run: (h: HistoryState) => evaluateGate(h, cases(), ADMIN, run()) },
   { name: "optimize", run: (h: HistoryState) => optimizeGate(h, ADMIN, run()) },
-  { name: "accept", run: (h: HistoryState) => acceptGate(h, ADMIN, false, "suggested") },
+  { name: "accept", run: (h: HistoryState) => acceptGate(h, ADMIN, "suggested", { pending: false, stale: false }) },
 ];
 
 const WITHOUT_CAPABILITY = [
   { name: "save", gate: saveGate(ready(), NONE, "draft") },
   { name: "evaluate", gate: evaluateGate(ready(), cases(), NONE, run()) },
   { name: "optimize", gate: optimizeGate(ready(), NONE, run()) },
-  { name: "accept", gate: acceptGate(ready(), NONE, false, "suggested") },
+  { name: "accept", gate: acceptGate(ready(), NONE, "suggested", { pending: false, stale: false }) },
 ];
 
 describe("prompt editor gates", () => {
@@ -103,7 +103,7 @@ describe("unsupported inline check", () => {
 
   it("leaves version saving and accepting available", () => {
     expect(saveGate(unsupported, ADMIN, "draft").enabled).toBe(true);
-    expect(acceptGate(unsupported, ADMIN, false, "suggested").enabled).toBe(true);
+    expect(acceptGate(unsupported, ADMIN, "suggested", { pending: false, stale: false }).enabled).toBe(true);
   });
 });
 
@@ -190,15 +190,34 @@ describe("run inputs", () => {
     ).toBe("The suggested prompt is empty.");
   });
 
-  it("leaves the version-body length limit to save and accept", () => {
+  it("holds every prompt body to the same length limit", () => {
     const long = "x".repeat(200_001);
 
-    expect(evaluate({ content: long }).enabled).toBe(true);
+    expect(evaluate({ content: long }).reason).toBe(
+      "The prompt is longer than 200,000 characters.",
+    );
     expect(optimizeGate(ready(), ADMIN, run({ content: long })).enabled).toBe(
-      true,
+      false,
     );
     expect(saveGate(ready(), ADMIN, long).enabled).toBe(false);
-    expect(acceptGate(ready(), ADMIN, false, long).enabled).toBe(false);
+    expect(acceptGate(ready(), ADMIN, long, { pending: false, stale: false }).enabled).toBe(false);
+  });
+
+  it("blocks a forbidden-phrase list the endpoint would reject", () => {
+    expect(evaluate({ phrasesProblem: "Add at least one forbidden phrase." }).reason).toBe(
+      "Add at least one forbidden phrase.",
+    );
+    expect(evaluate({ phrasesProblem: null }).enabled).toBe(true);
+  });
+
+  it("closes a suggestion whose inputs moved on, without hiding it", () => {
+    const reason = "The draft changed since this suggestion. Run Optimize again.";
+
+    expect(
+      evaluate({ content: "suggested", contentNoun: "suggested prompt", stale: true })
+        .reason,
+    ).toBe(reason);
+    expect(acceptGate(ready(), ADMIN, "suggested", { pending: false, stale: true }).reason).toBe(reason);
   });
 
   it("measures the body in code points, as the backend bound does", () => {
@@ -219,18 +238,18 @@ describe("run inputs", () => {
 
 describe("acceptGate", () => {
   it("blocks while a save is already running", () => {
-    expect(acceptGate(ready(), ADMIN, true, "suggested").enabled).toBe(false);
+    expect(acceptGate(ready(), ADMIN, "suggested", { pending: true, stale: false }).enabled).toBe(false);
   });
 
   it("applies the save contract to the suggestion, not the draft", () => {
-    const blank = acceptGate(ready(), ADMIN, false, "   ");
+    const blank = acceptGate(ready(), ADMIN, "   ", { pending: false, stale: false });
 
     expect(blank.enabled).toBe(false);
     expect(blank.reason).toMatch(/suggested prompt is empty/);
-    expect(acceptGate(ready(), ADMIN, false, "x".repeat(200_001)).enabled).toBe(
+    expect(acceptGate(ready(), ADMIN, "x".repeat(200_001), { pending: false, stale: false }).enabled).toBe(
       false,
     );
-    expect(acceptGate(ready(), ADMIN, false, "x".repeat(200_000)).enabled).toBe(
+    expect(acceptGate(ready(), ADMIN, "x".repeat(200_000), { pending: false, stale: false }).enabled).toBe(
       true,
     );
   });

@@ -498,7 +498,12 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                   )}
 
                   <div className="flex-1 min-h-0 overflow-y-auto">
-                    <TabsContent value="editor" className="mt-0">
+                    <TabsContent
+                      value="editor"
+                      forceMount
+                      hidden={activeTab !== "editor"}
+                      className="mt-0"
+                    >
                       {selectedVersion && (
                         <VersionPreviewPanel
                           key={selectedVersion.id}
