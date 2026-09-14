@@ -35,10 +35,17 @@ class MultiTenantSessionManager:
 
     _engines: Dict[str, AsyncEngine] = {}
     _session_factories: Dict[str, async_sessionmaker] = {}
+    # Read-replica caches are kept apart so a tenant string can never alias a read key.
+    _read_engines: Dict[str, AsyncEngine] = {}
+    _read_session_factories: Dict[str, async_sessionmaker] = {}
 
 
     async def initialize(self):
         """Initialize the multi-tenant session manager"""
+        if settings.read_replica_enabled:
+            logger.info("Read replica routing enabled: %s", settings.DB_READ_HOST.strip())
+        else:
+            logger.info("Read replica routing disabled: DB_READ_HOST is not set")
         await self.run_db_init_actions("master")
 
 
@@ -69,14 +76,6 @@ class MultiTenantSessionManager:
             else:
                 # Normal pooling for FastAPI
                 logger.debug(f"🔧 Creating pooled engine for FastAPI, tenant: {tenant}")
-                connect_args = {}
-                if settings.DB_STATEMENT_TIMEOUT > 0:
-                    # asyncpg applies server_settings on every connection; value is
-                    # a Postgres GUC string. Caps runaway interactive queries so they
-                    # can't pin DB CPU (see incident: 10h+ conversation search).
-                    connect_args["server_settings"] = {
-                        "statement_timeout": str(settings.DB_STATEMENT_TIMEOUT * 1000)
-                    }
                 self._engines[ktenant] = create_async_engine(
                         tenant_url,
                         echo=False,
@@ -86,7 +85,7 @@ class MultiTenantSessionManager:
                         pool_timeout=settings.DB_POOL_TIMEOUT,
                         pool_recycle=settings.DB_POOL_RECYCLE,
                         pool_pre_ping=True,
-                        connect_args=connect_args,
+                        connect_args=self._interactive_connect_args(),
                         )
 
             logger.debug(f"Created engine for tenant: {tenant}")
@@ -106,6 +105,53 @@ class MultiTenantSessionManager:
             logger.info(f"Created session factory for tenant: {tenant}")
 
         return self._session_factories[tenant]
+
+    @staticmethod
+    def _interactive_connect_args(read_only: bool = False) -> dict:
+        # asyncpg applies server_settings to every new connection as Postgres GUCs.
+        server_settings: Dict[str, str] = {}
+        if settings.DB_STATEMENT_TIMEOUT > 0:
+            server_settings["statement_timeout"] = str(settings.DB_STATEMENT_TIMEOUT * 1000)
+        if read_only:
+            server_settings["default_transaction_read_only"] = "on"
+            server_settings["application_name"] = "genassist-read"
+        if not server_settings:
+            return {}
+        return {"server_settings": server_settings}
+
+    def get_tenant_read_engine(self, tenant: str | None = None) -> AsyncEngine:
+        """Engine for read-only queries; the writer engine unless a replica is configured"""
+        if tenant is None:
+            tenant = "master"
+        if not settings.read_replica_enabled or is_background_task():
+            return self.get_tenant_engine(tenant)
+
+        if tenant not in self._read_engines:
+            self._read_engines[tenant] = create_async_engine(
+                settings.get_tenant_read_database_url(tenant),
+                echo=False,
+                future=True,
+                pool_size=settings.read_pool_size,
+                max_overflow=settings.read_max_overflow,
+                pool_timeout=settings.DB_POOL_TIMEOUT,
+                pool_recycle=settings.DB_POOL_RECYCLE,
+                pool_pre_ping=True,
+                connect_args=self._interactive_connect_args(read_only=True),
+            )
+            logger.info("Created read engine for tenant %s on %s", tenant, settings.DB_READ_HOST.strip())
+        return self._read_engines[tenant]
+
+    def get_tenant_read_session_factory(self, tenant: str = "master") -> async_sessionmaker:
+        """Session factory for read-only queries; the writer factory unless a replica is configured"""
+        if not settings.read_replica_enabled or is_background_task():
+            return self.get_tenant_session_factory(tenant)
+
+        if tenant not in self._read_session_factories:
+            self._read_session_factories[tenant] = async_sessionmaker(
+                bind=self.get_tenant_read_engine(tenant),
+                expire_on_commit=False,
+            )
+        return self._read_session_factories[tenant]
 
     async def create_tenant_database(self, tenant: str = "master") -> bool:
         """Create a new tenant database with the same schema as master using Alembic (async version)"""
@@ -237,7 +283,7 @@ class MultiTenantSessionManager:
 
     async def close_all(self):
         """Close all database connections"""
-        for engine in self._engines.values():
+        for engine in list(self._engines.values()) + list(self._read_engines.values()):
             await engine.dispose()
 
         logger.info("All database connections closed")
