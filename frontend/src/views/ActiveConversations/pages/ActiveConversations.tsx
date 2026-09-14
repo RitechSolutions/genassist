@@ -211,7 +211,10 @@ export const ActiveConversations = () => {
     error: wsError,
     refetch: wsRefetch,
     resyncHint,
+    lastConversationUpdate,
   } = useWebSocketDashboard();
+  // The dashboard's sentiment counts can shift with any message, so it still resyncs per update.
+  const conversationUpdateSeq = lastConversationUpdate?.seq ?? 0;
 
   // Load conversations from dashboard API
   useEffect(() => {
@@ -277,8 +280,8 @@ export const ActiveConversations = () => {
         // ignore
       }
     };
-    if (resyncHint > 0) sync();
-  }, [resyncHint, sentimentFilter, categoryFilter]);
+    if (resyncHint > 0 || conversationUpdateSeq > 0) sync();
+  }, [resyncHint, conversationUpdateSeq, sentimentFilter, categoryFilter]);
 
   // Poll dashboard API for updates
   useEffect(() => {

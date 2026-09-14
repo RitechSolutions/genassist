@@ -49,7 +49,8 @@ import { Badge } from "@/components/badge";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/useToast";
 import { conversationService } from "@/services/liveConversations";
-import { transformTranscript } from "../helpers/transformers";
+import { applyConversationUpdate, transformTranscript } from "../helpers/transformers";
+import type { ConversationDataPayload } from "@/interfaces/websocket.interface";
 import { UploadMediaDialog } from "@/views/MediaUpload";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -216,6 +217,7 @@ const Transcripts = () => {
   const {
     conversations: wsConversations,
     resyncHint,
+    lastConversationUpdate,
   } = useWebSocketDashboardContext();
 
   const { data, total, loading, error, refetch } = useTranscriptData({
@@ -240,6 +242,14 @@ const Transcripts = () => {
   const apiTranscripts = Array.isArray(data) ? data : [];
   const apiTotal = typeof total === "number" ? total : apiTranscripts.length;
 
+  // Latest websocket `update` per live conversation, overlaid on its row. The server sends one
+  // for every message, so patching rows replaces a list refetch (and skeleton) per message.
+  // A freshly fetched page already includes them, so it starts clean.
+  const [rowUpdates, setRowUpdates] = useState<Record<string, ConversationDataPayload>>({});
+  useEffect(() => {
+    setRowUpdates({});
+  }, [data]);
+
   // When statusFilter is "live", use WebSocket dashboard data for real-time updates
   const transcripts = useMemo(() => {
     const base =
@@ -247,15 +257,47 @@ const Transcripts = () => {
         ? apiTranscripts
         : wsConversations.map(enrichConversationItem);
 
-    if (locallyFinalizedIds.length === 0) return base;
+    if (locallyFinalizedIds.length === 0 && Object.keys(rowUpdates).length === 0) return base;
 
     const finalized = new Set(locallyFinalizedIds);
-    return base.map((transcript) =>
-      finalized.has(transcript.id) && isLiveTranscript(transcript)
-        ? { ...transcript, status: "finalized" }
-        : transcript
-    );
-  }, [statusFilter, wsConversations, apiTranscripts, locallyFinalizedIds]);
+    return base.map((transcript) => {
+      if (!isLiveTranscript(transcript)) return transcript;
+      if (finalized.has(transcript.id)) return { ...transcript, status: "finalized" };
+      const update = rowUpdates[transcript.id];
+      return update ? applyConversationUpdate(transcript, update) : transcript;
+    });
+  }, [statusFilter, wsConversations, apiTranscripts, locallyFinalizedIds, rowUpdates]);
+
+  // Read by the websocket effects below, which must fire per event rather than per render.
+  const transcriptsRef = useRef(transcripts);
+  transcriptsRef.current = transcripts;
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  // Conversations not on the page that already cost one background refetch.
+  const lookedUpConversationIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const payload = lastConversationUpdate?.payload;
+    const conversationId = payload?.conversation_id != null ? String(payload.conversation_id) : "";
+    if (!payload || !conversationId) return;
+
+    if (transcriptsRef.current.some((transcript) => transcript.id === conversationId)) {
+      setRowUpdates((prev) => ({
+        ...prev,
+        [conversationId]: { ...prev[conversationId], ...payload },
+      }));
+      return;
+    }
+
+    // Not on this page: it may be a new conversation, so look once. Only once — a conversation
+    // the filters exclude would otherwise refetch the list on each of its messages.
+    if (statusFilterRef.current === "finalized") return;
+    if (lookedUpConversationIdsRef.current.has(conversationId)) return;
+    lookedUpConversationIdsRef.current.add(conversationId);
+    void refetchRef.current({ silent: true });
+  }, [lastConversationUpdate]);
 
   const totalCount =
     statusFilter === "live" && Array.isArray(wsConversations) && wsConversations.length > 0
@@ -395,10 +437,11 @@ const Transcripts = () => {
     setViewMode(readConversationsViewMode(params));
   }, [location.search]);
 
-  // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID)
+  // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID). Keyed on
+  // the hint alone: `refetch` changes with every filter, which already fetches on its own.
   useEffect(() => {
-    if (resyncHint > 0) refetch();
-  }, [resyncHint, refetch]);
+    if (resyncHint > 0) void refetchRef.current({ silent: true });
+  }, [resyncHint]);
 
   // Fetch latest conversation data whenever a conversation detail becomes visible —
   // the dialog in list view, the detail columns in split view.

@@ -523,8 +523,8 @@ export function useActiveConversationDetail({
         messages: [newEntry],
         llm_analyst_id: DEFAULT_LLM_ANALYST_ID,
       });
-
-      if (refetchConversations) refetchConversations();
+      // Deliberately no list refetch: a message only changes the row's preview, which the
+      // workspace takes from `messages` — a refetch per send reloads the whole list.
     } catch {
       // Remove the message from sent messages if the API call fails
       setSentMessages((prev) =>
@@ -534,7 +534,7 @@ export function useActiveConversationDetail({
     } finally {
       isSendingRef.current = false;
     }
-  }, [chatInput, transcript, refetchConversations]);
+  }, [chatInput, transcript]);
 
   const handleFinalize = useCallback(async () => {
     if (!transcript?.id) return;

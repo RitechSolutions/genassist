@@ -37,6 +37,7 @@ function formatRowTimestamp(timestamp?: string): string {
 }
 
 function lastMessagePreview(transcript: Transcript): string {
+  if (transcript.last_message_preview?.trim()) return transcript.last_message_preview.trim();
   const messages = transcript.messages ?? [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const text = messages[index]?.text?.trim();
