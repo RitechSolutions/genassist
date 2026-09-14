@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { TrainModelNodeData } from "../../types/nodes";
+import {
+  TrainModelNodeData,
+  OutlierHandlingConfig,
+  OutlierHandlingItem,
+} from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { RichTextarea } from "@/components/richTextarea";
@@ -21,6 +25,7 @@ import { BaseNodeDialogProps } from "../base";
 import { DraggableInput } from "../../components/custom/DraggableInput";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
+import { OutlierHandler } from "./components/OutlierHandler";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
 import { useNodeDialogState } from "../useNodeDialogState";
@@ -49,6 +54,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       dateColumn: data.dateColumn || "",
       scalingMethod: data.scalingMethod || "auto",
       taskType: data.taskType || "auto",
+      outlierHandling: data.outlierHandling || ([] as OutlierHandlingItem[]),
     }),
     (v) => ({
       name: v.name,
@@ -63,6 +69,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       dateColumn: v.splitMethod === "time_based" ? v.dateColumn : undefined,
       scalingMethod: v.scalingMethod,
       taskType: v.taskType,
+      outlierHandling: v.outlierHandling,
     })
   );
 
@@ -544,6 +551,25 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 <p className="text-xs text-muted-foreground">
                   Auto selects a scaling method based on the model type and dataset
                   (e.g. Robust for outlier-heavy data, None for tree-based models)
+                </p>
+              </div>
+
+              {/* Outlier Handling */}
+              <div className="space-y-2">
+                <OutlierHandler
+                  config={{
+                    enabled: true,
+                    columns: values.outlierHandling,
+                  }}
+                  analysisResult={values.analysisResult}
+                  onChange={(config: OutlierHandlingConfig) =>
+                    setField("outlierHandling", config.columns)
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Bounds are computed from the training split only, after the
+                  validation split below is made, so validation rows never
+                  influence which values get capped or removed.
                 </p>
               </div>
 

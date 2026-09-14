@@ -449,6 +449,26 @@ export interface PreprocessingNodeData extends BaseNodeData {
 // Train Model Node Data
 export type SplitMethod = "random" | "time_based";
 
+// Outlier handling: lives on the Train Model node (not the pre-split
+// Preprocessing node) because bounds must be fit on the training split only —
+// fitting them on the full dataset before the split leaks validation-row
+// statistics into training.
+export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
+export type OutlierMethod = "iqr" | "zscore";
+
+export interface OutlierHandlingItem {
+  columnName: string;
+  strategy: OutlierStrategy;
+  method?: OutlierMethod;
+  iqrMultiplier?: number;
+  zScoreThreshold?: number;
+}
+
+export interface OutlierHandlingConfig {
+  enabled: boolean;
+  columns: OutlierHandlingItem[];
+}
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
@@ -469,6 +489,7 @@ export interface TrainModelNodeData extends BaseNodeData {
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
   scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
   taskType?: "auto" | "classification" | "regression"; // Override for the classification/regression heuristic (default: "auto")
+  outlierHandling?: OutlierHandlingItem[]; // Per-column outlier handling; bounds are fit on the training split only (default: [])
 }
 
 // Per Chat RAG Node Data

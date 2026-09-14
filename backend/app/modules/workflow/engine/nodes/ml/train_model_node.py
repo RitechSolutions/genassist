@@ -85,6 +85,13 @@ class TrainModelNode(BaseNode):
                             neural_network); it's rejected if it conflicts with a model
                             type that only supports one task (linear_regression,
                             logistic_regression).
+                - outlierHandling: Optional list of per-column outlier handling specs,
+                            each a dict with: columnName (required), strategy
+                            ("no_action" (default), "remove_outliers", or
+                            "cap_outliers"), method ("iqr" (default) or "zscore"),
+                            iqrMultiplier (default 1.5), zScoreThreshold (default 3).
+                            Bounds are computed from the training split only (never
+                            the validation split) and then applied to both.
 
         Returns:
             Dictionary with training results and model file path
@@ -102,6 +109,7 @@ class TrainModelNode(BaseNode):
             date_column = config.get("dateColumn")
             scaling_method = config.get("scalingMethod", "auto").lower()
             task_type = config.get("taskType", "auto").lower()
+            outlier_handling = config.get("outlierHandling", []) or []
 
             # Validate required parameters
             if not name:
@@ -171,6 +179,27 @@ class TrainModelNode(BaseNode):
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail="taskType 'regression' is incompatible with modelType 'logistic_regression', which only supports classification",
                 )
+
+            valid_outlier_strategies = ["no_action", "remove_outliers", "cap_outliers"]
+            valid_outlier_methods = ["iqr", "zscore"]
+            for item in outlier_handling:
+                if not isinstance(item, dict) or not item.get("columnName"):
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail="Each outlierHandling entry must be a dict with a 'columnName'",
+                    )
+                strategy = item.get("strategy", "no_action")
+                if strategy not in valid_outlier_strategies:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Invalid outlierHandling strategy: {strategy}. Must be one of: {', '.join(valid_outlier_strategies)}",
+                    )
+                method = item.get("method", "iqr")
+                if method not in valid_outlier_methods:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Invalid outlierHandling method: {method}. Must be one of: {', '.join(valid_outlier_methods)}",
+                    )
 
             # Check if XGBoost is available when needed
             if model_type == "xgboost" and not XGBOOST_AVAILABLE:
@@ -283,6 +312,15 @@ class TrainModelNode(BaseNode):
                 X_train, y_train = X.copy(), y
                 X_val, y_val = None, None
                 logger.info(f"Using all {len(X_train)} samples for training (no validation split)")
+
+            # Handle outliers — bounds (IQR quartiles or z-score mean/std) are
+            # computed from the training split only, then applied to both
+            # splits. This must run before imputation/encoding/scaling below
+            # since it can change which rows/values those steps see.
+            if outlier_handling:
+                X_train, y_train, X_val, y_val = self._handle_outliers(
+                    X_train, y_train, X_val, y_val, outlier_handling
+                )
 
             # Handle missing values — fit fill values on the training split only,
             # then apply those same values to validation so nothing about the
@@ -440,6 +478,60 @@ class TrainModelNode(BaseNode):
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"Train model processing failed: {str(e)}",
             ) from e
+
+    def _handle_outliers(self, X_train, y_train, X_val, y_val, outlier_handling):
+        """
+        Cap or remove outliers in numeric feature columns.
+
+        Bounds (IQR quartiles or z-score mean/std) are computed from X_train
+        only, then applied to both X_train and X_val — never the other way
+        around — so a validation row can never influence where a bound is
+        drawn for the training data it's supposed to evaluate.
+        """
+        for item in outlier_handling:
+            column = item.get("columnName")
+            strategy = item.get("strategy", "no_action")
+            if strategy == "no_action" or column not in X_train.columns:
+                continue
+            if X_train[column].dtype not in ["int64", "float64"]:
+                logger.warning(f"Skipping outlier handling for non-numeric column '{column}'")
+                continue
+
+            method = item.get("method", "iqr")
+            if method == "iqr":
+                q1 = X_train[column].quantile(0.25)
+                q3 = X_train[column].quantile(0.75)
+                iqr = q3 - q1
+                multiplier = item.get("iqrMultiplier", 1.5)
+                lower_bound = q1 - multiplier * iqr
+                upper_bound = q3 + multiplier * iqr
+            else:
+                mean = X_train[column].mean()
+                std = X_train[column].std()
+                threshold = item.get("zScoreThreshold", 3)
+                lower_bound = mean - threshold * std
+                upper_bound = mean + threshold * std
+
+            if strategy == "cap_outliers":
+                X_train[column] = X_train[column].clip(lower_bound, upper_bound)
+                if X_val is not None:
+                    X_val[column] = X_val[column].clip(lower_bound, upper_bound)
+            elif strategy == "remove_outliers":
+                train_mask = X_train[column].between(lower_bound, upper_bound)
+                removed_train = (~train_mask).sum()
+                X_train, y_train = X_train[train_mask].reset_index(drop=True), y_train[train_mask].reset_index(drop=True)
+                if X_val is not None:
+                    val_mask = X_val[column].between(lower_bound, upper_bound)
+                    removed_val = (~val_mask).sum()
+                    X_val, y_val = X_val[val_mask].reset_index(drop=True), y_val[val_mask].reset_index(drop=True)
+                else:
+                    removed_val = 0
+                logger.info(
+                    f"Removed {removed_train} training and {removed_val} validation outlier rows "
+                    f"from '{column}' using bounds [{lower_bound}, {upper_bound}] ({method})"
+                )
+
+        return X_train, y_train, X_val, y_val
 
     def _is_classification_task(self, y: pd.Series, model_type: str, task_type: str = "auto") -> bool:
         """

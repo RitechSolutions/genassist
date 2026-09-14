@@ -7,7 +7,6 @@
 export type PreprocessingStepType =
   | "column_filter"
   | "missing_value_handling"
-  | "outlier_handling"
   | "categorical_encoding"
   | "feature_engineering";
 
@@ -21,7 +20,6 @@ export interface PreprocessingStep {
 export type StepConfig =
   | ColumnFilterStepConfig
   | MissingValueHandlingStepConfig
-  | OutlierHandlingStepConfig
   | CategoricalEncodingStepConfig
   | FeatureEngineeringStepConfig;
 
@@ -59,22 +57,6 @@ export interface MissingValueHandlingItem {
   missingPercentage: number;
   strategy: MissingValueStrategy;
   imputeValue?: string | number;
-}
-
-// Outlier Handling Step
-export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
-export type OutlierMethod = "iqr" | "zscore";
-
-export interface OutlierHandlingStepConfig {
-  columns: OutlierHandlingItem[];
-}
-
-export interface OutlierHandlingItem {
-  columnName: string;
-  strategy: OutlierStrategy;
-  method?: OutlierMethod;
-  iqrMultiplier?: number;
-  zScoreThreshold?: number;
 }
 
 // Categorical Encoding Step
@@ -231,13 +213,6 @@ export function generatePythonCodeFromConfig(
           columnsToDropSet
         );
         break;
-      case "outlier_handling":
-        generateOutlierHandlingCode(
-          step.config as OutlierHandlingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
-        break;
       case "categorical_encoding":
         generateCategoricalEncodingCode(
           step.config as CategoricalEncodingStepConfig,
@@ -291,19 +266,6 @@ function extractMinimalConfig(
           columnName: col.columnName,
           strategy: col.strategy,
           imputeValue: col.imputeValue, // Critical: preserves string vs number
-        })),
-      };
-    }
-    case "outlier_handling": {
-      const outConfig = config as OutlierHandlingStepConfig;
-      // Store strategy, method, and parameters
-      return {
-        columns: outConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          method: col.method,
-          iqrMultiplier: col.iqrMultiplier,
-          zScoreThreshold: col.zScoreThreshold,
         })),
       };
     }
@@ -380,36 +342,6 @@ function restoreConfigFromMinimal(
             missingPercentage: parsedCol?.missingPercentage ?? 0,
             strategy: minimalCol.strategy,
             imputeValue: minimalCol.imputeValue,
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "outlier_handling": {
-      const parsed = parsedConfig as OutlierHandlingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: OutlierStrategy;
-          method?: OutlierMethod;
-          iqrMultiplier?: number;
-          zScoreThreshold?: number;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, methods, and parameters
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: OutlierHandlingItem[] = minimal.columns.map((minimalCol) => {
-          return {
-            columnName: minimalCol.columnName,
-            strategy: minimalCol.strategy,
-            method: minimalCol.method,
-            iqrMultiplier: minimalCol.iqrMultiplier,
-            zScoreThreshold: minimalCol.zScoreThreshold,
           };
         });
         
@@ -547,52 +479,6 @@ function generateMissingValueHandlingCode(
   });
 }
 
-function generateOutlierHandlingCode(
-  config: OutlierHandlingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Handle outliers");
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action" || columnsToDrop.has(item.columnName)) {
-      return;
-    }
-
-    lines.push(`    if "${item.columnName}" in df.columns:`);
-    const method = item.method || "iqr";
-    const iqrMultiplier = item.iqrMultiplier ?? 1.5;
-    const zScoreThreshold = item.zScoreThreshold ?? 3;
-
-    if (method === "iqr") {
-      lines.push(`        # Handle outliers in ${item.columnName} using IQR method`);
-      lines.push(`        Q1 = df["${item.columnName}"].quantile(0.25)`);
-      lines.push(`        Q3 = df["${item.columnName}"].quantile(0.75)`);
-      lines.push(`        IQR = Q3 - Q1`);
-      lines.push(`        lower_bound = Q1 - ${iqrMultiplier} * IQR`);
-      lines.push(`        upper_bound = Q3 + ${iqrMultiplier} * IQR`);
-
-      if (item.strategy === "remove_outliers") {
-        lines.push(`        df = df[(df["${item.columnName}"] >= lower_bound) & (df["${item.columnName}"] <= upper_bound)]`);
-      } else if (item.strategy === "cap_outliers") {
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].clip(lower=lower_bound, upper=upper_bound)`);
-      }
-    } else if (method === "zscore") {
-      lines.push(`        # Handle outliers in ${item.columnName} using Z-score method`);
-      lines.push(`        mean = df["${item.columnName}"].mean()`);
-      lines.push(`        std = df["${item.columnName}"].std()`);
-      lines.push(`        z_scores = (df["${item.columnName}"] - mean) / std`);
-
-      if (item.strategy === "remove_outliers") {
-        lines.push(`        df = df[(z_scores.abs() <= ${zScoreThreshold})]`);
-      } else if (item.strategy === "cap_outliers") {
-        lines.push(`        lower_bound = mean - ${zScoreThreshold} * std`);
-        lines.push(`        upper_bound = mean + ${zScoreThreshold} * std`);
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].clip(lower=lower_bound, upper=upper_bound)`);
-      }
-    }
-  });
-}
 
 function generateCategoricalEncodingCode(
   config: CategoricalEncodingStepConfig,
@@ -714,9 +600,6 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
         break;
       case "missing_value_handling":
         parsedFromCode = parseMissingValueHandlingStep(stepCode);
-        break;
-      case "outlier_handling":
-        parsedFromCode = parseOutlierHandlingStep(stepCode);
         break;
       case "categorical_encoding":
         parsedFromCode = parseCategoricalEncodingStep(stepCode);
@@ -913,58 +796,6 @@ function parseMissingValueHandlingStep(code: string): MissingValueHandlingStepCo
       imputeValue,
     });
     processedColumns.add(columnName);
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
-function parseOutlierHandlingStep(code: string): OutlierHandlingStepConfig | null {
-  const items: OutlierHandlingItem[] = [];
-
-  // IQR method
-  const iqrPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?Q1\s*=\s*df\["([^"]+)"\]\.quantile\(0\.25\)[\s\S]*?lower_bound\s*=\s*Q1\s*-\s*([\d.]+)\s*\*\s*IQR/g;
-  let match;
-  while ((match = iqrPattern.exec(code)) !== null) {
-    const columnName = match[1];
-    const multiplier = parseFloat(match[3]);
-    const afterCode = code.substring(match.index + match[0].length, match.index + match[0].length + 100);
-    
-    let strategy: OutlierStrategy = "no_action";
-    if (afterCode.includes("df = df[(")) {
-      strategy = "remove_outliers";
-    } else if (afterCode.includes(".clip(")) {
-      strategy = "cap_outliers";
-    }
-
-    items.push({
-      columnName,
-      strategy,
-      method: "iqr",
-      iqrMultiplier: multiplier,
-    });
-  }
-
-  // Z-score method
-  const zscorePattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?z_scores\s*=\s*\(df\["([^"]+)"\]\s*-\s*mean\)\s*\/\s*std/g;
-  while ((match = zscorePattern.exec(code)) !== null) {
-    const columnName = match[1];
-    const afterCode = code.substring(match.index + match[0].length, match.index + match[0].length + 100);
-    const thresholdMatch = afterCode.match(/z_scores\.abs\(\)\s*<=\s*([\d.]+)/);
-    const threshold = thresholdMatch ? parseFloat(thresholdMatch[1]) : 3;
-    
-    let strategy: OutlierStrategy = "no_action";
-    if (afterCode.includes("df = df[(")) {
-      strategy = "remove_outliers";
-    } else if (afterCode.includes(".clip(")) {
-      strategy = "cap_outliers";
-    }
-
-    items.push({
-      columnName,
-      strategy,
-      method: "zscore",
-      zScoreThreshold: threshold,
-    });
   }
 
   return items.length > 0 ? { columns: items } : null;
@@ -1175,9 +1006,6 @@ export function createPreprocessingStep(
     case "missing_value_handling":
       config = { columns: [] };
       break;
-    case "outlier_handling":
-      config = { columns: [] };
-      break;
     case "categorical_encoding":
       config = { columns: [] };
       break;
@@ -1201,7 +1029,6 @@ export function getStepTypeDisplayName(type: PreprocessingStepType): string {
   const names: Record<PreprocessingStepType, string> = {
     column_filter: "Column Filter",
     missing_value_handling: "Handle Missing Values",
-    outlier_handling: "Handle Outliers",
     categorical_encoding: "Categorical Encoding",
     feature_engineering: "Feature Engineering",
   };
@@ -1217,11 +1044,6 @@ export interface ColumnFilterConfig {
 export interface MissingValueHandlingConfig {
   enabled: boolean;
   columns: MissingValueHandlingItem[];
-}
-
-export interface OutlierHandlingConfig {
-  enabled: boolean;
-  columns: OutlierHandlingItem[];
 }
 
 export interface CategoricalEncodingConfig {
