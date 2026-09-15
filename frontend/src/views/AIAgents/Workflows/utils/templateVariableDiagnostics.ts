@@ -100,7 +100,8 @@ export const scanBraceCandidates = (
   return { findings, truncated: false };
 };
 
-const normalisePath = (path: string): string => path.replace(/\[\d+\]/g, "[]");
+const normalisePath = (path: string): string =>
+  path.replace(/\[\d+\]|\.\d+(?=$|[.[])/g, "[]");
 
 const rootOf = (binding: string): string => binding.split(/[.[]/)[0];
 

@@ -142,10 +142,6 @@ def _for_wire(text: str) -> str:
     return _shortened(text, MAX_ACTUAL_CHARS)
 
 
-def _generic(exc: Exception) -> str:
-    return _INTERNAL_FAILURE
-
-
 def _not_applicable(technique: str, reason: str) -> Dict[str, Any]:
     return {
         "key": technique,
@@ -871,13 +867,13 @@ class PromptEditorService:
                     ),
                     budget_cut=budget_cut,
                 )
-            except Exception as exc:
+            except Exception:
                 logger.warning(
                     "Prompt check %s: model call for case %s failed",
                     str(check_id)[:8], position, exc_info=True,
                 )
                 return _CaseRun(
-                    case=case, position=position, status="execution_failed", error=_generic(exc),
+                    case=case, position=position, status="execution_failed", error=_INTERNAL_FAILURE,
                 )
         return _CaseRun(case=case, position=position, status="scored", actual=actual, response=response)
 
@@ -1130,17 +1126,11 @@ class PromptEditorService:
                 metrics, exhausted = await self._score(run, request, configs, score_budget)
                 deadline_hit = deadline_hit or exhausted
                 rows.append(self._row(run, status="scored", metrics=metrics))
-            except asyncio.TimeoutError:
-                deadline_hit = True
-                rows.append(
-                    self._row(run, status="scoring_failed", error=_scoring_timeout_text(request.techniques))
-                )
-                continue
-            except Exception as exc:
+            except Exception:
                 logger.exception(
                     "Prompt check %s: scoring case %s failed", str(check_id)[:8], run.position
                 )
-                rows.append(self._row(run, status="scoring_failed", error=_generic(exc)))
+                rows.append(self._row(run, status="scoring_failed", error=_INTERNAL_FAILURE))
         return rows, deadline_hit
 
     # ---- Optimize ------------------------------------------------------------

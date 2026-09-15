@@ -83,7 +83,7 @@ def describe_expectations(techniques: List[str]) -> str:
 def validate_prompt_check_techniques(
     techniques: List[str], configs: PromptTechniqueConfigs
 ) -> Dict[str, Dict[str, Any]]:
-    """Filter unsupported techniques, then build config dicts for the registry"""
+    """Reject unsupported techniques, then build config dicts for the registry"""
     reject_unsupported_techniques(techniques)
 
     selected = set(techniques)

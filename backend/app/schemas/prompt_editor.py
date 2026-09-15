@@ -284,8 +284,9 @@ class CaseSplit(BaseModel):
 class PromptOptimizeRequest(BaseModel):
     provider_id: UUID = Field(..., description="LLM provider for generating the optimized prompt.")
     current_prompt: str = Field(..., min_length=1, max_length=MAX_PROMPT_CONTENT)
-    instructions: Optional[str] = Field(
-        default=None, max_length=4_000, description="Optional extra instructions to guide optimization."
+    # Stripped so a whitespace-only box reads as no instructions, not an empty prompt section
+    instructions: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=4_000)]] = Field(
+        default=None, description="Optional extra instructions to guide optimization."
     )
     failed_cases: Optional[List[FailedCaseRef]] = Field(default=None, max_length=10)
     case_split: Optional[CaseSplit] = None

@@ -228,6 +228,9 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     [caseRows],
   );
 
+  // Sent, keyed and gated trimmed, blank means no instructions
+  const instructions = optimizeInstructions.trim();
+
   const phrases = useMemo(() => splitForbiddenPhrases(phrasesText), [phrasesText]);
   const notContainsSelected = selectedTechniques.includes('not_contains');
   const phrasesIssue = notContainsSelected ? phrasesProblem(phrases) : null;
@@ -290,7 +293,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const currentOptimizeKey = optimizeKeyOf({
     prompt: value,
     providerId: activeProviderId,
-    instructions: optimizeInstructions,
+    instructions,
     caseSplit: splitActive ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds } : null,
     caseRowsKey,
     techniques: selectedTechniques,
@@ -451,7 +454,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const evaluate = evaluateGate(historyState, casesState, caps, runInputs);
   const optimize = optimizeGate(historyState, caps, {
     ...runInputs,
-    instructions: optimizeInstructions,
+    instructions,
   });
   const evaluateSuggested = evaluateGate(historyState, casesState, caps, {
     ...runInputs,
@@ -793,7 +796,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                           key: currentOptimizeKey,
                           prompt: value,
                           providerId: activeProviderId,
-                          instructions: optimizeInstructions,
+                          instructions,
                           failedCases: failedCases.length > 0 ? failedCases : undefined,
                           sourceFailuresKey: failuresKey,
                           caseSplit,

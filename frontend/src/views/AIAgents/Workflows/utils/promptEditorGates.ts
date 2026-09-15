@@ -31,7 +31,7 @@ export interface RunInputs {
 }
 
 export interface OptimizeInputs extends RunInputs {
-  /** Optional, so only its length is checked */
+  /** May be empty; only its length is checked */
   instructions: string;
 }
 

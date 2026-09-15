@@ -99,9 +99,14 @@ describe("unknownBindings", () => {
     ]);
   });
 
-  it("accepts any array index, since the tree only samples one", () => {
+  it("accepts any array index, bracketed or dotted, since the tree only samples one", () => {
     const tree = buildVariableTree({ source: { items: [{ name: "a" }] } });
-    expect(unknownBindings(["source.items[3].name"], tree)).toEqual([]);
+    expect(
+      unknownBindings(
+        ["source.items[3].name", "source.items.0.name", "source.items.0"],
+        tree,
+      ),
+    ).toEqual([]);
   });
 
   it("drops an unknown root, which the runtime may still resolve", () => {
