@@ -375,6 +375,8 @@ def validate_with_sqlglot(
             dialect_mapping = {
                 "mysql": "mysql",
                 "postgresql": "postgres",
+                "timescaledb": "postgres",
+                "timedb": "postgres",
                 "sqlite": "sqlite",
                 "mssql": "tsql",
                 "snowflake": "snowflake",

@@ -1,4 +1,4 @@
-"""SQLGlot parser/AST assumptions the TDS-2 read-only policy depends on.
+"""SQLGlot parser/AST assumptions used by the read-only SQL policy.
 
 These tests inspect installed SQLGlot behavior, not the policy outcome. If an
 upgrade changes a root class, executable-comment AST, REPLACE representation,

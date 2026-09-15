@@ -1,4 +1,4 @@
-"""Unit tests for DatabaseManager.execute_read_query (TDS-2 G-3).
+"""Unit tests for DatabaseManager.execute_read_query safety controls.
 
 AST validation is intentionally not used here. These tests prove the
 execution layer independently applies (or does not invent) database-level

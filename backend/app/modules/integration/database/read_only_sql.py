@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 SQLGLOT_DIALECTS = {
     "postgresql": "postgres",
+    "timescaledb": "postgres",
+    "timedb": "postgres",
     "mysql": "mysql",
     "sql": "mysql",
     "mssql": "tsql",
@@ -117,13 +119,26 @@ def validate_read_only_sql(query: str, db_type: str) -> ValidationResult:
     if not parsed:
         return ValidationResult(False, "SQL query could not be safely parsed.")
     if len(parsed) != 1:
-        return ValidationResult(False, "Multiple SQL statements are not allowed.")
+        return ValidationResult(
+            False,
+            f"Expected a single SELECT statement, found {len(parsed)}. "
+            "Multiple SQL statements are not allowed.",
+        )
 
     root = parsed[0]
     if not _is_allowed_root(root):
         return ValidationResult(
             False,
             f"SQL statement type '{type(root).__name__}' is not allowed. Only read-only queries are permitted.",
+            query_type=type(root).__name__,
+        )
+
+    identifier_placeholder = _find_identifier_placeholder(root)
+    if identifier_placeholder is not None:
+        return ValidationResult(
+            False,
+            "SQL parameters cannot be used as table names; "
+            "use a fixed table name in the query.",
             query_type=type(root).__name__,
         )
 
@@ -239,6 +254,14 @@ def _is_allowed_root(expression: exp.Expression) -> bool:
 def _find_forbidden_node(expression: exp.Expression) -> exp.Expression | None:
     for node in expression.walk():
         if isinstance(node, _FORBIDDEN_NODES):
+            return node
+    return None
+
+
+def _find_identifier_placeholder(expression: exp.Expression) -> exp.Placeholder | None:
+    """Return a bound placeholder used where SQL requires a table identifier."""
+    for node in expression.find_all(exp.Placeholder):
+        if isinstance(node.parent, exp.Table):
             return node
     return None
 
