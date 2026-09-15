@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { PromptEvalCaseResult } from "@/interfaces/promptEditor.interface";
+import type {
+  PromptEvalCaseResult,
+  PromptEvalMetric,
+} from "@/interfaces/promptEditor.interface";
 import {
   canonicalJson,
   evalKeyOf,
@@ -136,7 +139,21 @@ describe("failedCasesOf", () => {
       result("d", { status: "execution_failed", verdict: null }),
     ]);
 
-    expect(cases).toEqual([{ caseId: "a", actual: "actual" }]);
+    expect(cases).toEqual([{ caseId: "a", actual: "actual", failedMetrics: [] }]);
+  });
+
+  it("names the techniques that rejected the reply in a fixed order, skipping the ones that had nothing to grade", () => {
+    const metrics: Record<string, PromptEvalMetric> = {
+      nli_eval: { score: false, passed: false },
+      contains: { score: false, passed: false },
+      json_match: { score: true, passed: true },
+      exact_match: { score: null, passed: false, not_applicable: true },
+    };
+
+    expect(failedCasesOf([result("a", { metrics })])[0].failedMetrics).toEqual([
+      "contains",
+      "nli_eval",
+    ]);
   });
 
   it("treats a server that sends no verdict as having no failures", () => {
@@ -182,6 +199,7 @@ describe("isOptimizeCurrent", () => {
     instructions: "",
     caseSplit: null,
     caseRowsKey: "rows",
+    techniques: ["contains"],
     ...overrides,
   });
 
@@ -192,6 +210,7 @@ describe("isOptimizeCurrent", () => {
     instructions: "",
     sourceFailuresKey: FAILURES,
     caseSplit: null,
+    techniques: ["contains"],
     ...overrides,
   });
 
@@ -205,12 +224,19 @@ describe("isOptimizeCurrent", () => {
     expect(isOptimizeCurrent(request(), current())).toBe(true);
   });
 
+  it("ignores the order techniques were toggled in", () => {
+    expect(optimizeKeyOf(optimizeInputs({ techniques: ["contains", "exact_match"] }))).toBe(
+      optimizeKeyOf(optimizeInputs({ techniques: ["exact_match", "contains"] })),
+    );
+  });
+
   it.each([
     ["prompt", { prompt: "edited" }],
     ["provider", { providerId: "other" }],
     ["instructions", { instructions: "Be terse." }],
     ["gold dataset", { caseRowsKey: "edited" }],
     ["split", { caseSplit: { holdoutShare: 0.5, holdoutIds: ["c1"] } }],
+    ["techniques", { techniques: ["exact_match"] }],
   ])("expires when the %s changes", (_label, change) => {
     expect(
       isOptimizeCurrent(request(), current({ key: optimizeKeyOf(optimizeInputs(change)) })),

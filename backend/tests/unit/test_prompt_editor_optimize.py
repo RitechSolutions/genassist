@@ -186,6 +186,61 @@ class TestExampleBudget:
         assert _human_message(llm).count("Input: in0") == 1
 
     @pytest.mark.asyncio
+    async def test_the_rewrite_is_told_how_the_expectations_are_graded(self):
+        case = _case("in0", {"value": "URL"})
+        service = _service([case])
+        llm = _llm()
+
+        result = await _run(service, _injector(llm), _request(techniques=["contains"]))
+
+        message = _human_message(llm)
+        assert "## GRADING" in message
+        assert "- contains: " in message
+        assert "not the whole reply" in message
+        assert result.provenance.techniques == ["contains"]
+
+    @pytest.mark.asyncio
+    async def test_a_rewrite_sent_no_techniques_is_told_nothing_about_grading(self):
+        service = _service([_case("in0", {"value": "URL"})])
+        llm = _llm()
+
+        await _run(service, _injector(llm))
+
+        assert "## GRADING" not in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_a_failing_metric_the_check_cannot_run_is_refused_before_the_model_is_built(self):
+        case = _case()
+        service = _service([case])
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(
+                service,
+                _injector(llm),
+                _request(
+                    failed_cases=[
+                        {"case_id": case.id, "actual": "x", "failed_metrics": ["llm_judge"]}
+                    ]
+                ),
+            )
+
+        assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
+        llm.ainvoke.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_technique_the_check_cannot_run_is_refused_before_the_model_is_built(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(service, _injector(llm), _request(techniques=["llm_judge"]))
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
+        llm.ainvoke.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_a_failure_shows_the_graded_expectation_not_the_clients_copy(self):
         case = _case("in0", {"text": "hello"})
         service = _service([case])
@@ -200,6 +255,25 @@ class TestExampleBudget:
         message = _human_message(llm)
         assert "Input: in0\nExpected: hello\nGot: goodbye" in message
         assert "## FAILED CASES" in message
+
+    @pytest.mark.asyncio
+    async def test_a_failure_names_the_techniques_that_rejected_it(self):
+        case = _case("in0", {"value": "URL"})
+        service = _service([case])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                techniques=["contains"],
+                failed_cases=[
+                    {"case_id": case.id, "actual": "no link", "failed_metrics": ["contains"]}
+                ],
+            ),
+        )
+
+        assert "Got: no link\nFailed: contains" in _human_message(llm)
 
     @pytest.mark.asyncio
     async def test_a_very_long_observed_output_is_shortened_with_a_visible_marker(self):

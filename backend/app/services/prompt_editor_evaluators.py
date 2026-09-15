@@ -1,5 +1,5 @@
-"""Which evaluator techniques an isolated prompt check may run, and the exact
-configuration each one receives"""
+"""Which evaluator techniques an isolated prompt check may run, the exact
+configuration each one receives, and what each makes of a case's expectation"""
 
 from typing import Any, Dict, List
 
@@ -27,6 +27,27 @@ _NLI_CONFIG = {"evidence_source": "expected_output"}
 # Techniques whose configuration the request may carry, in PromptTechniqueConfigs order
 _CONFIGURABLE = ("not_contains", "field_equals")
 
+# Per-technique expected_output semantics for optimizer (so not all treated as ideal).
+# Follows PROMPT_CHECK_TECHNIQUES order. Omits not_contains and field_equals
+_EXPECTATION_RULES: Dict[str, str] = {
+    "exact_match": (
+        "the reply must be exactly the expected text, same characters and same case. "
+        "Only leading and trailing whitespace is ignored"
+    ),
+    "contains": (
+        "the expected text must appear somewhere in the reply, case-insensitively. "
+        "It is a required fragment, not the whole reply, and the rest is unconstrained"
+    ),
+    "json_match": (
+        "the whole reply must be one JSON object that is deep-equal to the expected "
+        "object: same keys, same values, nothing extra"
+    ),
+    "nli_eval": (
+        "the expected text is evidence, not a target reply: every claim the reply "
+        "makes must be supported by it. Say nothing the expected text does not back up"
+    ),
+}
+
 
 def _unsupported(detail: str) -> AppException:
     return AppException(
@@ -36,11 +57,9 @@ def _unsupported(detail: str) -> AppException:
     )
 
 
-def validate_prompt_check_techniques(
-    techniques: List[str], configs: PromptTechniqueConfigs
-) -> Dict[str, Dict[str, Any]]:
-    """Reject what an isolated check cannot grade, then build the configuration
-    dictionaries the registry receives"""
+def reject_unsupported_techniques(techniques: List[str]) -> None:
+    """Allow-list gate shared by the check and the rewrite. Ids reaching the rewrite
+    are rendered into a prompt, so nothing outside this list may pass"""
     for technique in techniques:
         if technique in _TRACE_TECHNIQUES:
             raise _unsupported(
@@ -51,6 +70,21 @@ def validate_prompt_check_techniques(
             raise _unsupported(f"'{technique}' is not available in prompt checks yet.")
         if technique not in PROMPT_CHECK_TECHNIQUES:
             raise _unsupported(f"'{technique}' is not a matching technique this check knows.")
+
+
+def describe_expectations(techniques: List[str]) -> str:
+    """One line per technique with a settled reading, allow-list ordered (reorder-stable).
+    Empty if none have one"""
+    selected = set(techniques)
+    lines = [f"- {technique}: {rule}" for technique, rule in _EXPECTATION_RULES.items() if technique in selected]
+    return "\n".join(lines)
+
+
+def validate_prompt_check_techniques(
+    techniques: List[str], configs: PromptTechniqueConfigs
+) -> Dict[str, Dict[str, Any]]:
+    """Filter unsupported techniques, then build config dicts for the registry"""
+    reject_unsupported_techniques(techniques)
 
     selected = set(techniques)
     for name in _CONFIGURABLE:

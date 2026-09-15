@@ -50,7 +50,11 @@ from app.schemas.prompt_editor import (
 )
 from app.services.evaluation_nli import evaluation_nli_model
 from app.services.evaluation_text import normalize_text
-from app.services.prompt_editor_evaluators import validate_prompt_check_techniques
+from app.services.prompt_editor_evaluators import (
+    describe_expectations,
+    reject_unsupported_techniques,
+    validate_prompt_check_techniques,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -418,9 +422,10 @@ _OPTIMIZE_SYSTEM_PROMPT = (
     "gold dataset expected outputs as closely as possible.\n\n"
     "Rules:\n"
     "- Study each gold dataset pair carefully: the Input is what the user will say, "
-    "and the Expected output is the ideal response the LLM should produce\n"
-    "- Rewrite the system prompt so the LLM would naturally produce responses "
-    "matching those expected outputs\n"
+    "and the Expected output is what the grader compares the reply against, which is "
+    "often a fragment or a reference rather than the whole reply\n"
+    "- Rewrite the system prompt so the LLM would naturally produce replies the "
+    "grader accepts, following the grading rules where they are given\n"
     "- If there are failed cases, pay special attention to fixing those patterns\n"
     "- Preserve the original intent and domain of the prompt\n"
     "- Be specific: add formatting instructions, tone guidance, or constraints "
@@ -433,8 +438,18 @@ _OPTIMIZE_SYSTEM_PROMPT = (
 
 
 def _optimize_request_text(
-    current_prompt: str, gold_examples: str, failed_section: str, instructions: Optional[str]
+    current_prompt: str,
+    gold_examples: str,
+    failed_section: str,
+    instructions: Optional[str],
+    grading_rules: str,
 ) -> str:
+    grading = (
+        "\n\n## GRADING\n"
+        "An expected output is not the ideal reply. Each is checked like this:\n\n" + grading_rules
+        if grading_rules
+        else ""
+    )
     failed = (
         "\n\n## FAILED CASES\n"
         "These cases failed evaluation with the current prompt:\n\n" + failed_section
@@ -445,8 +460,9 @@ def _optimize_request_text(
     return (
         f"## CURRENT SYSTEM PROMPT\n{current_prompt}\n\n"
         f"## GOLD DATASET (Input → Expected Output)\n"
-        f"The improved prompt must guide the LLM to produce outputs matching these:\n\n"
+        f"The improved prompt must guide the LLM to produce replies the grader accepts:\n\n"
         f"{gold_examples}"
+        f"{grading}"
         f"{failed}"
         f"{extra}"
     )
@@ -1180,6 +1196,8 @@ class PromptEditorService:
                 f"Expected: {normalize_text(row.expected_output)}\n"
                 f"Got: {_shortened(entry.actual, MAX_OPTIMIZE_FAILED_ACTUAL_CHARS)}"
             )
+            if entry.failed_metrics:
+                block += f"\nFailed: {', '.join(entry.failed_metrics)}"
             if not _fits(block):
                 truncated = True
                 continue
@@ -1233,12 +1251,14 @@ class PromptEditorService:
         from app.services.llm_providers import LlmProviderService
 
         ctx = await self._prepare_context(workflow_id, node_id, prompt_field)
+        reject_unsupported_techniques(request.techniques)
 
         config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
         suite_id = config.gold_suite_id if config else None
         index = await self.case_repo.get_case_index_for_suite(suite_id) if suite_id else []
 
         failed = list(request.failed_cases or [])
+        reject_unsupported_techniques([m for entry in failed for m in entry.failed_metrics])
         split = validate_case_split(request.case_split, index, [entry.case_id for entry in failed])
         examples = await self._build_examples(suite_id, split, failed)
 
@@ -1278,6 +1298,7 @@ class PromptEditorService:
                     examples.gold_text,
                     examples.failed_text,
                     request.instructions,
+                    describe_expectations(request.techniques),
                 )
             ),
         ]
@@ -1323,7 +1344,7 @@ class PromptEditorService:
                 provider_id=request.provider_id,
                 provider_key=provider.llm_model_provider or "",
                 model=provider.llm_model or "",
-                techniques=[],
+                techniques=list(request.techniques),
                 evaluated_case_ids=examples.case_ids,
                 total_cases=total_cases,
                 ran_at=utc_now(),

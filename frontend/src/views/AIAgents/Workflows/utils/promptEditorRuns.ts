@@ -1,7 +1,9 @@
 import type {
   PromptEvalCaseResult,
+  PromptEvalMetric,
   PromptTechniqueConfigs,
 } from "@/interfaces/promptEditor.interface";
+import { metricOutcomeOf } from "@/views/AIAgents/Workflows/utils/promptEditorResults";
 
 /** The gold-dataset fields a run depends on, so editing a case makes the run stale */
 export interface CaseRow {
@@ -25,13 +27,22 @@ export const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value) ?? "null";
 };
 
-/** One failure handed to the optimizer. Input and expectation are re-read server-side */
+/** One failure handed to the optimizer. Input and expectation are re-read server-side;
+ *  the metrics that rejected it travel so the rewrite is told which rule to satisfy */
 export interface FailedCase {
   caseId: string;
   actual: string;
+  failedMetrics: string[];
 }
 
 export const MAX_OPTIMIZE_FAILED = 10;
+
+// Sorted: metric order follows the technique toggle order, which must not change the key
+const failedMetricsOf = (metrics: Record<string, PromptEvalMetric>): string[] =>
+  Object.entries(metrics ?? {})
+    .filter(([, metric]) => metricOutcomeOf(metric) === "failed")
+    .map(([key]) => key)
+    .sort();
 
 /** Only graded failures reach optimizer; errors don't measure prompt quality. Server-side order keeps the cap stable */
 export const failedCasesOf = (
@@ -39,7 +50,11 @@ export const failedCasesOf = (
 ): FailedCase[] =>
   results
     .filter((r) => r.verdict === "failed")
-    .map((r) => ({ caseId: r.case_id, actual: r.actual }))
+    .map((r) => ({
+      caseId: r.case_id,
+      actual: r.actual,
+      failedMetrics: failedMetricsOf(r.metrics),
+    }))
     .slice(0, MAX_OPTIMIZE_FAILED);
 
 /** How many failed before the cap, for the "10 of 14 failures included" line */
@@ -99,6 +114,7 @@ export interface OptimizeKeyInputs {
   instructions: string;
   caseSplit: CaseSplitRef | null;
   caseRowsKey: string | null;
+  techniques: readonly string[];
 }
 
 /** The inputs a suggestion relies on. Failures are tracked separately, so early suggestions persist despite later failures */
@@ -109,6 +125,7 @@ export const optimizeKeyOf = (input: OptimizeKeyInputs): string =>
     instructions: input.instructions,
     caseSplit: input.caseSplit,
     caseRowsKey: input.caseRowsKey,
+    techniques: [...input.techniques].sort(),
   });
 
 export interface OptimizeRequest {
@@ -120,6 +137,7 @@ export interface OptimizeRequest {
   /** Identity of the failures that were sent; null when none were */
   sourceFailuresKey: string | null;
   caseSplit: CaseSplitRef | null;
+  techniques: string[];
 }
 
 /**

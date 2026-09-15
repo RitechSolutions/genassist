@@ -15,7 +15,12 @@ from app.schemas.prompt_editor import (
     PromptEvalRequest,
     PromptTechniqueConfigs,
 )
-from app.services.prompt_editor_evaluators import validate_prompt_check_techniques
+from app.services.prompt_editor_evaluators import (
+    _EXPECTATION_RULES,
+    PROMPT_CHECK_TECHNIQUES,
+    describe_expectations,
+    validate_prompt_check_techniques,
+)
 
 
 def _configs(**overrides) -> PromptTechniqueConfigs:
@@ -227,3 +232,26 @@ class TestPromptEvalRequestContract:
         assert _request().max_cases == 10
         with pytest.raises(ValidationError):
             _request(max_cases=26)
+
+
+class TestExpectationRules:
+
+    def test_a_new_technique_cannot_be_added_without_deciding_what_it_expects(self):
+        assert set(_EXPECTATION_RULES) | {"not_contains", "field_equals"} == set(
+            PROMPT_CHECK_TECHNIQUES
+        )
+
+    def test_a_technique_with_no_settled_meaning_describes_nothing(self):
+        assert describe_expectations(["not_contains", "field_equals"]) == ""
+        assert describe_expectations([]) == ""
+
+    def test_contains_is_described_as_a_fragment_not_the_whole_reply(self):
+        described = describe_expectations(["contains"])
+
+        assert described.startswith("- contains: ")
+        assert "not the whole reply" in described
+
+    def test_the_order_techniques_were_toggled_in_does_not_change_the_text(self):
+        assert describe_expectations(["nli_eval", "contains"]) == describe_expectations(
+            ["contains", "nli_eval"]
+        )

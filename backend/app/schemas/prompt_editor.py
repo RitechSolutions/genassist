@@ -257,6 +257,16 @@ class FailedCaseRef(BaseModel):
 
     case_id: UUID
     actual: str = Field(..., max_length=MAX_ACTUAL_CHARS)
+    failed_metrics: List[TechniqueId] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Techniques that rejected this reply, so the rewrite knows which rule to satisfy.",
+    )
+
+    @field_validator("failed_metrics")
+    @classmethod
+    def _unique_metrics(cls, value: List[str]) -> List[str]:
+        return _reject_duplicates(value)
 
 
 class CaseSplit(BaseModel):
@@ -279,6 +289,16 @@ class PromptOptimizeRequest(BaseModel):
     )
     failed_cases: Optional[List[FailedCaseRef]] = Field(default=None, max_length=10)
     case_split: Optional[CaseSplit] = None
+    techniques: List[TechniqueId] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Selected grading techniques, used to explain how expected outputs are interpreted.",
+    )
+
+    @field_validator("techniques")
+    @classmethod
+    def _unique_techniques(cls, value: List[str]) -> List[str]:
+        return _reject_duplicates(value)
 
     @field_validator("failed_cases")
     @classmethod

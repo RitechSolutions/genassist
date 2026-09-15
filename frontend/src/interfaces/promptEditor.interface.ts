@@ -145,6 +145,11 @@ export interface PromptOptimizeRequestPayload {
   provider_id: string;
   current_prompt: string;
   instructions?: string;
-  failed_cases?: Array<{ case_id: string; actual: string }>;
+  failed_cases?: Array<{
+    case_id: string;
+    actual: string;
+    failed_metrics: string[];
+  }>;
   case_split?: { holdout_case_ids: string[] };
+  techniques?: string[];
 }

@@ -293,6 +293,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     instructions: optimizeInstructions,
     caseSplit: splitActive ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds } : null,
     caseRowsKey,
+    techniques: selectedTechniques,
   });
   const optimizeResult = optimizeRun?.result ?? null;
   const optimizeStale =
@@ -353,10 +354,15 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         provider_id: vars.providerId,
         current_prompt: vars.prompt,
         instructions: vars.instructions || undefined,
-        failed_cases: vars.failedCases?.map((c) => ({ case_id: c.caseId, actual: c.actual })),
+        failed_cases: vars.failedCases?.map((c) => ({
+          case_id: c.caseId,
+          actual: c.actual,
+          failed_metrics: c.failedMetrics,
+        })),
         case_split: vars.caseSplit
           ? { holdout_case_ids: [...vars.caseSplit.holdoutIds] }
           : undefined,
+        techniques: vars.techniques,
       });
       if (!result) throw new Error('Server returned empty response — check permissions.');
       return result;
@@ -791,6 +797,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                           failedCases: failedCases.length > 0 ? failedCases : undefined,
                           sourceFailuresKey: failuresKey,
                           caseSplit,
+                          techniques: selectedTechniques,
                         });
                       }}
                       disabled={!optimize.enabled || optimizeMutation.isPending}
