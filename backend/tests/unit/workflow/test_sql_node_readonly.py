@@ -1,4 +1,4 @@
-"""SQLNode integration tests for TDS-2 read-only enforcement.
+"""SQLNode integration tests for read-only SQL enforcement.
 
 These tests prove both modes share one pre-execute validator and that rejected
 SQL never reaches ``execute_read_query``. Validator policy is covered separately.

@@ -1,4 +1,4 @@
-"""Unit tests for the TDS-2 AST-based read-only SQL policy.
+"""Unit tests for the AST-based read-only SQL policy.
 
 Matrix and dialect behavior come from the sqlglot 26.33.0 spike. Tests do not
 execute SQL against a database.
@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.modules.integration.database.query_validator import validate_with_sqlglot
 from app.modules.integration.database.read_only_sql import (
     SQLGLOT_DIALECTS,
     validate_read_only_sql,
@@ -260,6 +261,34 @@ def test_sql_alias_maps_to_mysql():
 
 def test_db_type_is_case_insensitive():
     _assert_valid(validate_read_only_sql("SELECT 1", "PostgreSQL"))
+
+
+@pytest.mark.parametrize("db_type", ["timescaledb", "timedb"])
+def test_postgres_compatible_training_datasources_are_supported(db_type):
+    _assert_valid(validate_read_only_sql("SELECT 1", db_type))
+
+
+@pytest.mark.parametrize("db_type", ["timescaledb", "timedb"])
+def test_existing_sqlglot_validator_supports_training_datasource_aliases(db_type):
+    _assert_valid(validate_with_sqlglot("SELECT 1", {"tables": []}, db_type))
+
+
+def test_identifier_parameter_is_rejected_clearly():
+    result = validate_read_only_sql(
+        "SELECT * FROM :wf_0_table",
+        "postgresql",
+    )
+
+    _assert_invalid(result, "parameters", "table names")
+
+
+def test_value_parameter_remains_valid():
+    _assert_valid(
+        validate_read_only_sql(
+            "SELECT * FROM lots WHERE city = :wf_0_city",
+            "postgresql",
+        )
+    )
 
 
 MYSQL_MAPPED_DB_TYPES = ("mysql", "sql")

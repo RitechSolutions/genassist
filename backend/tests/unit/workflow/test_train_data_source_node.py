@@ -1,5 +1,6 @@
-"""TrainDataSourceNode integration tests for TDS-2 read-only enforcement."""
+"""TrainDataSourceNode integration tests for read-only SQL enforcement."""
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,7 +22,7 @@ MODULE = "app.modules.workflow.engine.nodes.ml.train_data_source_node"
 
 def _node() -> TrainDataSourceNode:
     return TrainDataSourceNode(
-        "tds-1",
+        "train-source-1",
         {"type": "trainDataSourceNode", "data": {"name": "Training Data"}},
         SimpleNamespace(thread_id="thread-1"),
     )
@@ -118,6 +119,7 @@ async def test_stacked_query_never_executes():
     assert exc_info.value.error_key == ErrorKey.READ_ONLY_SQL_BLOCKED
     assert "SQL execution blocked" in exc_info.value.error_detail
     assert "Multiple SQL statements" in exc_info.value.error_detail
+    assert "found 2" in exc_info.value.error_detail
     db_manager.execute_read_query.assert_not_awaited()
     db_manager.execute_query.assert_not_awaited()
 
@@ -196,3 +198,42 @@ async def test_database_failure_after_valid_sql_stays_internal(monkeypatch):
     assert "password=secret" in exc_info.value.error_detail
     assert _response_error_detail(exc_info.value) is None
     db_manager.execute_read_query.assert_awaited_once_with("SELECT 1")
+
+
+@pytest.mark.asyncio
+async def test_advisory_warnings_are_logged_without_blocking(caplog):
+    db_manager = _db_manager()
+    save_csv, sample = _patch_csv_helpers()
+    sql = "SELECT * FROM demo_lots"
+
+    with (
+        _patch_db(db_manager),
+        save_csv,
+        sample,
+        caplog.at_level(logging.WARNING, logger=MODULE),
+    ):
+        result = await _node().process(_config(sql))
+
+    assert result["success"] is True
+    assert "Training query advisory: SELECT * without LIMIT" in caplog.text
+    db_manager.execute_read_query.assert_awaited_once_with(sql)
+
+
+@pytest.mark.asyncio
+async def test_advisory_validator_failure_does_not_block_execution(caplog):
+    db_manager = _db_manager()
+    save_csv, sample = _patch_csv_helpers()
+    sql = "SELECT id FROM demo_lots"
+
+    with (
+        _patch_db(db_manager),
+        save_csv,
+        sample,
+        patch(f"{MODULE}.AdvancedQueryValidator", side_effect=RuntimeError("boom")),
+        caplog.at_level(logging.DEBUG, logger=MODULE),
+    ):
+        result = await _node().process(_config(sql))
+
+    assert result["success"] is True
+    assert "Advisory validation skipped: boom" in caplog.text
+    db_manager.execute_read_query.assert_awaited_once_with(sql)

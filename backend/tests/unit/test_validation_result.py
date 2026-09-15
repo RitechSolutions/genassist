@@ -1,4 +1,4 @@
-"""A1: ValidationResult lives in a lightweight module, not query_validator."""
+"""Verify ValidationResult remains in a lightweight standalone module."""
 
 from __future__ import annotations
 

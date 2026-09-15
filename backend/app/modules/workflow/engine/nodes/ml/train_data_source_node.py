@@ -15,6 +15,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.integration.database.query_validator import AdvancedQueryValidator
 from app.modules.integration.database.read_only_sql import (
     read_only_sql_blocked_message,
     validate_read_only_sql,
@@ -151,6 +152,8 @@ class TrainDataSourceNode(BaseNode):
                     status_code=400,
                     error_detail=error,
                 )
+
+            self._log_query_advisories(substituted_query, db_manager)
 
             # Execute query with timeout
             # Note: For Snowflake, this automatically routes to SnowflakeManager.execute_query()
@@ -289,6 +292,22 @@ class TrainDataSourceNode(BaseNode):
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"CSV source processing failed: {str(e)}",
             ) from e
+
+    @staticmethod
+    def _log_query_advisories(query: str, db_manager: Any) -> None:
+        """Log existing validator warnings without making advice blocking."""
+        try:
+            # This advisory-only path does not perform schema validation, so
+            # avoid a live schema fetch here.
+            advisory = AdvancedQueryValidator(
+                db_manager,
+                schema={"tables": []},
+            ).validate_query(query)
+            for warning in advisory.warnings or []:
+                logger.warning("Training query advisory: %s", warning)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Advisory validation must never block extraction.
+            logger.debug("Advisory validation skipped: %s", exc)
 
     async def _get_database_manager(self, data_source_id: str):
         """
