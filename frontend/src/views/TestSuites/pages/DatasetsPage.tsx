@@ -306,7 +306,7 @@ const DatasetsPage: React.FC = () => {
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="What this dataset covers"
-                rows={2}
+                size="hint"
               />
             </div>
           </>
