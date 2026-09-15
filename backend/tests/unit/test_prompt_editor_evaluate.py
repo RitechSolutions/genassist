@@ -287,7 +287,7 @@ class TestScoring:
         assert "expected output is empty" in result.results[0].metrics["contains"]["comment"]
 
     @pytest.mark.asyncio
-    async def test_an_empty_dict_expectation_is_real_for_json_match(self):
+    async def test_an_empty_dict_expectation_is_real_for_every_technique(self):
         service = _service([_case(expected={})])
         request = _request(techniques=["json_match", "contains"])
 
@@ -295,7 +295,8 @@ class TestScoring:
 
         row = result.results[0]
         assert row.metrics["json_match"]["passed"] is True
-        assert row.metrics["contains"]["not_applicable"] is True
+        assert row.metrics["contains"]["passed"] is True
+        assert row.not_applicable_metrics == 0
 
     @pytest.mark.asyncio
     async def test_a_non_object_reply_fails_json_match_while_the_text_group_grades(self):
@@ -510,11 +511,51 @@ class TestGroundingCheck:
         assert result.provenance.deadline_hit is True
 
     @pytest.mark.asyncio
+    async def test_a_grounding_model_that_hangs_keeps_the_metrics_beside_it(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        request = _request(techniques=["contains", "nli_eval", "json_match"])
+
+        async def _hang(*_args, **_kwargs):
+            await asyncio.sleep(30)
+
+        service.evaluators._evaluators["nli_eval"] = _hang
+
+        class SpentScoreBudget(module.Budget):
+            def __init__(self, seconds):
+                self._deadline_seconds = seconds
+                super().__init__(seconds)
+
+            def remaining(self):
+                return 0.01 if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS else 10.0
+
+        with patch.object(module, "Budget", SpentScoreBudget):
+            result = await _run(service, _injector(_llm(["a"])), request)
+
+        row = result.results[0]
+        assert row.status == "scored"
+        assert row.metrics["contains"]["passed"] is True
+        assert row.metrics["nli_eval"]["error"] is True
+        assert "json_match" in row.metrics
+        assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
     async def test_a_loaded_grounding_model_gets_the_plain_timeout_text(self, monkeypatch):
         import app.services.prompt_editor as module
 
         monkeypatch.setattr(module.evaluation_nli_model, "is_loaded", lambda _name=None: True)
         assert module._scoring_timeout_text(["nli_eval"]) == "Scoring timed out."
+        assert module._scoring_timeout_text([]) == "Scoring timed out."
+
+    def test_a_grounding_model_that_failed_to_load_is_not_reported_as_loading(self, monkeypatch):
+        import app.services.prompt_editor as module
+
+        monkeypatch.setattr(module.evaluation_nli_model, "is_loaded", lambda _name=None: False)
+        monkeypatch.setattr(module.evaluation_nli_model, "load_failed", lambda _name=None: True)
+
+        assert "could not be loaded" in module._scoring_timeout_text(["nli_eval"])
+        # A technique the run never asked for must not colour the message
         assert module._scoring_timeout_text([]) == "Scoring timed out."
 
 

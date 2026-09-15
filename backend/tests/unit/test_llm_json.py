@@ -64,6 +64,11 @@ class TestParseJsonObjectReply:
     def test_ordinary_numbers_still_parse(self, number, expected):
         assert parse_json_object_reply('{"a": %s}' % number)["a"] == expected
 
+    def test_a_reply_nested_past_the_parser_depth_is_rejected(self):
+        depth = 50_000
+        with pytest.raises(ValueError):
+            parse_json_object_reply('{"a": ' + "[" * depth + "]" * depth + "}")
+
     def test_an_empty_reply_is_rejected(self):
         with pytest.raises(ValueError):
             parse_json_object_reply("")

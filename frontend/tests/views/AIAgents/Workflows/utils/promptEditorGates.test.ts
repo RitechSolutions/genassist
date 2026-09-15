@@ -8,6 +8,7 @@ import {
   type CasesState,
   type EvalInputs,
   type HistoryState,
+  type OptimizeInputs,
 } from "@/views/AIAgents/Workflows/utils/promptEditorGates";
 
 const ADMIN = promptEditorCapabilities(["*"]);
@@ -28,12 +29,15 @@ const cases = (overrides: Partial<CasesState> = {}): CasesState => ({
   ...overrides,
 });
 
-const run = (overrides: Partial<EvalInputs> = {}): EvalInputs => ({
+const run = (
+  overrides: Partial<EvalInputs & OptimizeInputs> = {},
+): EvalInputs & OptimizeInputs => ({
   content: "draft",
   contentNoun: "prompt",
   providerStatus: "ready",
   providerId: "provider-1",
   techniqueCount: 1,
+  instructions: "",
   ...overrides,
 });
 
@@ -203,6 +207,18 @@ describe("run inputs", () => {
     expect(acceptGate(ready(), ADMIN, long, { pending: false, stale: false }).enabled).toBe(false);
   });
 
+  it("counts optimizer instructions in code points, as the endpoint does", () => {
+    const gate = (instructions: string) =>
+      optimizeGate(ready(), ADMIN, run({ instructions }));
+
+    expect(gate("x".repeat(4_000)).enabled).toBe(true);
+    expect(gate("x".repeat(4_001)).reason).toBe(
+      "The additional instructions are longer than 4,000 characters.",
+    );
+    expect(gate("🙂".repeat(4_000)).enabled).toBe(true);
+    expect(gate("🙂".repeat(4_001)).enabled).toBe(false);
+  });
+
   it("blocks a forbidden-phrase list the endpoint would reject", () => {
     expect(evaluate({ phrasesProblem: "Add at least one forbidden phrase." }).reason).toBe(
       "Add at least one forbidden phrase.",
@@ -211,7 +227,7 @@ describe("run inputs", () => {
   });
 
   it("closes a suggestion whose inputs moved on, without hiding it", () => {
-    const reason = "The draft changed since this suggestion. Run Optimize again.";
+    const reason = "Inputs changed since this suggestion. Run Optimize again.";
 
     expect(
       evaluate({ content: "suggested", contentNoun: "suggested prompt", stale: true })

@@ -140,34 +140,26 @@ export const unknownDataNote = (unknown: readonly string[]): string | null =>
         .map((binding) => `{{${binding}}}`)
         .join(", ")}. It may still resolve at run time.`;
 
-interface WorkflowNodeRef {
-  id: string;
-  type?: string;
-}
-
 interface WorkflowEdgeRef {
   source: string;
   target: string;
+  targetHandle?: string | null;
 }
 
-/** Warnings match `source`'s shape in getAvailableDataForNode */
+const EXECUTION_INPUT_HANDLE = "input";
+
+/** Execution input only builds `source`. Matches engine's `base_node.get_input_from_source`
+ *  filter; legacy handles like "input_prompt" excluded everywhere */
 export const directPredecessorIds = (
   nodeId: string,
-  nodes: readonly WorkflowNodeRef[],
   edges: readonly WorkflowEdgeRef[],
-): string[] => {
-  const typeOf = (id: string) => nodes.find((node) => node.id === id)?.type;
-  const isAgent = typeOf(nodeId) === "agentNode";
-
-  return edges
-    .filter((edge) => edge.target === nodeId)
-    .map((edge) => edge.source)
-    .filter((source) => {
-      if (!isAgent) return true;
-      const type = typeOf(source);
-      return type !== "toolBuilderNode" && type !== "subAgentNode";
-    });
-};
+): string[] =>
+  edges
+    .filter(
+      (edge) =>
+        edge.target === nodeId && edge.targetHandle === EXECUTION_INPUT_HANDLE,
+    )
+    .map((edge) => edge.source);
 
 export const fanInNote = (
   bindings: readonly string[],

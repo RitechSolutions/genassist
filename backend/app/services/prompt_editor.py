@@ -3,7 +3,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from injector import inject
@@ -29,6 +29,7 @@ from app.modules.workflow.prompt_fields import (
 from app.repositories.prompt_editor import PromptConfigRepository, PromptVersionRepository
 from app.repositories.test_suite import TestCaseRepository, TestSuiteRepository
 from app.repositories.workflow import WorkflowRepository
+from app.schemas.llm import LlmProviderRead
 from app.schemas.prompt_editor import (
     MAX_ACTUAL_CHARS,
     MAX_PROMPT_CONTENT,
@@ -152,7 +153,8 @@ def _not_applicable(technique: str, reason: str) -> Dict[str, Any]:
 
 
 def _stale_selection(missing: List[str]) -> AppException:
-    """Sample of ids"""
+    """Names at most three of the missing ids, so a whole stale dataset cannot
+    push an unbounded list into the error body"""
     shown = ", ".join(missing[:3])
     more = f" and {len(missing) - 3} more" if len(missing) > 3 else ""
     return AppException(
@@ -166,9 +168,24 @@ def _stale_selection(missing: List[str]) -> AppException:
 
 
 def _scoring_timeout_text(techniques: List[str]) -> str:
-    if _GROUNDING_TECHNIQUE in techniques and not evaluation_nli_model.is_loaded(DEFAULT_NLI_MODEL):
-        return "The grounding model is still loading on this server. Re-run in a minute."
+    """Failed loads are permanent (operator fix only), not waiting.
+    Loading and never-attempted self-resolve"""
+    if _GROUNDING_TECHNIQUE in techniques:
+        if evaluation_nli_model.load_failed(DEFAULT_NLI_MODEL):
+            return "The grounding model could not be loaded on this server. Check the server logs."
+        if not evaluation_nli_model.is_loaded(DEFAULT_NLI_MODEL):
+            return "The grounding model is still loading on this server. Re-run in a minute."
     return "Scoring timed out."
+
+
+def _grounding_timed_out(techniques: List[str]) -> Dict[str, Any]:
+    return {
+        "key": _GROUNDING_TECHNIQUE,
+        "score": None,
+        "passed": False,
+        "error": True,
+        "comment": _scoring_timeout_text(techniques),
+    }
 
 
 def _metric_outcome(metric: Dict[str, Any]) -> str:
@@ -744,7 +761,7 @@ class PromptEditorService:
         ]
         return cases, len(index)
 
-    async def _build_model(self, provider, check_id: UUID):
+    async def _build_model(self, provider: LlmProviderRead, check_id: UUID) -> Any:
         """Release point; report the provider that built the model"""
         from app.dependencies.injector import injector
         from app.modules.workflow.llm.provider import LLMProvider
@@ -776,7 +793,7 @@ class PromptEditorService:
 
     async def _prepare_check(
         self, workflow_id: UUID, node_id: str, prompt_field: str, request: PromptEvalRequest, check_id: UUID
-    ):
+    ) -> Tuple[PromptContext, List[PreparedCase], Dict[str, Dict[str, Any]], LlmProviderRead, Any, int]:
         from app.dependencies.injector import injector
         from app.services.llm_providers import LlmProviderService
 
@@ -855,19 +872,22 @@ class PromptEditorService:
         configs: Dict[str, Dict[str, Any]],
         budget: Optional[Budget],
     ) -> Tuple[Dict[str, Any], bool]:
-        """Up to two calls: text group + json_match"""
+        """Up to three calls: plain text group, nli_eval, json_match. nli_eval is
+        called on its own so its deadline cannot cancel the metrics beside it"""
         case = run.case
         reference = case.expected_output if case.expected_output is not None else case.expected_text
         metrics: Dict[str, Any] = {}
         exhausted = False
 
         text_ids = [t for t in request.techniques if t != _JSON_TECHNIQUE]
-        if not (case.expected_output and case.expected_text):
-            reason = (
-                "the case has no expected output"
-                if not case.expected_output
-                else "the expected output is empty"
-            )
+        if case.expected_output is None:
+            reason = "the case has no expected output"
+        elif not case.expected_text:
+            reason = "the expected output is empty"
+        else:
+            reason = None
+
+        if reason is not None:
             gaps = [
                 t for t in text_ids
                 if t in _EXPECTATION_TECHNIQUES
@@ -880,26 +900,31 @@ class PromptEditorService:
         if budget is not None and _GROUNDING_TECHNIQUE in text_ids and budget.remaining() <= 0:
             exhausted = True
             text_ids = [t for t in text_ids if t != _GROUNDING_TECHNIQUE]
-            metrics[_GROUNDING_TECHNIQUE] = {
-                "key": _GROUNDING_TECHNIQUE,
-                "score": None,
-                "passed": False,
-                "error": True,
-                "comment": _scoring_timeout_text(request.techniques),
-            }
+            metrics[_GROUNDING_TECHNIQUE] = _grounding_timed_out(request.techniques)
 
-        if text_ids:
-            call = self.evaluators.evaluate(
-                text_ids,
+        def _evaluate(technique_ids: List[str]) -> Awaitable[Dict[str, Any]]:
+            return self.evaluators.evaluate(
+                technique_ids,
                 inputs=case.input_data,
                 outputs=run.actual,
                 reference_outputs=reference,
                 technique_configs=configs,
                 usage_ref=None,
             )
-            if budget is not None and _GROUNDING_TECHNIQUE in text_ids:
+
+        plain_ids = [t for t in text_ids if t != _GROUNDING_TECHNIQUE]
+        if plain_ids:
+            metrics.update(await _evaluate(plain_ids))
+
+        if _GROUNDING_TECHNIQUE in text_ids:
+            call = _evaluate([_GROUNDING_TECHNIQUE])
+            if budget is not None:
                 call = asyncio.wait_for(call, timeout=max(1.0, budget.remaining()))
-            metrics.update(await call)
+            try:
+                metrics.update(await call)
+            except asyncio.TimeoutError:
+                exhausted = True
+                metrics[_GROUNDING_TECHNIQUE] = _grounding_timed_out(request.techniques)
             self._rewrite_grounding_comment(metrics, request.techniques)
 
         if _JSON_TECHNIQUE in request.techniques:
@@ -1202,7 +1227,7 @@ class PromptEditorService:
         prompt_field: str,
         request: PromptOptimizeRequest,
         op_id: UUID,
-    ):
+    ) -> Tuple[PromptContext, LlmProviderRead, Any, ValidatedSplit, _Examples, int]:
         """Same gate as check. Allows no dataset (instructions-only is valid)"""
         from app.dependencies.injector import injector
         from app.services.llm_providers import LlmProviderService

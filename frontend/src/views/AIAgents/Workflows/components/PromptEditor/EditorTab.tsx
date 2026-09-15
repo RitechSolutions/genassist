@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Loader2, Play, Sparkles } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/accordion';
@@ -20,7 +20,13 @@ import type {
   PromptTechniqueConfigs,
 } from '@/interfaces/promptEditor.interface';
 import type { PromptEditorCapabilities } from '../../utils/promptEditorCapabilities';
-import { acceptGate, evaluateGate, optimizeGate, promptLength } from '../../utils/promptEditorGates';
+import {
+  acceptGate,
+  evaluateGate,
+  optimizeGate,
+  promptLength,
+  SUGGESTION_STALE_REASON,
+} from '../../utils/promptEditorGates';
 import type { CasesState, EvalInputs, HistoryState, RunInputs } from '../../utils/promptEditorGates';
 import { draftUnchangedSince } from '../../utils/promptEditorHistory';
 import { DEFAULT_HOLDOUT_SHARE, splitCasesByConversation } from '../../utils/caseSplit';
@@ -65,13 +71,21 @@ import { promptHistoryKey } from './usePromptHistory';
 
 type PairedHalf = { key: string; results: PromptEvalResponse } | null;
 
+/**
+ * Both requests built before sending, so config changes mid-flight don't affect
+ * the second. Baseline carries `next`, the chained request
+ */
+type HoldoutVars =
+  | { half: 'baseline'; request: EvalRequest; next: EvalRequest; token: number }
+  | { half: 'suggestion'; request: EvalRequest; token: number };
+
 interface HoldoutRun {
   caseIds: string[];
   baseline: PairedHalf;
   suggestion: PairedHalf;
   pending: 'baseline' | 'suggestion' | null;
   /** Keeps the variables, because TanStack clears them when the mutation resets */
-  error: { half: 'baseline' | 'suggestion'; message: string; vars: EvalRequest } | null;
+  error: { half: 'baseline' | 'suggestion'; message: string; vars: HoldoutVars } | null;
 }
 
 /** A 500 and the duplicate-version 400 carry no key, so a missing one is normal */
@@ -112,7 +126,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const queryClient = useQueryClient();
   // Both providers wrap every node dialog that can open this editor
   const { tree } = useWorkflowVariables();
-  const { nodes: workflowNodes, edges: workflowEdges } = useWorkflowExecution();
+  const { edges: workflowEdges } = useWorkflowExecution();
 
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -129,6 +143,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   } | null>(null);
   const [suggestedEvalRun, setSuggestedEvalRun] = useState<{
     key: string;
+    caseIds: string[] | null;
     results: PromptEvalResponse;
   } | null>(null);
   const [holdoutRun, setHoldoutRun] = useState<HoldoutRun | null>(null);
@@ -161,9 +176,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     [draftBindings, tree],
   );
   const fanIn = useMemo(
-    () =>
-      fanInNote(draftBindings, directPredecessorIds(nodeId, workflowNodes, workflowEdges)),
-    [draftBindings, nodeId, workflowNodes, workflowEdges],
+    () => fanInNote(draftBindings, directPredecessorIds(nodeId, workflowEdges)),
+    [draftBindings, nodeId, workflowEdges],
   );
   const hasDiagnostics =
     braceScan.findings.length > 0 || availabilityNote !== null || fanIn !== null;
@@ -233,23 +247,26 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     [split],
   );
 
-  const buildEvalRequest = (prompt: string, caseIds: string[] | null): EvalRequest => ({
-    key: evalKeyOf({
+  const buildEvalRequest = useCallback(
+    (prompt: string, caseIds: string[] | null): EvalRequest => ({
+      key: evalKeyOf({
+        prompt,
+        providerId: activeProviderId,
+        techniques: selectedTechniques,
+        techniqueConfigs,
+        caseIds,
+        maxCases: casesToCheck,
+        caseRowsKey,
+      }),
       prompt,
       providerId: activeProviderId,
       techniques: selectedTechniques,
       techniqueConfigs,
       caseIds,
       maxCases: casesToCheck,
-      caseRowsKey,
     }),
-    prompt,
-    providerId: activeProviderId,
-    techniques: selectedTechniques,
-    techniqueConfigs,
-    caseIds,
-    maxCases: casesToCheck,
-  });
+    [activeProviderId, selectedTechniques, techniqueConfigs, casesToCheck, caseRowsKey],
+  );
 
   const toggleTechnique = (key: string) => {
     setSelectedTechniques((prev) => (prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key]));
@@ -294,17 +311,21 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   );
 
   // Off a split the suggestion reuses the current run's cases, so both sides match
-  // One value, because the key must be built from exactly what the run is sent
   const suggestedCaseIds = splitActive
     ? evalCaseIds
     : evalRun && !evalStale
       ? evalRun.results.provenance.evaluated_case_ids
       : null;
-  const currentSuggestedKey =
-    suggestion === '' ? null : buildEvalRequest(suggestion, suggestedCaseIds).key;
+  const suggestedRunKey = useMemo(
+    () =>
+      suggestedEvalRun === null || suggestion === ''
+        ? null
+        : buildEvalRequest(suggestion, suggestedEvalRun.caseIds).key,
+    [buildEvalRequest, suggestion, suggestedEvalRun],
+  );
   const suggestedStale =
     suggestedEvalRun !== null &&
-    (optimizeStale || currentSuggestedKey === null || staleOf(suggestedEvalRun.key, currentSuggestedKey));
+    (optimizeStale || suggestedRunKey === null || staleOf(suggestedEvalRun.key, suggestedRunKey));
 
   const runEvaluation = async (vars: EvalRequest) => {
     setError(null);
@@ -355,14 +376,13 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     mutationFn: (vars: EvalRequest & { token: number }) => runEvaluation(vars),
     onSuccess: (data, vars) => {
       if (vars.token !== acceptTokenRef.current) return;
-      setSuggestedEvalRun({ key: vars.key, results: data });
+      setSuggestedEvalRun({ key: vars.key, caseIds: vars.caseIds, results: data });
     },
     onError: (err) => showError('evaluate suggested prompt', err),
   });
 
   const holdoutMutation = useMutation({
-    mutationFn: (vars: { half: 'baseline' | 'suggestion'; request: EvalRequest; token: number }) =>
-      runEvaluation(vars.request),
+    mutationFn: (vars: HoldoutVars) => runEvaluation(vars.request),
     onSuccess: (data, vars) => {
       const half: PairedHalf = { key: vars.request.key, results: data };
       const superseded = vars.token !== acceptTokenRef.current;
@@ -377,11 +397,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         prev ? { ...prev, baseline: half, pending: superseded ? null : 'suggestion' } : prev,
       );
       if (superseded) return;
-      holdoutMutation.mutate({
-        half: 'suggestion',
-        request: buildEvalRequest(suggestion, vars.request.caseIds),
-        token: vars.token,
-      });
+      holdoutMutation.mutate({ half: 'suggestion', request: vars.next, token: vars.token });
     },
     onError: (err, vars) => {
       setHoldoutRun((prev) =>
@@ -392,7 +408,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
               error: {
                 half: vars.half,
                 message: extractErrorMessage(err, 'Request failed'),
-                vars: vars.request,
+                vars,
               },
             }
           : prev,
@@ -427,7 +443,10 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   };
 
   const evaluate = evaluateGate(historyState, casesState, caps, runInputs);
-  const optimize = optimizeGate(historyState, caps, runInputs);
+  const optimize = optimizeGate(historyState, caps, {
+    ...runInputs,
+    instructions: optimizeInstructions,
+  });
   const evaluateSuggested = evaluateGate(historyState, casesState, caps, {
     ...runInputs,
     content: suggestion,
@@ -443,11 +462,16 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const hasRuns =
     evalRun !== null || optimizeRun !== null || suggestedEvalRun !== null || holdoutRun !== null;
   const pairedRun = holdoutRun?.baseline && holdoutRun.suggestion ? holdoutRun : null;
+  const pairedRunKey = useMemo(
+    () => (pairedRun ? buildEvalRequest(suggestion, pairedRun.caseIds).key : ''),
+    [buildEvalRequest, suggestion, pairedRun],
+  );
 
   /** Runs the hold-out under the current prompt, then under the suggestion */
   const startPairedRun = () => {
     const token = acceptTokenRef.current;
     const baseline = buildEvalRequest(value, holdoutCaseIds);
+    const suggested = buildEvalRequest(suggestion, holdoutCaseIds);
     const reuseBaseline = holdoutRun?.baseline?.key === baseline.key;
     setHoldoutRun((prev) => ({
       caseIds: holdoutCaseIds,
@@ -458,8 +482,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     }));
     holdoutMutation.mutate(
       reuseBaseline
-        ? { half: 'suggestion', request: buildEvalRequest(suggestion, holdoutCaseIds), token }
-        : { half: 'baseline', request: baseline, token },
+        ? { half: 'suggestion', request: suggested, token }
+        : { half: 'baseline', request: baseline, next: suggested, token },
     );
   };
 
@@ -613,7 +637,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                     )}
                     {evalStale && (
                       <p className="text-xs text-muted-foreground">
-                        The draft changed since the last run, so its failures were left out.
+                        Inputs changed since the last run, so its failures were left out.
                       </p>
                     )}
                   </div>
@@ -634,7 +658,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                   <div className="space-y-3 border-t pt-4">
                     {optimizeStale && (
                       <div className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
-                        The draft changed since this suggestion. Run Optimize again.
+                        {SUGGESTION_STALE_REASON}
                       </div>
                     )}
                     <div className="space-y-2">
@@ -714,8 +738,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                               prev ? { ...prev, pending: retry.half, error: null } : prev,
                             );
                             holdoutMutation.mutate({
-                              half: retry.half,
-                              request: retry.vars,
+                              ...retry.vars,
                               token: acceptTokenRef.current,
                             });
                           }}
@@ -730,10 +753,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                         <PromptEvalResults
                           results={pairedRun.suggestion!.results}
                           title="Hold-out comparison"
-                          stale={staleOf(
-                            pairedRun.suggestion!.key,
-                            buildEvalRequest(suggestion, pairedRun.caseIds).key,
-                          )}
+                          stale={staleOf(pairedRun.suggestion!.key, pairedRunKey)}
                           providerFallback={providerFallback}
                           comparison={{ baseline: pairedRun.baseline!.results }}
                         />

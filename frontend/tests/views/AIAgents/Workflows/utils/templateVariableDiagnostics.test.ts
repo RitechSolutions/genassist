@@ -111,27 +111,32 @@ describe("unknownBindings", () => {
 });
 
 describe("directPredecessorIds", () => {
-  const nodes = [
-    { id: "agent", type: "agentNode" },
-    { id: "tool", type: "toolBuilderNode" },
-    { id: "input", type: "chatInputNode" },
-  ];
-
-  it("excludes tool and sub-agent sources for an agent node", () => {
+  it("counts only edges on the execution input handle", () => {
     const edges = [
-      { source: "tool", target: "agent" },
-      { source: "input", target: "agent" },
+      { source: "tool", target: "agent", targetHandle: "input_tools" },
+      { source: "mcp", target: "agent", targetHandle: "input_tools" },
+      { source: "sub", target: "agent", targetHandle: "input_sub_agents" },
+      { source: "chat", target: "agent", targetHandle: "input" },
     ];
-    expect(directPredecessorIds("agent", nodes, edges)).toEqual(["input"]);
+    expect(directPredecessorIds("agent", edges)).toEqual(["chat"]);
   });
 
-  it("keeps every direct source for any other node type", () => {
-    const other = [...nodes, { id: "llm", type: "llmNode" }];
+  it("counts every execution input, whatever the source node is", () => {
     const edges = [
-      { source: "tool", target: "llm" },
-      { source: "input", target: "llm" },
+      { source: "a", target: "llm", targetHandle: "input" },
+      { source: "b", target: "llm", targetHandle: "input" },
+      { source: "c", target: "other", targetHandle: "input" },
     ];
-    expect(directPredecessorIds("llm", other, edges)).toEqual(["tool", "input"]);
+    expect(directPredecessorIds("llm", edges)).toEqual(["a", "b"]);
+  });
+
+  it("counts no legacy handle, as the engine does not either", () => {
+    const edges = [
+      { source: "chat", target: "agent", targetHandle: "input_prompt" },
+      { source: "tpl", target: "agent", targetHandle: "input_system_prompt" },
+      { source: "old", target: "agent" },
+    ];
+    expect(directPredecessorIds("agent", edges)).toEqual([]);
   });
 });
 

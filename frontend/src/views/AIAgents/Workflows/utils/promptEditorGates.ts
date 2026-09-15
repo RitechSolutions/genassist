@@ -30,6 +30,11 @@ export interface RunInputs {
   providerId: string;
 }
 
+export interface OptimizeInputs extends RunInputs {
+  /** Optional, so only its length is checked */
+  instructions: string;
+}
+
 export interface EvalInputs extends RunInputs {
   techniqueCount: number;
   /** Why the forbidden-phrase list is not sendable; null or absent when it is */
@@ -39,6 +44,7 @@ export interface EvalInputs extends RunInputs {
 }
 
 export const MAX_PROMPT_LENGTH = 200_000;
+export const MAX_INSTRUCTIONS_LENGTH = 4_000;
 
 /** Code points, matching the backend bound; JS `.length` double-counts astral characters */
 export const promptLength = (content: string): number =>
@@ -49,8 +55,8 @@ export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
 export const HISTORY_FORBIDDEN_REASON =
   "You don't have permission to view prompt history.";
 
-const SUGGESTION_STALE_REASON =
-  "The draft changed since this suggestion. Run Optimize again.";
+export const SUGGESTION_STALE_REASON =
+  "Inputs changed since this suggestion. Run Optimize again.";
 
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
@@ -157,7 +163,7 @@ export const evaluateGate = (
 export const optimizeGate = (
   history: HistoryState,
   caps: PromptEditorCapabilities,
-  run: RunInputs,
+  run: OptimizeInputs,
 ): Gate => {
   const context = contextGate(
     history,
@@ -167,7 +173,13 @@ export const optimizeGate = (
   if (context) return context;
   const inline = inlineCheckGate(history);
   if (inline) return inline;
-  return providerGate(run) ?? bodyGate(run.content, run.contentNoun) ?? OPEN;
+  const provider = providerGate(run);
+  if (provider) return provider;
+  if (promptLength(run.instructions) > MAX_INSTRUCTIONS_LENGTH)
+    return blocked(
+      `The additional instructions are longer than ${MAX_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`,
+    );
+  return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 /**

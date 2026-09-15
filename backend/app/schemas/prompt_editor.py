@@ -138,8 +138,8 @@ class FieldEqualsConfig(_Forbid):
     # Unresolved paths read as empty—typos fail, not skip
     # _read_path can't distinguish empty from missing
     field: str = Field(..., pattern=FIELD_PATH_RE, max_length=200)
-    # Stripped before bounds check (matches evaluator)
-    # Blank or whitespace-only normalizes to "" and always fails
+    # Stripped before bounds check (matches evaluator), so a blank is rejected here
+    # rather than reaching the evaluator, which normalizes it to "" and fails every case
     expected: Optional[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]
     ] = None
@@ -260,7 +260,7 @@ class FailedCaseRef(BaseModel):
 
 
 class CaseSplit(BaseModel):
-    """Absent = exploratory. The development set is never sent,it is the suite
+    """Absent = exploratory. The development set is never sent, it is the suite
     minus the hold-out"""
 
     holdout_case_ids: List[UUID] = Field(..., min_length=1, max_length=MAX_CHECK_CASES)
