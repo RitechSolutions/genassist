@@ -119,6 +119,13 @@ class ProjectSettings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     HUGGINGFACE_TOKEN: Optional[str] = None
 
+    # === Model call concurrency ===
+    # API process only: threads in the event loop's default pool, where synchronous model clients run; 0 keeps Python's default.
+    LLM_EXECUTOR_THREADS: int = 32
+    # Agent turns one process runs at once; a turn waiting longer than the timeout gets 503. 0 disables the cap.
+    CHAT_TURN_MAX_INFLIGHT: int = 24
+    CHAT_TURN_QUEUE_TIMEOUT_SECONDS: float = 10.0
+
     # === Whisper Model Defaults ===
     DEFAULT_WHISPER_MODEL: str = "base.en"
     SUPPORTED_AUDIO_FORMATS: Tuple[str, ...] = (
