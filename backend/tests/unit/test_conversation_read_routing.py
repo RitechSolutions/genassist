@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import settings
 from app.core.tenant_scope import clear_tenant_context, set_tenant_context
 from app.db import multi_tenant_session as mts
+from app.db.read_routing import allow_replica_reads, reset_replica_reads
 from app.db.session_types import ReadOnlySession
 from app.repositories.conversations import ConversationRepository
 from app.repositories.conversations_read import ConversationReadRepository
@@ -59,11 +60,13 @@ async def test_injector_builds_the_read_repository_with_the_read_session(monkeyp
     monkeypatch.setattr(mts.multi_tenant_manager, "get_tenant_read_session_factory", lambda tenant="master": lambda: read_session)
     inj = Injector([Dependencies()])
     set_tenant_context("acme-co")
+    scope_token = allow_replica_reads()
     try:
         async with inj.get(RequestScopeFactory).create_scope():
             assert inj.get(ConversationReadRepository).db is read_session
             assert inj.get(ConversationRepository).db is write_session
     finally:
+        reset_replica_reads(scope_token)
         clear_tenant_context()
 
 

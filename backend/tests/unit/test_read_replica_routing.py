@@ -1,6 +1,7 @@
 """Unit tests for read-replica routing: settings, engine fallback, the read session provider and routed repositories"""
 
 import typing
+from contextlib import contextmanager
 
 import pytest
 from sqlalchemy.engine import make_url
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import settings
 from app.core.tenant_scope import background_task_context, clear_tenant_context, set_tenant_context
 from app.db import multi_tenant_session as mts
+from app.db.read_routing import allow_replica_reads, reset_replica_reads
+from app.db.replica_health import ReplicaSession, replica_health
 from app.db.session_types import ReadOnlySession
 
 TENANT = "replica-routing-test"
@@ -22,6 +25,8 @@ SETTINGS_UNDER_TEST = (
     "DB_READ_HOST",
     "DB_READ_POOL_SIZE",
     "DB_READ_MAX_OVERFLOW",
+    "DB_READ_POOL_TIMEOUT",
+    "DB_READ_STATEMENT_TIMEOUT",
 )
 
 
@@ -35,6 +40,16 @@ class FakeEngine:
         self.disposed = True
 
 
+@contextmanager
+def http_request_scope():
+    """Mirror ReplicaScopeMiddleware, which marks only HTTP scopes eligible for the replica."""
+    token = allow_replica_reads()
+    try:
+        yield
+    finally:
+        reset_replica_reads(token)
+
+
 @pytest.fixture(autouse=True)
 def restore_settings():
     snapshot = {name: getattr(settings, name) for name in SETTINGS_UNDER_TEST}
@@ -43,13 +58,24 @@ def restore_settings():
     settings.DB_PASS = "secret"
     settings.DB_NAME = "core_db"
     settings.DB_READ_HOST = None
-    settings.DB_READ_POOL_SIZE = None
-    settings.DB_READ_MAX_OVERFLOW = None
+    settings.DB_READ_POOL_SIZE = 20
+    settings.DB_READ_MAX_OVERFLOW = 20
+    settings.DB_READ_POOL_TIMEOUT = 5
+    settings.DB_READ_STATEMENT_TIMEOUT = 120
     try:
         yield
     finally:
         for name, value in snapshot.items():
             setattr(settings, name, value)
+
+
+@pytest.fixture(autouse=True)
+def healthy_replica():
+    replica_health.reset()
+    try:
+        yield replica_health
+    finally:
+        replica_health.reset()
 
 
 @pytest.fixture(autouse=True)
@@ -105,13 +131,12 @@ def test_read_url_swaps_only_the_host():
     assert read_url.drivername == write_url.drivername
 
 
-def test_read_pool_settings_inherit_writer_values_unless_set():
-    assert settings.read_pool_size == settings.DB_POOL_SIZE
-    assert settings.read_max_overflow == settings.DB_MAX_OVERFLOW
-    settings.DB_READ_POOL_SIZE = 7
-    settings.DB_READ_MAX_OVERFLOW = 3
-    assert settings.read_pool_size == 7
-    assert settings.read_max_overflow == 3
+def test_read_pool_is_smaller_and_more_impatient_than_the_writer_pool():
+    fields = getattr(type(settings), "model_fields", None) or type(settings).__fields__
+    assert fields["DB_READ_POOL_SIZE"].default < fields["DB_POOL_SIZE"].default
+    assert fields["DB_READ_MAX_OVERFLOW"].default < fields["DB_MAX_OVERFLOW"].default
+    assert fields["DB_READ_POOL_TIMEOUT"].default < fields["DB_POOL_TIMEOUT"].default
+    assert fields["DB_READ_STATEMENT_TIMEOUT"].default < fields["DB_STATEMENT_TIMEOUT"].default
 
 
 # ───────────── engines and session factories ─────────────
@@ -147,10 +172,27 @@ def test_read_engine_is_a_separate_read_only_engine_when_replica_enabled(created
     server_settings = read_engine.kwargs["connect_args"]["server_settings"]
     assert server_settings["default_transaction_read_only"] == "on"
     assert server_settings["application_name"] == "genassist-read"
-    assert server_settings["statement_timeout"] == str(settings.DB_STATEMENT_TIMEOUT * 1000)
 
     writer_server_settings = write_engine.kwargs["connect_args"]["server_settings"]
     assert "default_transaction_read_only" not in writer_server_settings
+
+
+def test_read_connections_use_their_own_timeouts(created_engines, restore_manager_caches):
+    """A small pool plus the writer's 30 minute ceiling would let a few slow queries occupy all of it."""
+    manager = restore_manager_caches
+    settings.DB_READ_HOST = "reader.internal"
+
+    read_engine = manager.get_tenant_read_engine(TENANT)
+    write_engine = manager.get_tenant_engine(TENANT)
+
+    assert read_engine.kwargs["pool_timeout"] == settings.DB_READ_POOL_TIMEOUT
+    assert write_engine.kwargs["pool_timeout"] == settings.DB_POOL_TIMEOUT
+
+    read_timeout = read_engine.kwargs["connect_args"]["server_settings"]["statement_timeout"]
+    write_timeout = write_engine.kwargs["connect_args"]["server_settings"]["statement_timeout"]
+    assert read_timeout == str(settings.DB_READ_STATEMENT_TIMEOUT * 1000)
+    assert write_timeout == str(settings.DB_STATEMENT_TIMEOUT * 1000)
+    assert int(read_timeout) < int(write_timeout)
 
 
 def test_background_tasks_keep_reading_from_the_writer(created_engines, restore_manager_caches):
@@ -201,6 +243,54 @@ def test_read_session_factory_binds_to_the_read_engine(created_engines, restore_
     assert read_factory is not manager.get_tenant_session_factory(TENANT)
     assert read_factory.kw["bind"] is manager.get_tenant_read_engine(TENANT)
     assert read_factory.kw["expire_on_commit"] is False
+    assert read_factory.class_ is ReplicaSession
+
+
+# ───────────── middleware wiring ─────────────
+
+
+def test_replica_middlewares_are_installed_in_the_app():
+    """Without these registrations the whole feature silently reverts to the writer."""
+    from app.middlewares._middleware import build_middlewares
+    from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
+    from app.middlewares.replica_scope_middleware import ReplicaScopeMiddleware
+    from app.middlewares.session_cleanup_middleware import TransactionMiddleware
+
+    installed = [middleware.cls for middleware in build_middlewares()]
+
+    assert ReplicaScopeMiddleware in installed
+    assert ReadAfterWriteMiddleware in installed
+    # Outermost first: the scope marker and the guard must both wrap the endpoint.
+    assert installed.index(ReplicaScopeMiddleware) < installed.index(ReadAfterWriteMiddleware)
+    assert installed.index(ReadAfterWriteMiddleware) < installed.index(TransactionMiddleware)
+
+
+def test_replica_scope_middleware_marks_only_http_scopes():
+    """Without this guard a dashboard websocket would hold a replica connection for
+    the whole connection, which is what the small read pool cannot absorb."""
+    from fastapi.testclient import TestClient
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route, WebSocketRoute
+
+    from app.db.read_routing import replica_reads_allowed
+    from app.middlewares.replica_scope_middleware import ReplicaScopeMiddleware
+
+    async def http_endpoint(_request):
+        return JSONResponse({"eligible": replica_reads_allowed()})
+
+    async def websocket_endpoint(websocket):
+        await websocket.accept()
+        await websocket.send_json({"eligible": replica_reads_allowed()})
+        await websocket.close()
+
+    app = Starlette(routes=[Route("/read", http_endpoint), WebSocketRoute("/ws", websocket_endpoint)])
+    app.add_middleware(ReplicaScopeMiddleware)
+    client = TestClient(app)
+
+    assert client.get("/read").json() == {"eligible": True}
+    with client.websocket_connect("/ws") as websocket:
+        assert websocket.receive_json() == {"eligible": False}
 
 
 # ───────────── dependency injection ─────────────
@@ -210,7 +300,8 @@ def test_provider_returns_the_request_write_session_when_replica_disabled():
     from app.dependencies.dependency_injection import Dependencies
 
     write_session = object()
-    assert Dependencies().provide_read_session(write_session) is write_session
+    with http_request_scope():
+        assert Dependencies().provide_read_session(write_session) is write_session
 
 
 def test_provider_returns_a_read_session_from_the_tenant_read_factory(monkeypatch):
@@ -227,10 +318,20 @@ def test_provider_returns_a_read_session_from_the_tenant_read_factory(monkeypatc
     monkeypatch.setattr(mts.multi_tenant_manager, "get_tenant_read_session_factory", fake_read_factory)
     set_tenant_context("acme-co")
     try:
-        assert Dependencies().provide_read_session(object()) is read_session
+        with http_request_scope():
+            assert Dependencies().provide_read_session(object()) is read_session
     finally:
         clear_tenant_context()
     assert seen_tenants == ["acme-co"]
+
+
+def test_provider_keeps_non_http_scopes_on_the_write_session():
+    """A websocket scope lives for the whole connection, so it must never hold a replica connection."""
+    from app.dependencies.dependency_injection import Dependencies
+
+    settings.DB_READ_HOST = "reader.internal"
+    write_session = object()
+    assert Dependencies().provide_read_session(write_session) is write_session
 
 
 def test_provider_keeps_background_tasks_on_the_write_session():
@@ -238,8 +339,22 @@ def test_provider_keeps_background_tasks_on_the_write_session():
 
     settings.DB_READ_HOST = "reader.internal"
     write_session = object()
-    with background_task_context():
+    with http_request_scope(), background_task_context():
         assert Dependencies().provide_read_session(write_session) is write_session
+
+
+def test_provider_falls_back_to_the_writer_while_the_replica_is_unhealthy(healthy_replica):
+    from app.dependencies.dependency_injection import Dependencies
+
+    settings.DB_READ_HOST = "reader.internal"
+    write_session = object()
+    healthy_replica.mark_failure(RuntimeError("replica down"))
+    set_tenant_context("acme-co")
+    try:
+        with http_request_scope():
+            assert Dependencies().provide_read_session(write_session) is write_session
+    finally:
+        clear_tenant_context()
 
 
 def test_read_only_session_is_bound_to_the_provider_without_touching_the_write_binding():
@@ -270,9 +385,10 @@ async def test_injector_resolves_the_write_session_for_read_only_dependencies_wh
     inj = Injector([Dependencies()])
     set_tenant_context("acme-co")
     try:
-        async with inj.get(RequestScopeFactory).create_scope():
-            assert inj.get(AsyncSession) is write_session
-            assert inj.get(ReadOnlySession) is write_session
+        with http_request_scope():
+            async with inj.get(RequestScopeFactory).create_scope():
+                assert inj.get(AsyncSession) is write_session
+                assert inj.get(ReadOnlySession) is write_session
     finally:
         clear_tenant_context()
 
@@ -291,10 +407,10 @@ async def test_injector_resolves_a_separate_read_session_when_enabled(monkeypatc
     inj = Injector([Dependencies()])
     set_tenant_context("acme-co")
     try:
-        async with inj.get(RequestScopeFactory).create_scope():
-            assert inj.get(AsyncSession) is write_session
-            assert inj.get(ReadOnlySession) is read_session
-            assert inj.get(ReadOnlySession) is read_session
+        with http_request_scope():
+            async with inj.get(RequestScopeFactory).create_scope():
+                assert inj.get(AsyncSession) is write_session
+                assert inj.get(ReadOnlySession) is read_session
     finally:
         clear_tenant_context()
 
@@ -307,48 +423,63 @@ def _routed_repositories():
     return (AnalyticsReadRepository, DashboardRepository, LlmUsageReadRepository)
 
 
-async def _resolve_repositories_in_a_request(monkeypatch, write_session, read_session):
-    """Build every repository through the real injector, as a request would, and return their sessions"""
+async def _resolve_repositories_in_a_request(monkeypatch, write_sessions, read_sessions):
+    """Build every repository through the real injector, as a request would, and return their sessions.
+
+    The factories mint a new object per call, so a dropped request scope shows up as
+    a different session per repository instead of passing unnoticed.
+    """
     from fastapi_injector import RequestScopeFactory
     from injector import Injector
 
     from app.dependencies.dependency_injection import Dependencies
     from app.repositories.conversations import ConversationRepository
 
-    monkeypatch.setattr(mts.multi_tenant_manager, "get_tenant_session_factory", lambda tenant="master": lambda: write_session)
-    monkeypatch.setattr(mts.multi_tenant_manager, "get_tenant_read_session_factory", lambda tenant="master": lambda: read_session)
+    monkeypatch.setattr(
+        mts.multi_tenant_manager, "get_tenant_session_factory", lambda tenant="master": lambda: write_sessions()
+    )
+    monkeypatch.setattr(
+        mts.multi_tenant_manager, "get_tenant_read_session_factory", lambda tenant="master": lambda: read_sessions()
+    )
     inj = Injector([Dependencies()])
     set_tenant_context("acme-co")
     try:
-        async with inj.get(RequestScopeFactory).create_scope():
-            routed = {cls.__name__: inj.get(cls).db for cls in _routed_repositories()}
-            write_side = inj.get(ConversationRepository).db
+        with http_request_scope():
+            async with inj.get(RequestScopeFactory).create_scope():
+                routed = {cls.__name__: inj.get(cls).db for cls in _routed_repositories()}
+                write_side = inj.get(ConversationRepository).db
     finally:
         clear_tenant_context()
     return routed, write_side
 
 
+def _session_minter(label):
+    """Returns a fresh, identifiable session object on every call."""
+    counter = iter(range(1, 1000))
+    return lambda: f"{label}-{next(counter)}"
+
+
 @pytest.mark.asyncio
-async def test_routed_repositories_are_constructed_with_the_read_session_when_enabled(monkeypatch):
+async def test_routed_repositories_share_one_read_session_when_enabled(monkeypatch):
+    """A session per repository would open one replica connection per repository per request."""
     settings.DB_READ_HOST = "reader.internal"
-    write_session, read_session = object(), object()
 
-    routed, write_side = await _resolve_repositories_in_a_request(monkeypatch, write_session, read_session)
+    routed, write_side = await _resolve_repositories_in_a_request(
+        monkeypatch, _session_minter("write"), _session_minter("read")
+    )
 
-    for name, session in routed.items():
-        assert session is read_session, name
-    assert write_side is write_session
+    assert set(routed.values()) == {"read-1"}, routed
+    assert write_side == "write-1"
 
 
 @pytest.mark.asyncio
-async def test_routed_repositories_are_constructed_with_the_write_session_when_disabled(monkeypatch):
-    write_session, read_session = object(), object()
+async def test_routed_repositories_share_the_write_session_when_disabled(monkeypatch):
+    routed, write_side = await _resolve_repositories_in_a_request(
+        monkeypatch, _session_minter("write"), _session_minter("read")
+    )
 
-    routed, write_side = await _resolve_repositories_in_a_request(monkeypatch, write_session, read_session)
-
-    for name, session in routed.items():
-        assert session is write_session, name
-    assert write_side is write_session
+    assert set(routed.values()) == {"write-1"}, routed
+    assert write_side == "write-1"
 
 
 # ───────────── which repositories are routed ─────────────
