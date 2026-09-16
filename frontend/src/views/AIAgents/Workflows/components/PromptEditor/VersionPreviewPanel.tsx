@@ -1,5 +1,5 @@
 import React, { useId, useState } from "react";
-import { AlertCircle, ArrowRight, Copy, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowRight, ChevronDown, Copy, Undo2 } from "lucide-react";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import {
@@ -61,6 +61,7 @@ interface VersionPreviewPanelProps {
   onCopy: () => void;
   isCopying: boolean;
   copyError: string | null;
+  onCollapse: () => void;
 }
 
 export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
@@ -79,6 +80,7 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
   onCopy,
   isCopying,
   copyError,
+  onCollapse,
 }) => {
   const compareId = useId();
   const [compareTargetId, setCompareTargetId] = useState(NO_TARGET);
@@ -105,8 +107,8 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
         : NO_TARGET;
 
   return (
-    <div className="rounded-md border bg-card mb-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {comparison ? (
             <>
@@ -141,7 +143,7 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
           )}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <span
             id={`${compareId}-label`}
             className="text-xs text-muted-foreground"
@@ -175,11 +177,55 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
               <SelectItem value={NO_TARGET}>No comparison</SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={onApply}
+            disabled={isCurrentDraft}
+          >
+            Apply to draft
+          </Button>
+          {canUndo && (
+            <Button type="button" size="sm" variant="ghost" onClick={onUndo}>
+              <Undo2 className="h-3.5 w-3.5 mr-2" />
+              Undo
+            </Button>
+          )}
+          {canCopyToHistory && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onCopy}
+              disabled={isCopying}
+            >
+              <Copy className="h-3.5 w-3.5 mr-2" />
+              {isCopying ? "Copying…" : "Copy into this history"}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={onCollapse}
+            aria-label="Collapse comparison"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
-      {/* Fixed height so toggling the comparison on and off doesn't shift the panel */}
-      <div className="h-48 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {copyError && (
+          <div className="shrink-0 px-3 pt-2">
+            <div className="flex items-start gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+              <span>{copyError}</span>
+            </div>
+          </div>
+        )}
         {comparison ? (
           comparison.before.content === comparison.after.content ? (
             <div className="flex min-h-full items-center justify-center px-3 py-2 text-xs italic text-muted-foreground">
@@ -200,39 +246,6 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
           <pre className="min-h-full whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs text-muted-foreground">
             {version.content}
           </pre>
-        )}
-      </div>
-
-      {copyError && (
-        <div className="px-3 pb-2">
-          <div className="flex items-start gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1">
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
-            <span>{copyError}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-2 border-t px-3 py-2">
-        <Button type="button" size="sm" onClick={onApply} disabled={isCurrentDraft}>
-          Apply to draft
-        </Button>
-        {canUndo && (
-          <Button type="button" size="sm" variant="ghost" onClick={onUndo}>
-            <Undo2 className="h-3.5 w-3.5 mr-2" />
-            Undo
-          </Button>
-        )}
-        {canCopyToHistory && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onCopy}
-            disabled={isCopying}
-          >
-            <Copy className="h-3.5 w-3.5 mr-2" />
-            {isCopying ? "Copying…" : "Copy into this history"}
-          </Button>
         )}
       </div>
     </div>

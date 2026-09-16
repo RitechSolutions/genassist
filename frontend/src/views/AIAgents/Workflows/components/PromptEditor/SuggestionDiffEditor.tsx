@@ -6,6 +6,8 @@ import FieldChangeRow from "../diff/FieldChangeRow";
 import { PROMPT_DIFF_TIMEOUT_MS, PROMPT_MIN_SIMILARITY } from "./promptDiff";
 
 type SuggestionView = "diff" | "edit";
+const EDIT_MIN_ROWS = 12;
+const EDIT_MAX_ROWS = 24;
 
 interface SuggestionDiffEditorProps {
   /** The prompt the optimizer rewrote, so the diff reads optimized-from → saved */
@@ -23,6 +25,10 @@ export const SuggestionDiffEditor: React.FC<SuggestionDiffEditorProps> = ({
   onChange,
 }) => {
   const [view, setView] = useState<SuggestionView>("diff");
+  const editRows = Math.min(
+    Math.max(suggestion.split("\n").length, EDIT_MIN_ROWS),
+    EDIT_MAX_ROWS,
+  );
 
   return (
     <div className="space-y-2">
@@ -46,7 +52,7 @@ export const SuggestionDiffEditor: React.FC<SuggestionDiffEditorProps> = ({
       </div>
 
       {view === "diff" ? (
-        <div className="border rounded max-h-48 overflow-y-auto">
+        <div className="border rounded">
           {before === suggestion ? (
             <div className="px-3 py-2 text-xs italic text-muted-foreground">
               No differences
@@ -68,7 +74,7 @@ export const SuggestionDiffEditor: React.FC<SuggestionDiffEditorProps> = ({
         <RichTextarea
           value={suggestion}
           onChange={(e) => onChange(e.target.value)}
-          rows={12}
+          rows={editRows}
           className="w-full font-mono text-sm"
         />
       )}

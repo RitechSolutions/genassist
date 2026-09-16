@@ -122,7 +122,7 @@ const Comparison: React.FC<{
       <p className="text-xs text-muted-foreground">
         {joined.compared} of {joined.rows.length} cases could be compared.
       </p>
-      <div className="space-y-1 max-h-40 overflow-y-auto text-xs">
+      <div className="space-y-1 text-xs">
         {joined.rows.map((row) => (
           <div key={row.caseId} className="flex items-center gap-2">
             <span className="text-muted-foreground truncate flex-1">
@@ -182,7 +182,7 @@ export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
       <Comparison baseline={comparison.baseline} suggestion={results} />
     )}
 
-    <div className="space-y-2 max-h-60 overflow-y-auto">
+    <div className="space-y-2">
       {results.results.map((result, index) => (
         <CaseCard key={result.case_id || index} result={result} />
       ))}

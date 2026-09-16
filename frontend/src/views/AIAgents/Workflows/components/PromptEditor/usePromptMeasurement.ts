@@ -815,7 +815,7 @@ export const usePromptMeasurement = ({
     optimizeStale,
     suggestion,
     optimizedFrom: optimizeRun?.request.prompt ?? "",
-    suggestionEdited: suggestionEdit !== null,
+    suggestionEdited: suggestion !== (optimizeResult?.suggested_prompt ?? ""),
     editSuggestion: setSuggestionEdit,
     placeholderNote,
     suggestedEvalRun,
