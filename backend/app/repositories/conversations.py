@@ -296,21 +296,15 @@ class ConversationRepository(DbRepository[ConversationModel]):
 
         if conversation_filter.search:
             search_term = f"%{conversation_filter.search}%"
-            ts_query = func.plainto_tsquery("english", conversation_filter.search)
-            message_exists = select(TranscriptMessageModel.id).where(
-                TranscriptMessageModel.conversation_id == ConversationModel.id,
-                TranscriptMessageModel.text_search.op("@@")(ts_query),
-            ).exists()
-            analysis_match = select(ConversationAnalysisModel.id).where(
-                ConversationAnalysisModel.conversation_id == ConversationModel.id,
-                ConversationAnalysisModel.summary.ilike(search_term),
-            ).exists()
+            # Relationship predicates keep their FROM when the outer query joins the same table.
             query = query.where(
                 or_(
                     cast(ConversationModel.id, String).ilike(search_term),
                     ConversationModel.topic.ilike(search_term),
-                    analysis_match,
-                    message_exists,
+                    ConversationModel.analysis.has(
+                        ConversationAnalysisModel.summary.ilike(search_term)
+                    ),
+                    self._message_text_matches(conversation_filter.search),
                 )
             )
 
@@ -320,16 +314,9 @@ class ConversationRepository(DbRepository[ConversationModel]):
                 ConversationModel.custom_attributes["pii"]["requester_email"].astext
                 == email_normalized
             )
-            email_fts_query = func.plainto_tsquery("english", email_normalized)
-            email_message_exists = (
-                select(TranscriptMessageModel.id)
-                .where(
-                    TranscriptMessageModel.conversation_id == ConversationModel.id,
-                    TranscriptMessageModel.text_search.op("@@")(email_fts_query),
-                )
-                .exists()
+            query = query.where(
+                or_(json_match, self._message_text_matches(email_normalized))
             )
-            query = query.where(or_(json_match, email_message_exists))
 
         if conversation_filter.id_suffix:
             query = query.where(
@@ -372,6 +359,14 @@ class ConversationRepository(DbRepository[ConversationModel]):
             query = query.where(topic_condition)
 
         return query
+
+    @staticmethod
+    def _message_text_matches(text: str):
+        """EXISTS on the conversation's messages via full-text search."""
+        ts_query = func.plainto_tsquery("english", text)
+        return ConversationModel.messages.any(
+            TranscriptMessageModel.text_search.op("@@")(ts_query)
+        )
 
     def _needs_analysis_join(self, conversation_filter: ConversationFilter) -> bool:
         """Return True when we must outerjoin ConversationAnalysisModel."""
