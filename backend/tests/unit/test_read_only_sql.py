@@ -279,16 +279,51 @@ def test_identifier_parameter_is_rejected_clearly():
         "postgresql",
     )
 
-    _assert_invalid(result, "parameters", "table names")
+    _assert_invalid(result, "variables", "table or column names")
 
 
-def test_value_parameter_remains_valid():
-    _assert_valid(
-        validate_read_only_sql(
-            "SELECT * FROM lots WHERE city = :wf_0_city",
-            "postgresql",
-        )
-    )
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT :wf_0_column FROM lots",
+        "SELECT (:wf_0_column) FROM lots",
+        "SELECT CAST(:wf_0_column AS TEXT) FROM lots",
+        "SELECT (:wf_0_column)::text FROM lots",
+        "SELECT :wf_0_column AS selected_value FROM lots",
+        "SELECT city FROM lots ORDER BY :wf_0_column",
+        "SELECT city FROM lots ORDER BY (:wf_0_column)",
+        "SELECT city FROM lots ORDER BY LOWER(:wf_0_column)",
+        "SELECT city FROM lots GROUP BY :wf_0_column",
+        "SELECT city FROM lots GROUP BY ROLLUP(:wf_0_column)",
+        "SELECT DISTINCT ON (:wf_0_column) city FROM lots",
+        "SELECT ROW_NUMBER() OVER (PARTITION BY :wf_0_column) FROM lots",
+        "SELECT ROW_NUMBER() OVER (ORDER BY :wf_0_column) FROM lots",
+        "SELECT l.:wf_0_column FROM lots AS l",
+        "SELECT city FROM lots JOIN other USING (:wf_0_column)",
+    ],
+)
+def test_column_position_parameter_is_rejected(sql):
+    result = validate_read_only_sql(sql, "postgresql")
+
+    _assert_invalid(result, "variables", "table or column names")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM lots WHERE city = :wf_0_city",
+        "SELECT * FROM lots WHERE :wf_0_city = 'Tirana'",
+        "SELECT * FROM lots WHERE city IN (:wf_0_city, :wf_1_city)",
+        "SELECT * FROM lots WHERE created_at >= (:wf_0_day)::date",
+        "SELECT * FROM lots WHERE city LIKE '%' || :wf_0_city || '%'",
+        "SELECT city FROM lots ORDER BY CASE WHEN city = :wf_0_city THEN 0 ELSE 1 END",
+        "SELECT city, COUNT(*) FROM lots GROUP BY city HAVING COUNT(*) > :wf_0_count",
+        "SELECT * FROM lots LIMIT :wf_0_limit",
+        "SELECT COALESCE(:wf_0_city, 'Tirana') FROM lots",
+    ],
+)
+def test_value_parameter_remains_valid(sql):
+    _assert_valid(validate_read_only_sql(sql, "postgresql"))
 
 
 MYSQL_MAPPED_DB_TYPES = ("mysql", "sql")

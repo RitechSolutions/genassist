@@ -137,8 +137,8 @@ def validate_read_only_sql(query: str, db_type: str) -> ValidationResult:
     if identifier_placeholder is not None:
         return ValidationResult(
             False,
-            "SQL parameters cannot be used as table names; "
-            "use a fixed table name in the query.",
+            "Workflow variables can only supply values, not table or column "
+            "names. Put the name directly in the query.",
             query_type=type(root).__name__,
         )
 
@@ -259,11 +259,53 @@ def _find_forbidden_node(expression: exp.Expression) -> exp.Expression | None:
 
 
 def _find_identifier_placeholder(expression: exp.Expression) -> exp.Placeholder | None:
-    """Return a bound placeholder used where SQL requires a table identifier."""
+    """Return a placeholder used as an identifier, key, or output column."""
     for node in expression.find_all(exp.Placeholder):
-        if isinstance(node.parent, exp.Table):
+        outer: exp.Expression = node
+        while isinstance(outer.parent, (exp.Paren, exp.Cast)):
+            outer = outer.parent
+
+        parent = outer.parent
+        if isinstance(parent, (exp.Table, exp.Dot, exp.Column)):
             return node
+        if isinstance(parent, exp.Join) and node in (parent.args.get("using") or []):
+            return node
+        if (
+            isinstance(parent, exp.Alias)
+            and parent.this is outer
+            and isinstance(parent.parent, exp.Select)
+        ):
+            return node
+        if isinstance(parent, exp.Select) and outer in parent.expressions:
+            return node
+
+    for key in _identifier_key_expressions(expression):
+        placeholder = key.find(exp.Placeholder)
+        if placeholder is not None and key.find(exp.Column) is None:
+            return placeholder
     return None
+
+
+def _identifier_key_expressions(
+    expression: exp.Expression,
+) -> list[exp.Expression]:
+    """Collect sort, grouping, partition, and distinct-key expressions."""
+    keys: list[exp.Expression] = []
+    for node in expression.walk():
+        if isinstance(node, exp.Ordered):
+            keys.append(node.this)
+        elif isinstance(node, exp.Group):
+            keys.extend(node.expressions)
+            for argument in ("rollup", "cube", "grouping_sets"):
+                for item in node.args.get(argument) or []:
+                    keys.extend(item.expressions or [item])
+        elif isinstance(node, exp.Window):
+            keys.extend(node.args.get("partition_by") or [])
+        elif isinstance(node, exp.Distinct):
+            on = node.args.get("on")
+            if on is not None:
+                keys.extend(on.expressions or [on])
+    return keys
 
 
 def _validate_select_properties(
