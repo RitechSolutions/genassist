@@ -37,6 +37,7 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       className,
       size,
       rows,
+      fill,
       value,
       onFocus,
       onChange,
@@ -47,7 +48,7 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     },
     ref
   ) => {
-    const sizing = resolveTextareaSizing({ size, rows, className })
+    const sizing = resolveTextareaSizing({ size, rows, fill, className })
     const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
     const overlayRef = React.useRef<HTMLDivElement | null>(null)
     const pendingCursorRef = React.useRef<number | null>(null)
@@ -141,7 +142,7 @@ const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     })
 
     return (
-      <div className="relative w-full">
+      <div className={cn("relative w-full", fill && "h-full")}>
         <textarea
           rows={sizing.rows}
           spellCheck={sizing.spellCheck}

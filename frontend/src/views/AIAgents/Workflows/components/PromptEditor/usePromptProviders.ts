@@ -7,19 +7,24 @@ import type { ProviderFallback } from "../../utils/promptEditorResults";
 
 export interface PromptProvidersState {
   providers: LLMProvider[];
-  /** Empty when nothing is selected or the selection is no longer active */
-  activeProviderId: string;
-  setSelectedProviderId: (id: string) => void;
+  /** Scores every evaluation, including the ones started from the optimize side */
+  activeEvalProviderId: string;
+  setEvalProviderId: (id: string) => void;
+  /** Writes the rewrite */
+  activeOptimizeProviderId: string;
+  setOptimizeProviderId: (id: string) => void;
+  /** One query, so both selectors report the same unusable-list reason */
   providerStatus: RunInputs["providerStatus"];
-  /** Names the selected provider when a run's own provenance carries no model */
-  providerFallback: ProviderFallback | undefined;
+  /** Names the provider a run was sent to when its provenance carries no model */
+  fallbackFor: (providerId: string) => ProviderFallback | undefined;
 }
 
-/** The active LLM providers a run can be sent to, plus the current selection */
+/** The active LLM providers a run can be sent to, and the two independent selections */
 export const usePromptProviders = (
   defaultProviderId?: string,
 ): PromptProvidersState => {
-  const [selectedProviderId, setSelectedProviderId] = useState(
+  const [evalProviderId, setEvalProviderId] = useState(defaultProviderId || "");
+  const [optimizeProviderId, setOptimizeProviderId] = useState(
     defaultProviderId || "",
   );
 
@@ -29,16 +34,16 @@ export const usePromptProviders = (
     select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
   const providers = providersQuery.data ?? [];
-  // A default pointing at a deactivated provider must never reach a request
-  const activeProviderId = providers.some((p) => p.id === selectedProviderId)
-    ? selectedProviderId
-    : "";
-  const activeProvider = providers.find((p) => p.id === activeProviderId);
+  // A selection pointing at a deactivated provider must never reach a request
+  const activeIdOf = (selected: string) =>
+    providers.some((p) => p.id === selected) ? selected : "";
 
   return {
     providers,
-    activeProviderId,
-    setSelectedProviderId,
+    activeEvalProviderId: activeIdOf(evalProviderId),
+    setEvalProviderId,
+    activeOptimizeProviderId: activeIdOf(optimizeProviderId),
+    setOptimizeProviderId,
     providerStatus: providersQuery.isPending
       ? "pending"
       : providersQuery.isError
@@ -46,12 +51,15 @@ export const usePromptProviders = (
         : providers.length === 0
           ? "empty"
           : "ready",
-    providerFallback: activeProvider
-      ? {
-          name: activeProvider.name,
-          llm_model_provider: activeProvider.llm_model_provider,
-          llm_model: activeProvider.llm_model,
-        }
-      : undefined,
+    fallbackFor: (providerId) => {
+      const provider = providers.find((p) => p.id === providerId);
+      return provider
+        ? {
+            name: provider.name,
+            llm_model_provider: provider.llm_model_provider,
+            llm_model: provider.llm_model,
+          }
+        : undefined;
+    },
   };
 };

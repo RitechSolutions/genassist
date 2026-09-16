@@ -125,8 +125,10 @@ export interface PromptMeasurementState {
   successMessage: string | null;
 
   providers: LLMProvider[];
-  activeProviderId: string;
-  setSelectedProviderId: (id: string) => void;
+  activeEvalProviderId: string;
+  setEvalProviderId: (id: string) => void;
+  activeOptimizeProviderId: string;
+  setOptimizeProviderId: (id: string) => void;
   providerStatus: RunInputs["providerStatus"];
 
   selectedTechniques: string[];
@@ -151,6 +153,11 @@ export interface PromptMeasurementState {
   optimizeResult: PromptOptimizeResponse | null;
   optimizeStale: boolean;
   suggestion: string;
+  /** Original prompt sent to optimizer (suggestion rewrites this)
+   * Not live draft; drift flagged by `optimizeStale` */
+  optimizedFrom: string;
+  suggestionEdited: boolean;
+  editSuggestion: (text: string) => void;
   /** Warns that the rewrite changed the draft's {{placeholders}} */
   placeholderNote: string | null;
   suggestedEvalRun: SuggestedRunState | null;
@@ -209,8 +216,10 @@ export const usePromptMeasurement = ({
   const [suggestedEvalRun, setSuggestedEvalRun] =
     useState<SuggestedRunState | null>(null);
   const [holdoutRun, setHoldoutRun] = useState<HoldoutRun | null>(null);
+  const [suggestionEdit, setSuggestionEdit] = useState<string | null>(null);
   const [optimizeInstructions, setOptimizeInstructions] = useState("");
-  // Bumped on Accept/Dismiss/new suggestions to prevent stale applies
+  // Incremented when suggestion is superseded, dismissed, replaced, or saved
+  // Always clears runs together
   const acceptTokenRef = useRef(0);
   // Guard against stale async overwrites
   const latestDraftRef = useRef(draft);
@@ -223,10 +232,12 @@ export const usePromptMeasurement = ({
 
   const {
     providers,
-    activeProviderId,
-    setSelectedProviderId,
+    activeEvalProviderId,
+    setEvalProviderId,
+    activeOptimizeProviderId,
+    setOptimizeProviderId,
     providerStatus,
-    providerFallback,
+    fallbackFor,
   } = usePromptProviders(defaultProviderId);
 
   const goldSuiteId = historyState.goldSuiteId;
@@ -264,7 +275,7 @@ export const usePromptMeasurement = ({
     (prompt: string, caseIds: string[] | null): EvalRequest => ({
       key: evalKeyOf({
         prompt,
-        providerId: activeProviderId,
+        providerId: activeEvalProviderId,
         techniques: selectedTechniques,
         techniqueConfigs,
         caseIds,
@@ -272,14 +283,14 @@ export const usePromptMeasurement = ({
         caseRowsKey,
       }),
       prompt,
-      providerId: activeProviderId,
+      providerId: activeEvalProviderId,
       techniques: selectedTechniques,
       techniqueConfigs,
       caseIds,
       maxCases: casesToCheck,
     }),
     [
-      activeProviderId,
+      activeEvalProviderId,
       selectedTechniques,
       techniqueConfigs,
       casesToCheck,
@@ -314,7 +325,7 @@ export const usePromptMeasurement = ({
 
   const currentOptimizeKey = optimizeKeyOf({
     prompt: draft,
-    providerId: activeProviderId,
+    providerId: activeOptimizeProviderId,
     instructions,
     caseSplit: splitActive
       ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds }
@@ -329,7 +340,11 @@ export const usePromptMeasurement = ({
       key: currentOptimizeKey,
       failuresKey,
     });
-  const suggestion = optimizeResult?.suggested_prompt ?? "";
+  const suggestion = suggestionEdit ?? optimizeResult?.suggested_prompt ?? "";
+  // Used by Accept for comparison. Mid-save edits downgrade message;
+  // bumping would kill in-flight suggested runs
+  const latestSuggestionRef = useRef("");
+  latestSuggestionRef.current = suggestion;
 
   // Compared against the prompt the optimizer was given, not the live draft: a
   // changed draft is stale and Accept is already blocked
@@ -363,10 +378,11 @@ export const usePromptMeasurement = ({
       staleOf(suggestedEvalRun.key, suggestedRunKey));
 
   /** Captured in the same expression that builds the request: resolving either field
-   *  in a callback would read whatever the form holds when the run returns */
-  const runSnapshotOf = (leaky: boolean): RunSnapshot => ({
+   *  in a callback would read whatever the form holds when the run returns. The
+   *  fallback names the request's own provider, never whichever selector moved since */
+  const runSnapshotOf = (leaky: boolean, providerId: string): RunSnapshot => ({
     leaky,
-    providerFallback,
+    providerFallback: fallbackFor(providerId),
   });
 
   /** Both halves a paired run would send right now. Null when the paired flow does
@@ -442,6 +458,7 @@ export const usePromptMeasurement = ({
       // A new suggestion invalidates the old one's scores; the baseline is keyed to
       // the current prompt and stays valid
       setSuggestedEvalRun(null);
+      setSuggestionEdit(null);
       setHoldoutRun((prev) =>
         prev ? { ...prev, suggestion: null, error: null } : prev,
       );
@@ -579,22 +596,28 @@ export const usePromptMeasurement = ({
     onError: (err) => showError("accept optimized prompt", err),
   });
 
-  const runInputs: EvalInputs = {
+  // One base, two providers, every evaluation is gated on the model that scores it,
+  // the rewrite on the model that writes it
+  const runInputs: Omit<EvalInputs, "providerId"> = {
     content: draft,
     contentNoun: "prompt",
     providerStatus,
-    providerId: activeProviderId,
     techniqueCount: selectedTechniques.length,
     phrasesProblem: phrasesIssue,
   };
+  const evalInputs: EvalInputs = {
+    ...runInputs,
+    providerId: activeEvalProviderId,
+  };
 
-  const evaluate = evaluateGate(historyState, casesState, caps, runInputs);
+  const evaluate = evaluateGate(historyState, casesState, caps, evalInputs);
   const optimize = optimizeGate(historyState, caps, {
     ...runInputs,
+    providerId: activeOptimizeProviderId,
     instructions,
   });
   const evaluateSuggested = evaluateGate(historyState, casesState, caps, {
-    ...runInputs,
+    ...evalInputs,
     content: suggestion,
     contentNoun: "suggested prompt",
     stale: optimizeStale,
@@ -652,9 +675,9 @@ export const usePromptMeasurement = ({
   const startPairedRun = () => {
     if (!pairedRequests) return;
     const token = acceptTokenRef.current;
-    // The hold-out half is the non-leaky one, so the note never reaches a comparison
-    const snapshot = runSnapshotOf(false);
     const { baseline, suggestion: suggested } = pairedRequests;
+    // The hold-out half is the non-leaky one, so the note never reaches a comparison
+    const snapshot = runSnapshotOf(false, baseline.providerId);
     const reuseBaseline = holdoutRun?.baseline?.key === baseline.key;
     setHoldoutRun((prev) => ({
       baseline: reuseBaseline && prev ? prev.baseline : null,
@@ -681,10 +704,11 @@ export const usePromptMeasurement = ({
       startPairedRun();
       return;
     }
+    const request = buildEvalRequest(suggestion, suggestedCaseIds);
     evalOptimizedMutation.mutate({
-      ...buildEvalRequest(suggestion, suggestedCaseIds),
+      ...request,
       token: acceptTokenRef.current,
-      snapshot: runSnapshotOf(true),
+      snapshot: runSnapshotOf(true, request.providerId),
     });
   };
 
@@ -692,10 +716,12 @@ export const usePromptMeasurement = ({
   // Callbacks drop on unmount, so closing mid-save is safe
   const handleAcceptOptimized = () => {
     if (!optimizeResult || !accept.enabled) return;
-    const token = ++acceptTokenRef.current;
+    const token = acceptTokenRef.current;
     acceptOptimizedMutation.mutate(acceptPayloadOf(suggestion, draft, token), {
       onSuccess: (created, vars) => {
-        const stillCurrent = vars.token === acceptTokenRef.current;
+        const stillCurrent =
+          vars.token === acceptTokenRef.current &&
+          vars.content === latestSuggestionRef.current;
         if (
           stillCurrent &&
           draftUnchangedSince(vars.draftAtSubmit, latestDraftRef.current)
@@ -710,8 +736,10 @@ export const usePromptMeasurement = ({
           );
         }
         if (stillCurrent) {
+          acceptTokenRef.current += 1;
           setOptimizeRun(null);
           setSuggestedEvalRun(null);
+          setSuggestionEdit(null);
           setHoldoutRun(null);
         }
       },
@@ -726,7 +754,7 @@ export const usePromptMeasurement = ({
     optimizeMutation.mutate({
       key: currentOptimizeKey,
       prompt: draft,
-      providerId: activeProviderId,
+      providerId: activeOptimizeProviderId,
       instructions,
       failedCases: failedCases.length > 0 ? failedCases : undefined,
       sourceFailuresKey: failuresKey,
@@ -750,6 +778,7 @@ export const usePromptMeasurement = ({
     acceptTokenRef.current += 1;
     setOptimizeRun(null);
     setSuggestedEvalRun(null);
+    setSuggestionEdit(null);
     setHoldoutRun(null);
   };
 
@@ -758,8 +787,10 @@ export const usePromptMeasurement = ({
     successMessage,
 
     providers,
-    activeProviderId,
-    setSelectedProviderId,
+    activeEvalProviderId,
+    setEvalProviderId,
+    activeOptimizeProviderId,
+    setOptimizeProviderId,
     providerStatus,
 
     selectedTechniques,
@@ -783,6 +814,9 @@ export const usePromptMeasurement = ({
     optimizeResult,
     optimizeStale,
     suggestion,
+    optimizedFrom: optimizeRun?.request.prompt ?? "",
+    suggestionEdited: suggestionEdit !== null,
+    editSuggestion: setSuggestionEdit,
     placeholderNote,
     suggestedEvalRun,
     suggestedStale,
@@ -795,9 +829,10 @@ export const usePromptMeasurement = ({
       ...evaluate,
       run: () => {
         if (!evaluate.enabled) return;
+        const request = buildEvalRequest(draft, evalCaseIds);
         evalMutation.mutate({
-          ...buildEvalRequest(draft, evalCaseIds),
-          snapshot: runSnapshotOf(splitActive),
+          ...request,
+          snapshot: runSnapshotOf(splitActive, request.providerId),
         });
       },
       pending: evalMutation.isPending,

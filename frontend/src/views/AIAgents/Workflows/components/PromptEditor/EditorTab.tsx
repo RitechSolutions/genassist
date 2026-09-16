@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { AlertCircle, CheckCircle2, Loader2, Play, Sparkles } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/accordion';
 import { Button } from '@/components/button';
@@ -15,19 +15,11 @@ import {
   CASES_TO_CHECK_OPTIONS,
   PROMPT_CHECK_TECHNIQUES,
 } from '../../utils/promptEditorTechniques';
-import {
-  DIAGNOSTIC_MESSAGES,
-  directPredecessorIds,
-  fanInNote,
-  readPromptBindings,
-  scanBraceCandidates,
-  unknownBindings,
-  unknownDataNote,
-} from '../../utils/templateVariableDiagnostics';
-import { useWorkflowExecution } from '../../context/WorkflowExecutionContext';
-import { useWorkflowVariables } from '../../context/WorkflowVariablesContext';
 import { GateTooltip } from './GateTooltip';
+import { PromptDiagnostics } from './PromptDiagnostics';
+import { ProviderSelect } from './ProviderSelect';
 import { PromptEvalResults } from './PromptEvalResults';
+import { SuggestionDiffEditor } from './SuggestionDiffEditor';
 import type { PromptMeasurementState } from './usePromptMeasurement';
 
 interface EditorTabProps {
@@ -53,16 +45,14 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   caps,
   measurement,
 }) => {
-  // Both providers wrap every node dialog that can open this editor
-  const { tree } = useWorkflowVariables();
-  const { edges: workflowEdges } = useWorkflowExecution();
-
   const {
     error,
     successMessage,
     providers,
-    activeProviderId,
-    setSelectedProviderId,
+    activeEvalProviderId,
+    setEvalProviderId,
+    activeOptimizeProviderId,
+    setOptimizeProviderId,
     providerStatus,
     selectedTechniques,
     toggleTechnique,
@@ -84,6 +74,9 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     optimizeResult,
     optimizeStale,
     suggestion,
+    optimizedFrom,
+    suggestionEdited,
+    editSuggestion,
     placeholderNote,
     suggestedEvalRun,
     suggestedStale,
@@ -98,20 +91,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     retryHoldout,
     dismiss,
   } = measurement;
-
-  // Advisory only: the engine decides what resolves, so none of this gates a run
-  const draftBindings = useMemo(() => readPromptBindings(value), [value]);
-  const braceScan = useMemo(() => scanBraceCandidates(value), [value]);
-  const availabilityNote = useMemo(
-    () => unknownDataNote(unknownBindings(draftBindings, tree)),
-    [draftBindings, tree],
-  );
-  const fanIn = useMemo(
-    () => fanInNote(draftBindings, directPredecessorIds(nodeId, workflowEdges)),
-    [draftBindings, nodeId, workflowEdges],
-  );
-  const hasDiagnostics =
-    braceScan.findings.length > 0 || availabilityNote !== null || fanIn !== null;
 
   return (
     <div className="space-y-4 pt-4 px-2">
@@ -133,28 +112,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
       )}
 
       <div className="space-y-2">
-        <Label>LLM Provider</Label>
-        <Select value={activeProviderId} onValueChange={setSelectedProviderId}>
-          <SelectTrigger className="w-full">
-            <SelectValue
-              placeholder={
-                providerStatus === 'empty'
-                  ? 'No active LLM providers are available'
-                  : 'Select provider for evaluation/optimization'
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {providers.map((provider) => (
-              <SelectItem key={provider.id} value={provider.id}>
-                {provider.name} ({provider.llm_model_provider} - {provider.llm_model})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
         <Label>{fieldLabel}</Label>
         <RichTextarea
           value={value}
@@ -165,24 +122,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         />
         <div className="text-xs text-muted-foreground text-right">{promptLength(value)} characters</div>
 
-        {hasDiagnostics && (
-          <div className="space-y-1 text-xs">
-            {braceScan.findings.map((finding) => (
-              <p
-                key={`${finding.index}-${finding.kind}`}
-                className="text-amber-700 dark:text-amber-400"
-              >
-                <code className="font-mono">{finding.text}</code>{' '}
-                {DIAGNOSTIC_MESSAGES[finding.kind]}
-              </p>
-            ))}
-            {braceScan.truncated && (
-              <p className="text-amber-700 dark:text-amber-400">…and more.</p>
-            )}
-            {availabilityNote && <p className="text-muted-foreground">{availabilityNote}</p>}
-            {fanIn && <p className="text-muted-foreground">{fanIn}</p>}
-          </div>
-        )}
+        <PromptDiagnostics nodeId={nodeId} value={value} />
       </div>
 
       <Accordion type="multiple" className="border rounded-lg px-4">
@@ -218,6 +158,16 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                   </div>
                 </div>
 
+                <div className="px-2">
+                  <ProviderSelect
+                    label="Optimization model"
+                    providers={providers}
+                    value={activeOptimizeProviderId}
+                    onChange={setOptimizeProviderId}
+                    isEmpty={providerStatus === 'empty'}
+                  />
+                </div>
+
                 <div className="space-y-2 px-2">
                   <Label className="text-sm">Additional Instructions (optional)</Label>
                   <RichTextarea
@@ -236,12 +186,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                         {SUGGESTION_STALE_REASON}
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Suggested Prompt</Label>
-                      <div className="border rounded p-3 bg-muted text-sm font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
-                        {suggestion}
-                      </div>
-                    </div>
+                    <SuggestionDiffEditor
+                      before={optimizedFrom}
+                      suggestion={suggestion}
+                      edited={suggestionEdited}
+                      onChange={editSuggestion}
+                    />
                     {optimizeResult.explanation && (
                       <div className="space-y-1">
                         <Label className="text-sm font-medium">Explanation</Label>
@@ -253,6 +203,16 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                       <div className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
                         {placeholderNote} Check it before accepting.
                       </div>
+                    )}
+
+                    {caps.canEvaluate && (
+                      <ProviderSelect
+                        label="Evaluation model"
+                        providers={providers}
+                        value={activeEvalProviderId}
+                        onChange={setEvalProviderId}
+                        isEmpty={providerStatus === 'empty'}
+                      />
                     )}
 
                     <div className="flex flex-wrap gap-2">
@@ -372,6 +332,14 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             <AccordionContent>
               <div className="space-y-4">
                 <div className="flex flex-col gap-2">
+                  <ProviderSelect
+                    label="Evaluation model"
+                    providers={providers}
+                    value={activeEvalProviderId}
+                    onChange={setEvalProviderId}
+                    isEmpty={providerStatus === 'empty'}
+                  />
+
                   <div className="flex flex-wrap gap-4">
                     {PROMPT_CHECK_TECHNIQUES.map((technique) => (
                       <div key={technique} className="flex items-center gap-2">

@@ -17,8 +17,7 @@ import {
   type DiffEndpoint,
   type HistoryEntry,
 } from "../../utils/promptEditorHistory";
-
-const PROMPT_MIN_SIMILARITY = 0.15;
+import { PROMPT_MIN_SIMILARITY } from "./promptDiff";
 
 // Sentinels for non-version choices (Radix Select has no empty-string value)
 const DRAFT_TARGET = "__draft__";
