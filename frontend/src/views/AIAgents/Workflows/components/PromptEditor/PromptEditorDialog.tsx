@@ -44,6 +44,7 @@ import {
   promptHistoryWorkflowKey,
   usePromptHistory,
 } from "./usePromptHistory";
+import { usePromptMeasurement } from "./usePromptMeasurement";
 
 interface PromptEditorDialogProps {
   isOpen: boolean;
@@ -94,10 +95,6 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const [copyError, setCopyError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
-
-  // Guard against stale async overwrites
-  const latestDraftRef = useRef(localPrompt);
-  latestDraftRef.current = localPrompt;
 
   const historyQuery = usePromptHistory(workflowId, nodeId, promptField, nodeType);
   const { history } = historyQuery;
@@ -166,6 +163,17 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     commitDraft(undoSnapshot);
     setUndoSnapshot(null);
   };
+
+  const measurement = usePromptMeasurement({
+    workflowId,
+    nodeId,
+    promptField,
+    draft: localPrompt,
+    onAccepted: handleDraftEdit,
+    historyState,
+    caps,
+    defaultProviderId,
+  });
 
   const saveVersionMutation = useMutation({
     mutationFn: async ({
@@ -532,17 +540,12 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                       )}
 
                       <EditorTab
-                        workflowId={workflowId}
                         nodeId={nodeId}
-                        promptField={promptField}
                         value={localPrompt}
                         onDraftEdit={handleDraftEdit}
-                        onAccepted={handleDraftEdit}
-                        latestDraftRef={latestDraftRef}
                         fieldLabel={fieldLabel}
-                        historyState={historyState}
                         caps={caps}
-                        defaultProviderId={defaultProviderId}
+                        measurement={measurement}
                       />
                     </TabsContent>
 
