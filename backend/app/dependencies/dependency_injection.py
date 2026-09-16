@@ -20,6 +20,8 @@ from app.core.config.settings import settings
 # Multi-tenant session manager
 from app.core.tenant_scope import is_background_task, require_tenant_context, tenant_scope
 from app.db.multi_tenant_session import multi_tenant_manager
+from app.db.read_routing import reads_pinned_to_writer, replica_reads_allowed
+from app.db.replica_health import replica_health
 from app.db.session_types import ReadOnlySession
 from app.db.transaction_manager import TransactionManager
 from app.modules.data.manager import AgentRAGServiceManager
@@ -214,8 +216,14 @@ class Dependencies(Module):
 
     @inject
     def provide_read_session(self, db: AsyncSession) -> ReadOnlySession:
-        """Provide the read-replica session, or the request write session when no replica is configured."""
-        if not settings.read_replica_enabled or is_background_task():
+        """Provide the read-replica session, or the request write session when no replica is
+        configured, outside an HTTP request, in a background task, or right after this
+        client wrote."""
+        replica_available = (
+            settings.read_replica_enabled and replica_reads_allowed() and replica_health.is_available()
+        )
+        must_use_writer = is_background_task() or reads_pinned_to_writer()
+        if not replica_available or must_use_writer:
             return db
         tenant_id = require_tenant_context()
         return multi_tenant_manager.get_tenant_read_session_factory(tenant_id)()
