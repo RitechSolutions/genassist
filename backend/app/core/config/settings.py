@@ -179,9 +179,22 @@ class ProjectSettings(BaseSettings):
     DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30  # seconds
     DB_POOL_RECYCLE: int = 1800  # seconds
-    # Read-replica pool sizing. None inherits the writer values above.
-    DB_READ_POOL_SIZE: Optional[int] = None
-    DB_READ_MAX_OVERFLOW: Optional[int] = None
+    # Read-replica pool, per tenant per process. Deliberately smaller than the writer
+    # pool: only dashboard, analytics and list queries use it.
+    DB_READ_POOL_SIZE: int = 20
+    DB_READ_MAX_OVERFLOW: int = 20
+    # Fail fast rather than tying a request up waiting for a read connection.
+    DB_READ_POOL_TIMEOUT: int = 5  # seconds
+    # Lower than the writer's ceiling because the read pool is small and a few long
+    # queries would otherwise occupy all of it. Kept generous enough not to fail an
+    # export that works today; tune down once real query durations are known.
+    DB_READ_STATEMENT_TIMEOUT: int = 600  # seconds; 0 disables
+    # Seconds a client keeps reading from the writer after one of its own writes, so
+    # replica lag never hides a change from the user who made it. 0 disables.
+    DB_READ_PIN_AFTER_WRITE_SECONDS: int = 5
+    # After a replica fault, how long every read is served by the writer before the
+    # replica is tried again. 0 keeps reads on the replica. See app/db/replica_health.py.
+    DB_READ_FAILURE_COOLDOWN_SECONDS: int = 30
     # Hard ceiling on how long a single interactive (FastAPI) query may run.
     # Prevents runaway searches from pinning DB CPU indefinitely. 0 disables.
     DB_STATEMENT_TIMEOUT: int = 1800  # seconds (30 minutes)
@@ -401,18 +414,6 @@ class ProjectSettings(BaseSettings):
     @property
     def read_replica_enabled(self) -> bool:
         return bool((self.DB_READ_HOST or "").strip())
-
-    @property
-    def read_pool_size(self) -> int:
-        if self.DB_READ_POOL_SIZE is not None:
-            return self.DB_READ_POOL_SIZE
-        return self.DB_POOL_SIZE
-
-    @property
-    def read_max_overflow(self) -> int:
-        if self.DB_READ_MAX_OVERFLOW is not None:
-            return self.DB_READ_MAX_OVERFLOW
-        return self.DB_MAX_OVERFLOW
 
     def _tenant_async_database_url(self, host: str, tenant: str) -> str:
         tenant_db = self.get_tenant_database_name(tenant)

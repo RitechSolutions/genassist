@@ -13,6 +13,7 @@ from app.core.config.settings import settings
 from app.core.tenant_scope import is_background_task
 from app.db import models  # noqa: F401
 from app.db.base import Base
+from app.db.replica_health import ReplicaSession
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,12 @@ class MultiTenantSessionManager:
     async def initialize(self):
         """Initialize the multi-tenant session manager"""
         if settings.read_replica_enabled:
-            logger.info("Read replica routing enabled: %s", settings.DB_READ_HOST.strip())
+            logger.info(
+                "Read replica routing enabled: %s (pool %s + %s overflow per tenant)",
+                settings.DB_READ_HOST.strip(),
+                settings.DB_READ_POOL_SIZE,
+                settings.DB_READ_MAX_OVERFLOW,
+            )
         else:
             logger.info("Read replica routing disabled: DB_READ_HOST is not set")
         await self.run_db_init_actions("master")
@@ -110,8 +116,9 @@ class MultiTenantSessionManager:
     def _interactive_connect_args(read_only: bool = False) -> dict:
         # asyncpg applies server_settings to every new connection as Postgres GUCs.
         server_settings: Dict[str, str] = {}
-        if settings.DB_STATEMENT_TIMEOUT > 0:
-            server_settings["statement_timeout"] = str(settings.DB_STATEMENT_TIMEOUT * 1000)
+        statement_timeout = settings.DB_READ_STATEMENT_TIMEOUT if read_only else settings.DB_STATEMENT_TIMEOUT
+        if statement_timeout > 0:
+            server_settings["statement_timeout"] = str(statement_timeout * 1000)
         if read_only:
             server_settings["default_transaction_read_only"] = "on"
             server_settings["application_name"] = "genassist-read"
@@ -131,9 +138,9 @@ class MultiTenantSessionManager:
                 settings.get_tenant_read_database_url(tenant),
                 echo=False,
                 future=True,
-                pool_size=settings.read_pool_size,
-                max_overflow=settings.read_max_overflow,
-                pool_timeout=settings.DB_POOL_TIMEOUT,
+                pool_size=settings.DB_READ_POOL_SIZE,
+                max_overflow=settings.DB_READ_MAX_OVERFLOW,
+                pool_timeout=settings.DB_READ_POOL_TIMEOUT,
                 pool_recycle=settings.DB_POOL_RECYCLE,
                 pool_pre_ping=True,
                 connect_args=self._interactive_connect_args(read_only=True),
@@ -150,6 +157,7 @@ class MultiTenantSessionManager:
             self._read_session_factories[tenant] = async_sessionmaker(
                 bind=self.get_tenant_read_engine(tenant),
                 expire_on_commit=False,
+                class_=ReplicaSession,
             )
         return self._read_session_factories[tenant]
 

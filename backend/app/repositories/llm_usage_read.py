@@ -8,7 +8,6 @@ from app.core.config.llm_pricing import PricingStatus
 from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.db.session_types import ReadOnlySession
-from app.repositories.db_repository import DbRepository
 
 _COST = LlmUsageEventModel.cost_usd
 _CONV = LlmUsageEventModel.conversation_id
@@ -37,11 +36,11 @@ def _calls_with_status(status: PricingStatus):
 
 
 @inject
-class LlmUsageReadRepository(DbRepository[LlmUsageEventModel]):
-    """Aggregate reads over the ``llm_usage_events`` ledger for the LLM Usage surfaces"""
+class LlmUsageReadRepository:
+    """Aggregate reads over the ``llm_usage_events`` ledger for the LLM Usage surfaces. Read-only by design."""
 
     def __init__(self, db: ReadOnlySession):
-        super().__init__(LlmUsageEventModel, db)
+        self.db = db
 
     async def resolve_scope(self, params) -> list[UUID] | None:
         return await resolve_authorized_agent_ids(self.db, params.agent_id, params.group_id)
