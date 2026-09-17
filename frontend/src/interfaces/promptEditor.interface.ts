@@ -130,6 +130,7 @@ export interface GoldSuiteLinkPayload {
 export interface PromptTechniqueConfigs {
   not_contains?: { phrases: string[] };
   field_equals?: { field: string; expected?: string };
+  nli_eval?: { min_entail_score: number };
 }
 
 export interface PromptEvalRequestPayload {
@@ -155,7 +156,15 @@ export interface PromptOptimizeRequestPayload {
   case_split?: { holdout_case_ids: string[] };
   techniques?: string[];
   technique_configs?: PromptTechniqueConfigs;
+  previous_attempts?: PreviousAttemptPayload[];
 }
 
-/** How a scored prompt ranked against the one it was compared with */
-export type ChallengerVerdict = "better" | "worse" | "inconclusive";
+/** Previous rewrite + scores. Diff + counts; dev cases only */
+export interface PreviousAttemptPayload {
+  improved: number;
+  regressed: number;
+  unchanged: number;
+  explanation: string;
+  diff_summary: string;
+  regressions: Array<{ case_id: string; feedback: string | null }>;
+}

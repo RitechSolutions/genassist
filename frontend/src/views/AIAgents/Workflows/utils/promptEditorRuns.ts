@@ -55,9 +55,27 @@ const failedMetricsOf = (metrics: Record<string, PromptEvalMetric>): string[] =>
     .map(([key]) => key)
     .sort();
 
+const FEEDBACK_SEPARATOR = "; ";
+
+const clipToShares = (parts: readonly string[], max: number): string[] => {
+  const lengths = parts.map((part) => Array.from(part).length);
+  const clipped: string[] = [];
+  let left = max - FEEDBACK_SEPARATOR.length * (parts.length - 1);
+  parts
+    .map((_, index) => index)
+    .sort((a, b) => lengths[a] - lengths[b])
+    .forEach((index, taken) => {
+      const share = Math.max(Math.floor(left / (parts.length - taken)), 0);
+      clipped[index] = clipCodePoints(parts[index], share);
+      left -= Math.min(lengths[index], share);
+    });
+  return clipped;
+};
+
 /** Technique-prefixed and sorted */
 export const feedbackOf = (
   metrics: Record<string, PromptEvalMetric>,
+  max = MAX_FAILURE_FEEDBACK_CHARS,
 ): string | null => {
   const parts = Object.entries(metrics ?? {})
     .filter(([, metric]) => metricOutcomeOf(metric) === "failed" && metric.comment)
@@ -65,7 +83,7 @@ export const feedbackOf = (
     .sort();
   return parts.length === 0
     ? null
-    : clipCodePoints(parts.join("; "), MAX_FAILURE_FEEDBACK_CHARS);
+    : clipToShares(parts, max).join(FEEDBACK_SEPARATOR);
 };
 
 /** Only graded failures reach optimizer; errors don't measure prompt quality. Server-side order keeps the cap stable */
@@ -150,7 +168,6 @@ export interface EvalRequest {
 
 /** Metadata about completed run production. Read when rendering; not in live form state */
 export interface RunSnapshot {
-  leaky: boolean;
   providerFallback: ProviderFallback | undefined;
 }
 
@@ -223,17 +240,3 @@ export const failuresDrifted = (
   request: OptimizeRequest,
   failuresKey: string | null,
 ): boolean => request.sourceFailuresKey !== failuresKey;
-
-/** Version-create variables for an accepted suggestion */
-export interface AcceptPayload {
-  content: string;
-  draftAtSubmit: string;
-  token: number;
-}
-
-/** Saves the suggestion */
-export const acceptPayloadOf = (
-  suggestion: string,
-  draft: string,
-  token: number,
-): AcceptPayload => ({ content: suggestion, draftAtSubmit: draft, token });

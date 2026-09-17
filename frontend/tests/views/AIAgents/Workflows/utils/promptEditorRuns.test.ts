@@ -4,7 +4,6 @@ import type {
   PromptEvalMetric,
 } from "@/interfaces/promptEditor.interface";
 import {
-  acceptPayloadOf,
   canonicalJson,
   clipCodePoints,
   evalKeyOf,
@@ -222,6 +221,16 @@ describe("feedbackOf", () => {
 
     expect(Array.from(feedback ?? "")).toHaveLength(MAX_FAILURE_FEEDBACK_CHARS);
   });
+
+  it("keeps a short comment whole when a verbose one shares the bound", () => {
+    const feedback = feedbackOf({
+      nli_eval: { score: false, passed: false, comment: "x".repeat(600) },
+      not_contains: { score: false, passed: false, comment: "found: secret" },
+    });
+
+    expect(feedback).toContain("not_contains: found: secret");
+    expect(Array.from(feedback ?? "")).toHaveLength(MAX_FAILURE_FEEDBACK_CHARS);
+  });
 });
 
 describe("measurementContextKeyOf", () => {
@@ -362,15 +371,5 @@ describe("failuresDrifted", () => {
   it("stays quiet while the failures behind it are the ones it was sent", () => {
     expect(failuresDrifted(request(FAILURES), FAILURES)).toBe(false);
     expect(failuresDrifted(request(null), null)).toBe(false);
-  });
-});
-
-describe("acceptPayloadOf", () => {
-  it("saves the suggestion on screen, not the text the optimizer returned", () => {
-    expect(acceptPayloadOf("edited suggestion", "draft", 3)).toEqual({
-      content: "edited suggestion",
-      draftAtSubmit: "draft",
-      token: 3,
-    });
   });
 });

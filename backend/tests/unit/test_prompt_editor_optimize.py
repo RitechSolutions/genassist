@@ -63,7 +63,7 @@ def _request(**overrides) -> PromptOptimizeRequest:
 
 
 def _attempt(**overrides) -> dict:
-    payload = {"verdict": "worse", "improved": 0, "regressed": 1, "unchanged": 0}
+    payload = {"improved": 0, "regressed": 1, "unchanged": 0}
     payload.update(overrides)
     return payload
 
@@ -465,7 +465,7 @@ class TestExampleBudget:
 
 class TestPreviousAttempts:
     @pytest.mark.asyncio
-    async def test_a_previous_attempt_is_rendered_worst_first(self):
+    async def test_a_previous_attempt_is_rendered_worst_net_change_first(self):
         service = _service([_case()])
         llm = _llm()
 
@@ -474,16 +474,16 @@ class TestPreviousAttempts:
             _injector(llm),
             _request(
                 previous_attempts=[
-                    _attempt(verdict="better", improved=3, regressed=0, explanation="terser"),
-                    _attempt(verdict="worse", regressed=2, explanation="added a rule"),
+                    _attempt(improved=3, regressed=0, explanation="terser"),
+                    _attempt(regressed=2, explanation="added a rule"),
                 ]
             ),
         )
 
         message = _human_message(llm)
         assert "## PREVIOUS ATTEMPTS" in message
-        assert message.index("Attempt (worse)") < message.index("Attempt (better)")
-        assert "Explanation: added a rule" in message
+        assert message.index("Explanation: added a rule") < message.index("Explanation: terser")
+        assert "Attempt: 3 improved, 0 regressed, 0 unchanged" in message
 
     @pytest.mark.asyncio
     async def test_a_regression_names_the_labelled_case_or_says_it_is_not_shown(self):
@@ -545,7 +545,7 @@ class TestPreviousAttempts:
         await _run(service, _injector(llm), _request(previous_attempts=[maximal] * 3))
 
         message = _human_message(llm)
-        assert message.count("Attempt (worse)") == 2
+        assert message.count("Attempt: 0 improved") == 2
         assert _HISTORY_OMITTED in message
 
     @pytest.mark.asyncio

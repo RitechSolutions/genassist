@@ -2,6 +2,7 @@ import React from "react";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
+import { RichInput } from "@/components/richInput";
 import { RichTextarea } from "@/components/richTextarea";
 import {
   Select,
@@ -40,6 +41,10 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
     phrasesText,
     setPhrasesText,
     phrasesIssue,
+    nliSelected,
+    nliScoreText,
+    setNliScoreText,
+    nliScoreIssue,
     casesToCheck,
     setCasesToCheck,
     split,
@@ -87,6 +92,29 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
             />
             {phrasesIssue && (
               <p className="text-xs text-destructive">{phrasesIssue}</p>
+            )}
+          </div>
+        )}
+
+        {nliSelected && (
+          <div className="space-y-2">
+            <Label className="text-sm">Minimum entailment score (0-1)</Label>
+            <RichInput
+              type="number"
+              step="0.01"
+              min={0}
+              max={1}
+              value={nliScoreText}
+              onChange={(e) => setNliScoreText(e.target.value)}
+              placeholder="0.5"
+              className="w-28 text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              How much of the reply the expected output must back up. Lower
+              accepts replies that say more than the expected text.
+            </p>
+            {nliScoreIssue && (
+              <p className="text-xs text-destructive">{nliScoreIssue}</p>
             )}
           </div>
         )}
@@ -157,7 +185,6 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
           results={evalRun.results}
           stale={evalStale}
           providerFallback={evalRun.providerFallback}
-          leaky={evalRun.leaky}
         />
       )}
     </div>

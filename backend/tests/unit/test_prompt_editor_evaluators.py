@@ -11,6 +11,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import _response_error_detail
 from app.schemas.prompt_editor import (
     FieldEqualsConfig,
+    NliEvalConfig,
     NotContainsConfig,
     PromptEvalRequest,
     PromptTechniqueConfigs,
@@ -163,13 +164,18 @@ class TestTechniqueConfigContract:
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
-    def test_nli_eval_has_no_config_object_to_carry_a_model_name(self):
-        assert "nli_eval" not in PromptTechniqueConfigs.model_fields
+    def test_nli_eval_config_carries_a_threshold_and_nothing_else(self):
+        assert set(NliEvalConfig.model_fields) == {"min_entail_score"}
 
         with pytest.raises(ValidationError) as exc_info:
-            PromptTechniqueConfigs(nli_eval={"nli_model_name": "attacker/model"})
+            PromptTechniqueConfigs(nli_eval={"min_entail_score": 0.5, "nli_model_name": "attacker/model"})
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    @pytest.mark.parametrize("score", [-0.1, 1.1])
+    def test_an_out_of_range_entail_score_is_rejected(self, score):
+        with pytest.raises(ValidationError):
+            NliEvalConfig(min_entail_score=score)
 
     @pytest.mark.parametrize("key", ["nli_model_name", "evidence_source", "answer_field"])
     def test_a_registry_option_cannot_ride_along_on_a_config_that_does_exist(self, key):

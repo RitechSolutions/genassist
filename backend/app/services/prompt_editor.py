@@ -457,13 +457,12 @@ _OPTIMIZE_SYSTEM_PROMPT = (
 )
 
 
-_VERDICT_RANK = {"worse": 0, "inconclusive": 1, "better": 2}
 _HISTORY_OMITTED = "(earlier attempts omitted to stay within the budget)"
 
 
 def _render_attempt(attempt: PreviousAttempt, labels: Dict[str, str]) -> str:
     lines = [
-        f"Attempt ({attempt.verdict}): {attempt.improved} improved, "
+        f"Attempt: {attempt.improved} improved, "
         f"{attempt.regressed} regressed, {attempt.unchanged} unchanged"
     ]
     if attempt.diff_summary:
@@ -481,8 +480,8 @@ def _render_attempt(attempt: PreviousAttempt, labels: Dict[str, str]) -> str:
 
 
 def _render_history(attempts: List[PreviousAttempt], labels: Dict[str, str]) -> str:
-    """Worst first. Stops once the combined text would pass MAX_HISTORY_CHARS"""
-    ordered = sorted(attempts, key=lambda a: (_VERDICT_RANK[a.verdict], a.improved - a.regressed))
+    """Worst net change first. Stops once the combined text would pass MAX_HISTORY_CHARS"""
+    ordered = sorted(attempts, key=lambda a: a.improved - a.regressed)
     blocks, used = [], 0
     for attempt in ordered:
         block = _render_attempt(attempt, labels)

@@ -1,5 +1,4 @@
 import type {
-  ChallengerVerdict,
   PromptEvalCaseResult,
   PromptEvalMetric,
   PromptEvalResponse,
@@ -13,11 +12,6 @@ export const ISOLATION_NOTE =
   "Isolated check: the prompt was sent unrendered ({{variables}} not substituted), " +
   "without this node's memory, tools, user prompt or fallback chain. " +
   "It does not reproduce what the node runs.";
-
-/** Shown with the comparison panel and under a development run */
-export const LEAKAGE_NOTE =
-  "Development cases are sent to the optimizer word for word, so their scores do not " +
-  "show whether the suggestion generalises. The hold-out comparison is the one to read.";
 
 export const STALE_NOTE = "Inputs changed since this run. Re-run to compare.";
 
@@ -181,13 +175,7 @@ export const joinPairedRuns = (
   return comparison;
 };
 
-export const MIN_IMPROVED_FOR_BETTER = 2;
-export const VERDICT_POLICY_NOTE =
-  "Verdict is a fixed rule (no regressions and at least two improvements on identical " +
-  "cases), not a statistical test.";
-
 export interface ChallengerComparison {
-  verdict: ChallengerVerdict;
   comparison: PairedComparison;
   /** Why the runs cannot be compared; null when the comparison is complete */
   incomplete: string | null;
@@ -232,17 +220,14 @@ const incompleteReason = (
   return null;
 };
 
-/** Incomparable pairs are inconclusive, regardless of counts */
+/** Counts the moves between two runs and states whether the pair is comparable at all */
 export const compareRuns = (
   baseline: PromptEvalResponse,
   challenger: PromptEvalResponse,
 ): ChallengerComparison => {
   const comparison = joinPairedRuns(baseline, challenger);
-  const incomplete = incompleteReason(baseline, challenger, comparison);
-  if (incomplete) return { verdict: "inconclusive", comparison, incomplete };
-  if (comparison.regressed > 0)
-    return { verdict: "worse", comparison, incomplete: null };
-  if (comparison.improved >= MIN_IMPROVED_FOR_BETTER)
-    return { verdict: "better", comparison, incomplete: null };
-  return { verdict: "inconclusive", comparison, incomplete: null };
+  return {
+    comparison,
+    incomplete: incompleteReason(baseline, challenger, comparison),
+  };
 };

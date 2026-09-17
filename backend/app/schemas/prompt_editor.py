@@ -154,12 +154,17 @@ class FieldEqualsConfig(_Forbid):
         return self
 
 
+class NliEvalConfig(_Forbid):
+    min_entail_score: float = Field(..., ge=0, le=1)
+
+
 class PromptTechniqueConfigs(_Forbid):
-    """Config for techniques that accept it. nli_eval gets fixed evidence;
-    llm_judge/provenance_eval have no model, 422 if named"""
+    """Config for techniques that accept it. nli_eval takes only a threshold, its
+    evidence is fixed; llm_judge/provenance_eval have no model, 422 if named"""
 
     not_contains: Optional[NotContainsConfig] = None
     field_equals: Optional[FieldEqualsConfig] = None
+    nli_eval: Optional[NliEvalConfig] = None
 
 
 class PromptEvalRequest(BaseModel):
@@ -280,9 +285,6 @@ class FailedCaseRef(BaseModel):
         return _reject_duplicates(value)
 
 
-AttemptVerdict = Literal["better", "worse", "inconclusive"]
-
-
 class RegressionRef(_Forbid):
     case_id: UUID
     feedback: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)]] = None
@@ -291,7 +293,6 @@ class RegressionRef(_Forbid):
 class PreviousAttempt(_Forbid):
     """Previous round with scores (same cases). No prompt text; diff + explanation only"""
 
-    verdict: AttemptVerdict
     improved: int = Field(..., ge=0, le=MAX_CHECK_CASES)
     regressed: int = Field(..., ge=0, le=MAX_CHECK_CASES)
     unchanged: int = Field(..., ge=0, le=MAX_CHECK_CASES)

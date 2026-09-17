@@ -25,7 +25,7 @@ _DEFERRED_TECHNIQUES = ("llm_judge", "provenance_eval")
 _NLI_CONFIG = {"evidence_source": "expected_output"}
 
 # Techniques whose configuration the request may carry, in PromptTechniqueConfigs order
-_CONFIGURABLE = ("not_contains", "field_equals")
+_CONFIGURABLE = ("not_contains", "field_equals", "nli_eval")
 
 # Per-technique expected_output semantics for optimizer (so not all treated as ideal).
 # Follows PROMPT_CHECK_TECHNIQUES order. Omits not_contains and field_equals
@@ -134,6 +134,8 @@ def build_technique_configs(
             built[technique] = config
         elif technique == "nli_eval":
             built[technique] = dict(_NLI_CONFIG)
+            if configs.nli_eval is not None:
+                built[technique]["min_entail_score"] = configs.nli_eval.min_entail_score
         else:
             built[technique] = {}
     return built

@@ -39,6 +39,7 @@ export interface EvalInputs extends RunInputs {
   techniqueCount: number;
   /** Why the forbidden-phrase list is not sendable; null or absent when it is */
   phrasesProblem?: string | null;
+  entailScoreProblem?: string | null;
   /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
   stale?: boolean;
 }
@@ -163,6 +164,7 @@ export const evaluateGate = (
   if (run.techniqueCount === 0)
     return blocked("Select at least one matching technique.");
   if (run.phrasesProblem) return blocked(run.phrasesProblem);
+  if (run.entailScoreProblem) return blocked(run.entailScoreProblem);
   return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
