@@ -14,16 +14,6 @@ export const SWITCH_MATCH_MODE_LABELS: Record<SwitchMatchMode, string> = {
   regex: "Matches regex",
 };
 
-/**
- * A Switch has at most 6 outputs: 5 cases plus Default. More outputs crowd the
- * handles on the node and make edges hard to tell apart on the canvas.
- */
-export const MAX_SWITCH_OUTPUTS = 6;
-export const MAX_SWITCH_CASES = MAX_SWITCH_OUTPUTS - 1;
-
-export const canAddSwitchCase = (cases: SwitchCase[]): boolean =>
-  cases.length < MAX_SWITCH_CASES;
-
 export const DEFAULT_SWITCH_CASES: SwitchCase[] = [
   { id: "case_1", label: "Case 1", value: "" },
   { id: "case_2", label: "Case 2", value: "" },

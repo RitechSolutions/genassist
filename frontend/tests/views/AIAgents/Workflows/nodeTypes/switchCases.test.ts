@@ -8,11 +8,8 @@ import {
 } from "@/views/AIAgents/Workflows/types/nodes";
 import {
   buildSwitchHandlers,
-  canAddSwitchCase,
   DEFAULT_SWITCH_CASES,
   isSwitchSmartMode,
-  MAX_SWITCH_CASES,
-  MAX_SWITCH_OUTPUTS,
   nextSwitchCaseId,
   SWITCH_DEFAULT_HANDLE_ID,
   switchCaseHandleId,
@@ -43,22 +40,6 @@ describe("buildSwitchHandlers", () => {
 
   it("keeps the input and default handles when there are no cases", () => {
     expect(buildSwitchHandlers([]).map((h) => h.id)).toEqual(["input", "output_default"]);
-  });
-});
-
-describe("switch case limit", () => {
-  const casesOf = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ id: `case_${i + 1}`, label: "", value: "" }));
-
-  it("allows 5 cases, so a node has at most 6 outputs including Default", () => {
-    expect(MAX_SWITCH_CASES).toBe(5);
-    expect(MAX_SWITCH_OUTPUTS).toBe(6);
-    expect(canAddSwitchCase(casesOf(4))).toBe(true);
-    expect(canAddSwitchCase(casesOf(5))).toBe(false);
-    expect(canAddSwitchCase(casesOf(7))).toBe(false);
-    // Output handles at the limit: input + 5 cases + default.
-    const outputs = buildSwitchHandlers(casesOf(MAX_SWITCH_CASES)).filter((h) => h.type === "source");
-    expect(outputs).toHaveLength(MAX_SWITCH_OUTPUTS);
   });
 });
 

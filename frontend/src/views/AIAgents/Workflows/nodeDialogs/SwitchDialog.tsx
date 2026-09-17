@@ -26,10 +26,7 @@ import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "../components/PromptEditor/PromptEditorButton";
 import {
   buildSwitchHandlers,
-  canAddSwitchCase,
   isSwitchSmartMode,
-  MAX_SWITCH_CASES,
-  MAX_SWITCH_OUTPUTS,
   nextSwitchCaseId,
   SWITCH_MATCH_MODE_LABELS,
 } from "../nodeTypes/router/switchCases";
@@ -102,11 +99,7 @@ export const SwitchDialog: React.FC<SwitchDialogProps> = (props) => {
       values.cases.map((c) => (c.id === caseId ? { ...c, ...patch } : c))
     );
 
-  const canAddCase = canAddSwitchCase(values.cases);
-  const overCaseLimit = values.cases.length > MAX_SWITCH_CASES;
-
   const addCase = () => {
-    if (!canAddCase) return;
     const id = nextSwitchCaseId(values.cases);
     setField("cases", [
       ...values.cases,
@@ -308,24 +301,8 @@ export const SwitchDialog: React.FC<SwitchDialogProps> = (props) => {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>
-              Cases{" "}
-              <span className="font-normal text-muted-foreground">
-                ({values.cases.length}/{MAX_SWITCH_CASES})
-              </span>
-            </Label>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addCase}
-              disabled={!canAddCase}
-              title={
-                canAddCase
-                  ? undefined
-                  : `A Switch can have up to ${MAX_SWITCH_CASES} cases plus Default`
-              }
-            >
+            <Label>Cases</Label>
+            <Button type="button" variant="outline" size="sm" onClick={addCase}>
               <Plus className="h-4 w-4 mr-1" />
               Add Case
             </Button>
@@ -333,17 +310,8 @@ export const SwitchDialog: React.FC<SwitchDialogProps> = (props) => {
           <p className="text-sm text-muted-foreground">
             {values.smartModeEnabled
               ? "The model picks one case using each case's name and description. Each case gets its own output on the node, in this order."
-              : "Cases are evaluated top to bottom; the first match wins. Each case gets its own output on the node, in this order."}{" "}
-            Up to {MAX_SWITCH_CASES} cases plus Default ({MAX_SWITCH_OUTPUTS}{" "}
-            outputs).
+              : "Cases are evaluated top to bottom; the first match wins. Each case gets its own output on the node, in this order."}
           </p>
-          {overCaseLimit && (
-            <p className="text-sm text-red-600">
-              This Switch has {values.cases.length} cases. Remove{" "}
-              {values.cases.length - MAX_SWITCH_CASES} to stay within{" "}
-              {MAX_SWITCH_CASES}, or split the decision across two Switches.
-            </p>
-          )}
 
           <div className="space-y-2">
             {values.cases.map((switchCase, index) => (

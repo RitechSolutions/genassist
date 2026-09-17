@@ -532,7 +532,7 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | switchValue | text | Yes | The value to route on. Supports `{{source.field}}` |
-| cases | list | Yes | Ordered list of `{"id": "case_1", "label": "Billing", "value": "billing"}`. Ids must be unique, use the form `case_<n>`, and never be `default`. At most 5 cases (6 outputs including default); split larger decisions across two switchNodes |
+| cases | list | Yes | Ordered list of `{"id": "case_1", "label": "Billing", "value": "billing"}`. Ids must be unique, use the form `case_<n>`, and never be `default` |
 | matchMode | select | No | `equal` (default), `contains`, `starts_with`, `ends_with`, `regex` |
 | caseSensitive | boolean | No | Default `false` |
 | smartModeEnabled | boolean | No | Default `false`. When `true`, an LLM picks the case instead of comparing `switchValue` |
