@@ -7,7 +7,6 @@
 export type PreprocessingStepType =
   | "column_filter"
   | "missing_value_handling"
-  | "categorical_encoding"
   | "feature_engineering";
 
 export interface PreprocessingStep {
@@ -20,7 +19,6 @@ export interface PreprocessingStep {
 export type StepConfig =
   | ColumnFilterStepConfig
   | MissingValueHandlingStepConfig
-  | CategoricalEncodingStepConfig
   | FeatureEngineeringStepConfig;
 
 export interface PreprocessingConfig {
@@ -57,24 +55,6 @@ export interface MissingValueHandlingItem {
   missingPercentage: number;
   strategy: MissingValueStrategy;
   imputeValue?: string | number;
-}
-
-// Categorical Encoding Step
-export type CategoricalEncodingStrategy =
-  | "no_action"
-  | "one_hot"
-  | "label"
-  | "ordinal";
-
-export interface CategoricalEncodingStepConfig {
-  columns: CategoricalEncodingItem[];
-}
-
-export interface CategoricalEncodingItem {
-  columnName: string;
-  strategy: CategoricalEncodingStrategy;
-  dropFirst?: boolean;
-  ordinalMapping?: Record<string, number>;
 }
 
 // Feature Engineering Step
@@ -213,13 +193,6 @@ export function generatePythonCodeFromConfig(
           columnsToDropSet
         );
         break;
-      case "categorical_encoding":
-        generateCategoricalEncodingCode(
-          step.config as CategoricalEncodingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
-        break;
       case "feature_engineering":
         generateFeatureEngineeringCode(
           step.config as FeatureEngineeringStepConfig,
@@ -266,17 +239,6 @@ function extractMinimalConfig(
           columnName: col.columnName,
           strategy: col.strategy,
           imputeValue: col.imputeValue, // Critical: preserves string vs number
-        })),
-      };
-    }
-    case "categorical_encoding": {
-      const catConfig = config as CategoricalEncodingStepConfig;
-      // Store strategy and parameters
-      return {
-        columns: catConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          dropFirst: col.dropFirst,
         })),
       };
     }
@@ -342,39 +304,6 @@ function restoreConfigFromMinimal(
             missingPercentage: parsedCol?.missingPercentage ?? 0,
             strategy: minimalCol.strategy,
             imputeValue: minimalCol.imputeValue,
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "categorical_encoding": {
-      const parsed = parsedConfig as CategoricalEncodingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: CategoricalEncodingStrategy;
-          dropFirst?: boolean;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, and parameters
-        // Only use parsed data to fill in ordinalMapping if available
-        const parsedMap = new Map(
-          parsed.columns.map((c) => [c.columnName, c])
-        );
-        
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: CategoricalEncodingItem[] = minimal.columns.map((minimalCol) => {
-          const parsedCol = parsedMap.get(minimalCol.columnName);
-          return {
-            columnName: minimalCol.columnName,
-            strategy: minimalCol.strategy,
-            dropFirst: minimalCol.dropFirst,
-            ordinalMapping: parsedCol?.ordinalMapping, // Keep ordinalMapping from parsed if available
           };
         });
         
@@ -480,40 +409,6 @@ function generateMissingValueHandlingCode(
 }
 
 
-function generateCategoricalEncodingCode(
-  config: CategoricalEncodingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Encode categorical columns");
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action" || columnsToDrop.has(item.columnName)) {
-      return;
-    }
-
-    lines.push(`    if "${item.columnName}" in df.columns:`);
-    if (item.strategy === "one_hot") {
-      const dropFirst = item.dropFirst ?? false;
-      lines.push(`        # One-hot encode ${item.columnName}`);
-      if (dropFirst) {
-        lines.push(`        df = pd.get_dummies(df, columns=["${item.columnName}"], prefix="${item.columnName}", drop_first=True)`);
-      } else {
-        lines.push(`        df = pd.get_dummies(df, columns=["${item.columnName}"], prefix="${item.columnName}")`);
-      }
-    } else if (item.strategy === "label") {
-      lines.push(`        # Label encode ${item.columnName}`);
-      lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].astype('category').cat.codes`);
-    } else if (item.strategy === "ordinal") {
-      if (item.ordinalMapping && Object.keys(item.ordinalMapping).length > 0) {
-        lines.push(`        # Ordinal encode ${item.columnName}`);
-        lines.push(`        mapping = ${JSON.stringify(item.ordinalMapping)}`);
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].map(mapping)`);
-      }
-    }
-  });
-}
-
 function generateFeatureEngineeringCode(
   config: FeatureEngineeringStepConfig,
   lines: string[]
@@ -600,9 +495,6 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
         break;
       case "missing_value_handling":
         parsedFromCode = parseMissingValueHandlingStep(stepCode);
-        break;
-      case "categorical_encoding":
-        parsedFromCode = parseCategoricalEncodingStep(stepCode);
         break;
       case "feature_engineering":
         parsedFromCode = parseFeatureEngineeringStep(stepCode);
@@ -801,47 +693,6 @@ function parseMissingValueHandlingStep(code: string): MissingValueHandlingStepCo
   return items.length > 0 ? { columns: items } : null;
 }
 
-function parseCategoricalEncodingStep(code: string): CategoricalEncodingStepConfig | null {
-  const items: CategoricalEncodingItem[] = [];
-
-  // One-hot encoding
-  const oneHotPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?pd\.get_dummies\(df,\s*columns\s*=\s*\["([^"]+)"\][\s\S]*?prefix\s*=\s*"([^"]+)"(?:,\s*drop_first\s*=\s*True)?\)/g;
-  let match;
-  while ((match = oneHotPattern.exec(code)) !== null) {
-    items.push({
-      columnName: match[1],
-      strategy: "one_hot",
-      dropFirst: match[0].includes("drop_first=True"),
-    });
-  }
-
-  // Label encoding
-  const labelPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.astype\(['"]category['"]\)\.cat\.codes/g;
-  while ((match = labelPattern.exec(code)) !== null) {
-    items.push({
-      columnName: match[1],
-      strategy: "label",
-    });
-  }
-
-  // Ordinal encoding
-  const ordinalPattern = /mapping\s*=\s*(\{[^}]+\})[\s\S]*?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.map\(mapping\)/g;
-  while ((match = ordinalPattern.exec(code)) !== null) {
-    try {
-      const mapping = JSON.parse(match[1]);
-      items.push({
-        columnName: match[2],
-        strategy: "ordinal",
-        ordinalMapping: mapping,
-      });
-    } catch (e) {
-      // Skip if parsing fails
-    }
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
 function parseFeatureEngineeringStep(code: string): FeatureEngineeringStepConfig | null {
   const items: FeatureEngineeringItem[] = [];
 
@@ -1006,9 +857,6 @@ export function createPreprocessingStep(
     case "missing_value_handling":
       config = { columns: [] };
       break;
-    case "categorical_encoding":
-      config = { columns: [] };
-      break;
     case "feature_engineering":
       config = { features: [] };
       break;
@@ -1029,7 +877,6 @@ export function getStepTypeDisplayName(type: PreprocessingStepType): string {
   const names: Record<PreprocessingStepType, string> = {
     column_filter: "Column Filter",
     missing_value_handling: "Handle Missing Values",
-    categorical_encoding: "Categorical Encoding",
     feature_engineering: "Feature Engineering",
   };
   return names[type] || type;
@@ -1044,11 +891,6 @@ export interface ColumnFilterConfig {
 export interface MissingValueHandlingConfig {
   enabled: boolean;
   columns: MissingValueHandlingItem[];
-}
-
-export interface CategoricalEncodingConfig {
-  enabled: boolean;
-  columns: CategoricalEncodingItem[];
 }
 
 export interface FeatureEngineeringConfig {

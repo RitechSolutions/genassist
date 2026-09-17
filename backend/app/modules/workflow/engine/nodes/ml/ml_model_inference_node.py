@@ -192,6 +192,47 @@ def _build_input_array(
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
 
 
+def _one_hot_transform(
+    normalized_inputs: Dict[str, List[Any]],
+    columns: Sequence[str],
+    encoder: Any,
+) -> "tuple[np.ndarray, List[str]]":
+    """Reapply a fitted OneHotEncoder to raw categorical inputs, validating
+    against the categories it was fit on."""
+    # object dtype - a categorical column left entirely unset comes back as a
+    # plain numeric (int) array of 0-fillers, which trips an internal numpy
+    # isnan check in OneHotEncoder.transform when compared against its
+    # (string) fitted categories.
+    cat_data = _build_input_array(normalized_inputs, columns).astype(object)
+    _validate_categorical_inputs(normalized_inputs, columns, encoder.categories_)
+    encoded = encoder.transform(cat_data)
+    encoded_columns = encoder.get_feature_names_out(columns).tolist()
+    return encoded, encoded_columns
+
+
+def _mapped_transform(
+    normalized_inputs: Dict[str, List[Any]],
+    columns: Sequence[str],
+    mappings: Dict[str, Dict[Any, Any]],
+    batch_size: int,
+    unseen_value: float,
+) -> np.ndarray:
+    """Reapply a fitted label/ordinal value -> code mapping to raw inputs.
+
+    A value the mapping wasn't fit on (or has no entry for) falls back to
+    unseen_value, mirroring how the same case is handled at training time
+    (see TrainModelNode._encode_categoricals).
+    """
+    if not columns:
+        return np.empty((batch_size, 0))
+    raw = _build_input_array(normalized_inputs, columns).astype(object)
+    out = np.empty(raw.shape, dtype=float)
+    for i, col in enumerate(columns):
+        mapping = mappings.get(col, {})
+        out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+    return out
+
+
 def _label_for_prediction(value: Any) -> str:
     """Map a model prediction to an availability label."""
     if value is None:
@@ -324,29 +365,58 @@ class MLModelInferenceNode(BaseNode):
                     batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
                 )
 
-                # Reapply the same one-hot encoding fitted at training time (if
-                # any) so the matrix handed to the model has the exact columns
-                # it was trained on, instead of the raw (pre-encoding) feature
-                # names. No-op for models with no categorical features or
-                # legacy models that predate this metadata.
+                # Reapply the same categorical encoding fitted at training time
+                # (if any) so the matrix handed to the model has the exact
+                # columns it was trained on, instead of the raw (pre-encoding)
+                # feature names. No-op for models with no categorical features
+                # or legacy models that predate this metadata.
                 categorical_columns: List[str] = metadata.get("categorical_columns") or []
+                categorical_columns_no_drop: List[str] = metadata.get("categorical_columns_no_drop") or []
                 encoder = metadata.get("encoder")
-                if encoder is not None and categorical_columns:
-                    numeric_order = [f for f in feature_names if f not in categorical_columns]
+                encoder_no_drop = metadata.get("encoder_no_drop")
+                label_encodings: Dict[str, Dict[Any, int]] = metadata.get("label_encodings") or {}
+                ordinal_encodings: Dict[str, Dict[Any, Any]] = metadata.get("ordinal_encodings") or {}
+                label_columns = list(label_encodings.keys())
+                ordinal_columns = list(ordinal_encodings.keys())
+
+                encoded_feature_columns = (
+                    categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
+                )
+                if encoded_feature_columns:
+                    numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
                         _build_input_array(normalized_inputs, numeric_order).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
                     )
-                    # object dtype - a categorical column left entirely unset comes
-                    # back as a plain numeric (int) array of 0-fillers, which trips
-                    # an internal numpy isnan check in OneHotEncoder.transform when
-                    # compared against its (string) fitted categories.
-                    cat_data = _build_input_array(normalized_inputs, categorical_columns).astype(object)
-                    _validate_categorical_inputs(normalized_inputs, categorical_columns, encoder.categories_)
-                    encoded = encoder.transform(cat_data)
-                    encoded_columns = encoder.get_feature_names_out(categorical_columns).tolist()
-                    input_data = np.column_stack([numeric_data, encoded])
-                    model_feature_names = numeric_order + encoded_columns
+
+                    blocks = [numeric_data]
+                    model_feature_names = list(numeric_order)
+
+                    if label_columns:
+                        blocks.append(
+                            _mapped_transform(normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1)
+                        )
+                        model_feature_names += label_columns
+
+                    if ordinal_columns:
+                        blocks.append(
+                            _mapped_transform(normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan)
+                        )
+                        model_feature_names += ordinal_columns
+
+                    if encoder is not None and categorical_columns:
+                        encoded, encoded_columns = _one_hot_transform(normalized_inputs, categorical_columns, encoder)
+                        blocks.append(encoded)
+                        model_feature_names += encoded_columns
+
+                    if encoder_no_drop is not None and categorical_columns_no_drop:
+                        encoded_nd, encoded_nd_columns = _one_hot_transform(
+                            normalized_inputs, categorical_columns_no_drop, encoder_no_drop
+                        )
+                        blocks.append(encoded_nd)
+                        model_feature_names += encoded_nd_columns
+
+                    input_data = np.column_stack(blocks)
                 else:
                     input_data = raw_input_data
                     model_feature_names = list(feature_names)

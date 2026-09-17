@@ -3,6 +3,8 @@ import {
   TrainModelNodeData,
   OutlierHandlingConfig,
   OutlierHandlingItem,
+  CategoricalEncodingConfig,
+  CategoricalEncodingItem,
 } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -26,6 +28,7 @@ import { DraggableInput } from "../../components/custom/DraggableInput";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { OutlierHandler } from "./components/OutlierHandler";
+import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
 import { useNodeDialogState } from "../useNodeDialogState";
@@ -55,6 +58,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       scalingMethod: data.scalingMethod || "auto",
       taskType: data.taskType || "auto",
       outlierHandling: data.outlierHandling || ([] as OutlierHandlingItem[]),
+      categoricalEncoding:
+        data.categoricalEncoding || ([] as CategoricalEncodingItem[]),
     }),
     (v) => ({
       name: v.name,
@@ -70,6 +75,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       scalingMethod: v.scalingMethod,
       taskType: v.taskType,
       outlierHandling: v.outlierHandling,
+      categoricalEncoding: v.categoricalEncoding,
     })
   );
 
@@ -570,6 +576,25 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                   Bounds are computed from the training split only, after the
                   validation split below is made, so validation rows never
                   influence which values get capped or removed.
+                </p>
+              </div>
+
+              {/* Categorical Encoding */}
+              <div className="space-y-2">
+                <CategoricalEncodingHandler
+                  config={{
+                    enabled: true,
+                    columns: values.categoricalEncoding,
+                  }}
+                  analysisResult={values.analysisResult}
+                  onChange={(config: CategoricalEncodingConfig) =>
+                    setField("categoricalEncoding", config.columns)
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  One-Hot and Label mappings are fit on the training split
+                  only, after the validation split below is made, so
+                  validation-only categories never leak into training.
                 </p>
               </div>
 

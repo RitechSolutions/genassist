@@ -92,6 +92,15 @@ class TrainModelNode(BaseNode):
                             iqrMultiplier (default 1.5), zScoreThreshold (default 3).
                             Bounds are computed from the training split only (never
                             the validation split) and then applied to both.
+                - categoricalEncoding: Optional list of per-column categorical encoding
+                            specs, each a dict with: columnName (required), strategy
+                            ("no_action" (default), "one_hot", "label", or "ordinal"),
+                            dropFirst (default False, only used by "one_hot"),
+                            ordinalMapping (required by "ordinal": a dict mapping raw
+                            values to numeric codes). Columns left at "no_action" fall
+                            through to the default one-hot pass below. Fitted mappings
+                            (categories, codes) come from the training split only and
+                            are then applied to validation, never the other way around.
 
         Returns:
             Dictionary with training results and model file path
@@ -110,6 +119,7 @@ class TrainModelNode(BaseNode):
             scaling_method = config.get("scalingMethod", "auto").lower()
             task_type = config.get("taskType", "auto").lower()
             outlier_handling = config.get("outlierHandling", []) or []
+            categorical_encoding = config.get("categoricalEncoding", []) or []
 
             # Validate required parameters
             if not name:
@@ -199,6 +209,25 @@ class TrainModelNode(BaseNode):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"Invalid outlierHandling method: {method}. Must be one of: {', '.join(valid_outlier_methods)}",
+                    )
+
+            valid_encoding_strategies = ["no_action", "one_hot", "label", "ordinal"]
+            for item in categorical_encoding:
+                if not isinstance(item, dict) or not item.get("columnName"):
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail="Each categoricalEncoding entry must be a dict with a 'columnName'",
+                    )
+                strategy = item.get("strategy", "no_action")
+                if strategy not in valid_encoding_strategies:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Invalid categoricalEncoding strategy: {strategy}. Must be one of: {', '.join(valid_encoding_strategies)}",
+                    )
+                if strategy == "ordinal" and not item.get("ordinalMapping"):
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"categoricalEncoding entry for '{item.get('columnName')}' has strategy 'ordinal' but no ordinalMapping",
                     )
 
             # Check if XGBoost is available when needed
@@ -348,40 +377,40 @@ class TrainModelNode(BaseNode):
             # genuinely-numeric original features.
             numeric_feature_columns = X_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
 
-            # One-hot encode categorical variables with a fitted OneHotEncoder
-            # (not pd.get_dummies) and save both the encoder and the raw column
-            # names it applies to in the model metadata. Without this, the
-            # saved feature_columns list stays at the original (pre-encoding)
-            # names while the model is actually fit on the expanded dummy
-            # columns, which breaks inference for any model trained with
-            # categorical features (metadata.feature_columns wouldn't line up
-            # with what model.predict() expects). The encoder is fit on the
-            # training split only; unseen categories at inference/validation
-            # map to all-zeros (handle_unknown="ignore") rather than leaking
-            # into its vocabulary.
-            categorical_columns = X_train.select_dtypes(include=['object']).columns.tolist()
+            # Apply per-column encoding overrides (label/ordinal) and note which
+            # columns asked for one-hot without dropping the first category.
+            # Mappings are fit on the training split only, then applied to
+            # validation - see _encode_categoricals.
+            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
+                self._encode_categoricals(X_train, X_val, categorical_encoding)
+            )
+
+            # One-hot encode whatever categorical columns are left - columns with
+            # no explicit categoricalEncoding override, plus ones explicitly set
+            # to "one_hot" - using a fitted OneHotEncoder (not pd.get_dummies) and
+            # save the encoder(s) and the raw column names they apply to in model
+            # metadata. Without this, the saved feature_columns list stays at the
+            # original (pre-encoding) names while the model is actually fit on
+            # the expanded dummy columns, which breaks inference for any model
+            # trained with categorical features. Both encoders below are fit on
+            # the training split only; unseen categories at inference/validation
+            # map to all-zeros (handle_unknown="ignore") rather than leaking into
+            # their vocabulary. Columns configured with dropFirst=False are
+            # encoded separately since a single OneHotEncoder can't drop the
+            # first category for some columns and keep it for others.
+            remaining_categorical_columns = X_train.select_dtypes(include=['object']).columns.tolist()
+            no_drop_columns = [c for c in remaining_categorical_columns if c in one_hot_no_drop_columns]
+            categorical_columns = [c for c in remaining_categorical_columns if c not in one_hot_no_drop_columns]
+
             encoder = None
             if categorical_columns:
                 logger.info(f"One-hot encoding categorical columns: {categorical_columns}")
-                encoder = OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False)
-                encoded_train = encoder.fit_transform(X_train[categorical_columns])
-                encoded_columns = encoder.get_feature_names_out(categorical_columns).tolist()
-                X_train = pd.concat(
-                    [
-                        X_train.drop(columns=categorical_columns).reset_index(drop=True),
-                        pd.DataFrame(encoded_train, columns=encoded_columns),
-                    ],
-                    axis=1,
-                )
-                if X_val is not None:
-                    encoded_val = encoder.transform(X_val[categorical_columns])
-                    X_val = pd.concat(
-                        [
-                            X_val.drop(columns=categorical_columns).reset_index(drop=True),
-                            pd.DataFrame(encoded_val, columns=encoded_columns),
-                        ],
-                        axis=1,
-                    )
+                X_train, X_val, encoder = self._fit_one_hot(X_train, X_val, categorical_columns, drop="first")
+
+            encoder_no_drop = None
+            if no_drop_columns:
+                logger.info(f"One-hot encoding (no drop) categorical columns: {no_drop_columns}")
+                X_train, X_val, encoder_no_drop = self._fit_one_hot(X_train, X_val, no_drop_columns, drop=None)
 
             # Handle boolean columns
             boolean_columns = X_train.select_dtypes(include=['bool']).columns
@@ -447,6 +476,12 @@ class TrainModelNode(BaseNode):
                         {"encoder": encoder, "categorical_columns": categorical_columns}
                         if encoder is not None else {}
                     ),
+                    **(
+                        {"encoder_no_drop": encoder_no_drop, "categorical_columns_no_drop": no_drop_columns}
+                        if encoder_no_drop is not None else {}
+                    ),
+                    **({"label_encodings": label_encodings} if label_encodings else {}),
+                    **({"ordinal_encodings": ordinal_encodings} if ordinal_encodings else {}),
                 },
             )
 
@@ -532,6 +567,79 @@ class TrainModelNode(BaseNode):
                 )
 
         return X_train, y_train, X_val, y_val
+
+    def _encode_categoricals(self, X_train, X_val, categorical_encoding):
+        """
+        Apply per-column categorical encoding overrides before the default
+        one-hot pass that follows this call.
+
+        - "label": category -> integer code, fit on X_train's categories only;
+          an unseen category in X_val maps to -1 rather than leaking a
+          validation-only category into the training vocabulary.
+        - "ordinal": a fixed, caller-supplied mapping - safe to apply to both
+          splits directly since nothing is fit from the data.
+        - "one_hot": left as an object column here; it's one-hot encoded by
+          the default pass below (grouped by its dropFirst setting) so the
+          fitted encoder can be persisted in model metadata for inference.
+
+        Returns the (possibly mutated) X_train/X_val, the fitted label/ordinal
+        mappings (for model metadata), and the set of columns that asked for
+        one-hot encoding without dropping the first category.
+        """
+        label_encodings: Dict[str, Dict[Any, int]] = {}
+        ordinal_encodings: Dict[str, Dict[Any, Any]] = {}
+        one_hot_no_drop_columns = set()
+
+        for item in categorical_encoding:
+            column = item.get("columnName")
+            strategy = item.get("strategy", "no_action")
+            if strategy == "no_action" or column not in X_train.columns:
+                continue
+
+            if strategy == "one_hot":
+                if not item.get("dropFirst", False):
+                    one_hot_no_drop_columns.add(column)
+                continue
+
+            if strategy == "label":
+                categories = X_train[column].astype("category").cat.categories
+                mapping = {category: code for code, category in enumerate(categories)}
+                label_encodings[column] = mapping
+                X_train[column] = X_train[column].map(mapping).astype(int)
+                if X_val is not None:
+                    X_val[column] = X_val[column].map(mapping).fillna(-1).astype(int)
+
+            elif strategy == "ordinal":
+                mapping = item.get("ordinalMapping") or {}
+                ordinal_encodings[column] = mapping
+                X_train[column] = X_train[column].map(mapping)
+                if X_val is not None:
+                    X_val[column] = X_val[column].map(mapping)
+
+        return X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns
+
+    def _fit_one_hot(self, X_train, X_val, columns, drop):
+        """Fit a OneHotEncoder on X_train[columns] only and apply it to both splits."""
+        encoder = OneHotEncoder(drop=drop, handle_unknown="ignore", sparse_output=False)
+        encoded_train = encoder.fit_transform(X_train[columns])
+        encoded_columns = encoder.get_feature_names_out(columns).tolist()
+        X_train = pd.concat(
+            [
+                X_train.drop(columns=columns).reset_index(drop=True),
+                pd.DataFrame(encoded_train, columns=encoded_columns),
+            ],
+            axis=1,
+        )
+        if X_val is not None:
+            encoded_val = encoder.transform(X_val[columns])
+            X_val = pd.concat(
+                [
+                    X_val.drop(columns=columns).reset_index(drop=True),
+                    pd.DataFrame(encoded_val, columns=encoded_columns),
+                ],
+                axis=1,
+            )
+        return X_train, X_val, encoder
 
     def _is_classification_task(self, y: pd.Series, model_type: str, task_type: str = "auto") -> bool:
         """
