@@ -10,12 +10,21 @@ from uuid import uuid4
 
 import pytest
 from langchain_core.messages import AIMessage
+from pydantic import ValidationError
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.schemas.prompt_editor import PromptOptimizeRequest
+from app.schemas.prompt_editor import (
+    MAX_ATTEMPT_DIFF_CHARS,
+    MAX_ATTEMPT_TEXT_CHARS,
+    MAX_FAILURE_FEEDBACK_CHARS,
+    PromptOptimizeRequest,
+)
 from app.services.prompt_editor import (
+    _HISTORY_OMITTED,
+    _OPTIMIZE_SYSTEM_PROMPT,
     MAX_OPTIMIZE_EXAMPLES,
+    MAX_OPTIMIZE_PASSING_WITH_FAILURES,
     TRUNCATION_MARKER,
     PromptEditorService,
 )
@@ -51,6 +60,12 @@ def _request(**overrides) -> PromptOptimizeRequest:
     payload = {"provider_id": PROVIDER.id, "current_prompt": "You are helpful."}
     payload.update(overrides)
     return PromptOptimizeRequest(**payload)
+
+
+def _attempt(**overrides) -> dict:
+    payload = {"verdict": "worse", "improved": 0, "regressed": 1, "unchanged": 0}
+    payload.update(overrides)
+    return payload
 
 
 def _service(cases, *, nodes=None, gold_suite_id=SUITE_ID, index=None):
@@ -316,6 +331,240 @@ class TestExampleBudget:
         assert result.exposure["case_ids"] == [cases[1].id]
         assert result.examples_truncated is True
         assert "Input: small" in _human_message(llm)
+
+
+    @pytest.mark.asyncio
+    async def test_a_failure_carries_the_graders_feedback(self):
+        case = _case("in0", {"value": "URL"})
+        service = _service([case])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                techniques=["contains"],
+                failed_cases=[
+                    {
+                        "case_id": case.id,
+                        "actual": "no link",
+                        "failed_metrics": ["contains"],
+                        "feedback": "contains: expected URL",
+                    }
+                ],
+            ),
+        )
+
+        assert "Failed: contains\nFeedback: contains: expected URL" in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_a_failure_without_feedback_says_nothing_about_it(self):
+        case = _case("in0", {"value": "URL"})
+        service = _service([case])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(failed_cases=[{"case_id": case.id, "actual": "no link"}]),
+        )
+
+        assert "Feedback:" not in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_examples_are_labelled_in_render_order(self):
+        cases = [_case(f"in{i}", {"value": f"out{i}"}) for i in range(3)]
+        service = _service(cases)
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(failed_cases=[{"case_id": cases[2].id, "actual": "wrong"}]),
+        )
+
+        message = _human_message(llm)
+        assert "Case 1\nInput: in2" in message
+        assert "Case 2\nInput: in0" in message
+        assert "Case 3\nInput: in1" in message
+
+    @pytest.mark.asyncio
+    async def test_passing_examples_are_capped_when_failures_exist(self):
+        cases = [_case(f"in{i}", {"value": f"out{i}"}) for i in range(13)]
+        service = _service(cases)
+        llm = _llm()
+
+        result = await _run(
+            service,
+            _injector(llm),
+            _request(failed_cases=[{"case_id": cases[0].id, "actual": "wrong"}]),
+        )
+
+        assert len(result.exposure["case_ids"]) == 1 + MAX_OPTIMIZE_PASSING_WITH_FAILURES
+        assert result.examples_truncated is True
+
+    @pytest.mark.asyncio
+    async def test_passing_examples_keep_the_wider_budget_when_nothing_failed(self):
+        cases = [_case(f"in{i}", {"value": f"out{i}"}) for i in range(12)]
+        service = _service(cases)
+        llm = _llm()
+
+        result = await _run(service, _injector(llm))
+
+        assert len(result.exposure["case_ids"]) == 12
+        assert result.examples_truncated is False
+
+    @pytest.mark.asyncio
+    async def test_forbidden_phrases_are_described_to_the_rewrite(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                techniques=["not_contains"],
+                technique_configs={"not_contains": {"phrases": ["refund"]}},
+            ),
+        )
+
+        message = _human_message(llm)
+        assert "## GRADING" in message
+        assert '- not_contains: the reply must not contain any of these phrases' in message
+        assert '"refund"' in message
+
+    @pytest.mark.asyncio
+    async def test_not_contains_without_phrases_is_still_accepted_by_the_rewrite(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        result = await _run(service, _injector(llm), _request(techniques=["not_contains"]))
+
+        assert result.suggested_prompt == "Be concise."
+        assert "- not_contains:" not in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_configuration_for_an_unselected_technique_is_refused(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(
+                service,
+                _injector(llm),
+                _request(
+                    techniques=["contains"],
+                    technique_configs={"not_contains": {"phrases": ["refund"]}},
+                ),
+            )
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
+        llm.ainvoke.assert_not_called()
+
+
+class TestPreviousAttempts:
+    @pytest.mark.asyncio
+    async def test_a_previous_attempt_is_rendered_worst_first(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                previous_attempts=[
+                    _attempt(verdict="better", improved=3, regressed=0, explanation="terser"),
+                    _attempt(verdict="worse", regressed=2, explanation="added a rule"),
+                ]
+            ),
+        )
+
+        message = _human_message(llm)
+        assert "## PREVIOUS ATTEMPTS" in message
+        assert message.index("Attempt (worse)") < message.index("Attempt (better)")
+        assert "Explanation: added a rule" in message
+
+    @pytest.mark.asyncio
+    async def test_a_regression_names_the_labelled_case_or_says_it_is_not_shown(self):
+        cases = [_case(f"in{i}", {"value": f"out{i}"}) for i in range(2)]
+        service = _service(cases)
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                previous_attempts=[
+                    _attempt(
+                        regressed=2,
+                        regressions=[
+                            {"case_id": cases[1].id, "feedback": "answered in French"},
+                            {"case_id": uuid4()},
+                        ],
+                    )
+                ]
+            ),
+        )
+
+        assert (
+            "Regressed: Case 2 (answered in French); a case not shown above"
+            in _human_message(llm)
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_regression_in_the_hold_out_is_refused(self):
+        cases = [_case() for _ in range(4)]
+        service = _service(cases)
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(
+                service,
+                _injector(llm),
+                _request(
+                    case_split={"holdout_case_ids": [cases[0].id, cases[1].id]},
+                    previous_attempts=[_attempt(regressions=[{"case_id": cases[0].id}])],
+                ),
+            )
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_CASE_SELECTION_INVALID
+        assert "hold-out case" in exc_info.value.error_detail
+        llm.ainvoke.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_rendered_history_stays_within_its_budget(self):
+        service = _service([_case()])
+        llm = _llm()
+        maximal = _attempt(
+            explanation="e" * MAX_ATTEMPT_TEXT_CHARS,
+            diff_summary="d" * MAX_ATTEMPT_DIFF_CHARS,
+        )
+
+        await _run(service, _injector(llm), _request(previous_attempts=[maximal] * 3))
+
+        message = _human_message(llm)
+        assert message.count("Attempt (worse)") == 2
+        assert _HISTORY_OMITTED in message
+
+    @pytest.mark.asyncio
+    async def test_a_rewrite_sent_no_attempts_is_told_nothing_about_them(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(service, _injector(llm))
+
+        assert "## PREVIOUS ATTEMPTS" not in _human_message(llm)
+
+
+class TestSystemPrompt:
+    def test_the_system_prompt_asks_for_minimal_edits(self):
+        assert "Make the smallest change that fixes the listed failures" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "a shorter prompt that passes is better" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "Do not embed case-specific answers" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "build on what improved and avoid what regressed" in _OPTIMIZE_SYSTEM_PROMPT
+        assert '"improved_prompt": "the full improved prompt text"' in _OPTIMIZE_SYSTEM_PROMPT
 
 
 class TestCaseSplit:
@@ -602,3 +851,72 @@ class TestMetering:
 
         assert result.provenance.metering_handoff_failed is True
         assert result.suggested_prompt == "Be concise."
+
+
+class TestRequestBounds:
+
+    def test_a_fourth_previous_attempt_is_rejected(self):
+        with pytest.raises(ValidationError):
+            _request(previous_attempts=[_attempt() for _ in range(4)])
+
+    def test_the_same_case_cannot_regress_twice_in_one_attempt(self):
+        case_id = uuid4()
+        with pytest.raises(ValidationError):
+            _request(
+                previous_attempts=[
+                    _attempt(regressions=[{"case_id": case_id}, {"case_id": case_id}])
+                ]
+            )
+
+    def test_an_unknown_key_on_an_attempt_is_rejected(self):
+        with pytest.raises(ValidationError) as exc_info:
+            _request(previous_attempts=[_attempt(prompt="the text the optimizer must not see")])
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    def test_counts_beyond_one_run_of_cases_are_rejected(self):
+        with pytest.raises(ValidationError):
+            _request(previous_attempts=[_attempt(improved=25, regressed=1, unchanged=0)])
+
+    def test_an_over_long_feedback_is_rejected(self):
+        with pytest.raises(ValidationError):
+            _request(
+                failed_cases=[
+                    {
+                        "case_id": uuid4(),
+                        "actual": "x",
+                        "feedback": "f" * (MAX_FAILURE_FEEDBACK_CHARS + 1),
+                    }
+                ]
+            )
+
+    def test_an_over_long_diff_summary_is_rejected(self):
+        with pytest.raises(ValidationError):
+            _request(
+                previous_attempts=[_attempt(diff_summary="d" * (MAX_ATTEMPT_DIFF_CHARS + 1))]
+            )
+
+    def test_three_attempts_at_the_clients_own_caps_are_accepted(self):
+        request = _request(
+            failed_cases=[
+                {
+                    "case_id": uuid4(),
+                    "actual": "x",
+                    "feedback": "f" * MAX_FAILURE_FEEDBACK_CHARS,
+                }
+            ],
+            previous_attempts=[
+                _attempt(
+                    improved=5,
+                    regressed=5,
+                    unchanged=5,
+                    explanation="e" * MAX_ATTEMPT_TEXT_CHARS,
+                    diff_summary="d" * MAX_ATTEMPT_DIFF_CHARS,
+                    regressions=[{"case_id": uuid4(), "feedback": "r" * 300} for _ in range(5)],
+                )
+                for _ in range(3)
+            ],
+        )
+
+        assert len(request.previous_attempts) == 3
+        assert len(request.previous_attempts[0].regressions) == 5

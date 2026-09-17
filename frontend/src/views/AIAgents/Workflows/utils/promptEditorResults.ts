@@ -1,4 +1,5 @@
 import type {
+  ChallengerVerdict,
   PromptEvalCaseResult,
   PromptEvalMetric,
   PromptEvalResponse,
@@ -130,7 +131,7 @@ export interface PairedComparison {
   unchanged: number;
 }
 
-const VERDICT_RANK: Record<string, number> = {
+export const VERDICT_RANK: Record<string, number> = {
   failed: 0,
   inconclusive: 1,
   passed: 2,
@@ -178,4 +179,70 @@ export const joinPairedRuns = (
   }
 
   return comparison;
+};
+
+export const MIN_IMPROVED_FOR_BETTER = 2;
+export const VERDICT_POLICY_NOTE =
+  "Verdict is a fixed rule (no regressions and at least two improvements on identical " +
+  "cases), not a statistical test.";
+
+export interface ChallengerComparison {
+  verdict: ChallengerVerdict;
+  comparison: PairedComparison;
+  /** Why the runs cannot be compared; null when the comparison is complete */
+  incomplete: string | null;
+}
+
+const sameIdSet = (a: readonly string[], b: readonly string[]): boolean => {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  return (
+    setA.size === a.length &&
+    setB.size === b.length &&
+    setA.size === setB.size &&
+    b.every((id) => setA.has(id))
+  );
+};
+
+const incompleteReason = (
+  baseline: PromptEvalResponse,
+  challenger: PromptEvalResponse,
+  comparison: PairedComparison,
+): string | null => {
+  if (
+    !sameIdSet(
+      baseline.provenance.evaluated_case_ids,
+      challenger.provenance.evaluated_case_ids,
+    )
+  )
+    return "The two runs evaluated different cases.";
+  const unfinished = comparison.rows.filter(
+    (row) =>
+      !row.baseline ||
+      !row.suggestion ||
+      row.baseline.status !== "scored" ||
+      row.suggestion.status !== "scored" ||
+      row.baseline.verdict === null ||
+      row.suggestion.verdict === null,
+  ).length;
+  if (unfinished > 0)
+    return `${unfinished} case${unfinished === 1 ? "" : "s"} did not finish on one side.`;
+  if (comparison.compared !== baseline.provenance.evaluated_case_ids.length)
+    return "Not every case could be compared.";
+  return null;
+};
+
+/** Incomparable pairs are inconclusive, regardless of counts */
+export const compareRuns = (
+  baseline: PromptEvalResponse,
+  challenger: PromptEvalResponse,
+): ChallengerComparison => {
+  const comparison = joinPairedRuns(baseline, challenger);
+  const incomplete = incompleteReason(baseline, challenger, comparison);
+  if (incomplete) return { verdict: "inconclusive", comparison, incomplete };
+  if (comparison.regressed > 0)
+    return { verdict: "worse", comparison, incomplete: null };
+  if (comparison.improved >= MIN_IMPROVED_FOR_BETTER)
+    return { verdict: "better", comparison, incomplete: null };
+  return { verdict: "inconclusive", comparison, incomplete: null };
 };

@@ -18,6 +18,7 @@ from app.schemas.prompt_editor import (
 from app.services.prompt_editor_evaluators import (
     _EXPECTATION_RULES,
     PROMPT_CHECK_TECHNIQUES,
+    build_technique_configs,
     describe_expectations,
     validate_prompt_check_techniques,
 )
@@ -112,6 +113,27 @@ class TestValidatePromptCheckTechniques:
         )
 
         assert built["field_equals"] == {"field": "inputs.message", "expected": "hi"}
+
+
+class TestLenientBuilder:
+
+    def test_not_contains_without_phrases_builds_an_empty_config(self):
+        assert build_technique_configs(["not_contains"], _configs()) == {"not_contains": {}}
+
+    def test_the_check_still_refuses_what_the_builder_allows(self):
+        with pytest.raises(AppException) as exc_info:
+            validate_prompt_check_techniques(["not_contains"], _configs())
+
+        assert exc_info.value.error_detail == (
+            "'not_contains' needs at least one forbidden phrase. Add one or clear the check."
+        )
+
+    def test_a_configured_not_contains_builds_the_same_config_either_way(self):
+        configs = _configs(not_contains={"phrases": ["refund"]})
+
+        assert build_technique_configs(["not_contains"], configs) == validate_prompt_check_techniques(
+            ["not_contains"], configs
+        )
 
 
 class TestRejectionDetailReachesTheUser:
@@ -255,3 +277,39 @@ class TestExpectationRules:
         assert describe_expectations(["nli_eval", "contains"]) == describe_expectations(
             ["contains", "nli_eval"]
         )
+
+    def test_forbidden_phrases_are_described_from_the_built_config(self):
+        described = describe_expectations(
+            ["not_contains"], {"not_contains": {"phrases": ["refund", "chargeback"]}}
+        )
+
+        assert described == (
+            "- not_contains: the reply must not contain any of these phrases, "
+            'case-insensitively: "refund", "chargeback"'
+        )
+
+    def test_a_not_contains_with_no_phrases_describes_nothing(self):
+        assert describe_expectations(["not_contains"], {"not_contains": {}}) == ""
+
+    def test_field_equals_is_described_with_the_value_it_compares(self):
+        described = describe_expectations(
+            ["field_equals"], {"field_equals": {"field": "inputs.message", "expected": "hi"}}
+        )
+
+        assert described == "- field_equals: the reply field 'inputs.message' must equal \"hi\""
+
+    def test_field_equals_without_an_expected_points_at_the_case(self):
+        described = describe_expectations(["field_equals"], {"field_equals": {"field": "outputs"}})
+
+        assert described == "- field_equals: the reply field 'outputs' must equal the expected output"
+
+    def test_configured_lines_keep_the_allow_list_order(self):
+        described = describe_expectations(
+            ["nli_eval", "not_contains", "contains"], {"not_contains": {"phrases": ["x"]}}
+        )
+
+        assert [line.split(":")[0] for line in described.splitlines()] == [
+            "- contains",
+            "- not_contains",
+            "- nli_eval",
+        ]

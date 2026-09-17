@@ -32,10 +32,12 @@ from app.repositories.workflow import WorkflowRepository
 from app.schemas.llm import LlmProviderRead
 from app.schemas.prompt_editor import (
     MAX_ACTUAL_CHARS,
+    MAX_HISTORY_CHARS,
     MAX_PROMPT_CONTENT,
     CaseSplit,
     FailedCaseRef,
     LegacyHistoryRead,
+    PreviousAttempt,
     PromptConfigRead,
     PromptEvalCaseResult,
     PromptEvalRequest,
@@ -51,6 +53,7 @@ from app.schemas.prompt_editor import (
 from app.services.evaluation_nli import evaluation_nli_model
 from app.services.evaluation_text import normalize_text
 from app.services.prompt_editor_evaluators import (
+    build_technique_configs,
     describe_expectations,
     reject_unsupported_techniques,
     validate_prompt_check_techniques,
@@ -73,6 +76,7 @@ MAX_OPTIMIZE_FAILED_ACTUAL_CHARS = 4_000
 MAX_OPTIMIZE_EXAMPLES = 20
 MAX_OPTIMIZE_EXAMPLE_CHARS = 24_000
 MAX_OPTIMIZE_EXAMPLE_SCAN = 60
+MAX_OPTIMIZE_PASSING_WITH_FAILURES = 5  # passing examples are format anchors once failures exist
 
 TRUNCATION_MARKER = " […shortened by the editor]"
 _GROUNDING_TECHNIQUE = "nli_eval"
@@ -370,6 +374,20 @@ def validate_case_split(
     )
 
 
+def _reject_holdout_regressions(
+    attempts: Optional[List[PreviousAttempt]], split: ValidatedSplit
+) -> None:
+    """Regression in hold-out = forbidden cases are used (optimizer never sees them)"""
+    if not attempts or split.exploratory:
+        return
+    held = {str(case_id) for case_id in split.holdout}
+    for attempt in attempts:
+        if any(str(ref.case_id) in held for ref in attempt.regressions):
+            raise _split_refused(
+                "A previous attempt references a hold-out case; only development results can be sent."
+            )
+
+
 def _unusable_suggestion(detail: str) -> AppException:
     return AppException(
         status_code=400,
@@ -410,6 +428,8 @@ class _Examples:
     case_ids: List[UUID]
     failure_case_ids: List[UUID]
     truncated: bool
+    # Case id to the "Case N" heading it was rendered under, so history can name one
+    labels: Dict[str, str]
 
 
 _OPTIMIZE_SYSTEM_PROMPT = (
@@ -424,8 +444,12 @@ _OPTIMIZE_SYSTEM_PROMPT = (
     "grader accepts, following the grading rules where they are given\n"
     "- If there are failed cases, pay special attention to fixing those patterns\n"
     "- Preserve the original intent and domain of the prompt\n"
-    "- Be specific: add formatting instructions, tone guidance, or constraints "
-    "that align with the gold examples\n"
+    "- Make the smallest change that fixes the listed failures. Do not restate what already works\n"
+    "- You may remove or merge rules that no longer earn their place; a shorter prompt that "
+    "passes is better than a longer one\n"
+    "- Do not embed case-specific answers or input-to-answer lookup rules. Keep literal tokens "
+    "only when they are task-wide format, schema or behavioural requirements\n"
+    "- If previous attempts are listed, build on what improved and avoid what regressed\n"
     "- Return your response as JSON with two fields:\n"
     '  {"improved_prompt": "the full improved prompt text", '
     '"explanation": "brief explanation of what you changed and why"}\n'
@@ -433,10 +457,48 @@ _OPTIMIZE_SYSTEM_PROMPT = (
 )
 
 
+_VERDICT_RANK = {"worse": 0, "inconclusive": 1, "better": 2}
+_HISTORY_OMITTED = "(earlier attempts omitted to stay within the budget)"
+
+
+def _render_attempt(attempt: PreviousAttempt, labels: Dict[str, str]) -> str:
+    lines = [
+        f"Attempt ({attempt.verdict}): {attempt.improved} improved, "
+        f"{attempt.regressed} regressed, {attempt.unchanged} unchanged"
+    ]
+    if attempt.diff_summary:
+        lines.append(f"Change:\n{attempt.diff_summary}")
+    if attempt.explanation:
+        lines.append(f"Explanation: {attempt.explanation}")
+    if attempt.regressions:
+        refs = [
+            labels.get(str(ref.case_id), "a case not shown above")
+            + (f" ({ref.feedback})" if ref.feedback else "")
+            for ref in attempt.regressions
+        ]
+        lines.append("Regressed: " + "; ".join(refs))
+    return "\n".join(lines)
+
+
+def _render_history(attempts: List[PreviousAttempt], labels: Dict[str, str]) -> str:
+    """Worst first. Stops once the combined text would pass MAX_HISTORY_CHARS"""
+    ordered = sorted(attempts, key=lambda a: (_VERDICT_RANK[a.verdict], a.improved - a.regressed))
+    blocks, used = [], 0
+    for attempt in ordered:
+        block = _render_attempt(attempt, labels)
+        if used + len(block) > MAX_HISTORY_CHARS:
+            blocks.append(_HISTORY_OMITTED)
+            break
+        blocks.append(block)
+        used += len(block)
+    return "\n\n---\n".join(blocks)
+
+
 def _optimize_request_text(
     current_prompt: str,
     gold_examples: str,
     failed_section: str,
+    history_section: str,
     instructions: Optional[str],
     grading_rules: str,
 ) -> str:
@@ -452,6 +514,13 @@ def _optimize_request_text(
         if failed_section
         else ""
     )
+    history = (
+        "\n\n## PREVIOUS ATTEMPTS\n"
+        "Earlier rewrites of this prompt, scored on the same cases and settings, worst first. "
+        "Do not repeat a change that regressed cases:\n\n" + history_section
+        if history_section
+        else ""
+    )
     extra = f"\n\n## ADDITIONAL INSTRUCTIONS\n{instructions}" if instructions else ""
     return (
         f"## CURRENT SYSTEM PROMPT\n{current_prompt}\n\n"
@@ -460,6 +529,7 @@ def _optimize_request_text(
         f"{gold_examples}"
         f"{grading}"
         f"{failed}"
+        f"{history}"
         f"{extra}"
     )
 
@@ -1154,7 +1224,7 @@ class PromptEditorService:
         truncated = len(failed) > len(shown_failed)
 
         if suite_id is None or not (failure_ids or development):
-            return _Examples("", "", [], [], truncated)
+            return _Examples("", "", [], [], truncated, {})
 
         rendered = 0
         used = 0
@@ -1171,6 +1241,9 @@ class PromptEditorService:
         gold_blocks: List[str] = []
         case_ids: List[UUID] = []
         failure_case_ids: List[UUID] = []
+        labels: Dict[str, str] = {}
+        label_index = 1
+        gold_cap = MAX_OPTIMIZE_PASSING_WITH_FAILURES if shown_failed else MAX_OPTIMIZE_EXAMPLES
 
         # The first read carries the failures and the first window of development cases
         window = development[:MAX_OPTIMIZE_EXAMPLES]
@@ -1188,10 +1261,14 @@ class PromptEditorService:
             )
             if entry.failed_metrics:
                 block += f"\nFailed: {', '.join(entry.failed_metrics)}"
+            if entry.feedback:
+                block += f"\nFeedback: {entry.feedback}"
             if not _fits(block):
                 truncated = True
                 continue
-            failed_blocks.append(block)
+            labels[str(row.id)] = f"Case {label_index}"
+            failed_blocks.append(f"Case {label_index}\n{block}")
+            label_index += 1
             failure_case_ids.append(row.id)
             case_ids.append(row.id)
 
@@ -1199,6 +1276,9 @@ class PromptEditorService:
         scan_limit = min(len(development), MAX_OPTIMIZE_EXAMPLE_SCAN)
         while True:
             for case_id in window:
+                if len(gold_blocks) >= gold_cap:
+                    truncated = True
+                    break
                 row = by_id.get(str(case_id))
                 if row is None:
                     truncated = True
@@ -1210,10 +1290,12 @@ class PromptEditorService:
                 if not _fits(block):
                     truncated = True
                     continue
-                gold_blocks.append(block)
+                labels[str(row.id)] = f"Case {label_index}"
+                gold_blocks.append(f"Case {label_index}\n{block}")
+                label_index += 1
                 case_ids.append(row.id)
             scanned += len(window)
-            if rendered >= MAX_OPTIMIZE_EXAMPLES or scanned >= scan_limit:
+            if rendered >= MAX_OPTIMIZE_EXAMPLES or scanned >= scan_limit or len(gold_blocks) >= gold_cap:
                 break
             window = development[scanned : scanned + MAX_OPTIMIZE_EXAMPLES]
             by_id = await self._case_rows(suite_id, window)
@@ -1226,6 +1308,7 @@ class PromptEditorService:
             case_ids=case_ids,
             failure_case_ids=failure_case_ids,
             truncated=truncated,
+            labels=labels,
         )
 
     async def _prepare_optimize(
@@ -1235,13 +1318,13 @@ class PromptEditorService:
         prompt_field: str,
         request: PromptOptimizeRequest,
         op_id: UUID,
-    ) -> Tuple[PromptContext, LlmProviderRead, Any, ValidatedSplit, _Examples, int]:
+    ) -> Tuple[PromptContext, LlmProviderRead, Any, ValidatedSplit, _Examples, int, Dict[str, Dict[str, Any]]]:
         """Same gate as check. Allows no dataset (instructions-only is valid)"""
         from app.dependencies.injector import injector
         from app.services.llm_providers import LlmProviderService
 
         ctx = await self._prepare_context(workflow_id, node_id, prompt_field)
-        reject_unsupported_techniques(request.techniques)
+        configs = build_technique_configs(request.techniques, request.technique_configs)
 
         config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
         suite_id = config.gold_suite_id if config else None
@@ -1250,11 +1333,12 @@ class PromptEditorService:
         failed = list(request.failed_cases or [])
         reject_unsupported_techniques([m for entry in failed for m in entry.failed_metrics])
         split = validate_case_split(request.case_split, index, [entry.case_id for entry in failed])
+        _reject_holdout_regressions(request.previous_attempts, split)
         examples = await self._build_examples(suite_id, split, failed)
 
         provider = await injector.get(LlmProviderService).get_by_id(request.provider_id)
         llm = await self._build_model(provider, op_id)
-        return ctx, provider, llm, split, examples, len(index)
+        return ctx, provider, llm, split, examples, len(index), configs
 
     async def optimize_prompt(
         self,
@@ -1268,7 +1352,7 @@ class PromptEditorService:
         ref = PromptUsageRef(execution_id=f"prompt_editor:optimize:{op_id}")
 
         try:
-            ctx, provider, llm, split, examples, total_cases = await asyncio.wait_for(
+            ctx, provider, llm, split, examples, total_cases, configs = await asyncio.wait_for(
                 self._prepare_optimize(workflow_id, node_id, prompt_field, request, op_id),
                 PROMPT_CHECK_PREPARE_SECONDS,
             )
@@ -1287,8 +1371,9 @@ class PromptEditorService:
                     request.current_prompt,
                     examples.gold_text,
                     examples.failed_text,
+                    _render_history(request.previous_attempts or [], examples.labels),
                     request.instructions,
-                    describe_expectations(request.techniques),
+                    describe_expectations(request.techniques, configs),
                 )
             ),
         ]

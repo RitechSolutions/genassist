@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  PromptCaseVerdict,
   PromptEvalCaseResult,
   PromptEvalResponse,
   PromptEvalSummary,
@@ -7,6 +8,7 @@ import type {
 } from "@/interfaces/promptEditor.interface";
 import {
   caseStatusLabel,
+  compareRuns,
   formatAvgScore,
   joinPairedRuns,
   metricOutcomeLabel,
@@ -71,10 +73,13 @@ const caseResult = (
     ...overrides,
   }) as PromptEvalCaseResult;
 
-const response = (results: PromptEvalCaseResult[]): PromptEvalResponse => ({
+const response = (
+  results: PromptEvalCaseResult[],
+  provenanceOverrides: Partial<PromptRunProvenance> = {},
+): PromptEvalResponse => ({
   results,
   summary: summary(),
-  provenance: provenance(),
+  provenance: provenance(provenanceOverrides),
 });
 
 describe("summaryLine", () => {
@@ -213,5 +218,111 @@ describe("joinPairedRuns", () => {
     const after = response([caseResult("a")]);
 
     expect(joinPairedRuns(before, after).compared).toBe(0);
+  });
+});
+
+describe("compareRuns", () => {
+  const scored = (caseId: string, verdict: PromptCaseVerdict) =>
+    caseResult(caseId, { verdict, passed: verdict === "passed" });
+
+  const run = (results: PromptEvalCaseResult[], ids?: string[]) =>
+    response(results, { evaluated_case_ids: ids ?? results.map((r) => r.case_id) });
+
+  it("calls two improvements with nothing lost better", () => {
+    const before = run([
+      scored("a", "failed"),
+      scored("b", "failed"),
+      scored("c", "passed"),
+    ]);
+    const after = run([
+      scored("a", "passed"),
+      scored("b", "passed"),
+      scored("c", "passed"),
+    ]);
+
+    expect(compareRuns(before, after)).toMatchObject({
+      verdict: "better",
+      incomplete: null,
+      comparison: { improved: 2, regressed: 0, unchanged: 1 },
+    });
+  });
+
+  it("calls a single improvement inconclusive rather than better", () => {
+    const before = run([scored("a", "failed"), scored("b", "passed")]);
+    const after = run([scored("a", "passed"), scored("b", "passed")]);
+
+    expect(compareRuns(before, after)).toMatchObject({
+      verdict: "inconclusive",
+      incomplete: null,
+    });
+  });
+
+  it("calls any regression worse, however many cases improved", () => {
+    const ids = ["a", "b", "c", "d", "e", "f"];
+    const before = run(
+      ids.map((id) => scored(id, id === "f" ? "passed" : "failed")),
+    );
+    const after = run(
+      ids.map((id) => scored(id, id === "f" ? "failed" : "passed")),
+    );
+
+    expect(compareRuns(before, after)).toMatchObject({
+      verdict: "worse",
+      incomplete: null,
+      comparison: { improved: 5, regressed: 1 },
+    });
+  });
+
+  it("refuses to compare two runs of different cases", () => {
+    const before = run([scored("a", "failed"), scored("b", "failed")]);
+    const after = run([scored("a", "passed"), scored("c", "passed")]);
+
+    expect(compareRuns(before, after)).toMatchObject({
+      verdict: "inconclusive",
+      incomplete: "The two runs evaluated different cases.",
+    });
+  });
+
+  it("refuses a run whose case list repeats an id", () => {
+    const before = run([scored("a", "failed"), scored("a", "failed")], ["a", "a"]);
+    const after = run([scored("a", "passed")], ["a"]);
+
+    expect(compareRuns(before, after).incomplete).toBe(
+      "The two runs evaluated different cases.",
+    );
+  });
+
+  it("refuses a pair where a case never ran on one side", () => {
+    const before = run([
+      scored("a", "passed"),
+      caseResult("b", { status: "execution_failed", verdict: null }),
+    ]);
+    const after = run([scored("a", "passed"), scored("b", "passed")]);
+
+    expect(compareRuns(before, after)).toMatchObject({
+      verdict: "inconclusive",
+      incomplete: "1 case did not finish on one side.",
+    });
+  });
+
+  it("refuses a pair where a scored case came back without a verdict", () => {
+    const before = run([scored("a", "passed"), scored("b", "failed")]);
+    const after = run([scored("a", "passed"), caseResult("b", { verdict: null })]);
+
+    expect(compareRuns(before, after).incomplete).toBe(
+      "1 case did not finish on one side.",
+    );
+  });
+
+  it("counts every unfinished case in the reason it gives", () => {
+    const before = run([
+      caseResult("a", { status: "scoring_failed", verdict: null }),
+      caseResult("b", { status: "skipped", verdict: null }),
+    ]);
+    const after = run([scored("a", "passed"), scored("b", "passed")]);
+
+    expect(compareRuns(before, after).incomplete).toBe(
+      "2 cases did not finish on one side.",
+    );
   });
 });

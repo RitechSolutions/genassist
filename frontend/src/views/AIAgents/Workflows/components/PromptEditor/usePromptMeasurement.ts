@@ -40,6 +40,7 @@ import {
   evalKeyOf,
   failedCaseCount,
   failedCasesOf,
+  failuresDrifted,
   failuresKeyOf,
   isOptimizeCurrent,
   optimizeKeyOf,
@@ -152,6 +153,8 @@ export interface PromptMeasurementState {
   failedTotal: number;
   optimizeResult: PromptOptimizeResponse | null;
   optimizeStale: boolean;
+  /** The base was re-scored into different failures; the suggestion is still current */
+  failuresChanged: boolean;
   suggestion: string;
   /** Original prompt sent to optimizer (suggestion rewrites this)
    * Not live draft; drift flagged by `optimizeStale` */
@@ -238,6 +241,7 @@ export const usePromptMeasurement = ({
     setOptimizeProviderId,
     providerStatus,
     fallbackFor,
+    revisionOf,
   } = usePromptProviders(defaultProviderId);
 
   const goldSuiteId = historyState.goldSuiteId;
@@ -259,6 +263,7 @@ export const usePromptMeasurement = ({
     () => (notContainsSelected ? { not_contains: { phrases } } : {}),
     [notContainsSelected, phrases],
   );
+  const sentTechniqueConfigs = phrasesIssue === null ? techniqueConfigs : {};
 
   const splitActive = splitEnabled && split.feasible;
   const evalCaseIds = useMemo(
@@ -271,11 +276,14 @@ export const usePromptMeasurement = ({
     [split],
   );
 
+  const evalProviderRevision = revisionOf(activeEvalProviderId);
+
   const buildEvalRequest = useCallback(
     (prompt: string, caseIds: string[] | null): EvalRequest => ({
       key: evalKeyOf({
         prompt,
         providerId: activeEvalProviderId,
+        providerRevision: evalProviderRevision,
         techniques: selectedTechniques,
         techniqueConfigs,
         caseIds,
@@ -291,6 +299,7 @@ export const usePromptMeasurement = ({
     }),
     [
       activeEvalProviderId,
+      evalProviderRevision,
       selectedTechniques,
       techniqueConfigs,
       casesToCheck,
@@ -326,20 +335,24 @@ export const usePromptMeasurement = ({
   const currentOptimizeKey = optimizeKeyOf({
     prompt: draft,
     providerId: activeOptimizeProviderId,
+    providerRevision: revisionOf(activeOptimizeProviderId),
     instructions,
     caseSplit: splitActive
       ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds }
       : null,
     caseRowsKey,
     techniques: selectedTechniques,
+    techniqueConfigs: sentTechniqueConfigs,
+    sourceEvalKey: currentEvalKey,
   });
   const optimizeResult = optimizeRun?.result ?? null;
   const optimizeStale =
     optimizeRun !== null &&
-    !isOptimizeCurrent(optimizeRun.request, {
-      key: currentOptimizeKey,
-      failuresKey,
-    });
+    !isOptimizeCurrent(optimizeRun.request, currentOptimizeKey);
+  const failuresChanged =
+    optimizeRun !== null &&
+    !optimizeStale &&
+    failuresDrifted(optimizeRun.request, failuresKey);
   const suggestion = suggestionEdit ?? optimizeResult?.suggested_prompt ?? "";
   // Used by Accept for comparison. Mid-save edits downgrade message;
   // bumping would kill in-flight suggested runs
@@ -442,11 +455,13 @@ export const usePromptMeasurement = ({
           case_id: c.caseId,
           actual: c.actual,
           failed_metrics: c.failedMetrics,
+          feedback: c.feedback ?? undefined,
         })),
         case_split: vars.caseSplit
           ? { holdout_case_ids: [...vars.caseSplit.holdoutIds] }
           : undefined,
         techniques: vars.techniques,
+        technique_configs: vars.techniqueConfigs,
       });
       if (!result)
         throw new Error("Server returned empty response — check permissions.");
@@ -760,6 +775,7 @@ export const usePromptMeasurement = ({
       sourceFailuresKey: failuresKey,
       caseSplit,
       techniques: selectedTechniques,
+      techniqueConfigs: sentTechniqueConfigs,
     });
   };
 
@@ -813,6 +829,7 @@ export const usePromptMeasurement = ({
     failedTotal,
     optimizeResult,
     optimizeStale,
+    failuresChanged,
     suggestion,
     optimizedFrom: optimizeRun?.request.prompt ?? "",
     suggestionEdited: suggestion !== (optimizeResult?.suggested_prompt ?? ""),

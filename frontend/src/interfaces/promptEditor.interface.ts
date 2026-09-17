@@ -149,7 +149,13 @@ export interface PromptOptimizeRequestPayload {
     case_id: string;
     actual: string;
     failed_metrics: string[];
+    /** What the graders said about the reply, so the rewrite reads the same notes */
+    feedback?: string;
   }>;
   case_split?: { holdout_case_ids: string[] };
   techniques?: string[];
+  technique_configs?: PromptTechniqueConfigs;
 }
+
+/** How a scored prompt ranked against the one it was compared with */
+export type ChallengerVerdict = "better" | "worse" | "inconclusive";

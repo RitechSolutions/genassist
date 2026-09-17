@@ -61,6 +61,9 @@ export const SUGGESTION_STALE_REASON =
 export const HOLDOUT_STALE_REASON =
   "Inputs changed since this comparison. Start a new hold-out run.";
 
+export const HOLDOUT_OFF_REASON =
+  "Turn on Hold out cases to validate on the hold-out set.";
+
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
 
