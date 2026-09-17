@@ -16,6 +16,7 @@ or an LLM error) takes the default branch.
 import json
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -59,6 +60,28 @@ def _to_text(value: Any) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
     return str(value)
+
+
+_NUMBER_LITERAL = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+
+
+def _numbers_equal(actual: str, expected: str) -> bool:
+    """Whether two texts are the same number written differently (``3.0`` and ``3``).
+
+    Upstream numbers reach the switch as text in their serialized form, so an
+    integer-valued float arrives as ``3.0`` while the case says ``3``. Only
+    formatting is reconciled: at least one side must have a fractional or
+    exponent part, so plain digit strings such as ``007`` and ``7`` (ids, codes)
+    still compare as text.
+    """
+    if not (_NUMBER_LITERAL.fullmatch(actual) and _NUMBER_LITERAL.fullmatch(expected)):
+        return False
+    if not any(ch in text for text in (actual, expected) for ch in ".eE"):
+        return False
+    try:
+        return Decimal(actual) == Decimal(expected)
+    except InvalidOperation:
+        return False
 
 
 def handle_for_route(route: str) -> str:
@@ -214,9 +237,13 @@ class SwitchNode(BaseNode):
 
     @staticmethod
     def _case_from_answer(answer: str, cases: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        """Map the model's answer to a case by id, then by label; anything else is no case."""
+        """Map the model's answer to a case by id, then by label; anything else is no case.
+
+        ``default`` is the reserved fallback route offered in the prompt, so it
+        always means "no case", even when a case happens to be labelled "Default".
+        """
         normalized = answer.strip().strip("`\"'.").strip().casefold()
-        if not normalized:
+        if not normalized or normalized == DEFAULT_ROUTE:
             return None
         for switch_case in cases:
             if switch_case["id"].casefold() == normalized:
@@ -286,7 +313,7 @@ class SwitchNode(BaseNode):
             expected = expected.casefold()
 
         if match_mode == "equal":
-            return actual == expected
+            return actual == expected or _numbers_equal(actual, expected)
         if match_mode == "contains":
             return expected in actual
         if match_mode == "starts_with":

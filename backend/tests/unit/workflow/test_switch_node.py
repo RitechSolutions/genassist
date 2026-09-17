@@ -97,6 +97,35 @@ async def test_match_modes(mode, value, expected):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value, case_value",
+    [(3.0, "3"), ("3.0", "3"), ("3", "3.0"), ("2.50", "2.5"), ("1e3", "1000"), (-4.0, "-4")],
+)
+async def test_equal_matches_the_same_number_written_differently(value, case_value):
+    cases = [{"id": "case_1", "label": "Three", "value": case_value}]
+    result = await _make_node().process({"switchValue": value, "matchMode": "equal", "cases": cases})
+    assert result["route"] == "case_1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value, case_value",
+    [("007", "7"), ("3.1", "3"), ("12345678901234567891.0", "12345678901234567890"), ("3.0abc", "3")],
+)
+async def test_equal_keeps_different_numbers_and_digit_ids_apart(value, case_value):
+    cases = [{"id": "case_1", "label": "Hit", "value": case_value}]
+    result = await _make_node().process({"switchValue": value, "matchMode": "equal", "cases": cases})
+    assert result["route"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_number_formatting_is_only_reconciled_for_equal():
+    cases = [{"id": "case_1", "label": "Three", "value": "3"}]
+    result = await _make_node().process({"switchValue": "3.0", "matchMode": "ends_with", "cases": cases})
+    assert result["route"] == "default"
+
+
+@pytest.mark.asyncio
 async def test_first_matching_case_wins():
     cases = [
         {"id": "case_1", "label": "Urgent", "value": "urgent"},
@@ -249,6 +278,30 @@ async def test_smart_mode_uses_a_custom_system_prompt(smart_llm):
 async def test_smart_mode_accepts_ids_or_labels_and_defaults_otherwise(smart_llm, answer, route):
     smart_llm.answer = answer
     assert (await _make_node().process(_smart()))["route"] == route
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", ["default", "Default", " `DEFAULT`. "])
+async def test_smart_mode_default_answer_is_reserved_even_with_a_case_labelled_default(smart_llm, answer):
+    cases = [
+        {"id": "case_1", "label": "Billing", "value": "billing questions"},
+        {"id": "case_2", "label": "Default", "value": "a case the user named Default"},
+    ]
+    edges = [
+        {"source": "sw", "target": "labelled_default", "sourceHandle": "output_case_2"},
+        {"source": "sw", "target": "fallback", "sourceHandle": "output_default"},
+    ]
+    smart_llm.answer = answer
+    result = await _make_node(edges).process(_smart(cases=cases))
+    assert result["route"] == "default"
+    assert result["next_nodes"] == ["fallback"]
+
+
+@pytest.mark.asyncio
+async def test_smart_mode_case_labelled_default_is_still_reachable_by_its_id(smart_llm):
+    cases = [{"id": "case_2", "label": "Default", "value": "a case the user named Default"}]
+    smart_llm.answer = "case_2"
+    assert (await _make_node().process(_smart(cases=cases)))["route"] == "case_2"
 
 
 @pytest.mark.asyncio

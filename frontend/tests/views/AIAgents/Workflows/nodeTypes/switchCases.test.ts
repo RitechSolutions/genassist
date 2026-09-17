@@ -99,6 +99,40 @@ describe("nodeRegistry with config-derived handles", () => {
     ]);
   });
 
+  it("rebuilds handles when node data is patched outside the dialog (e.g. by the canvas assistant)", () => {
+    const node = nodeRegistry.createNode("switchNode", "sw", { x: 0, y: 0 })!;
+    const staleHandlers = node.data.handlers;
+    const updated = nodeRegistry.withDataUpdate(node, {
+      cases: [
+        { id: "case_2", label: "Sales", value: "sales" },
+        { id: "case_7", label: "VIP", value: "vip" },
+      ],
+      // A stale handler list in the patch must not win over the cases.
+      handlers: staleHandlers,
+    });
+    expect(updated.data.handlers.map((h: { id: string }) => h.id)).toEqual([
+      "input",
+      "output_case_2",
+      "output_case_7",
+      "output_default",
+    ]);
+    expect(updated.data.cases).toHaveLength(2);
+    // The original node is left untouched.
+    expect(node.data.handlers).toBe(staleHandlers);
+  });
+
+  it("merges data as-is for node types without config-derived handles", () => {
+    nodeRegistry.register({
+      type: "plainNode",
+      label: "Plain",
+      category: "utils",
+      defaultData: { name: "Plain", handlers: [] },
+    } as unknown as NodeTypeDefinition<NodeData>);
+    const node: Node = { id: "p", type: "plainNode", position: { x: 0, y: 0 }, data: { name: "Plain", handlers: [{ id: "custom" }] } };
+    const updated = nodeRegistry.withDataUpdate(node, { name: "Renamed" });
+    expect(updated.data).toEqual({ name: "Renamed", handlers: [{ id: "custom" }] });
+  });
+
   it("builds handles from override cases when creating a node", () => {
     const node = nodeRegistry.createNode("switchNode", "sw", { x: 0, y: 0 }, {
       cases: [{ id: "case_9", label: "VIP", value: "vip" }],

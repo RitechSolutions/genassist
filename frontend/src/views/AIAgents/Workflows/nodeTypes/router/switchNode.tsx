@@ -10,6 +10,7 @@ import { getLLMProvider } from "@/services/llmProviders";
 import { isSwitchSmartMode, SWITCH_MATCH_MODE_LABELS } from "./switchCases";
 import { needsSwitchFanOut, SWITCH_FAN_OUT_THRESHOLD } from "./switchHandleLayout";
 import SwitchFanOutHandles from "./SwitchFanOutHandles";
+import { edgesOnRemovedHandles } from "../../utils/handleEdges";
 
 // The card lists as many rows as fit before the outputs fan out: the first
 // cases plus Default; the rest are summarised as "+N more".
@@ -51,14 +52,11 @@ const SwitchNode: React.FC<NodeProps<SwitchNodeData>> = ({
 
   const onUpdate = (updatedData: SwitchNodeData) => {
     // Drop edges that were attached to a case that no longer exists.
-    const nextHandleIds = new Set(
-      (updatedData.handlers ?? []).map((h) => h.id)
-    );
-    const staleEdges = getEdges().filter(
-      (edge) =>
-        edge.source === id &&
-        !!edge.sourceHandle &&
-        !nextHandleIds.has(edge.sourceHandle)
+    const staleEdges = edgesOnRemovedHandles(
+      getEdges(),
+      id,
+      data.handlers,
+      updatedData.handlers
     );
     if (staleEdges.length > 0) {
       deleteElements({ edges: staleEdges.map((edge) => ({ id: edge.id })) });
