@@ -339,11 +339,14 @@ class EvaluationRouterBranch(BaseModel):
 
     value: str
     destination: Optional[str] = None
+    # Display name of the branch when the value is opaque (a Switch case id).
+    label: Optional[str] = None
 
 
 class EvaluationRouterInfo(BaseModel):
     id: str
     label: str
+    type: Optional[str] = None
     workflow_path: List[str] = Field(default_factory=list)
     branches: List[EvaluationRouterBranch] = Field(default_factory=list)
 
