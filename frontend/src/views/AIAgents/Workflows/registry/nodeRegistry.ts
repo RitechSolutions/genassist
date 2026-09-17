@@ -58,6 +58,12 @@ class NodeRegistry {
 
   hydrateNode(node: Node): Node {
     const definition = node.type ? this.getNodeType(node.type) : undefined;
+    if (definition?.getHandlers) {
+      return {
+        ...node,
+        data: { ...node.data, handlers: definition.getHandlers(node.data) },
+      };
+    }
     const defaultHandlers = (definition?.defaultData as BaseNodeData | undefined)?.handlers;
     if (!defaultHandlers?.length) return node;
 
@@ -86,6 +92,11 @@ class NodeRegistry {
       ...overrideData,
       label: overrideData?.label || nodeType.label
     };
+    // Config-derived handles must follow the overrides (e.g. a Switch created
+    // with its own `cases`), not the defaults they replaced.
+    if (nodeType.getHandlers) {
+      data.handlers = nodeType.getHandlers(data as NodeData);
+    }
 
     return createNode(type, id, position, data);
   }
