@@ -50,12 +50,10 @@ import {
   StepConfig,
   ColumnFilterStepConfig,
   MissingValueHandlingStepConfig,
-  CategoricalEncodingStepConfig,
   FeatureEngineeringStepConfig,
 } from "./preprocessingConfig";
 import { ColumnFilter } from "./components/ColumnFilter";
 import { MissingValueHandler } from "./components/MissingValueHandler";
-import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
 import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
@@ -499,24 +497,6 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             }}
           />
         );
-      case "categorical_encoding":
-        return (
-          <CategoricalEncodingHandler
-            config={{
-              enabled: step.enabled,
-              columns: (step.config as CategoricalEncodingStepConfig).columns,
-            }}
-            analysisResult={stepAnalysisResult}
-            onChange={(encodingConfig) => {
-              handleUpdateStepConfig(step.id, {
-                columns: encodingConfig.columns,
-              });
-              if (encodingConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, encodingConfig.enabled);
-              }
-            }}
-          />
-        );
       case "feature_engineering":
         return (
           <FeatureEngineeringHandler
@@ -543,7 +523,6 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const stepTypes: PreprocessingStepType[] = [
     "column_filter",
     "missing_value_handling",
-    "categorical_encoding",
     "feature_engineering",
   ];
 
