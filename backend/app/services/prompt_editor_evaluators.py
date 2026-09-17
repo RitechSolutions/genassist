@@ -90,6 +90,14 @@ def _configured_rule(technique: str, config: Optional[Dict[str, Any]]) -> Option
             return None
         target = f'"{config["expected"]}"' if "expected" in config else "the expected output"
         return f"the reply field '{field}' must equal {target}"
+    if technique == "nli_eval":
+        score = config.get("min_entail_score")
+        if score is None:
+            return None
+        return (
+            f"{_EXPECTATION_RULES['nli_eval']}. Support is judged per claim, and a claim "
+            f"counts as supported at an entailment score of {score} or higher"
+        )
     return None
 
 
@@ -103,7 +111,7 @@ def describe_expectations(
     for technique in PROMPT_CHECK_TECHNIQUES:
         if technique not in selected:
             continue
-        rule = _EXPECTATION_RULES.get(technique) or _configured_rule(technique, built.get(technique))
+        rule = _configured_rule(technique, built.get(technique)) or _EXPECTATION_RULES.get(technique)
         if rule:
             lines.append(f"- {technique}: {rule}")
     return "\n".join(lines)

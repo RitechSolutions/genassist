@@ -328,6 +328,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                 title="Hold-out comparison"
                 stale={pairedStale}
                 providerFallback={pairedRun.suggestion.providerFallback}
+                leaky={pairedRun.suggestion.leaky}
                 comparison={{ baseline: pairedRun.baseline.results }}
               />
             </div>
@@ -340,6 +341,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                 title="Suggested Prompt Evaluation"
                 stale={suggestedStale}
                 providerFallback={suggestedEvalRun.providerFallback}
+                leaky={suggestedEvalRun.leaky}
                 comparison={
                   baseline ? { baseline: baseline.run.results } : undefined
                 }

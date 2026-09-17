@@ -100,10 +100,7 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
           <div className="space-y-2">
             <Label className="text-sm">Minimum entailment score (0-1)</Label>
             <RichInput
-              type="number"
-              step="0.01"
-              min={0}
-              max={1}
+              inputMode="decimal"
               value={nliScoreText}
               onChange={(e) => setNliScoreText(e.target.value)}
               placeholder="0.5"
@@ -185,6 +182,7 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
           results={evalRun.results}
           stale={evalStale}
           providerFallback={evalRun.providerFallback}
+          leaky={evalRun.leaky}
         />
       )}
     </div>

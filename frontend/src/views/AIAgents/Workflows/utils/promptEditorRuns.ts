@@ -168,6 +168,7 @@ export interface EvalRequest {
 
 /** Metadata about completed run production. Read when rendering; not in live form state */
 export interface RunSnapshot {
+  leaky: boolean;
   providerFallback: ProviderFallback | undefined;
 }
 
@@ -223,10 +224,8 @@ export interface OptimizeRequest {
   techniqueConfigs: PromptTechniqueConfigs;
 }
 
-/**
- * Identifies failures, not runs (same prompt/provider can fail differently).
- * Null = no failures, so optimizations without failures never expire.
- */
+/** Identifies failures, not runs: the same prompt and provider can fail differently.
+ *  Recorded on the request as provenance; null when the rewrite was sent none */
 export const failuresKeyOf = (cases: readonly FailedCase[]): string | null =>
   cases.length === 0 ? null : canonicalJson(cases);
 
@@ -234,9 +233,3 @@ export const isOptimizeCurrent = (
   request: OptimizeRequest,
   currentKey: string,
 ): boolean => !staleOf(request.key, currentKey);
-
-/** Identical inputs re-run produced different failures (advisory only, doesn't block) */
-export const failuresDrifted = (
-  request: OptimizeRequest,
-  failuresKey: string | null,
-): boolean => request.sourceFailuresKey !== failuresKey;

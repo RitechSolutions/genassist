@@ -8,6 +8,7 @@ import type {
 import { methodLabel } from "@/views/TestSuites/helpers/methodLabels";
 import {
   ISOLATION_NOTE,
+  LEAKAGE_NOTE,
   STALE_NOTE,
   caseStatusLabel,
   formatAvgScore,
@@ -146,6 +147,7 @@ interface PromptEvalResultsProps {
   providerFallback?: ProviderFallback;
   /** Present for a paired hold-out run: the same cases under the current prompt */
   comparison?: { baseline: PromptEvalResponse };
+  leaky?: boolean;
 }
 
 export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
@@ -154,6 +156,7 @@ export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
   stale,
   providerFallback,
   comparison,
+  leaky,
 }) => (
   <div className="space-y-3">
     <div className="flex flex-wrap items-center gap-3">
@@ -170,6 +173,7 @@ export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
       {snapshotHeader(results.provenance, providerFallback)}
     </p>
     <p className="text-xs text-muted-foreground">{ISOLATION_NOTE}</p>
+    {leaky && <p className="text-xs text-muted-foreground">{LEAKAGE_NOTE}</p>}
     {comparison && (
       <Comparison baseline={comparison.baseline} suggestion={results} />
     )}

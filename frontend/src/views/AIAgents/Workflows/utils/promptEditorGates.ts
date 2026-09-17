@@ -191,7 +191,7 @@ export const optimizeGate = (
 };
 
 /**
- * Accept saves and applies the suggestion (follows save contract)
+ * Accept applies the suggestion to the draft
  * Not gated on inline check—suggestions only appear where Optimize is allowed
  */
 export const acceptGate = (
@@ -203,7 +203,7 @@ export const acceptGate = (
   const context = contextGate(
     history,
     caps.canEditPrompt,
-    "Saving versions needs the update:evaluation permission.",
+    "Applying a suggestion needs the update:evaluation permission.",
   );
   if (context) return context;
   if (state.pending) return blocked("A save is already running.");

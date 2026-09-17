@@ -13,6 +13,11 @@ export const ISOLATION_NOTE =
   "without this node's memory, tools, user prompt or fallback chain. " +
   "It does not reproduce what the node runs.";
 
+/** Shown under a run scored on the cases the optimizer was given */
+export const LEAKAGE_NOTE =
+  "Development cases are sent to the optimizer word for word, so their scores do not " +
+  "show whether the suggestion generalises. The hold-out comparison is the one to read.";
+
 export const STALE_NOTE = "Inputs changed since this run. Re-run to compare.";
 
 /** Counts that are zero are dropped; "passed" always renders so a run always has a

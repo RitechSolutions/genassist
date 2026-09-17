@@ -309,6 +309,20 @@ class TestExpectationRules:
 
         assert described == "- field_equals: the reply field 'outputs' must equal the expected output"
 
+    def test_the_entailment_threshold_the_grader_runs_at_is_described(self):
+        described = describe_expectations(
+            ["nli_eval"], {"nli_eval": {"evidence_source": "expected_output", "min_entail_score": 0.2}}
+        )
+
+        assert described.startswith("- nli_eval: ")
+        assert "per claim" in described
+        assert "0.2 or higher" in described
+
+    def test_an_nli_eval_without_a_threshold_keeps_the_settled_reading(self):
+        assert describe_expectations(
+            ["nli_eval"], {"nli_eval": {"evidence_source": "expected_output"}}
+        ) == describe_expectations(["nli_eval"])
+
     def test_configured_lines_keep_the_allow_list_order(self):
         described = describe_expectations(
             ["nli_eval", "not_contains", "contains"], {"not_contains": {"phrases": ["x"]}}

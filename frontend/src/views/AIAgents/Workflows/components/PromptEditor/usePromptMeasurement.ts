@@ -94,7 +94,6 @@ type HoldoutVars =
 
 type OptimizeVars = OptimizeRequest & {
   previousAttempts: PreviousAttemptPayload[];
-  outgoing: Omit<Round, "id"> | null;
   token: number;
   draftAtSubmit: string;
 };
@@ -131,7 +130,7 @@ export interface UsePromptMeasurementArgs {
   promptField: string;
   /** The live draft */
   draft: string;
-  /** Accepted optimization that was saved as a version */
+  /** Accepted suggestion, applied to the draft */
   onAccepted: (newValue: string) => void;
   historyState: HistoryState;
   caps: PromptEditorCapabilities;
@@ -311,7 +310,10 @@ export const usePromptMeasurement = ({
     }),
     [notContainsSelected, phrases, sentNliScore],
   );
-  const sentTechniqueConfigs = phrasesIssue === null ? techniqueConfigs : {};
+  const sentTechniqueConfigs = useMemo<PromptTechniqueConfigs>(
+    () => (phrasesIssue === null ? techniqueConfigs : {}),
+    [phrasesIssue, techniqueConfigs],
+  );
 
   const splitActive = splitEnabled && split.feasible;
   const evalCaseIds = useMemo(
@@ -325,6 +327,7 @@ export const usePromptMeasurement = ({
   );
 
   const evalProviderRevision = revisionOf(activeEvalProviderId);
+  const optimizeProviderRevision = revisionOf(activeOptimizeProviderId);
 
   const buildEvalRequest = useCallback(
     (prompt: string, caseIds: string[] | null): EvalRequest => ({
@@ -384,50 +387,87 @@ export const usePromptMeasurement = ({
     }
   };
 
-  const currentEvalKey = buildEvalRequest(draft, evalCaseIds).key;
-  const evalStale = evalRun !== null && staleOf(evalRun.key, currentEvalKey);
+  const evalStale =
+    evalRun !== null &&
+    staleOf(evalRun.key, buildEvalRequest(draft, evalCaseIds).key);
 
   const optimizeResult = optimizeRun?.result ?? null;
   const suggestion = suggestionEdit ?? optimizeResult?.suggested_prompt ?? "";
   const base = suggestion !== "" ? suggestion : draft;
 
-  const caseSplit = splitActive
-    ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds }
-    : null;
+  const caseSplit = useMemo(
+    () =>
+      splitActive
+        ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds }
+        : null,
+    [splitActive, holdoutCaseIds],
+  );
 
-  const contextKeyFor = (caseIds: readonly string[] | null): string =>
-    measurementContextKeyOf({
-      providerId: activeEvalProviderId,
-      providerRevision: evalProviderRevision,
-      techniques: selectedTechniques,
+  const contextKeyFor = useCallback(
+    (caseIds: readonly string[] | null): string =>
+      measurementContextKeyOf({
+        providerId: activeEvalProviderId,
+        providerRevision: evalProviderRevision,
+        techniques: selectedTechniques,
+        techniqueConfigs,
+        caseIds,
+        maxCases: casesToCheck,
+        caseRowsKey,
+        holdoutIds: splitActive ? holdoutCaseIds : null,
+      }),
+    [
+      activeEvalProviderId,
+      evalProviderRevision,
+      selectedTechniques,
       techniqueConfigs,
-      caseIds,
-      maxCases: casesToCheck,
+      casesToCheck,
       caseRowsKey,
-      holdoutIds: splitActive ? holdoutCaseIds : null,
-    });
+      splitActive,
+      holdoutCaseIds,
+    ],
+  );
 
-  const evalContextKey = contextKeyFor(evalCaseIds);
-  const optimizeKeyInputs = {
-    providerId: activeOptimizeProviderId,
-    providerRevision: revisionOf(activeOptimizeProviderId),
-    instructions,
-    caseSplit,
-    caseRowsKey,
-    techniques: selectedTechniques,
-    techniqueConfigs: sentTechniqueConfigs,
-    sourceEvalKey: evalContextKey,
-  };
-  const currentOptimizeKey = optimizeKeyOf({
-    ...optimizeKeyInputs,
-    prompt: optimizeRun?.request.prompt ?? base,
-  });
-  const optimizeStale =
-    optimizeRun !== null &&
-    !isOptimizeCurrent(optimizeRun.request, currentOptimizeKey);
+  const evalContextKey = useMemo(
+    () => contextKeyFor(evalCaseIds),
+    [contextKeyFor, evalCaseIds],
+  );
+  const optimizeKeyInputs = useMemo(
+    () => ({
+      providerId: activeOptimizeProviderId,
+      providerRevision: optimizeProviderRevision,
+      instructions,
+      caseSplit,
+      caseRowsKey,
+      techniques: selectedTechniques,
+      techniqueConfigs: sentTechniqueConfigs,
+      sourceEvalKey: evalContextKey,
+    }),
+    [
+      activeOptimizeProviderId,
+      optimizeProviderRevision,
+      instructions,
+      caseSplit,
+      caseRowsKey,
+      selectedTechniques,
+      sentTechniqueConfigs,
+      evalContextKey,
+    ],
+  );
+  // Editing the draft or the suggestion don't stales the rewrite
+  const optimizeStale = useMemo(
+    () =>
+      optimizeRun !== null &&
+      !isOptimizeCurrent(
+        optimizeRun.request,
+        optimizeKeyOf({
+          ...optimizeKeyInputs,
+          prompt: optimizeRun.request.prompt,
+        }),
+      ),
+    [optimizeRun, optimizeKeyInputs],
+  );
 
-  // Compared against the prompt the optimizer was given, not the live draft: a
-  // changed draft is stale and Accept is already blocked
+  // The note is about what the rewrite changed
   const placeholderNote = useMemo(
     () =>
       optimizeRun
@@ -438,12 +478,16 @@ export const usePromptMeasurement = ({
     [optimizeRun, suggestion],
   );
 
-  const selectionKey = canonicalJson({
-    splitActive,
-    holdoutIds: splitActive ? holdoutCaseIds : null,
-    caseRowsKey,
-    casesToCheck,
-  });
+  const selectionKey = useMemo(
+    () =>
+      canonicalJson({
+        splitActive,
+        holdoutIds: splitActive ? holdoutCaseIds : null,
+        caseRowsKey,
+        casesToCheck,
+      }),
+    [splitActive, holdoutCaseIds, caseRowsKey, casesToCheck],
+  );
   const chainCaseIds = pin && pin.selectionKey === selectionKey ? pin.ids : null;
 
   const suggestedCaseIds =
@@ -453,7 +497,10 @@ export const usePromptMeasurement = ({
       : evalRun && !evalStale
         ? evalRun.results.provenance.evaluated_case_ids
         : null);
-  const contextKey = contextKeyFor(suggestedCaseIds);
+  const contextKey = useMemo(
+    () => contextKeyFor(suggestedCaseIds),
+    [contextKeyFor, suggestedCaseIds],
+  );
   const suggestedRunKey = useMemo(
     () =>
       suggestedEvalRun === null || suggestion === ""
@@ -475,9 +522,11 @@ export const usePromptMeasurement = ({
       : evalRun && !evalStale
         ? evalRun
         : null;
-  const failedCases = baseRun ? failedCasesOf(baseRun.results.results) : [];
+  const failedCases = useMemo(
+    () => (baseRun ? failedCasesOf(baseRun.results.results) : []),
+    [baseRun],
+  );
   const failedTotal = baseRun ? failedCaseCount(baseRun.results.results) : 0;
-  const failuresKey = failuresKeyOf(failedCases);
   // Requires matching context; model switch mid-chain leaves nothing to compare. Memoized to skip recomputation
   const baseline = useMemo(
     () => baselineOf(rounds, contextKey, evalRun, evalStale),
@@ -491,10 +540,11 @@ export const usePromptMeasurement = ({
     [baseline, suggestedEvalRun, suggestedStale],
   );
 
-  /** Captured in the same expression that builds the request: resolving it in a
-   *  callback would read whatever the form holds when the run returns. The fallback
-   *  names the request's own provider, never whichever selector moved since */
-  const runSnapshotOf = (providerId: string): RunSnapshot => ({
+  /** Captured in the same expression that builds the request: resolving either field
+   *  in a callback would read whatever the form holds when the run returns. The
+   *  fallback names the request's own provider, never whichever selector moved since */
+  const runSnapshotOf = (leaky: boolean, providerId: string): RunSnapshot => ({
+    leaky,
     providerFallback: fallbackFor(providerId),
   });
 
@@ -570,9 +620,10 @@ export const usePromptMeasurement = ({
       return result;
     },
     onSuccess: (data, vars) => {
-      const { outgoing, previousAttempts, token, draftAtSubmit, ...request } =
-        vars;
-      if (outgoing && token === acceptTokenRef.current) pushRound(outgoing);
+      const { previousAttempts, token, draftAtSubmit, ...request } = vars;
+      if (token !== acceptTokenRef.current) return;
+      const outgoing = outgoingRoundRef.current();
+      if (outgoing) pushRound(outgoing);
       setChainOriginDraft((prev) => prev ?? draftAtSubmit);
       acceptTokenRef.current += 1;
       setOptimizeRun({ request, result: data });
@@ -737,10 +788,11 @@ export const usePromptMeasurement = ({
     stale: optimizeStale,
   });
   const holdoutOff = !splitActive || holdoutCaseIds.length === 0;
-  const validateHoldout: Gate =
-    evaluateSuggested.enabled && holdoutOff
+  const validateHoldout: Gate = !evaluateSuggested.enabled
+    ? evaluateSuggested
+    : holdoutOff
       ? { enabled: false, reason: HOLDOUT_OFF_REASON }
-      : evaluateSuggested;
+      : evaluate;
   const accept = acceptGate(historyState, caps, suggestion, {
     pending: false,
     stale: optimizeStale,
@@ -801,6 +853,8 @@ export const usePromptMeasurement = ({
       regressions: comparison ? regressionsOf(comparison.comparison) : [],
       contextKey,
     };
+  const outgoingRoundRef = useRef(outgoingRound);
+  outgoingRoundRef.current = outgoingRound;
 
   const pushRound = (round: Omit<Round, "id">) => {
     const filed = { ...round, id: nextRoundId() };
@@ -825,6 +879,9 @@ export const usePromptMeasurement = ({
         : round.suggestion,
     );
     setSuggestedEvalRun(round.run);
+    setHoldoutRun((prev) =>
+      prev ? { ...prev, suggestion: null, error: null } : prev,
+    );
     searchContinued();
   };
 
@@ -840,7 +897,7 @@ export const usePromptMeasurement = ({
     if (!validateHoldout.enabled || !pairedRequests) return;
     const token = acceptTokenRef.current;
     const { baseline, suggestion: suggested } = pairedRequests;
-    const snapshot = runSnapshotOf(baseline.providerId);
+    const snapshot = runSnapshotOf(false, baseline.providerId);
     const reuseBaseline = holdoutRun?.baseline?.key === baseline.key;
     setHoldoutRun((prev) => ({
       baseline: reuseBaseline && prev ? prev.baseline : null,
@@ -868,7 +925,7 @@ export const usePromptMeasurement = ({
       ...request,
       token: acceptTokenRef.current,
       selectionKey,
-      snapshot: runSnapshotOf(request.providerId),
+      snapshot: runSnapshotOf(true, request.providerId),
     });
   };
 
@@ -894,12 +951,11 @@ export const usePromptMeasurement = ({
       providerId: activeOptimizeProviderId,
       instructions,
       failedCases: failedCases.length > 0 ? failedCases : undefined,
-      sourceFailuresKey: failuresKey,
+      sourceFailuresKey: failuresKeyOf(failedCases),
       caseSplit,
       techniques: selectedTechniques,
       techniqueConfigs: sentTechniqueConfigs,
       previousAttempts: optimizerHistoryOf(rounds, contextKey),
-      outgoing: outgoingRound(),
       token: acceptTokenRef.current,
       draftAtSubmit: draft,
     });
@@ -988,7 +1044,7 @@ export const usePromptMeasurement = ({
         const request = buildEvalRequest(draft, evalCaseIds);
         evalMutation.mutate({
           ...request,
-          snapshot: runSnapshotOf(request.providerId),
+          snapshot: runSnapshotOf(splitActive, request.providerId),
         });
       },
       pending: evalMutation.isPending,

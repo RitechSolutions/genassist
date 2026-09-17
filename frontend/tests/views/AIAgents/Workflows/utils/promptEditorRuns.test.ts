@@ -9,7 +9,6 @@ import {
   evalKeyOf,
   failedCaseCount,
   failedCasesOf,
-  failuresDrifted,
   failuresKeyOf,
   feedbackOf,
   isOptimizeCurrent,
@@ -344,32 +343,5 @@ describe("isOptimizeCurrent", () => {
         optimizeKeyOf(optimizeInputs()),
       ),
     ).toBe(true);
-  });
-});
-
-describe("failuresDrifted", () => {
-  const FAILURES = failuresKeyOf(failedCasesOf([result("a", { actual: "X" })]));
-
-  const request = (sourceFailuresKey: string | null): OptimizeRequest => ({
-    key: "k",
-    prompt: "prompt",
-    providerId: "prov",
-    instructions: "",
-    sourceFailuresKey,
-    caseSplit: null,
-    techniques: ["contains"],
-    techniqueConfigs: {},
-  });
-
-  it("reports a base that was re-scored into different failures", () => {
-    const rerun = failuresKeyOf(failedCasesOf([result("a", { actual: "Y" })]));
-
-    expect(failuresDrifted(request(FAILURES), rerun)).toBe(true);
-    expect(failuresDrifted(request(FAILURES), null)).toBe(true);
-  });
-
-  it("stays quiet while the failures behind it are the ones it was sent", () => {
-    expect(failuresDrifted(request(FAILURES), FAILURES)).toBe(false);
-    expect(failuresDrifted(request(null), null)).toBe(false);
   });
 });
