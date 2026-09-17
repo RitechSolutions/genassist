@@ -36,8 +36,9 @@ class FakeRedis:
         self.set_calls.append((key, value, ex))
 
 
-def _expected_key(tenant="master", user_id="user-1"):
-    scope = f"{tenant}\x00{user_id}".encode()
+def _expected_key(tenant="master", user_id="user-1", api_key=None):
+    identity = f"key\x00{api_key}" if api_key else f"user\x00{user_id}"
+    scope = f"{tenant}\x00{identity}".encode()
     return f"read-pin:{hashlib.sha256(scope).hexdigest()[:32]}"
 
 
@@ -109,13 +110,56 @@ def test_requests_without_an_identity_are_not_tracked(guarded_app):
     assert redis.exists_calls == [] and redis.set_calls == []
 
 
-def test_api_key_clients_are_not_tracked(guarded_app):
-    """Chat clients authenticate with an API key and never read the routed endpoints,
-    so tracking them would add a Redis round trip per chat turn for no benefit."""
+def test_api_key_clients_are_pinned_after_their_own_write(guarded_app):
+    """GET /conversations and its write siblings both accept an API key, so an API-key
+    client can write and list. It needs the same read-your-writes guarantee."""
     client, redis = guarded_app
-    client.get("/read", headers={"x-api-key": "agent-secret"})
+    key = _expected_key(api_key="agent-secret")
+
+    assert client.post("/write", headers={"x-api-key": "agent-secret"}).status_code == 200
+    assert redis.set_calls == [(key, "1", PIN_SECONDS)]
+
+    redis.present = True
+    assert client.get("/read", headers={"x-api-key": "agent-secret"}).json() == {"pinned": True}
+    assert redis.exists_calls == [key]
+
+
+def test_each_api_key_gets_its_own_pin(guarded_app):
+    client, redis = guarded_app
+    client.post("/write", headers={"x-api-key": "key-one"})
+    client.post("/write", headers={"x-api-key": "key-two"})
+    written = [call[0] for call in redis.set_calls]
+    assert written == [_expected_key(api_key="key-one"), _expected_key(api_key="key-two")]
+
+
+def test_the_raw_api_key_never_reaches_redis(guarded_app):
+    client, redis = guarded_app
     client.post("/write", headers={"x-api-key": "agent-secret"})
-    assert redis.exists_calls == [] and redis.set_calls == []
+    assert "agent-secret" not in redis.set_calls[0][0]
+
+
+def test_a_bearer_token_wins_over_an_api_key_the_way_auth_resolves_them(guarded_app):
+    """get_current_user only looks at the API key when there is no bearer token, so a
+    request carrying both must pin under the user. Grouping it under the key would put
+    that user's other requests on a different pin and lose the guarantee."""
+    client, redis = guarded_app
+    both = {**_bearer("user-1"), "x-api-key": "agent-secret"}
+    client.post("/write", headers=both)
+    assert redis.set_calls == [(_expected_key(user_id="user-1"), "1", PIN_SECONDS)]
+
+
+def test_an_unparseable_bearer_does_not_fall_through_to_the_api_key(guarded_app):
+    """auth would reject this request outright, so there is no identity to group under."""
+    client, redis = guarded_app
+    client.post("/write", headers={"Authorization": "Bearer nope", "x-api-key": "agent-secret"})
+    assert redis.set_calls == []
+
+
+def test_an_api_key_and_a_user_id_with_the_same_value_do_not_share_a_pin(guarded_app):
+    client, redis = guarded_app
+    client.post("/write", headers={"x-api-key": "shared-value"})
+    client.post("/write", headers=_bearer("shared-value"))
+    assert redis.set_calls[0][0] != redis.set_calls[1][0]
 
 
 @pytest.mark.parametrize(
@@ -224,9 +268,9 @@ def test_pin_keys_are_a_fixed_length_digest_of_caller_supplied_values():
         def __init__(self, headers):
             self.headers = {key.lower(): value for key, value in headers.items()}
 
-    huge = _bearer("u" * 1000)
-    normal = _bearer("user-1")
-    assert len(_client_key(FakeRequest(huge))) == len(_client_key(FakeRequest(normal)))
+    normal = _client_key(FakeRequest(_bearer("user-1")))
+    assert len(_client_key(FakeRequest(_bearer("u" * 1000)))) == len(normal)
+    assert len(_client_key(FakeRequest({"x-api-key": "k" * 1000}))) == len(normal)
 
     set_tenant_context("a")
     try:

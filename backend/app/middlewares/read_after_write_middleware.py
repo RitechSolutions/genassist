@@ -1,9 +1,9 @@
 """
 Read-your-writes guard for the read replica.
 
-After a console user completes a write, their reads are served by the writer for a
-short window, so replica lag can never show them their own change late. Other
-clients keep reading from the replica. Inactive unless a replica is configured.
+After a client completes a write, its reads are served by the writer for a short
+window, so replica lag can never show it its own change late. Other clients keep
+reading from the replica. Inactive unless a replica is configured.
 """
 
 import base64
@@ -14,6 +14,7 @@ import logging
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.auth.utils import API_KEY_HEADER_NAME
 from app.core.config.settings import settings
 from app.core.tenant_scope import get_tenant_context
 from app.db.read_routing import pin_reads_to_writer, unpin_reads
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _KEY_PREFIX = "read-pin"
+# Starlette lower-cases header names; the test doubles use plain dicts.
+_API_KEY_HEADER = API_KEY_HEADER_NAME.lower()
 # Real payloads are a few hundred bytes. Anything larger is rejected before it is
 # decoded, so an oversized header cannot cost parsing work or reach json.loads.
 _MAX_PAYLOAD_SEGMENT = 4096
@@ -34,11 +37,17 @@ def _redis():
     return injector.get(RedisString)
 
 
+def _has_bearer_scheme(authorization: str | None) -> bool:
+    """Matches what OAuth2PasswordBearer accepts, so this agrees with ``auth`` on which
+    credential the request is presenting."""
+    return bool(authorization) and authorization.lower().startswith("bearer ")
+
+
 def _bearer_subject(authorization: str | None) -> str | None:
     """User id from the bearer token payload. Not verified here: auth does that later,
     and this value only groups one user's requests for routing. Anything unparseable
     yields None, because this runs before authentication and must never raise."""
-    if not authorization or not authorization.lower().startswith("bearer "):
+    if not _has_bearer_scheme(authorization):
         return None
     segments = authorization.split(" ", 1)[1].split(".")
     if len(segments) < 2 or len(segments[1]) > _MAX_PAYLOAD_SEGMENT:
@@ -54,17 +63,27 @@ def _bearer_subject(authorization: str | None) -> str | None:
     return str(subject) if subject else None
 
 
-def _client_key(request: Request) -> str | None:
-    """Console users only. API-key clients never read the routed endpoints, so
-    tracking them would add a Redis round trip per chat turn for no benefit.
+def _client_identity(request: Request) -> str | None:
+    """Who the request belongs to for routing, resolved in the order ``auth`` uses: a
+    bearer token wins outright, and the API key is read only when there is none. The two
+    are namespaced apart so a user id can never collide with a key value."""
+    authorization = request.headers.get("authorization")
+    if _has_bearer_scheme(authorization):
+        subject = _bearer_subject(authorization)
+        return f"user\x00{subject}" if subject is not None else None
+    api_key = request.headers.get(_API_KEY_HEADER)
+    return f"key\x00{api_key}" if api_key else None
 
-    Both the tenant and the subject are caller-supplied, so the key is a digest: it
-    stays a fixed length and two different pairs cannot produce the same key.
+
+def _client_key(request: Request) -> str | None:
+    """Both the tenant and the identity are caller-supplied, so the key is a digest: it
+    stays a fixed length, the API key value never leaves the process, and two different
+    callers cannot produce the same key.
     """
-    subject = _bearer_subject(request.headers.get("authorization"))
-    if subject is None:
+    identity = _client_identity(request)
+    if identity is None:
         return None
-    scope = f"{get_tenant_context()}\x00{subject}".encode()
+    scope = f"{get_tenant_context()}\x00{identity}".encode()
     return f"{_KEY_PREFIX}:{hashlib.sha256(scope).hexdigest()[:32]}"
 
 
