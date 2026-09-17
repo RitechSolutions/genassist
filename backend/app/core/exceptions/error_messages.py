@@ -176,6 +176,7 @@ class ErrorKey(Enum):
     LLM_USAGE_CONTROL_NOT_FOUND = "LLM_USAGE_CONTROL_NOT_FOUND"
     LLM_USAGE_CAPTURE_NOT_ENABLED = "LLM_USAGE_CAPTURE_NOT_ENABLED"
     LLM_COST_RATE_ALREADY_EXISTS = "LLM_COST_RATE_ALREADY_EXISTS"
+    CHAT_TURN_CAPACITY_EXCEEDED = "CHAT_TURN_CAPACITY_EXCEEDED"
 
 
 ERROR_MESSAGES = {
@@ -352,6 +353,7 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "The assistant is busy right now. Please try again in a moment.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
@@ -360,6 +362,7 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
+        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "L'assistant est occupé pour le moment. Veuillez réessayer dans un instant.",
     },
 }
 

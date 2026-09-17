@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,19 +108,6 @@ def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
         "output_tokens": output_tokens,
         "cost_usd": cost_usd,
     }
-
-
-async def _fail_fast_on_row_lock(session: AsyncSession, timeout_ms: int = 2000) -> None:
-    """
-    All four public entry points below upsert into the same (agent_id, stat_date)
-    row on agent_execution_daily_stats, so concurrent turns for one agent
-    serialize on that row's lock. Without this, a blocked upsert holds its
-    connection until the DB's statement_timeout (minutes), which is what
-    exhausted the pool. Failing fast here means the caller's blanket
-    except-Exception logs a warning and Celery's next full recount reconciles
-    the missed increment - safe to lose occasionally, not safe to block on.
-    """
-    await session.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
 
 
 async def _increment_agent_daily_stats(session: AsyncSession, data: dict) -> None:
@@ -375,7 +362,6 @@ async def update_stats_incrementally(agent_response: dict) -> None:
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
-                await _fail_fast_on_row_lock(session)
                 await _increment_agent_daily_stats(session, data)
                 await _increment_node_daily_stats(session, data)
                 await session.commit()
@@ -401,7 +387,6 @@ async def update_conversation_started(agent_id: UUID) -> None:
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
-                await _fail_fast_on_row_lock(session)
                 await _increment_conversation_counts(session, agent_id, "start")
                 await session.commit()
                 logger.debug("Conversation started for agent %s", agent_id)
@@ -424,7 +409,6 @@ async def update_conversation_finalized(conversation_id: UUID) -> None:
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
-                await _fail_fast_on_row_lock(session)
                 agent_id = await _get_agent_id_for_conversation(
                     session, conversation_id
                 )
@@ -507,7 +491,6 @@ async def update_feedback_given(
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
-                await _fail_fast_on_row_lock(session)
                 agent_id = await _get_agent_id_for_conversation(
                     session, conversation_id
                 )

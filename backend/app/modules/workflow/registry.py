@@ -3,6 +3,7 @@
 import logging
 from typing import Union
 
+from app.core.chat_turn_gate import chat_turn_gate
 from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models import AgentModel
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
@@ -38,6 +39,21 @@ class RegistryItem:
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
     async def execute(self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat") -> dict:
+        """Run one agent turn behind the process-wide admission gate."""
+        context = f"agent {self.agent_id} thread {metadata.get('thread_id')}"
+        async with chat_turn_gate.slot(context, before_wait=self._release_request_connection):
+            return await self._execute_workflow(session_message, metadata, persist, source)
+
+    async def _release_request_connection(self) -> None:
+        """A turn that has to queue must not hold the request's pooled connection meanwhile."""
+        # Local import avoids a circular import via the dependency injector.
+        from app.core.utils.db_connection_utils import release_db_connection
+
+        await release_db_connection(context=f"agent {self.agent_id}")
+
+    async def _execute_workflow(
+        self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat"
+    ) -> dict:
         """Execute a workflow, optionally resuming from a specific node.
 
         persist=False skips writing this turn to conversation memory (used by the
