@@ -85,24 +85,13 @@ describe("testSuites service", () => {
     expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "genagent/eval/cases/c2");
   });
 
-  describe("importCasesFromConversation", () => {
-    it("defaults replace to false", async () => {
-      await importCasesFromConversation("s7", "conv1");
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "genagent/eval/suites/s7/cases/import-from-conversation",
-        { conversation_id: "conv1", replace: false },
-      );
-    });
-
-    it("passes replace=true when provided", async () => {
-      await importCasesFromConversation("s7", "conv1", true);
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "genagent/eval/suites/s7/cases/import-from-conversation",
-        { conversation_id: "conv1", replace: true },
-      );
-    });
+  it("importCasesFromConversation POSTs the conversation id to the suite", async () => {
+    await importCasesFromConversation("s7", "conv1");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/eval/suites/s7/cases/import-from-conversation",
+      { conversation_id: "conv1" },
+    );
   });
 
   it("removeConversationFromSuite DELETEs the conversation from the suite", async () => {

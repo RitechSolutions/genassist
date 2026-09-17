@@ -81,7 +81,11 @@ export interface CreateTestSuitePayload {
 
 export interface CreateTestCasePayload {
   input_data: Record<string, unknown>;
-  expected_output?: Record<string, unknown>;
+  /** Explicit null clears the stored value; undefined leaves it untouched. */
+  expected_output?: Record<string, unknown> | null;
   tags?: string[];
   weight?: number;
+  /** Cases sharing this replay as one memory thread. */
+  source_conversation_id?: string | null;
+  turn_index?: number | null;
 }

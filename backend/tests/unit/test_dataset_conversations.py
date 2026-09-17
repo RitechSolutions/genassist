@@ -704,6 +704,69 @@ class TestImportFromConversation:
         )
         service.case_repo.soft_delete_for_conversation.assert_not_awaited()
 
+    def _import_recording_dates(self, service, *, suite_id, conversation_id):
+        """Import, capturing created_at as it was at insert time.
+
+        ``_persist`` stands in for the database and overwrites the timestamps,
+        so the value under test has to be read before it runs.
+        """
+        stamped = []
+
+        def persist(cases):
+            stamped.extend(case.created_at for case in cases)
+            return self._persist(cases)
+
+        service.suite_repo.get_by_id.return_value = SimpleNamespace(id=suite_id)
+        service.conversation_repo.fetch_conversation_by_id.return_value = (
+            self._conversation()
+        )
+        service.case_repo.create_many.side_effect = persist
+        return stamped
+
+    @pytest.mark.asyncio
+    async def test_reimport_keeps_the_date_the_conversation_first_joined(self):
+        service = _service()
+        suite_id, conversation_id = uuid4(), uuid4()
+        first_joined = datetime(2025, 6, 1)
+        service.case_repo.get_all_for_suite.return_value = [
+            _case(
+                conversation_id=conversation_id,
+                turn_index=0,
+                created_at=first_joined,
+            ),
+            _case(
+                conversation_id=conversation_id,
+                turn_index=1,
+                created_at=datetime(2025, 6, 2),
+            ),
+            # An older conversation must not donate its date to this one.
+            _case(
+                conversation_id=uuid4(),
+                turn_index=0,
+                created_at=datetime(2024, 1, 1),
+            ),
+        ]
+        stamped = self._import_recording_dates(
+            service, suite_id=suite_id, conversation_id=conversation_id
+        )
+
+        await service.import_cases_from_conversation(suite_id, conversation_id)
+
+        assert stamped == [first_joined, first_joined]
+
+    @pytest.mark.asyncio
+    async def test_first_import_lets_the_database_set_the_date(self):
+        service = _service()
+        suite_id, conversation_id = uuid4(), uuid4()
+        service.case_repo.get_all_for_suite.return_value = []
+        stamped = self._import_recording_dates(
+            service, suite_id=suite_id, conversation_id=conversation_id
+        )
+
+        await service.import_cases_from_conversation(suite_id, conversation_id)
+
+        assert stamped == [None, None]
+
     @pytest.mark.asyncio
     async def test_empty_conversation_is_rejected_before_deleting_anything(self):
         service = _service()
