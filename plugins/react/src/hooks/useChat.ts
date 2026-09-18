@@ -792,12 +792,11 @@ export const useChat = ({
         }
 
         // Increase polling interval over time on success
-        // const nextInterval = Math.min(
-        //   (heartbeatIntervalRef.current || HEARTBEAT_INITIAL_INTERVAL_MS) +
-        //     HEARTBEAT_INTERVAL_STEP_MS,
-        //   HEARTBEAT_MAX_INTERVAL_MS,
-        // );
-        const nextInterval = HEARTBEAT_INTERVAL_STEP_MS;
+        const nextInterval = Math.min(
+          (heartbeatIntervalRef.current || HEARTBEAT_INITIAL_INTERVAL_MS) +
+            HEARTBEAT_INTERVAL_STEP_MS,
+          HEARTBEAT_MAX_INTERVAL_MS,
+        );
         heartbeatIntervalRef.current = nextInterval;
         scheduleNext(nextInterval);
       } catch {
