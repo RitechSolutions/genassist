@@ -22,6 +22,7 @@ import {
   updateTestCase,
   deleteTestCase,
   importCasesFromConversation,
+  importCasesFromConversations,
   removeConversationFromSuite,
   listTestRunsForSuite,
   getTestRun,
@@ -91,6 +92,15 @@ describe("testSuites service", () => {
       "POST",
       "genagent/eval/suites/s7/cases/import-from-conversation",
       { conversation_id: "conv1" },
+    );
+  });
+
+  it("importCasesFromConversations POSTs every selected id to the batch endpoint", async () => {
+    await importCasesFromConversations("s7", ["conv1", "conv2"]);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/eval/suites/s7/cases/import-from-conversations",
+      { conversation_ids: ["conv1", "conv2"] },
     );
   });
 
