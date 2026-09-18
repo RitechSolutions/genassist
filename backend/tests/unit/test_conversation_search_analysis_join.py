@@ -10,7 +10,7 @@ import app.db.models  # noqa: F401
 import app.db.models.test_suite  # noqa: F401
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_field_enum import SortField
-from app.repositories.conversations import ANALYSIS_SCORE_FIELDS, ConversationRepository
+from app.repositories.conversations_read import ANALYSIS_SCORE_FIELDS, ConversationReadRepository
 from app.schemas.filter import ConversationFilter
 
 
@@ -44,7 +44,7 @@ def _sql(stmt) -> str:
 
 def _repo():
     db = CapturingDb()
-    return ConversationRepository(db), db
+    return ConversationReadRepository(db), db
 
 
 def _filter(**values) -> ConversationFilter:
