@@ -1,7 +1,7 @@
 """
 Train Data Source node implementation using the BaseNode class.
 
-This node fetches training data from databases or CSV files for ML model training.
+This node fetches training data from databases or uploaded files (CSV, Excel, JSON, Parquet) for ML model training.
 """
 
 import asyncio
@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 
 class TrainDataSourceNode(BaseNode):
     """
-    Train Data Source node that fetches training data from databases or CSV files.
+    Train Data Source node that fetches training data from databases or uploaded files.
 
     Supports:
     - Database queries with variable substitution
-    - CSV file parsing with encoding detection
+    - File parsing for CSV, Excel (.xlsx), JSON, and Parquet uploads
     - Multiple database types (TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
     - Snowflake-specific query execution via SnowflakeManager
     """
@@ -42,8 +42,8 @@ class TrainDataSourceNode(BaseNode):
                 - sourceType: "datasource" or "csv"
                 - dataSourceId: UUID of datasource (for database mode)
                 - query: SQL query string (for database mode)
-                - csvFileName: Name of CSV file (for CSV mode)
-                - csvFilePath: Server path to CSV file (for CSV mode)
+                - csvFileName: Name of the uploaded file (for CSV mode)
+                - csvFilePath: Server path to the uploaded file (for CSV mode)
 
         Returns:
             Dictionary with training data and metadata
@@ -208,6 +208,7 @@ class TrainDataSourceNode(BaseNode):
         csv_file_path = config.get("csvFilePath")
         csv_file_id = config.get("csvFileId")
         csv_file_url = config.get("csvFileUrl")
+        csv_file_name = config.get("csvFileName")
 
         if not csv_file_path and not csv_file_id:
             raise AppException(
@@ -215,17 +216,23 @@ class TrainDataSourceNode(BaseNode):
                 error_detail="csvFilePath is required for CSV source type",
             )
 
-        logger.info(f"Processing CSV file: {csv_file_path or csv_file_id}")
+        logger.info(f"Processing training file: {csv_file_path or csv_file_id}")
 
         try:
-            if not csv_file_path and csv_file_id:
+            # csvFilePath may be a stale path from another environment (e.g. saved by a
+            # host process while this node runs in a container with a separate filesystem),
+            # so fall back to downloading by csvFileId whenever the path isn't usable.
+            if (not csv_file_path or not Path(csv_file_path).exists()) and csv_file_id:
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
 
                 file_manager_service = injector.get(FileManagerService)
-                dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}.csv"
+                # Preserve the original extension so the parser dispatch below
+                # (which keys off the file suffix) still picks the right format.
+                original_suffix = Path(csv_file_name).suffix if csv_file_name else Path(csv_file_path or "").suffix
+                dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}{original_suffix or '.csv'}"
 
-                logger.info(f"Downloading CSV file to: {dest_file_path}")
+                logger.info(f"Downloading training file to: {dest_file_path}")
 
                 # download the file to the destination path
                 await file_manager_service.download_file_to_path(
@@ -240,23 +247,23 @@ class TrainDataSourceNode(BaseNode):
             if not csv_path.exists():
                 raise AppException(
                     error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=f"CSV file not found: {csv_file_path}",
+                    error_detail=f"Training file not found: {csv_file_path}",
                 )
 
             if not os.access(csv_file_path, os.R_OK):
                 raise AppException(
                     error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=f"CSV file not readable: {csv_file_path}",
+                    error_detail=f"Training file not readable: {csv_file_path}",
                 )
 
-            # Parse CSV file
-            results = ml_utils.parse_csv_file(csv_file_path)
+            # Parse the file (CSV, Excel, JSON, or Parquet, based on extension)
+            results = ml_utils.parse_training_file(csv_file_path)
 
             # Extract column names from first row
             columns = list(results[0].keys()) if results else []
 
             logger.info(
-                f"CSV parsing successful: {len(results)} rows, {len(columns)} columns"
+                f"File parsing successful: {len(results)} rows, {len(columns)} columns"
             )
 
             # Save parsed data to CSV using thread_id and timestamp
