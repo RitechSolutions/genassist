@@ -478,6 +478,51 @@ export interface PreprocessingNodeData extends BaseNodeData {
 // Train Model Node Data
 export type SplitMethod = "random" | "time_based";
 
+// Outlier handling: lives on the Train Model node (not the pre-split
+// Preprocessing node) because bounds must be fit on the training split only —
+// fitting them on the full dataset before the split leaks validation-row
+// statistics into training.
+export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
+export type OutlierMethod = "iqr" | "zscore";
+
+export interface OutlierHandlingItem {
+  columnName: string;
+  strategy: OutlierStrategy;
+  method?: OutlierMethod;
+  iqrMultiplier?: number;
+  zScoreThreshold?: number;
+}
+
+export interface OutlierHandlingConfig {
+  enabled: boolean;
+  columns: OutlierHandlingItem[];
+}
+
+// Categorical encoding: lives on the Train Model node (not the pre-split
+// Preprocessing node) for the same reason as outlier handling above — "one_hot"
+// and "label" fit a vocabulary/set of codes from the data, so fitting them on
+// the full dataset before the split leaks validation-only categories into
+// training. "ordinal" uses a fixed, caller-supplied mapping so it isn't fit
+// from data, but stays here too so all encoding configuration lives in one
+// place.
+export type CategoricalEncodingStrategy =
+  | "no_action"
+  | "one_hot"
+  | "label"
+  | "ordinal";
+
+export interface CategoricalEncodingItem {
+  columnName: string;
+  strategy: CategoricalEncodingStrategy;
+  dropFirst?: boolean;
+  ordinalMapping?: Record<string, number>;
+}
+
+export interface CategoricalEncodingConfig {
+  enabled: boolean;
+  columns: CategoricalEncodingItem[];
+}
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
@@ -487,6 +532,8 @@ export interface TrainModelNodeData extends BaseNodeData {
     | "linear_regression"
     | "logistic_regression"
     | "neural_network"
+    // No longer selectable (retired option) - kept so nodes saved before the
+    // removal still type-check and render their stored value.
     | "other";
   targetColumn: string; // Target variable column name
   featureColumns: string[]; // Feature column names
@@ -494,6 +541,10 @@ export interface TrainModelNodeData extends BaseNodeData {
   validationSplit: number; // Train/validation split ratio
   splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
+  scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
+  taskType?: "auto" | "classification" | "regression"; // Override for the classification/regression heuristic (default: "auto")
+  outlierHandling?: OutlierHandlingItem[]; // Per-column outlier handling; bounds are fit on the training split only (default: [])
+  categoricalEncoding?: CategoricalEncodingItem[]; // Per-column categorical encoding; one_hot/label mappings are fit on the training split only (default: [])
 }
 
 // Per Chat RAG Node Data

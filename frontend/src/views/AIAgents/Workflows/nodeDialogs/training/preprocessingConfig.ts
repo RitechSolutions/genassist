@@ -7,8 +7,6 @@
 export type PreprocessingStepType =
   | "column_filter"
   | "missing_value_handling"
-  | "outlier_handling"
-  | "categorical_encoding"
   | "feature_engineering";
 
 export interface PreprocessingStep {
@@ -21,8 +19,6 @@ export interface PreprocessingStep {
 export type StepConfig =
   | ColumnFilterStepConfig
   | MissingValueHandlingStepConfig
-  | OutlierHandlingStepConfig
-  | CategoricalEncodingStepConfig
   | FeatureEngineeringStepConfig;
 
 export interface PreprocessingConfig {
@@ -59,40 +55,6 @@ export interface MissingValueHandlingItem {
   missingPercentage: number;
   strategy: MissingValueStrategy;
   imputeValue?: string | number;
-}
-
-// Outlier Handling Step
-export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
-export type OutlierMethod = "iqr" | "zscore";
-
-export interface OutlierHandlingStepConfig {
-  columns: OutlierHandlingItem[];
-}
-
-export interface OutlierHandlingItem {
-  columnName: string;
-  strategy: OutlierStrategy;
-  method?: OutlierMethod;
-  iqrMultiplier?: number;
-  zScoreThreshold?: number;
-}
-
-// Categorical Encoding Step
-export type CategoricalEncodingStrategy =
-  | "no_action"
-  | "one_hot"
-  | "label"
-  | "ordinal";
-
-export interface CategoricalEncodingStepConfig {
-  columns: CategoricalEncodingItem[];
-}
-
-export interface CategoricalEncodingItem {
-  columnName: string;
-  strategy: CategoricalEncodingStrategy;
-  dropFirst?: boolean;
-  ordinalMapping?: Record<string, number>;
 }
 
 // Feature Engineering Step
@@ -231,20 +193,6 @@ export function generatePythonCodeFromConfig(
           columnsToDropSet
         );
         break;
-      case "outlier_handling":
-        generateOutlierHandlingCode(
-          step.config as OutlierHandlingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
-        break;
-      case "categorical_encoding":
-        generateCategoricalEncodingCode(
-          step.config as CategoricalEncodingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
-        break;
       case "feature_engineering":
         generateFeatureEngineeringCode(
           step.config as FeatureEngineeringStepConfig,
@@ -291,30 +239,6 @@ function extractMinimalConfig(
           columnName: col.columnName,
           strategy: col.strategy,
           imputeValue: col.imputeValue, // Critical: preserves string vs number
-        })),
-      };
-    }
-    case "outlier_handling": {
-      const outConfig = config as OutlierHandlingStepConfig;
-      // Store strategy, method, and parameters
-      return {
-        columns: outConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          method: col.method,
-          iqrMultiplier: col.iqrMultiplier,
-          zScoreThreshold: col.zScoreThreshold,
-        })),
-      };
-    }
-    case "categorical_encoding": {
-      const catConfig = config as CategoricalEncodingStepConfig;
-      // Store strategy and parameters
-      return {
-        columns: catConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          dropFirst: col.dropFirst,
         })),
       };
     }
@@ -380,69 +304,6 @@ function restoreConfigFromMinimal(
             missingPercentage: parsedCol?.missingPercentage ?? 0,
             strategy: minimalCol.strategy,
             imputeValue: minimalCol.imputeValue,
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "outlier_handling": {
-      const parsed = parsedConfig as OutlierHandlingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: OutlierStrategy;
-          method?: OutlierMethod;
-          iqrMultiplier?: number;
-          zScoreThreshold?: number;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, methods, and parameters
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: OutlierHandlingItem[] = minimal.columns.map((minimalCol) => {
-          return {
-            columnName: minimalCol.columnName,
-            strategy: minimalCol.strategy,
-            method: minimalCol.method,
-            iqrMultiplier: minimalCol.iqrMultiplier,
-            zScoreThreshold: minimalCol.zScoreThreshold,
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "categorical_encoding": {
-      const parsed = parsedConfig as CategoricalEncodingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: CategoricalEncodingStrategy;
-          dropFirst?: boolean;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, and parameters
-        // Only use parsed data to fill in ordinalMapping if available
-        const parsedMap = new Map(
-          parsed.columns.map((c) => [c.columnName, c])
-        );
-        
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: CategoricalEncodingItem[] = minimal.columns.map((minimalCol) => {
-          const parsedCol = parsedMap.get(minimalCol.columnName);
-          return {
-            columnName: minimalCol.columnName,
-            strategy: minimalCol.strategy,
-            dropFirst: minimalCol.dropFirst,
-            ordinalMapping: parsedCol?.ordinalMapping, // Keep ordinalMapping from parsed if available
           };
         });
         
@@ -547,86 +408,6 @@ function generateMissingValueHandlingCode(
   });
 }
 
-function generateOutlierHandlingCode(
-  config: OutlierHandlingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Handle outliers");
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action" || columnsToDrop.has(item.columnName)) {
-      return;
-    }
-
-    lines.push(`    if "${item.columnName}" in df.columns:`);
-    const method = item.method || "iqr";
-    const iqrMultiplier = item.iqrMultiplier ?? 1.5;
-    const zScoreThreshold = item.zScoreThreshold ?? 3;
-
-    if (method === "iqr") {
-      lines.push(`        # Handle outliers in ${item.columnName} using IQR method`);
-      lines.push(`        Q1 = df["${item.columnName}"].quantile(0.25)`);
-      lines.push(`        Q3 = df["${item.columnName}"].quantile(0.75)`);
-      lines.push(`        IQR = Q3 - Q1`);
-      lines.push(`        lower_bound = Q1 - ${iqrMultiplier} * IQR`);
-      lines.push(`        upper_bound = Q3 + ${iqrMultiplier} * IQR`);
-
-      if (item.strategy === "remove_outliers") {
-        lines.push(`        df = df[(df["${item.columnName}"] >= lower_bound) & (df["${item.columnName}"] <= upper_bound)]`);
-      } else if (item.strategy === "cap_outliers") {
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].clip(lower=lower_bound, upper=upper_bound)`);
-      }
-    } else if (method === "zscore") {
-      lines.push(`        # Handle outliers in ${item.columnName} using Z-score method`);
-      lines.push(`        mean = df["${item.columnName}"].mean()`);
-      lines.push(`        std = df["${item.columnName}"].std()`);
-      lines.push(`        z_scores = (df["${item.columnName}"] - mean) / std`);
-
-      if (item.strategy === "remove_outliers") {
-        lines.push(`        df = df[(z_scores.abs() <= ${zScoreThreshold})]`);
-      } else if (item.strategy === "cap_outliers") {
-        lines.push(`        lower_bound = mean - ${zScoreThreshold} * std`);
-        lines.push(`        upper_bound = mean + ${zScoreThreshold} * std`);
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].clip(lower=lower_bound, upper=upper_bound)`);
-      }
-    }
-  });
-}
-
-function generateCategoricalEncodingCode(
-  config: CategoricalEncodingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Encode categorical columns");
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action" || columnsToDrop.has(item.columnName)) {
-      return;
-    }
-
-    lines.push(`    if "${item.columnName}" in df.columns:`);
-    if (item.strategy === "one_hot") {
-      const dropFirst = item.dropFirst ?? false;
-      lines.push(`        # One-hot encode ${item.columnName}`);
-      if (dropFirst) {
-        lines.push(`        df = pd.get_dummies(df, columns=["${item.columnName}"], prefix="${item.columnName}", drop_first=True)`);
-      } else {
-        lines.push(`        df = pd.get_dummies(df, columns=["${item.columnName}"], prefix="${item.columnName}")`);
-      }
-    } else if (item.strategy === "label") {
-      lines.push(`        # Label encode ${item.columnName}`);
-      lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].astype('category').cat.codes`);
-    } else if (item.strategy === "ordinal") {
-      if (item.ordinalMapping && Object.keys(item.ordinalMapping).length > 0) {
-        lines.push(`        # Ordinal encode ${item.columnName}`);
-        lines.push(`        mapping = ${JSON.stringify(item.ordinalMapping)}`);
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].map(mapping)`);
-      }
-    }
-  });
-}
 
 function generateFeatureEngineeringCode(
   config: FeatureEngineeringStepConfig,
@@ -714,12 +495,6 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
         break;
       case "missing_value_handling":
         parsedFromCode = parseMissingValueHandlingStep(stepCode);
-        break;
-      case "outlier_handling":
-        parsedFromCode = parseOutlierHandlingStep(stepCode);
-        break;
-      case "categorical_encoding":
-        parsedFromCode = parseCategoricalEncodingStep(stepCode);
         break;
       case "feature_engineering":
         parsedFromCode = parseFeatureEngineeringStep(stepCode);
@@ -918,99 +693,6 @@ function parseMissingValueHandlingStep(code: string): MissingValueHandlingStepCo
   return items.length > 0 ? { columns: items } : null;
 }
 
-function parseOutlierHandlingStep(code: string): OutlierHandlingStepConfig | null {
-  const items: OutlierHandlingItem[] = [];
-
-  // IQR method
-  const iqrPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?Q1\s*=\s*df\["([^"]+)"\]\.quantile\(0\.25\)[\s\S]*?lower_bound\s*=\s*Q1\s*-\s*([\d.]+)\s*\*\s*IQR/g;
-  let match;
-  while ((match = iqrPattern.exec(code)) !== null) {
-    const columnName = match[1];
-    const multiplier = parseFloat(match[3]);
-    const afterCode = code.substring(match.index + match[0].length, match.index + match[0].length + 100);
-    
-    let strategy: OutlierStrategy = "no_action";
-    if (afterCode.includes("df = df[(")) {
-      strategy = "remove_outliers";
-    } else if (afterCode.includes(".clip(")) {
-      strategy = "cap_outliers";
-    }
-
-    items.push({
-      columnName,
-      strategy,
-      method: "iqr",
-      iqrMultiplier: multiplier,
-    });
-  }
-
-  // Z-score method
-  const zscorePattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?z_scores\s*=\s*\(df\["([^"]+)"\]\s*-\s*mean\)\s*\/\s*std/g;
-  while ((match = zscorePattern.exec(code)) !== null) {
-    const columnName = match[1];
-    const afterCode = code.substring(match.index + match[0].length, match.index + match[0].length + 100);
-    const thresholdMatch = afterCode.match(/z_scores\.abs\(\)\s*<=\s*([\d.]+)/);
-    const threshold = thresholdMatch ? parseFloat(thresholdMatch[1]) : 3;
-    
-    let strategy: OutlierStrategy = "no_action";
-    if (afterCode.includes("df = df[(")) {
-      strategy = "remove_outliers";
-    } else if (afterCode.includes(".clip(")) {
-      strategy = "cap_outliers";
-    }
-
-    items.push({
-      columnName,
-      strategy,
-      method: "zscore",
-      zScoreThreshold: threshold,
-    });
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
-function parseCategoricalEncodingStep(code: string): CategoricalEncodingStepConfig | null {
-  const items: CategoricalEncodingItem[] = [];
-
-  // One-hot encoding
-  const oneHotPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?pd\.get_dummies\(df,\s*columns\s*=\s*\["([^"]+)"\][\s\S]*?prefix\s*=\s*"([^"]+)"(?:,\s*drop_first\s*=\s*True)?\)/g;
-  let match;
-  while ((match = oneHotPattern.exec(code)) !== null) {
-    items.push({
-      columnName: match[1],
-      strategy: "one_hot",
-      dropFirst: match[0].includes("drop_first=True"),
-    });
-  }
-
-  // Label encoding
-  const labelPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.astype\(['"]category['"]\)\.cat\.codes/g;
-  while ((match = labelPattern.exec(code)) !== null) {
-    items.push({
-      columnName: match[1],
-      strategy: "label",
-    });
-  }
-
-  // Ordinal encoding
-  const ordinalPattern = /mapping\s*=\s*(\{[^}]+\})[\s\S]*?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.map\(mapping\)/g;
-  while ((match = ordinalPattern.exec(code)) !== null) {
-    try {
-      const mapping = JSON.parse(match[1]);
-      items.push({
-        columnName: match[2],
-        strategy: "ordinal",
-        ordinalMapping: mapping,
-      });
-    } catch (e) {
-      // Skip if parsing fails
-    }
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
 function parseFeatureEngineeringStep(code: string): FeatureEngineeringStepConfig | null {
   const items: FeatureEngineeringItem[] = [];
 
@@ -1175,12 +857,6 @@ export function createPreprocessingStep(
     case "missing_value_handling":
       config = { columns: [] };
       break;
-    case "outlier_handling":
-      config = { columns: [] };
-      break;
-    case "categorical_encoding":
-      config = { columns: [] };
-      break;
     case "feature_engineering":
       config = { features: [] };
       break;
@@ -1201,8 +877,6 @@ export function getStepTypeDisplayName(type: PreprocessingStepType): string {
   const names: Record<PreprocessingStepType, string> = {
     column_filter: "Column Filter",
     missing_value_handling: "Handle Missing Values",
-    outlier_handling: "Handle Outliers",
-    categorical_encoding: "Categorical Encoding",
     feature_engineering: "Feature Engineering",
   };
   return names[type] || type;
@@ -1217,16 +891,6 @@ export interface ColumnFilterConfig {
 export interface MissingValueHandlingConfig {
   enabled: boolean;
   columns: MissingValueHandlingItem[];
-}
-
-export interface OutlierHandlingConfig {
-  enabled: boolean;
-  columns: OutlierHandlingItem[];
-}
-
-export interface CategoricalEncodingConfig {
-  enabled: boolean;
-  columns: CategoricalEncodingItem[];
 }
 
 export interface FeatureEngineeringConfig {

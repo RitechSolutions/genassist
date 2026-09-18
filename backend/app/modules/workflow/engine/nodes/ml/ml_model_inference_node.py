@@ -131,6 +131,37 @@ def _broadcast_column(values: List[Any], batch_size: int, feature_name: str) -> 
     )
 
 
+def _validate_categorical_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    categorical_columns: Sequence[str],
+    categories: Sequence[np.ndarray],
+) -> None:
+    """Reject a caller-supplied categorical value the encoder wasn't trained on,
+    instead of silently encoding it as the dropped baseline category (which is
+    indistinguishable from a legitimate prediction for that category).
+
+    A column the caller left unset is skipped here - normalized_inputs already
+    excludes it (see _is_empty_input), and it's filled with 0 by
+    _build_input_array, the same as a missing numeric feature - not treated as
+    an invalid category.
+    """
+    for col, known in zip(categorical_columns, categories):
+        if col not in normalized_inputs:
+            continue
+        known_values = {str(v) for v in known.tolist()}
+        invalid_values = sorted({str(v) for v in normalized_inputs[col] if str(v) not in known_values})
+        if invalid_values:
+            allowed = ", ".join(str(v) for v in known.tolist())
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=(
+                    f"Invalid value(s) for feature '{col}': {', '.join(invalid_values)}. "
+                    f"Please enter a correct value, otherwise this field will be ignored. "
+                    f"Expected one of: {allowed}."
+                ),
+            )
+
+
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
@@ -159,6 +190,47 @@ def _build_input_array(
         else:
             columns.append([0] * batch_size)
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
+
+
+def _one_hot_transform(
+    normalized_inputs: Dict[str, List[Any]],
+    columns: Sequence[str],
+    encoder: Any,
+) -> "tuple[np.ndarray, List[str]]":
+    """Reapply a fitted OneHotEncoder to raw categorical inputs, validating
+    against the categories it was fit on."""
+    # object dtype - a categorical column left entirely unset comes back as a
+    # plain numeric (int) array of 0-fillers, which trips an internal numpy
+    # isnan check in OneHotEncoder.transform when compared against its
+    # (string) fitted categories.
+    cat_data = _build_input_array(normalized_inputs, columns).astype(object)
+    _validate_categorical_inputs(normalized_inputs, columns, encoder.categories_)
+    encoded = encoder.transform(cat_data)
+    encoded_columns = encoder.get_feature_names_out(columns).tolist()
+    return encoded, encoded_columns
+
+
+def _mapped_transform(
+    normalized_inputs: Dict[str, List[Any]],
+    columns: Sequence[str],
+    mappings: Dict[str, Dict[Any, Any]],
+    batch_size: int,
+    unseen_value: float,
+) -> np.ndarray:
+    """Reapply a fitted label/ordinal value -> code mapping to raw inputs.
+
+    A value the mapping wasn't fit on (or has no entry for) falls back to
+    unseen_value, mirroring how the same case is handled at training time
+    (see TrainModelNode._encode_categoricals).
+    """
+    if not columns:
+        return np.empty((batch_size, 0))
+    raw = _build_input_array(normalized_inputs, columns).astype(object)
+    out = np.empty(raw.shape, dtype=float)
+    for i, col in enumerate(columns):
+        mapping = mappings.get(col, {})
+        out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+    return out
 
 
 def _label_for_prediction(value: Any) -> str:
@@ -268,6 +340,7 @@ class MLModelInferenceNode(BaseNode):
             normalized_inputs = _normalize_inference_inputs(inference_inputs)
 
             # Check if model_response has a "version" key for v2.0 format vs legacy
+            metadata: Dict[str, Any] = {}
             if "version" in model_response and model_response["version"] == "v2.0":
                 model = model_response.get("model", {})
                 metadata = model_response.get("metadata", {})
@@ -282,12 +355,87 @@ class MLModelInferenceNode(BaseNode):
             if len(feature_names) == 0:
                 feature_names = list(normalized_inputs.keys())
             try:
-                input_data = _build_input_array(normalized_inputs, feature_names)
-                batch_size = input_data.shape[0]
+                # Raw values as supplied by the caller, aligned to feature_names -
+                # used below to build the model-ready matrix and for the
+                # human-readable "input_data" echoed back in the response.
+                raw_input_data = _build_input_array(normalized_inputs, feature_names)
+                batch_size = raw_input_data.shape[0]
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
-                    batch_size, input_data.shape[1] if input_data.ndim == 2 else 0, list(feature_names),
+                    batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
                 )
+
+                # Reapply the same categorical encoding fitted at training time
+                # (if any) so the matrix handed to the model has the exact
+                # columns it was trained on, instead of the raw (pre-encoding)
+                # feature names. No-op for models with no categorical features
+                # or legacy models that predate this metadata.
+                categorical_columns: List[str] = metadata.get("categorical_columns") or []
+                categorical_columns_no_drop: List[str] = metadata.get("categorical_columns_no_drop") or []
+                encoder = metadata.get("encoder")
+                encoder_no_drop = metadata.get("encoder_no_drop")
+                label_encodings: Dict[str, Dict[Any, int]] = metadata.get("label_encodings") or {}
+                ordinal_encodings: Dict[str, Dict[Any, Any]] = metadata.get("ordinal_encodings") or {}
+                label_columns = list(label_encodings.keys())
+                ordinal_columns = list(ordinal_encodings.keys())
+
+                encoded_feature_columns = (
+                    categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
+                )
+                if encoded_feature_columns:
+                    numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
+                    numeric_data = (
+                        _build_input_array(normalized_inputs, numeric_order).astype(float)
+                        if numeric_order else np.empty((batch_size, 0))
+                    )
+
+                    blocks = [numeric_data]
+                    model_feature_names = list(numeric_order)
+
+                    if label_columns:
+                        blocks.append(
+                            _mapped_transform(normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1)
+                        )
+                        model_feature_names += label_columns
+
+                    if ordinal_columns:
+                        blocks.append(
+                            _mapped_transform(normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan)
+                        )
+                        model_feature_names += ordinal_columns
+
+                    if encoder is not None and categorical_columns:
+                        encoded, encoded_columns = _one_hot_transform(normalized_inputs, categorical_columns, encoder)
+                        blocks.append(encoded)
+                        model_feature_names += encoded_columns
+
+                    if encoder_no_drop is not None and categorical_columns_no_drop:
+                        encoded_nd, encoded_nd_columns = _one_hot_transform(
+                            normalized_inputs, categorical_columns_no_drop, encoder_no_drop
+                        )
+                        blocks.append(encoded_nd)
+                        model_feature_names += encoded_nd_columns
+
+                    input_data = np.column_stack(blocks)
+                else:
+                    input_data = raw_input_data
+                    model_feature_names = list(feature_names)
+
+                # Reapply the scaler fitted at training time (if any) so scaled
+                # features match what the model was trained on. No-op for
+                # models trained with scalingMethod "none" or legacy models
+                # that predate this metadata.
+                scaler = metadata.get("scaler")
+                scaled_columns = metadata.get("scaled_columns") or []
+                if scaler is not None and scaled_columns:
+                    scaled_indices = [
+                        model_feature_names.index(c) for c in scaled_columns if c in model_feature_names
+                    ]
+                    if scaled_indices:
+                        input_data = input_data.astype(float)
+                        input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
+            except AppException:
+                raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
                 raise AppException(
@@ -316,9 +464,12 @@ class MLModelInferenceNode(BaseNode):
                     predictions = model.predict(input_data)
 
                 # Build response (always batch format)
-                # Convert input_data to column-wise dictionary (columns ordered by feature_names)
+                # Convert the raw (pre-encoding) input to a column-wise dictionary
+                # (columns ordered by feature_names) so the echoed input reflects
+                # what the caller actually submitted, not the expanded matrix
+                # handed to the model.
                 input_data_by_column = {
-                    feature_names[i]: input_data[:, i].tolist()
+                    feature_names[i]: raw_input_data[:, i].tolist()
                     for i in range(len(feature_names))
                 }
 

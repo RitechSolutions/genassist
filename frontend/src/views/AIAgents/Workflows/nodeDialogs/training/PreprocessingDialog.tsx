@@ -50,14 +50,10 @@ import {
   StepConfig,
   ColumnFilterStepConfig,
   MissingValueHandlingStepConfig,
-  OutlierHandlingStepConfig,
-  CategoricalEncodingStepConfig,
   FeatureEngineeringStepConfig,
 } from "./preprocessingConfig";
 import { ColumnFilter } from "./components/ColumnFilter";
 import { MissingValueHandler } from "./components/MissingValueHandler";
-import { OutlierHandler } from "./components/OutlierHandler";
-import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
 import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
@@ -501,42 +497,6 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             }}
           />
         );
-      case "outlier_handling":
-        return (
-          <OutlierHandler
-            config={{
-              enabled: step.enabled,
-              columns: (step.config as OutlierHandlingStepConfig).columns,
-            }}
-            analysisResult={stepAnalysisResult}
-            onChange={(outlierConfig) => {
-              handleUpdateStepConfig(step.id, {
-                columns: outlierConfig.columns,
-              });
-              if (outlierConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, outlierConfig.enabled);
-              }
-            }}
-          />
-        );
-      case "categorical_encoding":
-        return (
-          <CategoricalEncodingHandler
-            config={{
-              enabled: step.enabled,
-              columns: (step.config as CategoricalEncodingStepConfig).columns,
-            }}
-            analysisResult={stepAnalysisResult}
-            onChange={(encodingConfig) => {
-              handleUpdateStepConfig(step.id, {
-                columns: encodingConfig.columns,
-              });
-              if (encodingConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, encodingConfig.enabled);
-              }
-            }}
-          />
-        );
       case "feature_engineering":
         return (
           <FeatureEngineeringHandler
@@ -563,8 +523,6 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const stepTypes: PreprocessingStepType[] = [
     "column_filter",
     "missing_value_handling",
-    "outlier_handling",
-    "categorical_encoding",
     "feature_engineering",
   ];
 

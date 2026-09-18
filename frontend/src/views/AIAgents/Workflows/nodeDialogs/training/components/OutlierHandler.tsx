@@ -13,7 +13,7 @@ import {
   OutlierHandlingItem,
   OutlierStrategy,
   OutlierMethod,
-} from "../preprocessingConfig";
+} from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 interface OutlierHandlerProps {
