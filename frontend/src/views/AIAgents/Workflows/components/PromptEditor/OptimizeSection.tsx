@@ -10,6 +10,7 @@ import type { Round, RoundCounts } from "../../utils/promptEditorRounds";
 import { GateTooltip } from "./GateTooltip";
 import { PromptEvalResults } from "./PromptEvalResults";
 import { ProviderSelect } from "./ProviderSelect";
+import { Reveal } from "./Reveal";
 import { SuggestionDiffEditor } from "./SuggestionDiffEditor";
 import type { PromptMeasurementState } from "./usePromptMeasurement";
 
@@ -43,9 +44,14 @@ const RoundRow: React.FC<{
         )}
       </div>
       {round.source.result.explanation && (
-        <p className="text-xs text-muted-foreground line-clamp-1">
-          {round.source.result.explanation}
-        </p>
+        <div>
+          <Reveal
+            label="Explanation"
+            value={round.source.result.explanation}
+            className="block w-full text-xs text-muted-foreground"
+            clip="line-clamp-1"
+          />
+        </div>
       )}
     </div>
     <GateTooltip reason={blocked ? RESTORE_BLOCKED_REASON : null}>
@@ -82,6 +88,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     optimizeInstructions,
     setOptimizeInstructions,
     evalStale,
+    splitActive,
     failedIncluded,
     failedTotal,
     baseScored,
@@ -113,6 +120,34 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     dismiss,
   } = measurement;
   const [roundsOpen, setRoundsOpen] = useState(false);
+
+  const showHoldout = caps.canEvaluate && (splitActive || pairedRun !== null);
+  const primaryAction =
+    showHoldout && validateHoldout.enabled
+      ? "holdout"
+      : caps.canEvaluate && evaluateSuggested.enabled
+        ? "suggested"
+        : caps.canEditPrompt && accept.enabled
+          ? "accept"
+          : null;
+
+  const optimizeButton = (
+    <GateTooltip reason={optimize.reason}>
+      <Button
+        size="sm"
+        variant={optimizeResult ? "outline" : "default"}
+        onClick={optimize.run}
+        disabled={!optimize.enabled || optimize.pending}
+      >
+        {optimize.pending ? (
+          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+        ) : (
+          <Sparkles className="h-4 w-4 mr-2" />
+        )}
+        {optimize.pending ? "Optimizing..." : "Optimize"}
+      </Button>
+    </GateTooltip>
+  );
 
   return (
     <div className="space-y-4">
@@ -158,22 +193,9 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
           />
         </div>
 
-        <div className="flex justify-end">
-          <GateTooltip reason={optimize.reason}>
-            <Button
-              size="sm"
-              onClick={optimize.run}
-              disabled={!optimize.enabled || optimize.pending}
-            >
-              {optimize.pending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
-              )}
-              {optimize.pending ? "Optimizing..." : "Optimize"}
-            </Button>
-          </GateTooltip>
-        </div>
+        {!optimizeResult && (
+          <div className="flex justify-end">{optimizeButton}</div>
+        )}
       </div>
 
       {optimizeResult && (
@@ -237,6 +259,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
           )}
 
           <div className="flex flex-wrap gap-2">
+            {optimizeButton}
             {caps.canEvaluate && (
               <GateTooltip reason={evaluateSuggested.reason}>
                 <Button
@@ -245,7 +268,9 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                   disabled={
                     !evaluateSuggested.enabled || evaluateSuggested.pending
                   }
-                  variant="outline"
+                  variant={
+                    primaryAction === "suggested" ? "default" : "outline"
+                  }
                 >
                   {evaluateSuggested.pending ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -258,13 +283,13 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                 </Button>
               </GateTooltip>
             )}
-            {caps.canEvaluate && (
+            {showHoldout && (
               <GateTooltip reason={validateHoldout.reason}>
                 <Button
                   size="sm"
                   onClick={validateHoldout.run}
                   disabled={!validateHoldout.enabled || validateHoldout.pending}
-                  variant="outline"
+                  variant={primaryAction === "holdout" ? "default" : "outline"}
                 >
                   {validateHoldout.pending ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -279,7 +304,12 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
             )}
             {caps.canEditPrompt && (
               <GateTooltip reason={accept.reason}>
-                <Button size="sm" onClick={accept.run} disabled={!accept.enabled}>
+                <Button
+                  size="sm"
+                  variant={primaryAction === "accept" ? "default" : "outline"}
+                  onClick={accept.run}
+                  disabled={!accept.enabled}
+                >
                   Accept
                 </Button>
               </GateTooltip>
