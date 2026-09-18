@@ -48,8 +48,11 @@ from app.repositories.test_suite import (
 )
 from app.schemas.test_suite import (
     ImportCasesFromConversationRequest,
+    ImportCasesFromConversationsResult,
+    ImportedConversationResult,
     PaginatedEvaluations,
     StartedEvaluationRun,
+    TestCase,
     TestCaseCreate,
     TestCaseInDB,
     TestCaseUpdate,
@@ -87,6 +90,13 @@ def _truncate_output(output: Any, max_length: int = 64000) -> Any:
         return output[: max_length - 3] + "..."
     return output
 
+
+# Why one conversation in a multi-import was skipped. These reach the client in the
+# 2xx body, unlike error_detail, which is withheld outside dev.
+_IMPORT_FAILURE_DETAILS = {
+    ErrorKey.NOT_FOUND: "Conversation not found.",
+    ErrorKey.TRANSCRIPT_EMPTY: "No question and answer turns to import.",
+}
 
 # Reserved key holding run-level counts alongside the per-technique metrics.
 RUN_TOTALS_KEY = "_totals"
@@ -1860,49 +1870,142 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.case_repo.delete(case)
 
-    async def import_cases_from_conversation(
-        self, suite_id: UUID, conversation_id: UUID, replace: bool = False
-    ) -> List[TestCaseInDB]:
+    async def _import_conversations(
+        self,
+        suite_id: UUID,
+        conversation_ids: List[UUID],
+        replace: bool,
+    ) -> Tuple[
+        List[TestCaseModel],
+        List[ImportedConversationResult],
+        Dict[UUID, AppException],
+    ]:
+        """Import several conversations as one batch.
+
+        Returns the created cases, one outcome per requested conversation, and the
+        failures keyed by conversation so a single-conversation import can re-raise.
+        """
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
-        conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id, include_messages=True
-        )
-        if not conversation:
-            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        # The same conversation picked twice is one import, not two.
+        requested = list(dict.fromkeys(conversation_ids))
 
-        turns = extract_qa_pairs(conversation.messages)
-        if not turns:
-            raise AppException(
-                status_code=400,
-                error_key=ErrorKey.TRANSCRIPT_EMPTY,
-                error_detail="Conversation has no question/answer turns to import",
+        # Every conversation is read and checked before anything is deleted, so one
+        # unusable id in a selection cannot cost the dataset turns it already had.
+        turns_by_conversation: Dict[UUID, List[Tuple[str, str]]] = {}
+        failures: Dict[UUID, AppException] = {}
+        for conversation_id in requested:
+            conversation = await self.conversation_repo.fetch_conversation_by_id(
+                conversation_id, include_messages=True
             )
+            if not conversation:
+                failures[conversation_id] = AppException(
+                    status_code=404, error_key=ErrorKey.NOT_FOUND
+                )
+                continue
+            turns = extract_qa_pairs(conversation.messages)
+            if not turns:
+                failures[conversation_id] = AppException(
+                    status_code=400,
+                    error_key=ErrorKey.TRANSCRIPT_EMPTY,
+                    error_detail="Conversation has no question/answer turns to import",
+                )
+                continue
+            turns_by_conversation[conversation_id] = turns
 
-        # Replacing the suite wipes every conversation; otherwise re-importing the
-        # same conversation replaces only its own turns, keeping the append idempotent.
-        if replace:
-            await self.case_repo.soft_delete_all_for_suite(suite_id, commit=False)
-        else:
-            await self.case_repo.soft_delete_for_conversation(
-                suite_id, conversation_id, commit=False
-            )
+        # A re-import refreshes a conversation rather than adding a new one, so it
+        # inherits the date its turns first landed here and keeps its place in the
+        # dataset instead of dropping to the end.
+        existing = await self.case_repo.get_all_for_suite(suite_id)
+        joined_at: Dict[UUID, Any] = {}
+        for case in existing:
+            key = case.source_conversation_id
+            if not key or not case.created_at:
+                continue
+            if key not in joined_at or case.created_at < joined_at[key]:
+                joined_at[key] = case.created_at
 
-        cases = [
-            TestCaseModel(
-                suite_id=suite_id,
-                source_conversation_id=conversation_id,
-                turn_index=turn_index,
-                input_data={"message": question},
-                expected_output={"value": answer},
-                tags=["imported"],
+        cases: List[TestCaseModel] = []
+        # Nothing usable means nothing to delete either, or a failed selection would
+        # wipe the dataset on its way to importing none of it.
+        if turns_by_conversation:
+            # Replacing the suite wipes every conversation; otherwise re-importing the
+            # same conversation replaces only its own turns, keeping the append
+            # idempotent.
+            if replace:
+                await self.case_repo.soft_delete_all_for_suite(suite_id, commit=False)
+            else:
+                for conversation_id in turns_by_conversation:
+                    await self.case_repo.soft_delete_for_conversation(
+                        suite_id, conversation_id, commit=False
+                    )
+
+            for conversation_id, turns in turns_by_conversation.items():
+                joined = joined_at.get(conversation_id)
+                for turn_index, (question, answer) in enumerate(turns):
+                    cases.append(
+                        TestCaseModel(
+                            suite_id=suite_id,
+                            source_conversation_id=conversation_id,
+                            turn_index=turn_index,
+                            input_data={"message": question},
+                            expected_output={"value": answer},
+                            tags=["imported"],
+                            **({"created_at": joined} if joined else {}),
+                        )
+                    )
+
+        # One insert for the whole selection rather than one per conversation.
+        created = await self.case_repo.create_many(cases) if cases else []
+
+        results = [
+            ImportedConversationResult(
+                conversation_id=conversation_id,
+                status="failed",
+                detail=_IMPORT_FAILURE_DETAILS.get(
+                    failures[conversation_id].error_key, "Conversation could not be imported."
+                ),
             )
-            for turn_index, (question, answer) in enumerate(turns)
+            if conversation_id in failures
+            else ImportedConversationResult(
+                conversation_id=conversation_id,
+                status="replaced" if conversation_id in joined_at else "imported",
+                turns=len(turns_by_conversation[conversation_id]),
+            )
+            for conversation_id in requested
         ]
-        created = await self.case_repo.create_many(cases)
+        return created, results, failures
+
+    async def import_cases_from_conversation(
+        self, suite_id: UUID, conversation_id: UUID, replace: bool = False
+    ) -> List[TestCaseInDB]:
+        created, _results, failures = await self._import_conversations(
+            suite_id, [conversation_id], replace
+        )
+        failure = failures.get(conversation_id)
+        if failure:
+            raise failure
         return [TestCaseInDB.model_validate(c, from_attributes=True) for c in created]
+
+    async def import_cases_from_conversations(
+        self,
+        suite_id: UUID,
+        conversation_ids: List[UUID],
+        replace: bool = False,
+    ) -> ImportCasesFromConversationsResult:
+        """Import a selection of conversations, reporting each one's outcome."""
+        created, results, _failures = await self._import_conversations(
+            suite_id, conversation_ids, replace
+        )
+        return ImportCasesFromConversationsResult(
+            cases=[TestCase.model_validate(c, from_attributes=True) for c in created],
+            results=results,
+            imported=sum(1 for r in results if r.status == "imported"),
+            replaced=sum(1 for r in results if r.status == "replaced"),
+            failed=sum(1 for r in results if r.status == "failed"),
+        )
 
     async def remove_conversation_from_suite(
         self, suite_id: UUID, conversation_id: UUID

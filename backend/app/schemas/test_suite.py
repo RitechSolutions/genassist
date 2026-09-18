@@ -62,9 +62,43 @@ class TestCase(TestCaseInDB):
     pass
 
 
+# Upper bound on one multi-import, so a runaway selection cannot fan out into an
+# unbounded number of transcript reads inside a single request.
+MAX_IMPORT_CONVERSATIONS = 100
+
+
 class ImportCasesFromConversationRequest(BaseModel):
     conversation_id: UUID
     replace: bool = False
+
+
+class ImportCasesFromConversationsRequest(BaseModel):
+    conversation_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_IMPORT_CONVERSATIONS,
+        description="Conversations to import. Repeats are collapsed.",
+    )
+    replace: bool = False
+
+
+class ImportedConversationResult(BaseModel):
+    conversation_id: UUID
+    # imported (new to the dataset), replaced (its turns were refreshed), failed.
+    status: str
+    turns: int = 0
+    # Why the conversation failed, in one client-safe sentence.
+    detail: Optional[str] = None
+
+
+class ImportCasesFromConversationsResult(BaseModel):
+    # Every turn created by this import, across all conversations.
+    cases: List[TestCase] = Field(default_factory=list)
+    # One entry per requested conversation, in the order they were requested.
+    results: List[ImportedConversationResult] = Field(default_factory=list)
+    imported: int = 0
+    replaced: int = 0
+    failed: int = 0
 
 
 class TestSuiteBase(BaseModel):

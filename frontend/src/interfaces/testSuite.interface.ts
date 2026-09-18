@@ -25,6 +25,26 @@ export interface TestCase {
   updated_at?: string;
 }
 
+/** Outcome of one conversation inside a multi-conversation import. */
+export interface ImportedConversationResult {
+  conversation_id: string;
+  status: "imported" | "replaced" | "failed";
+  turns: number;
+  /** Why it failed, in one sentence. Only set on a failure. */
+  detail?: string | null;
+}
+
+/** Response of `POST /cases/import-from-conversations`. */
+export interface ImportFromConversationsResult {
+  /** Every turn created by this import, across all conversations. */
+  cases: TestCase[];
+  /** One entry per requested conversation, in the order they were requested. */
+  results: ImportedConversationResult[];
+  imported: number;
+  replaced: number;
+  failed: number;
+}
+
 export interface TestRun {
   id?: string;
   suite_id: string;
@@ -81,7 +101,11 @@ export interface CreateTestSuitePayload {
 
 export interface CreateTestCasePayload {
   input_data: Record<string, unknown>;
-  expected_output?: Record<string, unknown>;
+  /** Explicit null clears the stored value; undefined leaves it untouched. */
+  expected_output?: Record<string, unknown> | null;
   tags?: string[];
   weight?: number;
+  /** Cases sharing this replay as one memory thread. */
+  source_conversation_id?: string | null;
+  turn_index?: number | null;
 }

@@ -2,6 +2,7 @@ import { apiRequest } from "@/config/api";
 import type {
   CreateTestCasePayload,
   CreateTestSuitePayload,
+  ImportFromConversationsResult,
   TestCase,
   TestResult,
   TestRun,
@@ -56,11 +57,21 @@ export const updateTestCase = (caseId: string, payload: Partial<CreateTestCasePa
 export const deleteTestCase = (caseId: string) =>
   apiRequest<void>("DELETE", `${BASE}/cases/${caseId}`);
 
-export const importCasesFromConversation = (suiteId: string, conversationId: string, replace = false) =>
+export const importCasesFromConversation = (suiteId: string, conversationId: string) =>
   apiRequest<TestCase[]>(
     "POST",
     `${BASE}/suites/${suiteId}/cases/import-from-conversation`,
-    { conversation_id: conversationId, replace },
+    { conversation_id: conversationId },
+  );
+
+export const importCasesFromConversations = (
+  suiteId: string,
+  conversationIds: string[],
+) =>
+  apiRequest<ImportFromConversationsResult>(
+    "POST",
+    `${BASE}/suites/${suiteId}/cases/import-from-conversations`,
+    { conversation_ids: conversationIds },
   );
 
 export const removeConversationFromSuite = (suiteId: string, conversationId: string) =>
