@@ -13,6 +13,23 @@ from app.core.tenant_scope import (
 
 logger = logging.getLogger(__name__)
 
+TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
+
+
+def should_execute_run(kind: str, run_id, status) -> bool:
+    """Skip terminal runs; re-run one left "running" by a lost worker."""
+    status_value = getattr(status, "value", status)
+    if status_value in TERMINAL_RUN_STATUSES:
+        logger.info("%s %s is already %s; skipping", kind, run_id, status_value)
+        return False
+    if status_value == "running":
+        logger.warning(
+            "%s %s was left running by a lost worker; re-running it from scratch",
+            kind,
+            run_id,
+        )
+    return True
+
 
 def run_async_in_celery(
     coro: Coroutine[Any, Any, Any],
@@ -32,9 +49,9 @@ def run_async_in_celery(
     unreliable with the solo pool — this is the actual enforcement point.
     """
     async def _runner() -> Any:
-        if timeout is None:
-            return await coro
         try:
+            if timeout is None:
+                return await coro
             return await asyncio.wait_for(coro, timeout=timeout)
         except asyncio.TimeoutError:
             logger.error(
@@ -44,8 +61,34 @@ def run_async_in_celery(
                 timeout,
             )
             raise
+        finally:
+            await disconnect_async_redis_pools()
 
     return asyncio.run(_runner())
+
+
+def _async_redis_clients() -> List[Any]:
+    """Process-wide async Redis clients whose pooled connections outlive a task's loop."""
+    from app.dependencies.dependency_injection import RedisBinary, RedisString
+    from app.dependencies.injector import injector
+
+    clients = [injector.get(RedisString), injector.get(RedisBinary)]
+    try:
+        from fastapi_cache import FastAPICache
+
+        clients.append(FastAPICache.get_backend().redis)
+    except Exception:  # cache backend not initialized in this process
+        pass
+    return clients
+
+
+async def disconnect_async_redis_pools() -> None:
+    """Drop pooled Redis connections so the next task's event loop opens fresh ones."""
+    for client in _async_redis_clients():
+        try:
+            await client.connection_pool.disconnect(inuse_connections=True)
+        except Exception as exc:  # cleanup must never fail the task
+            logger.debug("Async Redis pool disconnect skipped: %s", exc)
 
 
 class BaseTaskWithLogging(Task):

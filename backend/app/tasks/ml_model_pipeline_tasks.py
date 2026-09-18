@@ -18,13 +18,12 @@ from app.repositories.ml_model_pipeline import (
 )
 from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models.ml_model_pipeline import PipelineRunStatus, ArtifactType
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
 from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
-from app.tasks.base import run_task_for_all_tenants, run_async_in_celery
+from app.tasks.base import run_task_for_all_tenants, run_async_in_celery, should_execute_run
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 from app.dependencies.injector import injector
@@ -115,6 +114,8 @@ async def execute_pipeline_run_async(run_id: UUID):
                         )
                         return None  # Skip this tenant - run doesn't belong to it
                     raise
+                if not should_execute_run("Pipeline run", run_id, run.status):
+                    return None
 
                 # Update status to running
                 await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)
@@ -137,7 +138,9 @@ async def execute_pipeline_run_async(run_id: UUID):
                     "edges": workflow.edges or [],
                 }
 
-                # Build workflow engine with configuration
+                # Imported lazily so the worker master never loads ML libs before forking
+                from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+
                 workflow_engine = WorkflowEngine(workflow_config)
 
                 # Prepare input data with model context
