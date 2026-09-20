@@ -158,13 +158,32 @@ class NliEvalConfig(_Forbid):
     min_entail_score: float = Field(..., ge=0, le=1)
 
 
+MAX_JUDGE_RUBRIC_CHARS = 2_000
+MAX_JUDGE_RULES = 1
+
+JudgeSourceType = Literal["none", "expected_output"]
+
+
+class JudgeRule(_Forbid):
+    rubric: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_JUDGE_RUBRIC_CHARS)]
+    min_score: float = Field(default=0.5, ge=0, le=1)
+    # `none` grades rubric alone. Uses expected_output as SOURCE; skips cases without
+    source_type: JudgeSourceType = "none"
+
+
+class LlmJudgeConfig(_Forbid):
+    rules: List[JudgeRule] = Field(..., min_length=1, max_length=MAX_JUDGE_RULES)
+
+
 class PromptTechniqueConfigs(_Forbid):
     """Config for techniques that accept it. nli_eval takes only a threshold, its
-    evidence is fixed; llm_judge/provenance_eval have no model, 422 if named"""
+    evidence is fixed; llm_judge takes one rubric rule and never a provider;
+    provenance_eval has no model, 422 if named"""
 
     not_contains: Optional[NotContainsConfig] = None
     field_equals: Optional[FieldEqualsConfig] = None
     nli_eval: Optional[NliEvalConfig] = None
+    llm_judge: Optional[LlmJudgeConfig] = None
 
 
 class PromptEvalRequest(BaseModel):

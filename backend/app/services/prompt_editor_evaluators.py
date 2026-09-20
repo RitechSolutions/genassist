@@ -2,6 +2,7 @@
 configuration each one receives, and what each makes of a case's expectation"""
 
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -24,8 +25,10 @@ _DEFERRED_TECHNIQUES = ("llm_judge", "provenance_eval")
 
 _NLI_CONFIG = {"evidence_source": "expected_output"}
 
+_JUDGE_TECHNIQUE = "llm_judge"
+
 # Techniques whose configuration the request may carry, in PromptTechniqueConfigs order
-_CONFIGURABLE = ("not_contains", "field_equals", "nli_eval")
+_CONFIGURABLE = ("not_contains", "field_equals", "nli_eval", _JUDGE_TECHNIQUE)
 
 # Per-technique expected_output semantics for optimizer (so not all treated as ideal).
 # Follows PROMPT_CHECK_TECHNIQUES order. Omits not_contains and field_equals
@@ -118,16 +121,22 @@ def describe_expectations(
 
 
 def build_technique_configs(
-    techniques: List[str], configs: PromptTechniqueConfigs
+    techniques: List[str],
+    configs: PromptTechniqueConfigs,
+    *,
+    judge_provider_id: Optional[UUID] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Config dicts for the registry. Rejects configuration for techniques that are not
-    selected; requires none, so a rewrite may name a check it has no options for"""
+    selected; requires none except the judge's rubric, which both routes need: a
+    rubric-less judge grades nothing and tells the rewrite nothing"""
     reject_unsupported_techniques(techniques)
 
     selected = set(techniques)
     for name in _CONFIGURABLE:
-        if getattr(configs, name) is not None and name not in selected:
+        if getattr(configs, name, None) is not None and name not in selected:
             raise _unsupported(f"Configuration was sent for '{name}', which is not selected.")
+    if _JUDGE_TECHNIQUE in selected and configs.llm_judge is None:
+        raise _unsupported("'llm_judge' needs a rubric. Add one or clear the check.")
 
     built: Dict[str, Dict[str, Any]] = {}
     for technique in techniques:
@@ -144,16 +153,29 @@ def build_technique_configs(
             built[technique] = dict(_NLI_CONFIG)
             if configs.nli_eval is not None:
                 built[technique]["min_entail_score"] = configs.nli_eval.min_entail_score
+        elif technique == _JUDGE_TECHNIQUE:
+            judge_config: Dict[str, Any] = {
+                "rules": [
+                    {"rubric": rule.rubric, "min_score": rule.min_score, "source_type": rule.source_type}
+                    for rule in configs.llm_judge.rules
+                ]
+            }
+            if judge_provider_id is not None:
+                judge_config["llm_provider_id"] = str(judge_provider_id)
+            built[technique] = judge_config
         else:
             built[technique] = {}
     return built
 
 
 def validate_prompt_check_techniques(
-    techniques: List[str], configs: PromptTechniqueConfigs
+    techniques: List[str],
+    configs: PromptTechniqueConfigs,
+    *,
+    judge_provider_id: Optional[UUID] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Reject unsupported techniques, then build config dicts for the registry"""
-    built = build_technique_configs(techniques, configs)
+    built = build_technique_configs(techniques, configs, judge_provider_id=judge_provider_id)
     if "not_contains" in techniques and configs.not_contains is None:
         raise _unsupported(
             "'not_contains' needs at least one forbidden phrase. Add one or clear the check."

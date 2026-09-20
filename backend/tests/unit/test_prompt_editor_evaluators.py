@@ -10,7 +10,10 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import _response_error_detail
 from app.schemas.prompt_editor import (
+    MAX_JUDGE_RUBRIC_CHARS,
     FieldEqualsConfig,
+    JudgeRule,
+    LlmJudgeConfig,
     NliEvalConfig,
     NotContainsConfig,
     PromptEvalRequest,
@@ -70,6 +73,13 @@ class TestValidatePromptCheckTechniques:
 
         assert exc_info.value.status_code == 400
         assert "not_contains" in exc_info.value.error_detail
+
+    def test_a_judge_config_sent_for_an_unselected_judge_is_rejected(self):
+        with pytest.raises(AppException) as exc_info:
+            validate_prompt_check_techniques(["contains"], _configs(llm_judge={"rules": [{"rubric": "grade it"}]}))
+
+        assert exc_info.value.status_code == 400
+        assert "llm_judge" in exc_info.value.error_detail
 
     def test_the_expectation_based_techniques_receive_an_empty_config(self):
         built = validate_prompt_check_techniques(
@@ -157,7 +167,7 @@ class TestRejectionDetailReachesTheUser:
 
 
 class TestTechniqueConfigContract:
-    @pytest.mark.parametrize("key", ["llm_judge", "provenance_eval"])
+    @pytest.mark.parametrize("key", ["provenance_eval"])
     def test_a_deferred_evaluator_has_no_config_model_at_all(self, key):
         with pytest.raises(ValidationError) as exc_info:
             PromptTechniqueConfigs(**{key: {}})
@@ -176,6 +186,61 @@ class TestTechniqueConfigContract:
     def test_an_out_of_range_entail_score_is_rejected(self, score):
         with pytest.raises(ValidationError):
             NliEvalConfig(min_entail_score=score)
+
+    def test_a_judge_rule_carries_a_rubric_a_threshold_and_a_source_and_nothing_else(self):
+        assert set(JudgeRule.model_fields) == {"rubric", "min_score", "source_type"}
+
+    @pytest.mark.parametrize("key", ["label", "source_field", "llm_provider_id", "answer_field", "question_field"])
+    def test_a_registry_selector_cannot_ride_along_on_a_judge_rule(self, key):
+        with pytest.raises(ValidationError) as exc_info:
+            JudgeRule(rubric="grade it", **{key: "anything"})
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    def test_a_judge_rule_the_registry_would_read_cannot_reach_the_request(self):
+        with pytest.raises(ValidationError) as exc_info:
+            PromptTechniqueConfigs(llm_judge={"rules": [{"rubric": "grade it", "source_field": "trace.x"}]})
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    def test_the_judge_config_cannot_choose_its_own_provider(self):
+        with pytest.raises(ValidationError) as exc_info:
+            LlmJudgeConfig(rules=[{"rubric": "grade it"}], llm_provider_id=str(uuid4()))
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    @pytest.mark.parametrize("rules, error", [([], "too_short"), ([{"rubric": "a"}, {"rubric": "b"}], "too_long")])
+    def test_the_judge_grades_exactly_one_rule(self, rules, error):
+        with pytest.raises(ValidationError) as exc_info:
+            LlmJudgeConfig(rules=rules)
+
+        assert exc_info.value.errors()[0]["type"] == error
+
+    @pytest.mark.parametrize("rubric", ["", "   ", "x" * (MAX_JUDGE_RUBRIC_CHARS + 1)])
+    def test_a_rubric_the_judge_could_not_grade_with_is_rejected(self, rubric):
+        with pytest.raises(ValidationError):
+            JudgeRule(rubric=rubric)
+
+    def test_a_rubric_at_the_bound_is_accepted_and_stripped(self):
+        rule = JudgeRule(rubric=f"  {'x' * MAX_JUDGE_RUBRIC_CHARS}  ")
+
+        assert rule.rubric == "x" * MAX_JUDGE_RUBRIC_CHARS
+
+    def test_a_rule_grades_the_rubric_alone_until_a_source_is_chosen(self):
+        rule = JudgeRule(rubric="grade it")
+
+        assert (rule.source_type, rule.min_score) == ("none", 0.5)
+
+    def test_a_source_the_editor_does_not_offer_is_rejected(self):
+        with pytest.raises(ValidationError) as exc_info:
+            JudgeRule(rubric="grade it", source_type="output")
+
+        assert exc_info.value.errors()[0]["type"] == "literal_error"
+
+    @pytest.mark.parametrize("score", [-0.1, 1.1])
+    def test_an_out_of_range_judge_threshold_is_rejected(self, score):
+        with pytest.raises(ValidationError):
+            JudgeRule(rubric="grade it", min_score=score)
 
     @pytest.mark.parametrize("key", ["nli_model_name", "evidence_source", "answer_field"])
     def test_a_registry_option_cannot_ride_along_on_a_config_that_does_exist(self, key):

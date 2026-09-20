@@ -485,6 +485,18 @@ class TestBudget:
         assert result.provenance.deadline_hit is True
 
 
+    @pytest.mark.asyncio
+    async def test_a_run_with_no_model_graded_check_keeps_the_whole_model_budget(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm(["a"])))
+
+        assert module._uses_score_budget(["exact_match"]) is False
+        assert result.provenance.budget_seconds == 70
+
+
 class TestGroundingCheck:
     @pytest.mark.asyncio
     async def test_an_exhausted_scoring_budget_reports_the_grounding_model_not_a_failure(self):
@@ -557,6 +569,20 @@ class TestGroundingCheck:
         assert "could not be loaded" in module._scoring_timeout_text(["nli_eval"])
         # A technique the run never asked for must not colour the message
         assert module._scoring_timeout_text([]) == "Scoring timed out."
+
+    @pytest.mark.asyncio
+    async def test_a_registry_answer_without_the_grounding_key_leaves_the_metric_absent(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        async def _nothing(*_args, **_kwargs):
+            return {}
+
+        service.evaluators.evaluate = _nothing
+        result = await _run(service, _injector(_llm(["a"])), _request(techniques=["nli_eval"]))
+
+        row = result.results[0]
+        assert row.metrics == {}
+        assert row.verdict == "inconclusive"
 
 
 class TestMetering:
@@ -637,3 +663,16 @@ class TestMetering:
 
         assert result.provenance.metering_handoff_failed is True
         assert result.results[0].verdict == "passed"
+
+    def test_a_judge_row_is_renumbered_out_of_the_model_call_band(self):
+        import app.services.prompt_editor as module
+
+        ref = module.PromptUsageRef(execution_id="prompt_editor:1")
+        case_ref = module.PromptUsageRef(execution_id="prompt_editor:1")
+        case_ref.entries.append({"call_index": 0, "provider_id": "p", "purpose": "llm_judge", "usage": None})
+
+        module._collect_judge_usage(ref, case_ref, 2)
+
+        assert [entry["call_index"] for entry in ref.entries] == [1002]
+        assert ref.entries[0]["purpose"] == "llm_judge"
+        assert case_ref.entries[0]["call_index"] == 0
