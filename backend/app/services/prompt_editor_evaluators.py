@@ -15,13 +15,14 @@ PROMPT_CHECK_TECHNIQUES: tuple[str, ...] = (
     "json_match",
     "field_equals",
     "nli_eval",
+    "llm_judge",
 )
 
 # Graded from an execution trace the isolated check never produces
 _TRACE_TECHNIQUES = ("no_errors", "tool_used", "route_taken", "action_taken")
 
-# Real evaluators, held back until the editor can bound and meter their own model calls
-_DEFERRED_TECHNIQUES = ("llm_judge", "provenance_eval")
+# Loads its embedder on the event loop, which no editor timeout can interrupt
+_DEFERRED_TECHNIQUES = ("provenance_eval",)
 
 _NLI_CONFIG = {"evidence_source": "expected_output"}
 
@@ -100,6 +101,21 @@ def _configured_rule(technique: str, config: Optional[Dict[str, Any]]) -> Option
         return (
             f"{_EXPECTATION_RULES['nli_eval']}. Support is judged per claim, and a claim "
             f"counts as supported at an entailment score of {score} or higher"
+        )
+    if technique == _JUDGE_TECHNIQUE:
+        rules = config.get("rules") or []
+        rule = rules[0] if rules and isinstance(rules[0], dict) else {}
+        rubric = rule.get("rubric")
+        if not rubric:
+            return None
+        source = (
+            ", with the expected output shown to the judge as its source"
+            if rule.get("source_type") == "expected_output"
+            else ""
+        )
+        return (
+            f"an LLM judge scores the reply from 0 to 1 against this rubric and it passes "
+            f'at {rule.get("min_score", 0.5)} or higher{source}: "{rubric}"'
         )
     return None
 

@@ -4,6 +4,7 @@ import { evaluatePrompt, optimizePrompt } from "@/services/promptEditor";
 import { extractErrorMessage } from "@/helpers/apiError";
 import type { LLMProvider } from "@/interfaces/llmProvider.interface";
 import type {
+  JudgeRuleConfig,
   PreviousAttemptPayload,
   PromptOptimizeResponse,
   PromptTechniqueConfigs,
@@ -28,10 +29,13 @@ import {
 } from "../../utils/caseSplit";
 import {
   DEFAULT_CASES_TO_CHECK,
+  DEFAULT_JUDGE_RUBRIC,
   entailScoreProblem,
+  judgeScoreProblem,
   MAX_CHECK_CASES,
   parseEntailScore,
   phrasesProblem,
+  rubricProblem,
   splitForbiddenPhrases,
 } from "../../utils/promptEditorTechniques";
 import {
@@ -158,6 +162,15 @@ export interface PromptMeasurementState {
   nliScoreText: string;
   setNliScoreText: (text: string) => void;
   nliScoreIssue: string | null;
+  judgeSelected: boolean;
+  rubricText: string;
+  setRubricText: (text: string) => void;
+  rubricIssue: string | null;
+  judgeScoreText: string;
+  setJudgeScoreText: (text: string) => void;
+  judgeScoreIssue: string | null;
+  judgeSeesExpected: boolean;
+  setJudgeSeesExpected: (enabled: boolean) => void;
   casesToCheck: number;
   setCasesToCheck: (count: number) => void;
   split: CaseSplitResult;
@@ -235,6 +248,9 @@ export const usePromptMeasurement = ({
   ]);
   const [phrasesText, setPhrasesText] = useState("");
   const [nliScoreText, setNliScoreText] = useState("");
+  const [rubricText, setRubricText] = useState(DEFAULT_JUDGE_RUBRIC);
+  const [judgeScoreText, setJudgeScoreText] = useState("");
+  const [judgeSeesExpected, setJudgeSeesExpected] = useState(false);
   const [casesToCheck, setCasesToCheck] = useState<number>(
     DEFAULT_CASES_TO_CHECK,
   );
@@ -301,19 +317,53 @@ export const usePromptMeasurement = ({
   const nliScore = parseEntailScore(nliScoreText);
   const nliScoreIssue = nliSelected ? entailScoreProblem(nliScore) : null;
   const sentNliScore = nliSelected && nliScoreIssue === null ? nliScore : null;
+  const judgeSelected = selectedTechniques.includes("llm_judge");
+  const rubricIssue = judgeSelected ? rubricProblem(rubricText) : null;
+  const judgeScore = parseEntailScore(judgeScoreText);
+  const judgeScoreIssue = judgeSelected ? judgeScoreProblem(judgeScore) : null;
+  const sentJudgeScore =
+    judgeSelected && judgeScoreIssue === null ? judgeScore : null;
+  const judgeSource: JudgeRuleConfig["source_type"] = judgeSeesExpected
+    ? "expected_output"
+    : "none";
   const techniqueConfigs = useMemo<PromptTechniqueConfigs>(
     () => ({
       ...(notContainsSelected ? { not_contains: { phrases } } : {}),
       ...(sentNliScore === null
         ? {}
         : { nli_eval: { min_entail_score: sentNliScore } }),
+      ...(judgeSelected && rubricIssue === null
+        ? {
+            llm_judge: {
+              rules: [
+                {
+                  rubric: rubricText.trim(),
+                  ...(sentJudgeScore === null
+                    ? {}
+                    : { min_score: sentJudgeScore }),
+                  source_type: judgeSource,
+                },
+              ],
+            },
+          }
+        : {}),
     }),
-    [notContainsSelected, phrases, sentNliScore],
+    [
+      notContainsSelected,
+      phrases,
+      sentNliScore,
+      judgeSelected,
+      rubricIssue,
+      rubricText,
+      sentJudgeScore,
+      judgeSource,
+    ],
   );
-  const sentTechniqueConfigs = useMemo<PromptTechniqueConfigs>(
-    () => (phrasesIssue === null ? techniqueConfigs : {}),
-    [phrasesIssue, techniqueConfigs],
-  );
+  const sentTechniqueConfigs = useMemo<PromptTechniqueConfigs>(() => {
+    if (phrasesIssue === null) return techniqueConfigs;
+    const { not_contains: _unsendable, ...rest } = techniqueConfigs;
+    return rest;
+  }, [phrasesIssue, techniqueConfigs]);
 
   const splitActive = splitEnabled && split.feasible;
   const evalCaseIds = useMemo(
@@ -768,6 +818,8 @@ export const usePromptMeasurement = ({
     techniqueCount: selectedTechniques.length,
     phrasesProblem: phrasesIssue,
     entailScoreProblem: nliScoreIssue,
+    rubricProblem: rubricIssue,
+    judgeScoreProblem: judgeScoreIssue,
   };
   const evalInputs: EvalInputs = {
     ...runInputs,
@@ -1002,6 +1054,15 @@ export const usePromptMeasurement = ({
     nliScoreText,
     setNliScoreText,
     nliScoreIssue,
+    judgeSelected,
+    rubricText,
+    setRubricText,
+    rubricIssue,
+    judgeScoreText,
+    setJudgeScoreText,
+    judgeScoreIssue,
+    judgeSeesExpected,
+    setJudgeSeesExpected,
     casesToCheck,
     setCasesToCheck,
     split,

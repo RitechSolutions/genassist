@@ -108,6 +108,22 @@ async def _run(service, injector, request=None):
         return await service.evaluate_prompt(WORKFLOW_ID, NODE_ID, FIELD, request or _request())
 
 
+def _spent_score_budget(score_seconds: float):
+    import app.services.prompt_editor as module
+
+    class SpentScoreBudget(module.Budget):
+        def __init__(self, seconds):
+            self._deadline_seconds = seconds
+            super().__init__(seconds)
+
+        def remaining(self):
+            if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS:
+                return score_seconds
+            return 10.0
+
+    return SpentScoreBudget
+
+
 class TestFieldGate:
     @pytest.mark.asyncio
     async def test_a_field_the_check_cannot_reproduce_is_rejected(self):
@@ -381,6 +397,27 @@ class TestWireBounds:
         assert metric["actual"].endswith(TRUNCATION_MARKER)
         assert len(metric["expected"]) == MAX_ACTUAL_CHARS
 
+    def test_a_metrics_nested_strings_are_bounded_without_reshaping_it(self):
+        import app.services.prompt_editor as module
+
+        long_text = "z" * 40_000
+        bounded = module._bounded_metrics(
+            {
+                "llm_judge": {
+                    "score": 0.8,
+                    "details": [{"reason": long_text, "rule_number": 1}],
+                },
+                "nli_eval": {"unsupported_claims": [long_text, "short"]},
+            }
+        )
+
+        detail = bounded["llm_judge"]["details"][0]
+        assert len(detail["reason"]) == MAX_ACTUAL_CHARS
+        assert detail["reason"].endswith(TRUNCATION_MARKER)
+        assert (detail["rule_number"], bounded["llm_judge"]["score"]) == (1, 0.8)
+        claims = bounded["nli_eval"]["unsupported_claims"]
+        assert [len(claim) for claim in claims] == [MAX_ACTUAL_CHARS, 5]
+
     @pytest.mark.asyncio
     async def test_a_grounding_model_that_could_not_load_says_so(self, monkeypatch):
         import app.services.prompt_editor as module
@@ -505,15 +542,7 @@ class TestGroundingCheck:
         service = _service([_case("a", {"value": "a"})])
         request = _request(techniques=["contains", "nli_eval"])
 
-        class SpentScoreBudget(module.Budget):
-            def remaining(self):
-                return 0.0 if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS else 10.0
-
-            def __init__(self, seconds):
-                self._deadline_seconds = seconds
-                super().__init__(seconds)
-
-        with patch.object(module, "Budget", SpentScoreBudget):
+        with patch.object(module, "Budget", _spent_score_budget(0.0)):
             result = await _run(service, _injector(_llm(["a"])), request)
 
         row = result.results[0]
@@ -534,15 +563,7 @@ class TestGroundingCheck:
 
         service.evaluators._evaluators["nli_eval"] = _hang
 
-        class SpentScoreBudget(module.Budget):
-            def __init__(self, seconds):
-                self._deadline_seconds = seconds
-                super().__init__(seconds)
-
-            def remaining(self):
-                return 0.01 if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS else 10.0
-
-        with patch.object(module, "Budget", SpentScoreBudget):
+        with patch.object(module, "Budget", _spent_score_budget(0.01)):
             result = await _run(service, _injector(_llm(["a"])), request)
 
         row = result.results[0]
@@ -676,3 +697,176 @@ class TestMetering:
         assert [entry["call_index"] for entry in ref.entries] == [1002]
         assert ref.entries[0]["purpose"] == "llm_judge"
         assert case_ref.entries[0]["call_index"] == 0
+
+
+def _judge_metric(score=0.8, reason="the reply answers the question"):
+    detail = {
+        "rule_number": 1,
+        "label": "Rule 1",
+        "score": score,
+        "threshold": 0.5,
+        "passed": score >= 0.5,
+        "reason": reason,
+        "comment": f"Rule 1: {reason}; score={score:.2f}; threshold=0.50",
+    }
+    return {
+        "key": "llm_judge",
+        "score": score,
+        "passed": score >= 0.5,
+        "threshold": 0.5,
+        "comment": f"{reason}; threshold=0.50",
+        "details": [detail],
+    }
+
+
+def _judge_fake(calls, metric=None):
+
+    async def _judge(*, inputs, outputs, reference_outputs, payload, config):
+        calls.append({"inputs": inputs, "outputs": outputs, "config": config})
+        ref = payload.get("_usage_ref")
+        if ref is not None:
+            ref.entries.append(
+                {
+                    "call_index": payload["_technique_index"],
+                    "provider_id": config.get("llm_provider_id"),
+                    "purpose": "llm_judge",
+                    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                }
+            )
+        return metric if metric is not None else _judge_metric()
+
+    return _judge
+
+
+def _judge_request(source_type="none", **overrides):
+    payload = {
+        "techniques": ["llm_judge"],
+        "technique_configs": {"llm_judge": {"rules": [{"rubric": "grade it", "source_type": source_type}]}},
+    }
+    payload.update(overrides)
+    return _request(**payload)
+
+
+class TestJudgeCheck:
+    @pytest.mark.asyncio
+    async def test_the_judge_is_asked_the_question_the_model_was_sent(self):
+        case = SimpleNamespace(id=uuid4(), input_data="hi", expected_output={"value": "a"})
+        service = _service([case])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert calls[0]["inputs"] == {"message": "hi"}
+        assert calls[0]["config"]["llm_provider_id"] == str(PROVIDER.id)
+        assert result.results[0].metrics["llm_judge"]["score"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_every_judged_case_meters_its_own_row(self):
+        cases = [_case("a", {"value": "a"}), _case("b", {"value": "b"}), _case("c", {"value": "c"})]
+        service = _service(cases)
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        captured = {}
+
+        async def _capture(ref):
+            captured.setdefault("refs", []).append(list(ref.entries))
+
+        service._persist_usage = _capture
+        await _run(service, _injector(_llm(["a", "b", "c"])), _judge_request())
+
+        entries = captured["refs"][0]
+        assert len(captured["refs"]) == 1
+        assert [entry["call_index"] for entry in entries] == [0, 1, 2, 1000, 1001, 1002]
+        assert {entry["purpose"] for entry in entries} == {"prompt_check", "llm_judge"}
+
+    @pytest.mark.asyncio
+    async def test_a_judge_that_hangs_keeps_the_metrics_beside_it(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        request = _judge_request(techniques=["contains", "llm_judge", "json_match"])
+
+        async def _hang(**_kwargs):
+            await asyncio.sleep(30)
+
+        service.evaluators._evaluators["llm_judge"] = _hang
+
+        with patch.object(module, "Budget", _spent_score_budget(0.01)):
+            result = await _run(service, _injector(_llm(["a"])), request)
+
+        row = result.results[0]
+        assert row.metrics["contains"]["passed"] is True
+        assert "json_match" in row.metrics
+        assert row.metrics["llm_judge"]["error"] is True
+        assert "judge" in row.metrics["llm_judge"]["comment"]
+        assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_spent_score_budget_never_pays_for_the_judge(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        with patch.object(module, "Budget", _spent_score_budget(0.0)):
+            result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert calls == []
+        assert result.results[0].metrics["llm_judge"]["error"] is True
+        assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_judge_reading_the_expectation_skips_a_case_without_one(self):
+        service = _service([_case("a")])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request("expected_output"))
+
+        assert calls == []
+        assert result.results[0].metrics["llm_judge"]["not_applicable"] is True
+
+    @pytest.mark.asyncio
+    async def test_a_rubric_only_judge_grades_a_case_without_an_expectation(self):
+        service = _service([_case("a")])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert len(calls) == 1
+        assert result.results[0].metrics["llm_judge"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_a_registry_that_loses_the_judge_key_reports_an_error_not_a_pass(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        async def _nothing(*_args, **_kwargs):
+            return {}
+
+        service.evaluators.evaluate = _nothing
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        row = result.results[0]
+        assert row.metrics["llm_judge"]["error"] is True
+        assert row.verdict == "inconclusive"
+
+    @pytest.mark.asyncio
+    async def test_the_session_is_released_after_every_judged_case(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.db.in_transaction = MagicMock(return_value=True)
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+
+        await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert service.db.rollback.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_judge_run_pays_for_its_scoring_out_of_the_model_budget(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert result.provenance.budget_seconds == 80

@@ -235,7 +235,11 @@ class TestExampleBudget:
                 _injector(llm),
                 _request(
                     failed_cases=[
-                        {"case_id": case.id, "actual": "x", "failed_metrics": ["llm_judge"]}
+                        {
+                            "case_id": case.id,
+                            "actual": "x",
+                            "failed_metrics": ["provenance_eval"],
+                        }
                     ]
                 ),
             )
@@ -249,7 +253,7 @@ class TestExampleBudget:
         llm = _llm()
 
         with pytest.raises(AppException) as exc_info:
-            await _run(service, _injector(llm), _request(techniques=["llm_judge"]))
+            await _run(service, _injector(llm), _request(techniques=["provenance_eval"]))
 
         assert exc_info.value.status_code == 400
         assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
@@ -432,6 +436,37 @@ class TestExampleBudget:
         assert "## GRADING" in message
         assert '- not_contains: the reply must not contain any of these phrases' in message
         assert '"refund"' in message
+
+    @pytest.mark.asyncio
+    async def test_the_rewrite_is_told_the_rubric_the_judge_grades_with(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                techniques=["llm_judge"],
+                technique_configs={"llm_judge": {"rules": [{"rubric": "Is it polite?"}]}},
+            ),
+        )
+
+        message = _human_message(llm)
+        assert "## GRADING" in message
+        assert "Is it polite?" in message
+
+    @pytest.mark.asyncio
+    async def test_a_rubric_less_judge_is_refused_before_the_model_is_built(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(service, _injector(llm), _request(techniques=["llm_judge"]))
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
+        assert "rubric" in exc_info.value.error_detail
+        llm.ainvoke.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_not_contains_without_phrases_is_still_accepted_by_the_rewrite(self):

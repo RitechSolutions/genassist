@@ -15,6 +15,7 @@ import {
   joinPairedRuns,
   metricOutcomeLabel,
   metricOutcomeOf,
+  metricScoreLabel,
   snapshotHeader,
   summaryLine,
   type MetricOutcome,
@@ -88,15 +89,34 @@ const CaseCard: React.FC<{ result: PromptEvalCaseResult }> = ({ result }) => {
         <p className="text-xs text-muted-foreground mb-2">{result.error}</p>
       )}
       {metrics.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-2">
-          {metrics.map(([technique, metric]) => (
-            <span key={technique} className="flex items-baseline gap-1">
-              <span className="font-medium">{methodLabel(technique)}</span>
-              <span className={METRIC_TONE[metricOutcomeOf(metric)]}>
-                {metricOutcomeLabel(metric)}
-              </span>
-            </span>
-          ))}
+        <div className="space-y-1 mb-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {metrics.map(([technique, metric]) => {
+              const score = metricScoreLabel(metric);
+              return (
+                <span key={technique} className="flex items-baseline gap-1">
+                  <span className="font-medium">{methodLabel(technique)}</span>
+                  <span className={METRIC_TONE[metricOutcomeOf(metric)]}>
+                    {metricOutcomeLabel(metric)}
+                  </span>
+                  {score && (
+                    <span className="text-muted-foreground">{score}</span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+          {metrics.map(([technique, metric]) =>
+            technique === "llm_judge" && metric.comment && !metric.not_applicable ? (
+              <Reveal
+                key={technique}
+                label={`${methodLabel(technique)} note`}
+                value={`${methodLabel(technique)}: ${metric.comment}`}
+                className="block w-full text-xs text-muted-foreground"
+                clip="line-clamp-1"
+              />
+            ) : null,
+          )}
         </div>
       )}
       <div className="grid grid-cols-3 gap-2 text-xs">

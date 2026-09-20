@@ -12,6 +12,7 @@ import {
   formatAvgScore,
   joinPairedRuns,
   metricOutcomeLabel,
+  metricScoreLabel,
   snapshotHeader,
   summaryLine,
 } from "@/views/AIAgents/Workflows/utils/promptEditorResults";
@@ -173,6 +174,15 @@ describe("metricOutcomeLabel", () => {
       "Could not run",
     );
     expect(metricOutcomeLabel({ score: 0, passed: false })).toBe("Failed");
+  });
+});
+
+describe("metricScoreLabel", () => {
+  it("shows a number only for a check that produced one", () => {
+    expect(metricScoreLabel({ score: 0.6, passed: true })).toBe("0.60");
+    expect(metricScoreLabel({ score: true, passed: true })).toBeNull();
+    expect(metricScoreLabel({ score: false, passed: false })).toBeNull();
+    expect(metricScoreLabel({ score: null, passed: false })).toBeNull();
   });
 });
 

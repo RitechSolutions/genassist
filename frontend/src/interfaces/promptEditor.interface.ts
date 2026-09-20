@@ -125,12 +125,20 @@ export interface GoldSuiteLinkPayload {
   name?: string;
 }
 
+export interface JudgeRuleConfig {
+  rubric: string;
+  /** Omitted = default 0.5 */
+  min_score?: number;
+  source_type: "none" | "expected_output";
+}
+
 /** Options for the techniques that take them. nli_eval gets a fixed evidence
- *  source server-side; llm_judge and provenance_eval are rejected outright */
+ *  source server-side; llm_judge takes one rule; provenance_eval is rejected outright */
 export interface PromptTechniqueConfigs {
   not_contains?: { phrases: string[] };
   field_equals?: { field: string; expected?: string };
   nli_eval?: { min_entail_score: number };
+  llm_judge?: { rules: JudgeRuleConfig[] };
 }
 
 export interface PromptEvalRequestPayload {

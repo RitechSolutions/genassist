@@ -293,14 +293,19 @@ def _usage_total(ref: "PromptUsageRef") -> Dict[str, Any]:
     return totals
 
 
+def _bounded_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _for_wire(value)
+    if isinstance(value, list):
+        return [_bounded_value(item) for item in value]
+    if isinstance(value, dict):
+        return {name: _bounded_value(item) for name, item in value.items()}
+    return value
+
+
 def _bounded_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        key: {
-            name: _for_wire(value) if isinstance(value, str) else value
-            for name, value in metric.items()
-        }
-        for key, metric in metrics.items()
-    }
+    """Judge details carry the model's reason, so nested strings are bounded too"""
+    return {key: _bounded_value(metric) for key, metric in metrics.items()}
 
 
 def _usage_entry(response: Any, call_index: int, purpose: str, provider_id: UUID) -> Dict[str, Any]:

@@ -105,6 +105,26 @@ def _optimize_request():
     return PromptOptimizeRequest(provider_id=PROVIDER.id, current_prompt="You are helpful.")
 
 
+def _judge_request():
+    return PromptEvalRequest(
+        prompt_content="You are helpful.",
+        provider_id=PROVIDER.id,
+        techniques=["llm_judge"],
+        technique_configs={"llm_judge": {"rules": [{"rubric": "grade it"}]}},
+    )
+
+
+def _judge(session, *, commit: bool):
+
+    async def _grade(**_kwargs):
+        await session.begin()
+        if commit:
+            await session.commit()
+        return {"key": "llm_judge", "score": 0.8, "passed": True, "threshold": 0.5, "comment": "ok"}
+
+    return _grade
+
+
 class TestReleasePoint:
     @pytest.mark.asyncio
     async def test_an_open_transaction_is_released_before_the_check_calls_the_model(self, session):
@@ -146,3 +166,17 @@ class TestReleasePoint:
         await session.begin()
         assert session.in_transaction() is True
         await session.rollback()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("commit", [False, True])
+    async def test_a_judges_own_transaction_never_outlives_the_case(self, session, commit):
+        service = _service(session, [_case()])
+        service.evaluators._evaluators["llm_judge"] = _judge(session, commit=commit)
+        llm = AsyncMock()
+        llm.ainvoke.return_value = AIMessage(content="hi")
+
+        with patch("app.dependencies.injector.injector", _injector(llm)):
+            result = await service.evaluate_prompt(WORKFLOW_ID, NODE_ID, FIELD, _judge_request())
+
+        assert session.in_transaction() is False
+        assert result.results[0].verdict == "passed"
