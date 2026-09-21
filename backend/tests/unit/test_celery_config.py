@@ -153,3 +153,13 @@ def test_redelivery_delay_sits_between_task_timeout_and_reconciler(celery_conf):
     assert visibility_timeout > two_hours
     assert visibility_timeout < settings.TEST_RUN_RUNNING_MAX_AGE_SECONDS
     assert visibility_timeout < settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS
+
+
+def test_solo_watchdog_fires_before_redelivery(celery_conf):
+    """On the solo pool the watchdog is the only hard stop, so it must beat the broker's redelivery"""
+    from app.tasks.solo_watchdog import GRACE_SECONDS
+
+    visibility_timeout = celery_conf.broker_transport_options["visibility_timeout"]
+    assert celery_conf.task_time_limit + GRACE_SECONDS < visibility_timeout
+    for name, limits in celery_conf.task_annotations.items():
+        assert limits["time_limit"] + GRACE_SECONDS < visibility_timeout, name

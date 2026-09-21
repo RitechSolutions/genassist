@@ -46,6 +46,8 @@ class ProjectSettings(BaseSettings):
     # Only one beat replica dispatches; the others stand by and take over within the TTL
     CELERY_BEAT_LEADER_LOCK_ENABLED: bool = True
     CELERY_BEAT_LEADER_LOCK_TTL_SECONDS: int = 60
+    # The solo pool cannot enforce task time limits; the watchdog stops the worker instead
+    CELERY_SOLO_WATCHDOG_ENABLED: bool = True
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True

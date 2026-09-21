@@ -384,11 +384,13 @@ def create_celery():
         task_track_started=True,
         # Ack after completion so a job survives a worker killed or moved mid-task.
         # A job whose child process dies is not requeued: that death is usually
-        # deterministic for the job, and requeueing it would loop forever
+        # deterministic for the job, and requeueing it would loop forever. A redelivered
+        # job already marked running is failed, not run again (base.should_execute_run).
         task_acks_late=True,
         task_reject_on_worker_lost=False,
         # Backstop for hangs the per-task asyncio timeouts cannot see. Enforced by the
-        # prefork pool only; the global pair covers every task without its own entry.
+        # prefork pool; on the solo pool tasks.solo_watchdog stops the worker instead.
+        # The global pair covers every task without its own entry.
         task_time_limit=480,
         task_soft_time_limit=420,
         task_annotations=_long_task_time_limits(),

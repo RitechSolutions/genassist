@@ -7,6 +7,8 @@ from app import create_celery
 from app.core.config.settings import settings
 # Registers the beat leader lock and tick heartbeat (beat_init signal)
 import app.tasks.beat_leader  # noqa: F401
+# Stops a solo-pool worker whose task ran past its hard limit (celeryd_after_setup signal)
+import app.tasks.solo_watchdog  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)

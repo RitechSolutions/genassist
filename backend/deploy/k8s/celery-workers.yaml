@@ -6,6 +6,9 @@
 #                      on the SOLO pool. Workflow Python code nodes execute user code in a
 #                      subprocess, and a prefork child (daemonic) may not start children,
 #                      so this worker cannot run prefork until that executor is adapted.
+#                      Solo cannot enforce task time limits, so the worker stops itself once
+#                      a task runs past its hard limit (app/tasks/solo_watchdog.py) and the
+#                      Deployment restarts it.
 #   * worker-default : runs everything else on the "default" queue on the PREFORK pool with
 #                      two children. Prefork is the only pool that enforces task time limits
 #                      and answers `celery inspect ping` during a task.
