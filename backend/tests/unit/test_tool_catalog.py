@@ -167,6 +167,43 @@ def test_resolve_routers_dedupes_branch_values():
     assert [b["value"] for b in routers[0]["branches"]] == ["true"]
 
 
+def test_resolve_routers_includes_switch_branches_with_case_labels():
+    wf = {
+        "nodes": [
+            {"id": "r1", "type": "routerNode", "data": {"name": "Escalate?"}},
+            {
+                "id": "s1",
+                "type": "switchNode",
+                "data": {
+                    "name": "Intent Switch",
+                    "cases": [
+                        {"id": "case_1", "label": "Billing", "value": "billing"},
+                        {"id": "case_2", "label": "", "value": "sales"},
+                    ],
+                },
+            },
+            {"id": "billing", "type": "agentNode", "data": {"name": "Billing Agent"}},
+            {"id": "sales", "type": "agentNode", "data": {"name": "Sales Agent"}},
+            {"id": "other", "type": "agentNode", "data": {"name": "Fallback"}},
+        ],
+        "edges": [
+            {"source": "s1", "target": "billing", "sourceHandle": "output_case_1"},
+            {"source": "s1", "target": "sales", "sourceHandle": "output_case_2"},
+            {"source": "s1", "target": "other", "sourceHandle": "output_default"},
+        ],
+    }
+    routers = {r["id"]: r for r in resolve_routers(wf)}
+    assert routers["r1"]["type"] == "routerNode"
+    assert routers["s1"]["type"] == "switchNode"
+    assert routers["s1"]["label"] == "Intent Switch"
+    # The value is the route the switch records; the label names the case.
+    assert routers["s1"]["branches"] == [
+        {"value": "case_1", "destination": "Billing Agent", "label": "Billing"},
+        {"value": "case_2", "destination": "Sales Agent", "label": "Case 2"},
+        {"value": "default", "destination": "Fallback", "label": "Default"},
+    ]
+
+
 def test_resolve_action_nodes_lists_every_node_with_type():
     wf = {
         "nodes": [

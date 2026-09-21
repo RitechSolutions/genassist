@@ -20,6 +20,8 @@ export interface NodeHandler {
   position: "left" | "right" | "top" | "bottom";
   compatibility: NodeCompatibility;
   schema?: NodeSchema;
+  /** Optional human-readable name shown in the handle tooltip (e.g. a Switch case). */
+  label?: string;
 }
 
 // Base node data interface
@@ -112,6 +114,33 @@ export interface RouterNodeData extends BaseNodeData {
     | "not_ends_with"
     | "regex";
   second_value?: string;
+}
+
+// Switch node data — deterministic N-way routing on a single value. Each case
+// owns an `output_<case.id>` source handle; unmatched values take `output_default`.
+export type SwitchMatchMode =
+  | "equal"
+  | "contains"
+  | "starts_with"
+  | "ends_with"
+  | "regex";
+
+export interface SwitchCase {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface SwitchNodeData extends BaseNodeData {
+  /** When on, an LLM picks the case (from smartPrompt) instead of comparing switchValue. */
+  smartModeEnabled?: boolean | string;
+  providerId?: string;
+  smartPrompt?: string;
+  systemPrompt?: string;
+  switchValue?: string;
+  matchMode?: SwitchMatchMode;
+  caseSensitive?: boolean;
+  cases?: SwitchCase[];
 }
 
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
@@ -673,6 +702,7 @@ export type NodeData =
   | SlackOutputNodeData
   | WhatsappNodeData
   | RouterNodeData
+  | SwitchNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
@@ -716,6 +746,12 @@ export interface NodeTypeDefinition<T extends NodeData> {
     | "training" | "utils"
   icon: string;
   defaultData: T;
+  /**
+   * For nodes whose handles depend on their config (e.g. one output per Switch
+   * case): derives the handles from the node data. When set, hydration rebuilds
+   * handles from this instead of back-filling `defaultData.handlers`.
+   */
+  getHandlers?: (data: T) => NodeHandler[];
   component: ComponentType<NodeProps<NodeData>>; // React component for the node
   createNode: (id: string, position: { x: number; y: number }, data: T) => Node;
 }

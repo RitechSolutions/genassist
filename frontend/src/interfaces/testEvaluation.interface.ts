@@ -57,11 +57,15 @@ export interface EvaluationAgentInfo {
 export interface EvaluationRouterBranch {
   value: string;
   destination: string | null;
+  /** Display name when the value is opaque (a Switch case id). */
+  label?: string | null;
 }
 
 export interface EvaluationRouterInfo {
   id: string;
   label: string;
+  /** routerNode or switchNode. */
+  type?: string | null;
   workflow_path: string[];
   branches: EvaluationRouterBranch[];
 }
