@@ -106,6 +106,16 @@ NODE_DESCRIPTIONS = {
             "Conditional processing based on classification results",
         ],
     },
+    "switchNode": {
+        "category": "Control Flow",
+        "description": "Deterministic multi-way branching. Compares switchValue against an ordered list of cases (each {id, label, value}); the first match routes to output_<case id>, no match routes to output_default. Match modes: equal, contains, starts_with, ends_with, regex.",
+        "when_to_use": "When one value selects between three or more branches, such as a classified intent, a status or a priority. Use instead of chaining several routerNodes.",
+        "example_use_cases": [
+            "Routing billing, technical support, sales and cancellation intents to separate agents",
+            "Different handling for new, pending, approved and rejected items",
+            "Sending low-, medium-, high- and critical-priority tickets down different paths",
+        ],
+    },
     "aggregatorNode": {
         "category": "Control Flow",
         "description": "Collects outputs from multiple upstream nodes and combines them using a strategy (list, merge, first, last). Useful after branching to reconverge.",
