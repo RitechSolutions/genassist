@@ -620,7 +620,7 @@ class TestPausedConversationExecution:
 
 
 class TestRunPickupGuard:
-    """A redelivered message must not re-run a finished run, but must re-run a lost one."""
+    """A redelivered message must not re-run a finished run, and must fail a lost one."""
 
     @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
     def test_terminal_runs_are_skipped(self, status):
@@ -628,18 +628,44 @@ class TestRunPickupGuard:
 
         assert should_execute_run("TestRun", uuid4(), status) is False
 
-    @pytest.mark.parametrize("status", ["queued", "pending", "running"])
-    def test_open_runs_execute(self, status):
+    @pytest.mark.parametrize("status", ["queued", "pending"])
+    def test_unstarted_runs_execute(self, status):
         from app.tasks.base import should_execute_run
 
         assert should_execute_run("TestRun", uuid4(), status) is True
+
+    def test_a_run_left_running_by_a_lost_worker_is_not_re_executed(self):
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("TestRun", uuid4(), "running") is False
 
     def test_enum_statuses_are_understood(self):
         from app.core.utils.enums.workflow_schedule_enum import WorkflowScheduleRunStatus
         from app.tasks.base import should_execute_run
 
         assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.COMPLETED) is False
-        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.RUNNING) is True
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.RUNNING) is False
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.PENDING) is True
+
+    @pytest.mark.asyncio
+    async def test_redelivered_running_evaluation_is_failed_not_re_executed(self):
+        from app.tasks.base import ABANDONED_RUN_ERROR
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        run = _run(status="running")
+        service = MagicMock()
+        service.run_repo.get_by_id = AsyncMock(return_value=run)
+        service.suite_repo.get_by_id = AsyncMock()
+        service._fail_run = AsyncMock()
+        service._execute_run = AsyncMock()
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service._fail_run.assert_awaited_once_with(run, ABANDONED_RUN_ERROR)
+        service.suite_repo.get_by_id.assert_not_awaited()
+        service._execute_run.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_redelivered_completed_evaluation_is_not_re_executed(self):
@@ -700,7 +726,7 @@ class TestFailureIsPersisted:
         from app.tasks.test_suite_tasks import _execute_test_suite_run_async
 
         run = SimpleNamespace(
-            id=uuid4(), status="running", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+            id=uuid4(), status="queued", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
         )
         service = _failing_service(run, RuntimeError("kaboom"))
 
@@ -719,7 +745,7 @@ class TestFailureIsPersisted:
         from app.tasks.test_suite_tasks import _execute_test_suite_run_async
 
         run = SimpleNamespace(
-            id=uuid4(), status="running", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+            id=uuid4(), status="queued", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
         )
 
         async def service_fails_the_run(*_args, **_kwargs):

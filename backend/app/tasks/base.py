@@ -14,20 +14,33 @@ from app.core.tenant_scope import (
 logger = logging.getLogger(__name__)
 
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
+ABANDONED_RUN_ERROR = (
+    "The worker executing this run was lost before it finished. Start the run again to retry."
+)
+
+
+def run_status_value(status) -> str:
+    return getattr(status, "value", status)
+
+
+def was_abandoned_by_worker(status) -> bool:
+    """A run still marked running when its message is redelivered lost its worker."""
+    return run_status_value(status) == "running"
 
 
 def should_execute_run(kind: str, run_id, status) -> bool:
-    """Skip terminal runs; re-run one left "running" by a lost worker."""
-    status_value = getattr(status, "value", status)
+    """Execute only runs that have not started; finished and abandoned runs are skipped."""
+    status_value = run_status_value(status)
     if status_value in TERMINAL_RUN_STATUSES:
         logger.info("%s %s is already %s; skipping", kind, run_id, status_value)
         return False
-    if status_value == "running":
+    if was_abandoned_by_worker(status):
         logger.warning(
-            "%s %s was left running by a lost worker; re-running it from scratch",
+            "%s %s was left running by a lost worker; failing it instead of re-running",
             kind,
             run_id,
         )
+        return False
     return True
 
 

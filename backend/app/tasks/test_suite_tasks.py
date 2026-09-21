@@ -14,10 +14,12 @@ from app.core.tenant_scope import (
     background_task_context,
 )
 from app.tasks.base import (
+    ABANDONED_RUN_ERROR,
     TERMINAL_RUN_STATUSES,
     create_task_wrapper,
     run_async_in_celery,
     should_execute_run,
+    was_abandoned_by_worker,
 )
 from app.core.tenant_scope import get_tenant_context
 from app.dependencies.injector import injector
@@ -68,6 +70,8 @@ async def _execute_test_suite_run_async(
         logger.warning("TestRun %s not found — skipping", run_id)
         return
     if not should_execute_run("TestRun", run_id, run.status):
+        if was_abandoned_by_worker(run.status):
+            await service._fail_run(run, ABANDONED_RUN_ERROR)
         return
 
     suite = await service.suite_repo.get_by_id(run.suite_id)

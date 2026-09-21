@@ -30,7 +30,12 @@ from app.repositories.agent import AgentRepository
 from app.repositories.workflow_schedule import WorkflowScheduleRepository
 from app.repositories.workflow_schedule_run import WorkflowScheduleRunRepository
 from app.services.realtime_notifications import emit_notification, notification_payload
-from app.tasks.base import run_async_in_celery, should_execute_run
+from app.tasks.base import (
+    ABANDONED_RUN_ERROR,
+    run_async_in_celery,
+    should_execute_run,
+    was_abandoned_by_worker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +75,32 @@ def _redact_structure(value):
 
 # ==================== Execution ====================
 
+def _notify_run_failed(tenant_id: str, run_id: UUID) -> None:
+    emit_notification(
+        socket_connection_manager=injector.get(SocketConnectionManager),
+        tenant_id=tenant_id,
+        payload=notification_payload(
+            notification_id=f"workflow_failed:schedule:{run_id}",
+            title="Scheduled Workflow Run Failed",
+            description=f"Scheduled run {str(run_id)[:8]}... failed.",
+            level="error",
+            action_url="/ai-agents",
+            entity_kind="workflow_schedule_run",
+            entity_id=run_id,
+            event_key=f"workflow_failed:schedule:{run_id}",
+        ),
+    )
+
+
+async def _fail_abandoned_run(run_repository, session, run_id: UUID, tenant_id: str) -> None:
+    """Fail a run whose worker was lost instead of running it a second time."""
+    await run_repository.update_status(
+        run_id, WorkflowScheduleRunStatus.FAILED, error_message=ABANDONED_RUN_ERROR
+    )
+    await session.commit()
+    _notify_run_failed(tenant_id, run_id)
+
+
 async def execute_workflow_run_async(run_id: UUID):
     """Execute a single workflow schedule run for the current tenant."""
     tenant_id = get_tenant_context()
@@ -95,6 +126,8 @@ async def execute_workflow_run_async(run_id: UUID):
                         return None
                     raise
                 if not should_execute_run("Workflow schedule run", run_id, run.status):
+                    if was_abandoned_by_worker(run.status):
+                        await _fail_abandoned_run(run_repository, session, run_id, tenant_id)
                     return None
 
                 await run_repository.update_status(
@@ -186,21 +219,7 @@ async def execute_workflow_run_async(run_id: UUID):
                         error_message=str(e),
                     )
                     await session.commit()
-                    socket_connection_manager = injector.get(SocketConnectionManager)
-                    emit_notification(
-                        socket_connection_manager=socket_connection_manager,
-                        tenant_id=tenant_id,
-                        payload=notification_payload(
-                            notification_id=f"workflow_failed:schedule:{run_id}",
-                            title="Scheduled Workflow Run Failed",
-                            description=f"Scheduled run {str(run_id)[:8]}... failed.",
-                            level="error",
-                            action_url="/ai-agents",
-                            entity_kind="workflow_schedule_run",
-                            entity_id=run_id,
-                            event_key=f"workflow_failed:schedule:{run_id}",
-                        ),
-                    )
+                    _notify_run_failed(tenant_id, run_id)
                 except AppException as update_error:
                     if update_error.error_key == ErrorKey.NOT_FOUND:
                         logger.debug(
