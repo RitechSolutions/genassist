@@ -244,7 +244,7 @@ export const usePromptMeasurement = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedTechniques, setSelectedTechniques] = useState<string[]>([
-    "contains",
+    "llm_judge",
   ]);
   const [phrasesText, setPhrasesText] = useState("");
   const [nliScoreText, setNliScoreText] = useState("");

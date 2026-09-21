@@ -73,8 +73,10 @@ describe("unit score problems", () => {
 });
 
 describe("PROMPT_CHECK_TECHNIQUES", () => {
-  it("offers the judge and still withholds the deferred evaluator", () => {
+  it("offers the judge and withholds the deferred and literal checks", () => {
     expect(PROMPT_CHECK_TECHNIQUES).toContain("llm_judge");
     expect(PROMPT_CHECK_TECHNIQUES).not.toContain("provenance_eval");
+    expect(PROMPT_CHECK_TECHNIQUES).not.toContain("exact_match");
+    expect(PROMPT_CHECK_TECHNIQUES).not.toContain("contains");
   });
 });

@@ -7,10 +7,10 @@ export const CASES_TO_CHECK_OPTIONS = [5, 10, 25] as const;
 export const DEFAULT_CASES_TO_CHECK = 10;
 
 /** Techniques an isolated check can grade. `field_equals` stays API-only and
- *  `provenance_eval` is rejected server-side, so neither is offered */
+ *  `provenance_eval` is rejected server-side, so neither is offered. The API still
+ *  accepts `exact_match` and `contains`; gold replies are ideal answers, not literal
+ *  targets, so the picker withholds both */
 export const PROMPT_CHECK_TECHNIQUES = [
-  "exact_match",
-  "contains",
   "json_match",
   "not_contains",
   "nli_eval",
