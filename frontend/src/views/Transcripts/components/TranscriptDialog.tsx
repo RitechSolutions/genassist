@@ -9,6 +9,7 @@ import {
   Megaphone,
   Share2,
   Check,
+  Database,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -39,6 +40,9 @@ import { formatFeedbackDate } from '@/helpers/utils';
 import { useAgentsList } from '@/views/Analytics/hooks/useAgentsList';
 import { useFeatureFlagVisible } from '@/components/featureFlag';
 import { FeatureFlags } from '@/config/featureFlags';
+import { usePermissions } from '@/context/PermissionContext';
+import { AddToDatasetDialog } from '@/views/TestSuites/components/AddToDatasetDialog';
+import { canAddConversationToDataset } from '@/views/TestSuites/helpers/conversationDatasets';
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -145,6 +149,7 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
     output_tokens: 0,
   });
   const [costIncomplete, setCostIncomplete] = useState(false);
+  const [isAddToDatasetOpen, setIsAddToDatasetOpen] = useState(false);
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -156,6 +161,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const [linkCopied, setLinkCopied] = useState(false);
   const { agentNameMap } = useAgentsList();
   const showAskGenAI = useFeatureFlagVisible(FeatureFlags.CONVERSATIONS.SHOW_ASK_GENAI);
+  const permissions = usePermissions();
+  const canAddToDataset = canAddConversationToDataset(permissions, localTranscript?.id);
   // Without the flag the assistant is gone, so the transcript is the only pane left
   const rightPanelTab = showAskGenAI ? activeTab : 'transcript';
 
@@ -464,6 +471,22 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
           </DialogTitle>
         </DialogHeader>
 
+        {/* Pinned to the corner beside the close X rather than placed in the
+            header, so nothing else shifts and the h2 the dialog is named by
+            stays free of button text. top-[10px] centres it on the X. */}
+        {canAddToDataset && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="absolute right-12 top-[10px] h-7 gap-1.5 px-2.5 text-xs font-normal"
+            title="Add this conversation to an evaluation dataset"
+            onClick={() => setIsAddToDatasetOpen(true)}
+          >
+            <Database className="h-3.5 w-3.5" />
+            Add to dataset
+          </Button>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-[350px_1fr] gap-6 items-start">
           <div className="space-y-4 flex flex-col">
             {/* Left Panel Toggle */}
@@ -748,6 +771,13 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
             }
           }}
           messageId={debugMessageId}
+        />
+
+        <AddToDatasetDialog
+          open={isAddToDatasetOpen}
+          onOpenChange={setIsAddToDatasetOpen}
+          conversationId={localTranscript?.id ?? null}
+          conversationLabel={`${isCall ? 'Call' : 'Chat'} #${(localTranscript?.metadata?.title ?? '----').slice(-4)}`}
         />
       </DialogContent>
     </Dialog>

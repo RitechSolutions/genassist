@@ -158,23 +158,32 @@ describe("describeImportPlan", () => {
     expect(text).toContain("keeping everything already in the dataset");
   });
 
-  it("warns about the turns a refresh destroys", () => {
+  it("warns about the turns a replacement destroys", () => {
     const text = describeImportPlan(
       planImport(["a", "b"], new Map([["a", 4]])),
       "Refunds",
     );
     expect(text).toContain("1 conversation already in this dataset");
-    expect(text).toContain("replacing 4 turns");
+    expect(text).toContain("4 turns across");
+    expect(text).toContain("will be replaced from the transcript");
     expect(text).toContain("Any edits or turns you added to them are lost");
   });
 
-  it("drops the add clause when every pick is a refresh", () => {
+  it("drops the add clause when every pick is a replacement", () => {
     const text = describeImportPlan(
       planImport(["a"], new Map([["a", 1]])),
       "Refunds",
     );
     expect(text).not.toContain("This adds");
-    expect(text).toContain("replacing 1 turn");
+    expect(text).toContain("1 turn across 1 conversation");
+  });
+
+  it("says replaced, never refreshed", () => {
+    const text = describeImportPlan(
+      planImport(["a"], new Map([["a", 2]])),
+      "Refunds",
+    );
+    expect(text).not.toMatch(/refresh/i);
   });
 
   it("uses singular wording for one conversation", () => {
@@ -193,20 +202,20 @@ describe("summarizeImportOutcome", () => {
     expect(summary.errorMessage).toBeNull();
   });
 
-  it("separates refreshed conversations from new ones", () => {
+  it("separates replaced conversations from new ones", () => {
     const summary = summarizeImportOutcome(
       outcome({ imported: 1, replaced: 2, cases: turns(9) }),
     );
     expect(summary.successMessage).toBe(
-      "Imported 1 conversation and refreshed 2 (9 turns).",
+      "Imported 1 conversation and replaced 2 (9 turns).",
     );
   });
 
-  it("says refreshed when nothing was new", () => {
+  it("says replaced when nothing was new", () => {
     const summary = summarizeImportOutcome(
       outcome({ replaced: 1, cases: turns(3) }),
     );
-    expect(summary.successMessage).toBe("Refreshed 1 conversation (3 turns).");
+    expect(summary.successMessage).toBe("Replaced 1 conversation (3 turns).");
   });
 
   it("names the reason when exactly one conversation fails", () => {
