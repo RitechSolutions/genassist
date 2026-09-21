@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import json
+import math
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -34,6 +35,7 @@ from app.modules.workflow.engine.workflow_engine import (
 )
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.llm_json import parse_json_object_reply
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
@@ -351,17 +353,18 @@ def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
 def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
     """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
     try:
-        parsed = json.loads(raw_content)
-        if not isinstance(parsed, dict):
-            return None, "LLM judge response was not a JSON object"
+        parsed = parse_json_object_reply(raw_content)
         # A missing score is a malformed judgment, not a real 0.0 — surface it as
         # an error rather than silently failing the answer.
         if parsed.get("score") is None:
             return None, "LLM judge response did not include a score"
-        score = max(0.0, min(1.0, float(parsed["score"])))
+        score = float(parsed["score"])
+        if not math.isfinite(score):
+            return None, "LLM judge response did not include a usable score"
+        score = max(0.0, min(1.0, score))
         reason = str(parsed.get("reason", "")).strip() or None
         return score, reason
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except (ValueError, TypeError):
         return None, "LLM judge response could not be parsed"
 
 
