@@ -191,11 +191,18 @@ async def execute_pipeline_run_async(run_id: UUID):
                 # Build workflow engine with configuration
                 workflow_engine = WorkflowEngine(workflow_config)
 
-                # Prepare input data with model context
+                # Prepare input data with model context. Every ML pipeline
+                # workflow is scaffolded with a chatInputNode Start whose
+                # inputSchema requires a "message" - without one, that node
+                # (and everything downstream of it) fails validation before
+                # any training can run. Required fields don't fall back to
+                # their schema defaultValue (see validate_input_schema), so
+                # this has to be supplied explicitly.
                 input_data = {
                     "model_id": str(run.model_id),
                     "model_name": model.name,
                     "pipeline_run_id": str(run_id),
+                    "message": f"Scheduled pipeline run for model '{model.name}'",
                 }
 
                 # Execute workflow
