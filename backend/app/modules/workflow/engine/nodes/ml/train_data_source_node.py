@@ -218,7 +218,16 @@ class TrainDataSourceNode(BaseNode):
         logger.info(f"Processing CSV file: {csv_file_path or csv_file_id}")
 
         try:
-            if not csv_file_path and csv_file_id:
+            # Prefer re-downloading by ID over trusting a stored csvFilePath.
+            # csvFilePath is an absolute path captured wherever the file was
+            # originally uploaded from (e.g. DATA_VOLUME on the API server at
+            # upload time) - it can point somewhere that doesn't exist in
+            # whatever process/container actually executes this node (a
+            # scheduled pipeline run, a different host, etc.), while the file
+            # manager download always resolves correctly relative to this
+            # process's own DATA_VOLUME. Only fall back to the raw
+            # csvFilePath when there's no ID to re-download by.
+            if csv_file_id:
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
 
