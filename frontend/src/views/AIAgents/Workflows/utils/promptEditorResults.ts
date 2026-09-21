@@ -117,7 +117,7 @@ export const metricOutcomeLabel = (metric: PromptEvalMetric): string =>
   METRIC_OUTCOME_LABELS[metricOutcomeOf(metric)];
 
 export const metricScoreLabel = (metric: PromptEvalMetric): string | null =>
-  typeof metric.score === "number" ? metric.score.toFixed(2) : null;
+  typeof metric.score === "number" ? formatAvgScore(metric.score) : null;
 
 export interface PairedCaseRow {
   caseId: string;

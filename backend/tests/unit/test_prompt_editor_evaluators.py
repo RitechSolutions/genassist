@@ -218,16 +218,15 @@ class TestTechniqueConfigContract:
     def test_a_judge_rule_carries_a_rubric_a_threshold_and_a_source_and_nothing_else(self):
         assert set(JudgeRule.model_fields) == {"rubric", "min_score", "source_type"}
 
+        with pytest.raises(ValidationError) as exc_info:
+            PromptTechniqueConfigs(llm_judge={"rules": [{"rubric": "grade it", "source_field": "trace.x"}]})
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
     @pytest.mark.parametrize("key", ["label", "source_field", "llm_provider_id", "answer_field", "question_field"])
     def test_a_registry_selector_cannot_ride_along_on_a_judge_rule(self, key):
         with pytest.raises(ValidationError) as exc_info:
             JudgeRule(rubric="grade it", **{key: "anything"})
-
-        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
-
-    def test_a_judge_rule_the_registry_would_read_cannot_reach_the_request(self):
-        with pytest.raises(ValidationError) as exc_info:
-            PromptTechniqueConfigs(llm_judge={"rules": [{"rubric": "grade it", "source_field": "trace.x"}]})
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 

@@ -179,7 +179,7 @@ describe("metricOutcomeLabel", () => {
 
 describe("metricScoreLabel", () => {
   it("shows a number only for a check that produced one", () => {
-    expect(metricScoreLabel({ score: 0.6, passed: true })).toBe("0.60");
+    expect(metricScoreLabel({ score: 0.6, passed: true })).toBe("60.0%");
     expect(metricScoreLabel({ score: true, passed: true })).toBeNull();
     expect(metricScoreLabel({ score: false, passed: false })).toBeNull();
     expect(metricScoreLabel({ score: null, passed: false })).toBeNull();

@@ -34,6 +34,7 @@ export interface OptimizeInputs extends RunInputs {
   /** May be empty; only its length is checked */
   instructions: string;
   rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
 }
 
 export interface EvalInputs extends RunInputs {
@@ -189,6 +190,7 @@ export const optimizeGate = (
   const provider = providerGate(run);
   if (provider) return provider;
   if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
   if (promptLength(run.instructions) > MAX_INSTRUCTIONS_LENGTH)
     return blocked(
       `The additional instructions are longer than ${MAX_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`,

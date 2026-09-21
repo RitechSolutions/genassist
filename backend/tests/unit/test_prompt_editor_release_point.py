@@ -114,12 +114,10 @@ def _judge_request():
     )
 
 
-def _judge(session, *, commit: bool):
+def _judge(session, seen):
 
     async def _grade(**_kwargs):
-        await session.begin()
-        if commit:
-            await session.commit()
+        seen.append(session.in_transaction())
         return {"key": "llm_judge", "score": 0.8, "passed": True, "threshold": 0.5, "comment": "ok"}
 
     return _grade
@@ -168,15 +166,17 @@ class TestReleasePoint:
         await session.rollback()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("commit", [False, True])
-    async def test_a_judges_own_transaction_never_outlives_the_case(self, session, commit):
-        service = _service(session, [_case()])
-        service.evaluators._evaluators["llm_judge"] = _judge(session, commit=commit)
+    async def test_the_session_is_free_while_the_judge_grades(self, session):
+        await session.begin()
+        seen = []
+        service = _service(session, [_case(), _case()])
+        service.evaluators._evaluators["llm_judge"] = _judge(session, seen)
         llm = AsyncMock()
         llm.ainvoke.return_value = AIMessage(content="hi")
 
         with patch("app.dependencies.injector.injector", _injector(llm)):
             result = await service.evaluate_prompt(WORKFLOW_ID, NODE_ID, FIELD, _judge_request())
 
+        assert seen == [False, False]
         assert session.in_transaction() is False
         assert result.results[0].verdict == "passed"

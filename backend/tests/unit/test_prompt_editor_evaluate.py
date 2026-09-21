@@ -13,7 +13,11 @@ from langchain_core.messages import AIMessage
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.prompt_editor import MAX_ACTUAL_CHARS, PromptEvalRequest
-from app.services.prompt_editor import TRUNCATION_MARKER, PromptEditorService
+from app.services.prompt_editor import (
+    PROMPT_CHECK_CONCURRENCY,
+    TRUNCATION_MARKER,
+    PromptEditorService,
+)
 
 WORKFLOW_ID = uuid4()
 NODE_ID = "n1"
@@ -776,7 +780,7 @@ class TestJudgeCheck:
 
         entries = captured["refs"][0]
         assert len(captured["refs"]) == 1
-        assert [entry["call_index"] for entry in entries] == [0, 1, 2, 1000, 1001, 1002]
+        assert sorted(entry["call_index"] for entry in entries) == [0, 1, 2, 1000, 1001, 1002]
         assert {entry["purpose"] for entry in entries} == {"prompt_check", "llm_judge"}
 
     @pytest.mark.asyncio
@@ -839,28 +843,38 @@ class TestJudgeCheck:
         assert result.results[0].metrics["llm_judge"]["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_a_registry_that_loses_the_judge_key_reports_an_error_not_a_pass(self):
-        service = _service([_case("a", {"value": "a"})])
+    async def test_the_cases_are_judged_together_so_one_budget_covers_them_all(self):
+        cases = [_case(str(i), {"value": str(i)}) for i in range(PROMPT_CHECK_CONCURRENCY)]
+        service = _service(cases)
+        gate = asyncio.Barrier(PROMPT_CHECK_CONCURRENCY)
 
-        async def _nothing(*_args, **_kwargs):
-            return {}
+        async def _judge(**_kwargs):
+            await gate.wait()
+            return _judge_metric()
 
-        service.evaluators.evaluate = _nothing
-        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+        service.evaluators._evaluators["llm_judge"] = _judge
+        result = await asyncio.wait_for(
+            _run(service, _injector(_llm(["a"] * PROMPT_CHECK_CONCURRENCY)), _judge_request()), timeout=5
+        )
 
-        row = result.results[0]
-        assert row.metrics["llm_judge"]["error"] is True
-        assert row.verdict == "inconclusive"
+        assert [row.verdict for row in result.results] == ["passed"] * PROMPT_CHECK_CONCURRENCY
 
     @pytest.mark.asyncio
-    async def test_the_session_is_released_after_every_judged_case(self):
-        service = _service([_case("a", {"value": "a"})])
+    async def test_every_case_is_graded_on_the_model_the_check_already_built(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
         service.db.in_transaction = MagicMock(return_value=True)
-        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        llm = _llm(["a", "b"])
+        seen = []
 
-        await _run(service, _injector(_llm(["a"])), _judge_request())
+        async def _judge(*, inputs, outputs, reference_outputs, payload, config):
+            seen.append(payload["_judge_model"])
+            return _judge_metric()
 
-        assert service.db.rollback.await_count == 2
+        service.evaluators._evaluators["llm_judge"] = _judge
+        await _run(service, _injector(llm), _judge_request())
+
+        assert seen == [llm, llm]
+        assert service.db.rollback.await_count == 1
 
     @pytest.mark.asyncio
     async def test_a_judge_run_pays_for_its_scoring_out_of_the_model_budget(self):

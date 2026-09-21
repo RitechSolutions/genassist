@@ -806,6 +806,7 @@ class SimpleEvaluatorRegistry:
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
         usage_ref: "EvaluationUsageRef | None" = None,
+        judge_model: Any = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -818,6 +819,7 @@ class SimpleEvaluatorRegistry:
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
             "_usage_ref": usage_ref,
+            "_judge_model": judge_model,
         }
         for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
@@ -1512,10 +1514,13 @@ class SimpleEvaluatorRegistry:
         usage_ref: "EvaluationUsageRef | None" = None,
         purpose: str | None = None,
         call_index: int | None = None,
+        model: Any = None,
     ) -> tuple[float | None, str | None]:
         """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(provider_id)
+        llm = model
+        if llm is None:
+            llm_provider = injector.get(LLMProvider)
+            llm = await llm_provider.get_model(provider_id)
         response = await llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
@@ -1651,6 +1656,7 @@ class SimpleEvaluatorRegistry:
             usage_ref=payload.get("_usage_ref"),
             purpose="llm_judge",
             call_index=_judge_rule_call_index(payload, rule_number),
+            model=payload.get("_judge_model"),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.

@@ -107,7 +107,9 @@ const CaseCard: React.FC<{ result: PromptEvalCaseResult }> = ({ result }) => {
             })}
           </div>
           {metrics.map(([technique, metric]) =>
-            technique === "llm_judge" && metric.comment && !metric.not_applicable ? (
+            (technique === "llm_judge" || metric.error || metric.not_evaluated) &&
+            metric.comment &&
+            !metric.not_applicable ? (
               <Reveal
                 key={technique}
                 label={`${methodLabel(technique)} note`}

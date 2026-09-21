@@ -243,7 +243,7 @@ function LlmUsagePage() {
   const dimensionLabel = activeDimension?.label ?? "Model";
   const dimensionHeading = activeDimension?.heading ?? dimensionLabel;
   const costFor = (key: string) => sourceItems.find((i) => i.key === key)?.cost_usd ?? 0;
-  // Rounded where it is read, so the notice is gated on the figure it shows
+  // Gated on the rounded figure the notice prints, so it never reads "0.0%"
   const unpricedTokenPct = Number((100 - (summary?.priced_token_coverage_pct ?? 100)).toFixed(1));
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const previous = hasCompare ? compare.data : undefined;

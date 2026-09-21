@@ -883,19 +883,6 @@ class PromptEditorService:
         ]
         return cases, len(index)
 
-    async def _rollback_if_open(self, check_id: UUID, step: str) -> None:
-        """get_model() commits to release the pooled connection. Failures before that leave the transaction open"""
-        if self.db.in_transaction():
-            try:
-                await self.db.rollback()
-            except Exception:
-                logger.warning(
-                    "Prompt check %s: session rollback after %s failed",
-                    str(check_id)[:8],
-                    step,
-                    exc_info=True,
-                )
-
     async def _build_model(self, provider: LlmProviderRead, check_id: UUID) -> Any:
         """Release point; report the provider that built the model"""
         from app.dependencies.injector import injector
@@ -916,7 +903,15 @@ class PromptEditorService:
                 ),
             ) from exc
         finally:
-            await self._rollback_if_open(check_id, "provider build")
+            if self.db.in_transaction():
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    logger.warning(
+                        "Prompt check %s: session rollback after provider build failed",
+                        str(check_id)[:8],
+                        exc_info=True,
+                    )
 
     async def _prepare_check(
         self, workflow_id: UUID, node_id: str, prompt_field: str, request: PromptEvalRequest, check_id: UUID
@@ -1001,8 +996,8 @@ class PromptEditorService:
         configs: Dict[str, Dict[str, Any]],
         budget: Optional[Budget],
         *,
+        judge_model: Any = None,
         usage_ref: Optional[PromptUsageRef] = None,
-        check_id: Optional[UUID] = None,
     ) -> Tuple[Dict[str, Any], bool]:
         """Up to four calls: plain text group, nli_eval, llm_judge, json_match. The two
         model-graded checks are called on their own so a deadline cannot cancel the
@@ -1070,8 +1065,8 @@ class PromptEditorService:
                 budget=budget,
                 techniques=request.techniques,
                 metrics=metrics,
+                judge_model=judge_model,
                 usage_ref=usage_ref,
-                check_id=check_id,
             )
 
         if _JSON_TECHNIQUE in request.techniques:
@@ -1108,8 +1103,8 @@ class PromptEditorService:
         budget: Optional[Budget],
         techniques: List[str],
         metrics: Dict[str, Any],
+        judge_model: Any,
         usage_ref: Optional[PromptUsageRef],
-        check_id: Optional[UUID],
     ) -> bool:
         case_ref = PromptUsageRef(execution_id=usage_ref.execution_id) if usage_ref is not None else None
 
@@ -1121,27 +1116,16 @@ class PromptEditorService:
                 reference_outputs=reference,
                 technique_configs=configs,
                 usage_ref=case_ref,
+                judge_model=judge_model,
             )
 
         try:
-            timed_out = await self._score_bounded(
+            return await self._score_bounded(
                 _JUDGE_TECHNIQUE, _evaluate, budget=budget, techniques=techniques, metrics=metrics
             )
         finally:
             if usage_ref is not None and case_ref.entries:
                 _collect_judge_usage(usage_ref, case_ref, run.position)
-            if check_id is not None:
-                await self._rollback_if_open(check_id, "judge call")
-
-        if not timed_out and _JUDGE_TECHNIQUE not in metrics:
-            metrics[_JUDGE_TECHNIQUE] = {
-                "key": _JUDGE_TECHNIQUE,
-                "score": None,
-                "passed": False,
-                "error": True,
-                "comment": _INTERNAL_FAILURE,
-            }
-        return timed_out
 
     @staticmethod
     def _rewrite_grounding_comment(metrics: Dict[str, Any], techniques: List[str]) -> None:
@@ -1275,7 +1259,7 @@ class PromptEditorService:
                 )
             )
             _collect_usage(ref, runs, request.provider_id)
-            rows, deadline_hit = await self._score_all(runs, request, configs, check_id, usage_ref=ref)
+            rows, deadline_hit = await self._score_all(runs, request, configs, check_id, llm, usage_ref=ref)
         finally:
             metering_handoff_failed = await self._flush_usage(ref)
 
@@ -1307,34 +1291,41 @@ class PromptEditorService:
         request: PromptEvalRequest,
         configs: Dict[str, Dict[str, Any]],
         check_id: UUID,
+        judge_model: Any,
         usage_ref: Optional[PromptUsageRef] = None,
     ) -> Tuple[List[PromptEvalCaseResult], bool]:
-        """Sequential. nli_eval serializes with a module lock; the judge keeps one
-        get_model() in flight on the request session; rest is in-memory"""
-        rows: List[PromptEvalCaseResult] = []
-        deadline_hit = any(run.status == "skipped" or run.budget_cut for run in runs)
+        """Cases score together under one budget; the judge grades on the model the check
+        built, so scoring touches no session. nli_eval serializes on a process lock, so a
+        grounded run keeps one case in flight instead of queueing threads behind it"""
         score_budget = (
             Budget(PROMPT_CHECK_SCORE_BUDGET_SECONDS)
             if _uses_score_budget(request.techniques)
             else None
         )
+        semaphore = asyncio.Semaphore(
+            1 if _GROUNDING_TECHNIQUE in request.techniques else PROMPT_CHECK_CONCURRENCY
+        )
 
-        for run in runs:
+        async def _score_one(run: _CaseRun) -> Tuple[PromptEvalCaseResult, bool]:
             if run.status != "scored":
-                rows.append(self._row(run, status=run.status, error=run.error))
-                continue
-            try:
-                metrics, exhausted = await self._score(
-                    run, request, configs, score_budget, usage_ref=usage_ref, check_id=check_id
-                )
-                deadline_hit = deadline_hit or exhausted
-                rows.append(self._row(run, status="scored", metrics=metrics))
-            except Exception:
-                logger.exception(
-                    "Prompt check %s: scoring case %s failed", str(check_id)[:8], run.position
-                )
-                rows.append(self._row(run, status="scoring_failed", error=_INTERNAL_FAILURE))
-        return rows, deadline_hit
+                return self._row(run, status=run.status, error=run.error), False
+            async with semaphore:
+                try:
+                    metrics, exhausted = await self._score(
+                        run, request, configs, score_budget, judge_model=judge_model, usage_ref=usage_ref
+                    )
+                    return self._row(run, status="scored", metrics=metrics), exhausted
+                except Exception:
+                    logger.exception(
+                        "Prompt check %s: scoring case %s failed", str(check_id)[:8], run.position
+                    )
+                    return self._row(run, status="scoring_failed", error=_INTERNAL_FAILURE), False
+
+        scored = await asyncio.gather(*(_score_one(run) for run in runs))
+        deadline_hit = any(run.status == "skipped" or run.budget_cut for run in runs) or any(
+            exhausted for _, exhausted in scored
+        )
+        return [row for row, _ in scored], deadline_hit
 
     # ---- Optimize ------------------------------------------------------------
 
