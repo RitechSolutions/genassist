@@ -639,7 +639,8 @@ export function MCPServerDialog({
                         value={sampleJwtPaste}
                         onChange={(e) => setSampleJwtPaste(e.target.value)}
                         placeholder="eyJhbGciOiJSUzI1NiIs..."
-                        className="font-mono text-xs min-h-[72px]"
+                        size="description"
+                        className="font-mono text-xs"
                         autoComplete="off"
                       />
                       <Button
@@ -795,7 +796,7 @@ export function MCPServerDialog({
                 id="description"
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
-                rows={3}
+                size="hint"
                 placeholder="Optional description for this MCP server"
               />
             </div>
@@ -876,7 +877,7 @@ export function MCPServerDialog({
                                 )
                               }
                               placeholder="Description of what this tool does"
-                              rows={2}
+                              size="description"
                               className="text-sm mt-1"
                             />
                             <p className="text-xs text-muted-foreground mt-1">
