@@ -14,7 +14,7 @@ import {
   FeatureEngineeringConfig,
   FeatureEngineeringItem,
   FeatureEngineeringStrategy,
-} from "../preprocessingConfig";
+} from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
 import { Plus, X } from "lucide-react";
 

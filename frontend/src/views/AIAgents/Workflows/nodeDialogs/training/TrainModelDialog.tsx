@@ -5,6 +5,11 @@ import {
   OutlierHandlingItem,
   CategoricalEncodingConfig,
   CategoricalEncodingItem,
+  MissingValueHandlingConfig,
+  MissingValueHandlingItem,
+  FeatureEngineeringConfig,
+  FeatureEngineeringItem,
+  TargetTransform,
 } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -18,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Slider } from "@/components/slider";
+import { Switch } from "@/components/switch";
 import { useToast } from "@/components/use-toast";
 import { Save, Plus, X, Search } from "lucide-react";
 import { Badge } from "@/components/badge";
@@ -29,6 +35,8 @@ import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { OutlierHandler } from "./components/OutlierHandler";
 import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
+import { MissingValueHandler } from "./components/MissingValueHandler";
+import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
 import { useNodeDialogState } from "../useNodeDialogState";
@@ -60,6 +68,11 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       outlierHandling: data.outlierHandling || ([] as OutlierHandlingItem[]),
       categoricalEncoding:
         data.categoricalEncoding || ([] as CategoricalEncodingItem[]),
+      missingValueHandling:
+        data.missingValueHandling || ([] as MissingValueHandlingItem[]),
+      featureEngineering:
+        data.featureEngineering || ([] as FeatureEngineeringItem[]),
+      targetTransform: data.targetTransform,
     }),
     (v) => ({
       name: v.name,
@@ -76,6 +89,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       taskType: v.taskType,
       outlierHandling: v.outlierHandling,
       categoricalEncoding: v.categoricalEncoding,
+      missingValueHandling: v.missingValueHandling,
+      featureEngineering: v.featureEngineering,
+      targetTransform: v.targetTransform,
     })
   );
 
@@ -89,6 +105,14 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     }
   }, [values.modelType, values.taskType, setField]);
 
+  // targetTransform (ratio target) is only meaningful for regression - clear
+  // it if the task becomes classification so the two never disagree.
+  useEffect(() => {
+    if (values.taskType === "classification" && values.targetTransform) {
+      setField("targetTransform", undefined);
+    }
+  }, [values.taskType, values.targetTransform, setField]);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
 
@@ -99,6 +123,48 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   });
   const toggleSection = (section: keyof typeof openSections) =>
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
+
+  // Training Configuration steps - shown one at a time via the ADD button
+  // below (same UX as the Data Preprocessing node's step list), except each
+  // of these four can only be added once. Initialized from any existing
+  // config so a previously-configured node still shows its steps on reopen.
+  const trainingStepTypes = [
+    "outlier",
+    "encoding",
+    "missingValues",
+    "featureEngineering",
+  ] as const;
+  type TrainingStepType = (typeof trainingStepTypes)[number];
+  const trainingStepDisplayName: Record<TrainingStepType, string> = {
+    outlier: "Handle Outliers",
+    encoding: "Categorical Encoding",
+    missingValues: "Handle Missing Values",
+    featureEngineering: "Feature Engineering",
+  };
+  const [activeTrainingSteps, setActiveTrainingSteps] = useState<
+    TrainingStepType[]
+  >(() => {
+    const initial: TrainingStepType[] = [];
+    if ((data.outlierHandling || []).length > 0) initial.push("outlier");
+    if ((data.categoricalEncoding || []).length > 0) initial.push("encoding");
+    if ((data.missingValueHandling || []).length > 0)
+      initial.push("missingValues");
+    if ((data.featureEngineering || []).length > 0)
+      initial.push("featureEngineering");
+    return initial;
+  });
+  const handleAddTrainingStep = (type: TrainingStepType) => {
+    setActiveTrainingSteps((prev) =>
+      prev.includes(type) ? prev : [...prev, type]
+    );
+  };
+  const handleRemoveTrainingStep = (type: TrainingStepType) => {
+    setActiveTrainingSteps((prev) => prev.filter((t) => t !== type));
+    if (type === "outlier") setField("outlierHandling", []);
+    else if (type === "encoding") setField("categoricalEncoding", []);
+    else if (type === "missingValues") setField("missingValueHandling", []);
+    else if (type === "featureEngineering") setField("featureEngineering", []);
+  };
 
   // Clean up featureColumns: remove targetColumn and invalid columns
   useEffect(() => {
@@ -371,6 +437,84 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 </p>
               </div>
 
+              {/* Target Transform (ratio) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="targetTransformEnabled">
+                    Train on a ratio of the target
+                  </Label>
+                  <Switch
+                    id="targetTransformEnabled"
+                    checked={!!values.targetTransform}
+                    disabled={values.taskType === "classification"}
+                    onCheckedChange={(checked: boolean) =>
+                      setField(
+                        "targetTransform",
+                        checked
+                          ? ({ type: "ratio", baselineColumn: "" } as TargetTransform)
+                          : undefined
+                      )
+                    }
+                  />
+                </div>
+                {values.targetTransform ? (
+                  <>
+                    <Label htmlFor="baselineColumn">Baseline Column *</Label>
+                    {values.analysisResult ? (
+                      <Select
+                        value={values.targetTransform.baselineColumn}
+                        onValueChange={(v) =>
+                          setField("targetTransform", {
+                            type: "ratio",
+                            baselineColumn: v,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select baseline column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {values.analysisResult.column_names
+                            .filter((columnName) => columnName !== values.targetColumn)
+                            .map((columnName) => (
+                              <SelectItem key={columnName} value={columnName}>
+                                {columnName}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <DraggableInput
+                        id="baselineColumn"
+                        value={values.targetTransform.baselineColumn}
+                        onChange={(e) =>
+                          setField("targetTransform", {
+                            type: "ratio",
+                            baselineColumn: e.target.value,
+                          })
+                        }
+                        placeholder="Enter baseline column name"
+                        className="w-full"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      The model is fit on {values.targetColumn || "target"} / baseline
+                      instead of the raw target, then predictions are multiplied back
+                      by baseline before computing metrics - so RMSE/MAE/R² stay in
+                      real units. Pick a column that isn't already a feature (e.g. a
+                      rolling mean); including it as a feature too can let the model
+                      trivially learn to predict a ratio of ~1.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {values.taskType === "classification"
+                      ? "Not available for classification tasks."
+                      : "Useful for a target with strong trend/seasonality (e.g. daily revenue) - trains on the target's ratio to a baseline column (like a rolling mean) instead of its raw value."}
+                  </p>
+                )}
+              </div>
+
               {/* Feature Columns */}
               <div className="space-y-2">
                 <Label>Feature Columns *</Label>
@@ -528,16 +672,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                     : "Auto-detect infers the task from the target column. Override it if the heuristic picks the wrong type for your dataset."}
                 </p>
               </div>
-            </div>
-          </CollapsibleSection>
 
-          {/* Training Configuration */}
-          <CollapsibleSection
-            title="Training Configuration"
-            open={openSections.training}
-            onOpenChange={() => toggleSection("training")}
-          >
-            <div className="space-y-4">
               {/* Feature Scaling */}
               <div className="space-y-2">
                 <Label htmlFor="scalingMethod">Feature Scaling</Label>
@@ -559,44 +694,164 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                   (e.g. Robust for outlier-heavy data, None for tree-based models)
                 </p>
               </div>
+            </div>
+          </CollapsibleSection>
 
-              {/* Outlier Handling */}
-              <div className="space-y-2">
-                <OutlierHandler
-                  config={{
-                    enabled: true,
-                    columns: values.outlierHandling,
-                  }}
-                  analysisResult={values.analysisResult}
-                  onChange={(config: OutlierHandlingConfig) =>
-                    setField("outlierHandling", config.columns)
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Bounds are computed from the training split only, after the
-                  validation split below is made, so validation rows never
-                  influence which values get capped or removed.
-                </p>
-              </div>
+          {/* Training Configuration */}
+          <CollapsibleSection
+            title="Training Configuration"
+            open={openSections.training}
+            onOpenChange={() => toggleSection("training")}
+          >
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                All steps below are fit on the training split only, after the
+                validation split further down is made, so validation rows
+                never leak into how these are computed.
+              </p>
 
-              {/* Categorical Encoding */}
-              <div className="space-y-2">
-                <CategoricalEncodingHandler
-                  config={{
-                    enabled: true,
-                    columns: values.categoricalEncoding,
-                  }}
-                  analysisResult={values.analysisResult}
-                  onChange={(config: CategoricalEncodingConfig) =>
-                    setField("categoricalEncoding", config.columns)
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  One-Hot and Label mappings are fit on the training split
-                  only, after the validation split below is made, so
-                  validation-only categories never leak into training.
-                </p>
-              </div>
+              {activeTrainingSteps.includes("outlier") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTrainingStep("outlier")}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove outlier handling"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <OutlierHandler
+                    config={{
+                      enabled: true,
+                      columns: values.outlierHandling,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: OutlierHandlingConfig) =>
+                      setField("outlierHandling", config.columns)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Bounds are computed from the training split only, so
+                    validation rows never influence which values get capped
+                    or removed.
+                  </p>
+                </div>
+              )}
+
+              {activeTrainingSteps.includes("encoding") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTrainingStep("encoding")}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove categorical encoding"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <CategoricalEncodingHandler
+                    config={{
+                      enabled: true,
+                      columns: values.categoricalEncoding,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: CategoricalEncodingConfig) =>
+                      setField("categoricalEncoding", config.columns)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    One-Hot and Label mappings are fit on the training split
+                    only, so validation-only categories never leak into
+                    training.
+                  </p>
+                </div>
+              )}
+
+              {activeTrainingSteps.includes("missingValues") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTrainingStep("missingValues")}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove missing value handling"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <MissingValueHandler
+                    config={{
+                      enabled: true,
+                      columns: values.missingValueHandling,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: MissingValueHandlingConfig) =>
+                      setField("missingValueHandling", config.columns)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Impute fill values (mean/median/mode) are computed from
+                    the training split only, so validation rows never
+                    influence what a missing value gets replaced with.
+                  </p>
+                </div>
+              )}
+
+              {activeTrainingSteps.includes("featureEngineering") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleRemoveTrainingStep("featureEngineering")
+                    }
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove feature engineering"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <FeatureEngineeringHandler
+                    config={{
+                      enabled: true,
+                      features: values.featureEngineering,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: FeatureEngineeringConfig) =>
+                      setField("featureEngineering", config.features)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Bin edges and normalize/standardize statistics are fit on
+                    the training split only, so validation rows never
+                    influence a derived feature's definition.
+                  </p>
+                </div>
+              )}
+
+              {/* Add Training Step */}
+              {activeTrainingSteps.length < trainingStepTypes.length && (
+                <div className="flex items-center justify-center py-2">
+                  <div className="relative inline-block">
+                    <Select
+                      value=""
+                      onValueChange={(value) => {
+                        if (value) {
+                          handleAddTrainingStep(value as TrainingStepType);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9 p-2 border rounded-md">
+                        <div className="flex items-center gap-2 pr-2">ADD</div>
+                      </SelectTrigger>
+                      <SelectContent className="z-[1002]" position="popper">
+                        {trainingStepTypes
+                          .filter((type) => !activeTrainingSteps.includes(type))
+                          .map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {trainingStepDisplayName[type]}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
 
               {/* Split Method */}
               <div className="space-y-2">
