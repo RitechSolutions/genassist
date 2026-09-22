@@ -9,7 +9,6 @@ import {
   Megaphone,
   Share2,
   Check,
-  Database,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,7 +25,6 @@ import { Button } from '@/components/button';
 import { askAIQuestion } from '@/services/aiChat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 import { useToast } from '@/hooks/useToast';
 import { getEffectiveSentiment } from '../helpers/formatting';
 import { MetricCards } from './MetricCard';
@@ -40,9 +38,6 @@ import { formatFeedbackDate } from '@/helpers/utils';
 import { useAgentsList } from '@/views/Analytics/hooks/useAgentsList';
 import { useFeatureFlagVisible } from '@/components/featureFlag';
 import { FeatureFlags } from '@/config/featureFlags';
-import { usePermissions } from '@/context/PermissionContext';
-import { AddToDatasetDialog } from '@/views/TestSuites/components/AddToDatasetDialog';
-import { canAddConversationToDataset } from '@/views/TestSuites/helpers/conversationDatasets';
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -149,7 +144,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
     output_tokens: 0,
   });
   const [costIncomplete, setCostIncomplete] = useState(false);
-  const [isAddToDatasetOpen, setIsAddToDatasetOpen] = useState(false);
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -161,8 +155,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
   const [linkCopied, setLinkCopied] = useState(false);
   const { agentNameMap } = useAgentsList();
   const showAskGenAI = useFeatureFlagVisible(FeatureFlags.CONVERSATIONS.SHOW_ASK_GENAI);
-  const permissions = usePermissions();
-  const canAddToDataset = canAddConversationToDataset(permissions, localTranscript?.id);
   // Without the flag the assistant is gone, so the transcript is the only pane left
   const rightPanelTab = showAskGenAI ? activeTab : 'transcript';
 
@@ -281,8 +273,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
       setCostIncomplete(logs.some((log) => log.cost_usd == null));
     });
   }, [isOpen, localTranscript?.id]);
-
-  const chatInputRef = useAutoGrowTextarea(chatInput, 160);
 
   const handleSendMessage = async () => {
     if (!showAskGenAI || chatInput.trim() === '' || !localTranscript) return;
@@ -471,22 +461,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
           </DialogTitle>
         </DialogHeader>
 
-        {/* Pinned to the corner beside the close X rather than placed in the
-            header, so nothing else shifts and the h2 the dialog is named by
-            stays free of button text. top-[10px] centres it on the X. */}
-        {canAddToDataset && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="absolute right-12 top-[10px] h-7 gap-1.5 px-2.5 text-xs font-normal"
-            title="Add this conversation to an evaluation dataset"
-            onClick={() => setIsAddToDatasetOpen(true)}
-          >
-            <Database className="h-3.5 w-3.5" />
-            Add to dataset
-          </Button>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-[350px_1fr] gap-6 items-start">
           <div className="space-y-4 flex flex-col">
             {/* Left Panel Toggle */}
@@ -608,8 +582,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
                         placeholder="Enter feedback details"
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
-                        size="body"
-                        className="text-sm"
+                        rows={6}
+                        className="resize-none text-sm"
                       />
                     </div>
 
@@ -744,15 +718,14 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
               )}
             </div>
             {rightPanelTab === 'ai' && (
-              <div className="mt-2 flex items-end gap-2 bg-secondary/30 p-2 rounded-lg">
-                <textarea
-                  ref={chatInputRef}
-                  rows={1}
-                  className="flex-1 resize-none rounded-3xl border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
+                <Input
+                  className="flex-1"
+                  type="text"
                   placeholder="Ask GenAI"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={submitOnEnter(handleSendMessage)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                 />
                 <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
                   Send
@@ -771,13 +744,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName: 
             }
           }}
           messageId={debugMessageId}
-        />
-
-        <AddToDatasetDialog
-          open={isAddToDatasetOpen}
-          onOpenChange={setIsAddToDatasetOpen}
-          conversationId={localTranscript?.id ?? null}
-          conversationLabel={`${isCall ? 'Call' : 'Chat'} #${(localTranscript?.metadata?.title ?? '----').slice(-4)}`}
         />
       </DialogContent>
     </Dialog>

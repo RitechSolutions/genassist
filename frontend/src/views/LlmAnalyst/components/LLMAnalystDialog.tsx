@@ -246,8 +246,7 @@ export function LLMAnalystDialog({
               value={form.values.prompt}
               onChange={(e) => form.setField("prompt", e.target.value)}
               placeholder="System prompt"
-              size="prompt"
-              className="font-mono text-sm"
+              rows={6}
             />
           </FormField>
 

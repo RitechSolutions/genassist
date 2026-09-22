@@ -39,7 +39,6 @@ from .slack_tool_node import SlackToolNode
 from .stt_node import STTNode
 from .sql_node import SQLNode
 from .sub_agent_node import SubAgentNode
-from .switch_node import SwitchNode
 from .thread_rag_node import ThreadRAGNode
 from .tool_builder_node import ToolBuilderNode
 from .tts_node import TTSNode
@@ -55,7 +54,6 @@ __all__ = [
     "ChatInputNode",
     "ChatOutputNode",
     "RouterNode",
-    "SwitchNode",
     "AgentNode",
     "ApiToolNode",
     "OpenAPINode",

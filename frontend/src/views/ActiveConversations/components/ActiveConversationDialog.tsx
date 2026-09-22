@@ -8,7 +8,6 @@ import {
   ThumbsUp,
   ThumbsDown,
   Pencil,
-  Database,
 } from "lucide-react";
 import {
   Dialog,
@@ -22,6 +21,7 @@ import {
   TranscriptEntry,
   ConversationFeedbackEntry,
 } from "@/interfaces/transcript.interface";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
@@ -33,14 +33,10 @@ import toast from "react-hot-toast";
 import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 import { submitConversationFeedback } from "@/services/transcripts";
 import { isWsEnabled } from "@/config/api";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
-import { usePermissions } from "@/context/PermissionContext";
-import { AddToDatasetDialog } from "@/views/TestSuites/components/AddToDatasetDialog";
-import { canAddConversationToDataset } from "@/views/TestSuites/helpers/conversationDatasets";
 
 function toEpochMs(ct: string | number | undefined | null): number {
   if (ct == null) return 0;
@@ -150,10 +146,6 @@ function TranscriptDialogContent({
       transcriptMessages.some((entry) => entry.type === "takeover")
     );
   }, [transcript?.status, transcriptMessages]);
-
-  const permissions = usePermissions();
-  const canAddToDataset = canAddConversationToDataset(permissions, transcript?.id);
-  const [isAddToDatasetOpen, setIsAddToDatasetOpen] = useState(false);
 
   const [userInitiatedTakeOver, setUserInitiatedTakeOver] = useState(false);
   const [localSupervisorId, setLocalSupervisorId] = useState<string | null>(null);
@@ -587,8 +579,6 @@ function TranscriptDialogContent({
       ? Math.floor(conversationStats.duration / 1000)
       : conversationStats.duration;
 
-  const chatInputRef = useAutoGrowTextarea(chatInput, 160);
-
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !transcript?.id || isSendingRef.current) return;
 
@@ -743,22 +733,6 @@ function TranscriptDialogContent({
         </DialogTitle>
       </DialogHeader>
 
-      {/* Pinned to the corner beside the close X rather than placed in the
-          header, so the wrapping badge row is untouched and the h2 the dialog
-          is named by stays free of button text. top-[10px] centres it on the X. */}
-      {canAddToDataset && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="absolute right-12 top-[10px] h-7 gap-1.5 px-2.5 text-xs font-normal"
-          title="Add this conversation to an evaluation dataset"
-          onClick={() => setIsAddToDatasetOpen(true)}
-        >
-          <Database className="h-3.5 w-3.5" />
-          Add to dataset
-        </Button>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:h-[550px] md:overflow-hidden">
         <div className="space-y-4 flex flex-col h-full">
           <Tabs
@@ -861,7 +835,7 @@ function TranscriptDialogContent({
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
                         placeholder="Enter feedback details"
-                        className="text-sm"
+                        className="resize-none text-sm"
                       />
                     </div>
                     <Button
@@ -1032,15 +1006,13 @@ function TranscriptDialogContent({
               </Button>
             ) : isCurrentUserSupervisor ? (
               <>
-                <div className="flex items-end gap-2">
-                  <textarea
-                    ref={chatInputRef}
-                    rows={1}
-                    className="flex-1 resize-none rounded-3xl border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                <div className="flex items-center gap-2">
+                  <Input
+                    className="flex-1"
                     placeholder="Type a message as Admin..."
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={submitOnEnter(handleSendMessage)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
                   />
                   <Button
                     onClick={handleSendMessage}
@@ -1072,13 +1044,6 @@ function TranscriptDialogContent({
           </div>
         </div>
       </div>
-
-      <AddToDatasetDialog
-        open={isAddToDatasetOpen}
-        onOpenChange={setIsAddToDatasetOpen}
-        conversationId={transcript?.id ?? null}
-        conversationLabel={`Chat #${transcript.id.slice(-4)}`}
-      />
     </>
   );
 }

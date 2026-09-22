@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { queryAgent, getAgentConfig } from "@/services/api";
 import { Button } from "@/components/button";
-import { RichTextarea } from "@/components/richTextarea";
-import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
+import { RichInput } from "@/components/richInput";
 import { ArrowLeft, Send, Bot, User, Loader2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/avatar";
 import { Separator } from "@/components/separator";
@@ -43,7 +42,7 @@ const Chat: React.FC = () => {
   const [agentInfo, setAgentInfo] = useState<AgentConfig | null>(null);
   const [initializing, setInitializing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useAutoGrowTextarea(input, 160);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchAgentInfo = async () => {
@@ -236,15 +235,14 @@ const Chat: React.FC = () => {
 
         <CardFooter className="border-t p-4 bg-background">
           <form className="flex w-full gap-2" onSubmit={handleSendMessage}>
-            <RichTextarea
+            <RichInput
               ref={inputRef}
-              rows={1}
+              type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={submitOnEnter(() => inputRef.current?.form?.requestSubmit())}
               placeholder="Type your message here..."
               disabled={loading || initializing}
-              className="flex-1 resize-none py-2 leading-6"
+              className="flex-1"
             />
             <Button
               type="submit"
