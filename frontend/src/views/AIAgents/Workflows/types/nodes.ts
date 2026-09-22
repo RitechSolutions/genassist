@@ -143,6 +143,34 @@ export interface SwitchNodeData extends BaseNodeData {
   cases?: SwitchCase[];
 }
 
+// Filter node data — a gate with one output: the branch continues only while
+// `field <operator> value` holds. Operators mirror engine/conditions.py.
+export type FilterOperator =
+  | "equal"
+  | "not_equal"
+  | "contains"
+  | "not_contain"
+  | "starts_with"
+  | "not_starts_with"
+  | "ends_with"
+  | "not_ends_with"
+  | "regex"
+  | "greater_than"
+  | "greater_than_or_equal"
+  | "less_than"
+  | "less_than_or_equal"
+  | "is_empty"
+  | "is_not_empty";
+
+export interface FilterNodeData extends BaseNodeData {
+  field?: string;
+  operator?: FilterOperator;
+  value?: string;
+  caseSensitive?: boolean;
+  /** Chat reply used when the filter stops the conversation's main path. */
+  stopMessage?: string;
+}
+
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
 export interface NlpNodeData extends BaseNodeData {
   providerId?: string;
@@ -652,6 +680,7 @@ export type NodeData =
   | WhatsappNodeData
   | RouterNodeData
   | SwitchNodeData
+  | FilterNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData

@@ -10,6 +10,7 @@ from .calendar_events_node import CalendarEventsNode
 from .chat_nodes import ChatInputNode, ChatOutputNode
 from .data_mapper_node import DataMapperNode
 from .file_reader_node import FileReaderNode
+from .filter_node import FilterNode
 from .finalize_conversation_node import FinalizeConversationNode
 from .gmail_tool_node import GmailToolNode
 from .html_to_image_node import HtmlToImageNode
@@ -56,6 +57,7 @@ __all__ = [
     "ChatOutputNode",
     "RouterNode",
     "SwitchNode",
+    "FilterNode",
     "AgentNode",
     "ApiToolNode",
     "OpenAPINode",

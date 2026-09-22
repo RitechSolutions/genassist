@@ -13,10 +13,8 @@ Anything that selects no case (no match, missing config, an invalid LLM answer
 or an LLM error) takes the default branch.
 """
 
-import json
 import logging
 import re
-from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -25,6 +23,7 @@ from app.dependencies.injector import injector
 from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
+from ..conditions import evaluate, parse_bool as _parse_bool, to_text as _to_text
 
 logger = logging.getLogger(__name__)
 
@@ -36,52 +35,6 @@ DEFAULT_SMART_SWITCH_SYSTEM_PROMPT = (
     "of routes you are given. Return only the route id. Do not explain. Do not "
     "add extra text."
 )
-
-
-def _parse_bool(raw: Any) -> bool:
-    """Accept bool or common string forms from UI / JSON without mis-treating str."""
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, (int, float)):
-        return raw != 0
-    if isinstance(raw, str):
-        return raw.strip().lower() in ("1", "true", "yes", "on")
-    return False
-
-
-def _to_text(value: Any) -> str:
-    """The switch value as text, so non-string outputs (numbers, flags, objects) can match."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value)
-
-
-_NUMBER_LITERAL = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
-
-
-def _numbers_equal(actual: str, expected: str) -> bool:
-    """Whether two texts are the same number written differently (``3.0`` and ``3``).
-
-    Upstream numbers reach the switch as text in their serialized form, so an
-    integer-valued float arrives as ``3.0`` while the case says ``3``. Only
-    formatting is reconciled: at least one side must have a fractional or
-    exponent part, so plain digit strings such as ``007`` and ``7`` (ids, codes)
-    still compare as text.
-    """
-    if not (_NUMBER_LITERAL.fullmatch(actual) and _NUMBER_LITERAL.fullmatch(expected)):
-        return False
-    if not any(ch in text for text in (actual, expected) for ch in ".eE"):
-        return False
-    try:
-        return Decimal(actual) == Decimal(expected)
-    except InvalidOperation:
-        return False
 
 
 def handle_for_route(route: str) -> str:
@@ -286,41 +239,16 @@ class SwitchNode(BaseNode):
         switch_case: Dict[str, str],
     ) -> bool:
         """Evaluate one case, never raising: a broken case simply does not match."""
-        case_value = switch_case["value"]
-
-        if match_mode == "regex":
-            if not case_value:
-                return False
-            try:
-                flags = 0 if case_sensitive else re.IGNORECASE
-                return re.search(case_value, value, flags) is not None
-            except re.error as e:
-                logger.error(
-                    "SwitchNode %s invalid regex in case %s: %s",
-                    self.node_id,
-                    switch_case["id"],
-                    e,
-                )
-                return False
-
-        expected = case_value.strip()
-        if not expected:
+        try:
+            return evaluate(value, match_mode, switch_case["value"], case_sensitive)
+        except re.error as e:
+            logger.error(
+                "SwitchNode %s invalid regex in case %s: %s",
+                self.node_id,
+                switch_case["id"],
+                e,
+            )
             return False
-
-        actual = value
-        if not case_sensitive:
-            actual = actual.casefold()
-            expected = expected.casefold()
-
-        if match_mode == "equal":
-            return actual == expected or _numbers_equal(actual, expected)
-        if match_mode == "contains":
-            return expected in actual
-        if match_mode == "starts_with":
-            return actual.startswith(expected)
-        if match_mode == "ends_with":
-            return actual.endswith(expected)
-        return False
 
     def _get_route_targets(self, route: str) -> List[str]:
         """Targets of the edges leaving this route's handle.
