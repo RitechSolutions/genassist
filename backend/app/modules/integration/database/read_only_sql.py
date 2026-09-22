@@ -306,8 +306,6 @@ def _identifier_key_expressions(
             if on is not None:
                 keys.extend(on.expressions or [on])
     return keys
-
-
 def _validate_select_properties(
     expression: exp.Expression, query_type: str
 ) -> ValidationResult | None:
