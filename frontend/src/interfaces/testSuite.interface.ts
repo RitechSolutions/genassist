@@ -45,6 +45,35 @@ export interface ImportFromConversationsResult {
   failed: number;
 }
 
+/** One dataset, and what it already holds of a given conversation. */
+export interface ConversationDataset {
+  suite_id: string;
+  name: string;
+  description?: string | null;
+  /** Turns of this conversation already in the dataset. 0 means not in it yet. */
+  turns: number;
+  /** When the conversation first joined this dataset, or null if it has not. */
+  added_at?: string | null;
+}
+
+/** Outcome of one dataset inside an add-to-datasets call. */
+export interface ConversationDatasetResult {
+  suite_id: string;
+  status: "imported" | "replaced" | "failed";
+  turns: number;
+  /** Why it failed, in one sentence. Only set on a failure. */
+  detail?: string | null;
+}
+
+/** Response of `POST /conversations/{id}/suites`. */
+export interface AddConversationToDatasetsResult {
+  /** One entry per requested dataset, in the order they were requested. */
+  results: ConversationDatasetResult[];
+  imported: number;
+  replaced: number;
+  failed: number;
+}
+
 export interface TestRun {
   id?: string;
   suite_id: string;

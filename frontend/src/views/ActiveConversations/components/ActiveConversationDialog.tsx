@@ -8,6 +8,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Pencil,
+  Database,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,6 +38,9 @@ import { submitConversationFeedback } from "@/services/transcripts";
 import { isWsEnabled } from "@/config/api";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
+import { usePermissions } from "@/context/PermissionContext";
+import { AddToDatasetDialog } from "@/views/TestSuites/components/AddToDatasetDialog";
+import { canAddConversationToDataset } from "@/views/TestSuites/helpers/conversationDatasets";
 
 function toEpochMs(ct: string | number | undefined | null): number {
   if (ct == null) return 0;
@@ -146,6 +150,10 @@ function TranscriptDialogContent({
       transcriptMessages.some((entry) => entry.type === "takeover")
     );
   }, [transcript?.status, transcriptMessages]);
+
+  const permissions = usePermissions();
+  const canAddToDataset = canAddConversationToDataset(permissions, transcript?.id);
+  const [isAddToDatasetOpen, setIsAddToDatasetOpen] = useState(false);
 
   const [userInitiatedTakeOver, setUserInitiatedTakeOver] = useState(false);
   const [localSupervisorId, setLocalSupervisorId] = useState<string | null>(null);
@@ -735,6 +743,22 @@ function TranscriptDialogContent({
         </DialogTitle>
       </DialogHeader>
 
+      {/* Pinned to the corner beside the close X rather than placed in the
+          header, so the wrapping badge row is untouched and the h2 the dialog
+          is named by stays free of button text. top-[10px] centres it on the X. */}
+      {canAddToDataset && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="absolute right-12 top-[10px] h-7 gap-1.5 px-2.5 text-xs font-normal"
+          title="Add this conversation to an evaluation dataset"
+          onClick={() => setIsAddToDatasetOpen(true)}
+        >
+          <Database className="h-3.5 w-3.5" />
+          Add to dataset
+        </Button>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:h-[550px] md:overflow-hidden">
         <div className="space-y-4 flex flex-col h-full">
           <Tabs
@@ -1048,6 +1072,13 @@ function TranscriptDialogContent({
           </div>
         </div>
       </div>
+
+      <AddToDatasetDialog
+        open={isAddToDatasetOpen}
+        onOpenChange={setIsAddToDatasetOpen}
+        conversationId={transcript?.id ?? null}
+        conversationLabel={`Chat #${transcript.id.slice(-4)}`}
+      />
     </>
   );
 }

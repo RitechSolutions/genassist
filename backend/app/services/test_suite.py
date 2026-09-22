@@ -47,6 +47,9 @@ from app.repositories.test_suite import (
     TestToolRuleResultRepository,
 )
 from app.schemas.test_suite import (
+    AddConversationToSuitesResult,
+    ConversationSuiteImportResult,
+    ConversationSuiteMembership,
     ImportCasesFromConversationRequest,
     ImportCasesFromConversationsResult,
     ImportedConversationResult,
@@ -2015,6 +2018,91 @@ class TestSuiteService:
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.case_repo.soft_delete_for_conversation(suite_id, conversation_id)
+
+    async def list_suites_for_conversation(
+        self, conversation_id: UUID
+    ) -> List[ConversationSuiteMembership]:
+        """Every dataset, saying what each already holds of this conversation.
+
+        Datasets the conversation is not in are included with zero turns, because
+        this answers "where can I add it" as much as "where is it already".
+        """
+        suites = await self.suite_repo.get_all()
+        membership = await self.case_repo.get_conversation_membership(conversation_id)
+        by_suite = {row[0]: (row[1], row[2]) for row in membership}
+
+        entries = [
+            ConversationSuiteMembership(
+                suite_id=suite.id,
+                name=suite.name,
+                description=suite.description,
+                turns=by_suite.get(suite.id, (0, None))[0],
+                added_at=by_suite.get(suite.id, (0, None))[1],
+            )
+            for suite in suites
+        ]
+        # list_suites has no ORDER BY, so the picker would otherwise get DB order.
+        entries.sort(key=lambda entry: entry.name.casefold())
+        return entries
+
+    async def add_conversation_to_suites(
+        self, conversation_id: UUID, suite_ids: List[UUID]
+    ) -> AddConversationToSuitesResult:
+        """Add one conversation to several datasets, reporting each one's outcome.
+
+        A dataset that already holds the conversation has its turns refreshed, so
+        the same call covers both a first add and a re-import.
+        """
+        # Read the conversation once up front: it is the same for every dataset, so
+        # a bad id is one error rather than the same failure repeated per dataset.
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id, include_messages=True
+        )
+        if not conversation:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        if not extract_qa_pairs(conversation.messages):
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.TRANSCRIPT_EMPTY,
+                error_detail="Conversation has no question/answer turns to import",
+            )
+
+        # The same dataset picked twice is one add, not two.
+        requested = list(dict.fromkeys(suite_ids))
+
+        results: List[ConversationSuiteImportResult] = []
+        for suite_id in requested:
+            try:
+                _created, outcomes, _failures = await self._import_conversations(
+                    suite_id, [conversation_id], replace=False
+                )
+            except AppException:
+                # Only a missing dataset reaches here; a bad conversation was
+                # already rejected above.
+                results.append(
+                    ConversationSuiteImportResult(
+                        suite_id=suite_id,
+                        status="failed",
+                        detail="Dataset not found.",
+                    )
+                )
+                continue
+            outcome = outcomes[0]
+            results.append(
+                ConversationSuiteImportResult(
+                    suite_id=suite_id,
+                    status=outcome.status,
+                    turns=outcome.turns,
+                    detail=outcome.detail,
+                )
+            )
+
+        return AddConversationToSuitesResult(
+            results=results,
+            imported=sum(1 for r in results if r.status == "imported"),
+            replaced=sum(1 for r in results if r.status == "replaced"),
+            failed=sum(1 for r in results if r.status == "failed"),
+        )
 
     # ---- Runs -------------------------------------------------------------
 

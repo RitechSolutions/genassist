@@ -1,5 +1,7 @@
 import { apiRequest } from "@/config/api";
 import type {
+  AddConversationToDatasetsResult,
+  ConversationDataset,
   CreateTestCasePayload,
   CreateTestSuitePayload,
   ImportFromConversationsResult,
@@ -72,6 +74,23 @@ export const importCasesFromConversations = (
     "POST",
     `${BASE}/suites/${suiteId}/cases/import-from-conversations`,
     { conversation_ids: conversationIds },
+  );
+
+/** Every dataset, with how much of this conversation each already holds. */
+export const listDatasetsForConversation = (conversationId: string) =>
+  apiRequest<ConversationDataset[]>(
+    "GET",
+    `${BASE}/conversations/${conversationId}/suites`,
+  );
+
+export const addConversationToDatasets = (
+  conversationId: string,
+  suiteIds: string[],
+) =>
+  apiRequest<AddConversationToDatasetsResult>(
+    "POST",
+    `${BASE}/conversations/${conversationId}/suites`,
+    { suite_ids: suiteIds },
   );
 
 export const removeConversationFromSuite = (suiteId: string, conversationId: string) =>

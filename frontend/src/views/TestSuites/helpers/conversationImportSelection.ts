@@ -78,9 +78,9 @@ export interface ImportPlan {
   total: number;
   /** Conversations not in the dataset yet. */
   added: number;
-  /** Conversations already in the dataset, whose turns get refreshed. */
+  /** Conversations already in the dataset, whose turns get replaced. */
   refreshed: number;
-  /** Turns the refresh replaces. */
+  /** Turns the replacement destroys. */
   replacedTurns: number;
 }
 
@@ -119,9 +119,9 @@ export const describeImportPlan = (plan: ImportPlan, datasetName: string): strin
   if (plan.refreshed === 0) {
     return `This adds the turns of ${plural(plan.total, "conversation")} to ${target}, keeping everything already in the dataset.`;
   }
-  const refreshClause = `${plural(plan.refreshed, "conversation")} already in this dataset will be refreshed from the transcript, replacing ${plural(plan.replacedTurns, "turn")}. Any edits or turns you added to them are lost, and past evaluation results stop matching them.`;
-  if (plan.added === 0) return refreshClause;
-  return `This adds ${plural(plan.added, "conversation")} to ${target}. ${refreshClause}`;
+  const replaceClause = `${plural(plan.replacedTurns, "turn")} across ${plural(plan.refreshed, "conversation")} already in this dataset will be replaced from the transcript. Any edits or turns you added to them are lost, and past evaluation results stop matching them.`;
+  if (plan.added === 0) return replaceClause;
+  return `This adds ${plural(plan.added, "conversation")} to ${target}. ${replaceClause}`;
 };
 
 export interface ImportOutcome {
@@ -148,8 +148,8 @@ export const summarizeImportOutcome = (
       result.replaced === 0
         ? `Imported ${plural(result.imported, "conversation")}`
         : result.imported === 0
-          ? `Refreshed ${plural(result.replaced, "conversation")}`
-          : `Imported ${plural(result.imported, "conversation")} and refreshed ${result.replaced}`;
+          ? `Replaced ${plural(result.replaced, "conversation")}`
+          : `Imported ${plural(result.imported, "conversation")} and replaced ${result.replaced}`;
     successMessage = `${what} (${plural(turns, "turn")}).`;
   }
 

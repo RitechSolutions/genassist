@@ -23,6 +23,8 @@ import {
   deleteTestCase,
   importCasesFromConversation,
   importCasesFromConversations,
+  listDatasetsForConversation,
+  addConversationToDatasets,
   removeConversationFromSuite,
   listTestRunsForSuite,
   getTestRun,
@@ -101,6 +103,23 @@ describe("testSuites service", () => {
       "POST",
       "genagent/eval/suites/s7/cases/import-from-conversations",
       { conversation_ids: ["conv1", "conv2"] },
+    );
+  });
+
+  it("listDatasetsForConversation GETs the datasets for a conversation", async () => {
+    await listDatasetsForConversation("conv3");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/eval/conversations/conv3/suites",
+    );
+  });
+
+  it("addConversationToDatasets POSTs every picked dataset for one conversation", async () => {
+    await addConversationToDatasets("conv3", ["s1", "s2"]);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/eval/conversations/conv3/suites",
+      { suite_ids: ["s1", "s2"] },
     );
   });
 
