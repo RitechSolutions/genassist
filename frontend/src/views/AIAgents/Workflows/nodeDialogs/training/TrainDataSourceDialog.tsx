@@ -284,8 +284,9 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
               className="w-full font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              SQL query to fetch training data. Use variables from previous
-              nodes if needed.
+              {"Variables like {{chat.input}} are sent to the database as values, "}
+              so they are safe to use in WHERE and LIMIT. They cannot replace
+              table or column names.
             </p>
           </div>
         )}

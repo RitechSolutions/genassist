@@ -122,9 +122,12 @@ class TestSqlTranslationCapture:
             raise ValueError("model returned malformed JSON")
 
         db_manager = MagicMock()
-        with llm_ctx, _patch_provider_lookup(), patch.object(
-            sql_module.db_provider_manager, "get_database_manager", AsyncMock(return_value=db_manager)
-        ), patch.object(sql_module, "translate_to_query", _translate):
+        with (
+            llm_ctx,
+            _patch_provider_lookup(),
+            patch.object(sql_module.db_provider_manager, "get_database_manager", AsyncMock(return_value=db_manager)),
+            patch.object(sql_module, "translate_to_query", _translate),
+        ):
             result = await node.process(self._config())
 
         assert is_node_failure(result)
@@ -142,10 +145,14 @@ class TestSqlTranslationCapture:
             return {"formatted_query": "SELECT 1"}
 
         db_manager = MagicMock()
-        db_manager.execute_query = AsyncMock(return_value=([{"n": 1}], None))
-        with llm_ctx, _patch_provider_lookup(), patch.object(
-            sql_module.db_provider_manager, "get_database_manager", AsyncMock(return_value=db_manager)
-        ), patch.object(sql_module, "translate_to_query", _translate):
+        db_manager.get_db_type.return_value = "postgresql"
+        db_manager.execute_read_query = AsyncMock(return_value=([{"n": 1}], None))
+        with (
+            llm_ctx,
+            _patch_provider_lookup(),
+            patch.object(sql_module.db_provider_manager, "get_database_manager", AsyncMock(return_value=db_manager)),
+            patch.object(sql_module, "translate_to_query", _translate),
+        ):
             result = await node.process(self._config())
 
         assert result["status"] == 200
