@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,19 @@ def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
     }
 
 
+async def _fail_fast_on_row_lock(session: AsyncSession, timeout_ms: int = 2000) -> None:
+    """
+    All four public entry points below upsert (via AnalyticsAggregationRepository)
+    into the same (agent_id, stat_date) row on agent_execution_daily_stats, so
+    concurrent turns for one agent serialize on that row's lock. Without this, a
+    blocked upsert holds its connection until the DB's statement_timeout (minutes),
+    which is what exhausted the pool. Failing fast here means the caller's blanket
+    except-Exception logs a warning and Celery's next full recount reconciles
+    the missed increment - safe to lose occasionally, not safe to block on.
+    """
+    await session.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
+
+
 # ---------------------------------------------------------------------------
 # Public entry points (called via asyncio.create_task)
 # ---------------------------------------------------------------------------
@@ -127,6 +141,7 @@ async def update_stats_incrementally(agent_response: dict) -> None:
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
+                await _fail_fast_on_row_lock(session)
                 repo = AnalyticsAggregationRepository(session)
                 await repo.increment_agent_daily_stats(data)
                 await repo.increment_node_daily_stats(data)
@@ -154,6 +169,7 @@ async def update_conversation_started(agent_id: UUID) -> None:
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
+                await _fail_fast_on_row_lock(session)
                 repo = AnalyticsAggregationRepository(session)
                 await repo.increment_conversation_counts(agent_id, "start")
                 await session.commit()
@@ -178,6 +194,7 @@ async def update_conversation_finalized(conversation_id: UUID) -> None:
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
+                await _fail_fast_on_row_lock(session)
                 repo = AnalyticsAggregationRepository(session)
                 agent_id = await repo.get_agent_id_for_conversation(conversation_id)
                 if agent_id is None:
@@ -205,6 +222,7 @@ async def update_feedback_given(conversation_id: UUID, is_thumbs_up: bool) -> No
         async with create_tenant_request_scope():
             session = injector.get(AsyncSession)
             try:
+                await _fail_fast_on_row_lock(session)
                 repo = AnalyticsAggregationRepository(session)
                 agent_id = await repo.get_agent_id_for_conversation(conversation_id)
                 if agent_id is None:

@@ -96,7 +96,7 @@ class UserUpdate(BaseModel):
     is_active: int | None = None
     password: str | None = None
     user_type_id: UUID | None = None
-    role_ids: list[UUID] | None = Field(default=None, min_length=1)
+    role_ids: list[UUID] | None = None
     notes: str | None = None
     group_id: UUID | None = None
     entra_oid: str | None = Field(None, max_length=64, description="Microsoft Entra object id (oid) for SSO")

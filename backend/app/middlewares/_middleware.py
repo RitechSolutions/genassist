@@ -24,6 +24,8 @@ from app.core.config.logging import (
     uid_ctx,
 )
 from app.middlewares.rate_limit_middleware import _request_context
+from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
+from app.middlewares.replica_scope_middleware import ReplicaScopeMiddleware
 from app.middlewares.session_cleanup_middleware import TransactionMiddleware
 from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
@@ -203,7 +205,11 @@ def build_middlewares() -> list[Middleware]:
                 allow_headers=["*"],
             ),
             Middleware(VersionHeaderMiddleware),
-            # 6️⃣  DB transaction boundary — must be the *innermost* user middleware so
+            # 6️⃣  Marks HTTP scopes as eligible for replica reads; websockets keep the writer.
+            Middleware(ReplicaScopeMiddleware),
+            # 7️⃣  Read-your-writes guard for the read replica; needs the tenant scope above.
+            Middleware(ReadAfterWriteMiddleware),
+            # 8️⃣  DB transaction boundary — must be the *innermost* user middleware so
             #     it runs inside the tenant scope (tenant context still active when it
             #     commits/rolls back the request-scoped session after the endpoint).
             Middleware(TransactionMiddleware),

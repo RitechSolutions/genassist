@@ -118,6 +118,19 @@ def _force_child_pii(nodes: list, child_node_id: str) -> list:
     return out
 
 
+def propagate_prompt_cache_diagnostics(child_state: "WorkflowState", parent_state: "WorkflowState") -> None:
+    """Carry a child's prompt-caching diagnostics up to the parent, out of band"""
+    try:
+        merged = getattr(child_state, "prompt_caching_diagnostics", None)
+        if not isinstance(merged, dict) or not merged:
+            return
+        collected = getattr(parent_state, "prompt_caching_diagnostics", None)
+        if isinstance(collected, dict):
+            collected.update(merged)
+    except Exception:
+        logger.warning("Failed propagating sub-agent prompt-caching diagnostics", exc_info=True)
+
+
 async def run_child_turn(
     *,
     workflow: Dict[str, Any],

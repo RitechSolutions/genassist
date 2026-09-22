@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models import UserModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
@@ -18,7 +19,7 @@ from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.api_key import ApiKeyCreate, ApiKeyUpdate
-from app.schemas.filter import ApiKeysFilter
+from app.schemas.filter import ApiKeyListFilter, ApiKeysFilter
 
 api_key_key_builder  = make_key_builder("api_key")
 
@@ -93,11 +94,21 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
                 )
         return result.scalars().first()
 
-    async def _get_by_name(self, api_key_name: str):
-        # Need index
+    async def _get_by_name(self, api_key_name: str, *, exclude_id: Optional[UUID] = None):
+        """
+        Find an *active* key by name, regardless of who created it.
+
+        The DB uniqueness index (``api_keys_name_active_unique``) is global and
+        only covers rows with ``is_deleted = 0``, so this lookup must mirror it:
+        bypass group scoping (otherwise a name taken by another group's key would
+        slip past this check and surface as a raw duplicate-key error) and keep
+        the default soft-delete filter (a deleted key has released its name).
+        """
+        query = select(ApiKeyModel).where(ApiKeyModel.name == api_key_name)
+        if exclude_id is not None:
+            query = query.where(ApiKeyModel.id != exclude_id)
         result = await self.db.execute(
-                select(ApiKeyModel)
-                .where(ApiKeyModel.name == api_key_name)
+                query.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
         return result.scalars().first()
 
@@ -121,6 +132,40 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         return result.scalars().all()
 
 
+    def _search_condition(self, search: Optional[str]):
+        """Case-insensitive substring match on the key name"""
+        if not search or not search.strip():
+            return None
+
+        term = search.strip()
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return ApiKeyModel.name.ilike(f"%{escaped}%", escape="\\")
+
+
+    async def get_list_paginated(self, filter_obj: ApiKeyListFilter) -> tuple[list[ApiKeyModel], int]:
+        """Return one page of API keys, newest first, plus the unpaginated total"""
+        search_condition = self._search_condition(filter_obj.search)
+
+        count_stmt = select(func.count(ApiKeyModel.id)).where(ApiKeyModel.is_deleted == 0)
+        if search_condition is not None:
+            count_stmt = count_stmt.where(search_condition)
+        total = (await self.db.execute(count_stmt)).scalar() or 0
+
+        data_stmt = (
+            select(ApiKeyModel)
+            .options(selectinload(ApiKeyModel.api_key_roles).selectinload(ApiKeyRoleModel.role))
+            .where(ApiKeyModel.is_deleted == 0)
+        )
+        if search_condition is not None:
+            data_stmt = data_stmt.where(search_condition)
+
+        data_stmt = data_stmt.order_by(ApiKeyModel.created_at.desc(), ApiKeyModel.id.desc())
+        data_stmt = self._apply_pagination(data_stmt, filter_obj)
+
+        result = await self.db.execute(data_stmt)
+        return result.scalars().all(), total
+
+
     async def delete(self, api_key: ApiKeyModel):
         await self.db.delete(api_key)
         await self.db.flush()
@@ -132,7 +177,9 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         if not api_key:
             raise AppException(ErrorKey.API_KEY_NOT_FOUND, status_code=404)
 
-        if data.name is not None:
+        if data.name is not None and data.name != api_key.name:
+            if await self._get_by_name(data.name, exclude_id=api_key.id):
+                raise AppException(ErrorKey.API_KEY_NAME_EXISTS)
             api_key.name = data.name
         if data.is_active is not None:
             api_key.is_active = data.is_active

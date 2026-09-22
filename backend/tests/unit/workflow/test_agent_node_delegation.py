@@ -36,6 +36,7 @@ def _patch_runtime(*, result=None, resolve_error=None):
 
     instance = MagicMock()
     instance.invoke = AsyncMock(return_value=result or {})
+    instance.cache_split_decision = (False, None)
     stack.enter_context(patch(f"{_RUNTIME}.ToolAgent", MagicMock(return_value=instance)))
 
     provider = MagicMock()
@@ -703,3 +704,150 @@ async def test_pause_frame_does_not_nest_prior_resume_marker():
     stack = await sub_session.read_frame_strict(node.get_memory())
     captured = stack.top().parent_resume.request_context.get("initial_values", {})
     assert SUB_AGENT_RESUME_KEY not in captured
+
+
+_CHILD_DIAG = {"requested": True, "applied": False}
+_DIAG_KEY = "__prompt_caching_diagnostics"
+
+
+def _child_state_with_diagnostic(node_id="child", diagnostic=None):
+    return SimpleNamespace(
+        get_node_output=lambda _id: {"message": "child answer"},
+        get_last_node_output=lambda: {"message": "child answer"},
+        node_execution_status={node_id: {"status": "success"}},
+        prompt_caching_diagnostics={node_id: diagnostic or _CHILD_DIAG},
+        sub_agent_control={"result": "child answer"},
+        get_memory=MagicMock(return_value=MagicMock(add_input_output=AsyncMock())),
+    )
+
+
+async def _delegate_once(node, child_state):
+    fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=120)
+    with patch(_ORCH_RUN, AsyncMock(return_value=child_state)), patch(_ORCH_DISCARD, MagicMock()):
+        return await fn({"parameters": {"task": "do x"}})
+
+
+@pytest.mark.asyncio
+async def test_in_turn_delegation_lands_the_child_diagnostic_in_the_parent_collection():
+    node = _parent_node(thread_id="t-diag")
+    await _delegate_once(node, _child_state_with_diagnostic())
+
+    assert node.get_state().prompt_caching_diagnostics == {"child": _CHILD_DIAG}
+
+
+@pytest.mark.asyncio
+async def test_the_parents_execution_map_never_gains_the_child():
+    node = _parent_node(thread_id="t-diag-map")
+    await _delegate_once(node, _child_state_with_diagnostic())
+
+    assert set(node.get_state().node_execution_status) == {"parent"}
+
+
+@pytest.mark.asyncio
+async def test_nested_diagnostics_chain_up_through_the_delegation():
+    node = _parent_node(thread_id="t-diag-nested")
+    child = _child_state_with_diagnostic()
+    child.prompt_caching_diagnostics["grandchild"] = {"requested": True, "applied": True}
+    await _delegate_once(node, child)
+
+    assert set(node.get_state().prompt_caching_diagnostics) == {"child", "grandchild"}
+
+
+@pytest.mark.asyncio
+async def test_a_child_without_a_diagnostic_leaves_the_collection_empty():
+    node = _parent_node(thread_id="t-diag-none")
+    child = _child_state_with_diagnostic()
+    child.prompt_caching_diagnostics = {}
+    await _delegate_once(node, child)
+
+    assert node.get_state().prompt_caching_diagnostics == {}
+
+
+async def _pause_after_delegating(node, *, seed_diagnostics=None):
+    if seed_diagnostics:
+        node.get_state().prompt_caching_diagnostics.update(seed_diagnostics)
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [_rr(_env("active", "a question", mode="task", invocation_id="inv9"),
+                   return_direct=True, tool="request_task_child")]
+    with pytest.raises(WorkflowPausedException):
+        await _run_loop(node, results, delegation_map=dmap)
+    stack = await sub_session.read_frame_strict(node.get_memory())
+    return stack.top().parent_resume.request_context
+
+
+@pytest.mark.asyncio
+async def test_a_pause_carries_an_earlier_childs_diagnostic_in_the_frame():
+    context = await _pause_after_delegating(_parent_node(mode="task"), seed_diagnostics={"child-a": _CHILD_DIAG})
+
+    assert context[_DIAG_KEY] == {"child-a": _CHILD_DIAG}
+
+
+@pytest.mark.asyncio
+async def test_a_pause_with_no_diagnostics_writes_a_frame_identical_to_before():
+    context = await _pause_after_delegating(_parent_node(mode="task"))
+
+    assert _DIAG_KEY not in context
+    assert set(context) == {"initial_values", "session"}
+
+
+@pytest.mark.asyncio
+async def test_the_resume_merges_the_carried_diagnostics_back():
+    resume = {
+        "node_outputs": {},
+        "node_execution_status": {},
+        "request_context": {"initial_values": {}, "session": {}, _DIAG_KEY: {"child-a": _CHILD_DIAG}},
+        "completed_count": 1,
+        "accumulated_steps": [],
+        "accumulated_tools_used": [],
+        "child_node_id": "child",
+        "mode": "task",
+        "child_task": "task B",
+        "child_result": "result B",
+    }
+    node = _parent_node(
+        mode="task", initial_values={"message": "hi", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    await _run_loop(node, [_rr("final")], delegation_map=dmap)
+
+    assert node.get_state().prompt_caching_diagnostics == {"child-a": _CHILD_DIAG}
+    assert _DIAG_KEY not in node.get_state().session
+
+
+@pytest.mark.asyncio
+async def test_an_old_frame_without_the_key_resumes_with_an_empty_collection():
+    resume = {
+        "node_outputs": {},
+        "node_execution_status": {},
+        "request_context": {"initial_values": {}, "session": {}},
+        "completed_count": 1,
+        "accumulated_steps": [],
+        "accumulated_tools_used": [],
+        "child_node_id": "child",
+        "mode": "task",
+        "child_task": "task B",
+        "child_result": "result B",
+    }
+    node = _parent_node(
+        mode="task", initial_values={"message": "hi", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    await _run_loop(node, [_rr("final")], delegation_map=dmap)
+
+    assert node.get_state().prompt_caching_diagnostics == {}
+
+
+@pytest.mark.asyncio
+async def test_a_new_frame_still_validates_and_restores_on_an_old_build():
+    node = _parent_node(mode="task")
+    context = await _pause_after_delegating(node, seed_diagnostics={"child-a": _CHILD_DIAG})
+
+    stored = node.get_memory().metadata[sub_session.STACK_KEY]
+    json.dumps(stored)
+    assert SubAgentStack.model_validate(stored).top().parent_resume.request_context[_DIAG_KEY]
+
+    fresh = _parent_node(mode="task", thread_id="t-old-pod")
+    fresh.get_state().restore_resume_context(context, drop_keys={"message"})
+
+    assert _DIAG_KEY not in fresh.get_state().session
+    assert _DIAG_KEY not in fresh.get_state().initial_values

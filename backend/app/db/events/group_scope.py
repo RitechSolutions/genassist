@@ -31,14 +31,24 @@ class GroupScopedMixin:
     pass
 
 
+def _scoped_group_ids(group_id, supervised_group_ids):
+    """Groups a caller may read: their own membership plus any groups they supervise"""
+    ids = list(supervised_group_ids)
+    if group_id and group_id not in ids:
+        ids.insert(0, group_id)
+    return ids
+
+
 def _build_criteria(model_cls, group_id, supervised_group_ids, user_id):
     """Build the WHERE clause for a given user context."""
     from app.db.models.user import UserModel
 
     if supervised_group_ids:
-        # Supervisor: records created by users in any of their supervised groups
+        # Supervisor: records created by users in their own group or any supervised group
         return model_cls.created_by.in_(
-            select(UserModel.id).where(UserModel.group_id.in_(supervised_group_ids))
+            select(UserModel.id).where(
+                UserModel.group_id.in_(_scoped_group_ids(group_id, supervised_group_ids))
+            )
         )
     if group_id:
         # Regular user in a group: records created by anyone in same group
@@ -58,11 +68,12 @@ def _build_conversation_criteria(model_cls, group_id, supervised_group_ids, user
     from app.db.models.user import UserModel
 
     if supervised_group_ids:
+        group_ids = _scoped_group_ids(group_id, supervised_group_ids)
         legacy = model_cls.created_by.in_(
-            select(UserModel.id).where(UserModel.group_id.in_(supervised_group_ids))
+            select(UserModel.id).where(UserModel.group_id.in_(group_ids))
         )
         return or_(
-            model_cls.group_id.in_(supervised_group_ids),
+            model_cls.group_id.in_(group_ids),
             and_(model_cls.group_id.is_(None), legacy),
         )
     if group_id:
@@ -73,8 +84,7 @@ def _build_conversation_criteria(model_cls, group_id, supervised_group_ids, user
             model_cls.group_id == group_id,
             and_(model_cls.group_id.is_(None), legacy),
         )
-    legacy = model_cls.created_by == user_id
-    return and_(model_cls.group_id.is_(None), legacy)
+    return model_cls.created_by == user_id
 
 
 def get_group_scope_clause(model_cls):
@@ -147,7 +157,7 @@ def _group_scope_filter(execute_state):
     from app.db.models.user import UserModel
 
     if supervised_group_ids:
-        _ids = tuple(supervised_group_ids)  # capture for closure
+        _ids = tuple(_scoped_group_ids(group_id, supervised_group_ids))
 
         def default_criteria(cls):
             return cls.created_by.in_(
@@ -181,8 +191,7 @@ def _group_scope_filter(execute_state):
             return cls.created_by == _uid
 
         def conversation_criteria(cls):
-            legacy = cls.created_by == _uid
-            return and_(cls.group_id.is_(None), legacy)
+            return cls.created_by == _uid
 
     for scoped_cls in GroupScopedMixin.__subclasses__():
         if scoped_cls.__name__ == "ConversationModel":
