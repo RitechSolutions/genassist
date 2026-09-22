@@ -1,14 +1,8 @@
-import React, { useRef, useState } from "react";
+import React, { useState, useRef } from "react";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
-import {
-  isVariableDrag,
-  readVariableReference,
-} from "@/helpers/variable-input/variableDragDrop";
-import { insertReferenceAt } from "@/helpers/variable-input/variableReference";
-import { useVariableAutocomplete } from "../../hooks/useVariableAutocomplete";
-import { VariablePickerButton } from "./VariablePickerButton";
+import { parseDroppedVariable } from "@/helpers/variable-input/droppedVariable";
 
 interface DraggableInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   id?: string;
@@ -17,12 +11,20 @@ interface DraggableInputProps extends React.InputHTMLAttributes<HTMLInputElement
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   className?: string;
+  onVariableDrop?: (path: string, value: unknown) => void;
 }
 
 /**
- * Input for workflow config fields. Variables go in either by typing "{{" for
- * the tree typeahead or through the picker button, and the underlying RichInput
- * highlights them once inserted.
+ * Input component that can receive dropped values from the JSON viewer
+ * Supports both manual input and drag-and-drop from available variables
+ *
+ * Styling:
+ * - Inherits all Input component styles
+ * - Supports custom className for additional styling
+ * - Full width by default (w-full)
+ * - Proper drag and drop visual feedback
+ * - Syntax highlighting for variables in the preview section
+ * - Supports dropping variables at cursor position
  */
 export const DraggableInput: React.FC<DraggableInputProps> = ({
   id,
@@ -31,57 +33,93 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
   onChange,
   placeholder,
   className,
+  onVariableDrop,
   ...props
 }) => {
+  const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { fieldProps, suggestions, insertVariable } =
-    useVariableAutocomplete<HTMLInputElement>({
-      elementRef: inputRef,
-      value,
-      onChange,
-    });
-
-
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  // Only our own drags are intercepted; anything else keeps native behaviour
   const handleDragOver = (e: React.DragEvent) => {
-    if (!isVariableDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = "copy";
     setIsDragOver(true);
   };
 
-  const handleDragLeave = () => setIsDragOver(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
 
   const handleDrop = (e: React.DragEvent) => {
-    if (!isVariableDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-    const reference = readVariableReference(e.dataTransfer);
-    if (!reference) return;
-
     const el = inputRef.current;
-    const at =
+    const insertPos =
       el && document.activeElement === el
         ? el.selectionStart ?? value.length
         : value.length;
 
-    const next = insertReferenceAt(value, reference, at);
-    onChange({
-      target: { value: next.value },
-    } as React.ChangeEvent<HTMLInputElement>);
-
-    setTimeout(() => {
-      const node = inputRef.current;
-      if (node && document.activeElement === node) {
-        node.setSelectionRange(next.cursor, next.cursor);
+    try {
+      const dropped = parseDroppedVariable(e.dataTransfer);
+      if (!dropped) {
+        return;
       }
-    }, 0);
+
+      const newValue = insertAtPosition(value, dropped.reference, insertPos);
+      const cursorAfter = insertPos + dropped.reference.length;
+
+      const syntheticEvent = {
+        target: { value: newValue },
+      } as React.ChangeEvent<HTMLInputElement>;
+      onChange(syntheticEvent);
+
+      setTimeout(() => {
+        if (inputRef.current && document.activeElement === inputRef.current) {
+          inputRef.current.setSelectionRange(cursorAfter, cursorAfter);
+        }
+      }, 0);
+
+      if (onVariableDrop) {
+        onVariableDrop(dropped.path, dropped.value);
+      }
+    } catch (error) {
+      // ignore
+    }
+  };
+
+  // Helper function to insert value at specific position
+  const insertAtPosition = (
+    currentValue: string,
+    newValue: string,
+    position: number
+  ): string => {
+    if (!currentValue) return newValue;
+
+    // Ensure position is within bounds
+    const safePosition = Math.max(0, Math.min(position, currentValue.length));
+
+    // Insert at the specified position
+    const before = currentValue.slice(0, safePosition);
+    const after = currentValue.slice(safePosition);
+
+    // Add appropriate spacing if needed
+    const needsLeadingSpace =
+      safePosition > 0 &&
+      !currentValue[safePosition - 1].match(/\s/) &&
+      !currentValue[safePosition - 1].match(/[,;:]/);
+
+    const needsTrailingSpace =
+      safePosition < currentValue.length &&
+      !currentValue[safePosition].match(/\s/) &&
+      !currentValue[safePosition].match(/[,;:]/);
+
+    const leadingSpace = needsLeadingSpace ? " " : "";
+    const trailingSpace = needsTrailingSpace ? " " : "";
+
+    return before + leadingSpace + newValue + trailingSpace + after;
   };
 
   return (
@@ -89,35 +127,34 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
       {label && <Label htmlFor={id}>{label}</Label>}
       <div
         className={cn(
-          "group relative w-full",
-          isDragOver && "ring-2 ring-blue-500 ring-opacity-50 rounded-3xl"
+          "relative w-full",
+          isDragOver && "ring-2 ring-blue-500 ring-opacity-50"
         )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         <RichInput
           ref={inputRef}
           id={id}
           value={value}
+          onChange={onChange}
           placeholder={placeholder}
-          className={cn("w-full pr-10", className)}
+          className={cn(
+            "w-full transition-colors",
+            isDragOver && "border-blue-500 bg-blue-50 dark:bg-blue-500/15",
+            className
+          )}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           {...props}
-          {...fieldProps}
         />
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-blue-100/50 dark:bg-blue-500/20">
-            <span className="rounded-full bg-card px-3 py-1 text-sm font-medium text-blue-600 shadow-sm dark:text-blue-400">
+          <div className="absolute inset-0 flex items-center justify-center bg-blue-100 bg-opacity-50 dark:bg-blue-500/20 rounded-md pointer-events-none z-10">
+            <span className="text-blue-600 dark:text-blue-400 font-medium text-sm bg-card px-3 py-1 rounded-full shadow-sm">
               Drop variable at cursor position
             </span>
           </div>
         )}
-        <VariablePickerButton
-          onSelect={insertVariable}
-          className="absolute right-1.5 top-1/2 z-20 -translate-y-1/2"
-        />
       </div>
-      {suggestions}
     </div>
   );
 };

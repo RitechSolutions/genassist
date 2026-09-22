@@ -789,7 +789,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe what this evaluation tests..."
-                size="hint"
+                rows={3}
                 className="mt-1.5"
               />
             </div>
@@ -827,7 +827,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               label="Extra Metadata (JSON)"
               description="Optional metadata to pass with each test case"
               placeholder="{}"
-              rows={8}
+              rows={3}
               allowEmpty
             />
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
@@ -1042,7 +1042,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                         value={provLlmJudgeSystemPromptSuffix}
                         onChange={(e) => setProvLlmJudgeSystemPromptSuffix(e.target.value)}
                         placeholder="Optional extra instructions for the judge..."
-                        size="body"
+                        rows={3}
                         className="mt-1"
                       />
                     </div>
@@ -1094,7 +1094,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     value={notContainsText}
                     onChange={(e) => setNotContainsText(e.target.value)}
                     placeholder={"e.g.\ncompetitor name\nsocial security number"}
-                    size="body"
+                    rows={3}
                     className="mt-1"
                   />
                 </div>

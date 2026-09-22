@@ -50,45 +50,6 @@ export const CONDITIONAL_ROUTER_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
-export const SWITCH_HELP_CONTENT: NodeHelpContent = {
-  intro:
-    "The Switch node provides deterministic N-way branching based on a single value. Instead of chaining several binary routers, one Switch routes execution into multiple clearly defined branches — one per case, plus a default branch for anything that doesn't match.",
-  sections: [
-    {
-      title: "Overview & Use Cases",
-      body: "Use the Switch node when you need to:",
-      bullets: [
-        "Route classified intents (billing, account, technical support, sales, cancellation) into separate branches",
-        "Run different logic per status such as new, pending, approved, rejected, or completed",
-        "Send low-, medium-, high-, and critical-priority items through different handling paths",
-        "Branch on a known category, type, region, product, department, or workflow result",
-        "Use a Classifier's output to decide which downstream workflow runs",
-      ],
-    },
-    {
-      title: "How it differs",
-      body: "The Conditional Router is a binary true/false decision, and the Result Merger joins branches back together. Switch selects exactly one of many cases, keeping multi-option decisions readable on the canvas. A typical flow is Classifier → Switch → Specialist workflow.",
-    },
-    {
-      title: "Smart Mode",
-      body: "Turn on Smart Mode to let an LLM choose the case instead of comparing a value. Write a routing prompt (it can include variables such as the user's message) and describe each case; the model picks one of them. If the provider, prompt, or model answer is invalid, the Default branch is used.",
-    },
-    {
-      title: "Configuring the node",
-      steps: [
-        "Click the settings icon in the node header.",
-        "The Configure Switch dialog will open.",
-        "Enter the Node Name.",
-        "Set the Value to route on, usually a variable from an upstream node, or turn on Smart Mode and write a routing prompt.",
-        "Choose the Match Mode and whether matching is case sensitive (rule mode only).",
-        "Add one case per branch and give each a name and a value to match (or a description, in Smart Mode).",
-        "Connect each case output, plus the Default output, to its branch.",
-        "Save the node configuration.",
-      ],
-    },
-  ],
-};
-
 export const RESULT_MERGER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The Result Merger node combines outputs from multiple workflow branches into a single result. It is useful for collecting parallel outputs and preparing them for later steps.",

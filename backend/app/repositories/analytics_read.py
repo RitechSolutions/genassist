@@ -12,7 +12,6 @@ from uuid import UUID
 
 from injector import inject
 from sqlalchemy import case, false, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
@@ -20,6 +19,7 @@ from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.db.models.operator import OperatorModel
+from app.db.session_types import ReadOnlySession
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def _apply_agent_ids(stmt, column, agent_ids: list[UUID] | None):
 
 class AnalyticsReadRepository:
     @inject
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: ReadOnlySession):
         self.db = db
 
     async def get_agents_for_group(self, group_id: UUID) -> list[dict]:

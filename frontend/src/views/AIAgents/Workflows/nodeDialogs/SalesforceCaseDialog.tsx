@@ -233,11 +233,11 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
               <Label htmlFor="description">Description</Label>
               <DraggableTextArea
                 id="description"
-                size="body"
+                rows={4}
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="Enter the issue or request description"
-                className="w-full"
+                className="w-full resize-none"
               />
             </div>
           </div>
