@@ -192,7 +192,7 @@ export default function TicketDetailPage() {
                   value={commentBody}
                   onChange={(e) => setCommentBody(e.target.value)}
                   placeholder="Add a comment..."
-                  size="hint"
+                  rows={3}
                 />
                 <Button
                   onClick={handleComment}

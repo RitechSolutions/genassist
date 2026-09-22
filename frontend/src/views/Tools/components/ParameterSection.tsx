@@ -2,7 +2,6 @@ import { FC } from "react";
 import { Button } from "@/components/button";
 import { Trash2, Plus } from "lucide-react";
 import { RichInput } from "@/components/richInput";
-import { RichTextarea } from "@/components/richTextarea";
 import {
   Select,
   SelectTrigger,
@@ -106,8 +105,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Description</label>
-                <RichTextarea
-                  size="hint"
+                <RichInput
                   placeholder="Parameter description"
                   value={param.description}
                   onChange={e =>

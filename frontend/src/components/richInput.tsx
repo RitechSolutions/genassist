@@ -19,21 +19,7 @@ const OVERLAY_BASE_CLASS =
   "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 overflow-hidden text-foreground"
 
 const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  (
-    {
-      className,
-      type,
-      value,
-      onFocus,
-      onChange,
-      onMouseUp,
-      onScroll,
-      onKeyDown,
-      onKeyUp,
-      ...props
-    },
-    ref
-  ) => {
+  ({ className, type, value, onFocus, onChange, onMouseUp, onScroll, ...props }, ref) => {
     const inputRef = React.useRef<HTMLInputElement | null>(null)
     const overlayRef = React.useRef<HTMLDivElement | null>(null)
     const pendingCursorRef = React.useRef<number | null>(null)
@@ -83,9 +69,8 @@ const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input
           value,
           onChange,
           pendingCursorRef,
-          onKeyDown,
         }),
-      [useOverlay, value, onChange, onKeyDown]
+      [useOverlay, value, onChange]
     )
 
     const handleKeyUp = React.useMemo(
@@ -93,9 +78,8 @@ const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input
         createVariableKeyUpHandler<HTMLInputElement>({
           useOverlay,
           value,
-          onKeyUp,
         }),
-      [useOverlay, value, onKeyUp]
+      [useOverlay, value]
     )
 
     const handleMouseUp = React.useMemo(

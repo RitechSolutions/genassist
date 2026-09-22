@@ -1,29 +1,32 @@
-import React, { useRef, useState } from "react";
+import React, { useState, useRef } from "react";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
-import {
-  isVariableDrag,
-  readVariableReference,
-} from "@/helpers/variable-input/variableDragDrop";
-import { insertReferenceAt } from "@/helpers/variable-input/variableReference";
 import { RichTextarea } from "@/components/richTextarea";
-import type { TextareaSizingProps } from "@/components/ui/textarea-sizing";
-import { useVariableAutocomplete } from "../../hooks/useVariableAutocomplete";
-import { VariablePickerButton } from "./VariablePickerButton";
+import { parseDroppedVariable } from "@/helpers/variable-input/droppedVariable";
 
-interface DraggableTextAreaProps extends TextareaSizingProps {
+interface DraggableTextAreaProps {
   id?: string;
   label?: string;
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   className?: string;
+  rows?: number;
+  onVariableDrop?: (path: string, value: unknown) => void;
 }
 
 /**
- * Textarea for workflow config fields. Variables go in either by typing "{{"
- * for the tree typeahead or through the picker button, and the underlying
- * RichTextarea highlights them once inserted.
+ * Textarea component that can receive dropped values from the JSON viewer
+ * Supports both manual input and drag-and-drop from available variables
+ * Variables can be dropped at cursor position or replace selected text
+ * Shows real-time drag cursor for precise positioning
+ *
+ * Styling:
+ * - Inherits all Textarea component styles
+ * - Supports custom className for additional styling
+ * - Full width by default (w-full)
+ * - Proper drag and drop visual feedback
+ * - Syntax highlighting for variables in the preview section
  */
 export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
   id,
@@ -32,58 +35,96 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
   onChange,
   placeholder,
   className,
-  size,
-  rows,
+  rows = 4,
+  onVariableDrop,
 }) => {
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { fieldProps, suggestions, insertVariable } =
-    useVariableAutocomplete<HTMLTextAreaElement>({
-      elementRef: textareaRef,
-      value,
-      onChange,
-    });
-
-
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  // Only our own drags are intercepted; anything else keeps native behaviour
   const handleDragOver = (e: React.DragEvent) => {
-    if (!isVariableDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = "copy";
     setIsDragOver(true);
   };
 
-  const handleDragLeave = () => setIsDragOver(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
 
   const handleDrop = (e: React.DragEvent) => {
-    if (!isVariableDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-    const reference = readVariableReference(e.dataTransfer);
-    if (!reference) return;
-
     const el = textareaRef.current;
-    const at =
+    const insertPos =
       el && document.activeElement === el
         ? el.selectionStart ?? value.length
         : value.length;
 
-    const next = insertReferenceAt(value, reference, at);
-    onChange({
-      target: { value: next.value },
-    } as React.ChangeEvent<HTMLTextAreaElement>);
-
-    setTimeout(() => {
-      const node = textareaRef.current;
-      if (node && document.activeElement === node) {
-        node.setSelectionRange(next.cursor, next.cursor);
+    try {
+      const dropped = parseDroppedVariable(e.dataTransfer);
+      if (!dropped) {
+        return;
       }
-    }, 0);
+
+      const newValue = insertAtPosition(value, dropped.reference, insertPos);
+      const cursorAfter = insertPos + dropped.reference.length;
+
+      const syntheticEvent = {
+        target: { value: newValue },
+      } as React.ChangeEvent<HTMLTextAreaElement>;
+      onChange(syntheticEvent);
+
+      setTimeout(() => {
+        if (
+          textareaRef.current &&
+          document.activeElement === textareaRef.current
+        ) {
+          textareaRef.current.setSelectionRange(cursorAfter, cursorAfter);
+        }
+      }, 0);
+
+      if (onVariableDrop) {
+        onVariableDrop(dropped.path, dropped.value);
+      }
+    } catch (error) {
+      // ignore
+    }
+  };
+
+  // Helper function to insert value at specific position
+  const insertAtPosition = (
+    currentValue: string,
+    newValue: string,
+    position: number
+  ): string => {
+    if (!currentValue) return newValue;
+
+    // Ensure position is within bounds
+    const safePosition = Math.max(0, Math.min(position, currentValue.length));
+
+    // Insert at the specified position
+    const before = currentValue.slice(0, safePosition);
+    const after = currentValue.slice(safePosition);
+
+    // Add space separator if needed (let natural text wrapping handle line breaks)
+    const needsLeadingSpace =
+      safePosition > 0 &&
+      !currentValue[safePosition - 1].match(/\s/) &&
+      !currentValue[safePosition - 1].match(/[,;:]/);
+
+    const needsTrailingSpace =
+      safePosition < currentValue.length &&
+      !currentValue[safePosition].match(/\s/) &&
+      !currentValue[safePosition].match(/[,;:]/);
+
+    const leadingSpace = needsLeadingSpace ? " " : "";
+    const trailingSpace = needsTrailingSpace ? " " : "";
+
+    return before + leadingSpace + newValue + trailingSpace + after;
   };
 
   return (
@@ -91,36 +132,34 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
       {label && <Label htmlFor={id}>{label}</Label>}
       <div
         className={cn(
-          "group relative w-full",
-          isDragOver && "ring-2 ring-blue-500 ring-opacity-50 rounded-3xl"
+          "relative w-full",
+          isDragOver && "ring-2 ring-blue-500 ring-opacity-50"
         )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         <RichTextarea
           ref={textareaRef}
           id={id}
           value={value}
+          onChange={onChange}
           placeholder={placeholder}
-          size={size}
           rows={rows}
-          className={cn("w-full pr-10", className)}
-          {...fieldProps}
+          className={cn(
+            "w-full transition-colors",
+            isDragOver && "border-blue-500 bg-blue-50 dark:bg-blue-500/15",
+            className
+          )}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         />
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-blue-100/50 dark:bg-blue-500/20">
-            <span className="rounded-full bg-card px-3 py-1 text-sm font-medium text-blue-600 shadow-sm dark:text-blue-400">
+          <div className="absolute inset-0 flex items-center justify-center bg-blue-100 bg-opacity-50 dark:bg-blue-500/20 rounded-md pointer-events-none z-10">
+            <span className="text-blue-600 dark:text-blue-400 font-medium text-sm bg-card px-3 py-1 rounded-full shadow-sm">
               Drop variable here
             </span>
           </div>
         )}
-        <VariablePickerButton
-          onSelect={insertVariable}
-          className="absolute right-2 top-2 z-20"
-        />
       </div>
-      {suggestions}
     </div>
   );
 };

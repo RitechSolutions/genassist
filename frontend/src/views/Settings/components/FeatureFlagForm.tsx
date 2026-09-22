@@ -106,7 +106,6 @@ export function FeatureFlagForm({
               <FormLabel>Description</FormLabel>
               <FormControl>
                 <Textarea
-                  size="description"
                   placeholder="Description of what this feature flag controls"
                   {...field}
                 />
