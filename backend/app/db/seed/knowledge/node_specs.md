@@ -32,6 +32,7 @@ Defaults: `sourceHandle = "output"`, `targetHandle = "input"`. Override for spec
 - Sub-agent delegation: `sourceHandle: "output_sub_agent"`, `targetHandle: "input_sub_agents"`
 - Router true: `sourceHandle: "output_true"`
 - Router false: `sourceHandle: "output_false"`
+- Switch case: `sourceHandle: "output_<case id>"` (e.g. `"output_case_1"`); Switch no-match: `sourceHandle: "output_default"`
 
 ---
 
@@ -116,6 +117,33 @@ Edges:
   4→6, 5→7
 ```
 
+### Multi-Way Routing (Switch)
+Use `switchNode` instead of chaining routers when ONE value picks between 3+ branches. Classify first, then switch on the label. Every case edge and the default edge need their own branch.
+```
+chatInputNode(1) → llmModelNode(2) → switchNode(3)
+  output_case_1 → agentNode(4) → chatOutputNode(7)
+  output_case_2 → agentNode(5) → chatOutputNode(8)
+  output_default → templateNode(6) → chatOutputNode(9)
+
+llmModelNode(2) config:
+  systemPrompt: "Classify the user's message. Respond with exactly one word: billing, technical or other."
+  userPrompt: "{{session.message}}"
+
+switchNode(3) config:
+  switchValue: "{{source.message}}"
+  matchMode: "equal"
+  caseSensitive: false
+  cases: [{"id": "case_1", "label": "Billing", "value": "billing"},
+          {"id": "case_2", "label": "Technical", "value": "technical"}]
+
+Edges:
+  1→2, 2→3
+  3→4 (sourceHandle: "output_case_1")
+  3→5 (sourceHandle: "output_case_2")
+  3→6 (sourceHandle: "output_default")
+  4→7, 5→8, 6→9
+```
+
 ### AI Pipeline (no agent)
 ```
 chatInputNode(1) → templateNode(2) → llmModelNode(3) → chatOutputNode(4)
@@ -149,6 +177,7 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 - **RIGHT**: `chatInput → llmModelNode` (classifies topic) → `routerNode` (checks classification string)
 - If the user's use case involves "if X is found, do Y", put the search as a **TOOL** of the agent and let the agent decide via its reasoning + systemPrompt instructions. Do NOT use a routerNode for this.
 - routerNode config has ONLY these fields: `first_value`, `compare_condition`, `second_value`. Do NOT invent fields like `condition`, `trueLabel`, `falseLabel`.
+- When one value selects between 3 or more branches, use a single `switchNode` rather than a chain of routerNodes. The same rules apply: it compares strings, so classify first.
 
 ### Tool Connection Rules
 - Integration and data nodes (`knowledgeBaseNode`, `zendeskTicketNode`, `slackMessageNode`, `gmailNode`, `jiraNode`, `apiToolNode`, `sqlNode`, `calendarEventNode`, `readMailsNode`, `whatsappToolNode`, etc.) **MUST** be connected as **TOOLS** of an `agentNode` via a `toolBuilderNode`. They must **NEVER** be placed as standalone nodes in the main chain.
@@ -187,6 +216,12 @@ Router connections — must specify branch:
 ```json
 {"from": "<router_id>", "to": "<target>", "sourceHandle": "output_true", "targetHandle": "input"}
 {"from": "<router_id>", "to": "<target>", "sourceHandle": "output_false", "targetHandle": "input"}
+```
+
+Switch connections — one edge per case id, plus the default:
+```json
+{"from": "<switch_id>", "to": "<target>", "sourceHandle": "output_case_1", "targetHandle": "input"}
+{"from": "<switch_id>", "to": "<target>", "sourceHandle": "output_default", "targetHandle": "input"}
 ```
 
 Tool connections — both edges required:
@@ -476,6 +511,37 @@ Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
 - `ends_with` — first_value ends with second_value
 - `not_ends_with` — first_value does not end with second_value
 - `regex` — second_value is a regex pattern to test against first_value
+
+---
+
+### switchNode — Switch
+**Category:** Control Flow
+**Purpose:** Deterministic multi-way branching on a single value. Compares `switchValue` against each case in order; the FIRST matching case wins and only its branch runs. If no case matches, `output_default` runs. In its default rule mode it does SIMPLE STRING COMPARISON only, like routerNode — classify with an llmModelNode or nlpNode first, then switch on the label. With `smartModeEnabled: true` an LLM picks the case instead (any invalid answer takes `output_default`).
+**Use cases:** Routing classified intents (billing, account, technical support, sales, cancellation) to separate branches, status-based processing (new, pending, approved, rejected), priority routing (low, medium, high, critical).
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output_<case id> | source | right | any |
+| output_default | source | right | any |
+
+There is one `output_<case id>` handler per entry in `cases` (case `case_1` → handler `output_case_1`).
+
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| switchValue | text | Yes | The value to route on. Supports `{{source.field}}` |
+| cases | list | Yes | Ordered list of `{"id": "case_1", "label": "Billing", "value": "billing"}`. Ids must be unique, use the form `case_<n>`, and never be `default` |
+| matchMode | select | No | `equal` (default), `contains`, `starts_with`, `ends_with`, `regex` |
+| caseSensitive | boolean | No | Default `false` |
+| smartModeEnabled | boolean | No | Default `false`. When `true`, an LLM picks the case instead of comparing `switchValue` |
+| providerId | select | Smart Mode only | LLM provider that picks the case |
+| smartPrompt | text | Smart Mode only | Routing instructions, e.g. `"Route this message: {{session.message}}"`. Case `value`s act as descriptions of when to pick each case |
+| systemPrompt | text | No | Smart Mode only; overrides the built-in routing instructions |
+| name | text | No | Node name |
+
+**Output:** `route` (the matched case id, or `default`), `label` (the matched case label, or `Default`), `value` (the compared value).
 
 ---
 
