@@ -82,7 +82,7 @@ const JudgeRuleRow: React.FC<JudgeRuleRowProps> = ({
         value={rule.rubric}
         onChange={(e) => onChange({ rubric: e.target.value })}
         placeholder="e.g. Score 1.0 if the answer is polite and offers a next step, 0.0 otherwise."
-        rows={4}
+        size="description"
         className="mt-1"
       />
     </div>
