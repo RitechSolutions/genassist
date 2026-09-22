@@ -45,6 +45,7 @@ export const FeatureFlags = {
     WORKFLOW: {
       CHAT_INPUT: 'workflow.chatInput',
       CONVERSATIONAL_TAB: 'workflow.conversationalTab',
+      PROMPT_EDITOR: 'workflow.promptEditor',
     },
 
     // Specific UI components within features
