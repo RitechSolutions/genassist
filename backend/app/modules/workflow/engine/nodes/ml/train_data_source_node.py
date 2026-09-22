@@ -7,18 +7,46 @@ This node fetches training data from databases or uploaded files (CSV, Excel, JS
 import asyncio
 import logging
 import os
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, TypeVar
 from uuid import UUID
 
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.sensitive_data_utils import redact_bound_values
+from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.integration.database.query_validator import AdvancedQueryValidator
+from app.modules.integration.database.read_only_sql import (
+    read_only_sql_blocked_message,
+    validate_read_only_sql,
+)
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.utils import (
+    PARAM_STYLE_NAMED,
+    PARAM_STYLE_PYFORMAT,
+    BoundParameters,
+    QueryVariableError,
+    bind_config_vars,
+)
 
 logger = logging.getLogger(__name__)
+
+NumericLimit = TypeVar("NumericLimit", int, float)
+
+
+@dataclass(frozen=True)
+class ExtractionLimits:
+    """Effective limits for one Train Data Source execution."""
+
+    max_rows: int
+    max_bytes: int
+    query_timeout_seconds: float
 
 
 class TrainDataSourceNode(BaseNode):
@@ -26,11 +54,15 @@ class TrainDataSourceNode(BaseNode):
     Train Data Source node that fetches training data from databases or uploaded files.
 
     Supports:
-    - Database queries with variable substitution
+    - Database queries with bound workflow variables
     - File parsing for CSV, Excel (.xlsx), JSON, and Parquet uploads
     - Multiple database types (TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
     - Snowflake-specific query execution via SnowflakeManager
     """
+
+    def _unresolved_config_fields(self) -> set[str]:
+        """Keep SQL templates intact until they can be bound for the driver."""
+        return {"query"}
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -65,14 +97,22 @@ class TrainDataSourceNode(BaseNode):
                     error_detail="sourceType must be 'datasource' or 'csv'",
                 )
 
+            limits = self._resolve_extraction_limits(config)
+
             logger.info(
-                f"Processing train data source node: {name} (type: {source_type})"
+                "Processing train data source node %s (type=%s, max_rows=%s, "
+                "max_bytes=%s, timeout=%ss)",
+                name,
+                source_type,
+                limits.max_rows,
+                limits.max_bytes,
+                self._format_number(limits.query_timeout_seconds),
             )
 
             if source_type == "datasource":
-                return await self._process_database_source(config)
+                return await self._process_database_source(config, limits)
             elif source_type == "csv":
-                return await self._process_csv_source(config)
+                return await self._process_csv_source(config, limits)
             else:
                 # This should never happen due to validation above, but for completeness
                 raise AppException(
@@ -84,15 +124,15 @@ class TrainDataSourceNode(BaseNode):
             # Re-raise AppException as is
             raise
         except Exception as e:
-            logger.error(
-                f"Unexpected error in train data source node: {str(e)}", exc_info=True
-            )
+            logger.error(f"Unexpected error in train data source node: {str(e)}", exc_info=True)
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"Train data source processing failed: {str(e)}",
             ) from e
 
-    async def _process_database_source(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_database_source(
+        self, config: Dict[str, Any], limits: ExtractionLimits
+    ) -> Dict[str, Any]:
         """
         Process database data source.
 
@@ -103,7 +143,7 @@ class TrainDataSourceNode(BaseNode):
             Dictionary with database query results and metadata
         """
         data_source_id = config.get("dataSourceId")
-        query = config.get("query", "")
+        query_template = config.get("query", "")
 
         if not data_source_id:
             raise AppException(
@@ -111,7 +151,7 @@ class TrainDataSourceNode(BaseNode):
                 error_detail="dataSourceId is required for database source type",
             )
 
-        if not query:
+        if not query_template:
             raise AppException(
                 error_key=ErrorKey.MISSING_PARAMETER,
                 error_detail="query is required for database source type",
@@ -132,31 +172,100 @@ class TrainDataSourceNode(BaseNode):
                     error_detail=f"Database connection not available for datasource {data_source_id}",
                 )
 
-            # Log database type for debugging (supports TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
-            db_type = getattr(db_manager, "db_type", "unknown")
-            logger.debug(f"Using database manager for {db_type} database")
+            # Datasource DB types are mapped to SQLGlot dialects by
+            # read_only_sql.SQLGLOT_DIALECTS; keep supported types aligned there.
+            db_type = db_manager.get_db_type()
+            logger.debug("Using database manager for %s database", db_type)
 
-            substituted_query = query
-            logger.debug(f"Substituted query: {substituted_query}")
+            try:
+                validation_query, statement, parameters = self._bind_database_query(
+                    query_template,
+                    db_type,
+                )
+            except QueryVariableError as exc:
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=str(exc),
+                ) from None
+
+            logger.info(
+                "Executing training query with %d bound parameter(s)",
+                len(parameters),
+            )
+
+            # Fail closed before execution. The rejection reason is generated by the
+            # read-only policy and is safe to expose; execute_read_query adds DB-level
+            # read-only defense in depth for statements that pass this gate.
+            validation = validate_read_only_sql(validation_query, db_type)
+            if not validation.is_valid:
+                error = read_only_sql_blocked_message(validation)
+                logger.warning(error)
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=error,
+                )
+
+            self._log_query_advisories(validation_query, db_manager)
+
+            # Fail closed before execution. The rejection reason is generated by the
+            # read-only policy and is safe to expose; execute_read_query adds DB-level
+            # read-only defense in depth for statements that pass this gate.
+            validation = validate_read_only_sql(validation_query, db_type)
+            if not validation.is_valid:
+                error = read_only_sql_blocked_message(validation)
+                logger.warning(error)
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=error,
+                )
+
+            self._log_query_advisories(validation_query, db_manager)
 
             # Execute query with timeout
             # Note: For Snowflake, this automatically routes to SnowflakeManager.execute_query()
             try:
                 results, error_msg = await asyncio.wait_for(
-                    db_manager.execute_query(substituted_query),
-                    timeout=30.0,  # 30 second timeout
+                    self._execute_bound_query(db_manager, statement, parameters),
+                    timeout=limits.query_timeout_seconds,
                 )
+            except BoundValueError as exc:
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=str(exc),
+                ) from None
             except asyncio.TimeoutError as exc:
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="Database query timed out after 30 seconds",
+                    error_detail=(
+                        "Database query timed out after "
+                        f"{self._format_number(limits.query_timeout_seconds)} seconds"
+                    ),
                 ) from exc
 
             if error_msg:
+                safe_error = redact_bound_values(error_msg, parameters)
+                logger.error(
+                    "Training database query failed with %d bound parameter(s): %s",
+                    len(parameters),
+                    safe_error,
+                )
+                if parameters:
+                    error_detail = (
+                        "Database query failed. Check that each workflow variable's "
+                        "value matches the column it is compared with."
+                    )
+                else:
+                    error_detail = f"Database query failed: {safe_error}"
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=f"Database query failed: {error_msg}",
+                    error_detail=error_detail,
                 )
+
+            self._enforce_row_limit(results, limits.max_rows, "query")
 
             # Extract column names from first row
             columns = list(results[0].keys()) if results else []
@@ -164,14 +273,10 @@ class TrainDataSourceNode(BaseNode):
             if not results:
                 logger.warning("Database query returned no results")
             else:
-                logger.info(
-                    f"Database query successful: {len(results)} rows, {len(columns)} columns"
-                )
+                logger.info(f"Database query successful: {len(results)} rows, {len(columns)} columns")
 
             # Save all results to CSV using thread_id and timestamp
-            csv_file_path = await ml_utils.save_data_to_csv(
-                results, columns, self.state.thread_id
-            )
+            csv_file_path = await ml_utils.save_data_to_csv(results, columns, self.state.thread_id)
 
             # Get first 3 and last 3 records for response
             sample_data = ml_utils.get_sample_data(results)
@@ -195,7 +300,9 @@ class TrainDataSourceNode(BaseNode):
                 error_detail=f"Database source processing failed: {str(e)}",
             ) from e
 
-    async def _process_csv_source(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_csv_source(
+        self, config: Dict[str, Any], limits: ExtractionLimits
+    ) -> Dict[str, Any]:
         """
         Process CSV data source.
 
@@ -235,9 +342,7 @@ class TrainDataSourceNode(BaseNode):
                 logger.info(f"Downloading training file to: {dest_file_path}")
 
                 # download the file to the destination path
-                await file_manager_service.download_file_to_path(
-                    csv_file_id, dest_file_path
-                )
+                await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
 
                 # set the csv file path to the destination path
                 csv_file_path = dest_file_path
@@ -256,8 +361,12 @@ class TrainDataSourceNode(BaseNode):
                     error_detail=f"Training file not readable: {csv_file_path}",
                 )
 
+            self._enforce_csv_byte_limit(csv_path, limits.max_bytes)
+
             # Parse the file (CSV, Excel, JSON, or Parquet, based on extension)
             results = ml_utils.parse_training_file(csv_file_path)
+
+            self._enforce_row_limit(results, limits.max_rows, "CSV file")
 
             # Extract column names from first row
             columns = list(results[0].keys()) if results else []
@@ -268,9 +377,7 @@ class TrainDataSourceNode(BaseNode):
 
             # Save parsed data to CSV using thread_id and timestamp
             # This ensures consistent naming regardless of source type
-            saved_csv_path = await ml_utils.save_data_to_csv(
-                results, columns, self.state.thread_id
-            )
+            saved_csv_path = await ml_utils.save_data_to_csv(results, columns, self.state.thread_id)
 
             # Get first 3 and last 3 records for response
             sample_data = ml_utils.get_sample_data(results)
@@ -293,6 +400,149 @@ class TrainDataSourceNode(BaseNode):
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"CSV source processing failed: {str(e)}",
             ) from e
+
+    @staticmethod
+    def _log_query_advisories(query: str, db_manager: Any) -> None:
+        """Log existing validator warnings without making advice blocking."""
+        try:
+            # This advisory-only path does not perform schema validation, so
+            # avoid a live schema fetch here.
+            advisory = AdvancedQueryValidator(
+                db_manager,
+                schema={"tables": []},
+            ).validate_query(query)
+            for warning in advisory.warnings or []:
+                logger.warning("Training query advisory: %s", warning)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Advisory validation must never block extraction.
+            logger.debug("Advisory validation skipped: %s", exc)
+
+    def _bind_database_query(
+        self,
+        query_template: str,
+        db_type: str,
+    ) -> tuple[str, str, BoundParameters]:
+        """Create the validation and driver-specific forms of a query."""
+        source_output = self.get_input_from_source()
+        direct_input = self.direct_input if isinstance(self.direct_input, dict) else {}
+        validation_query, parameters = bind_config_vars(
+            query_template,
+            self.state,
+            source_output,
+            direct_input=direct_input,
+            param_style=PARAM_STYLE_NAMED,
+            db_type=db_type,
+        )
+
+        statement = validation_query
+        if str(db_type).strip().lower() == "snowflake":
+            statement, parameters = bind_config_vars(
+                query_template,
+                self.state,
+                source_output,
+                direct_input=direct_input,
+                param_style=PARAM_STYLE_PYFORMAT,
+                db_type=db_type,
+            )
+        return validation_query, statement, parameters
+
+    @staticmethod
+    async def _execute_bound_query(
+        db_manager: Any,
+        statement: str,
+        parameters: Mapping[str, Any],
+    ) -> tuple[list[dict], str | None]:
+        """Execute a query without changing the no-parameter call path."""
+        if parameters:
+            return await db_manager.execute_read_query(statement, parameters)
+        return await db_manager.execute_read_query(statement)
+
+    @classmethod
+    def _resolve_extraction_limits(cls, config: Dict[str, Any]) -> ExtractionLimits:
+        """Resolve node overrides without allowing platform ceilings to rise."""
+        return ExtractionLimits(
+            max_rows=cls._resolve_limit(
+                config,
+                "maxRows",
+                settings.ML_EXTRACT_MAX_ROWS,
+                int,
+            ),
+            max_bytes=cls._resolve_limit(
+                config,
+                "maxBytes",
+                settings.ML_EXTRACT_MAX_BYTES,
+                int,
+            ),
+            query_timeout_seconds=cls._resolve_limit(
+                config,
+                "timeoutSeconds",
+                float(settings.ML_EXTRACT_QUERY_TIMEOUT_SECONDS),
+                float,
+            ),
+        )
+
+    @staticmethod
+    def _resolve_limit(
+        config: Dict[str, Any],
+        config_key: str,
+        platform_limit: NumericLimit,
+        converter: Callable[[Any], NumericLimit],
+    ) -> NumericLimit:
+        raw_value = config.get(config_key)
+        if raw_value in (None, ""):
+            return platform_limit
+
+        try:
+            requested_limit = converter(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=f"{config_key} must be a positive number",
+            ) from exc
+
+        if isinstance(raw_value, bool) or requested_limit <= 0:
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=f"{config_key} must be a positive number",
+            )
+
+        return min(requested_limit, platform_limit)
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return f"{value:g}"
+
+    @staticmethod
+    def _enforce_row_limit(
+        results: list[Dict[str, Any]], max_rows: int, source_label: str
+    ) -> None:
+        row_count = len(results)
+        if row_count <= max_rows:
+            return
+
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"The {source_label} returned {row_count:,} rows, which exceeds "
+                f"the limit of {max_rows:,}. Add a filter or LIMIT, or raise "
+                "ML_EXTRACT_MAX_ROWS."
+            ),
+        )
+
+    @staticmethod
+    def _enforce_csv_byte_limit(csv_path: Path, max_bytes: int) -> None:
+        csv_size = csv_path.stat().st_size
+        if csv_size <= max_bytes:
+            return
+
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"CSV file is {csv_size:,} bytes, which exceeds the limit "
+                f"of {max_bytes:,} bytes for training extracts. "
+                "Use a smaller file or raise ML_EXTRACT_MAX_BYTES."
+            ),
+        )
 
     async def _get_database_manager(self, data_source_id: str):
         """
