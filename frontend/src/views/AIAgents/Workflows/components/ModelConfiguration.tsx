@@ -394,7 +394,6 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         </div>
         <DraggableTextArea
           id={`system-prompt-input-${id}`}
-          size="prompt"
           value={systemPrompt}
           onChange={handleSystemPromptChange}
           placeholder="Enter system prompt"
@@ -420,7 +419,6 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           </div>
           <DraggableTextArea
             id={`user-prompt-input-${id}`}
-            size="body"
             value={userPrompt}
             onChange={handleUserPromptChange}
             placeholder="Enter user prompt"
