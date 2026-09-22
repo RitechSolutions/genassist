@@ -11,6 +11,7 @@ from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models import UserModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
@@ -93,11 +94,21 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
                 )
         return result.scalars().first()
 
-    async def _get_by_name(self, api_key_name: str):
-        # Need index
+    async def _get_by_name(self, api_key_name: str, *, exclude_id: Optional[UUID] = None):
+        """
+        Find an *active* key by name, regardless of who created it.
+
+        The DB uniqueness index (``api_keys_name_active_unique``) is global and
+        only covers rows with ``is_deleted = 0``, so this lookup must mirror it:
+        bypass group scoping (otherwise a name taken by another group's key would
+        slip past this check and surface as a raw duplicate-key error) and keep
+        the default soft-delete filter (a deleted key has released its name).
+        """
+        query = select(ApiKeyModel).where(ApiKeyModel.name == api_key_name)
+        if exclude_id is not None:
+            query = query.where(ApiKeyModel.id != exclude_id)
         result = await self.db.execute(
-                select(ApiKeyModel)
-                .where(ApiKeyModel.name == api_key_name)
+                query.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
         return result.scalars().first()
 
@@ -166,7 +177,9 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         if not api_key:
             raise AppException(ErrorKey.API_KEY_NOT_FOUND, status_code=404)
 
-        if data.name is not None:
+        if data.name is not None and data.name != api_key.name:
+            if await self._get_by_name(data.name, exclude_id=api_key.id):
+                raise AppException(ErrorKey.API_KEY_NAME_EXISTS)
             api_key.name = data.name
         if data.is_active is not None:
             api_key.is_active = data.is_active
