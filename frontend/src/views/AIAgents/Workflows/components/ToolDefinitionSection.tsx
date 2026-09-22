@@ -87,8 +87,7 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Enter a description for this tool"
-          size="body"
-          className="w-full text-base"
+          className="w-full text-base min-h-[120px] resize-y"
         />
       </div>
       <div className="space-y-2 w-full flex items-center">

@@ -409,7 +409,9 @@ export const RoutesProvider = () => {
             {
               path: "ai-agents",
               element: (
-                <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
+                <ProtectedRoute
+                  requiredPermissions={["read:workflow", "read:llm_analyst"]}
+                >
                   <AIAgents />
                 </ProtectedRoute>
               ),
@@ -417,7 +419,9 @@ export const RoutesProvider = () => {
             {
               path: "ai-agents/*",
               element: (
-                <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
+                <ProtectedRoute
+                  requiredPermissions={["read:workflow", "read:llm_analyst"]}
+                >
                   <AIAgents />
                 </ProtectedRoute>
               ),

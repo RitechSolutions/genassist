@@ -23,20 +23,8 @@ export function OperatorDetailsDialog({ operator, isOpen, onOpenChange }: Operat
         return;
       }
       
-      // Without an id we cannot scope the lookup, and an unfiltered fetch would
-      // surface some other operator's conversation as this operator's latest.
-      if (!operator.id) {
-        setOperatorWithLatestCall({...operator});
-        return;
-      }
-
       try {
-        const { items: transcripts } = await fetchTranscripts({
-          operator_id: operator.id,
-          limit: 1,
-          order_by: "created_at",
-          sort_direction: "desc",
-        });
+        const { items: transcripts } = await fetchTranscripts();
         const latestTranscript = getLatestTranscript(transcripts);
         
         if (!latestTranscript) {
@@ -64,7 +52,7 @@ export function OperatorDetailsDialog({ operator, isOpen, onOpenChange }: Operat
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl 2xl:max-w-[960px] min-[1920px]:max-w-[1120px]">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-4">
             <OperatorAvatar 

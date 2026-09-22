@@ -60,11 +60,6 @@ interface BaseNodeContainerProps<T extends NodeData> {
   nodeContent?: NodeContentRow[];
   onSettings?: () => void;
   children?: React.ReactNode;
-  /**
-   * Replaces the default handle layout for a node style (e.g. a Switch whose
-   * outputs don't fit on the node's edge). Return undefined to keep the default.
-   */
-  renderHandles?: (variant: "compact" | "detailed") => React.ReactNode;
 }
 
 const BaseNodeContainer = <T extends NodeData>({
@@ -79,7 +74,6 @@ const BaseNodeContainer = <T extends NodeData>({
   nodeContent,
   onSettings,
   children,
-  renderHandles,
 }: BaseNodeContainerProps<T>) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
 
@@ -341,7 +335,7 @@ const BaseNodeContainer = <T extends NodeData>({
       {children}
 
       {/* Handlers */}
-      {renderHandles?.("detailed") ?? <HandlersRenderer id={id} data={data} />}
+      <HandlersRenderer id={id} data={data} />
 
       {hasError && (
         <NodeAlert
@@ -485,7 +479,7 @@ const BaseNodeContainer = <T extends NodeData>({
         )}
 
         {/* Handlers anchor to this tile */}
-        {renderHandles?.("compact") ?? <HandlersRenderer id={id} data={data} />}
+        <HandlersRenderer id={id} data={data} />
       </div>
 
       {/* Node name below the tile */}

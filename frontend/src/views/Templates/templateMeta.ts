@@ -64,7 +64,6 @@ const NODE_LABELS: Record<string, string> = {
   jiraNode: "Jira",
   calendarEventNode: "Calendar",
   routerNode: "Router",
-  switchNode: "Router",
   sqlNode: "SQL",
   apiToolNode: "API",
   openApiNode: "API",

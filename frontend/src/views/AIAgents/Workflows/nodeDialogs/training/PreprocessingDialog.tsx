@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Textarea } from "@/components/ui/textarea";
 import { PreprocessingNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -892,12 +891,12 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
               (Optional)
             </DialogDescription>
           </DialogHeader>
-          <Textarea
-            size="body"
-            className="mt-2"
+          <textarea
             placeholder="Enter a prompt (optional)"
             value={templatePrompt}
             onChange={(e) => setTemplatePrompt(e.target.value)}
+            className="mt-2 w-full rounded border border-border p-2 text-sm min-h-[80px] resize-y bg-background"
+            rows={4}
           />
           <DialogFooter className="mt-4">
             <Button

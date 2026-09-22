@@ -18,7 +18,6 @@ import { AppSetting } from "@/interfaces/app-setting.interface";
 import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { DraggableInput } from "../components/custom/DraggableInput";
-import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { useNodeDialogState } from "./useNodeDialogState";
 
 type WhatsAppDialogProps = BaseNodeDialogProps<
@@ -145,9 +144,8 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
 
         <div className="space-y-2">
           <Label htmlFor="textMsg">Message</Label>
-          <DraggableTextArea
+          <DraggableInput
             id="textMsg"
-            size="body"
             value={values.message}
             onChange={(e) => setField("message", e.target.value)}
             placeholder="e.g., Please call me!"

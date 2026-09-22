@@ -107,7 +107,7 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
             FieldSchema(
                 name="allowed_tables",
-                type="tags",
+                type="text",
                 label="Allowed tables",
                 required=False,
                 description="Enter allowed tables",
@@ -240,10 +240,10 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
             FieldSchema(
                 name="allowed_tables",
-                type="tags",
+                type="text",
                 label="Allowed tables",
                 required=False,
-                description="Tables this connection may read",
+                description="Comma-separated allowlist",
                 placeholder="ORDERS, CUSTOMERS",
                 advanced=True,
             ),
