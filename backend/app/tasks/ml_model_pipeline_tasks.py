@@ -39,6 +39,39 @@ from app.services.realtime_notifications import emit_notification, notification_
 logger = logging.getLogger(__name__)
 
 
+def _training_succeeded(execution_output: Dict[str, Any]) -> bool:
+    """
+    Whether the run's actual training result succeeded.
+
+    `execution_output["output"]` is the *final* node's output (see
+    WorkflowState.format_state_as_response) - for these pipelines, that's
+    TrainModelNode's result, which always includes "success": True on a
+    normal completion. This is deliberately NOT based on the workflow-wide
+    "has_failures" flag: a pipeline graph can have an unrelated, disconnected
+    node (e.g. a leftover chat "Start" node that was never wired into the
+    training chain) fail independently while the actual Train Data Source ->
+    Train Model chain still completes and produces real metrics - has_failures
+    would be true there even though training succeeded.
+    """
+    output = execution_output.get("output")
+    return isinstance(output, dict) and output.get("success") is True
+
+
+def _summarize_run_failure(execution_output: Dict[str, Any]) -> str:
+    """Build a readable error message for a run whose final output didn't succeed."""
+    output = execution_output.get("output")
+    if isinstance(output, dict) and output.get("error"):
+        return str(output["error"])
+
+    failed_nodes = execution_output.get("failed_nodes") or []
+    if not failed_nodes:
+        return "Workflow execution completed without producing a successful result"
+    return "; ".join(
+        f"{node.get('name', node.get('node_id', 'unknown node'))}: {node.get('error', 'unknown error')}"
+        for node in failed_nodes
+    )
+
+
 def detect_artifact_type(file_path: str) -> ArtifactType:
     """Detect artifact type based on file extension."""
     ext = Path(file_path).suffix.lower()
@@ -177,11 +210,18 @@ async def execute_pipeline_run_async(run_id: UUID):
 
                 workflow_engine = WorkflowEngine(workflow_config)
 
-                # Prepare input data with model context
+                # Prepare input data with model context. Every ML pipeline
+                # workflow is scaffolded with a chatInputNode Start whose
+                # inputSchema requires a "message" - without one, that node
+                # (and everything downstream of it) fails validation before
+                # any training can run. Required fields don't fall back to
+                # their schema defaultValue (see validate_input_schema), so
+                # this has to be supplied explicitly.
                 input_data = {
                     "model_id": str(run.model_id),
                     "model_name": model.name,
                     "pipeline_run_id": str(run_id),
+                    "message": f"Scheduled pipeline run for model '{model.name}'",
                 }
 
                 # Execute workflow
@@ -214,17 +254,39 @@ async def execute_pipeline_run_async(run_id: UUID):
                     )
                     await artifact_repository.create(artifact_create)
 
-                # Update run status to completed
-                await run_repository.update_status(
-                    run_id,
-                    PipelineRunStatus.COMPLETED,
-                    execution_output=execution_output,
-                    execution_id=UUID(state.execution_id) if state.execution_id else None,
-                )
-                # Persist artifacts + completed status for this run.
-                await session.commit()
+                # A workflow can fail node-by-node without raising - the engine
+                # catches per-node errors and reports them in the returned state
+                # instead of propagating an exception. Treat that the same as a
+                # raised exception when the actual training result didn't
+                # succeed: without this check, a run whose Train Model node
+                # never produced output (e.g. a broken Train Data Source path)
+                # still gets stamped COMPLETED with no metrics and no error,
+                # which silently drops the model out of the Evaluate Model page
+                # instead of surfacing the failure.
+                if not _training_succeeded(execution_output):
+                    error_message = _summarize_run_failure(execution_output)
+                    await run_repository.update_status(
+                        run_id,
+                        PipelineRunStatus.FAILED,
+                        error_message=error_message,
+                        execution_output=execution_output,
+                        execution_id=UUID(state.execution_id) if state.execution_id else None,
+                    )
+                    await session.commit()
+                    _notify_run_failed(tenant_id, run_id)
+                    logger.error(f"Pipeline run {run_id} failed: {error_message}")
+                else:
+                    # Update run status to completed
+                    await run_repository.update_status(
+                        run_id,
+                        PipelineRunStatus.COMPLETED,
+                        execution_output=execution_output,
+                        execution_id=UUID(state.execution_id) if state.execution_id else None,
+                    )
+                    # Persist artifacts + completed status for this run.
+                    await session.commit()
 
-                logger.info(f"Pipeline run {run_id} completed successfully")
+                    logger.info(f"Pipeline run {run_id} completed successfully")
 
             except Exception as e:
                 logger.error(

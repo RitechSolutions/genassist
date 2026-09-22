@@ -478,6 +478,120 @@ export interface PreprocessingNodeData extends BaseNodeData {
 // Train Model Node Data
 export type SplitMethod = "random" | "time_based";
 
+// Outlier handling: lives on the Train Model node (not the pre-split
+// Preprocessing node) because bounds must be fit on the training split only —
+// fitting them on the full dataset before the split leaks validation-row
+// statistics into training.
+export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
+export type OutlierMethod = "iqr" | "zscore";
+
+export interface OutlierHandlingItem {
+  columnName: string;
+  strategy: OutlierStrategy;
+  method?: OutlierMethod;
+  iqrMultiplier?: number;
+  zScoreThreshold?: number;
+}
+
+export interface OutlierHandlingConfig {
+  enabled: boolean;
+  columns: OutlierHandlingItem[];
+}
+
+// Categorical encoding: lives on the Train Model node (not the pre-split
+// Preprocessing node) for the same reason as outlier handling above — "one_hot"
+// and "label" fit a vocabulary/set of codes from the data, so fitting them on
+// the full dataset before the split leaks validation-only categories into
+// training. "ordinal" uses a fixed, caller-supplied mapping so it isn't fit
+// from data, but stays here too so all encoding configuration lives in one
+// place.
+export type CategoricalEncodingStrategy =
+  | "no_action"
+  | "one_hot"
+  | "label"
+  | "ordinal";
+
+export interface CategoricalEncodingItem {
+  columnName: string;
+  strategy: CategoricalEncodingStrategy;
+  dropFirst?: boolean;
+  ordinalMapping?: Record<string, number>;
+}
+
+export interface CategoricalEncodingConfig {
+  enabled: boolean;
+  columns: CategoricalEncodingItem[];
+}
+
+// Missing value handling: lives on the Train Model node (not the pre-split
+// Preprocessing node) because impute_mean/median/mode fit a fill value from
+// the data, so fitting it on the full dataset before the split leaks
+// validation-row statistics into training.
+export type MissingValueStrategy =
+  | "no_action"
+  | "drop_column"
+  | "drop_rows"
+  | "impute_constant"
+  | "impute_mean"
+  | "impute_median"
+  | "impute_mode";
+
+export interface MissingValueHandlingItem {
+  columnName: string;
+  missingCount: number;
+  missingPercentage: number;
+  strategy: MissingValueStrategy;
+  imputeValue?: string | number;
+}
+
+export interface MissingValueHandlingConfig {
+  enabled: boolean;
+  columns: MissingValueHandlingItem[];
+}
+
+// Feature engineering: lives on the Train Model node (not the pre-split
+// Preprocessing node) because bin_numeric/normalize/standardize/polynomial
+// fit bin edges or scaling stats from the data, so fitting them on the full
+// dataset before the split leaks validation-row statistics into training.
+// custom_expression is a deterministic per-row formula with nothing fit from
+// data, but stays here too so all feature configuration lives in one place.
+export type FeatureEngineeringStrategy =
+  | "custom_expression"
+  | "bin_numeric"
+  | "normalize"
+  | "standardize"
+  | "polynomial";
+
+export interface FeatureEngineeringItem {
+  id: string;
+  newColumnName: string;
+  strategy: FeatureEngineeringStrategy;
+  expression?: string;
+  sourceColumns?: string[];
+  numBins?: number;
+  binColumn?: string;
+  polynomialDegree?: number;
+  polynomialColumns?: string[];
+}
+
+export interface FeatureEngineeringConfig {
+  enabled: boolean;
+  features: FeatureEngineeringItem[];
+}
+
+// Target transform: trains on a ratio of the target (targetColumn /
+// baselineColumn) instead of its raw value, and reconstructs predictions
+// back to real units (predicted_ratio * baselineColumn) before computing
+// validation metrics — useful for a target with strong trend/seasonality,
+// where a ratio to a rolling baseline is far more learnable than the raw
+// value. baselineColumn is read from the source data like targetColumn; it
+// doesn't need to be one of featureColumns (and usually shouldn't be, or the
+// model can trivially learn to predict ratio ~= 1).
+export interface TargetTransform {
+  type: "ratio";
+  baselineColumn: string;
+}
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
@@ -487,6 +601,8 @@ export interface TrainModelNodeData extends BaseNodeData {
     | "linear_regression"
     | "logistic_regression"
     | "neural_network"
+    // No longer selectable (retired option) - kept so nodes saved before the
+    // removal still type-check and render their stored value.
     | "other";
   targetColumn: string; // Target variable column name
   featureColumns: string[]; // Feature column names
@@ -494,6 +610,13 @@ export interface TrainModelNodeData extends BaseNodeData {
   validationSplit: number; // Train/validation split ratio
   splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
+  scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
+  taskType?: "auto" | "classification" | "regression"; // Override for the classification/regression heuristic (default: "auto")
+  outlierHandling?: OutlierHandlingItem[]; // Per-column outlier handling; bounds are fit on the training split only (default: [])
+  categoricalEncoding?: CategoricalEncodingItem[]; // Per-column categorical encoding; one_hot/label mappings are fit on the training split only (default: [])
+  missingValueHandling?: MissingValueHandlingItem[]; // Per-column missing-value handling; impute fill values are fit on the training split only (default: [])
+  featureEngineering?: FeatureEngineeringItem[]; // Derived feature definitions; bin edges/scaling stats are fit on the training split only (default: [])
+  targetTransform?: TargetTransform; // Train on targetColumn/baselineColumn instead of the raw target; predictions are reconstructed to real units before scoring (default: undefined)
 }
 
 // Per Chat RAG Node Data

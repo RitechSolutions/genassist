@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { TrainModelNodeData } from "../../types/nodes";
+import {
+  TrainModelNodeData,
+  OutlierHandlingConfig,
+  OutlierHandlingItem,
+  CategoricalEncodingConfig,
+  CategoricalEncodingItem,
+  MissingValueHandlingConfig,
+  MissingValueHandlingItem,
+  FeatureEngineeringConfig,
+  FeatureEngineeringItem,
+  TargetTransform,
+} from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { RichTextarea } from "@/components/richTextarea";
@@ -12,14 +23,20 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Slider } from "@/components/slider";
+import { Switch } from "@/components/switch";
 import { useToast } from "@/components/use-toast";
 import { Save, Plus, X, Search } from "lucide-react";
 import { Badge } from "@/components/badge";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableInput } from "../../components/custom/DraggableInput";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
+import { OutlierHandler } from "./components/OutlierHandler";
+import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
+import { MissingValueHandler } from "./components/MissingValueHandler";
+import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
 import { useNodeDialogState } from "../useNodeDialogState";
@@ -46,6 +63,16 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       analysisResult: data.analysisResult || null,
       splitMethod: data.splitMethod || "random",
       dateColumn: data.dateColumn || "",
+      scalingMethod: data.scalingMethod || "auto",
+      taskType: data.taskType || "auto",
+      outlierHandling: data.outlierHandling || ([] as OutlierHandlingItem[]),
+      categoricalEncoding:
+        data.categoricalEncoding || ([] as CategoricalEncodingItem[]),
+      missingValueHandling:
+        data.missingValueHandling || ([] as MissingValueHandlingItem[]),
+      featureEngineering:
+        data.featureEngineering || ([] as FeatureEngineeringItem[]),
+      targetTransform: data.targetTransform,
     }),
     (v) => ({
       name: v.name,
@@ -58,11 +85,86 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       validationSplit: v.validationSplit,
       splitMethod: v.splitMethod,
       dateColumn: v.splitMethod === "time_based" ? v.dateColumn : undefined,
+      scalingMethod: v.scalingMethod,
+      taskType: v.taskType,
+      outlierHandling: v.outlierHandling,
+      categoricalEncoding: v.categoricalEncoding,
+      missingValueHandling: v.missingValueHandling,
+      featureEngineering: v.featureEngineering,
+      targetTransform: v.targetTransform,
     })
   );
 
+  // linear_regression and logistic_regression only support one task each -
+  // keep taskType in sync with those so it never disagrees with modelType.
+  useEffect(() => {
+    if (values.modelType === "linear_regression" && values.taskType !== "regression") {
+      setField("taskType", "regression");
+    } else if (values.modelType === "logistic_regression" && values.taskType !== "classification") {
+      setField("taskType", "classification");
+    }
+  }, [values.modelType, values.taskType, setField]);
+
+  // targetTransform (ratio target) is only meaningful for regression - clear
+  // it if the task becomes classification so the two never disagree.
+  useEffect(() => {
+    if (values.taskType === "classification" && values.targetTransform) {
+      setField("targetTransform", undefined);
+    }
+  }, [values.taskType, values.targetTransform, setField]);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
+
+  const [openSections, setOpenSections] = useState({
+    data: true,
+    model: true,
+    training: true,
+  });
+  const toggleSection = (section: keyof typeof openSections) =>
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
+
+  // Training Configuration steps - shown one at a time via the ADD button
+  // below (same UX as the Data Preprocessing node's step list), except each
+  // of these four can only be added once. Initialized from any existing
+  // config so a previously-configured node still shows its steps on reopen.
+  const trainingStepTypes = [
+    "outlier",
+    "encoding",
+    "missingValues",
+    "featureEngineering",
+  ] as const;
+  type TrainingStepType = (typeof trainingStepTypes)[number];
+  const trainingStepDisplayName: Record<TrainingStepType, string> = {
+    outlier: "Handle Outliers",
+    encoding: "Categorical Encoding",
+    missingValues: "Handle Missing Values",
+    featureEngineering: "Feature Engineering",
+  };
+  const [activeTrainingSteps, setActiveTrainingSteps] = useState<
+    TrainingStepType[]
+  >(() => {
+    const initial: TrainingStepType[] = [];
+    if ((data.outlierHandling || []).length > 0) initial.push("outlier");
+    if ((data.categoricalEncoding || []).length > 0) initial.push("encoding");
+    if ((data.missingValueHandling || []).length > 0)
+      initial.push("missingValues");
+    if ((data.featureEngineering || []).length > 0)
+      initial.push("featureEngineering");
+    return initial;
+  });
+  const handleAddTrainingStep = (type: TrainingStepType) => {
+    setActiveTrainingSteps((prev) =>
+      prev.includes(type) ? prev : [...prev, type]
+    );
+  };
+  const handleRemoveTrainingStep = (type: TrainingStepType) => {
+    setActiveTrainingSteps((prev) => prev.filter((t) => t !== type));
+    if (type === "outlier") setField("outlierHandling", []);
+    else if (type === "encoding") setField("categoricalEncoding", []);
+    else if (type === "missingValues") setField("missingValueHandling", []);
+    else if (type === "featureEngineering") setField("featureEngineering", []);
+  };
 
   // Clean up featureColumns: remove targetColumn and invalid columns
   useEffect(() => {
@@ -219,6 +321,17 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     setField("modelType", value as TrainModelNodeData["modelType"]);
   };
 
+  const handleScalingMethodChange = (value: string) => {
+    setField("scalingMethod", value as TrainModelNodeData["scalingMethod"]);
+  };
+
+  const handleTaskTypeChange = (value: string) => {
+    setField("taskType", value as TrainModelNodeData["taskType"]);
+  };
+
+  const isTaskTypeLocked =
+    values.modelType === "linear_regression" || values.modelType === "logistic_regression";
+
   const handleSplitMethodChange = (value: string) => {
     setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
   };
@@ -255,262 +368,566 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             />
           </div>
 
-          {/* File URL */}
-          <div className="space-y-2">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <DraggableInput
-                  id="fileUrl"
-                  label="File URL"
-                  value={values.fileUrl}
-                  onChange={(e) => setField("fileUrl", e.target.value)}
-                  placeholder="Enter file URL or drag variable"
-                  className="w-full"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleAnalyzeCSV}
-                disabled={isAnalyzing || !values.fileUrl.trim()}
-                className="mb-0"
-              >
-                <Search className="h-4 w-4 mr-2" />
-                {isAnalyzing ? "Analyzing..." : "Analyze"}
-              </Button>
-            </div>
-            {values.analysisResult && (
-              <CSVAnalysisDisplay analysisResult={values.analysisResult} />
-            )}
-          </div>
-
-          {/* Model Type */}
-          <div className="space-y-2">
-            <Label htmlFor="modelType">Model Type *</Label>
-            <Select value={values.modelType} onValueChange={handleModelTypeChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select model type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="xgboost">XGBoost</SelectItem>
-                <SelectItem value="random_forest">Random Forest</SelectItem>
-                <SelectItem value="linear_regression">
-                  Linear Regression
-                </SelectItem>
-                <SelectItem value="logistic_regression">
-                  Logistic Regression
-                </SelectItem>
-                <SelectItem value="neural_network">
-                  Neural Network
-                </SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Select the machine learning algorithm to use
-            </p>
-          </div>
-
-          {/* Target Column */}
-          <div className="space-y-2">
-            <Label htmlFor="targetColumn">Target Column *</Label>
-            {values.analysisResult ? (
-              <Select
-                value={values.targetColumn}
-                onValueChange={(v) => setField("targetColumn", v)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select target column" />
-                </SelectTrigger>
-                <SelectContent>
-                  {values.analysisResult.column_names.map((columnName) => (
-                    <SelectItem key={columnName} value={columnName}>
-                      {columnName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <DraggableInput
-                id="targetColumn"
-                value={values.targetColumn}
-                onChange={(e) => setField("targetColumn", e.target.value)}
-                placeholder="Enter target column name"
-                className="w-full"
-              />
-            )}
-            <p className="text-xs text-muted-foreground">
-              Name of the column containing the target variable to predict
-            </p>
-          </div>
-
-          {/* Feature Columns */}
-          <div className="space-y-2">
-            <Label>Feature Columns *</Label>
-            {values.analysisResult ? (
-              /* Badge view when column names are available */
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-2 border rounded">
-                  {values.analysisResult.column_names
-                    .filter((columnName) => columnName !== values.targetColumn)
-                    .map((columnName) => {
-                      const isSelected =
-                        values.featureColumns.includes(columnName);
-                      return (
-                        <Badge
-                          key={columnName}
-                          variant={isSelected ? "default" : "outline"}
-                          className="cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => handleFeatureColumnToggle(columnName)}
-                        >
-                          {columnName}
-                        </Badge>
-                      );
-                    })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {values.featureColumns.length} of{" "}
-                  {values.analysisResult.column_names.filter(
-                    (col) => col !== values.targetColumn
-                  ).length}{" "}
-                  columns selected. Click badges to toggle selection.
-                </p>
-              </div>
-            ) : (
-              /* Text input when no column names available */
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Columns</span>
+          {/* Data Source */}
+          <CollapsibleSection
+            title="Data Source"
+            open={openSections.data}
+            onOpenChange={() => toggleSection("data")}
+          >
+            <div className="space-y-4">
+              {/* File URL */}
+              <div className="space-y-2">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <DraggableInput
+                      id="fileUrl"
+                      label="File URL"
+                      value={values.fileUrl}
+                      onChange={(e) => setField("fileUrl", e.target.value)}
+                      placeholder="Enter file URL or drag variable"
+                      className="w-full"
+                    />
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    onClick={addFeatureColumn}
+                    onClick={handleAnalyzeCSV}
+                    disabled={isAnalyzing || !values.fileUrl.trim()}
+                    className="mb-0"
                   >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Feature
+                    <Search className="h-4 w-4 mr-2" />
+                    {isAnalyzing ? "Analyzing..." : "Analyze"}
                   </Button>
                 </div>
-                <div className="space-y-2">
-                  <RichTextarea
-                    size="hint"
-                    value={values.featureColumns.join(", ")}
-                    onChange={(e) =>
-                      handleCommaSeparatedInputChange(e.target.value)
-                    }
-                    placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
-                    className="w-full font-mono text-sm"
-                  />
-                  {values.featureColumns.length > 0 && (
-                    <>
-                      <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
-                        {values.featureColumns.map((column, index) => (
-                          <div key={index} className="flex items-center gap-1">
-                            <Badge variant="default">{column}</Badge>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0"
-                              onClick={() => removeFeatureColumn(index)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {values.featureColumns.length} column
-                        {values.featureColumns.length !== 1 ? "s" : ""} added
-                      </p>
-                    </>
-                  )}
-                  {values.featureColumns.length === 0 && (
-                    <p className="text-sm text-muted-foreground italic">
-                      No feature columns defined. Add columns to specify which
-                      features to use for training.
-                    </p>
-                  )}
-                </div>
+                {values.analysisResult && (
+                  <CSVAnalysisDisplay analysisResult={values.analysisResult} />
+                )}
               </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Select the columns to use as features for training the model
-            </p>
-          </div>
 
-          {/* Split Method */}
-          <div className="space-y-2">
-            <Label htmlFor="splitMethod">Split Method</Label>
-            <Select value={values.splitMethod} onValueChange={handleSplitMethodChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select split method" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="random">Random</SelectItem>
-                <SelectItem value="time_based">Time-based</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Random shuffles rows before splitting. Time-based sorts by a date
-              column and reserves the most recent rows for validation — use this
-              for time-series data.
-            </p>
-          </div>
+              {/* Target Column */}
+              <div className="space-y-2">
+                <Label htmlFor="targetColumn">Target Column *</Label>
+                {values.analysisResult ? (
+                  <Select
+                    value={values.targetColumn}
+                    onValueChange={(v) => setField("targetColumn", v)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select target column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {values.analysisResult.column_names.map((columnName) => (
+                        <SelectItem key={columnName} value={columnName}>
+                          {columnName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <DraggableInput
+                    id="targetColumn"
+                    value={values.targetColumn}
+                    onChange={(e) => setField("targetColumn", e.target.value)}
+                    placeholder="Enter target column name"
+                    className="w-full"
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Name of the column containing the target variable to predict
+                </p>
+              </div>
 
-          {/* Date Column (time-based split only) */}
-          {values.splitMethod === "time_based" && (
-            <div className="space-y-2">
-              <Label htmlFor="dateColumn">Date Column *</Label>
-              {values.analysisResult ? (
-                <Select
-                  value={values.dateColumn}
-                  onValueChange={(v) => setField("dateColumn", v)}
-                >
+              {/* Target Transform (ratio) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="targetTransformEnabled">
+                    Train on a ratio of the target
+                  </Label>
+                  <Switch
+                    id="targetTransformEnabled"
+                    checked={!!values.targetTransform}
+                    disabled={values.taskType === "classification"}
+                    onCheckedChange={(checked: boolean) =>
+                      setField(
+                        "targetTransform",
+                        checked
+                          ? ({ type: "ratio", baselineColumn: "" } as TargetTransform)
+                          : undefined
+                      )
+                    }
+                  />
+                </div>
+                {values.targetTransform ? (
+                  <>
+                    <Label htmlFor="baselineColumn">Baseline Column *</Label>
+                    {values.analysisResult ? (
+                      <Select
+                        value={values.targetTransform.baselineColumn}
+                        onValueChange={(v) =>
+                          setField("targetTransform", {
+                            type: "ratio",
+                            baselineColumn: v,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select baseline column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {values.analysisResult.column_names
+                            .filter((columnName) => columnName !== values.targetColumn)
+                            .map((columnName) => (
+                              <SelectItem key={columnName} value={columnName}>
+                                {columnName}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <DraggableInput
+                        id="baselineColumn"
+                        value={values.targetTransform.baselineColumn}
+                        onChange={(e) =>
+                          setField("targetTransform", {
+                            type: "ratio",
+                            baselineColumn: e.target.value,
+                          })
+                        }
+                        placeholder="Enter baseline column name"
+                        className="w-full"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      The model is fit on {values.targetColumn || "target"} / baseline
+                      instead of the raw target, then predictions are multiplied back
+                      by baseline before computing metrics - so RMSE/MAE/R² stay in
+                      real units. Pick a column that isn't already a feature (e.g. a
+                      rolling mean); including it as a feature too can let the model
+                      trivially learn to predict a ratio of ~1.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {values.taskType === "classification"
+                      ? "Not available for classification tasks."
+                      : "Useful for a target with strong trend/seasonality (e.g. daily revenue) - trains on the target's ratio to a baseline column (like a rolling mean) instead of its raw value."}
+                  </p>
+                )}
+              </div>
+
+              {/* Feature Columns */}
+              <div className="space-y-2">
+                <Label>Feature Columns *</Label>
+                {values.analysisResult ? (
+                  /* Badge view when column names are available */
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-2 border rounded">
+                      {values.analysisResult.column_names
+                        .filter((columnName) => columnName !== values.targetColumn)
+                        .map((columnName) => {
+                          const isSelected =
+                            values.featureColumns.includes(columnName);
+                          return (
+                            <Badge
+                              key={columnName}
+                              variant={isSelected ? "default" : "outline"}
+                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => handleFeatureColumnToggle(columnName)}
+                            >
+                              {columnName}
+                            </Badge>
+                          );
+                        })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {values.featureColumns.length} of{" "}
+                      {values.analysisResult.column_names.filter(
+                        (col) => col !== values.targetColumn
+                      ).length}{" "}
+                      columns selected. Click badges to toggle selection.
+                    </p>
+                  </div>
+                ) : (
+                  /* Text input when no column names available */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Columns</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addFeatureColumn}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Feature
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <RichTextarea
+                        size="hint"
+                        value={values.featureColumns.join(", ")}
+                        onChange={(e) =>
+                          handleCommaSeparatedInputChange(e.target.value)
+                        }
+                        placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
+                        className="w-full font-mono text-sm"
+                      />
+                      {values.featureColumns.length > 0 && (
+                        <>
+                          <div className="flex flex-wrap gap-2 p-2 border rounded bg-muted">
+                            {values.featureColumns.map((column, index) => (
+                              <div key={index} className="flex items-center gap-1">
+                                <Badge variant="default">{column}</Badge>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 w-5 p-0"
+                                  onClick={() => removeFeatureColumn(index)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {values.featureColumns.length} column
+                            {values.featureColumns.length !== 1 ? "s" : ""} added
+                          </p>
+                        </>
+                      )}
+                      {values.featureColumns.length === 0 && (
+                        <p className="text-sm text-muted-foreground italic">
+                          No feature columns defined. Add columns to specify which
+                          features to use for training.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Select the columns to use as features for training the model
+                </p>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Model Configuration */}
+          <CollapsibleSection
+            title="Model Configuration"
+            open={openSections.model}
+            onOpenChange={() => toggleSection("model")}
+          >
+            <div className="space-y-4">
+              {/* Model Type */}
+              <div className="space-y-2">
+                <Label htmlFor="modelType">Model Type *</Label>
+                <Select value={values.modelType} onValueChange={handleModelTypeChange}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select date column" />
+                    <SelectValue placeholder="Select model type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {values.analysisResult.column_names.map((columnName) => (
-                      <SelectItem key={columnName} value={columnName}>
-                        {columnName}
+                    <SelectItem value="xgboost">XGBoost</SelectItem>
+                    <SelectItem value="random_forest">Random Forest</SelectItem>
+                    <SelectItem value="linear_regression">
+                      Linear Regression
+                    </SelectItem>
+                    <SelectItem value="logistic_regression">
+                      Logistic Regression
+                    </SelectItem>
+                    <SelectItem value="neural_network">
+                      Neural Network
+                    </SelectItem>
+                    {values.modelType === "other" && (
+                      <SelectItem value="other" disabled>
+                        Other (no longer supported - choose a new type)
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
-              ) : (
-                <DraggableInput
-                  id="dateColumn"
-                  value={values.dateColumn}
-                  onChange={(e) => setField("dateColumn", e.target.value)}
-                  placeholder="Enter date/timestamp column name"
+                <p className="text-xs text-muted-foreground">
+                  Select the machine learning algorithm to use
+                </p>
+              </div>
+
+              {/* Task Type */}
+              <div className="space-y-2">
+                <Label htmlFor="taskType">Task Type</Label>
+                <Select
+                  value={values.taskType}
+                  onValueChange={handleTaskTypeChange}
+                  disabled={isTaskTypeLocked}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select task type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto-detect</SelectItem>
+                    <SelectItem value="classification">Classification</SelectItem>
+                    <SelectItem value="regression">Regression</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {isTaskTypeLocked
+                    ? `${values.modelType === "linear_regression" ? "Linear" : "Logistic"} Regression only supports ${values.modelType === "linear_regression" ? "regression" : "classification"}`
+                    : "Auto-detect infers the task from the target column. Override it if the heuristic picks the wrong type for your dataset."}
+                </p>
+              </div>
+
+              {/* Feature Scaling */}
+              <div className="space-y-2">
+                <Label htmlFor="scalingMethod">Feature Scaling</Label>
+                <Select value={values.scalingMethod} onValueChange={handleScalingMethodChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select feature scaling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="standard">Standardized (Z-score)</SelectItem>
+                    <SelectItem value="minmax">Min-Max</SelectItem>
+                    <SelectItem value="maxabs">Abs-Max</SelectItem>
+                    <SelectItem value="robust">Robust</SelectItem>
+                    <SelectItem value="auto">Auto (Recommended)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Auto selects a scaling method based on the model type and dataset
+                  (e.g. Robust for outlier-heavy data, None for tree-based models)
+                </p>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Training Configuration */}
+          <CollapsibleSection
+            title="Training Configuration"
+            open={openSections.training}
+            onOpenChange={() => toggleSection("training")}
+          >
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                All steps below are fit on the training split only, after the
+                validation split further down is made, so validation rows
+                never leak into how these are computed.
+              </p>
+
+              {activeTrainingSteps.includes("outlier") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTrainingStep("outlier")}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove outlier handling"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <OutlierHandler
+                    config={{
+                      enabled: true,
+                      columns: values.outlierHandling,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: OutlierHandlingConfig) =>
+                      setField("outlierHandling", config.columns)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Bounds are computed from the training split only, so
+                    validation rows never influence which values get capped
+                    or removed.
+                  </p>
+                </div>
+              )}
+
+              {activeTrainingSteps.includes("encoding") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTrainingStep("encoding")}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove categorical encoding"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <CategoricalEncodingHandler
+                    config={{
+                      enabled: true,
+                      columns: values.categoricalEncoding,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: CategoricalEncodingConfig) =>
+                      setField("categoricalEncoding", config.columns)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    One-Hot and Label mappings are fit on the training split
+                    only, so validation-only categories never leak into
+                    training.
+                  </p>
+                </div>
+              )}
+
+              {activeTrainingSteps.includes("missingValues") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTrainingStep("missingValues")}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove missing value handling"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <MissingValueHandler
+                    config={{
+                      enabled: true,
+                      columns: values.missingValueHandling,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: MissingValueHandlingConfig) =>
+                      setField("missingValueHandling", config.columns)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Impute fill values (mean/median/mode) are computed from
+                    the training split only, so validation rows never
+                    influence what a missing value gets replaced with.
+                  </p>
+                </div>
+              )}
+
+              {activeTrainingSteps.includes("featureEngineering") && (
+                <div className="space-y-2 border rounded-md p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleRemoveTrainingStep("featureEngineering")
+                    }
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove feature engineering"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <FeatureEngineeringHandler
+                    config={{
+                      enabled: true,
+                      features: values.featureEngineering,
+                    }}
+                    analysisResult={values.analysisResult}
+                    onChange={(config: FeatureEngineeringConfig) =>
+                      setField("featureEngineering", config.features)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Bin edges and normalize/standardize statistics are fit on
+                    the training split only, so validation rows never
+                    influence a derived feature's definition.
+                  </p>
+                </div>
+              )}
+
+              {/* Add Training Step */}
+              {activeTrainingSteps.length < trainingStepTypes.length && (
+                <div className="flex items-center justify-center py-2">
+                  <div className="relative inline-block">
+                    <Select
+                      value=""
+                      onValueChange={(value) => {
+                        if (value) {
+                          handleAddTrainingStep(value as TrainingStepType);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9 p-2 border rounded-md">
+                        <div className="flex items-center gap-2 pr-2">ADD</div>
+                      </SelectTrigger>
+                      <SelectContent className="z-[1002]" position="popper">
+                        {trainingStepTypes
+                          .filter((type) => !activeTrainingSteps.includes(type))
+                          .map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {trainingStepDisplayName[type]}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {/* Split Method */}
+              <div className="space-y-2">
+                <Label htmlFor="splitMethod">Split Method</Label>
+                <Select value={values.splitMethod} onValueChange={handleSplitMethodChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select split method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="random">Random</SelectItem>
+                    <SelectItem value="time_based">Time-based</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Random shuffles rows before splitting. Time-based sorts by a date
+                  column and reserves the most recent rows for validation — use this
+                  for time-series data.
+                </p>
+              </div>
+
+              {/* Date Column (time-based split only) */}
+              {values.splitMethod === "time_based" && (
+                <div className="space-y-2">
+                  <Label htmlFor="dateColumn">Date Column *</Label>
+                  {values.analysisResult ? (
+                    <Select
+                      value={values.dateColumn}
+                      onValueChange={(v) => setField("dateColumn", v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select date column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {values.analysisResult.column_names.map((columnName) => (
+                          <SelectItem key={columnName} value={columnName}>
+                            {columnName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <DraggableInput
+                      id="dateColumn"
+                      value={values.dateColumn}
+                      onChange={(e) => setField("dateColumn", e.target.value)}
+                      placeholder="Enter date/timestamp column name"
+                      className="w-full"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Column used to sort rows chronologically before splitting
+                  </p>
+                </div>
+              )}
+
+              {/* Validation Split */}
+              <div className="space-y-2">
+                <Label>
+                  Validation Split: {Math.round(values.validationSplit * 100)}%
+                </Label>
+                <Slider
+                  value={[values.validationSplit]}
+                  onValueChange={(value) => setField("validationSplit", value[0])}
+                  max={0.5}
+                  min={0.1}
+                  step={0.05}
                   className="w-full"
                 />
-              )}
-              <p className="text-xs text-muted-foreground">
-                Column used to sort rows chronologically before splitting
-              </p>
+                <p className="text-xs text-muted-foreground">
+                  {values.splitMethod === "time_based"
+                    ? "Fraction of the most recent rows to reserve for validation (10% - 50%)"
+                    : "Fraction of data to use for validation (10% - 50%)"}
+                </p>
+              </div>
             </div>
-          )}
-
-          {/* Validation Split */}
-          <div className="space-y-2">
-            <Label>
-              Validation Split: {Math.round(values.validationSplit * 100)}%
-            </Label>
-            <Slider
-              value={[values.validationSplit]}
-              onValueChange={(value) => setField("validationSplit", value[0])}
-              max={0.5}
-              min={0.1}
-              step={0.05}
-              className="w-full"
-            />
-            <p className="text-xs text-muted-foreground">
-              {values.splitMethod === "time_based"
-                ? "Fraction of the most recent rows to reserve for validation (10% - 50%)"
-                : "Fraction of data to use for validation (10% - 50%)"}
-            </p>
-          </div>
+          </CollapsibleSection>
         </div>
       </NodeConfigPanel>
     </>
