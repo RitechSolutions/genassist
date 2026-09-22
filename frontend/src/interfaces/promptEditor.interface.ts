@@ -49,6 +49,13 @@ export type PromptCaseStatus =
 export type PromptCaseVerdict = "passed" | "failed" | "inconclusive";
 export type PromptEvalMetric = TestResultMetric & { not_applicable?: boolean };
 
+/** Tokens the provider reported for one call */
+export interface PromptCallUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
 export interface PromptEvalCaseResult {
   case_id: string;
   input: string;
@@ -66,6 +73,9 @@ export interface PromptEvalCaseResult {
   errored_metrics: number;
   not_evaluated_metrics: number;
   not_applicable_metrics: number;
+  latency_ms: number | null;
+  usage: PromptCallUsage | null;
+  cost_usd: number | null;
 }
 
 export interface PromptEvalSummary {
@@ -94,6 +104,11 @@ export interface PromptRunProvenance {
   ran_at: string;
   latency_ms_total: number;
   usage_total: Record<string, number>;
+  cost_usd: number | null;
+  unpriced_calls: number;
+  grader_calls: number;
+  grader_tokens: number;
+  grader_cost_usd: number | null;
   budget_seconds: number;
   deadline_hit: boolean;
   metering_handoff_failed: boolean;

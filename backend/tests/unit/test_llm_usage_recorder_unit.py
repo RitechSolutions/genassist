@@ -25,6 +25,7 @@ from app.services.llm_usage_recorder import (
     _resolve_cost,
     _token_columns,
     _total_tokens,
+    price_usage,
 )
 
 
@@ -293,6 +294,22 @@ class TestResolveCostCacheBuckets:
         out = _resolve_cost("", "", 100, 100, {})
         assert out["pricing_status"] == "unpriced"
         assert out["cost_usd"] is None
+
+
+class TestPriceUsage:
+    def test_a_call_without_usage_is_counted_but_unpriced(self):
+        priced = price_usage("openai", "gpt-4o", None)
+
+        assert priced["total_tokens"] == 0
+        assert priced["pricing_status"] == "unpriced" and priced["cost_usd"] is None
+
+    def test_reported_usage_prices_exactly_as_the_ledger_row_does(self):
+        usage = {"input_tokens": 1000, "output_tokens": 500, "total_tokens": 1500}
+
+        priced = price_usage("openai", "gpt-4o", usage)
+
+        assert (priced["input_tokens"], priced["output_tokens"], priced["total_tokens"]) == (1000, 500, 1500)
+        assert priced["cost_usd"] == _resolve_cost("openai", "gpt-4o", 1000, 500, {})["cost_usd"]
 
 
 class TestConfiguredRatesLoad:
@@ -654,16 +671,18 @@ class TestRecordEvaluationCalls:
     async def test_empty_entries_never_touch_the_database(self, evaluation_scope):
         session = evaluation_scope(EvaluationSession())
 
-        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [])
+        status = await LlmUsageRecorder().record_evaluation_calls("eval:abc", [])
 
+        assert status == "empty"
         assert session.statements == [] and session.committed is False
 
     @pytest.mark.asyncio
     async def test_inert_while_capture_is_disabled(self, evaluation_scope):
         session = evaluation_scope(EvaluationSession(capture_enabled=False))
 
-        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+        status = await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
 
+        assert status == "disabled"
         assert not [s for s in session.statements if isinstance(s, Insert)]
         assert session.committed is False
 
@@ -671,11 +690,12 @@ class TestRecordEvaluationCalls:
     async def test_events_and_receipt_are_written_in_one_commit(self, evaluation_scope):
         session = evaluation_scope(EvaluationSession(persisted=2))
 
-        await LlmUsageRecorder().record_evaluation_calls(
+        status = await LlmUsageRecorder().record_evaluation_calls(
             "eval:abc", [_entry(0, "llm_judge"), _entry(1, "provenance_judge")]
         )
 
         inserts = [s for s in session.statements if isinstance(s, Insert)]
+        assert status == "recorded"
         assert len(inserts) == 2, "one batched events insert plus one receipt"
         assert session.committed is True and session.closed is True
 
@@ -808,9 +828,47 @@ class TestRecordEvaluationCalls:
 
         session.execute = boom
 
-        await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
+        status = await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()])
 
+        assert status == "failed"
         assert session.rolled_back is True and session.committed is False
+
+    @pytest.mark.asyncio
+    async def test_a_scope_failure_is_reported_not_raised(self, evaluation_scope, monkeypatch):
+        evaluation_scope(EvaluationSession())
+
+        def boom():
+            raise RuntimeError("tenant pool unavailable")
+
+        monkeypatch.setattr(recorder_module, "create_tenant_request_scope", boom)
+
+        assert await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()]) == "failed"
+
+    @pytest.mark.asyncio
+    async def test_a_given_rate_snapshot_is_used_instead_of_a_reload(self, evaluation_scope, monkeypatch):
+        session = evaluation_scope(EvaluationSession())
+
+        async def never_reload(_self, _session):
+            raise AssertionError("the caller's snapshot must not trigger a second read")
+
+        monkeypatch.setattr(LlmUsageRecorder, "_configured_rates", never_reload)
+        snapshot = {
+            "openai": {
+                "gpt-4o": {
+                    "input_per_1k": Decimal("0.01"),
+                    "output_per_1k": Decimal("0.02"),
+                    "cache_read_per_1k": None,
+                    "cache_creation_per_1k": None,
+                }
+            }
+        }
+
+        status = await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()], configured_rates=snapshot)
+
+        row = _rows_of(_insert_for(session.statements, "llm_usage_events"))[0]
+        assert status == "recorded"
+        assert row["pricing_status"] == "configured"
+        assert row["cost_usd"] == Decimal("0.002"), "100 input and 50 output at the caller's rates"
 
 
 class TestWorkflowUsageContext:

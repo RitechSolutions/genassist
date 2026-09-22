@@ -3,6 +3,7 @@ the run reports about itself"""
 
 import asyncio
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -12,7 +13,8 @@ from langchain_core.messages import AIMessage
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.schemas.prompt_editor import MAX_ACTUAL_CHARS, PromptEvalRequest
+from app.schemas.prompt_editor import MAX_ACTUAL_CHARS, PromptCallUsage, PromptEvalRequest
+from app.services.llm_usage_recorder import _resolve_cost
 from app.services.prompt_editor import (
     PROMPT_CHECK_CONCURRENCY,
     TRUNCATION_MARKER,
@@ -77,7 +79,18 @@ def _service(cases, *, nodes=None, gold_suite_id=SUITE_ID, index=None):
     )
 
 
-def _injector(llm, provider=PROVIDER, provider_error=None, build_error=None):
+def _rate(provider="openai", model="gpt-4o", input_per_1k="0.01", output_per_1k="0.02"):
+    return SimpleNamespace(
+        provider_key=provider,
+        model_key=model,
+        input_per_1k=Decimal(input_per_1k),
+        output_per_1k=Decimal(output_per_1k),
+        cache_read_per_1k=None,
+        cache_creation_per_1k=None,
+    )
+
+
+def _injector(llm, provider=PROVIDER, provider_error=None, build_error=None, rate_rows=(), rates_error=None):
     provider_service = SimpleNamespace(
         get_by_id=AsyncMock(side_effect=provider_error) if provider_error else AsyncMock(return_value=provider)
     )
@@ -86,10 +99,19 @@ def _injector(llm, provider=PROVIDER, provider_error=None, build_error=None):
         if build_error
         else AsyncMock(return_value=llm)
     )
-    fake = MagicMock()
-    fake.get.side_effect = lambda cls: (
-        provider_service if cls.__name__ == "LlmProviderService" else llm_provider
+    rate_repo = SimpleNamespace(
+        list_active=AsyncMock(side_effect=rates_error) if rates_error else AsyncMock(return_value=list(rate_rows))
     )
+
+    def _get(cls):
+        if cls.__name__ == "LlmProviderService":
+            return provider_service
+        if cls.__name__ == "LlmCostRateRepository":
+            return rate_repo
+        return llm_provider
+
+    fake = MagicMock()
+    fake.get.side_effect = _get
     return fake
 
 
@@ -101,6 +123,8 @@ def _llm(replies):
         reply = pending.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if isinstance(reply, AIMessage):
+            return reply
         return AIMessage(content=reply)
 
     llm.ainvoke.side_effect = invoke
@@ -619,6 +643,7 @@ class TestMetering:
 
         async def _fake_persist(ref):
             captured["ref"] = ref
+            return "recorded"
 
         service._persist_usage = _fake_persist
         result = await _run(service, _injector(_llm(["a", "b", RuntimeError("down")])))
@@ -641,6 +666,7 @@ class TestMetering:
                 captured["execution_id"] = execution_id
                 captured["entries"] = entries
                 captured["kwargs"] = kwargs
+                return "recorded"
 
         async def _resolve(provider_id, cache=None):
             return ("openai", "gpt-4o")
@@ -658,6 +684,7 @@ class TestMetering:
         assert entry["llm_provider_id"] == PROVIDER.id
         assert captured["kwargs"]["source"] == "prompt_editor"
         assert captured["kwargs"]["workflow_id"] == WORKFLOW_ID
+        assert captured["kwargs"]["configured_rates"] == {}, "a loaded but empty snapshot, not a missing one"
         assert result.provenance.metering_handoff_failed is False
 
     @pytest.mark.asyncio
@@ -667,6 +694,7 @@ class TestMetering:
 
         async def _capture(ref):
             captured["entries"] = list(ref.entries)
+            return "recorded"
 
         service._persist_usage = _capture
         service._score_all = AsyncMock(side_effect=RuntimeError("scoring exploded"))
@@ -774,6 +802,7 @@ class TestJudgeCheck:
 
         async def _capture(ref):
             captured.setdefault("refs", []).append(list(ref.entries))
+            return "recorded"
 
         service._persist_usage = _capture
         await _run(service, _injector(_llm(["a", "b", "c"])), _judge_request())
@@ -884,3 +913,142 @@ class TestJudgeCheck:
         result = await _run(service, _injector(_llm(["a"])), _judge_request())
 
         assert result.provenance.budget_seconds == 80
+
+
+def _priced_reply(content="a", input_tokens=1000, output_tokens=500):
+    return AIMessage(
+        content=content,
+        usage_metadata={
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        },
+    )
+
+
+_BUNDLED_COST = float(_resolve_cost("openai", "gpt-4o", 1000, 500, {})["cost_usd"])
+
+
+class TestSpend:
+    @pytest.mark.asyncio
+    async def test_a_case_reports_the_duration_of_its_own_call(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
+
+        result = await _run(service, _injector(_llm(["a", RuntimeError("down")])))
+
+        assert isinstance(result.results[0].latency_ms, int) and result.results[0].latency_ms >= 0
+        assert result.results[1].latency_ms is None, "a call that never answered reports no duration"
+
+    @pytest.mark.asyncio
+    async def test_reported_tokens_are_priced_the_way_the_ledger_row_is(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm([_priced_reply()])))
+
+        row = result.results[0]
+        assert row.usage == PromptCallUsage(input_tokens=1000, output_tokens=500, total_tokens=1500)
+        assert row.cost_usd == _BUNDLED_COST
+        assert result.provenance.cost_usd == _BUNDLED_COST
+        assert (result.provenance.unpriced_calls, result.provenance.grader_calls) == (0, 0)
+        assert result.provenance.grader_cost_usd is None, "no judge ran, so it has no share"
+        assert result.provenance.grader_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_a_configured_rate_beats_the_bundled_table(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm([_priced_reply()]), rate_rows=[_rate()]))
+
+        assert result.results[0].cost_usd == 0.02, "1000 input at 0.01 and 500 output at 0.02, per 1k"
+
+    @pytest.mark.asyncio
+    async def test_a_call_the_provider_reported_no_usage_for_stays_unpriced(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm(["a"])))
+
+        row = result.results[0]
+        assert row.usage is None and row.cost_usd is None
+        assert result.provenance.cost_usd is None, "no $0 for a call nothing is known about"
+        assert result.provenance.unpriced_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_the_run_total_covers_the_priced_calls_and_names_the_rest(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
+
+        result = await _run(service, _injector(_llm([_priced_reply(), "b"])))
+
+        assert result.results[1].cost_usd is None
+        assert result.provenance.cost_usd == result.results[0].cost_usd
+        assert result.provenance.unpriced_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_grader_spend_counts_on_the_run_and_never_on_a_case(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        captured = {}
+
+        async def _capture(ref):
+            captured["ref"] = ref
+            return "recorded"
+
+        service._persist_usage = _capture
+        result = await _run(service, _injector(_llm([_priced_reply()])), _judge_request())
+
+        row = result.results[0]
+        assert row.cost_usd == _BUNDLED_COST, "the case shows its own model call"
+        assert result.provenance.grader_calls == 1
+        assert sorted(captured["ref"].costs) == [0, 1000], "the judge call is priced too"
+        assert result.provenance.cost_usd > row.cost_usd
+        assert result.provenance.grader_cost_usd == pytest.approx(
+            result.provenance.cost_usd - row.cost_usd
+        ), "the judge's share is the run total less the case's own call"
+        assert result.provenance.grader_tokens == 2, "the judge's own tokens, not the case's"
+        assert (
+            result.provenance.usage_total["total_tokens"]
+            == row.usage.total_tokens + result.provenance.grader_tokens
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_failed_rate_read_leaves_the_ledger_to_load_its_own(self, monkeypatch):
+        import app.services.llm_usage_recorder as recorder_module
+
+        captured = {}
+
+        class FakeRecorder:
+            async def record_evaluation_calls(self, execution_id, entries, **kwargs):
+                captured["kwargs"] = kwargs
+                return "recorded"
+
+        monkeypatch.setattr(recorder_module, "LlmUsageRecorder", FakeRecorder)
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm(["a"]), rates_error=RuntimeError("rates table gone")))
+
+        assert result.results[0].status == "scored"
+        assert service.db.rollback.await_count == 1
+        assert captured["kwargs"]["configured_rates"] is None
+
+    @pytest.mark.asyncio
+    async def test_pricing_and_the_hand_over_never_read_the_provider_again(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        injector = _injector(_llm([_priced_reply()]))
+
+        await _run(service, injector, _judge_request())
+
+        provider_service = injector.get.side_effect(SimpleNamespace(__name__="LlmProviderService"))
+        provider_service.get_by_id.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "status, failed",
+        [("recorded", False), ("disabled", False), ("empty", False), ("failed", True), (None, True), ("bogus", True)],
+    )
+    @pytest.mark.asyncio
+    async def test_only_a_confirmed_hand_over_clears_the_metering_flag(self, status, failed):
+        service = _service([_case("a", {"value": "a"})])
+        service._persist_usage = AsyncMock(return_value=status)
+
+        result = await _run(service, _injector(_llm(["a"])))
+
+        assert result.provenance.metering_handoff_failed is failed

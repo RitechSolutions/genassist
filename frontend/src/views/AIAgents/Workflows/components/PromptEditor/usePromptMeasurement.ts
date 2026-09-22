@@ -57,6 +57,7 @@ import {
 import {
   compareRuns,
   type ChallengerComparison,
+  type ProviderFallback,
 } from "../../utils/promptEditorResults";
 import {
   baselineOf,
@@ -185,6 +186,7 @@ export interface PromptMeasurementState {
   failedIncluded: number;
   failedTotal: number;
   optimizeResult: PromptOptimizeResponse | null;
+  optimizeProviderFallback: ProviderFallback | undefined;
   optimizeStale: boolean;
   baseScored: boolean;
   draftDiverged: boolean;
@@ -1076,6 +1078,9 @@ export const usePromptMeasurement = ({
     failedIncluded: failedCases.length,
     failedTotal,
     optimizeResult,
+    optimizeProviderFallback: optimizeRun
+      ? fallbackFor(optimizeRun.request.providerId)
+      : undefined,
     optimizeStale,
     baseScored: baseRun !== null,
     draftDiverged: chainOriginDraft !== null && draft !== chainOriginDraft,

@@ -2,18 +2,24 @@ import { describe, expect, it } from "vitest";
 import type {
   PromptCaseVerdict,
   PromptEvalCaseResult,
+  PromptEvalMetric,
   PromptEvalResponse,
   PromptEvalSummary,
   PromptRunProvenance,
 } from "@/interfaces/promptEditor.interface";
 import {
+  caseSpendLine,
   caseStatusLabel,
   compareRuns,
   formatAvgScore,
+  formatSpend,
   joinPairedRuns,
   metricOutcomeLabel,
   metricScoreLabel,
+  rewriteHeader,
+  soleMetricEchoesVerdict,
   snapshotHeader,
+  spendComparisonLine,
   summaryLine,
 } from "@/views/AIAgents/Workflows/utils/promptEditorResults";
 
@@ -44,6 +50,11 @@ const provenance = (
   ran_at: "2026-09-14T14:32:00Z",
   latency_ms_total: 1200,
   usage_total: {},
+  cost_usd: null,
+  unpriced_calls: 0,
+  grader_calls: 0,
+  grader_tokens: 0,
+  grader_cost_usd: null,
   budget_seconds: 70,
   deadline_hit: false,
   metering_handoff_failed: false,
@@ -71,6 +82,9 @@ const caseResult = (
     errored_metrics: 0,
     not_evaluated_metrics: 0,
     not_applicable_metrics: 0,
+    latency_ms: null,
+    usage: null,
+    cost_usd: null,
     ...overrides,
   }) as PromptEvalCaseResult;
 
@@ -107,7 +121,7 @@ describe("snapshotHeader", () => {
   it("states the cases run, the model the server used and the sampling", () => {
     const header = snapshotHeader(provenance());
 
-    expect(header).toContain("Snapshot · 10 of 42 cases");
+    expect(header).toMatch(/^10 of 42 cases · /);
     expect(header).toMatch(/ran \d{1,2}:\d{2}/);
     expect(header).toContain("azure_openai (gpt-4o)");
     expect(header).toContain("single sample");
@@ -120,7 +134,7 @@ describe("snapshotHeader", () => {
     );
 
     expect(header).toContain("cut by the time budget");
-    expect(header).toContain("spend hand-off failed");
+    expect(header).toContain("spend not recorded");
   });
 
   it("falls back to the local provider row when the run named no model", () => {
@@ -132,6 +146,139 @@ describe("snapshotHeader", () => {
       }),
     ).toContain("House OpenAI");
   });
+
+  it("states what the run took, used and cost", () => {
+    const header = snapshotHeader(
+      provenance({
+        usage_total: { total_tokens: 1500, responses_without_usage: 0 },
+        cost_usd: 0.0412,
+      }),
+    );
+
+    expect(header).toContain("took 1.20 s");
+    expect(header).toMatch(/1[,.\s ]?500 tokens/);
+    expect(header).toContain("$0.0412");
+  });
+
+  it("names the calls the provider reported no tokens for", () => {
+    expect(
+      snapshotHeader(
+        provenance({
+          usage_total: { total_tokens: 1500, responses_without_usage: 2 },
+        }),
+      ),
+    ).toContain("2 calls unreported");
+  });
+
+  it("never prints zero tokens for a run that reported none", () => {
+    const header = snapshotHeader(
+      provenance({ usage_total: { total_tokens: 0, responses_without_usage: 3 } }),
+    );
+
+    expect(header).toContain("tokens unreported");
+    expect(header).not.toContain("0 tokens");
+  });
+
+  it("says nothing about tokens when the run has no usage at all", () => {
+    expect(snapshotHeader(provenance())).not.toContain("tokens");
+  });
+
+  it("says unpriced rather than $0 when nothing could be priced", () => {
+    const header = snapshotHeader(provenance({ cost_usd: null, unpriced_calls: 3 }));
+
+    expect(header).toContain("unpriced");
+    expect(header).not.toContain("$");
+  });
+
+  it("discloses the calls a priced subtotal leaves out", () => {
+    expect(
+      snapshotHeader(provenance({ cost_usd: 0.02, unpriced_calls: 1 })),
+    ).toContain("$0.0200 (1 call unpriced)");
+  });
+
+  it("names the judge's own share only when a judge call was recorded", () => {
+    expect(
+      snapshotHeader(
+        provenance({
+          cost_usd: 0.0021,
+          grader_calls: 2,
+          grader_tokens: 2051,
+          grader_cost_usd: 0.0009,
+        }),
+      ),
+    ).toMatch(/\$0\.0021 · LLM Judge 2[,.\s ]?051 tokens · \$0\.0009/);
+    expect(
+      snapshotHeader(provenance({ techniques: ["llm_judge"], grader_calls: 0 })),
+    ).not.toContain("LLM Judge");
+  });
+
+  it("stays silent about a judge share the run never priced", () => {
+    const header = snapshotHeader(
+      provenance({
+        usage_total: { total_tokens: 6415, responses_without_usage: 0 },
+        cost_usd: 0.0007,
+        unpriced_calls: 5,
+        grader_calls: 5,
+        grader_tokens: 0,
+        grader_cost_usd: null,
+      }),
+    );
+
+    expect(header).not.toContain("LLM Judge");
+    expect(header).toContain("6,415 tokens");
+    expect(header).toContain("(5 calls unpriced)");
+  });
+});
+
+describe("rewriteHeader", () => {
+  it("states the rewrite's own spend and never claims a sample or a grader", () => {
+    const header = rewriteHeader(
+      provenance({
+        usage_total: { total_tokens: 900, responses_without_usage: 0 },
+        cost_usd: 0.0031,
+        techniques: ["llm_judge"],
+      }),
+    );
+
+    expect(header).toContain("Rewrite");
+    expect(header).toContain("10 of 42 cases shown");
+    expect(header).toContain("$0.0031");
+    expect(header).not.toContain("single sample");
+    expect(header).not.toContain("LLM Judge");
+  });
+
+  it("carries the hand-off flag", () => {
+    expect(
+      rewriteHeader(provenance({ metering_handoff_failed: true })),
+    ).toContain("spend not recorded");
+  });
+});
+
+describe("formatSpend", () => {
+  it("never renders a real cost as zero", () => {
+    expect(formatSpend(0.00005)).toBe("<$0.0001");
+    expect(formatSpend(0)).toBe("$0.0000");
+    expect(formatSpend(0.0412)).toBe("$0.0412");
+  });
+});
+
+describe("caseSpendLine", () => {
+  it("reports nothing when the case measured nothing", () => {
+    expect(caseSpendLine(caseResult("a"))).toBeNull();
+  });
+
+  it("reports only the parts the case carries", () => {
+    const line = caseSpendLine(
+      caseResult("a", {
+        latency_ms: 840,
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      }),
+    );
+
+    expect(line).toContain("840 ms");
+    expect(line).toContain("150 tokens");
+    expect(line).not.toContain("$");
+  });
 });
 
 describe("formatAvgScore", () => {
@@ -139,8 +286,10 @@ describe("formatAvgScore", () => {
     expect(formatAvgScore(null)).toBe("—");
   });
 
-  it("renders a percentage to one decimal", () => {
-    expect(formatAvgScore(0.8)).toBe("80.0%");
+  it("keeps a decimal only when it carries a digit", () => {
+    expect(formatAvgScore(0.8)).toBe("80%");
+    expect(formatAvgScore(0.875)).toBe("87.5%");
+    expect(formatAvgScore(0.07)).toBe("7%");
   });
 });
 
@@ -179,10 +328,52 @@ describe("metricOutcomeLabel", () => {
 
 describe("metricScoreLabel", () => {
   it("shows a number only for a check that produced one", () => {
-    expect(metricScoreLabel({ score: 0.6, passed: true })).toBe("60.0%");
+    expect(metricScoreLabel({ score: 0.6, passed: true })).toBe("60%");
     expect(metricScoreLabel({ score: true, passed: true })).toBeNull();
     expect(metricScoreLabel({ score: false, passed: false })).toBeNull();
     expect(metricScoreLabel({ score: null, passed: false })).toBeNull();
+  });
+});
+
+describe("soleMetricEchoesVerdict", () => {
+  const withMetrics = (
+    metrics: Record<string, PromptEvalMetric>,
+    overrides: Partial<PromptEvalCaseResult> = {},
+  ) => caseResult("a", { metrics, ...overrides });
+
+  it("reports a lone check that only restated the verdict", () => {
+    expect(
+      soleMetricEchoesVerdict(withMetrics({ llm_judge: { score: 1, passed: true } })),
+    ).toBe(true);
+  });
+
+  it("keeps a lone check that says why the case is inconclusive", () => {
+    const inconclusive = { verdict: "inconclusive" as const, passed: false };
+
+    expect(
+      soleMetricEchoesVerdict(
+        withMetrics({ nli_eval: { score: null, passed: false, error: true } }, inconclusive),
+      ),
+    ).toBe(false);
+    expect(
+      soleMetricEchoesVerdict(
+        withMetrics(
+          { nli_eval: { score: null, passed: false, not_applicable: true } },
+          inconclusive,
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps every check once more than one ran", () => {
+    expect(
+      soleMetricEchoesVerdict(
+        withMetrics({
+          contains: { score: true, passed: true },
+          llm_judge: { score: 1, passed: true },
+        }),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -228,6 +419,79 @@ describe("joinPairedRuns", () => {
     const after = response([caseResult("a")]);
 
     expect(joinPairedRuns(before, after).compared).toBe(0);
+  });
+});
+
+describe("spendComparisonLine", () => {
+  const measured = (
+    caseId: string,
+    latency: number,
+    tokens: number,
+    cost: number,
+  ) =>
+    caseResult(caseId, {
+      latency_ms: latency,
+      usage: { input_tokens: tokens, output_tokens: 0, total_tokens: tokens },
+      cost_usd: cost,
+    });
+
+  it("reports each metric plainly when every compared pair carries it", () => {
+    const before = response([
+      measured("a", 1600, 8000, 0.03),
+      measured("b", 1200, 4345, 0.0112),
+    ]);
+    const after = response([
+      measured("a", 1200, 6000, 0.02),
+      measured("b", 1000, 3870, 0.012),
+    ]);
+
+    const line = spendComparisonLine(joinPairedRuns(before, after));
+
+    expect(line).toContain("Model calls over 2 compared cases:");
+    expect(line).toContain("avg 1.40 s → 1.10 s");
+    expect(line).toMatch(/12[,.\s ]?345 → 9[,.\s ]?870 tokens/);
+    expect(line).toContain("$0.0412 → $0.0320");
+    expect(line).not.toContain("of 2 cases");
+  });
+
+  it("names its own coverage when only some pairs carry a metric", () => {
+    const before = response([
+      measured("a", 1000, 100, 0.01),
+      caseResult("b", { latency_ms: 1000, usage: null, cost_usd: null }),
+    ]);
+    const after = response([
+      measured("a", 1000, 200, 0.02),
+      caseResult("b", { latency_ms: 1000, usage: null, cost_usd: null }),
+    ]);
+
+    const line = spendComparisonLine(joinPairedRuns(before, after));
+
+    expect(line).toContain("100 → 200 tokens (1 of 2 cases)");
+    expect(line).toContain("$0.0100 → $0.0200 (1 of 2 cases)");
+    expect(line).toContain("avg 1.00 s → 1.00 s");
+    expect(line).not.toContain("avg 1.00 s → 1.00 s (1 of 2 cases)");
+  });
+
+  it("leaves a case that never ran on one side out of the comparison", () => {
+    const before = response([
+      measured("a", 1000, 100, 0.01),
+      caseResult("b", { status: "execution_failed", verdict: null }),
+    ]);
+    const after = response([
+      measured("a", 1000, 200, 0.02),
+      measured("b", 1000, 999, 0.99),
+    ]);
+
+    expect(spendComparisonLine(joinPairedRuns(before, after))).toContain(
+      "Model calls over 1 compared case:",
+    );
+  });
+
+  it("says nothing when no compared pair measured anything", () => {
+    const before = response([caseResult("a")]);
+    const after = response([caseResult("a")]);
+
+    expect(spendComparisonLine(joinPairedRuns(before, after))).toBeNull();
   });
 });
 

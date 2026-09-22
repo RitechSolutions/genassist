@@ -399,13 +399,20 @@ async def test_breakdown_source_relabels_workflow_analyst_and_evaluations():
 
 
 @pytest.mark.asyncio
-async def test_breakdown_evaluation_method_labels_the_two_judges():
-    rows = [("llm_judge", Decimal("0.04"), 0, 150, 2), ("provenance_judge", Decimal("0.01"), 1, 50, 1)]
+async def test_breakdown_evaluation_method_labels_every_metered_purpose():
+    rows = [
+        ("llm_judge", Decimal("0.04"), 0, 150, 2),
+        ("provenance_judge", Decimal("0.01"), 1, 50, 1),
+        ("prompt_check", Decimal("0.02"), 0, 90, 3),
+        ("prompt_optimize", Decimal("0.03"), 0, 80, 1),
+    ]
     service, *_ = _service(breakdown_rows=rows)
     resp = await service.get_breakdown(_params(), "evaluation_method")
     by = {i.key: i for i in resp.items}
     assert by["llm_judge"].label == "LLM Judge"
     assert by["provenance_judge"].label == "Provenance"
+    assert by["prompt_check"].label == "Prompt check"
+    assert by["prompt_optimize"].label == "Prompt rewrite"
     assert by["provenance_judge"].cost_is_partial is True
 
 

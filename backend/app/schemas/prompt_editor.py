@@ -211,6 +211,14 @@ class PromptEvalRequest(BaseModel):
         return _reject_duplicates(value)
 
 
+class PromptCallUsage(BaseModel):
+    """Tokens the provider reported for one call"""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
 class PromptEvalCaseResult(BaseModel):
     case_id: UUID
     input: str = Field(default="", max_length=MAX_ACTUAL_CHARS)
@@ -228,6 +236,9 @@ class PromptEvalCaseResult(BaseModel):
     errored_metrics: int = 0
     not_evaluated_metrics: int = 0
     not_applicable_metrics: int = 0
+    latency_ms: Optional[int] = None  # None when the call never answered
+    usage: Optional[PromptCallUsage] = None  # None when the provider reported no usage
+    cost_usd: Optional[float] = None  # None when unpriced
 
 
 class PromptEvalSummary(BaseModel):
@@ -260,6 +271,11 @@ class PromptRunProvenance(BaseModel):
     ran_at: datetime
     latency_ms_total: int
     usage_total: Dict[str, Any]
+    cost_usd: Optional[float] = None
+    unpriced_calls: int = 0
+    grader_calls: int = 0  # judge calls actually recorded; 0 on a rewrite
+    grader_tokens: int = 0  # the judge's share of usage_total
+    grader_cost_usd: Optional[float] = None  # the judge's share of cost_usd
     budget_seconds: int
     deadline_hit: bool = False
     metering_handoff_failed: bool = False

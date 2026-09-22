@@ -66,7 +66,7 @@ def _service(db, cases):
         workflow_repo=workflow_repo,
         db=db,
     )
-    service._persist_usage = AsyncMock()
+    service._persist_usage = AsyncMock(return_value="recorded")
     return service
 
 
@@ -77,10 +77,17 @@ def _injector(llm, build_error=None):
         if build_error
         else AsyncMock(return_value=llm)
     )
+    rate_repo = SimpleNamespace(list_active=AsyncMock(return_value=[]))
+
+    def _get(cls):
+        if cls.__name__ == "LlmProviderService":
+            return provider_service
+        if cls.__name__ == "LlmCostRateRepository":
+            return rate_repo
+        return llm_provider
+
     fake = MagicMock()
-    fake.get.side_effect = lambda cls: (
-        provider_service if cls.__name__ == "LlmProviderService" else llm_provider
-    )
+    fake.get.side_effect = _get
     return fake
 
 

@@ -6,6 +6,7 @@ import { Label } from "@/components/label";
 import { RichTextarea } from "@/components/richTextarea";
 import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilities";
 import { SUGGESTION_STALE_REASON } from "../../utils/promptEditorGates";
+import { rewriteHeader } from "../../utils/promptEditorResults";
 import type { Round, RoundCounts } from "../../utils/promptEditorRounds";
 import { GateTooltip } from "./GateTooltip";
 import { PromptEvalResults } from "./PromptEvalResults";
@@ -101,6 +102,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     restoreRound,
     restoreBlocked,
     optimizeResult,
+    optimizeProviderFallback,
     optimizeStale,
     suggestion,
     optimizedFrom,
@@ -219,6 +221,10 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
             edited={suggestionEdited}
             onChange={editSuggestion}
           />
+
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {rewriteHeader(optimizeResult.provenance, optimizeProviderFallback)}
+          </p>
 
           {optimizeResult.explanation && (
             <div className="space-y-1">

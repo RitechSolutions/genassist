@@ -314,6 +314,7 @@ class TestFlush:
         class FakeRecorder:
             async def record_evaluation_calls(self, execution_id, entries, *, workflow_id=None, agent_id=None, **_):
                 recorded.append((execution_id, entries, workflow_id, agent_id))
+                return "recorded"
 
         monkeypatch.setattr(recorder_module, "LlmUsageRecorder", FakeRecorder)
         return recorded
