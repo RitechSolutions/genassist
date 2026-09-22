@@ -44,7 +44,6 @@ import {
 } from "@/views/AIAgents/Workflows/utils/helpHeaderGradients";
 import { getNodeDocsUrl } from "@/views/AIAgents/Workflows/utils/nodeDocsLinks";
 import { isNewNode } from "@/views/AIAgents/Workflows/utils/newNodes";
-import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -91,7 +90,6 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedHelp, setSelectedHelp] = useState<HelpDialogState | null>(null);
   const [inputMessage, setInputMessage] = useState<string>("");
-  const composerRef = useAutoGrowTextarea(inputMessage, 128);
   const conversationScrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll conversation to bottom

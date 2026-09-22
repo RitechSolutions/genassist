@@ -84,8 +84,7 @@ def _build_conversation_criteria(model_cls, group_id, supervised_group_ids, user
             model_cls.group_id == group_id,
             and_(model_cls.group_id.is_(None), legacy),
         )
-    legacy = model_cls.created_by == user_id
-    return and_(model_cls.group_id.is_(None), legacy)
+    return model_cls.created_by == user_id
 
 
 def get_group_scope_clause(model_cls):
@@ -192,8 +191,7 @@ def _group_scope_filter(execute_state):
             return cls.created_by == _uid
 
         def conversation_criteria(cls):
-            legacy = cls.created_by == _uid
-            return and_(cls.group_id.is_(None), legacy)
+            return cls.created_by == _uid
 
     for scoped_cls in GroupScopedMixin.__subclasses__():
         if scoped_cls.__name__ == "ConversationModel":
