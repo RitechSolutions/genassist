@@ -1,4 +1,5 @@
-import { Search } from "lucide-react";
+import { useRef } from "react";
+import { Search, X } from "lucide-react";
 import { cn } from "@/helpers/utils";
 import { Button } from "@/components/button";
 
@@ -30,6 +31,7 @@ export const SearchInput = ({
   onSearch,
   minLength = 0,
 }: SearchInputProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
   const trimmed = value.trim();
   // Empty is always valid (clears the search); otherwise enforce the minimum.
   const canSubmit = trimmed.length === 0 || trimmed.length >= minLength;
@@ -37,6 +39,14 @@ export const SearchInput = ({
 
   const submit = () => {
     if (onSearch && canSubmit) onSearch(trimmed);
+  };
+
+  const clear = () => {
+    onChange("");
+    // Submit mode does not react to typing, so clearing has to commit as well
+    // or the results would keep showing the old query.
+    if (onSearch) onSearch("");
+    inputRef.current?.focus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -52,13 +62,24 @@ export const SearchInput = ({
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
           <input
+            ref={inputRef}
             type="text"
             placeholder={placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full pl-10 pr-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-primary bg-card"
+            className="w-full pl-10 pr-9 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-primary bg-card"
           />
+          {value && (
+            <button
+              type="button"
+              onClick={clear}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center rounded-full bg-muted-foreground/40 text-background transition-colors hover:bg-muted-foreground/60"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
         {onSearch && (
           <Button

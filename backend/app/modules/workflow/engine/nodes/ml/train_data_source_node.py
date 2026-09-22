@@ -7,10 +7,12 @@ This node fetches training data from databases or CSV files for ML model trainin
 import asyncio
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, TypeVar
 from uuid import UUID
 
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
@@ -19,6 +21,17 @@ from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
 
 logger = logging.getLogger(__name__)
+
+NumericLimit = TypeVar("NumericLimit", int, float)
+
+
+@dataclass(frozen=True)
+class ExtractionLimits:
+    """Effective limits for one Train Data Source execution."""
+
+    max_rows: int
+    max_bytes: int
+    query_timeout_seconds: float
 
 
 class TrainDataSourceNode(BaseNode):
@@ -65,14 +78,22 @@ class TrainDataSourceNode(BaseNode):
                     error_detail="sourceType must be 'datasource' or 'csv'",
                 )
 
+            limits = self._resolve_extraction_limits(config)
+
             logger.info(
-                f"Processing train data source node: {name} (type: {source_type})"
+                "Processing train data source node %s (type=%s, max_rows=%s, "
+                "max_bytes=%s, timeout=%ss)",
+                name,
+                source_type,
+                limits.max_rows,
+                limits.max_bytes,
+                self._format_number(limits.query_timeout_seconds),
             )
 
             if source_type == "datasource":
-                return await self._process_database_source(config)
+                return await self._process_database_source(config, limits)
             elif source_type == "csv":
-                return await self._process_csv_source(config)
+                return await self._process_csv_source(config, limits)
             else:
                 # This should never happen due to validation above, but for completeness
                 raise AppException(
@@ -92,7 +113,9 @@ class TrainDataSourceNode(BaseNode):
                 error_detail=f"Train data source processing failed: {str(e)}",
             ) from e
 
-    async def _process_database_source(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_database_source(
+        self, config: Dict[str, Any], limits: ExtractionLimits
+    ) -> Dict[str, Any]:
         """
         Process database data source.
 
@@ -144,12 +167,15 @@ class TrainDataSourceNode(BaseNode):
             try:
                 results, error_msg = await asyncio.wait_for(
                     db_manager.execute_query(substituted_query),
-                    timeout=30.0,  # 30 second timeout
+                    timeout=limits.query_timeout_seconds,
                 )
             except asyncio.TimeoutError as exc:
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="Database query timed out after 30 seconds",
+                    error_detail=(
+                        "Database query timed out after "
+                        f"{self._format_number(limits.query_timeout_seconds)} seconds"
+                    ),
                 ) from exc
 
             if error_msg:
@@ -157,6 +183,8 @@ class TrainDataSourceNode(BaseNode):
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail=f"Database query failed: {error_msg}",
                 )
+
+            self._enforce_row_limit(results, limits.max_rows, "query")
 
             # Extract column names from first row
             columns = list(results[0].keys()) if results else []
@@ -195,7 +223,9 @@ class TrainDataSourceNode(BaseNode):
                 error_detail=f"Database source processing failed: {str(e)}",
             ) from e
 
-    async def _process_csv_source(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_csv_source(
+        self, config: Dict[str, Any], limits: ExtractionLimits
+    ) -> Dict[str, Any]:
         """
         Process CSV data source.
 
@@ -207,7 +237,6 @@ class TrainDataSourceNode(BaseNode):
         """
         csv_file_path = config.get("csvFilePath")
         csv_file_id = config.get("csvFileId")
-        csv_file_url = config.get("csvFileUrl")
 
         if not csv_file_path and not csv_file_id:
             raise AppException(
@@ -258,8 +287,12 @@ class TrainDataSourceNode(BaseNode):
                     error_detail=f"CSV file not readable: {csv_file_path}",
                 )
 
+            self._enforce_csv_byte_limit(csv_path, limits.max_bytes)
+
             # Parse CSV file
             results = ml_utils.parse_csv_file(csv_file_path)
+
+            self._enforce_row_limit(results, limits.max_rows, "CSV file")
 
             # Extract column names from first row
             columns = list(results[0].keys()) if results else []
@@ -295,6 +328,93 @@ class TrainDataSourceNode(BaseNode):
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"CSV source processing failed: {str(e)}",
             ) from e
+
+    @classmethod
+    def _resolve_extraction_limits(cls, config: Dict[str, Any]) -> ExtractionLimits:
+        """Resolve node overrides without allowing platform ceilings to rise."""
+        return ExtractionLimits(
+            max_rows=cls._resolve_limit(
+                config,
+                "maxRows",
+                settings.ML_EXTRACT_MAX_ROWS,
+                int,
+            ),
+            max_bytes=cls._resolve_limit(
+                config,
+                "maxBytes",
+                settings.ML_EXTRACT_MAX_BYTES,
+                int,
+            ),
+            query_timeout_seconds=cls._resolve_limit(
+                config,
+                "timeoutSeconds",
+                float(settings.ML_EXTRACT_QUERY_TIMEOUT_SECONDS),
+                float,
+            ),
+        )
+
+    @staticmethod
+    def _resolve_limit(
+        config: Dict[str, Any],
+        config_key: str,
+        platform_limit: NumericLimit,
+        converter: Callable[[Any], NumericLimit],
+    ) -> NumericLimit:
+        raw_value = config.get(config_key)
+        if raw_value in (None, ""):
+            return platform_limit
+
+        try:
+            requested_limit = converter(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=f"{config_key} must be a positive number",
+            ) from exc
+
+        if isinstance(raw_value, bool) or requested_limit <= 0:
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=f"{config_key} must be a positive number",
+            )
+
+        return min(requested_limit, platform_limit)
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return f"{value:g}"
+
+    @staticmethod
+    def _enforce_row_limit(
+        results: list[Dict[str, Any]], max_rows: int, source_label: str
+    ) -> None:
+        row_count = len(results)
+        if row_count <= max_rows:
+            return
+
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"The {source_label} returned {row_count:,} rows, which exceeds "
+                f"the limit of {max_rows:,}. Add a filter or LIMIT, or raise "
+                "ML_EXTRACT_MAX_ROWS."
+            ),
+        )
+
+    @staticmethod
+    def _enforce_csv_byte_limit(csv_path: Path, max_bytes: int) -> None:
+        csv_size = csv_path.stat().st_size
+        if csv_size <= max_bytes:
+            return
+
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"CSV file is {csv_size:,} bytes, which exceeds the limit "
+                f"of {max_bytes:,} bytes for training extracts. "
+                "Use a smaller file or raise ML_EXTRACT_MAX_BYTES."
+            ),
+        )
 
     async def _get_database_manager(self, data_source_id: str):
         """

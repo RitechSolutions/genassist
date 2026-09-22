@@ -2,7 +2,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from app.tasks.ml_model_pipeline_tasks import (
-    _emit_pipeline_failed_notification,
+    _notify_run_failed,
     _summarize_run_failure,
     _training_succeeded,
 )
@@ -75,7 +75,7 @@ class TestSummarizeRunFailure:
         assert _summarize_run_failure({}) == "Workflow execution completed without producing a successful result"
 
 
-class TestEmitPipelineFailedNotification:
+class TestNotifyRunFailed:
     @patch("app.tasks.ml_model_pipeline_tasks.emit_notification")
     @patch("app.tasks.ml_model_pipeline_tasks.injector")
     def test_emits_error_notification_with_run_id(self, mock_injector, mock_emit_notification):
@@ -83,7 +83,7 @@ class TestEmitPipelineFailedNotification:
         mock_injector.get.return_value = mock_socket_manager
         run_id = uuid.uuid4()
 
-        _emit_pipeline_failed_notification("tenant-1", run_id)
+        _notify_run_failed("tenant-1", run_id)
 
         mock_emit_notification.assert_called_once()
         kwargs = mock_emit_notification.call_args.kwargs

@@ -2,13 +2,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDataSourceNode
+from app.modules.workflow.engine.nodes.ml.train_data_source_node import (
+    ExtractionLimits,
+    TrainDataSourceNode,
+)
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 
 @pytest.fixture
 def node() -> TrainDataSourceNode:
     return TrainDataSourceNode(node_id="test", node_config={}, state=WorkflowState(workflow={}))
+
+
+# Generously permissive - these tests are about csvFileId/csvFilePath priority,
+# not about extraction limits, so nothing here should ever hit a real cap.
+PERMISSIVE_LIMITS = ExtractionLimits(
+    max_rows=1_000_000, max_bytes=1_000_000_000, query_timeout_seconds=30.0
+)
 
 
 class TestProcessCsvSourcePrefersDownloadById:
@@ -48,7 +58,8 @@ class TestProcessCsvSourcePrefersDownloadById:
                     # if the code used this directly, it would fail with
                     # file_not_found instead of succeeding via the download.
                     "csvFilePath": "/nonexistent/host/only/path.csv",
-                }
+                },
+                PERMISSIVE_LIMITS,
             )
 
         mock_file_manager.download_file_to_path.assert_called_once()
@@ -66,7 +77,9 @@ class TestProcessCsvSourcePrefersDownloadById:
             "app.modules.workflow.engine.nodes.ml.ml_utils.save_data_to_csv",
             new=AsyncMock(return_value=str(tmp_path / "saved.csv")),
         ):
-            result = await node._process_csv_source({"csvFilePath": str(csv_path)})
+            result = await node._process_csv_source(
+                {"csvFilePath": str(csv_path)}, PERMISSIVE_LIMITS
+            )
 
         mock_get.assert_not_called()
         assert result["success"] is True
@@ -77,4 +90,4 @@ class TestProcessCsvSourcePrefersDownloadById:
         from app.core.exceptions.exception_classes import AppException
 
         with pytest.raises(AppException):
-            await node._process_csv_source({})
+            await node._process_csv_source({}, PERMISSIVE_LIMITS)
