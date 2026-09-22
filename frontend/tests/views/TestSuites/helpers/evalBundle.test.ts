@@ -174,6 +174,20 @@ describe("buildNodeTypeIndex", () => {
       "node-1": "httpNode",
     });
   });
+
+  it("indexes router types when the catalog reports them", () => {
+    const withTypedRouters: EvaluationToolCatalog = {
+      ...catalog,
+      routers: [
+        { id: "router-1", label: "Router", type: "routerNode", workflow_path: [], branches: [] },
+        { id: "switch-1", label: "Switch", type: "switchNode", workflow_path: [], branches: [] },
+      ],
+    };
+    expect(buildNodeTypeIndex(withTypedRouters)).toMatchObject({
+      "router-1": "routerNode",
+      "switch-1": "switchNode",
+    });
+  });
 });
 
 describe("narrowToOriginalType", () => {
