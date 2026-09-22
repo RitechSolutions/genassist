@@ -641,9 +641,8 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                       </span>
                     )}
                   </div>
-                  <RichTextarea
+                  <RichInput
                     id="test-input-message"
-                    size="body"
                     placeholder="Enter your message"
                     value={testInput.message || ""}
                     onChange={(e) =>
@@ -800,7 +799,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                         ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15"
                                         : ""
                                     }`}
-                                    size="code"
+                                    rows={4}
                                   />
                                 ) : (
                                   <RichInput
@@ -933,18 +932,6 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                   ))}
                                 </SelectContent>
                               </Select>
-                            ) : field.type === "textarea" ? (
-                              <RichTextarea
-                                id={fieldKey}
-                                size="body"
-                                placeholder={
-                                  field.placeholder ||
-                                  `Enter ${field.label}`
-                                }
-                                value={val}
-                                onChange={(e) => onChange(e.target.value)}
-                                disabled={testing}
-                              />
                             ) : (
                               <RichInput
                                 id={fieldKey}

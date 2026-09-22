@@ -1,5 +1,4 @@
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
 import { extractErrorMessage } from "@/helpers/apiError";
@@ -19,9 +18,6 @@ type UserGroupFormValues = {
   name: string;
   description: string;
 };
-
-// Matches the String(500) description column on the user_group table.
-const USER_GROUP_DESCRIPTION_MAX_LENGTH = 500;
 
 export function UserGroupDialog({
   isOpen,
@@ -88,10 +84,8 @@ export function UserGroupDialog({
           </FormField>
 
           <FormField id="description" label="Description">
-            <Textarea
+            <Input
               id="description"
-              size="description"
-              maxLength={USER_GROUP_DESCRIPTION_MAX_LENGTH}
               value={values.description}
               onChange={(e) => setField("description", e.target.value)}
               placeholder="Enter description (optional)"

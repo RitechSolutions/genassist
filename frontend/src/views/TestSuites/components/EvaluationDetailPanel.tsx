@@ -792,7 +792,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
               )}
               {lastRunTotals && (
                 <div className="text-xs text-muted-foreground">
-                  {lastRunTotals.scored} of {lastRunTotals.cases} cases scored
+                  {lastRunTotals.scored} of {lastRunTotals.cases} records scored
                   {lastRunTotals.execution_failed > 0 &&
                     ` · ${lastRunTotals.execution_failed} failed to execute`}
                 </div>
@@ -984,7 +984,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
                     {runTotals && runTotals.scored < runTotals.cases && (
                       <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400">
-                        Scores cover {runTotals.scored} of {runTotals.cases} cases
+                        Scores cover {runTotals.scored} of {runTotals.cases} records
                         {runTotals.execution_failed > 0 &&
                           ` · ${runTotals.execution_failed} failed to execute`}
                         {runTotals.scoring_failed > 0 &&
@@ -1158,7 +1158,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                     <div className="flex h-full flex-col items-center justify-center p-6 text-center">
                       <AlertCircle className="mb-3 h-10 w-10 text-muted-foreground/30" />
                       <p className="text-sm text-muted-foreground">
-                        {isLoadingResults ? "Loading results..." : "Select a case to see its details."}
+                        {isLoadingResults ? "Loading results…" : "Select a case to see its details."}
                       </p>
                     </div>
                   )}

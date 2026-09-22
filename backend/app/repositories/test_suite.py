@@ -76,31 +76,6 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         if commit:
             await self.db.flush()
 
-    async def get_conversation_membership(
-        self, conversation_id: UUID
-    ) -> List[Tuple[UUID, int, datetime]]:
-        """Per suite, how many turns of one conversation it holds and when they landed.
-
-        Only cases tagged ``imported`` count: a hand-authored thread carries a
-        generated source_conversation_id too, so the tag is what says the turns
-        came from a real conversation.
-        """
-        stmt = (
-            select(
-                TestCaseModel.suite_id,
-                func.count(TestCaseModel.id),
-                func.min(TestCaseModel.created_at),
-            )
-            .where(
-                TestCaseModel.source_conversation_id == conversation_id,
-                TestCaseModel.is_deleted == 0,
-                TestCaseModel.tags.contains(["imported"]),
-            )
-            .group_by(TestCaseModel.suite_id)
-        )
-        result = await self.db.execute(stmt)
-        return [(row[0], row[1], row[2]) for row in result.all()]
-
     async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
         """Insert cases in a single transaction so a partial import cannot persist."""
         self.db.add_all(cases)
