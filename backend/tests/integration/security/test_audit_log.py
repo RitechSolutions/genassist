@@ -1,6 +1,20 @@
 import pytest
 import json
+import uuid
 
+from sqlalchemy import delete, event, inspect as sa_inspect
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.core.config.settings import settings
+from app.db.models import ConversationAnalysisModel, ConversationModel
+from app.db.seed.seed_data_config import seed_test_data
+
+# PromptConfigModel.gold_suite has a string relationship() to "TestSuiteModel",
+# but app/db/models/__init__.py never imports that module. Without this, the
+# first mapper configure() triggered anywhere in the process (e.g. by
+# instantiating ConversationModel below) fails with a clsregistry KeyError.
+from app.db.models.test_suite import TestSuiteModel  # noqa: F401
 
 
 @pytest.mark.asyncio
@@ -125,3 +139,68 @@ async def test_audit_log_update_redacts_only_sensitive_substrings_in_text_fields
             if isinstance(val, str) and ("@" in val or "eyJ" in val):
                 assert "[REDACTED]" in val
                 assert val != "[REDACTED]"
+
+
+@pytest.mark.asyncio
+async def test_conversation_update_does_not_lazy_load_analysis_relationship():
+    """
+    Regression test for the audit `before_flush` hook (app/db/models/audit_log.py).
+
+    The hook must diff only column attributes. Iterating relationship attrs
+    (e.g. `analysis`) and calling `get_history` on an unloaded one triggers a
+    lazy load during flush, adding an extra query to every conversation
+    update (see SCROSS-4439).
+    """
+    engine = create_async_engine(settings.DATABASE_URL)
+    session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    conversation_id = uuid.uuid4()
+
+    try:
+        async with session_maker() as session:
+            conversation = ConversationModel(
+                id=conversation_id,
+                operator_id=seed_test_data.operator_id,
+                conversation_type="chat",
+                topic="original-topic",
+            )
+            session.add(conversation)
+            await session.flush()
+
+            session.add(ConversationAnalysisModel(conversation_id=conversation_id))
+            await session.commit()
+
+            # Precondition: the relationship was never touched, so it's unloaded.
+            assert "analysis" in sa_inspect(conversation).unloaded
+
+            sync_engine = engine.sync_engine
+            executed_statements = []
+
+            def _capture(conn, cursor, statement, parameters, context, executemany):
+                executed_statements.append(statement)
+
+            event.listen(sync_engine, "before_cursor_execute", _capture)
+            try:
+                conversation.topic = "updated-topic"
+                await session.commit()
+            finally:
+                event.remove(sync_engine, "before_cursor_execute", _capture)
+
+            assert not any(
+                "conversation_analysis" in statement
+                for statement in executed_statements
+            ), (
+                "Updating a conversation must not query conversation_analysis; "
+                "the audit before_flush hook should skip relationship attributes"
+            )
+    finally:
+        async with session_maker() as session:
+            await session.execute(
+                delete(ConversationAnalysisModel).where(
+                    ConversationAnalysisModel.conversation_id == conversation_id
+                )
+            )
+            await session.execute(
+                delete(ConversationModel).where(ConversationModel.id == conversation_id)
+            )
+            await session.commit()
+        await engine.dispose()

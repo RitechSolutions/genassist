@@ -4,7 +4,6 @@ from uuid import UUID
 
 from injector import inject
 from sqlalchemy import and_, case, distinct, func
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +16,7 @@ from app.db.models.app_settings import AppSettingsModel
 from app.db.models.conversation import ConversationModel
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.db.models.operator import OperatorModel
+from app.db.session_types import ReadOnlySession
 
 
 def _ledger_window(from_date: datetime, to_date: datetime) -> tuple[datetime, datetime]:
@@ -29,7 +29,7 @@ def _ledger_window(from_date: datetime, to_date: datetime) -> tuple[datetime, da
 @inject
 class DashboardRepository:
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: ReadOnlySession):
         self.db = db
 
     async def get_active_agents_count(self) -> int:
