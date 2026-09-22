@@ -7,6 +7,7 @@ import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
+import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import {
   Select,
   SelectContent,
@@ -139,8 +140,9 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="message">Message</Label>
-          <DraggableInput
+          <DraggableTextArea
             id="message"
+            size="body"
             value={values.message}
             onChange={(e) => setField("message", e.target.value)}
             placeholder="e.g., Hello, how are you?"

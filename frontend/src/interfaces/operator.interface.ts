@@ -9,12 +9,13 @@ export type Operator = {
     neutral?: number;
     negative?: number;
     totalCallDuration?: string;
-    score?: number;
+    score?: number | string;
     callCount?: number;
-    avg_customer_satisfaction?: number;
-    avg_resolution_rate?: number;
-    avg_response_time?: number;
-    avg_quality_of_service?: number;
+    // Serialized by the backend as percent strings ("86.0%"), not numbers.
+    avg_customer_satisfaction?: number | string;
+    avg_resolution_rate?: number | string;
+    avg_response_time?: number | string;
+    avg_quality_of_service?: number | string;
   };
   latest_conversation_analysis?: {
     conversation_id?: number;
