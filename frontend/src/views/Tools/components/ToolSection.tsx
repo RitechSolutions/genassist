@@ -102,7 +102,6 @@ export function ToolSection({
           <div className="space-y-2">
             <Label className="text-sm font-medium">JSON Body</Label>
             <RichTextarea
-              size="document"
               value={JSON.stringify(items, ["id","name","value"], 2)}
               onChange={(e) => {
                 try {
@@ -120,7 +119,7 @@ export function ToolSection({
                   // ignore
                 }
               }}              
-              className="w-full font-mono text-sm"
+              className="h-60 w-full font-mono text-sm"
               placeholder={`[
                 {
                     "name": "parameterName",

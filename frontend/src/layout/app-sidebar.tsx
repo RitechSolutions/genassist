@@ -85,7 +85,7 @@ const navGroups: NavGroup[] = [
         title: "Agent Studio",
         icon: UserRoundCog,
         url: "/ai-agents",
-        permissionsRequired: ["read:llm_analyst"],
+        permissionsRequired: ["read:workflow", "read:llm_analyst"],
       },
       {
         title: "Templates",

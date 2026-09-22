@@ -276,7 +276,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
                 value={values.message}
                 onChange={(e) => setField("message", e.target.value)}
                 placeholder="Input message passed to the workflow's input node"
-                size="body"
+                rows={3}
               />
             </div>
 
@@ -288,7 +288,7 @@ const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({
                 label="Additional input fields (JSON)"
                 description="Optional extra input-node fields merged into the run payload."
                 placeholder='{ "customer_id": "123" }'
-                rows={8}
+                rows={3}
                 allowEmpty
               />
             </div>

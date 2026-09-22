@@ -71,7 +71,6 @@ export default function EditTool() {
           placeholder="Tool Name"
         />
         <Textarea
-          size="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Tool Description"

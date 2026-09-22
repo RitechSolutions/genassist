@@ -5,7 +5,6 @@
  * node's display label, for readability.
  */
 export const NEW_NODE_TYPES = new Set<string>([
-  "switchNode", // Switch
   "nlpNode", // Text Analysis
   "webScraperNode", // Web Scraper
   "htmlToImageNode", // HTML to Image

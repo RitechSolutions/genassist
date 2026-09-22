@@ -84,11 +84,9 @@ import WhatsAppNode from "./integrations/whatsappNode";
 import {
   ROUTER_NODE_DEFINITION,
   AGGREGATOR_NODE_DEFINITION,
-  SWITCH_NODE_DEFINITION,
 } from "./router/definitions";
 import RouterNode from "./router/routerNode";
 import AggregatorNode from "./router/aggregatorNode";
-import SwitchNode from "./router/switchNode";
 import CalendarEventNode from "./integrations/calendarEventNode";
 import {
   TRAIN_DATA_SOURCE_NODE_DEFINITION,
@@ -154,7 +152,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(SET_STATE_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(ROUTER_NODE_DEFINITION);
-  nodeRegistry.registerNodeType(SWITCH_NODE_DEFINITION);
+
 
   nodeRegistry.registerNodeType(AGGREGATOR_NODE_DEFINITION);
 
@@ -212,7 +210,6 @@ export const getNodeTypes = () => {
     pythonCodeNode: PythonCodeNode,
     toolBuilderNode: ToolBuilderNode,
     routerNode: RouterNode,
-    switchNode: SwitchNode,
     aggregatorNode: AggregatorNode,
     nlpNode: NlpNode,
     dataMapperNode: DataMapperNode,
