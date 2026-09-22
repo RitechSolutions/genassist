@@ -256,7 +256,7 @@ const DatasetDetailPage: React.FC = () => {
             disabled={!suite}
             onClick={() => setIsImportDialogOpen(true)}
           >
-            Import conversation
+            Import conversations
           </Button>
           <Button
             className="w-full justify-center rounded-full sm:w-auto"
