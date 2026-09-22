@@ -7,13 +7,20 @@ read-only protection.
 
 from __future__ import annotations
 
+import logging
+from datetime import date, datetime
+from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, List, Optional, Tuple
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql.asyncpg import dialect as asyncpg_dialect
 
+from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.database_manager import DatabaseManager
+from app.modules.workflow.engine.utils import BoundParameters
 
 
 def _sql(stmt) -> str:
@@ -209,6 +216,130 @@ async def test_mssql_does_not_invent_read_only_sql():
 
 
 @pytest.mark.asyncio
+async def test_bound_value_is_redacted_from_database_error(caplog):
+    secret = "private-query-value"
+
+    async def execute_impl(_sql, _parameters):
+        raise RuntimeError(f"driver rejected {secret!r}")
+
+    conn = RecordingConn(execute_impl)
+    manager = _manager_with_engine("mssql", conn)
+
+    with caplog.at_level(logging.ERROR):
+        results, error = await manager.execute_read_query(
+            "SELECT :value",
+            {"value": secret},
+        )
+
+    assert results == []
+    assert secret not in error
+    assert secret not in caplog.text
+    assert "[BOUND_VALUE]" in error
+
+
+@pytest.mark.asyncio
+async def test_short_bound_value_hides_database_error_details(caplog):
+    async def execute_impl(_sql, _parameters):
+        raise RuntimeError("driver rejected x")
+
+    conn = RecordingConn(execute_impl)
+    manager = _manager_with_engine("mssql", conn)
+
+    with caplog.at_level(logging.ERROR):
+        results, error = await manager.execute_read_query(
+            "SELECT :value",
+            {"value": "x"},
+        )
+
+    assert results == []
+    assert error == "Database error details hidden for a query with bound parameters."
+    assert "driver rejected x" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("value", "pg_type", "expected"),
+    [
+        ("42", "int4", 42),
+        ("42.5", "float8", 42.5),
+        ("42.50", "numeric", Decimal("42.50")),
+        ("true", "bool", True),
+        ("2026-09-16", "date", date(2026, 9, 16)),
+        (
+            "2026-09-16T12:30:00Z",
+            "timestamptz",
+            datetime.fromisoformat("2026-09-16T12:30:00+00:00"),
+        ),
+        ("Tirana", "text", "Tirana"),
+    ],
+)
+def test_postgres_string_parameters_are_coerced_to_inferred_types(
+    value,
+    pg_type,
+    expected,
+):
+    assert DatabaseManager._coerce_postgres_value(value, pg_type) == expected
+
+
+@pytest.mark.asyncio
+async def test_postgres_uses_server_inferred_type_before_execution():
+    conn = RecordingConn()
+    prepared = MagicMock()
+    prepared.get_parameters.return_value = [SimpleNamespace(name="int8")]
+    driver_connection = MagicMock()
+    driver_connection.prepare = AsyncMock(return_value=prepared)
+    conn.get_raw_connection = AsyncMock(
+        return_value=SimpleNamespace(driver_connection=driver_connection)
+    )
+    manager = _manager_with_engine("postgresql", conn)
+    manager.engine.dialect = asyncpg_dialect()
+    parameters = BoundParameters()
+    parameters["row_limit"] = "2"
+    parameters.variable_names["row_limit"] = "limit"
+
+    rows, error = await manager.execute_read_query(
+        "SELECT 1 AS n LIMIT :row_limit",
+        parameters,
+    )
+
+    assert error is None
+    assert rows == [{"n": 1}]
+    driver_connection.prepare.assert_awaited_once_with("SELECT 1 AS n LIMIT $1")
+    assert conn.calls[-1] == (
+        "execute",
+        "SELECT 1 AS n LIMIT :row_limit",
+        {"row_limit": 2},
+    )
+
+
+@pytest.mark.asyncio
+async def test_postgres_invalid_inferred_type_error_never_contains_value():
+    secret = "not-an-integer-private"
+    conn = RecordingConn()
+    prepared = MagicMock()
+    prepared.get_parameters.return_value = [SimpleNamespace(name="int4")]
+    driver_connection = MagicMock()
+    driver_connection.prepare = AsyncMock(return_value=prepared)
+    conn.get_raw_connection = AsyncMock(
+        return_value=SimpleNamespace(driver_connection=driver_connection)
+    )
+    manager = _manager_with_engine("postgresql", conn)
+    manager.engine.dialect = asyncpg_dialect()
+    parameters = BoundParameters()
+    parameters["quantity"] = secret
+    parameters.variable_names["quantity"] = "minimum_quantity"
+
+    with pytest.raises(BoundValueError) as exc_info:
+        await manager.execute_read_query(
+            "SELECT 1 WHERE 1 >= :quantity",
+            parameters,
+        )
+
+    assert "minimum_quantity" in str(exc_info.value)
+    assert "int4" in str(exc_info.value)
+    assert secret not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 async def test_snowflake_delegates_to_existing_execute_query():
     manager = DatabaseManager({"source_type": "snowflake"})
     manager.db_type = "snowflake"
@@ -245,6 +376,36 @@ async def test_unsupported_db_type_does_not_guess_a_dialect():
 async def _create_sqlite_table(manager: DatabaseManager) -> None:
     async with manager.engine.begin() as conn:
         await conn.execute(text("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)"))
+
+
+@pytest.mark.asyncio
+async def test_sqlite_read_query_treats_injection_payload_as_data():
+    manager = DatabaseManager({"database_type": "sqlite", "database_path": ":memory:"})
+    await manager.connect()
+    try:
+        assert manager.engine.sync_engine.hide_parameters is True
+        async with manager.engine.begin() as conn:
+            await conn.execute(text("CREATE TABLE lots (city TEXT)"))
+            await conn.execute(
+                text("INSERT INTO lots (city) VALUES (:city)"),
+                {"city": "O'Brien"},
+            )
+
+        rows, error = await manager.execute_read_query(
+            "SELECT city FROM lots WHERE city = :city",
+            {"city": "x' OR '1'='1"},
+        )
+        assert error is None
+        assert rows == []
+
+        rows, error = await manager.execute_read_query(
+            "SELECT city FROM lots WHERE city = :city",
+            {"city": "O'Brien"},
+        )
+        assert error is None
+        assert rows == [{"city": "O'Brien"}]
+    finally:
+        await manager.disconnect()
 
 
 @pytest.mark.asyncio

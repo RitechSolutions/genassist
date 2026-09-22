@@ -1,15 +1,22 @@
-from typing import Dict, List, Any, Tuple, Optional
-import logging
-import yaml
-import os
-from sshtunnel import SSHTunnelForwarder
-from app.core.utils.encryption_utils import decrypt_key
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
-from sqlalchemy import text
-from sqlalchemy.pool import NullPool
 import asyncio
-from app.modules.integration.snowflake import SnowflakeManager
+import logging
+import os
+from collections.abc import Mapping
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.pool import NullPool
+from sshtunnel import SSHTunnelForwarder
+
 from app.core.config.settings import settings
+from app.core.utils.encryption_utils import decrypt_key
+from app.core.utils.sensitive_data_utils import redact_bound_values
+from app.modules.integration.database.bound_parameters import BoundValueError
+from app.modules.integration.snowflake import SnowflakeManager
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +157,7 @@ class DatabaseManager:
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
+                    hide_parameters=True,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -175,6 +183,7 @@ class DatabaseManager:
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
+                    hide_parameters=True,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -209,6 +218,7 @@ class DatabaseManager:
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
+                    hide_parameters=True,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -219,7 +229,12 @@ class DatabaseManager:
                 db_path = self.config.get("database_path", ":memory:")
                 connection_string = f"sqlite+aiosqlite:///{db_path}"
                 logger.info(f"Connecting to SQLite with connection string: {connection_string}")
-                self.engine = create_async_engine(connection_string, echo=False, future=True)
+                self.engine = create_async_engine(
+                    connection_string,
+                    echo=False,
+                    hide_parameters=True,
+                    future=True,
+                )
                 logger.info("Connected to SQLite database")
             elif self.db_type and self.db_type.lower() == "snowflake":
                 # Use SnowflakeManager for Snowflake connections
@@ -357,7 +372,11 @@ class DatabaseManager:
             finally:
                 self.tunnel = None
 
-    async def execute_query(self, query: str, parameters: List = None) -> Tuple[List[Dict], Optional[str]]:
+    async def execute_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
         """
         Executes a database query and returns the results.
 
@@ -401,11 +420,15 @@ class DatabaseManager:
             return results, None
 
         except Exception as e:
-            error_msg = str(e)
+            error_msg = redact_bound_values(e, parameters)
             logger.error(f"Error executing query: {error_msg}")
             return [], error_msg
 
-    async def execute_read_query(self, query: str, parameters: List = None) -> Tuple[List[Dict], Optional[str]]:
+    async def execute_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
         """Execute a user-facing datasource read with DB-level defense in depth.
 
         This does not replace ``validate_read_only_sql`` and does not guarantee
@@ -447,13 +470,18 @@ class DatabaseManager:
             # Database permissions (e.g. db_datareader) are the second layer.
             return await self._execute_generic_sqlalchemy_query(query, parameters)
 
+        except BoundValueError:
+            logger.error("A bound workflow variable has an invalid database value type")
+            raise
         except Exception as e:
-            error_msg = str(e)
+            error_msg = redact_bound_values(e, parameters)
             logger.error(f"Error executing read query: {error_msg}")
             return [], error_msg
 
     async def _execute_postgres_read_query(
-        self, query: str, parameters: Optional[List] = None
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[List[Dict], Optional[str]]:
         """SET TRANSACTION READ ONLY on the same txn as the user query.
 
@@ -464,10 +492,68 @@ class DatabaseManager:
         """
         async with self.engine.begin() as conn:
             await conn.execute(text("SET TRANSACTION READ ONLY"))
-            return await self._fetch_query_rows(conn, query, parameters), None
+            converted = await self._coerce_postgres_parameters(conn, query, parameters)
+            return await self._fetch_query_rows(conn, query, converted), None
+
+    async def _coerce_postgres_parameters(
+        self,
+        conn,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+    ) -> Optional[Mapping[str, Any]]:
+        """Convert string inputs to the types inferred by PostgreSQL."""
+        if not parameters:
+            return parameters
+
+        compiled = text(query).compile(dialect=self.engine.dialect)
+        parameter_order = list(compiled.positiontup or [])
+        if not parameter_order:
+            return parameters
+
+        raw_connection = await conn.get_raw_connection()
+        prepared = await raw_connection.driver_connection.prepare(str(compiled))
+        inferred_types = prepared.get_parameters()
+        converted = dict(parameters)
+        variable_names = getattr(parameters, "variable_names", {})
+
+        for bind_name, inferred_type in zip(parameter_order, inferred_types):
+            value = converted.get(bind_name)
+            if not isinstance(value, str):
+                continue
+            pg_type = str(getattr(inferred_type, "name", "")).lower()
+            try:
+                converted[bind_name] = self._coerce_postgres_value(value, pg_type)
+            except (ValueError, TypeError, InvalidOperation):
+                variable_name = variable_names.get(bind_name, bind_name)
+                expected_type = pg_type or "database-compatible"
+                raise BoundValueError(variable_name, expected_type) from None
+        return converted
+
+    @staticmethod
+    def _coerce_postgres_value(value: str, pg_type: str) -> Any:
+        if pg_type in {"int2", "int4", "int8"}:
+            return int(value)
+        if pg_type in {"float4", "float8"}:
+            return float(value)
+        if pg_type == "numeric":
+            return Decimal(value)
+        if pg_type == "bool":
+            normalized = value.strip().lower()
+            if normalized in {"true", "t", "yes", "y", "on", "1"}:
+                return True
+            if normalized in {"false", "f", "no", "n", "off", "0"}:
+                return False
+            raise ValueError("invalid boolean")
+        if pg_type == "date":
+            return date.fromisoformat(value)
+        if pg_type in {"timestamp", "timestamptz"}:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return value
 
     async def _execute_mysql_read_query(
-        self, query: str, parameters: Optional[List] = None
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[List[Dict], Optional[str]]:
         """Run the user query inside START TRANSACTION READ ONLY.
 
@@ -498,12 +584,20 @@ class DatabaseManager:
                 raise
 
     async def _execute_sqlite_read_query(
-        self, query: str, parameters: Optional[List] = None
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[List[Dict], Optional[str]]:
         """Per-call SQLite read-only enforcement; does not alter ``self.engine``."""
         readonly_url = self._sqlite_file_readonly_url()
         if readonly_url is not None:
-            ro_engine = create_async_engine(readonly_url, echo=False, future=True, poolclass=NullPool)
+            ro_engine = create_async_engine(
+                readonly_url,
+                echo=False,
+                hide_parameters=True,
+                future=True,
+                poolclass=NullPool,
+            )
             try:
                 return await self._execute_generic_sqlalchemy_query(query, parameters, engine=ro_engine)
             finally:
@@ -531,14 +625,19 @@ class DatabaseManager:
     async def _execute_generic_sqlalchemy_query(
         self,
         query: str,
-        parameters: Optional[List] = None,
+        parameters: Optional[Mapping[str, Any]] = None,
         engine: Optional[AsyncEngine] = None,
     ) -> Tuple[List[Dict], Optional[str]]:
         target = engine if engine is not None else self.engine
         async with target.begin() as conn:
             return await self._fetch_query_rows(conn, query, parameters), None
 
-    async def _fetch_query_rows(self, conn, query: str, parameters: Optional[List] = None) -> List[Dict]:
+    async def _fetch_query_rows(
+        self,
+        conn,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> List[Dict]:
         if parameters:
             result = await conn.execute(text(query), parameters)
         else:
