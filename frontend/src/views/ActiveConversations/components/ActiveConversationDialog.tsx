@@ -4,28 +4,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Transcript,
-  TranscriptEntry,
-  ConversationFeedbackEntry,
-} from "@/interfaces/transcript.interface";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/button";
-import { Badge } from "@/components/badge";
-import { conversationService } from "@/services/liveConversations";
-import { extractErrorMessage } from "@/helpers/apiError";
-import { getCurrentUserId } from "@/services/auth";
-import { useWebSocketTranscript } from "../hooks/useWebsocket";
-import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmAnalyst";
-import toast from "react-hot-toast";
-import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
-import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { submitConversationFeedback } from "@/services/transcripts";
-import { isWsEnabled } from "@/config/api";
-import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
-import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
 function toEpochMs(ct: string | number | undefined | null): number {
   if (ct == null) return 0;
