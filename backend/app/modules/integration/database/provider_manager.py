@@ -7,6 +7,7 @@ instances per source_id, avoiding repeated initialization and connection overhea
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -161,7 +162,10 @@ class DBProviderManager:
             return False
 
     async def execute_query(
-        self, source_id: str, query: str, parameters: list = None
+        self,
+        source_id: str,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
     ) -> tuple[list[dict], Optional[str]]:
         """
         Execute a query using the appropriate DatabaseManager
