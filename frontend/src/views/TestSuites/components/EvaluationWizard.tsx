@@ -60,10 +60,12 @@ const deriveConversations = (cases: TestCase[]): RuleConversation[] => {
     return {
       id,
       label: `Conversation ${id.slice(0, 8)} (${sorted.length} turns)`,
-      turns: sorted.map((turn) => ({
+      // Labelled by position to match the dataset page; the targeted value is
+      // still the stored turn_index.
+      turns: sorted.map((turn, position) => ({
         caseId: turn.id,
         turnIndex: turn.turn_index ?? 0,
-        label: `Turn ${(turn.turn_index ?? 0) + 1}`,
+        label: `Turn ${position + 1}`,
       })),
     };
   });

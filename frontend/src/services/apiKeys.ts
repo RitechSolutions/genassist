@@ -1,17 +1,26 @@
 import { apiRequest } from "@/config/api";
 import { ApiKey } from "@/interfaces/api-key.interface";
+import { PaginatedResponse } from "@/interfaces/common.interface";
 
-export const getAllApiKeys = async (): Promise<ApiKey[]> => {
-  const data = await apiRequest<ApiKey[]>("GET", "api-keys/");
-  if (!data) {
-    return [];
-  }
+export const getApiKeysPaginated = async (
+  page: number = 1,
+  pageSize: number = 20,
+  search?: string
+): Promise<PaginatedResponse<ApiKey>> => {
+  const limit = Math.min(Math.max(1, pageSize), 100);
+  const skip = (Math.max(1, page) - 1) * limit;
+  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+  const trimmed = search?.trim();
+  if (trimmed) params.set("search", trimmed);
 
-  if (!Array.isArray(data)) {
-    return [];
-  }
-
-  return data;
+  const response = await apiRequest<PaginatedResponse<ApiKey>>(
+    "GET",
+    `api-keys/list?${params.toString()}`
+  );
+  // apiRequest returns null on 403; other failures still throw.
+  return (
+    response ?? { items: [], total: 0, page: 1, page_size: limit, total_pages: 0 }
+  );
 };
 
 export const getApiKey = async (id: string): Promise<ApiKey | null> => {
