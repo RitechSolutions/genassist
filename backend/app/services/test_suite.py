@@ -1881,6 +1881,19 @@ class TestSuiteService:
                 error_detail="Conversation has no question/answer turns to import",
             )
 
+        # A re-import refreshes a conversation rather than adding a new one, so it
+        # inherits the date its turns first landed here and keeps its place in the
+        # dataset instead of dropping to the end.
+        existing = await self.case_repo.get_all_for_suite(suite_id)
+        joined_at = min(
+            (
+                case.created_at
+                for case in existing
+                if case.source_conversation_id == conversation_id and case.created_at
+            ),
+            default=None,
+        )
+
         # Replacing the suite wipes every conversation; otherwise re-importing the
         # same conversation replaces only its own turns, keeping the append idempotent.
         if replace:
@@ -1898,6 +1911,7 @@ class TestSuiteService:
                 input_data={"message": question},
                 expected_output={"value": answer},
                 tags=["imported"],
+                **({"created_at": joined_at} if joined_at else {}),
             )
             for turn_index, (question, answer) in enumerate(turns)
         ]
