@@ -375,7 +375,7 @@ class ProjectSettings(BaseSettings):
     # === Analytics Aggregation ===
     # Rollout flag: off restores the legacy discovery strategy. Not a full revert,
     # the shared UTC date alignment stays active either way.
-    ANALYTICS_AGG_V2: bool = False
+    ANALYTICS_AGG_V2: bool = True
     ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
     # First-cutover seed window below the MAX(last_aggregated_at).
     ANALYTICS_AGG_HEAL_LOOKBACK_HOURS: int = 12
