@@ -6,7 +6,7 @@ deliberately includes soft-deleted conversations, so no ``WHERE is_deleted = 0``
 and the single-row ``analytics_aggregation_state`` cursor table.
 
 Revision ID: cdb1de95f099
-Revises: d37941010920
+Revises: 8f3c2a91b7d4
 Create Date: 2026-08-31 20:47:14.287388
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "cdb1de95f099"
-down_revision: Union[str, None] = "d37941010920"
+down_revision: Union[str, None] = "8f3c2a91b7d4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
