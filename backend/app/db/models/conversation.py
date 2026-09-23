@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     PrimaryKeyConstraint,
     String,
@@ -75,6 +76,9 @@ class ConversationModel(Base, GroupScopedMixin):
             ["recording_id"], ["recordings.id"], name="recording_id_fk"
         ),
         PrimaryKeyConstraint("id", name="conversations_pkey"),
+        # Non-partial by design: analytics discovery scans soft-deleted rows too.
+        # Created CONCURRENTLY by its migration; declared so autogenerate keeps it.
+        Index("ix_conversations_updated_at", "updated_at"),
     )
 
     zendesk_ticket_id: Mapped[Optional[int]] = mapped_column(
