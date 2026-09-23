@@ -71,9 +71,11 @@ class ErrorKey(Enum):
     CONVERSATION_TAKEN_OVER = "CONVERSATION_TAKEN_OVER"
     CONVERSATION_TAKEN_OVER_OTHER = "CONVERSATION_TAKEN_OVER_OTHER"
     DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
+    READ_ONLY_SQL_BLOCKED = "READ_ONLY_SQL_BLOCKED"
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
+    LLM_ANALYST_INACTIVE = "LLM_ANALYST_INACTIVE"
     FALLBACK_CHAIN_NOT_FOUND = "FALLBACK_CHAIN_NOT_FOUND"
     FALLBACK_CHAIN_INVALID_PROVIDER = "FALLBACK_CHAIN_INVALID_PROVIDER"
     LLM_PROVIDER_IN_USE_BY_CHAIN = "LLM_PROVIDER_IN_USE_BY_CHAIN"
@@ -249,8 +251,10 @@ ERROR_MESSAGES = {
         ErrorKey.CONVERSATION_TAKEN_OVER: "Conversation already taken over.",
         ErrorKey.CONVERSATION_TAKEN_OVER_OTHER: "Conversation already taken over by another user.",
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "This SQL was rejected because it is not read-only.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
+        ErrorKey.LLM_ANALYST_INACTIVE: "LLM Analyst is inactive.",
         ErrorKey.FALLBACK_CHAIN_NOT_FOUND: "Fallback chain not found.",
         ErrorKey.FALLBACK_CHAIN_INVALID_PROVIDER: "Fallback chain references an LLM provider that does not exist.",
         ErrorKey.LLM_PROVIDER_IN_USE_BY_CHAIN: "This LLM provider is used by one or more fallback chains. Remove it from those chains before deleting.",
@@ -365,6 +369,7 @@ ERROR_MESSAGES = {
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "Ce SQL a été rejeté car il n'est pas en lecture seule.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",

@@ -76,6 +76,31 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         if commit:
             await self.db.flush()
 
+    async def get_conversation_membership(
+        self, conversation_id: UUID
+    ) -> List[Tuple[UUID, int, datetime]]:
+        """Per suite, how many turns of one conversation it holds and when they landed.
+
+        Only cases tagged ``imported`` count: a hand-authored thread carries a
+        generated source_conversation_id too, so the tag is what says the turns
+        came from a real conversation.
+        """
+        stmt = (
+            select(
+                TestCaseModel.suite_id,
+                func.count(TestCaseModel.id),
+                func.min(TestCaseModel.created_at),
+            )
+            .where(
+                TestCaseModel.source_conversation_id == conversation_id,
+                TestCaseModel.is_deleted == 0,
+                TestCaseModel.tags.contains(["imported"]),
+            )
+            .group_by(TestCaseModel.suite_id)
+        )
+        result = await self.db.execute(stmt)
+        return [(row[0], row[1], row[2]) for row in result.all()]
+
     async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
         """Insert cases in a single transaction so a partial import cannot persist."""
         self.db.add_all(cases)
@@ -113,31 +138,36 @@ class TestRunRepository(DbRepository[TestRunModel]):
         )
         await self.db.flush()
 
-    async def mark_stuck_as_failed(
+    async def get_waiting_ids_older_than(self, before: datetime) -> List[str]:
+        """Ids of queued runs last updated before ``before``."""
+        stmt = select(TestRunModel.id).where(
+            TestRunModel.is_deleted == 0,
+            TestRunModel.status == "queued",
+            TestRunModel.updated_at < before,
+        )
+        result = await self.db.execute(stmt)
+        return [str(run_id) for run_id in result.scalars().all()]
+
+    async def mark_orphaned_as_failed(
         self,
-        queued_before: datetime,
+        waiting_ids: List[str],
         running_before: datetime,
         error_message: str,
     ) -> int:
-        """Fail runs orphaned by a worker/pod crash in one atomic UPDATE:
-        queued runs never picked up, and running runs past the max execution age.
-        Returns the number of rows transitioned to failed.
-        """
+        """Fail queued runs whose job left the broker and runs past the max run age."""
+        conditions = [
+            and_(
+                TestRunModel.status == "running",
+                TestRunModel.updated_at < running_before,
+            )
+        ]
+        if waiting_ids:
+            conditions.append(
+                and_(TestRunModel.status == "queued", TestRunModel.id.in_(waiting_ids))
+            )
         stmt = (
             update(TestRunModel)
-            .where(
-                TestRunModel.is_deleted == 0,
-                or_(
-                    and_(
-                        TestRunModel.status == "queued",
-                        TestRunModel.updated_at < queued_before,
-                    ),
-                    and_(
-                        TestRunModel.status == "running",
-                        TestRunModel.updated_at < running_before,
-                    ),
-                ),
-            )
+            .where(TestRunModel.is_deleted == 0, or_(*conditions))
             .values(status="failed", summary_metrics={"error": error_message})
             .execution_options(synchronize_session=False)
         )

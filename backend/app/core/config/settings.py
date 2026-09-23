@@ -37,6 +37,17 @@ class ProjectSettings(BaseSettings):
 
     # Celery Redis connection pool settings
     CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
+    # Socket bounds for Celery's broker/result-backend Redis connections; without
+    # them a silently dead connection blocks the worker or beat indefinitely.
+    CELERY_REDIS_SOCKET_TIMEOUT: int = 30
+    CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15
+    # Redelivery delay for unacknowledged messages; above the 2h task timeout
+    CELERY_BROKER_VISIBILITY_TIMEOUT: int = 8400
+    # Only one beat replica dispatches; the others stand by and take over within the TTL
+    CELERY_BEAT_LEADER_LOCK_ENABLED: bool = True
+    CELERY_BEAT_LEADER_LOCK_TTL_SECONDS: int = 60
+    # The solo pool cannot enforce task time limits; the watchdog stops the worker instead
+    CELERY_SOLO_WATCHDOG_ENABLED: bool = True
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
@@ -58,13 +69,13 @@ class ProjectSettings(BaseSettings):
     # (its worker never picked it up / crashed before starting) and marked FAILED.
     WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS: int = 900  # 15 minutes
     # A scheduled run still RUNNING after this many seconds is presumed orphaned
-    # (worker died mid-run). Kept above the 2h execution timeout + buffer so a
-    # genuinely long run is never failed prematurely.
-    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m
+    # (worker died mid-run). Kept above the 2h execution timeout and the broker
+    # redelivery delay so a lost run is re-run before it is declared dead.
+    WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
     # Evaluation (test) runs use the same orphaned-run reconciliation.
     CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
     TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
-    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 7800  # 2h10m, above the 2h task timeout
+    TEST_RUN_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m, above the broker redelivery delay
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
@@ -73,21 +84,16 @@ class ProjectSettings(BaseSettings):
     # flag is off: with no direct-S3 rows the task simply finds nothing to do.
     CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
-    # Worker pool. "solo" is required for the ML worker: ML libs (torch/sklearn/
-    # transformers) spawn native OpenMP/MKL threads at import, and fork() copies
-    # only the calling thread, leaving the child with locked mutexes -> SIGSEGV.
-    # The "default" worker can run "prefork" for true concurrency *because* its boot
-    # import graph is ML-free (see CELERY_INCLUDE_ML_TASKS and the lean worker
-    # bootstrap in run_celery.py): prefork children may lazily import ML libs after
-    # fork safely; only the parent (master) must stay clean.
+    # Worker pool. Only "prefork" enforces task time limits and answers health pings
+    # during a task; the default worker runs it. The ml worker stays "solo": workflow
+    # Python code nodes run user code in a subprocess, which a prefork child (daemonic)
+    # is not allowed to start. Task modules load ML libs lazily so the master stays
+    # fork-safe either way; test_celery_worker_boot_clean.py guards this.
     CELERY_WORKER_POOL: str = "solo"
 
-    # Role selector for the two-worker split. When True (default — preserves the
-    # legacy single-worker behavior), the Celery app includes the ML/evaluation task
-    # modules (ml_model_pipeline_tasks, test_suite_tasks), which top-level import the
-    # workflow engine and therefore pull sklearn into the process at boot. The
-    # prefork "default" worker MUST set this False so its master process never imports
-    # those modules; ML/eval tasks are routed to the dedicated "ml" queue instead.
+    # Role selector for the two-worker split. When True (default), the app includes
+    # the ML/evaluation task modules; the "default" worker sets it False and those
+    # tasks are routed to the dedicated "ml" queue instead.
     CELERY_INCLUDE_ML_TASKS: bool = True
 
     # Explicit prefork concurrency (number of child worker processes). Leave None to
@@ -151,6 +157,11 @@ class ProjectSettings(BaseSettings):
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
     FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # Train Data Source extraction ceilings. Workflow nodes may request lower
+    # values, but these settings remain the operator-controlled upper bounds.
+    ML_EXTRACT_MAX_ROWS: int = 2_000_000
+    ML_EXTRACT_MAX_BYTES: int = 2 * 1024**3  # 2 GiB
+    ML_EXTRACT_QUERY_TIMEOUT_SECONDS: int = 600
     # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
     # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
     # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
@@ -170,6 +181,8 @@ class ProjectSettings(BaseSettings):
     DB_PASS: Optional[str]
     DB_NAME: Optional[str]
     DB_PORT: Optional[int]
+    # Aurora cluster reader endpoint. Empty sends every read to DB_HOST.
+    DB_READ_HOST: Optional[str] = None
     CREATE_DB: bool = False
     DB_ASYNC: bool = True
     # SQLAlchemy async engine pool settings
@@ -177,6 +190,22 @@ class ProjectSettings(BaseSettings):
     DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30  # seconds
     DB_POOL_RECYCLE: int = 1800  # seconds
+    # Read-replica pool, per tenant per process. Deliberately smaller than the writer
+    # pool: only dashboard, analytics and list queries use it.
+    DB_READ_POOL_SIZE: int = 20
+    DB_READ_MAX_OVERFLOW: int = 20
+    # Fail fast rather than tying a request up waiting for a read connection.
+    DB_READ_POOL_TIMEOUT: int = 5  # seconds
+    # Lower than the writer's ceiling because the read pool is small and a few long
+    # queries would otherwise occupy all of it. Kept generous enough not to fail an
+    # export that works today; tune down once real query durations are known.
+    DB_READ_STATEMENT_TIMEOUT: int = 600  # seconds; 0 disables
+    # Seconds a client keeps reading from the writer after one of its own writes, so
+    # replica lag never hides a change from the user who made it. 0 disables.
+    DB_READ_PIN_AFTER_WRITE_SECONDS: int = 5
+    # After a replica fault, how long every read is served by the writer before the
+    # replica is tried again. 0 keeps reads on the replica. See app/db/replica_health.py.
+    DB_READ_FAILURE_COOLDOWN_SECONDS: int = 30
     # Hard ceiling on how long a single interactive (FastAPI) query may run.
     # Prevents runaway searches from pinning DB CPU indefinitely. 0 disables.
     DB_STATEMENT_TIMEOUT: int = 1800  # seconds (30 minutes)
@@ -403,13 +432,25 @@ class ProjectSettings(BaseSettings):
         else:
             return f"{self.DB_NAME}_tenant_{tenant.replace('-', '_')}"
 
-    def get_tenant_database_url(self, tenant: str = "master") -> str:
-        """Generate database URL for a specific tenant"""
-        # Sanitize tenant_id for database name (replace hyphens with underscores)
+    @property
+    def read_replica_enabled(self) -> bool:
+        return bool((self.DB_READ_HOST or "").strip())
+
+    def _tenant_async_database_url(self, host: str, tenant: str) -> str:
         tenant_db = self.get_tenant_database_name(tenant)
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return unquote(f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}")
+        return unquote(f"postgresql+asyncpg://{user}:{password}@{host}/{tenant_db}")
+
+    def get_tenant_database_url(self, tenant: str = "master") -> str:
+        """Generate database URL for a specific tenant"""
+        return self._tenant_async_database_url(self.DB_HOST, tenant)
+
+    def get_tenant_read_database_url(self, tenant: str = "master") -> str:
+        """Database URL for read-only queries; the writer URL when no replica is configured"""
+        if not self.read_replica_enabled:
+            return self.get_tenant_database_url(tenant)
+        return self._tenant_async_database_url(self.DB_READ_HOST.strip(), tenant)
 
     def get_tenant_database_url_sync(self, tenant: str = "master") -> str:
         """Generate SYNC database URL for a specific tenant (psycopg2)"""

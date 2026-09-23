@@ -67,7 +67,7 @@ class FileManagerService:
             return self.storage_provider
         except Exception as e:
             logger.error(f"Failed to initialize file manager service: {e}")
-            raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED, detail=str(e))
+            raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED, error_detail=str(e))
 
 
     async def set_storage_provider(self, provider: BaseStorageProvider):
@@ -382,7 +382,7 @@ class FileManagerService:
                 f.write(content)
         except Exception as e:
             logger.error(f"Failed to download file to path {path}: {e}")
-            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, detail=str(e))
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(e))
 
     async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
         """Download file from URL to path."""

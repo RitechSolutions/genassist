@@ -41,6 +41,7 @@ def _build_service(conversation_repo, transcript_repo=None):
     return ConversationService(
         operator_statistics_service=MagicMock(),
         conversation_repo=conversation_repo,
+        conversation_read_repo=AsyncMock(),
         transcript_message_repo=transcript_repo or AsyncMock(spec=TranscriptMessageRepository),
         audit_log_repo=AsyncMock(),
         recordings_repo=AsyncMock(),

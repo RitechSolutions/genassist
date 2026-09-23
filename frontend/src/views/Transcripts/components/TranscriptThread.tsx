@@ -21,11 +21,13 @@ function MessageFeedbackButton({
   messageId,
   localTranscript,
   setLocalTranscript,
+  collisionBoundary,
   onOpenChange,
 }: {
   messageId: string;
   localTranscript: Transcript | null;
   setLocalTranscript: Dispatch<SetStateAction<Transcript | null>>;
+  collisionBoundary: Element | null;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -98,6 +100,7 @@ function MessageFeedbackButton({
       isOpen={isOpen}
       hasFeedbackMessage={hasFeedbackMessage}
       text={text}
+      collisionBoundary={collisionBoundary}
       onOpenChange={handleOpenChange}
       onTextChange={setText}
       onSave={handleSave}
@@ -119,6 +122,12 @@ type TranscriptThreadProps = {
   variant?: TranscriptThreadVariant;
   /** Ringed, labelled "Reported" and scrolled to the middle of the pane on mount. */
   highlightMessageId?: string | null;
+  /**
+   * The date header and the "Conversation Finalized" banner. Turn these off where the
+   * surrounding UI already states the date and status, so the thread does not repeat them.
+   * Takeover markers are unaffected: those are events inside the conversation.
+   */
+  showConversationMarkers?: boolean;
   showCosts?: boolean;
   costsByMessageId?: Record<string, AgentResponseLogSummary>;
   onMessageFeedback?: (messageId: string, feedback: 'good' | 'bad') => void;
@@ -140,6 +149,7 @@ export function TranscriptThread({
   isCall = false,
   variant = 'full',
   highlightMessageId = null,
+  showConversationMarkers = true,
   showCosts = false,
   costsByMessageId,
   onMessageFeedback,
@@ -149,7 +159,7 @@ export function TranscriptThread({
   style,
 }: TranscriptThreadProps) {
   const [openPopoverMessageId, setOpenPopoverMessageId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const isInteractive = variant === 'full';
@@ -159,28 +169,27 @@ export function TranscriptThread({
   // Centre the flagged message inside this pane only — scrollIntoView() would walk up the
   // ancestor chain and drag the surrounding dialog along with it.
   useEffect(() => {
-    if (!highlightMessageId) return;
+    if (!highlightMessageId || !scrollEl) return;
 
     const raf = requestAnimationFrame(() => {
-      const container = scrollRef.current;
       const node = messageRefs.current.get(highlightMessageId);
-      if (!container || !node) return;
+      if (!node) return;
 
-      const top = node.offsetTop - container.clientHeight / 2 + node.offsetHeight / 2;
-      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      const top = node.offsetTop - scrollEl.clientHeight / 2 + node.offsetHeight / 2;
+      scrollEl.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [highlightMessageId, transcript.id, messages.length]);
+  }, [highlightMessageId, transcript.id, messages.length, scrollEl]);
 
   return (
     <div
-      ref={scrollRef}
+      ref={setScrollEl}
       className={cn('relative overflow-y-auto p-3 text-[13px] sm:text-[12px]', className)}
       style={style}
     >
       <div className="space-y-2">
-        {transcript.timestamp && (
+        {showConversationMarkers && transcript.timestamp && (
           <div className="flex justify-center mb-3">
             <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs">
               {formatDateTime(transcript.timestamp)}
@@ -282,6 +291,7 @@ export function TranscriptThread({
                         messageId={messageId}
                         localTranscript={transcript}
                         setLocalTranscript={onTranscriptChange}
+                        collisionBoundary={scrollEl}
                         onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
                       />
                     )}
@@ -338,7 +348,7 @@ export function TranscriptThread({
             </div>
           );
         })}
-        {transcript.status === 'finalized' && (
+        {showConversationMarkers && transcript.status === 'finalized' && (
           <div className="flex justify-center my-3">
             <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">
               Conversation Finalized

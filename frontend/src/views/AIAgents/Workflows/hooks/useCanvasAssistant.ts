@@ -3,6 +3,8 @@ import { type ChatMessage } from "genassist-chat-react";
 import { Node, Edge } from "reactflow";
 import { v4 as uuidv4 } from "uuid";
 import { useChatService } from "@/hooks/useChatService";
+import nodeRegistry from "../registry/nodeRegistry";
+import { edgesOnRemovedHandles } from "../utils/handleEdges";
 import {
   serializeCanvasContext,
   parseAgentActions,
@@ -103,13 +105,37 @@ export function useCanvasAssistant({
           }
         } else if (action.type === "update_node") {
           const { nodeId, updates } = action as UpdateNodeAction;
+          // Go through the registry so config-derived handles (a Switch's case
+          // outputs) are rebuilt, then drop edges left on handles the update
+          // removed — the same cleanup the node's own dialog performs.
+          const before = batchNodes.find((n) => n.id === nodeId);
+          const after = before ? nodeRegistry.withDataUpdate(before, updates) : undefined;
+          if (before && after) {
+            batchNodes = batchNodes.map((n) => (n.id === nodeId ? after : n));
+          }
           setNodes((nds) => {
             const updated = nds.map((n) =>
-              n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n,
+              n.id === nodeId ? nodeRegistry.withDataUpdate(n, updates) : n,
             );
             nodesRef.current = updated;
             return updated;
           });
+          const staleEdgeIds = new Set(
+            edgesOnRemovedHandles(
+              batchEdges,
+              nodeId,
+              before?.data?.handlers,
+              after?.data?.handlers,
+            ).map((e) => e.id),
+          );
+          if (staleEdgeIds.size > 0) {
+            batchEdges = batchEdges.filter((e) => !staleEdgeIds.has(e.id));
+            setEdges((eds) => {
+              const updated = eds.filter((e) => !staleEdgeIds.has(e.id));
+              edgesRef.current = updated;
+              return updated;
+            });
+          }
         } else if (action.type === "remove_node") {
           const { nodeId } = action as RemoveNodeAction;
           setNodes((nds) => {

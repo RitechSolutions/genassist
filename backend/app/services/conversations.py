@@ -48,6 +48,7 @@ from app.db.models.message_model import TranscriptMessageModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
+from app.repositories.conversations_read import ConversationReadRepository
 from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.conversation_read_receipt import ConversationReadReceiptRepository
 from app.repositories.recordings import RecordingsRepository
@@ -83,7 +84,9 @@ conversation_id_key_builder_full = make_key_builder("conversation_id")
 @inject
 class ConversationService:
     def __init__(self, operator_statistics_service: OperatorStatisticsService,
-            conversation_repo: ConversationRepository, transcript_message_repo: TranscriptMessageRepository,
+            conversation_repo: ConversationRepository,
+            conversation_read_repo: ConversationReadRepository,
+            transcript_message_repo: TranscriptMessageRepository,
             audit_log_repo: AuditLogRepository,
             recordings_repo: RecordingsRepository,
             conversation_read_receipt_repo: ConversationReadReceiptRepository,
@@ -93,6 +96,7 @@ class ConversationService:
             conversation_analysis_service: ConversationAnalysisService = Depends(),
             llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService), ):
         self.conversation_repo = conversation_repo
+        self.conversation_read_repo = conversation_read_repo
         self.gpt_kpi_analyzer_service = gpt_kpi_analyzer_service
         self.conversation_analysis_service = conversation_analysis_service
         self.operator_statistics_service = operator_statistics_service
@@ -591,6 +595,17 @@ class ConversationService:
             conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
                 conversation.id)
             agent_id = conv_with_agent.agent_id if conv_with_agent else None
+
+            # Release the pooled connection before the tone-analysis GPT call so it
+            # isn't held idle-in-transaction for the duration of the call (see
+            # genassist-outage-report-2026-09-03.md, release point #3).
+            # Import kept local: conversations.py loads early in app bootstrap
+            # (injector -> dependency_injection -> services.audio -> here), and
+            # db_connection_utils imports app.dependencies.injector itself, so a
+            # top-level import here is circular.
+            from app.core.utils.db_connection_utils import release_db_connection
+            await release_db_connection(context=f"conversation {conversation.id}")
+
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
                         conversation_id=conversation.id, agent_id=agent_id))
@@ -643,14 +658,14 @@ class ConversationService:
                 return []
             conversation_filter.operator_id = get_current_operator_id()
 
-        models = await self.conversation_repo.fetch_conversations_with_relations(conversation_filter,
+        models = await self.conversation_read_repo.fetch_conversations_with_relations(conversation_filter,
                 include_messages=conversation_filter.include_messages)
         null_unloaded_attributes(models)
         return models
 
 
     async def count_conversations(self, conversation_filter: ConversationFilter) -> int:
-        models = await self.conversation_repo.count_conversations(conversation_filter)
+        models = await self.conversation_read_repo.count_conversations(conversation_filter)
         return models
 
 
