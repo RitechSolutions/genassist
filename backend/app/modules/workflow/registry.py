@@ -1,7 +1,11 @@
 """Registry for managing initialized agents"""
 
+import asyncio
 import logging
-from typing import Union
+from typing import Optional, Union
+
+from starlette_context import context as request_context
+from starlette_context.errors import ContextDoesNotExistError
 
 from app.core.chat_turn_gate import chat_turn_gate
 from app.core.utils.uuid_utils import coerce_uuid
@@ -11,6 +15,48 @@ from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.schemas.agent import AgentRead
 
 logger = logging.getLogger(__name__)
+
+
+def _current_http_request():
+    try:
+        return request_context.get("http_request")
+    except (LookupError, ContextDoesNotExistError):
+        return None
+
+
+class HttpClientWatch:
+    """Notices an HTTP client leaving while its turn is queued. Non-HTTP callers are never gone.
+
+    Starlette's ``Request.is_disconnected`` cannot see the disconnect behind BaseHTTPMiddleware,
+    so this listens on the request's receive channel once the body has been consumed.
+    """
+
+    def __init__(self, request=None):
+        self._request = request if request is not None else _current_http_request()
+        self._task: Optional[asyncio.Task] = None
+
+    def start(self) -> None:
+        request = self._request
+        body_consumed = getattr(request, "_stream_consumed", False)
+        if request is None or not body_consumed:
+            return
+        self._task = asyncio.create_task(request.receive())
+
+    async def client_gone(self) -> bool:
+        task, self._task = self._task, None
+        if task is None:
+            return False
+        if not task.done():
+            task.cancel()
+            return False
+        if task.cancelled() or task.exception() is not None:
+            return False
+        return task.result().get("type") == "http.disconnect"
+
+    def stop(self) -> None:
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+        self._task = None
 
 
 class RegistryItem:
@@ -41,8 +87,17 @@ class RegistryItem:
     async def execute(self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat") -> dict:
         """Run one agent turn behind the process-wide admission gate."""
         context = f"agent {self.agent_id} thread {metadata.get('thread_id')}"
-        async with chat_turn_gate.slot(context, before_wait=self._release_request_connection):
-            return await self._execute_workflow(session_message, metadata, persist, source)
+        client_watch = HttpClientWatch()
+
+        async def before_wait() -> None:
+            client_watch.start()
+            await self._release_request_connection()
+
+        try:
+            async with chat_turn_gate.slot(context, before_wait=before_wait, caller_gone=client_watch.client_gone):
+                return await self._execute_workflow(session_message, metadata, persist, source)
+        finally:
+            client_watch.stop()
 
     async def _release_request_connection(self) -> None:
         """A turn that has to queue must not hold the request's pooled connection meanwhile."""

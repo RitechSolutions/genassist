@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 SLOW_WAIT_LOG_THRESHOLD_SECONDS = 1.0
 
 BeforeWait = Callable[[], Awaitable[None]]
+CallerGone = Callable[[], Awaitable[bool]]
+
+CLIENT_CLOSED_REQUEST_STATUS = 499
 
 
 class ChatTurnGate:
@@ -28,20 +31,40 @@ class ChatTurnGate:
         self._semaphores: WeakKeyDictionary = WeakKeyDictionary()
 
     @asynccontextmanager
-    async def slot(self, context: str, before_wait: Optional[BeforeWait] = None) -> AsyncIterator[None]:
-        """Hold one place for the block. ``before_wait`` runs only if the turn has to queue."""
+    async def slot(
+        self,
+        context: str,
+        before_wait: Optional[BeforeWait] = None,
+        caller_gone: Optional[CallerGone] = None,
+    ) -> AsyncIterator[None]:
+        """Hold one place for the block.
+
+        ``before_wait`` runs only if the turn has to queue. ``caller_gone`` is asked once a
+        queued turn gets its place; a turn nobody is waiting for gives the place straight back.
+        """
         if self.max_inflight <= 0:
             yield
             return
 
         semaphore = self._semaphore_for_running_loop()
-        if semaphore.locked() and before_wait is not None:
+        queued = semaphore.locked()
+        if queued and before_wait is not None:
             await before_wait()
         await self._acquire(semaphore, context)
         try:
+            if queued and caller_gone is not None and await caller_gone():
+                self._reject_abandoned(context)
             yield
         finally:
             semaphore.release()
+
+    @staticmethod
+    def _reject_abandoned(context: str) -> None:
+        logger.info("Agent turn skipped, client disconnected while queued (%s)", context)
+        raise AppException(
+            error_key=ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED,
+            status_code=CLIENT_CLOSED_REQUEST_STATUS,
+        )
 
     def _semaphore_for_running_loop(self) -> asyncio.Semaphore:
         loop = asyncio.get_running_loop()

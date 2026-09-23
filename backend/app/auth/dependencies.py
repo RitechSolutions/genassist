@@ -32,6 +32,9 @@ async def get_current_user(
     api_key: Optional[str] = Depends(api_key_header),
     auth_service: AuthService = Injected(AuthService),
 ):
+    # Lets deeper layers ask whether the HTTP client is still connected.
+    context["http_request"] = request
+
     if token is None:
         if api_key is None:
             return None

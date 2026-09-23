@@ -89,6 +89,49 @@ async def test_place_is_returned_when_the_turn_fails():
         pass
 
 
+async def _enter_slot(gate: ChatTurnGate, caller_gone):
+    async with gate.slot(context="test", caller_gone=caller_gone):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_queued_turn_is_skipped_when_its_caller_has_gone():
+    gate = ChatTurnGate(max_inflight=1, queue_timeout_seconds=1.0)
+    release = asyncio.Event()
+    holder = asyncio.create_task(_hold_slot(gate, release, asyncio.Event()))
+    await _let_tasks_run()
+
+    async def caller_gone():
+        return True
+
+    abandoned = asyncio.create_task(_enter_slot(gate, caller_gone))
+    await _let_tasks_run()
+    release.set()
+    await holder
+
+    with pytest.raises(AppException) as raised:
+        await abandoned
+    assert raised.value.error_key == ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED
+
+    # The place was given straight back, otherwise this would be rejected after the timeout.
+    async with gate.slot(context="test"):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_caller_gone_is_not_consulted_when_the_turn_did_not_queue():
+    gate = ChatTurnGate(max_inflight=1, queue_timeout_seconds=0.05)
+    calls = []
+
+    async def caller_gone():
+        calls.append("asked")
+        return True
+
+    async with gate.slot(context="test", caller_gone=caller_gone):
+        pass
+    assert calls == []
+
+
 @pytest.mark.asyncio
 async def test_disabled_gate_never_waits():
     gate = ChatTurnGate(max_inflight=0, queue_timeout_seconds=0.05)
