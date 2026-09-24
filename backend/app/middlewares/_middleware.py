@@ -171,10 +171,11 @@ def build_middlewares() -> list[Middleware]:
     Order matters:
 
     1. RawContextMiddleware – creates `starlette_context` and the X-Request-ID header.
-    2. TenantMiddleware – extracts tenant information from requests.
-    3. RequestContextMiddleware – copies data into the Loguru ContextVars and
+    2. TenantMiddleware – extracts tenant information from requests (multi-tenant only).
+    3. TenantScopeMiddleware – sets the tenant context, defaulting to master (always).
+    4. RequestContextMiddleware – copies data into the Loguru ContextVars and
        times the request.
-    4. CORS – normal cross-origin checks.
+    5. CORS – normal cross-origin checks.
     """
     middlewares = [
         # 1️⃣  Generates a request-scoped UUID and puts it in `request.headers`
@@ -184,11 +185,11 @@ def build_middlewares() -> list[Middleware]:
         ),
     ]
 
-    # 2️⃣  Tenant resolution (only if multi-tenancy is enabled)
+    # 2️⃣  Tenant resolution from the request (only if multi-tenancy is enabled)
     if settings.MULTI_TENANT_ENABLED:
         middlewares.append(Middleware(TenantMiddleware))
-        # Add tenant scope middleware after tenant middleware
-        middlewares.append(Middleware(TenantScopeMiddleware))
+    # Always installed; defaults the tenant context to master in single-tenant mode.
+    middlewares.append(Middleware(TenantScopeMiddleware))
 
     middlewares.extend(
         [
