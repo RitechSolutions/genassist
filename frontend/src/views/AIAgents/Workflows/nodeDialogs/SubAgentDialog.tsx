@@ -89,6 +89,8 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
     >
       <ModelConfiguration
         id="sub-agent-config"
+        nodeId={props.nodeId}
+        nodeType={props.nodeType}
         config={values}
         onConfigChange={handleModelConfigChange}
         typeSelect="agent"

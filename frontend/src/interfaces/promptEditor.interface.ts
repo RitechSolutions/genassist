@@ -6,18 +6,35 @@ export interface PromptVersion {
   version_number: number;
   content: string;
   label: string | null;
-  is_active: boolean;
   created_at: string;
   created_by: string | null;
 }
 
 export interface PromptConfig {
-  id: string;
+  id: string | null;
   workflow_id: string;
   node_id: string;
   prompt_field: string;
   gold_suite_id: string | null;
-  created_at: string;
+  created_at: string | null;
+}
+
+/** Versions saved under a shared DOM id before nodes carried their own history */
+export interface LegacyPromptHistory {
+  node_id: string;
+  versions: PromptVersion[];
+  gold_suite_id: string | null;
+}
+
+export interface PromptHistory {
+  versions: PromptVersion[];
+  gold_suite_id: string | null;
+  node_type: string | null;
+  node_missing: boolean;
+  field_label: string | null;
+  inline_check_supported: boolean;
+  unsupported_reason: string | null;
+  legacy_shared: LegacyPromptHistory | null;
 }
 
 export interface PromptEvalCaseResult {

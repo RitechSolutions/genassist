@@ -2,10 +2,10 @@
  * Best-effort extraction of a human-readable message from an API/network error.
  *
  * Handles the axios error shapes used across the app
- * (`response.data.error`, `response.data.message`, `response.data.detail` as a
- * string, a FastAPI validation array `[{ msg }]`, or a `{ "0": { msg } }` map)
- * as well as plain `Error` instances. Falls back to `fallback` when nothing
- * usable is found.
+ * (`response.data.error_detail`, `response.data.error`, `response.data.message`,
+ * `response.data.detail` as a string, a FastAPI validation array `[{ msg }]`, or
+ * a `{ "0": { msg } }` map) as well as plain `Error` instances. Falls back to
+ * `fallback` when nothing usable is found.
  */
 export function extractErrorMessage(err: unknown, fallback: string): string {
   const e = (err ?? {}) as { response?: { data?: unknown }; message?: unknown };
@@ -15,10 +15,14 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
 
   if (data && typeof data === "object") {
     const d = data as {
+      error_detail?: unknown;
       error?: unknown;
       message?: unknown;
       detail?: unknown;
     };
+    // AppException: error_detail = details, error = message
+    if (typeof d.error_detail === "string" && d.error_detail.trim())
+      return d.error_detail;
     if (typeof d.error === "string" && d.error.trim()) return d.error;
     if (typeof d.message === "string" && d.message.trim()) return d.message;
 

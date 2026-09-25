@@ -33,6 +33,8 @@ export const AgentDialog: React.FC<AgentDialogProps> = (props) => {
     >
       <ModelConfiguration
         id="agent-config"
+        nodeId={props.nodeId}
+        nodeType={props.nodeType}
         config={values}
         onConfigChange={setValues}
         typeSelect="agent"
