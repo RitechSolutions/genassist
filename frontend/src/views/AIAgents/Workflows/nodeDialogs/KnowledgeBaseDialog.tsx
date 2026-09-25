@@ -96,7 +96,6 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
         <Label htmlFor="query">Query</Label>
         <DraggableTextArea
           id="query"
-          size="description"
           value={values.query}
           onChange={(e) => setField("query", e.target.value)}
           placeholder="Enter a query for this node"

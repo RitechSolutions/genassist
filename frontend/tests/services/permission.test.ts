@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Method } from "axios";
 
 vi.mock("@/config/api", () => ({
   apiRequest: vi.fn(),
@@ -10,10 +11,17 @@ vi.mock("@/config/api", () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn(), request: vi.fn() },
 }));
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+vi.mock("react-hot-toast", () => ({
+  default: { error: toastError, success: vi.fn() },
+}));
+
 import { apiRequest } from "@/config/api";
 import {
   getAllPermissions,
+  getRolePermissions,
   getPermissionsByRoleId,
+  getRolePermissionLinksByRoleId,
   saveRolePermissions,
 } from "@/services/permission";
 
@@ -25,105 +33,120 @@ describe("getAllPermissions", () => {
     const permissions = [{ id: "p1" }];
     mockApiRequest.mockResolvedValue(permissions as never);
 
-    const result = await getAllPermissions();
+    const result = await getAllPermissions("create");
 
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "/permissions");
     expect(result).toBe(permissions);
   });
 
-  // apiRequest resolves with null on 403 rather than throwing.
-  it("throws rather than returning an empty list when the response is null", async () => {
+  it("falls back to an empty array when the response is null", async () => {
     mockApiRequest.mockResolvedValue(null as never);
 
-    await expect(getAllPermissions()).rejects.toThrow(/permission/i);
+    await expect(getAllPermissions("edit")).resolves.toEqual([]);
   });
 
   it("propagates errors", async () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
 
-    await expect(getAllPermissions()).rejects.toThrow("boom");
+    await expect(getAllPermissions("create")).rejects.toThrow("boom");
+  });
+});
+
+describe("getRolePermissions", () => {
+  it("requests the role and returns its permissions", async () => {
+    mockApiRequest.mockResolvedValue({ permissions: ["a", "b"] } as never);
+
+    const result = await getRolePermissions("r1");
+
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "/roles/r1");
+    expect(result).toEqual(["a", "b"]);
+  });
+
+  it("returns an empty array when the role has no permissions field", async () => {
+    mockApiRequest.mockResolvedValue({} as never);
+
+    await expect(getRolePermissions("r1")).resolves.toEqual([]);
+  });
+
+  it("returns an empty array on error", async () => {
+    mockApiRequest.mockRejectedValue(new Error("boom"));
+
+    await expect(getRolePermissions("r1")).resolves.toEqual([]);
   });
 });
 
 describe("getPermissionsByRoleId", () => {
-  it("reads the role's permission ids from the scoped endpoint", async () => {
-    mockApiRequest.mockResolvedValue(["p1", "p2"] as never);
+  it("requests the role-permission links and returns the matching permission ids", async () => {
+    mockApiRequest.mockResolvedValue([
+      { role_id: "r1", permission_id: "p1" },
+      { role_id: "r1", permission_id: "p2" },
+      { role_id: "r2", permission_id: "p3" },
+    ] as never);
 
     const result = await getPermissionsByRoleId("r1");
 
-    expect(mockApiRequest).toHaveBeenCalledWith("GET", "/roles/r1/permissions");
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "/role-permissions");
     expect(result).toEqual(["p1", "p2"]);
   });
 
-  // Returning [] here would look identical to "this role has no permissions",
-  // and saving that empty set would wipe the role.
-  it("throws instead of reporting an empty permission set when denied", async () => {
-    mockApiRequest.mockResolvedValue(null as never);
-
-    await expect(getPermissionsByRoleId("r1")).rejects.toThrow(/permission/i);
-  });
-
-  it("propagates errors", async () => {
+  it("returns an empty array on error", async () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
 
-    await expect(getPermissionsByRoleId("r1")).rejects.toThrow("boom");
+    await expect(getPermissionsByRoleId("r1")).resolves.toEqual([]);
+  });
+});
+
+describe("getRolePermissionLinksByRoleId", () => {
+  it("requests the role-permission links and returns the matching link objects", async () => {
+    const links = [
+      { id: "l1", role_id: "r1", permission_id: "p1" },
+      { id: "l2", role_id: "r2", permission_id: "p2" },
+    ];
+    mockApiRequest.mockResolvedValue(links as never);
+
+    const result = await getRolePermissionLinksByRoleId("r1");
+
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "/role-permissions");
+    expect(result).toEqual([{ id: "l1", role_id: "r1", permission_id: "p1" }]);
+  });
+
+  it("returns an empty array on error", async () => {
+    mockApiRequest.mockRejectedValue(new Error("boom"));
+
+    await expect(getRolePermissionLinksByRoleId("r1")).resolves.toEqual([]);
   });
 });
 
 describe("saveRolePermissions", () => {
-  it("sends the full selection to the bulk endpoint in one request", async () => {
-    mockApiRequest.mockResolvedValue({ role_id: "r1" } as never);
+  const links = [
+    { id: "l1", role_id: "r1", permission_id: "p1" },
+    { id: "l2", role_id: "r1", permission_id: "p2" },
+    { id: "l3", role_id: "r2", permission_id: "p3" },
+  ];
 
+  it("adds newly selected permissions and deletes deselected links", async () => {
+    mockApiRequest.mockResolvedValue(links as never);
+
+    // existing for r1 = [p1, p2]; selecting [p2, p3] => add p3, delete link l1 (p1)
     await saveRolePermissions("r1", ["p2", "p3"]);
 
-    expect(mockApiRequest).toHaveBeenCalledTimes(1);
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "PUT",
-      "/roles/r1/permissions",
-      { permission_ids: ["p2", "p3"] },
-      {},
-      { rethrowForbidden: true }
-    );
-  });
-
-  it("sends an empty list when every permission is cleared", async () => {
-    mockApiRequest.mockResolvedValue({ role_id: "r1" } as never);
-
-    await saveRolePermissions("r1", []);
-
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "PUT",
-      "/roles/r1/permissions",
-      { permission_ids: [] },
-      {},
-      { rethrowForbidden: true }
-    );
-  });
-
-  // A 403 here can mean "reserved for the admin role", which the admin can act
-  // on only if the server's message reaches them intact.
-  it("lets a forbidden response surface its own message", async () => {
-    const forbidden = Object.assign(new Error("Request failed"), {
-      response: {
-        status: 403,
-        data: { error: "This permission can only be assigned to the admin role." },
-      },
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", "/role-permissions", {
+      role_id: "r1",
+      permission_id: "p3",
+      is_active: true,
     });
-    mockApiRequest.mockRejectedValue(forbidden);
-
-    await expect(saveRolePermissions("r1", ["p2"])).rejects.toBe(forbidden);
+    expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "/role-permissions/l1");
+    expect(mockApiRequest).not.toHaveBeenCalledWith("DELETE", "/role-permissions/l2");
+    expect(toastError).not.toHaveBeenCalled();
   });
 
-  // The dialog reports success off this resolving, so a failed write must reject.
-  it("throws when the write fails", async () => {
-    mockApiRequest.mockRejectedValue(new Error("write failed"));
+  it("shows a toast and does not throw when a write fails", async () => {
+    mockApiRequest.mockImplementation((method: Method) => {
+      if (method === "GET") return Promise.resolve(links as never);
+      return Promise.reject(new Error("write failed"));
+    });
 
-    await expect(saveRolePermissions("r1", ["p2"])).rejects.toThrow("write failed");
-  });
-
-  it("throws when the write is rejected with a null response", async () => {
-    mockApiRequest.mockResolvedValue(null as never);
-
-    await expect(saveRolePermissions("r1", ["p2"])).rejects.toThrow(/permission/i);
+    await expect(saveRolePermissions("r1", ["p2", "p3"])).resolves.toBeUndefined();
+    expect(toastError).toHaveBeenCalledWith("Failed to update role permissions.");
   });
 });

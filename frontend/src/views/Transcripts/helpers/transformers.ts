@@ -1,6 +1,5 @@
 import { getApiUrl } from "@/config/api";
 import { BackendTranscript, Transcript, TranscriptEntry, ConversationFeedbackEntry } from "@/interfaces/transcript.interface";
-import type { ConversationDataPayload } from "@/interfaces/websocket.interface";
 
 export function processApiResponse(data: unknown): BackendTranscript[] {
   if (!data) return [];
@@ -220,46 +219,4 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       },
     };
   }
-}
-
-const finiteNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-/**
- * Overlays a dashboard `update` websocket payload on a list row. The server sends one for every
- * message of a live conversation — carrying the last message text and the running stats — so
- * patching the row keeps the list current without refetching it per message.
- */
-export function applyConversationUpdate(
-  transcript: Transcript,
-  update: ConversationDataPayload
-): Transcript {
-  const hostility = finiteNumber(update.in_progress_hostility_score);
-  const duration = finiteNumber(update.duration);
-  const thumbsUp = finiteNumber(update.thumbs_up_count);
-  const thumbsDown = finiteNumber(update.thumbs_down_count);
-  const topic =
-    typeof update.topic === "string" && update.topic.trim() !== "" ? update.topic : undefined;
-  const lastMessage =
-    typeof update.transcript === "string" && update.transcript.trim() !== ""
-      ? update.transcript
-      : undefined;
-
-  return {
-    ...transcript,
-    in_progress_hostility_score: hostility ?? transcript.in_progress_hostility_score,
-    duration: duration ?? transcript.duration,
-    thumbs_up_count: thumbsUp ?? transcript.thumbs_up_count,
-    thumbs_down_count: thumbsDown ?? transcript.thumbs_down_count,
-    last_message_preview: lastMessage ?? transcript.last_message_preview,
-    metadata: {
-      ...transcript.metadata,
-      duration: duration ?? transcript.metadata?.duration,
-      topic: topic ?? transcript.metadata?.topic,
-    },
-    metrics:
-      hostility === undefined
-        ? transcript.metrics
-        : { ...transcript.metrics, in_progress_hostility_score: hostility },
-  };
 }

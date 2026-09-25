@@ -1,61 +1,48 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/PageLayout";
-import toast from "react-hot-toast";
 import {
   addTestCase,
   deleteTestCase,
   getTestSuite,
   listTestCases,
-  removeConversationFromSuite,
   updateTestCase,
 } from "@/services/testSuites";
 import { TestCase, TestSuite } from "@/interfaces/testSuite.interface";
 import { Button } from "@/components/button";
-import { ChevronLeft, Import, MessagesSquare, Plus } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/label";
+import { ChevronLeft, ChevronDown, ChevronRight, Plus, ListOrdered, Pencil, Trash2 } from "lucide-react";
+import JsonViewer from "@/components/JsonViewer";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ListEmptyState } from "@/components/ListEmptyState";
-import { PageListSkeleton } from "@/components/skeletons";
 import { ConversationRecordGroup } from "../components/ConversationRecordGroup";
-import { ImportFromConversationDialog } from "../components/ImportFromConversationDialog";
-import { RecordDialog, RecordPayload } from "../components/RecordDialog";
+import { groupCasesByConversation } from "../helpers/datasetConversations";
 import {
-  countConversations,
-  groupCasesByConversation,
-  type ConversationGroup,
-} from "../helpers/datasetConversations";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/dialog";
 
 const DatasetDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { datasetId } = useParams<{ datasetId: string }>();
   const [suite, setSuite] = useState<TestSuite | null>(null);
   const [cases, setCases] = useState<TestCase[]>([]);
-  // The card shows a skeleton until the first load settles, like every other list.
-  const [isLoading, setIsLoading] = useState(true);
+  const [caseInput, setCaseInput] = useState("");
+  const [caseExpectedOutput, setCaseExpectedOutput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  // Set when appending to an existing hand-authored thread; null starts a new one.
-  const [pendingThread, setPendingThread] = useState<{
-    id: string;
-    nextTurn: number;
-  } | null>(null);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
+  const [editInput, setEditInput] = useState("");
+  const [editExpectedOutput, setEditExpectedOutput] = useState("");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [caseToDelete, setCaseToDelete] = useState<TestCase | null>(null);
-  const [deletingTurn, setDeletingTurn] = useState<number | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [conversationToRemove, setConversationToRemove] = useState<{
-    id: string;
-    label: string;
-    turns: number;
-  } | null>(null);
-  const [isRemovingConversation, setIsRemovingConversation] = useState(false);
-  // Everything starts collapsed, so a large dataset opens as a readable list
-  // and nothing is open that the user did not open.
   const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set());
+  // Conversations start collapsed so a large dataset opens as a readable list.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [newestId, setNewestId] = useState<string | null>(null);
 
@@ -69,15 +56,15 @@ const DatasetDetailPage: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       if (!datasetId) return;
-      try {
-        const [suiteData, caseData] = await Promise.all([
-          getTestSuite(datasetId),
-          listTestCases(datasetId),
-        ]);
-        setSuite(suiteData ?? null);
-        setCases(caseData ?? []);
-      } finally {
-        setIsLoading(false);
+      const [suiteData, caseData] = await Promise.all([
+        getTestSuite(datasetId),
+        listTestCases(datasetId),
+      ]);
+      setSuite(suiteData ?? null);
+      const records = caseData ?? [];
+      setCases(records);
+      if (records.length > 0) {
+        setExpandedRecords(new Set([records[0].id]));
       }
     };
     load();
@@ -95,37 +82,78 @@ const DatasetDetailPage: React.FC = () => {
     });
   };
 
-  const handleAddCase = async (payload: RecordPayload) => {
-    if (!datasetId) return;
-    // Every hand-written turn gets a thread id, so it is already a
-    // conversation of one and can grow a second turn without being re-threaded.
-    const thread = pendingThread ?? { id: crypto.randomUUID(), nextTurn: 0 };
-    const created = await addTestCase(datasetId, {
-      ...payload,
-      source_conversation_id: thread.id,
-      turn_index: thread.nextTurn,
-    });
-    if (!created) throw new Error("The turn was not saved.");
+  const handleAddCase = async () => {
+    if (!datasetId || !caseInput.trim()) return;
 
-    setCases((prev) => [...prev, created]);
-    setExpandedRecords((prev) => new Set([...prev, created.id]));
-    // Open the thread too, or a brand-new conversation renders collapsed and
-    // there is nothing for the scroll below to find.
-    setExpandedGroups((prev) => new Set(prev).add(thread.id));
-    setNewestId(created.id);
+    let inputData: Record<string, unknown>;
+    let expectedOutput: Record<string, unknown> | undefined;
+
+    try {
+      inputData = JSON.parse(caseInput);
+    } catch {
+      inputData = { message: caseInput };
+    }
+
+    if (caseExpectedOutput.trim()) {
+      try {
+        expectedOutput = JSON.parse(caseExpectedOutput);
+      } catch {
+        expectedOutput = { value: caseExpectedOutput };
+      }
+    }
+
+    const created = await addTestCase(datasetId, {
+      input_data: inputData,
+      expected_output: expectedOutput,
+    });
+
+    if (created) {
+      setCases((prev) => [...prev, created]);
+      setExpandedRecords((prev) => new Set([...prev, created.id]));
+      setNewestId(created.id);
+      setCaseInput("");
+      setCaseExpectedOutput("");
+    }
   };
 
   const openEditDialog = (entry: TestCase) => {
     setEditingCase(entry);
+    setEditInput(JSON.stringify(entry.input_data ?? {}, null, 2));
+    setEditExpectedOutput(
+      entry.expected_output ? JSON.stringify(entry.expected_output, null, 2) : "",
+    );
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveEditCase = async (payload: RecordPayload) => {
+  const handleSaveEditCase = async () => {
     if (!editingCase?.id) return;
-    const updated = await updateTestCase(editingCase.id, payload);
-    if (!updated) throw new Error("The turn was not saved.");
+
+    let inputData: Record<string, unknown> | undefined;
+    let expectedOutput: Record<string, unknown> | undefined;
+
+    try {
+      inputData = editInput.trim()
+        ? (JSON.parse(editInput) as Record<string, unknown>)
+        : undefined;
+    } catch {
+      inputData = { message: editInput };
+    }
+
+    if (editExpectedOutput.trim()) {
+      try {
+        expectedOutput = JSON.parse(editExpectedOutput) as Record<string, unknown>;
+      } catch {
+        expectedOutput = { value: editExpectedOutput };
+      }
+    }
+
+    const updated = await updateTestCase(editingCase.id, {
+      input_data: inputData ?? editingCase.input_data,
+      expected_output: expectedOutput,
+    });
 
     setCases((prev) => prev.map((c) => (c.id === editingCase.id ? updated : c)));
+    setIsEditDialogOpen(false);
     setEditingCase(null);
   };
 
@@ -135,35 +163,10 @@ const DatasetDetailPage: React.FC = () => {
     try {
       await deleteTestCase(caseToDelete.id);
       setCases((prev) => prev.filter((c) => c.id !== caseToDelete.id));
-      toast.success(`Turn ${deletingTurn ?? ""} deleted.`);
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr?.response?.data?.error ?? "Failed to delete the turn.");
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
       setCaseToDelete(null);
-      setDeletingTurn(null);
-    }
-  };
-
-  const handleRemoveConversation = async () => {
-    if (!datasetId || !conversationToRemove) return;
-    setIsRemovingConversation(true);
-    try {
-      await removeConversationFromSuite(datasetId, conversationToRemove.id);
-      setCases((prev) =>
-        prev.filter((c) => c.source_conversation_id !== conversationToRemove.id),
-      );
-      toast.success(`${conversationToRemove.label} removed.`);
-      setConversationToRemove(null);
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(
-        axiosErr?.response?.data?.error ?? "Failed to remove conversation.",
-      );
-    } finally {
-      setIsRemovingConversation(false);
     }
   };
 
@@ -176,24 +179,7 @@ const DatasetDetailPage: React.FC = () => {
   });
 
   const conversationGroups = groupCasesByConversation(filteredCases);
-  // The header counts describe the dataset, so they ignore the search filter.
-  const conversationCount = countConversations(cases);
-  const countLabel = `${conversationCount} conversation${
-    conversationCount === 1 ? "" : "s"
-  } · ${cases.length} turn${cases.length === 1 ? "" : "s"}`;
-  const isSearching = searchQuery.trim().length > 0;
-
-  // Opens or closes every turn in one conversation, opening the group itself
-  // when expanding so the turns are actually visible.
-  const setTurnsExpanded = (group: ConversationGroup, expand: boolean) => {
-    const ids = group.cases.map((entry) => entry.id ?? "");
-    setExpandedRecords((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => (expand ? next.add(id) : next.delete(id)));
-      return next;
-    });
-    if (expand) setExpandedGroups((prev) => new Set(prev).add(group.key));
-  };
+  const importedCount = conversationGroups.filter((g) => g.conversationId).length;
 
   const toggleGroupExpansion = (key: string) => {
     setExpandedGroups((prev) => {
@@ -206,183 +192,125 @@ const DatasetDetailPage: React.FC = () => {
 
   return (
     <PageLayout>
-      {/* Header: back, identity, then search and the conversation actions.
-          PageHeader has no back slot, so detail pages hand-roll this row. */}
-      <div className="flex flex-wrap items-start gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate("/tests/datasets")}
-          aria-label="Back to Datasets"
-          className="shrink-0"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-        <div className="min-w-0 flex-1">
-          {/* Counts trail the name in muted type, as on Agent Studio. Too narrow
-              to sit beside it, they drop below the description instead. */}
-          <h1 className="text-2xl font-bold tracking-tight animate-fade-down md:text-3xl">
-            {suite?.name ?? "Dataset"}{" "}
-            {!isLoading && (
-              <span className="hidden sm:inline text-lg md:text-xl text-muted-foreground font-normal">
-                {countLabel}
-              </span>
-            )}
-          </h1>
-          {suite?.description && (
-            <p className="mt-1 text-sm text-muted-foreground animate-fade-up">
-              {suite.description}
-            </p>
-          )}
-          {!isLoading && (
-            <div className="mt-2 sm:hidden">
-              <span className="text-base font-normal text-muted-foreground">
-                {countLabel}
-              </span>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" onClick={() => navigate("/tests/datasets")}>
+            <ChevronLeft className="h-4 w-4 mr-2" />
+            Back to Datasets
+          </Button>
+          {suite?.name && (
+            <div className="text-right">
+              <h1 className="text-xl font-semibold text-foreground animate-fade-down">{suite.name}</h1>
+              {suite.description && (
+                <p className="text-xs text-muted-foreground animate-fade-up">{suite.description}</p>
+              )}
             </div>
           )}
         </div>
-        {/* One gap for search and both buttons, as on Agent Studio. */}
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <SearchInput
-            placeholder="Search conversations..."
-            value={searchQuery}
-            onChange={setSearchQuery}
-          />
-          <Button
-            variant="outline"
-            className="w-full justify-center rounded-full sm:w-auto"
-            icon={<Import className="h-4 w-4" />}
-            disabled={!suite}
-            onClick={() => setIsImportDialogOpen(true)}
-          >
-            Import conversations
-          </Button>
-          <Button
-            className="w-full justify-center rounded-full sm:w-auto"
-            icon={<Plus className="h-4 w-4" />}
-            onClick={() => {
-              setPendingThread(null);
-              setIsAddDialogOpen(true);
-            }}
-          >
-            New conversation
-          </Button>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4 space-y-3">
+            <h2 className="text-lg font-semibold">Add Dataset Record</h2>
+            <Label className="text-xs">Input</Label>
+            <Textarea
+              value={caseInput}
+              onChange={(e) => setCaseInput(e.target.value)}
+              rows={6}
+              placeholder='{"message":"What are your support hours?"}'
+              className="font-mono text-xs"
+            />
+            <Label className="text-xs">Expected Output</Label>
+            <Textarea
+              value={caseExpectedOutput}
+              onChange={(e) => setCaseExpectedOutput(e.target.value)}
+              rows={6}
+              placeholder='{"text":"We are available 24/7"}'
+              className="font-mono text-xs"
+            />
+            <Button onClick={handleAddCase} disabled={!caseInput.trim()}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Record
+            </Button>
+          </div>
+
+          <div className="bg-card dark:bg-zinc-900 rounded-lg border p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Dataset Records</h2>
+              <span className="inline-flex items-center text-xs rounded-full bg-muted px-3 py-1">
+                {importedCount} conversation{importedCount === 1 ? "" : "s"} ·{" "}
+                {cases.length} record{cases.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <SearchInput
+              placeholder="Search records..."
+              value={searchQuery}
+              onChange={setSearchQuery}
+              className="mb-3"
+            />
+            <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
+              {conversationGroups.map((group) => (
+                <ConversationRecordGroup
+                  key={group.key}
+                  group={group}
+                  isCollapsed={!expandedGroups.has(group.key)}
+                  onToggleCollapse={() => toggleGroupExpansion(group.key)}
+                  expandedRecords={expandedRecords}
+                  onToggleRecord={toggleRecordExpansion}
+                  onEdit={openEditDialog}
+                  onDelete={(entry) => {
+                    setCaseToDelete(entry);
+                    setIsDeleteDialogOpen(true);
+                  }}
+                />
+              ))}
+              {filteredCases.length === 0 && (
+                <div className="text-sm text-muted-foreground">No records found.</div>
+              )}
+            </div>
+          </div>
         </div>
+
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="w-[95vw] max-w-2xl h-[80vh] max-h-[80vh] overflow-hidden p-0 flex flex-col">
+            <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+              <DialogTitle>Edit Record #{editingCase?.id?.slice(-4) ?? ""}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
+              <Label className="text-xs">Input</Label>
+              <Textarea
+                value={editInput}
+                onChange={(e) => setEditInput(e.target.value)}
+                rows={8}
+                className="font-mono text-xs"
+              />
+              <Label className="text-xs">Expected Output</Label>
+              <Textarea
+                value={editExpectedOutput}
+                onChange={(e) => setEditExpectedOutput(e.target.value)}
+                rows={8}
+                className="font-mono text-xs"
+              />
+            </div>
+            <DialogFooter className="border-t px-6 py-4 shrink-0">
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEditCase} disabled={!editInput.trim()}>
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <ConfirmDialog
+          isOpen={isDeleteDialogOpen}
+          onOpenChange={setIsDeleteDialogOpen}
+          onConfirm={handleDeleteCase}
+          isInProgress={isDeleting}
+          itemName={`#${caseToDelete?.id?.slice(-4) || ""}`}
+          description={`This will permanently delete this record from dataset "${suite?.name || ""}".`}
+        />
       </div>
-
-      {isLoading || conversationGroups.length === 0 ? (
-        <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
-          {isLoading ? <PageListSkeleton bordered={false} /> : null}
-          {!isLoading && (
-            <ListEmptyState
-              icon={<MessagesSquare className="h-12 w-12 text-muted-foreground" />}
-              title={
-                isSearching ? "No matching conversations" : "No conversations yet"
-              }
-              description={
-                isSearching
-                  ? "No conversations match your search. Try adjusting your query."
-                  : "A dataset holds the conversations you evaluate an agent against. Import one from a real transcript, or write your own."
-              }
-              action={
-                isSearching ? undefined : (
-                  <Button
-                    className="rounded-full"
-                    icon={<Plus className="h-4 w-4" />}
-                    onClick={() => {
-                      setPendingThread(null);
-                      setIsAddDialogOpen(true);
-                    }}
-                  >
-                    Create your first conversation
-                  </Button>
-                )
-              }
-            />
-          )}
-        </div>
-      ) : (
-        // Each conversation is its own card, so they read as separate threads.
-        <div className="space-y-3">
-          {conversationGroups.map((group) => (
-            <ConversationRecordGroup
-              key={group.key}
-              group={group}
-              isCollapsed={!expandedGroups.has(group.key)}
-              onToggleCollapse={() => toggleGroupExpansion(group.key)}
-              expandedRecords={expandedRecords}
-              onToggleRecord={toggleRecordExpansion}
-              onEdit={openEditDialog}
-              onDelete={(entry, turnNumber) => {
-                setCaseToDelete(entry);
-                setDeletingTurn(turnNumber);
-                setIsDeleteDialogOpen(true);
-              }}
-              onRemoveConversation={setConversationToRemove}
-              onSetTurnsExpanded={(expand) => setTurnsExpanded(group, expand)}
-              onAddTurn={() => {
-                if (!group.conversationId) return;
-                setPendingThread({
-                  id: group.conversationId,
-                  nextTurn:
-                    Math.max(
-                      ...group.cases.map((entry) => entry.turn_index ?? 0),
-                    ) + 1,
-                });
-                setIsAddDialogOpen(true);
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      <RecordDialog
-        open={isAddDialogOpen}
-        onOpenChange={setIsAddDialogOpen}
-        startsConversation={!pendingThread}
-        onSubmit={handleAddCase}
-      />
-
-      <RecordDialog
-        open={isEditDialogOpen}
-        onOpenChange={(next) => {
-          setIsEditDialogOpen(next);
-          if (!next) setEditingCase(null);
-        }}
-        record={editingCase}
-        onSubmit={handleSaveEditCase}
-      />
-
-      <ImportFromConversationDialog
-        open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
-        suite={suite}
-        onDatasetChanged={(_suiteId, records) => setCases(records)}
-      />
-
-      <ConfirmDialog
-        isOpen={!!conversationToRemove}
-        onOpenChange={(open) => {
-          if (!open) setConversationToRemove(null);
-        }}
-        onConfirm={handleRemoveConversation}
-        isInProgress={isRemovingConversation}
-        title={`Remove ${conversationToRemove?.label ?? "conversation"}?`}
-        description={`This will permanently delete its ${conversationToRemove?.turns ?? 0} turn${
-          conversationToRemove?.turns === 1 ? "" : "s"
-        }. Everything else in "${suite?.name ?? ""}" is kept.`}
-        primaryButtonText="Remove"
-      />
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteCase}
-        isInProgress={isDeleting}
-        title={`Delete turn ${deletingTurn ?? ""}?`}
-        description={`This will permanently delete turn ${deletingTurn ?? ""}. Later turns will be renumbered.`}
-      />
     </PageLayout>
   );
 };

@@ -1,5 +1,4 @@
 import re
-from collections.abc import Mapping
 from typing import Any
 
 _SENSITIVE_FIELD_RE = re.compile(
@@ -38,39 +37,6 @@ _HEX_TOKEN_RE = re.compile(r"\b[a-f0-9]{32,}\b", re.IGNORECASE)
 _B64URL_TOKEN_RE = re.compile(r"\b[a-zA-Z0-9_-]{32,}\b")
 
 TOKEN_REDACTION_LABEL = "[TOKEN]"
-
-
-def redact_bound_values(
-    message: Any,
-    parameters: Mapping[str, Any] | None,
-    *,
-    redacted: str = "[BOUND_VALUE]",
-) -> str:
-    """Remove bound parameter values from a database or driver message."""
-    result = str(message)
-    if not parameters:
-        return result
-
-    replacements: set[str] = set()
-    has_short_value = False
-    for value in parameters.values():
-        if value is None:
-            continue
-        rendered = str(value)
-        represented = repr(value)
-        if len(rendered) == 1:
-            has_short_value = True
-        if represented:
-            replacements.add(represented)
-        if len(rendered) >= 2:
-            replacements.add(rendered)
-
-    if has_short_value:
-        return "Database error details hidden for a query with bound parameters."
-
-    for candidate in sorted(replacements, key=len, reverse=True):
-        result = result.replace(candidate, redacted)
-    return result
 
 
 def is_sensitive_field_name(field_name: str) -> bool:
@@ -276,3 +242,4 @@ def redact_structure(value: Any, *, redacted: str = "[REDACTED]") -> Any:
         return redact_sensitive_substrings(value, redacted=redacted)
 
     return value
+

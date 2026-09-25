@@ -1127,7 +1127,7 @@ const MLModelDetail: React.FC = () => {
                 value={newWorkflowDescription}
                 onChange={(e) => setNewWorkflowDescription(e.target.value)}
                 placeholder="What this training workflow does"
-                size="hint"
+                rows={3}
               />
             </FormField>
           </div>

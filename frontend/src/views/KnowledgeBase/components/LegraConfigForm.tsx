@@ -50,7 +50,8 @@ const LegraConfigForm: React.FC<LegraConfigFormProps> = ({
               placeholder="Enter questions (one per line) that will be used by Legra during graph building..."
               value={legraConfig.questions || ""}
               onChange={(e) => handleLegraChange("questions", e.target.value)}
-              size="body"
+              rows={6}
+              className="min-h-32"
             />
           </div>
 

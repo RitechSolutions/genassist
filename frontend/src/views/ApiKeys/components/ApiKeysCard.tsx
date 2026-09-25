@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DataTable, Column } from '@/components/ui/data-table';
-import { PaginationBar } from '@/components/PaginationBar';
 import { LIST_PAGE_SIZE } from '@/constants/pagination';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { Button } from '@/components/button';
 import { Badge } from '@/components/badge';
 import { KeyRound, Pencil, RefreshCw, Trash } from 'lucide-react';
@@ -10,13 +8,13 @@ import { ListEmptyState } from '@/components/ListEmptyState';
 import { ApiKeyExpiryLines } from '@/components/api-keys/ApiKeyExpiryLines';
 import { RotateApiKeyDialog, type RotateApiKeyTarget } from '@/components/api-keys/RotateApiKeyDialog';
 import { ApiKey } from '@/interfaces/api-key.interface';
-import { getApiKeysPaginated } from '@/services/apiKeys';
+import { getAllApiKeys } from '@/services/apiKeys';
+import { getAllUsers } from '@/services/users';
 import { toast } from 'react-hot-toast';
 import { formatDate } from '@/helpers/utils';
+import { User } from '@/interfaces/user.interface';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/RadixTooltip';
 import { TooltipButton } from '@/components/tooltip-button';
-
-const SEARCH_DEBOUNCE_MS = 300;
 
 interface ApiKeysCardProps {
   searchQuery: string;
@@ -38,65 +36,37 @@ export function ApiKeysCard({
   onDeleteApiKey,
 }: ApiKeysCardProps) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rotateTarget, setRotateTarget] = useState<RotateApiKeyTarget | null>(null);
 
-  const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
-  const requestSeqRef = useRef(0);
-  const lastResetSigRef = useRef(`${debouncedSearch}|${refreshKey}`);
-
-  const fetchData = useCallback(async () => {
-    const seq = ++requestSeqRef.current;
-
-    const resetSig = `${debouncedSearch}|${refreshKey}`;
-    if (resetSig !== lastResetSigRef.current) {
-      lastResetSigRef.current = resetSig;
-      // A new search or a create/edit/delete refresh belongs on page 1
-      if (page !== 1) {
-        setPage(1);
-        return;
-      }
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getApiKeysPaginated(page, LIST_PAGE_SIZE, debouncedSearch);
-      if (seq !== requestSeqRef.current) return;
-
-      // Rows removed elsewhere can leave the page past the end: fall back to the last valid page
-      const lastPage = Math.max(1, data.total_pages);
-      if (data.items.length === 0 && page > lastPage) {
-        setPage(lastPage);
-        return;
-      }
-
-      setApiKeys(data.items);
-      setTotal(data.total);
-    } catch (err) {
-      if (seq !== requestSeqRef.current) return;
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
-      toast.error('Failed to fetch data.');
-    } finally {
-      if (seq === requestSeqRef.current) setLoading(false);
-    }
-  }, [page, debouncedSearch, refreshKey]);
-
   useEffect(() => {
     fetchData();
-    return () => {
-      requestSeqRef.current += 1;
-    };
-  }, [fetchData]);
+  }, [refreshKey]);
 
   useEffect(() => {
     if (updatedApiKey) {
       setApiKeys((prevKeys) => prevKeys.map((key) => (key.id === updatedApiKey.id ? updatedApiKey : key)));
     }
   }, [updatedApiKey]);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [keysData, usersData] = await Promise.all([getAllApiKeys(), getAllUsers()]);
+      setApiKeys(keysData);
+      setUsers(usersData);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
+      toast.error('Failed to fetch data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredApiKeys = apiKeys.filter((apiKey) => apiKey.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const columns: Column<ApiKey>[] = [
     {
@@ -179,23 +149,24 @@ export function ApiKeysCard({
   return (
     <>
       <DataTable
-        data={apiKeys}
+        data={filteredApiKeys}
         columns={columns}
         loading={loading}
         error={error}
         onRetry={fetchData}
-        searchQuery={debouncedSearch}
+        searchQuery={searchQuery}
+        pageSize={LIST_PAGE_SIZE}
         emptyState={
           <ListEmptyState
             icon={<KeyRound className="h-12 w-12 text-muted-foreground" />}
-            title={debouncedSearch ? "No matching API keys" : "No API keys yet"}
+            title={searchQuery ? "No matching API keys" : "No API keys yet"}
             description={
-              debouncedSearch
+              searchQuery
                 ? "No API keys match your search. Try a different name."
                 : "API keys let external services authenticate with the platform. Create one to grant programmatic access."
             }
             action={
-              !debouncedSearch && onCreateApiKey ? (
+              !searchQuery && onCreateApiKey ? (
                 <Button className="rounded-full" onClick={onCreateApiKey}>
                   Generate your first API key
                 </Button>
@@ -204,15 +175,6 @@ export function ApiKeysCard({
           />
         }
       />
-      {!loading && !error && (
-        <PaginationBar
-          total={total}
-          currentPage={page}
-          pageSize={LIST_PAGE_SIZE}
-          pageItemCount={apiKeys.length}
-          onPageChange={setPage}
-        />
-      )}
       <RotateApiKeyDialog
         open={rotateTarget !== null}
         target={rotateTarget}

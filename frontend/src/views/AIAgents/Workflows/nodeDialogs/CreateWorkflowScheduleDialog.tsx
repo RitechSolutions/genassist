@@ -152,7 +152,6 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <Label htmlFor="message">Message</Label>
         <DraggableTextArea
           id="message"
-          size="body"
           value={values.message}
           onChange={(e) => setField("message", e.target.value)}
           placeholder="Message passed to the workflow's input node on each run"
@@ -164,7 +163,6 @@ export const CreateWorkflowScheduleDialog: React.FC<
         <Label htmlFor="inputData">Additional input fields (JSON)</Label>
         <DraggableTextArea
           id="inputData"
-          size="code"
           value={values.inputData}
           onChange={(e) => setField("inputData", e.target.value)}
           placeholder='{ "customer_id": "123" }'
