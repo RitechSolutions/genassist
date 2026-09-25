@@ -3,16 +3,17 @@ from typing import Optional
 from uuid import UUID
 
 import jwt
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Depends, Header
 from fastapi_injector import Injected
 
+from app.core.chat_turn_gate import TURN_REJECTION_ERRORS
 from app.core.tenant_scope import set_tenant_context
 from app.services.auth import AuthService
 from app.services.agent_config import AgentConfigService
 from app.modules.workflow.registry import RegistryItem
 
 # Dependencies
-from app.auth.dependencies import verify_internal_secret
+from app.auth.dependencies import expose_request_to_turn_gate, verify_internal_secret
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -162,6 +163,7 @@ async def get_agent_config(
 @router.post(
     "/agents/execute",
     summary="Execute agent with text input (internal use only)",
+    dependencies=[Depends(expose_request_to_turn_gate)],
 )
 async def execute_agent(
     body: AgentExecuteRequest,
@@ -171,6 +173,7 @@ async def execute_agent(
     """
     Internal endpoint called by the websocket for Twilio media-stream.
     Passes transcribed text to the agent and returns the response.
+    A busy or abandoned turn keeps its HTTP status; other errors return a failure body.
     """
     verify_internal_secret(_secret)
 
@@ -187,5 +190,8 @@ async def execute_agent(
             return {"success": False, "message": "Agent returned empty response"}
         return {"success": True, "message": output}
     except Exception as exc:
+        is_turn_rejection = isinstance(exc, AppException) and exc.error_key in TURN_REJECTION_ERRORS
+        if is_turn_rejection:
+            raise
         logger.error(f"Agent execution error: {exc}")
         return {"success": False, "message": str(exc)}

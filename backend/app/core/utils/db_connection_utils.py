@@ -13,10 +13,47 @@ from fastapi_injector import RequestScopeFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
+from app.db.events.write_tracking import session_has_writes
 from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
 
 logger = logging.getLogger(__name__)
+
+
+async def release_idle_connection(
+    context: Optional[str] = None,
+    session: Optional[AsyncSession] = None,
+) -> bool:
+    """Return the pooled connection while a request waits, unless its transaction has writes to protect."""
+    if session is None:
+        try:
+            session = injector.get(AsyncSession)
+        except Exception as e:
+            logger.debug(f"No session to release ({context}): {e}")
+            return False
+
+    if not session.in_transaction():
+        return False
+    if session_has_writes(session):
+        logger.debug(f"Keeping the connection, transaction has writes ({context})")
+        return False
+
+    try:
+        await session.commit()
+    except Exception as e:
+        # Nothing was written, so rolling back only restores the session for later use.
+        logger.warning(f"Could not release the idle connection ({context}): {e}")
+        await _rollback_quietly(session, context)
+        return False
+    logger.debug(f"Released an idle connection ({context})")
+    return True
+
+
+async def _rollback_quietly(session: AsyncSession, context: Optional[str]) -> None:
+    try:
+        await session.rollback()
+    except Exception as e:
+        logger.debug(f"Rollback after a failed release also failed ({context}): {e}")
 
 
 async def commit_scope_session(context: Optional[str] = None) -> None:
@@ -46,55 +83,6 @@ async def rollback_scope_session(context: Optional[str] = None) -> None:
         await tx.rollback()
     except Exception as e:  # pylint: disable=broad-except
         logger.debug(f"Scope rollback skipped/failed ({context}): {e}")
-
-
-async def release_db_connection(
-    context: Optional[str] = None,
-    session: Optional[AsyncSession] = None,
-) -> None:
-    """
-    Release a database connection back to the pool by committing any pending
-    transaction or expiring all objects in the session.
-
-    This function helps optimize connection pool utilization by releasing
-    connections when they're not actively being used (e.g., during long-running
-    LLM calls).
-
-    Args:
-        context: Optional context string for logging (e.g., conversation_id, agent_id)
-        session: Optional AsyncSession instance. If not provided, will get from injector.
-
-    Example:
-        ```python
-        # Release connection after DB reads, before LLM call
-        await release_db_connection(context=f"conversation {conversation_id}")
-        ```
-    """
-    if session is None:
-        try:
-            session = injector.get(AsyncSession)
-        except Exception as e:
-            logger.debug(f"Could not get session for connection release: {e}")
-            return
-
-    try:
-        # Try to commit any pending transaction to release the connection
-        await session.commit()
-        log_msg = "Committed transaction to release DB connection"
-        if context:
-            log_msg += f" for {context}"
-        logger.debug(log_msg)
-    except Exception:
-        # If commit fails (e.g., no active transaction), expire all objects
-        # to detach them from the session, which helps release the connection
-        try:
-            session.expire_all()
-            log_msg = "Expired all objects to release DB connection"
-            if context:
-                log_msg += f" for {context}"
-            logger.debug(log_msg)
-        except Exception as expire_error:
-            logger.debug(f"Could not expire objects: {expire_error}")
 
 
 @asynccontextmanager
