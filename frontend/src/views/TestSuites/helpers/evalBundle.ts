@@ -77,8 +77,8 @@ export const catalogOptionsForKind = (
   return catalog.action_nodes.map((node) => ({ id: node.id, label: node.label }));
 };
 
-/** Node type per target-workflow node id. Routers carry theirs too, since a
- * Conditional Router and a Switch record different routes. */
+/** Node type per target-workflow node id. Routers are omitted upstream because
+ * they are all routerNode, so a type comparison there says nothing. */
 export const buildNodeTypeIndex = (
   catalog: EvaluationToolCatalog | null,
 ): Record<string, string> => {
@@ -89,9 +89,6 @@ export const buildNodeTypeIndex = (
     for (const tool of agent.tools) {
       if (tool.type) types[tool.id] = tool.type;
     }
-  }
-  for (const router of catalog.routers) {
-    if (router.type) types[router.id] = router.type;
   }
   for (const node of catalog.action_nodes) {
     if (node.type) types[node.id] = node.type;

@@ -10,13 +10,13 @@ Fetches training data from databases or CSV files.
 **Features:**
 - **Data Source Method**: Query TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB
 - **CSV Upload Method**: Upload CSV files directly to server
-- **Bound Query Variables**: Use `{{variable}}` for SQL values; values are sent to the database separately from the query text
+- **Variable Substitution**: Use `{{variable}}` syntax in SQL queries
 - **File Management**: Server-side file storage and validation
 
 **Configuration:**
 - `sourceType`: "datasource" or "csv"
 - `dataSourceId`: Database connection ID
-- `query`: SQL query with bound variables in value positions; table and column names must be fixed
+- `query`: SQL query with variable support
 - `csvFilePath`: Server path to uploaded CSV file
 
 ### 2. PreprocessingNode
@@ -89,3 +89,4 @@ TrainDataSource → PreprocessingNode → TrainModelNode
 - **AutoML**: Automated model selection and training
 - **Model Versioning**: Track and manage model versions
 - **Deployment**: Direct model deployment to inference endpoints
+

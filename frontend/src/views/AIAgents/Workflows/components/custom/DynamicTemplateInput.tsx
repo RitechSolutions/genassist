@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { RichTextarea } from "@/components/richTextarea";
-import type { TextareaSize } from "@/components/ui/textarea-sizing";
 import { Badge } from "@/components/badge";
 import { ScrollArea } from "@/components/scroll-area";
 import { createSimpleSchema, NodeSchema } from "../../types/schemas";
@@ -14,7 +13,7 @@ interface DynamicTemplateInputProps {
   }) => void;
   showProcessedOutput?: boolean;
   inputValues?: Record<string, string>;
-  size?: TextareaSize;
+  height?: string;
   placeholder?: string;
   readOnly?: boolean;
 }
@@ -24,7 +23,7 @@ const DynamicTemplateInput: React.FC<DynamicTemplateInputProps> = ({
   onChange,
   showProcessedOutput = false,
   inputValues = {},
-  size = "hint",
+  height = "100px",
   placeholder = "Enter your template with {{placeholders}}",
   readOnly = false,
 }) => {
@@ -123,8 +122,7 @@ const DynamicTemplateInput: React.FC<DynamicTemplateInputProps> = ({
           value={template}
           onChange={(e) => setTemplate(e.target.value)}
           placeholder={placeholder}
-          size={size}
-          className="text-sm"
+          className={`min-h-[${height}] text-sm`}
           readOnly={readOnly}
         />
       </div>

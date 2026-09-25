@@ -55,12 +55,9 @@ const RouteRuleRow: React.FC<RouteRuleRowProps> = ({
   const useDropdowns = routers.length > 0 && !isLegacyValue;
 
   const routerName = selectedRouter?.label ?? rule.router;
-  // A Switch route is an opaque case id, so name it by its case label.
-  const expectedBranch = selectedRouter?.branches.find((branch) => branch.value === rule.expected);
-  const expectedName = expectedBranch?.label ?? rule.expected;
   const summary = rule.expected
     ? routerName
-      ? `Router "${routerName}" must take route "${expectedName}" ${scopePhrase(rule, conversations)}.`
+      ? `Router "${routerName}" must take route "${rule.expected}" ${scopePhrase(rule, conversations)}.`
       : `Route "${rule.expected}" must be taken ${scopePhrase(rule, conversations)}.`
     : null;
 
@@ -108,8 +105,8 @@ const RouteRuleRow: React.FC<RouteRuleRowProps> = ({
                   {selectedRouter.branches.map((branch) => (
                     <SelectItem key={branch.value} value={branch.value}>
                       {branch.destination
-                        ? `${branch.label ?? branch.value} → ${branch.destination}`
-                        : branch.label ?? branch.value}
+                        ? `${branch.value} → ${branch.destination}`
+                        : branch.value}
                     </SelectItem>
                   ))}
                 </SelectContent>

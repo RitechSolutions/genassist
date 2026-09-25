@@ -25,8 +25,6 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   workflowExecutorNode: "Workflow Executor",
   // Router
   routerNode: "Conditional Router",
-  switchNode: "Switch",
-  filterNode: "Filter",
   aggregatorNode: "Result Merger",
   // Utils
   templateNode: "Text Template",

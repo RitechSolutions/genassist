@@ -148,11 +148,11 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
           <Label htmlFor="name">Task Description</Label>
           <DraggableTextArea
             id="task_description"
-            size="body"
+            rows={6}
             value={values.taskDescription}
             onChange={(e) => setField("taskDescription", e.target.value)}
             placeholder="Enter task description"
-            className="w-full"
+            className="w-full resize-none"
           />
         </div>
       </NodeConfigPanel>

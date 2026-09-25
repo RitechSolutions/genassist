@@ -47,10 +47,8 @@ function PromptCell({ prompt }: { prompt: string }) {
           </span>
         </TooltipTrigger>
         {isTruncated && (
-          <TooltipContent className="max-w-md p-0">
-            <div className="max-h-[var(--radix-tooltip-content-available-height,24rem)] overflow-y-auto whitespace-pre-wrap break-words px-3 py-1.5">
-              {prompt}
-            </div>
+          <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
+            {prompt}
           </TooltipContent>
         )}
       </Tooltip>

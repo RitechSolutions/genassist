@@ -400,7 +400,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] max-w-[min(1100px,95vw)] max-h-[90vh] flex flex-col overflow-hidden" style={{ zIndex: 1201 }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] w-full overflow-hidden" style={{ zIndex: 1201 }}>
         <DialogHeader>
           <DialogTitle>{`Test ${nodeName}`}</DialogTitle>
           <p className="text-sm text-muted-foreground">
@@ -416,7 +416,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           )}
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-1 min-w-0">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
           <div className="flex flex-col space-y-4 min-w-0 w-full">
             {isAudioInputNode && (
               <STTAudioInput
@@ -450,7 +450,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           </div>
         </div>
 
-        <DialogFooter className="mt-4">
+        <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             <X className="h-4 w-4 mr-2" />
             Close

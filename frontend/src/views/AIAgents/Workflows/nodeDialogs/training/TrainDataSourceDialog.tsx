@@ -277,16 +277,14 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             <Label htmlFor="query">Query *</Label>
             <DraggableTextArea
               id="query"
-              size="code"
               value={values.query ?? ""}
               onChange={(e) => setField("query", e.target.value || null)}
               placeholder="SELECT * FROM training_data WHERE ..."
-              className="w-full font-mono text-sm"
+              className="w-full min-h-[120px] font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              {"Variables like {{chat.input}} are sent to the database as values, "}
-              so they are safe to use in WHERE and LIMIT. They cannot replace
-              table or column names.
+              SQL query to fetch training data. Use variables from previous
+              nodes if needed.
             </p>
           </div>
         )}

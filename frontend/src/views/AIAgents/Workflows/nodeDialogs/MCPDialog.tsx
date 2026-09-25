@@ -390,9 +390,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
-        <RichTextarea
+        <RichInput
           id="description"
-          size="description"
           value={values.description}
           onChange={(e) => setField("description", e.target.value)}
           placeholder="MCP server tool connector"
@@ -460,7 +459,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               onChange={(e) => setStdioEnv(e.target.value)}
               placeholder='{"API_KEY": "secret"}'
               className="w-full font-mono text-sm"
-              size="description"
+              rows={4}
             />
             <div className="text-xs text-muted-foreground break-words">
               Environment variables as JSON object (e.g., {"{"}"API_KEY": "secret"{"}"})
@@ -661,7 +660,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               onChange={(e) => setHttpHeaders(e.target.value)}
               placeholder='{"X-Custom-Header": "value"}'
               className="w-full font-mono text-sm"
-              size="description"
+              rows={4}
             />
             <div className="text-xs text-muted-foreground break-words">
               Custom HTTP headers as JSON object (e.g., {"{"}"X-Custom-Header": "value"{"}"})

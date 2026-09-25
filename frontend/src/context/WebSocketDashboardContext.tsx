@@ -35,13 +35,6 @@ export type DashboardMessageListener = (
   data: Record<string, unknown>
 ) => void;
 
-/** One dashboard `update` event — sent by the server for every message of a live conversation. */
-export interface ConversationUpdateEvent {
-  /** Increments per event, so identical payloads still register as new. */
-  seq: number;
-  payload: ConversationDataPayload;
-}
-
 export interface WebSocketDashboardContextValue {
   conversations: ActiveConversation[];
   total: number;
@@ -49,13 +42,7 @@ export interface WebSocketDashboardContextValue {
   error: Error | null;
   refetch: () => void;
   finalizedIds: string[];
-  /**
-   * Bumped when the socket state can no longer be trusted (e.g. a finalize without an id).
-   * Per-message updates are NOT resyncs — they arrive as `lastConversationUpdate`, so a
-   * consumer can patch rows instead of refetching on every message.
-   */
   resyncHint: number;
-  lastConversationUpdate: ConversationUpdateEvent | null;
   /** Bumped when a dashboard WS notification event arrives; refetch notification feed. */
   notificationResyncHint: number;
   /** Subscribe to raw dashboard WS messages (e.g. notification topic). Returns unsubscribe. */
@@ -106,8 +93,6 @@ export function WebSocketDashboardProvider({
   const [total, setTotal] = useState<number>(0);
   const [finalizedIds, setFinalizedIds] = useState<string[]>([]);
   const [resyncHint, setResyncHint] = useState<number>(0);
-  const [lastConversationUpdate, setLastConversationUpdate] =
-    useState<ConversationUpdateEvent | null>(null);
   const [notificationResyncHint, setNotificationResyncHint] = useState<number>(0);
   const messageListenersRef = useRef(new Set<DashboardMessageListener>());
 
@@ -218,7 +203,7 @@ export function WebSocketDashboardProvider({
           }
           return [...prev, enhanced];
         });
-        setLastConversationUpdate((prev) => ({ seq: (prev?.seq ?? 0) + 1, payload }));
+        setResyncHint((n) => n + 1);
         break;
       }
       case "conversation_update": {
@@ -317,7 +302,6 @@ export function WebSocketDashboardProvider({
       refetch,
       finalizedIds,
       resyncHint,
-      lastConversationUpdate,
       notificationResyncHint,
       subscribe,
     }),
@@ -329,7 +313,6 @@ export function WebSocketDashboardProvider({
       refetch,
       finalizedIds,
       resyncHint,
-      lastConversationUpdate,
       notificationResyncHint,
       subscribe,
     ]
@@ -354,7 +337,6 @@ export function useWebSocketDashboardContext(): WebSocketDashboardContextValue {
       refetch: () => {},
       finalizedIds: [],
       resyncHint: 0,
-      lastConversationUpdate: null,
       notificationResyncHint: 0,
       subscribe: () => () => {},
     };

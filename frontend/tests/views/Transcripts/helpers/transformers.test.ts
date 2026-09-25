@@ -10,11 +10,10 @@ vi.mock("@/config/api", () => ({
 }));
 
 import {
-  applyConversationUpdate,
   processApiResponse,
   transformTranscript,
 } from "@/views/Transcripts/helpers/transformers";
-import type { BackendTranscript, Transcript } from "@/interfaces/transcript.interface";
+import type { BackendTranscript } from "@/interfaces/transcript.interface";
 
 const asBackend = (value: unknown): BackendTranscript => value as BackendTranscript;
 
@@ -297,64 +296,5 @@ describe("transformTranscript - transcription string / array fallback", () => {
     expect(result.duration).toBe(10);
     expect(result.metrics.wordCount).toBe(4);
     expect(result.transcription).toHaveLength(2);
-  });
-});
-
-describe("applyConversationUpdate", () => {
-  const row = (): Transcript =>
-    ({
-      id: "c1",
-      status: "in_progress",
-      duration: 10,
-      in_progress_hostility_score: 5,
-      thumbs_up_count: 0,
-      thumbs_down_count: 0,
-      messages: [{ speaker: "customer", text: "hi", start_time: 0, end_time: 0, create_time: "" }],
-      metadata: { isCall: false, duration: 10, title: "c1", topic: "Billing" },
-      metrics: { in_progress_hostility_score: 5, sentiment: "neutral" },
-    }) as unknown as Transcript;
-
-  it("overlays the running stats and the last message text", () => {
-    const patched = applyConversationUpdate(row(), {
-      conversation_id: "c1",
-      in_progress_hostility_score: 70,
-      duration: 42,
-      topic: "Refunds",
-      transcript: "latest message",
-      thumbs_up_count: 2,
-      thumbs_down_count: 1,
-    });
-
-    expect(patched.in_progress_hostility_score).toBe(70);
-    expect(patched.metrics.in_progress_hostility_score).toBe(70);
-    expect(patched.duration).toBe(42);
-    expect(patched.metadata.duration).toBe(42);
-    expect(patched.metadata.topic).toBe("Refunds");
-    expect(patched.last_message_preview).toBe("latest message");
-    expect(patched.thumbs_up_count).toBe(2);
-    expect(patched.thumbs_down_count).toBe(1);
-  });
-
-  it("keeps the row's values for fields the payload leaves out or blanks", () => {
-    const original = row();
-    const patched = applyConversationUpdate(original, {
-      conversation_id: "c1",
-      topic: "  ",
-      transcript: "",
-      thumbs_up_count: null,
-    });
-
-    expect(patched.duration).toBe(10);
-    expect(patched.in_progress_hostility_score).toBe(5);
-    expect(patched.metrics).toBe(original.metrics);
-    expect(patched.metadata.topic).toBe("Billing");
-    expect(patched.last_message_preview).toBeUndefined();
-    expect(patched.thumbs_up_count).toBe(0);
-  });
-
-  it("leaves the messages untouched, since the row also seeds the detail view", () => {
-    const original = row();
-    const patched = applyConversationUpdate(original, { conversation_id: "c1", transcript: "new" });
-    expect(patched.messages).toBe(original.messages);
   });
 });

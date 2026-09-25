@@ -66,7 +66,7 @@ export function MessageFeedbackPopover({
               placeholder="Enter message"
               value={text}
               onChange={(e) => onTextChange(e.target.value)}
-              size="description"
+              rows={4}
               className="max-h-[40vh] resize-y overflow-y-auto overscroll-contain"
             />
           </div>

@@ -26,7 +26,6 @@ import {
   DialogFooter,
 } from "@/components/dialog";
 import { RichInput } from "@/components/richInput";
-import { RichTextarea } from "@/components/richTextarea";
 import { Label } from "@/components/label";
 import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -612,9 +611,8 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description (Optional)</Label>
-              <RichTextarea
+              <RichInput
                 id="description"
-                size="description"
                 placeholder="Description of what this workflow does"
                 value={workflowDescription}
                 onChange={(e) => setWorkflowDescription(e.target.value)}
