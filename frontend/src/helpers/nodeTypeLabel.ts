@@ -7,6 +7,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   mcpNode: "MCP Server",
   // Chat / IO
   chatInputNode: "Start",
+  webhookTriggerNode: "Webhook Trigger",
   chatOutputNode: "Finish",
   setStateNode: "Set State",
   humanInTheLoopNode: "Human In The Loop",

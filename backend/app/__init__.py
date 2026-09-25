@@ -271,6 +271,7 @@ async def output_open_api(app):
 LONG_TASK_TIMEOUTS = {
     "execute_test_suite_run": 2 * 60 * 60,
     "execute_workflow_run": 2 * 60 * 60,
+    "execute_webhook_trigger_run": 2 * 60 * 60,
     "execute_pipeline_run": 2 * 60 * 60,
     "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics": 110 * 60,
     "app.tasks.analytics_aggregation_tasks.backfill_agent_analytics": 110 * 60,
@@ -315,6 +316,7 @@ def create_celery():
         "app.tasks.ml_model_pipeline_tasks",
         "app.tasks.test_suite_tasks",
         "app.tasks.workflow_schedule_tasks",
+        "app.tasks.workflow_trigger_tasks",
     ]
     include = [
         "app.tasks.base",
@@ -407,6 +409,7 @@ def create_celery():
             "execute_test_suite_run": {"queue": "ml"},
             "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs": {"queue": "ml"},
             "execute_workflow_run": {"queue": "ml"},
+            "execute_webhook_trigger_run": {"queue": "ml"},
             "app.tasks.workflow_schedule_tasks.check_scheduled_workflow_runs": {"queue": "ml"},
         },
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
@@ -555,6 +558,11 @@ def create_celery():
         beat_schedule["reconcile-stuck-workflow-runs"] = {
             "task": "app.tasks.run_reconciliation_tasks.reconcile_stuck_workflow_runs",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
+            "options": {"expires": 290},
+        }
+        beat_schedule["reconcile-stuck-workflow-trigger-runs"] = {
+            "task": "app.tasks.run_reconciliation_tasks.reconcile_stuck_workflow_trigger_runs",
+            "schedule": 300.0,
             "options": {"expires": 290},
         }
 

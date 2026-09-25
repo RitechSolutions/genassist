@@ -72,6 +72,9 @@ class ProjectSettings(BaseSettings):
     # (worker died mid-run). Kept above the 2h execution timeout and the broker
     # redelivery delay so a lost run is re-run before it is declared dead.
     WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
+    # Webhook Trigger node ingress (public /webhook/execute/{id} for workflow_trigger rows).
+    WEBHOOK_TRIGGER_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB
+    WEBHOOK_TRIGGER_HMAC_TOLERANCE_SECONDS: int = 300
     # Evaluation (test) runs use the same orphaned-run reconciliation.
     CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
     TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
