@@ -37,9 +37,22 @@ const ensureTrailingSlash = (url: string): string =>
 /** Default HTTP client timeout for JSON/API calls (not used for large file uploads — see uploadConstants). */
 export const API_DEFAULT_TIMEOUT_MS = 120000;
 
-/** Timeout for CSV analysis / data profiling calls, which can run arbitrary
- *  pandas code (or ydata-profiling, for the profile-csv endpoint) server-side. */
+/**
+ * Timeout for CSV analysis / preprocessing-step execution calls, which can run
+ * arbitrary pandas code (or ydata-profiling, for the profile-csv endpoint)
+ * server-side. Kept slightly above the backend's _EXEC_TIMEOUT_SECONDS cap
+ * (600s, in backend/app/modules/workflow/utils.py) so the backend's own
+ * timeout error always wins the race.
+ */
 export const API_PREPROCESSING_TIMEOUT_MS = 630000;
+
+/**
+ * Timeout for running a full workflow test (POST genagent/workflow/test), which
+ * executes every node synchronously in one request — e.g. Train Data Source ->
+ * Preprocessing -> Train Model. Preprocessing alone can take up to the backend's
+ * 600s exec cap, so this must comfortably exceed that plus the other nodes.
+ */
+export const API_WORKFLOW_TEST_TIMEOUT_MS = 1200000;
 
 const api = axios.create({
   headers: {

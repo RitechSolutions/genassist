@@ -16,8 +16,10 @@ from app.modules.workflow.sandbox import (
 
 logger = logging.getLogger(__name__)
 
-# Maximum wall-clock seconds for user-supplied Python code execution.
-_EXEC_TIMEOUT_SECONDS = 120
+# Maximum wall-clock seconds for user-supplied Python code execution
+# (e.g. preprocessing steps on large datasets). Keep well under the 2-hour
+# cap on full pipeline runs (app/tasks/ml_model_pipeline_tasks.py).
+_EXEC_TIMEOUT_SECONDS = 600
 
 
 def add_executable_function(code: str) -> str:
