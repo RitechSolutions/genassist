@@ -6,6 +6,9 @@ from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
 
+# Ceiling for replica reads when DB_READ_STATEMENT_TIMEOUT is unset; the small read pool cannot afford the writer's default.
+DEFAULT_READ_STATEMENT_TIMEOUT = 600  # seconds
+
 
 class ProjectSettings(BaseSettings):
     def __init__(self, **values):
@@ -191,7 +194,7 @@ class ProjectSettings(BaseSettings):
     DB_READ_MAX_OVERFLOW: int = 20
     # Fail fast rather than tying a request up waiting for a read connection.
     DB_READ_POOL_TIMEOUT: int = 5  # seconds
-    # None inherits DB_STATEMENT_TIMEOUT; set lower to protect the small read pool; 0 disables.
+    # None uses the writer's ceiling capped at DEFAULT_READ_STATEMENT_TIMEOUT; 0 disables.
     DB_READ_STATEMENT_TIMEOUT: Optional[int] = Field(default=None, ge=0)  # seconds
     # Seconds a client keeps reading from the writer after one of its own writes, so
     # replica lag never hides a change from the user who made it. 0 disables.
@@ -428,9 +431,12 @@ class ProjectSettings(BaseSettings):
 
     @property
     def read_statement_timeout(self) -> int:
-        if self.DB_READ_STATEMENT_TIMEOUT is None:
-            return self.DB_STATEMENT_TIMEOUT
-        return self.DB_READ_STATEMENT_TIMEOUT
+        if self.DB_READ_STATEMENT_TIMEOUT is not None:
+            return self.DB_READ_STATEMENT_TIMEOUT
+        writer_is_unbounded = self.DB_STATEMENT_TIMEOUT <= 0
+        if writer_is_unbounded:
+            return DEFAULT_READ_STATEMENT_TIMEOUT
+        return min(self.DB_STATEMENT_TIMEOUT, DEFAULT_READ_STATEMENT_TIMEOUT)
 
     def _tenant_async_database_url(self, host: str, tenant: str) -> str:
         tenant_db = self.get_tenant_database_name(tenant)
