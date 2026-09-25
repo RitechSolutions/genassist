@@ -21,6 +21,7 @@ import { Label } from "@/components/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
+import { Tooltip } from "@/components/tooltip";
 import { RichInput } from "@/components/richInput";
 import { SecretInput } from "@/components/SecretInput";
 import JsonViewer, { JsonValue } from "@/components/JsonViewer";
@@ -383,9 +384,11 @@ export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props)
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 items-start gap-3">
                 <div className="space-y-2">
-                  <Label htmlFor="wt-method">HTTP method</Label>
+                  <div className="flex h-5 items-center gap-1.5">
+                    <Label htmlFor="wt-method">HTTP method</Label>
+                  </div>
                   <Select value={method} onValueChange={(v) => setMethod(v as WorkflowTriggerMethod)}>
                     <SelectTrigger id="wt-method">
                       <SelectValue />
@@ -397,7 +400,9 @@ export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props)
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="wt-auth">Authentication</Label>
+                  <div className="flex h-5 items-center gap-1.5">
+                    <Label htmlFor="wt-auth">Authentication</Label>
+                  </div>
                   <Select value={authMode} onValueChange={(v) => setAuthMode(v as WorkflowTriggerAuthMode)}>
                     <SelectTrigger id="wt-auth">
                       <SelectValue />
@@ -409,7 +414,14 @@ export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props)
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="wt-rate">Rate limit (per minute)</Label>
+                  <div className="flex h-5 items-center gap-1.5">
+                    <Label htmlFor="wt-rate">Rate limit (per minute)</Label>
+                    <Tooltip
+                      content="Maximum deliveries accepted per minute for this endpoint. 0 disables the limit."
+                      iconClassName="h-3.5 w-3.5"
+                      contentClassName="w-56 text-left"
+                    />
+                  </div>
                   <Input
                     id="wt-rate"
                     type="number"
@@ -417,15 +429,22 @@ export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props)
                     max={6000}
                     value={rateLimit}
                     onChange={(e) => setRateLimit(e.target.value)}
+                    className="h-10"
                   />
-                  <p className="text-xs text-muted-foreground">0 disables the limit.</p>
                 </div>
-                <div className="flex items-center justify-between rounded-md border p-3">
-                  <div className="space-y-0.5">
+                <div className="space-y-2">
+                  <div className="flex h-5 items-center gap-1.5">
                     <Label htmlFor="wt-active">Accepting deliveries</Label>
-                    <p className="text-xs text-muted-foreground">Off answers 404.</p>
+                    <Tooltip
+                      content="When off, the endpoint answers 404 and no runs are queued. Use it to pause an integration without rotating the secret."
+                      iconClassName="h-3.5 w-3.5"
+                      contentClassName="w-56 text-left"
+                    />
                   </div>
-                  <Switch id="wt-active" checked={isActive} onCheckedChange={(c) => setIsActive(Boolean(c))} />
+                  <div className="flex h-10 items-center justify-between rounded-full border border-input bg-background px-3">
+                    <span className="text-sm">{isActive ? "Enabled" : "Paused"}</span>
+                    <Switch id="wt-active" checked={isActive} onCheckedChange={(c) => setIsActive(Boolean(c))} />
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end">
