@@ -683,10 +683,9 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     {formData.description.length}/{AGENT_DESCRIPTION_MAX_LENGTH}
                   </span>
                 </div>
-                <Textarea
+                <Input
                   id="description"
                   name="description"
-                  size="description"
                   value={formData.description}
                   onChange={handleInputChange}
                   placeholder="Enter agent description"
@@ -928,7 +927,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 <Textarea
                   id="welcome_message"
                   name="welcome_message"
-                  size="description"
                   value={formData.welcome_message}
                   onChange={handleInputChange}
                   placeholder="Enter welcome message"
@@ -1161,7 +1159,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <Textarea
                       id="greeting_prompt"
                       name="greeting_prompt"
-                      size="body"
                       value={formData.greeting_prompt || ""}
                       onChange={handleInputChange}
                       placeholder="e.g. Mention our weekend promotion and ask which product they're interested in."

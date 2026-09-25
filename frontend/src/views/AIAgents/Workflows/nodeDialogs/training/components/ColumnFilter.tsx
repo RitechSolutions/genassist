@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
-import { RichTextarea } from "@/components/richTextarea";
+import { RichInput } from "@/components/richInput";
 import { Badge } from "@/components/badge";
 import { ColumnFilterConfig, ColumnFilterItem } from "../preprocessingConfig";
 
@@ -181,14 +181,13 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         ) : (
           /* Comma-separated input when no column names available */
           <div className="space-y-3">
-            <RichTextarea
-              size="hint"
+            <RichInput
               value={commaSeparatedInput}
               onChange={(e) =>
                 handleCommaSeparatedInputChange(e.target.value)
               }
               placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
-              className="w-full font-mono text-sm"
+              className="w-full"
             />
             {columns.length > 0 && (
               <>

@@ -157,11 +157,6 @@ class ProjectSettings(BaseSettings):
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
     FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
-    # Train Data Source extraction ceilings. Workflow nodes may request lower
-    # values, but these settings remain the operator-controlled upper bounds.
-    ML_EXTRACT_MAX_ROWS: int = 2_000_000
-    ML_EXTRACT_MAX_BYTES: int = 2 * 1024**3  # 2 GiB
-    ML_EXTRACT_QUERY_TIMEOUT_SECONDS: int = 600
     # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
     # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
     # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths

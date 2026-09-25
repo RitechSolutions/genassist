@@ -5,10 +5,8 @@
  * to ensure consistency and maintainability.
  */
 
-import type { TextareaSize } from '@/components/ui/textarea-sizing';
-
 // Field types supported across all schemas
-export type FieldType = 'text' | 'textarea' | 'number' | 'password' | 'select' | 'boolean' | 'tags' | 'files';
+export type FieldType = 'text' | 'number' | 'password' | 'select' | 'boolean' | 'tags' | 'files';
 
 // The set of values a form field can hold.
 export type FieldValue = string | number | boolean | string[] | undefined;
@@ -35,10 +33,6 @@ export interface FieldSchema {
 
   // For select fields
   options?: Array<{ value: string; label: string }>; // Options for select fields
-
-  // For textarea fields
-  size?: TextareaSize; // Height preset (default: 'body')
-  rows?: number; // Explicit row count, overriding the preset
 
   // For number fields
   min?: number; // Minimum value for number fields

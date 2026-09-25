@@ -37,8 +37,6 @@ import {
   ScanText,
   Image,
   BotMessageSquare,
-  Signpost,
-  Filter,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -88,8 +86,6 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
       <Merge {...props} style={{ transform: "rotate(90deg)" }} />
     ),
   },
-  Signpost: { type: "lucide", source: Signpost },
-  Filter: { type: "lucide", source: Filter },
   Send: { type: "lucide", source: Send },
   ArrowRightFromLine: { type: "lucide", source: ArrowRightFromLine },
   ArrowRightToLine: { type: "lucide", source: ArrowRightToLine },

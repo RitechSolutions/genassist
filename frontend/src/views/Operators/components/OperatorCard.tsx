@@ -5,7 +5,7 @@ import { OperatorDetailsDialog } from "./OperatorDetailsDialog";
 import { useSearchParams } from "react-router-dom";
 import { fetchOperatorById, fetchOperatorsPaginated } from "@/services/operators";
 import { Operator, OperatorListItem } from "@/interfaces/operator.interface";
-import { formatExactDuration } from "@/helpers/formatters";
+import { formatCallDuration } from "@/helpers/formatters";
 import { Button } from "@/components/button";
 import { PageListSkeleton } from "@/components/skeletons";
 import { ListEmptyState } from "@/components/ListEmptyState";
@@ -15,9 +15,6 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
-
-const formatConversationCount = (count: number) =>
-  `${count} ${count === 1 ? "conversation" : "conversations"}`;
 
 interface OperatorsCardProps {
   searchQuery: string;
@@ -207,7 +204,7 @@ export function OperatorsCard({
                     <div className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">
-                        {formatExactDuration(
+                        {formatCallDuration(
                           agent.operator_statistics?.totalCallDuration
                         )}
                       </span>
@@ -221,7 +218,7 @@ export function OperatorsCard({
                   </div>
                 </div>
                 <div className="text-xs font-medium text-muted-foreground shrink-0">
-                  {formatConversationCount(agent.operator_statistics?.callCount ?? 0)}
+                  {agent.operator_statistics?.callCount ?? 0} calls
                 </div>
               </div>
             ))

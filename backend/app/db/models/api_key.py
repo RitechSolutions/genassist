@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import UUID, DateTime, ForeignKey, Index, Integer, PrimaryKeyConstraint, String, text
+from sqlalchemy import UUID, DateTime, Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.events.group_scope import GroupScopedMixin
@@ -9,9 +9,7 @@ class ApiKeyModel(Base, GroupScopedMixin):
     __tablename__ = 'api_keys'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='api_keys_pk'),
-        # Names are unique among *active* keys only: a soft-deleted key releases
-        # its name so a new key can be created with it (see migration 00112).
-        Index('api_keys_name_active_unique', 'name', unique=True, postgresql_where=text('is_deleted = 0')),
+        UniqueConstraint('name', name='api_keys_unique')
         )
 
     name: Mapped[Optional[str]] = mapped_column(String(255))

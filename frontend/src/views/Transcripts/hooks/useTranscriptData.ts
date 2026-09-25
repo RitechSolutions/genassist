@@ -44,9 +44,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
   const [error, setError] = useState<Error | null>(null);
   const [total, setTotal] = useState<number>(0);
 
-  // `silent` refreshes in the background: the current rows stay up instead of the skeleton.
-  const fetchAndTransformTranscripts = useCallback(async (fetchOptions?: { silent?: boolean }) => {
-    const silent = fetchOptions?.silent === true;
+  const fetchAndTransformTranscripts = useCallback(async () => {
     if (id) {
       try {
         setLoading(true);
@@ -76,7 +74,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
       }
     } else {
       try {
-        if (!silent) setLoading(true);
+        setLoading(true);
         const params = {
           limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
           include_feedback, conversation_status, order_by, sort_direction,
