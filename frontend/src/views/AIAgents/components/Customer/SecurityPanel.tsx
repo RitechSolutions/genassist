@@ -338,7 +338,7 @@ export const SecurityPanel = ({
               value={corsAllowedOrigins}
               onChange={(e) => setCorsAllowedOrigins(e.target.value)}
               placeholder="https://example.com, https://app.example.com"
-              rows={3}
+              size="hint"
             />
             <p className="text-xs text-muted-foreground">
               Comma-separated list of allowed CORS origins. Leave empty to use
