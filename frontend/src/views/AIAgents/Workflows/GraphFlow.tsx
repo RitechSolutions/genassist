@@ -13,6 +13,8 @@ import ReactFlow, {
   MarkerType,
   reconnectEdge,
   useStore,
+  useReactFlow,
+  useStoreApi,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { isEqual } from "lodash";
@@ -50,6 +52,7 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useSidebar } from "@/components/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { History, ChevronLeft, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
@@ -57,6 +60,7 @@ import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
 import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import { buildDeleteConfirmation } from "./utils/nodeDeletion";
 import toast from "react-hot-toast";
 import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
@@ -409,6 +413,10 @@ const GraphFlowContent: React.FC = () => {
   // Clipboard for node copy/paste (supports multi-node + edges)
   const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
+  const [pendingDeletion, setPendingDeletion] = useState<{
+    nodes: Node[];
+    edges: Edge[];
+  } | null>(null);
 
   // Always-current snapshot of nodes, so the per-node action callbacks below can
   // read the latest node without listing `nodes` in their deps (which would
@@ -1001,6 +1009,31 @@ const GraphFlowContent: React.FC = () => {
     [duplicateNode, copyNode, requestReplaceNode, testWorkflowFromCanvas]
   );
 
+  const { deleteElements } = useReactFlow();
+  const storeApi = useStoreApi();
+  const requestDeleteSelection = useCallback(() => {
+    if (activeTab !== "workflow") return false;
+    if (pendingDeletion) return false;
+    const { getNodes, edges: storeEdges } = storeApi.getState();
+    const selNodes = getNodes().filter((n) => n.selected);
+    const selEdges = storeEdges.filter((e) => e.selected);
+    if (selNodes.length === 0 && selEdges.length === 0) return false;
+    if (selNodes.length === 0) {
+      deleteElements({ nodes: [], edges: selEdges });
+      storeApi.setState({ nodesSelectionActive: false });
+      return true;
+    }
+    setPendingDeletion({ nodes: selNodes, edges: selEdges });
+    return true;
+  }, [activeTab, deleteElements, pendingDeletion, storeApi]);
+
+  const confirmPendingDeletion = useCallback(async () => {
+    if (!pendingDeletion) return;
+    deleteElements(pendingDeletion);
+    storeApi.setState({ nodesSelectionActive: false });
+    setPendingDeletion(null);
+  }, [deleteElements, pendingDeletion, storeApi]);
+
   // Keyboard shortcuts for canvas interactions
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1021,9 +1054,15 @@ const GraphFlowContent: React.FC = () => {
         return;
       }
 
-      // Never hijack copy/paste while typing in a field or inside a dialog.
+      // Never hijack delete/copy/paste while typing in a field or inside a dialog.
       if (isEditableEventTarget(target) || target.closest('[role="dialog"]'))
         return;
+
+      if (e.key === "Backspace") {
+        if (target.closest('[role="alertdialog"]')) return;
+        if (requestDeleteSelection()) e.preventDefault();
+        return;
+      }
 
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
@@ -1048,7 +1087,7 @@ const GraphFlowContent: React.FC = () => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [copySelectedNodes, pasteFromClipboard, undo, redo]);
+  }, [copySelectedNodes, pasteFromClipboard, requestDeleteSelection, undo, redo]);
 
   // ---- Node search / command palette --------------------------------------
   const closeNodeSearch = useCallback(() => {
@@ -1336,6 +1375,8 @@ const GraphFlowContent: React.FC = () => {
       ? "Save the workflow to add evaluations"
       : null;
 
+  const deletionCopy = buildDeleteConfirmation(pendingDeletion?.nodes ?? []);
+
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
@@ -1360,6 +1401,7 @@ const GraphFlowContent: React.FC = () => {
                   edges={displayEdges}
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
+                  deleteKeyCode={null}
                   onConnect={onConnect}
                   minZoom={0.1}
                   nodeTypes={nodeTypes}
@@ -1621,6 +1663,17 @@ const GraphFlowContent: React.FC = () => {
                 onSendAgentMessage={sendAgentMessageFromSearch}
               />
             )}
+
+            <ConfirmDialog
+              isOpen={pendingDeletion !== null}
+              onOpenChange={(open) => {
+                if (!open) setPendingDeletion(null);
+              }}
+              onConfirm={confirmPendingDeletion}
+              isInProgress={false}
+              itemName={deletionCopy.itemName}
+              description={deletionCopy.description}
+            />
           </div>
         </div>
         </NodeActionsContext.Provider>

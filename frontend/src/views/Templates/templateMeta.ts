@@ -64,6 +64,7 @@ const NODE_LABELS: Record<string, string> = {
   jiraNode: "Jira",
   calendarEventNode: "Calendar",
   routerNode: "Router",
+  switchNode: "Router",
   sqlNode: "SQL",
   apiToolNode: "API",
   openApiNode: "API",
@@ -87,6 +88,7 @@ export function nodeLabel(type: string): string {
 
 // Structural/plumbing nodes that don't communicate a capability to a buyer.
 const STRUCTURAL = new Set([
+  "filterNode",
   "chatInputNode",
   "chatOutputNode",
   "templateNode",

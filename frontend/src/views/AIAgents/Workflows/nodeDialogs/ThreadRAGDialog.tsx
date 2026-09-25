@@ -118,7 +118,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
               onChange={(e) => setField("query", e.target.value)}
               placeholder="e.g., {{query}}"
               className="w-full"
-              rows={3}
+              size="hint"
             />
           </div>
 
@@ -148,7 +148,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
               onChange={(e) => setField("message", e.target.value)}
               placeholder="e.g., {{message}}"
               className="w-full"
-              rows={4}
+              size="description"
             />
           </div>
         </>

@@ -1,4 +1,5 @@
 import { ArrowUp } from "lucide-react";
+import { useAutoGrowTextarea, submitOnEnter } from "@/hooks/useAutoGrowTextarea";
 
 interface OnboardingInputProps {
   value: string;
@@ -7,24 +8,28 @@ interface OnboardingInputProps {
   onSubmit: (event: React.FormEvent) => void;
 }
 
-export const OnboardingInput = ({ value, disabled, onChange, onSubmit }: OnboardingInputProps) => (
+// The 56px bottom padding clears the send button, so the box starts taller than
+// one line and grows from there.
+const MIN_HEIGHT = 132;
+
+export const OnboardingInput = ({ value, disabled, onChange, onSubmit }: OnboardingInputProps) => {
+  const inputRef = useAutoGrowTextarea(value);
+
+  return (
   <form
     onSubmit={onSubmit}
     className="w-full max-w-2xl relative"
   >
     <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-ai-brand/30 focus-within:shadow-md focus-within:shadow-ai-brand/5 transition-all duration-200">
       <textarea
+        ref={inputRef}
         rows={1}
-        className="w-full min-h-[100px] bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground px-5 pt-4 pb-14 resize-none leading-relaxed"
+        style={{ minHeight: MIN_HEIGHT }}
+        className="w-full bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground px-5 pt-4 pb-14 resize-none leading-relaxed"
         placeholder="Describe what you want your agent to do..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            e.currentTarget.form?.requestSubmit();
-          }
-        }}
+        onKeyDown={submitOnEnter(() => inputRef.current?.form?.requestSubmit())}
         disabled={disabled}
       />
       <div className="absolute bottom-3 right-3">
@@ -39,4 +44,5 @@ export const OnboardingInput = ({ value, disabled, onChange, onSubmit }: Onboard
       </div>
     </div>
   </form>
-);
+  );
+};

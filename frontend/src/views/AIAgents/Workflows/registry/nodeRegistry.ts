@@ -56,8 +56,28 @@ class NodeRegistry {
     return Array.from(this.nodeTypes.keys()).filter(type => toolTypes.includes(type));
   }
 
+  /**
+   * Merge a data patch into a node. Config-derived handles (e.g. a Switch's case
+   * outputs) are rebuilt from the merged data, so any caller that edits node data
+   * outside the node's own dialog keeps its handles in step with its config.
+   */
+  withDataUpdate(node: Node, updates: Record<string, unknown>): Node {
+    const data = { ...node.data, ...updates };
+    const definition = node.type ? this.getNodeType(node.type) : undefined;
+    if (definition?.getHandlers) {
+      data.handlers = definition.getHandlers(data as NodeData);
+    }
+    return { ...node, data };
+  }
+
   hydrateNode(node: Node): Node {
     const definition = node.type ? this.getNodeType(node.type) : undefined;
+    if (definition?.getHandlers) {
+      return {
+        ...node,
+        data: { ...node.data, handlers: definition.getHandlers(node.data) },
+      };
+    }
     const defaultHandlers = (definition?.defaultData as BaseNodeData | undefined)?.handlers;
     if (!defaultHandlers?.length) return node;
 
@@ -86,6 +106,11 @@ class NodeRegistry {
       ...overrideData,
       label: overrideData?.label || nodeType.label
     };
+    // Config-derived handles must follow the overrides (e.g. a Switch created
+    // with its own `cases`), not the defaults they replaced.
+    if (nodeType.getHandlers) {
+      data.handlers = nodeType.getHandlers(data as NodeData);
+    }
 
     return createNode(type, id, position, data);
   }

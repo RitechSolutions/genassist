@@ -9,6 +9,7 @@ from uuid import UUID
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.db_connection_utils import release_db_connection
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.db.base import generate_sequential_uuid
 from app.db.models.conversation import ConversationModel
@@ -385,6 +386,10 @@ async def process_conversation_update_with_agent(
             )
         else:
             session_message = model.messages[-1].text
+
+        # Release the pooled connection before the LLM/tool run so it isn't held
+        # idle-in-transaction for the duration of the call (see incident-queuepool-exhaustion.md).
+        await release_db_connection(context=f"conversation {conversation_id}")
 
         agent_response = await run_query_agent_logic(
             agent_service,

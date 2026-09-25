@@ -122,6 +122,12 @@ type TranscriptThreadProps = {
   variant?: TranscriptThreadVariant;
   /** Ringed, labelled "Reported" and scrolled to the middle of the pane on mount. */
   highlightMessageId?: string | null;
+  /**
+   * The date header and the "Conversation Finalized" banner. Turn these off where the
+   * surrounding UI already states the date and status, so the thread does not repeat them.
+   * Takeover markers are unaffected: those are events inside the conversation.
+   */
+  showConversationMarkers?: boolean;
   showCosts?: boolean;
   costsByMessageId?: Record<string, AgentResponseLogSummary>;
   onMessageFeedback?: (messageId: string, feedback: 'good' | 'bad') => void;
@@ -143,6 +149,7 @@ export function TranscriptThread({
   isCall = false,
   variant = 'full',
   highlightMessageId = null,
+  showConversationMarkers = true,
   showCosts = false,
   costsByMessageId,
   onMessageFeedback,
@@ -182,7 +189,7 @@ export function TranscriptThread({
       style={style}
     >
       <div className="space-y-2">
-        {transcript.timestamp && (
+        {showConversationMarkers && transcript.timestamp && (
           <div className="flex justify-center mb-3">
             <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs">
               {formatDateTime(transcript.timestamp)}
@@ -341,7 +348,7 @@ export function TranscriptThread({
             </div>
           );
         })}
-        {transcript.status === 'finalized' && (
+        {showConversationMarkers && transcript.status === 'finalized' && (
           <div className="flex justify-center my-3">
             <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">
               Conversation Finalized

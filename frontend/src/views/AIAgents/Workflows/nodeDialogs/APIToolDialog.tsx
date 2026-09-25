@@ -281,7 +281,8 @@ export const APIToolDialog: React.FC<
             value={values.requestBody}
             onChange={(e) => setField("requestBody", e.target.value)}
             placeholder='{"key": "value"}'
-            className="font-mono text-xs h-24 resize-none w-full"
+            size="code"
+            className="w-full"
           />
           <div className="text-xs text-muted-foreground break-words">
             Use {"{{field}}"} to define dynamic parameters

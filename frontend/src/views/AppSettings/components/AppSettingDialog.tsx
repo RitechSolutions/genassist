@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   createAppSetting,
   getAppSettingsFormSchemas,
@@ -428,8 +429,9 @@ export function AppSettingDialog({
 
       <div className="space-y-2">
         <Label htmlFor="description">Description (Optional)</Label>
-        <Input
+        <Textarea
           id="description"
+          size="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description"

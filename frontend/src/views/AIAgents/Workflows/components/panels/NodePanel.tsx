@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp, X, ExternalLink } from "lucide-react";
+import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, X, ExternalLink } from "lucide-react";
 import { RichInput } from "@/components/richInput";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
@@ -10,6 +10,8 @@ import { FeatureFlags } from "@/config/featureFlags";
 import type { AssistantMessage } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import { getActionLabel } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import FormattedText from "@/components/FormattedText";
+import { AssistantComposer } from "@/components/AssistantComposer";
+import { AssistantEmptyState } from "@/components/AssistantEmptyState";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import {
@@ -116,18 +118,9 @@ const NodePanel: React.FC<NodePanelProps> = ({
     }
   }, [isOpen, activeTab, showConversationalTab]);
 
-  const handleSend = () => {
-    if (inputMessage.trim() && onSendMessage && !isThinking) {
-      onSendMessage(inputMessage.trim());
-      setInputMessage("");
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+  // The composer owns the trimming, the Enter key and clearing the field.
+  const handleSend = (message: string) => {
+    if (onSendMessage) onSendMessage(message);
   };
 
   // Handle drag start
@@ -514,35 +507,10 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 {/* Messages area */}
                 <div ref={conversationScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
                   {messages.length === 0 && !isThinking ? (
-                    <div className="flex flex-col justify-center h-full gap-8 py-12">
-                      <div className="flex justify-center">
-                        <svg
-                          width="64"
-                          height="64"
-                          viewBox="0 0 64 64"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M59.9971 32.8848L59.999 32.8867L35.1133 57.7705L22.3008 44.96L22.915 43.3008C23.6078 41.431 24.8249 39.8283 26.3906 38.6611L35.1133 47.3838V32.8848H59.9971ZM20.3867 23.3965C21.2165 25.6369 22.6409 27.5756 24.4727 29.0283L20.6152 32.8867L24.4668 36.7383C22.6377 38.1905 21.2157 40.128 20.3867 42.3662L20.2031 42.8613L10.2266 32.8867L20.2051 22.9072L20.3867 23.3965ZM57.4336 30.3203H47.0449L35.1133 18.3877L26.3965 27.1045C24.8278 25.9367 23.6084 24.3323 22.915 22.46L22.3037 20.8086L35.1133 8L57.4336 30.3203Z"
-                            fill="#D8D8D8"
-                          />
-                          <path
-                            d="M18.5165 18.3594L20.3777 23.3911C21.6857 26.9231 24.4693 29.7066 28.0013 31.0147L33.033 32.8759L28.0013 34.737C24.4693 36.045 21.6858 38.8287 20.3777 42.3607L18.5165 47.3924L16.6554 42.3607C15.3474 38.8287 12.5637 36.0451 9.03169 34.737L4 32.8759L9.03169 31.0147C12.5637 29.7067 15.3473 26.9231 16.6554 23.3911L18.5165 18.3594Z"
-                            fill="#D8D8D8"
-                          />
-                        </svg>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-lg text-muted-foreground">
-                          Let&apos;s create your agent together.
-                        </p>
-                        <p className="text-lg font-semibold text-foreground">
-                          What would you like your agent to do?
-                        </p>
-                      </div>
-                    </div>
+                    <AssistantEmptyState
+                      title="Let's create your agent together."
+                      prompt="What would you like your agent to do?"
+                    />
                   ) : (
                     <>
                       {messages.map((msg) => (
@@ -613,25 +581,13 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 </div>
                 {/* Input bar */}
                 <div className="p-3">
-                  <div className="relative flex items-center">
-                    <Sparkles className="absolute left-3 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
-                    <input
-                      type="text"
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Ask AI to update your workflow..."
-                      disabled={isThinking}
-                      className="w-full h-10 bg-card rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
-                    />
-                    <button
-                      onClick={handleSend}
-                      disabled={isThinking || !inputMessage.trim()}
-                      className="absolute right-1.5 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 dark:disabled:bg-zinc-700 disabled:opacity-100 disabled:cursor-not-allowed h-7 w-7 flex items-center justify-center transition-opacity"
-                    >
-                      <ArrowUp className="h-3.5 w-3.5 text-white" />
-                    </button>
-                  </div>
+                  <AssistantComposer
+                    value={inputMessage}
+                    onChange={setInputMessage}
+                    onSubmit={handleSend}
+                    placeholder="Ask AI to update your workflow..."
+                    busy={isThinking}
+                  />
                 </div>
               </div>
             )}
