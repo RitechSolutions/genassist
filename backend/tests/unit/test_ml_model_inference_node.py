@@ -1,10 +1,15 @@
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
 import numpy as np
 import pytest
 
+from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
+    MLModelInferenceNode,
     _build_input_array,
-    _build_prediction_entries,
-    _label_for_prediction,
+    _build_prediction_outputs,
     _normalize_inference_inputs,
 )
 
@@ -52,26 +57,93 @@ class TestBuildInputArray:
         np.testing.assert_array_equal(result[0], [0, 10, 0])
 
 
-class TestLabelForPrediction:
-    def test_zero_is_not_available(self):
-        assert _label_for_prediction(0) == "Not Available"
+class TestBuildPredictionOutputs:
+    def test_numpy_scalars_become_json_safe_python_scalars(self):
+        predictions, labels, details = _build_prediction_outputs(
+            [np.int64(2), np.float32(1.5), np.bool_(True), np.str_("ready")],
+            class_labels=[2, 1.5, True, "ready"],
+        )
 
-    def test_non_zero_number_is_available(self):
-        assert _label_for_prediction(3891) == "Available"
+        assert predictions == [2, 1.5, True, "ready"]
+        assert [type(value) for value in predictions] == [int, float, bool, str]
+        assert labels == predictions
+        assert [detail["label"] for detail in details] == labels
+        json.dumps({"prediction": predictions, "prediction_label": labels, "prediction_details": details})
 
-    def test_bool_false_is_not_available(self):
-        assert _label_for_prediction(False) == "Not Available"
+    def test_regression_prediction_has_no_invented_label(self):
+        predictions, labels, details = _build_prediction_outputs([np.float64(12.75)], class_labels=None)
+
+        assert predictions == [12.75]
+        assert labels == [None]
+        assert details == [{"result": 12.75, "label": None}]
 
 
-class TestBuildPredictionEntries:
-    def test_single_prediction_object(self):
-        entries = _build_prediction_entries([3891])
-        assert entries == [{"result": 3891, "label": "Available"}]
+async def _run_inference(monkeypatch, model, model_type):
+    model_record = SimpleNamespace(
+        name="test-model",
+        model_type=model_type,
+        target_variable="target",
+        features=["feature"],
+        pkl_file=__file__,
+        pkl_file_id=None,
+        updated_at=None,
+    )
+    ml_service = SimpleNamespace(get_by_id=AsyncMock(return_value=model_record))
+    model_manager = SimpleNamespace(
+        get_model=AsyncMock(
+            return_value={
+                "version": "v2.0",
+                "model": model,
+                "metadata": {"feature_columns": ["feature"]},
+            }
+        )
+    )
+    monkeypatch.setattr(inference_module, "injector", SimpleNamespace(get=Mock(return_value=ml_service)))
+    monkeypatch.setattr(inference_module, "get_ml_model_manager", Mock(return_value=model_manager))
 
-    def test_batch_prediction_objects(self):
-        entries = _build_prediction_entries([1, 0, 3891])
-        assert entries == [
-            {"result": 1, "label": "Available"},
-            {"result": 0, "label": "Not Available"},
-            {"result": 3891, "label": "Available"},
-        ]
+    node = MLModelInferenceNode("node-id", {"data": {}}, Mock())
+    return await node.process(
+        {
+            "modelId": "12345678-1234-5678-1234-567812345678",
+            "inferenceInputs": {"feature": 1},
+        }
+    )
+
+
+class TestInferenceOutput:
+    @pytest.mark.asyncio
+    async def test_preserves_float_regression_output_without_labels(self, monkeypatch):
+        class RegressionModel:
+            def predict(self, _input_data):
+                return np.array([np.float32(12.75)])
+
+        result = await _run_inference(monkeypatch, RegressionModel(), "linear_regression")
+
+        assert result["prediction"] == [12.75]
+        assert isinstance(result["prediction"][0], float)
+        assert result["prediction_label"] == [None]
+        assert result["prediction_details"] == [{"result": 12.75, "label": None}]
+        assert result["batch_size"] == 1
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_preserves_string_classes_and_uses_them_consistently(self, monkeypatch):
+        class StringClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        result = await _run_inference(monkeypatch, StringClassifier(), "logistic_regression")
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
+        assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
+        assert result["confidences"] == [0.75]
+        assert result["batch_size"] == 1
+        json.dumps(result)

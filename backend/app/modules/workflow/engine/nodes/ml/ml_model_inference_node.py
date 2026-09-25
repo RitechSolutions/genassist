@@ -161,25 +161,47 @@ def _build_input_array(
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
 
 
-def _label_for_prediction(value: Any) -> str:
-    """Map a model prediction to an availability label."""
-    if value is None:
-        return "Not Available"
-    if isinstance(value, (bool, np.bool_)):
-        return "Available" if value else "Not Available"
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        return "Available" if float(value) != 0 else "Not Available"
-    if isinstance(value, str):
-        return "Available" if value.strip() else "Not Available"
-    return "Available" if value else "Not Available"
+def _json_safe_scalar(value: Any) -> Any:
+    """Convert NumPy scalars to JSON-safe Python scalar values."""
+    if isinstance(value, np.generic):
+        value = value.item()
+
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return value
 
 
-def _build_prediction_entries(predictions: Sequence[Any]) -> List[Dict[str, Any]]:
-    """Build drag-and-drop friendly prediction objects for workflow variables."""
-    return [
-        {"result": int(p), "label": _label_for_prediction(p)}
-        for p in predictions
+def _build_prediction_outputs(
+    predictions: Sequence[Any], class_labels: Optional[Sequence[Any]]
+) -> tuple[List[Any], List[Any], List[Dict[str, Any]]]:
+    """Build flat and structured prediction outputs from one shared label rule."""
+    prediction_values = [_json_safe_scalar(prediction) for prediction in predictions]
+    prediction_labels = list(prediction_values) if class_labels is not None else [None] * len(prediction_values)
+    prediction_entries = [
+        {"result": prediction, "label": label}
+        for prediction, label in zip(prediction_values, prediction_labels, strict=True)
     ]
+    return prediction_values, prediction_labels, prediction_entries
+
+
+def _build_probability_outputs(
+    probabilities: np.ndarray, class_labels: Sequence[Any]
+) -> tuple[List[Dict[str, Any]], List[Any]]:
+    """Build probability dictionaries without assuming numeric class labels."""
+    json_class_labels = [_json_safe_scalar(class_label) for class_label in class_labels]
+    probability_outputs = [
+        {f"Class_{json_class_labels[index]}": _json_safe_scalar(probability) for index, probability in enumerate(row)}
+        for row in probabilities
+    ]
+    confidences = [_json_safe_scalar(max(row)) for row in probabilities]
+    return probability_outputs, confidences
 
 
 class MLModelInferenceNode(BaseNode):
@@ -205,8 +227,8 @@ class MLModelInferenceNode(BaseNode):
             Dictionary with prediction results in batch format:
                 {
                     "prediction": [1, 0, ...],  # flat list (backward compatible)
-                    "prediction_label": ["Available", "Not Available", ...],
-                    "prediction_details": [{"result": 1, "label": "Available"}, ...],
+                    "prediction_label": ["approved", "denied", ...],
+                    "prediction_details": [{"result": "approved", "label": "approved"}, ...],
                     "probabilities": [{...}, {...}, ...],
                     "batch_size": N,
                     ...
@@ -286,7 +308,9 @@ class MLModelInferenceNode(BaseNode):
                 batch_size = input_data.shape[0]
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
-                    batch_size, input_data.shape[1] if input_data.ndim == 2 else 0, list(feature_names),
+                    batch_size,
+                    input_data.shape[1] if input_data.ndim == 2 else 0,
+                    list(feature_names),
                 )
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
@@ -301,28 +325,28 @@ class MLModelInferenceNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR, error_detail="Model does not have predict method"
                     )
 
-                # Get class labels
-                class_labels = getattr(model, "classes_", [0, 1])
+                # Get model-derived class labels. Regressors do not expose classes_.
+                class_labels = getattr(model, "classes_", None)
 
                 # Use predict_proba when available to avoid a redundant forward pass
                 probabilities: Optional[np.ndarray] = None
-                if hasattr(model, "predict_proba"):
+                if hasattr(model, "predict_proba") and class_labels is not None:
                     try:
                         probabilities = model.predict_proba(input_data)
-                        predictions = class_labels[np.argmax(probabilities, axis=1)]
+                        predictions = np.asarray(class_labels)[np.argmax(probabilities, axis=1)]
                     except Exception:
+                        probabilities = None
                         predictions = model.predict(input_data)
                 else:
                     predictions = model.predict(input_data)
 
                 # Build response (always batch format)
                 # Convert input_data to column-wise dictionary (columns ordered by feature_names)
-                input_data_by_column = {
-                    feature_names[i]: input_data[:, i].tolist()
-                    for i in range(len(feature_names))
-                }
+                input_data_by_column = {feature_names[i]: input_data[:, i].tolist() for i in range(len(feature_names))}
 
-                prediction_entries = _build_prediction_entries(predictions)
+                prediction_values, prediction_labels, prediction_entries = _build_prediction_outputs(
+                    predictions, class_labels
+                )
 
                 result: Dict[str, Any] = {
                     "status": "success",
@@ -335,13 +359,9 @@ class MLModelInferenceNode(BaseNode):
                     "features_used": ml_model.features,
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,
-                    # Backward-compatible flat outputs. Existing client workflows consume
-                    # `prediction` as a list of ints and `prediction_label` as a list of
-                    # strings; keep that contract stable.
-                    "prediction": [int(p) for p in predictions],
-                    "prediction_label": [
-                        "Available" if p == 1 else "Not Available" for p in predictions
-                    ],
+                    # Backward-compatible flat output keys, preserving model value types.
+                    "prediction": prediction_values,
+                    "prediction_label": prediction_labels,
                     # New structured entries for drag-and-drop variable binding, e.g.
                     # {{source.prediction_details[0].result}}. Additive — does not replace
                     # the flat `prediction` field above.
@@ -350,11 +370,9 @@ class MLModelInferenceNode(BaseNode):
 
                 # Add probabilities and confidence
                 if probabilities is not None:
-                    result["probabilities"] = [
-                        {f"Class_{int(class_labels[i])}": float(prob) for i, prob in enumerate(probs)}
-                        for probs in probabilities
-                    ]
-                    result["confidences"] = [float(max(probs)) for probs in probabilities]
+                    probability_outputs, confidences = _build_probability_outputs(probabilities, class_labels)
+                    result["probabilities"] = probability_outputs
+                    result["confidences"] = confidences
 
                 logger.info("Prediction complete: %d rows for model %s", batch_size, model_id)
                 return result
@@ -371,9 +389,7 @@ class MLModelInferenceNode(BaseNode):
             raise
         except Exception as e:
             logger.error("Unexpected error in ML model inference: %s", e, exc_info=True)
-            raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"ML model inference failed: {e}"
-            ) from e
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"ML model inference failed: {e}") from e
 
     async def _ensure_pkl_file(self, ml_model: Any, ml_service: MLModelsService) -> None:
         """
