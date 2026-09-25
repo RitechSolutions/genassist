@@ -20,6 +20,10 @@ CallerGone = Callable[[], Awaitable[bool]]
 
 CLIENT_CLOSED_REQUEST_STATUS = 499
 
+TURN_REJECTION_ERRORS = frozenset(
+    {ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED, ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED}
+)
+
 
 class ChatTurnGate:
     """Caps concurrent agent turns in this process; a turn that waits past the timeout gets a 503."""
@@ -75,6 +79,11 @@ class ChatTurnGate:
         return semaphore
 
     async def _acquire(self, semaphore: asyncio.Semaphore, context: str) -> None:
+        # A free place is taken directly; wait_for with a zero timeout would reject it.
+        if not semaphore.locked():
+            await semaphore.acquire()
+            return
+
         started = time.monotonic()
         try:
             await asyncio.wait_for(semaphore.acquire(), timeout=self.queue_timeout_seconds)

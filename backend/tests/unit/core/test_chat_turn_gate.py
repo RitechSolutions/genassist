@@ -146,6 +146,17 @@ async def test_disabled_gate_never_waits():
     await asyncio.gather(*tasks)
 
 
+@pytest.mark.asyncio
+async def test_zero_timeout_admits_free_places_and_rejects_only_when_full():
+    gate = ChatTurnGate(max_inflight=1, queue_timeout_seconds=0)
+
+    async with gate.slot(context="test"):
+        pass
+
+    rejection = await _expect_rejection_while_one_turn_holds_the_place(gate)
+    assert rejection.status_code == 503
+
+
 def test_gate_keeps_working_across_event_loops():
     gate = ChatTurnGate(max_inflight=1, queue_timeout_seconds=0.05)
 

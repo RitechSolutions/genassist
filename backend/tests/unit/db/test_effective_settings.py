@@ -9,7 +9,7 @@ import pytest
 from app.db import effective_settings
 from app.db.effective_settings import log_effective_statement_timeout
 
-Row = namedtuple("Row", "setting reset_val source")
+Row = namedtuple("Row", "setting source")
 
 
 class _Result:
@@ -36,14 +36,14 @@ class FakeAsyncEngine:
 
 
 @pytest.mark.asyncio
-async def test_logs_configured_effective_and_server_default_with_source(caplog, monkeypatch):
-    monkeypatch.setattr(effective_settings.settings, "DB_STATEMENT_TIMEOUT", 1800)
-    engine = FakeAsyncEngine(row=Row(setting="1800000", reset_val="73000", source="session"))
+async def test_logs_configured_and_effective_with_source(caplog, monkeypatch):
+    monkeypatch.setattr(effective_settings.settings, "DB_STATEMENT_TIMEOUT", 60)
+    engine = FakeAsyncEngine(row=Row(setting="60000", source="client"))
 
     with caplog.at_level(logging.INFO, logger=effective_settings.__name__):
         await log_effective_statement_timeout(engine)
 
-    assert "configured=1800s effective=1800.0s source=session server_default=73.0s" in caplog.text
+    assert "configured=60s effective=60.0s source=client" in caplog.text
 
 
 @pytest.mark.asyncio
