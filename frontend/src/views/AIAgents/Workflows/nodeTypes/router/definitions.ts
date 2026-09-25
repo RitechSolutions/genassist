@@ -1,6 +1,7 @@
 import { NodeProps } from "reactflow";
 import {
   AggregatorNodeData,
+  FilterNodeData,
   NodeData,
   NodeTypeDefinition,
   RouterNodeData,
@@ -9,10 +10,12 @@ import {
 import RouterNode from "./routerNode";
 import AggregatorNode from "./aggregatorNode";
 import SwitchNode from "./switchNode";
+import FilterNode from "./filterNode";
 import {
   CONDITIONAL_ROUTER_HELP_CONTENT,
   RESULT_MERGER_HELP_CONTENT,
   SWITCH_HELP_CONTENT,
+  FILTER_HELP_CONTENT,
 } from "./helperDefinition";
 import { buildSwitchHandlers, DEFAULT_SWITCH_CASES } from "./switchCases";
 
@@ -97,6 +100,46 @@ export const SWITCH_NODE_DEFINITION: NodeTypeDefinition<SwitchNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "switchNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const FILTER_NODE_DEFINITION: NodeTypeDefinition<FilterNodeData> = {
+  type: "filterNode",
+  label: "Filter",
+  description:
+    "Lets the branch continue only when a condition is true; otherwise the branch stops.",
+  shortDescription: "Continue or stop",
+  helpContent: FILTER_HELP_CONTENT,
+  configSubtitle:
+    "Configure the condition that must hold for the branch to continue.",
+  category: "routing",
+  icon: "Filter",
+  defaultData: {
+    name: "Filter",
+    field: "",
+    operator: "equal",
+    value: "",
+    caseSensitive: false,
+    stopMessage: "",
+    handlers: [
+      { id: "input", type: "target", compatibility: "any", position: "left" },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+        label: "Passed",
+      },
+    ],
+  },
+  component: FilterNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "filterNode",
     position,
     data: {
       ...data,

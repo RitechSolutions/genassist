@@ -35,6 +35,7 @@ SUPPORTED_NODE_TYPES = [
     "chatOutputNode",
     "routerNode",
     "switchNode",
+    "filterNode",
     "agentNode",
     "subAgentNode",
     "apiToolNode",
