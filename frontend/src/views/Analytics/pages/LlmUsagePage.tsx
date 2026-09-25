@@ -62,6 +62,7 @@ const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
 const EVALUATION_KEY = "evaluation";
 const COVERAGE_NOTICE = "llm-unpriced-coverage";
+const FALLBACK_NOTICE = "llm-fallback-rates";
 const PARTIAL_COST_HELP =
   "Some calls here ran on a model with no configured rate. " +
   "This figure is the priced subtotal, real spend may be higher. Add the missing rates under " +
@@ -247,6 +248,7 @@ function LlmUsagePage() {
   const previous = hasCompare ? compare.data : undefined;
   const hasPartialCost = items.some((i) => i.cost_is_partial);
   const coverageNotice = useDismissibleNotice(COVERAGE_NOTICE, summary?.last_unpriced_at);
+  const fallbackNotice = useDismissibleNotice(FALLBACK_NOTICE, summary?.last_fallback_at);
 
   const isEvaluationRow = (i: LlmUsageBreakdownItem) => dimension === "source" && i.key === EVALUATION_KEY;
 
@@ -432,7 +434,7 @@ function LlmUsagePage() {
           </div>
         )}
 
-        {summary && summary.fallback_calls > 0 && (
+        {summary && summary.fallback_calls > 0 && fallbackNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
             <Info className="h-4 w-4 shrink-0" />
             <span>
@@ -441,6 +443,14 @@ function LlmUsagePage() {
               </span>{" "}
               Add matching rates to price them from your own configuration.
             </span>
+            <button
+              type="button"
+              onClick={fallbackNotice.dismiss}
+              aria-label="Dismiss fallback rates notice"
+              className="ml-auto shrink-0 rounded p-0.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
 

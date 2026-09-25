@@ -21,6 +21,7 @@ class FakeReadRepo:
         options=None,
         timeseries_rows=None,
         last_unpriced=None,
+        last_fallback=None,
     ):
         self._summary = summary_row
         self._breakdown = breakdown_rows or []
@@ -28,11 +29,13 @@ class FakeReadRepo:
         self._options = options or {}
         self._timeseries = timeseries_rows or []
         self._last_unpriced = last_unpriced
+        self._last_fallback = last_fallback
         self.scope_resolutions = 0
         self.distinct_calls = []
         self.breakdown_calls = []
         self.pair_calls = []
         self.last_unpriced_calls = 0
+        self.last_fallback_calls = 0
         self.queries = []
 
     async def resolve_scope(self, params):
@@ -46,6 +49,10 @@ class FakeReadRepo:
     async def last_unpriced_at(self):
         self.last_unpriced_calls += 1
         return self._last_unpriced
+
+    async def last_fallback_at(self):
+        self.last_fallback_calls += 1
+        return self._last_fallback
 
     async def timeseries(self, params, scope):
         self.queries.append("timeseries")
@@ -124,8 +131,9 @@ def _service(
     timeseries_rows=None,
     workflows=None,
     last_unpriced=None,
+    last_fallback=None,
 ):
-    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows, last_unpriced)
+    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows, last_unpriced, last_fallback)
     return LlmUsageReadService(repo, FakeAgentRepo(agents), FakeWorkflowRepo(workflows)), repo
 
 
@@ -236,6 +244,33 @@ async def test_empty_scope_summary_has_no_watermark():
     summ = await service.get_summary(_params())
     assert summ.last_unpriced_at is None
     assert repo.last_unpriced_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_fallback_calls_expose_the_tenant_wide_watermark():
+    watermark = datetime(2026, 9, 23, 9, 15, tzinfo=timezone.utc)
+    row = _row(calls=3, configured=1, fallback=2)
+    service, repo = _service(summary_row=row, last_fallback=watermark)
+    summ = await service.get_summary(_params())
+    assert summ.last_fallback_at == watermark
+    assert repo.last_fallback_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_no_fallback_calls_skips_the_watermark_query():
+    row = _row(calls=4, configured=4, fallback=0)
+    service, repo = _service(summary_row=row, last_fallback=datetime.now(timezone.utc))
+    summ = await service.get_summary(_params())
+    assert summ.last_fallback_at is None
+    assert repo.last_fallback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_scope_summary_has_no_fallback_watermark():
+    service, repo = _service(scope=[])
+    summ = await service.get_summary(_params())
+    assert summ.last_fallback_at is None
+    assert repo.last_fallback_calls == 0
 
 
 @pytest.mark.asyncio

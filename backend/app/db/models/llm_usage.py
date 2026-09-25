@@ -51,6 +51,11 @@ class LlmUsageEventModel(Base):
             "created_at",
             postgresql_where="cost_usd IS NULL AND is_deleted = 0",
         ),
+        Index(
+            "ix_llm_usage_events_fallback_created",
+            "created_at",
+            postgresql_where="pricing_status = 'fallback' AND is_deleted = 0",
+        ),
         CheckConstraint(
             "source_type IN ('workflow', 'llm_analyst', 'evaluation')", name="ck_llm_usage_events_source_type"
         ),

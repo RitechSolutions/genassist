@@ -44,6 +44,8 @@ class LlmUsageSummaryResponse(BaseModel):
     ``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,
     ignoring the filters, so a client can tell whether one has landed since it last
     reported the gap. It is only populated when the filtered window has unpriced calls.
+    ``last_fallback_at`` follows the same rules for calls priced from the bundled
+    fallback rates.
 
     Prompt tokens sent, normalized across providers. Includes cache (already
     in total_input_tokens). If provider reports input minus cache, we add it back
@@ -69,6 +71,7 @@ class LlmUsageSummaryResponse(BaseModel):
     unpriced_calls: int
     priced_token_coverage_pct: float
     last_unpriced_at: Optional[datetime] = None
+    last_fallback_at: Optional[datetime] = None
 
 
 class LlmUsageTimeseriesItem(BaseModel):
