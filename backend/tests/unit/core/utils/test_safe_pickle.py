@@ -9,9 +9,10 @@ import io
 import os
 import pickle
 
+import numpy as np
 import pytest
 
-from app.core.utils.safe_pickle import RestrictedUnpickler, safe_pickle_load
+from app.core.utils.safe_pickle import BUILTINS_ONLY_ALLOWED_MODULES, RestrictedUnpickler, safe_pickle_load
 
 
 class _EvilReduce:
@@ -92,3 +93,32 @@ class TestBuiltinClassRestriction:
         # eval/exec/getattr are not on the builtins class allowlist.
         with pytest.raises(pickle.UnpicklingError):
             RestrictedUnpickler(io.BytesIO()).find_class("builtins", "eval")
+
+
+class TestBuiltinsOnlyAllowlist:
+    def test_plain_data_roundtrips(self):
+        payload = {
+            "id_map": {0: "a", 1: "b"},
+            "metadata_map": {"a": {"chunk_index": 0, "flag": True}},
+            "next_id": 2,
+            "dimension": None,
+        }
+        data = pickle.dumps(payload)
+        assert safe_pickle_load(io.BytesIO(data), allowed_modules=BUILTINS_ONLY_ALLOWED_MODULES) == payload
+
+    def test_numpy_scalar_blocked_but_allowed_by_default(self):
+        data = pickle.dumps(np.int64(3))
+        with pytest.raises(pickle.UnpicklingError):
+            safe_pickle_load(io.BytesIO(data), allowed_modules=BUILTINS_ONLY_ALLOWED_MODULES)
+        assert safe_pickle_load(io.BytesIO(data)) == 3
+
+    def test_reduce_payload_is_blocked_without_side_effect(self, tmp_path):
+        marker = tmp_path / "pwned"
+
+        class _WriteFile:
+            def __reduce__(self):
+                return (eval, (f"__import__('os').system('touch {marker}')",))
+
+        with pytest.raises(pickle.UnpicklingError):
+            safe_pickle_load(io.BytesIO(pickle.dumps(_WriteFile())), allowed_modules=BUILTINS_ONLY_ALLOWED_MODULES)
+        assert not marker.exists()

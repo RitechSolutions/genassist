@@ -8,6 +8,8 @@ import pickle
 from typing import List, Dict, Any
 import numpy as np
 
+from app.core.utils.safe_pickle import BUILTINS_ONLY_ALLOWED_MODULES, safe_pickle_load
+
 from .base import BaseVectorDB, VectorDBConfig, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -411,7 +413,7 @@ class FaissVectorDB(BaseVectorDB):
                 
                 # Load metadata
                 with open(metadata_file, "rb") as f:
-                    metadata = pickle.load(f)
+                    metadata = safe_pickle_load(f, allowed_modules=BUILTINS_ONLY_ALLOWED_MODULES)
                 
                 self.id_map = metadata["id_map"]
                 self.metadata_map = metadata["metadata_map"]
